@@ -1,9 +1,15 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
+  implausibleCountLines,
+  summarisePurchases,
+  type PurchaseFacts,
+  type PurchaseLine,
   stockCategoryCreateInputSchema,
   stockCategoryUpdateInputSchema,
   stockItemBulkDeleteInputSchema,
+  stockItemMergeInputSchema,
+  type StockItemMergeResult,
   stockItemBulkUpdateInputSchema,
   stockItemCreateInputSchema,
   stockItemUpdateInputSchema,
@@ -417,6 +423,158 @@ export const itemsService = {
     };
   },
 
+  /**
+   * The catalogue as a picker sees it.
+   *
+   * Seven screens — stocktake, recipes, invoices, purchase orders, transfers,
+   * templates and settings — loaded the full list() payload purely to fill an
+   * item dropdown. That is 437 KB for 716 items here, and more in production
+   * where list() also returns every VenueStockItem with a nested copy of its
+   * item. None of those screens read createdAt, notes, par levels, reorder
+   * points or the category object; they read a name, a unit, a conversion and
+   * a cost.
+   *
+   * The Items page itself still uses list() — it genuinely edits every field.
+   *
+   * Venue scoping and the on-hand merge are identical to list(), so a picker
+   * shows the same stock position the items page does. A leaner payload must
+   * not mean a differently-scoped one.
+   */
+  async picker(actor?: AuthUser | null, requestedVenue?: string | null) {
+    const venue = actorVenueScope(actor, requestedVenue);
+    const [items, categories, venueStockItems, totalsRaw] = await Promise.all([
+      prisma.stockItem.findMany({
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          unit: true,
+          countUnit: true,
+          conversionFactor: true,
+          measurePerCountUnit: true,
+          measureUnit: true,
+          avgCostCents: true,
+          latestCostCents: true,
+          onHand: true,
+          status: true,
+          categoryId: true,
+          category: { select: { id: true, name: true } }
+        },
+        orderBy: [{ status: 'asc' }, { name: 'asc' }]
+      }),
+      prisma.stockCategory.findMany({ orderBy: { name: 'asc' } }),
+      prisma.venueStockItem.findMany({
+        where: scopedVenueStockWhere(actor, requestedVenue),
+        orderBy: [{ venue: 'asc' }, { updatedAt: 'desc' }]
+      }),
+      prisma.venueStockItem.groupBy({ by: ['stockItemId'], _sum: { onHand: true } })
+    ]);
+
+    const scopedByItemId = venue
+      ? new Map(venueStockItems.filter((row) => row.venue === venue).map((row) => [row.stockItemId, row]))
+      : new Map<string, (typeof venueStockItems)[number]>();
+    const totalOnHandByItem = new Map(totalsRaw.map((row) => [row.stockItemId, row._sum.onHand ?? 0]));
+
+    return {
+      items: items.map((item) => {
+        const scoped = scopedByItemId.get(item.id);
+        return {
+          ...item,
+          categoryName: item.category?.name ?? null,
+          category: undefined,
+          totalOnHand: totalOnHandByItem.get(item.id) ?? item.onHand,
+          venueStock: scoped ? { venue: scoped.venue, onHand: scoped.onHand } : undefined
+        };
+      }),
+      categories: categories.map(toCategoryPayload),
+      venue,
+      scope: { venue, admin: isAdminActor(actor), stockItemsVenueScoped: true }
+    };
+  },
+
+  /**
+   * Stock value and the per-category rollup, computed here.
+   *
+   * Reports downloaded the entire 402 KB catalogue to work these out in the
+   * browser: a total of onHand x avgCost, and counts/value/low-stock grouped by
+   * category. It is an aggregation, so it belongs on this side of the wire —
+   * the answer is about a kilobyte.
+   *
+   * The venue-rows-vs-items fallback is reproduced exactly as Reports had it:
+   * when active venue stock rows exist they are the source of truth (they hold
+   * the real per-venue holding), and only when there are none does it fall back
+   * to the item-level onHand. Changing that would change the stock value shown
+   * on the dashboard, which is a different kind of change from making it fast.
+   */
+  async valueByCategory(actor?: AuthUser | null, requestedVenue?: string | null) {
+    const venue = actorVenueScope(actor, requestedVenue);
+    const venueRows = await prisma.venueStockItem.findMany({
+      where: {
+        ...(venue ? { venue } : {}),
+        active: true,
+        stockItem: { status: 'ACTIVE' }
+      },
+      select: {
+        onHand: true,
+        parLevel: true,
+        reorderPoint: true,
+        stockItem: {
+          select: {
+            avgCostCents: true,
+            parLevel: true,
+            reorderPoint: true,
+            category: { select: { name: true } }
+          }
+        }
+      }
+    });
+
+    type Row = { category: string; itemCount: number; valueCents: number; lowStock: number };
+    const buckets = new Map<string, Row>();
+    const bucket = (name: string) => {
+      const existing = buckets.get(name);
+      if (existing) return existing;
+      const created: Row = { category: name, itemCount: 0, valueCents: 0, lowStock: 0 };
+      buckets.set(name, created);
+      return created;
+    };
+
+    let totalValueCents = 0;
+    const usesVenueRows = venueRows.length > 0;
+
+    if (usesVenueRows) {
+      for (const row of venueRows) {
+        const value = Math.round((row.onHand ?? 0) * (row.stockItem.avgCostCents ?? 0));
+        totalValueCents += value;
+        const entry = bucket(row.stockItem.category?.name ?? 'Uncategorised');
+        entry.itemCount += 1;
+        entry.valueCents += value;
+        const threshold = row.reorderPoint ?? row.parLevel ?? row.stockItem.reorderPoint ?? row.stockItem.parLevel ?? 0;
+        if (row.onHand !== null && threshold > 0 && row.onHand <= threshold) entry.lowStock += 1;
+      }
+    } else {
+      const items = await prisma.stockItem.findMany({
+        select: { onHand: true, avgCostCents: true, category: { select: { name: true } } }
+      });
+      for (const item of items) {
+        const value = Math.round(item.onHand * (item.avgCostCents ?? 0));
+        totalValueCents += value;
+        const entry = bucket(item.category?.name ?? 'Uncategorised');
+        entry.itemCount += 1;
+        entry.valueCents += value;
+      }
+    }
+
+    return {
+      totalValueCents,
+      // Tells Reports which basis produced these numbers, so the label it shows
+      // ("Venue rows" vs "Items") stays truthful.
+      basis: usesVenueRows ? ('VENUE_ROWS' as const) : ('ITEMS' as const),
+      categories: [...buckets.values()].sort((a, b) => b.valueCents - a.valueCents),
+      venue
+    };
+  },
+
   // Full-catalogue CSV export — every item with its current category, count
   // area, unit, status and latest cost. Column names line up with the
   // categorize-items helper (item / sku / category) so it round-trips.
@@ -445,6 +603,151 @@ export const itemsService = {
 
     const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
     return { filename: 'alma-stock-items.csv', csv };
+  },
+
+  /**
+   * Where each item is bought from and what it costs, derived from the
+   * invoices already entered.
+   *
+   * The supplier price list is where this "should" live and it holds 0 rows in
+   * production, because it is a second catalogue somebody would have to keep
+   * up by hand next to the invoices they already process. Reading the invoices
+   * asks for the data once.
+   *
+   * Only covers items whose invoice lines have been matched — 123 of 716
+   * today, growing as the review queue is cleared. An item with no history
+   * reports nothing rather than a guess.
+   */
+  async purchaseFacts(itemIds?: string[]): Promise<Map<string, PurchaseFacts>> {
+    const lines = await prisma.supplierInvoiceLine.findMany({
+      where: {
+        itemId: itemIds?.length ? { in: itemIds } : { not: null },
+        unitAmountCents: { gt: 0 },
+        // A line somebody actively set aside as a charge is not a purchase of
+        // this item, even if it somehow carries an itemId.
+        matchingStatus: { not: 'NON_STOCK' }
+      },
+      select: {
+        itemId: true,
+        unitAmountCents: true,
+        lineAmountCents: true,
+        quantity: true,
+        // Needed because the importer frequently records quantity as 1 and
+        // leaves the real figure only in the supplier's own wording.
+        description: true,
+        invoice: { select: { supplierId: true, supplierName: true, invoiceDate: true, createdAt: true } }
+      }
+    });
+
+    const grouped = new Map<string, PurchaseLine[]>();
+    for (const line of lines) {
+      if (!line.itemId) continue;
+      const list = grouped.get(line.itemId) ?? [];
+      list.push({
+        supplierId: line.invoice?.supplierId ?? null,
+        supplierName: line.invoice?.supplierName ?? null,
+        unitAmountCents: line.unitAmountCents,
+        lineAmountCents: line.lineAmountCents,
+        quantity: line.quantity,
+        description: line.description,
+        // The invoice date is when the price was actually paid. Falling back to
+        // createdAt would order purchases by when somebody got round to
+        // importing them, which is not the same thing.
+        purchasedAt: line.invoice?.invoiceDate ?? line.invoice?.createdAt ?? new Date(0)
+      });
+      grouped.set(line.itemId, list);
+    }
+
+    const out = new Map<string, PurchaseFacts>();
+    for (const [itemId, itemLines] of grouped) {
+      out.set(itemId, summarisePurchases(itemLines));
+    }
+    return out;
+  },
+
+  /**
+   * The catalogue seen the way a buyer sees it: grouped by who supplies each
+   * item, with what was last paid.
+   *
+   * Items nothing has ever been bought for are grouped separately rather than
+   * hidden — "we have no idea where this comes from" is a real answer a buyer
+   * needs, and today it is most of the catalogue.
+   */
+  async bySupplier(actor?: AuthUser | null, requestedVenue?: string | null) {
+    const venue = actorVenueScope(actor, requestedVenue);
+    const [items, facts] = await Promise.all([
+      prisma.stockItem.findMany({
+        where: { status: 'ACTIVE' },
+        select: {
+          id: true, name: true, unit: true, countUnit: true, conversionFactor: true,
+          parLevel: true, reorderPoint: true, onHand: true,
+          latestCostCents: true, latestCostAt: true,
+          category: { select: { id: true, name: true } },
+          venueStock: venue
+            ? { where: { venue }, select: { onHand: true, parLevel: true, reorderPoint: true } }
+            : false
+        },
+        orderBy: [{ name: 'asc' }]
+      }),
+      this.purchaseFacts()
+    ]);
+
+    const groups = new Map<string, {
+      supplierId: string | null;
+      supplierName: string;
+      items: Array<Record<string, unknown>>;
+    }>();
+
+    for (const item of items) {
+      const fact = facts.get(item.id) ?? null;
+      const key = fact?.supplierId ?? '__none__';
+      if (!groups.has(key)) {
+        groups.set(key, {
+          supplierId: fact?.supplierId ?? null,
+          supplierName: fact?.supplierName ?? 'No purchase history',
+          items: []
+        });
+      }
+      const venueRow = Array.isArray(item.venueStock) ? item.venueStock[0] : null;
+      groups.get(key)!.items.push({
+        id: item.id,
+        name: item.name,
+        unit: item.unit,
+        countUnit: item.countUnit,
+        conversionFactor: item.conversionFactor,
+        category: item.category,
+        // Venue figures win when a venue is in scope; the item-level numbers
+        // are the group-wide fallback.
+        onHand: venueRow?.onHand ?? item.onHand,
+        parLevel: venueRow?.parLevel ?? item.parLevel,
+        reorderPoint: venueRow?.reorderPoint ?? item.reorderPoint,
+        latestCostCents: item.latestCostCents,
+        latestCostAt: item.latestCostAt ? item.latestCostAt.toISOString() : null,
+        purchase: fact
+      });
+    }
+
+    const ordered = [...groups.values()].sort((a, b) => {
+      // Items nobody knows the source of sort last: they are a data gap to
+      // work through, not a supplier to order from.
+      if (a.supplierId === null) return 1;
+      if (b.supplierId === null) return -1;
+      return a.supplierName.localeCompare(b.supplierName);
+    });
+
+    return {
+      venue,
+      suppliers: ordered,
+      itemsWithHistory: facts.size,
+      itemsTotal: items.length,
+      generatedAt: new Date().toISOString()
+    };
+  },
+
+  /** One item's purchase history, for the item detail view. */
+  async purchaseFactsForItem(itemId: string): Promise<PurchaseFacts | null> {
+    const facts = await this.purchaseFacts([itemId]);
+    return facts.get(itemId) ?? null;
   },
 
   async summary(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockItemsSummary> {
@@ -970,6 +1273,78 @@ export const itemsService = {
     return { deleted: result.count };
   },
 
+  // Merge duplicate items into a chosen parent. Every reference (recipes,
+  // invoices, stocktakes, movements, deliveries, wastage, transfers, POs, Square
+  // mappings, reorder notices) is repointed onto the parent. Per-venue stock is
+  // summed where the parent already stocks that venue, otherwise moved onto the
+  // parent — so a duplicate that only existed at St Alma makes the parent stocked
+  // at St Alma too (one item, both venues). Duplicates are archived (reversible).
+  async mergeItems(input: unknown): Promise<StockItemMergeResult> {
+    const { parentId, duplicateIds } = stockItemMergeInputSchema.parse(input);
+    const dupIds = Array.from(new Set(duplicateIds)).filter((id) => id !== parentId);
+    if (dupIds.length === 0) throw new HttpError(400, 'Pick at least one different item to merge into the parent.');
+
+    const parent = await prisma.stockItem.findUnique({ where: { id: parentId }, include: { venueStock: true } });
+    if (!parent) throw new HttpError(404, 'Parent item not found.');
+    const dups = await prisma.stockItem.findMany({ where: { id: { in: dupIds } }, include: { venueStock: true } });
+    if (dups.length !== dupIds.length) throw new HttpError(404, 'One or more items to merge could not be found.');
+
+    const venuesAdded = new Set<string>();
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Repoint every history/reference relation onto the parent.
+      await tx.recipeLine.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } });
+      await tx.stocktakeLine.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } });
+      await tx.inventoryMovement.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } });
+      await tx.supplierInvoiceLine.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } });
+      await tx.stockTransfer.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+      await tx.stockWastageRecord.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+      await tx.stockDeliveryCheckItem.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+      await tx.stockReorderNotice.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+      await tx.squareMenuRecipeMapping.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+      await tx.purchaseOrderLine.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+
+      // 2. Supplier price list is unique on (supplierId, stockItemId) — the parent
+      //    keeps its own prices; drop the duplicates' rows (re-derived from invoices).
+      await tx.supplierPriceListItem.deleteMany({ where: { stockItemId: { in: dupIds } } });
+
+      // 3. Venue stock — sum where the parent already has the venue, else move it
+      //    onto the parent (unioning venue availability). A running map keeps
+      //    multi-duplicate merges onto the same new venue from colliding.
+      const parentVenues = new Map(parent.venueStock.map((row) => [row.venue, { id: row.id, onHand: row.onHand ?? 0, active: row.active }]));
+      for (const dup of dups) {
+        for (const vs of dup.venueStock) {
+          const existing = parentVenues.get(vs.venue);
+          if (existing) {
+            existing.onHand += vs.onHand ?? 0;
+            existing.active = existing.active || vs.active;
+            await tx.venueStockItem.update({ where: { id: existing.id }, data: { onHand: existing.onHand, active: existing.active } });
+            await tx.venueStockItem.delete({ where: { id: vs.id } });
+          } else {
+            await tx.venueStockItem.update({ where: { id: vs.id }, data: { stockItemId: parentId } });
+            parentVenues.set(vs.venue, { id: vs.id, onHand: vs.onHand ?? 0, active: vs.active });
+            venuesAdded.add(vs.venue);
+          }
+        }
+      }
+
+      // 4. Recompute the parent's rolled-up on-hand from its venue rows.
+      const rows = await tx.venueStockItem.findMany({ where: { stockItemId: parentId }, select: { onHand: true } });
+      await tx.stockItem.update({
+        where: { id: parentId },
+        data: { onHand: rows.reduce((sum, row) => sum + (row.onHand ?? 0), 0) }
+      });
+
+      // 5. Archive the now-empty duplicates (reversible — no references remain).
+      await tx.stockItem.updateMany({
+        where: { id: { in: dupIds } },
+        data: { status: 'ARCHIVED', onHand: 0, notes: `Merged into ${parent.name} (${parentId})` }
+      });
+    }, { maxWait: 15_000, timeout: 60_000 });
+
+    return { parentId, mergedCount: dups.length, venuesAdded: Array.from(venuesAdded) };
+  },
+
   // Data quality report for the Loaded replacement catalogue check
   // (Sprint 1 #5). Returns counts per warning type plus an actionable
   // list of problem items so the admin can fix them in bulk.
@@ -1077,6 +1452,50 @@ export const itemsService = {
       }
     });
 
+    // Counts made in the wrong unit. Every field on these lines is individually
+    // valid — a number, a real cost, a real unit — so nothing else here can see
+    // them; only the product is absurd. In production eight such lines carried
+    // 76% of all counted stock value, and the par levels derived from them made
+    // the reorder screen propose a $2.17M order.
+    const countedLines = await prisma.stocktakeLine.findMany({
+      where: { itemId: { not: null }, countedQty: { not: null } },
+      select: {
+        itemId: true,
+        label: true,
+        countedQty: true,
+        stocktake: { select: { venue: true } },
+        item: {
+          select: {
+            name: true,
+            avgCostCents: true,
+            countUnit: true,
+            measurePerCountUnit: true,
+            measureUnit: true
+          }
+        }
+      }
+    });
+    const badCounts = implausibleCountLines(
+      countedLines
+        .filter((line) => line.item)
+        .map((line) => ({
+          itemId: line.itemId!,
+          itemName: line.item!.name,
+          venue: line.stocktake?.venue ?? null,
+          countedQty: line.countedQty ?? 0,
+          unitCostCents: line.item!.avgCostCents,
+          countUnit: line.item!.countUnit,
+          measurePerCountUnit: line.item!.measurePerCountUnit,
+          measureUnit: line.item!.measureUnit
+        }))
+    );
+    // Worst line per item — an item counted wrongly three times is one problem.
+    const badCountByItem = new Map<string, (typeof badCounts)[number]>();
+    for (const bad of badCounts) {
+      const existing = badCountByItem.get(bad.itemId);
+      if (!existing || bad.lineValueCents > existing.lineValueCents) badCountByItem.set(bad.itemId, bad);
+    }
+
     const staleDays = options.staleDays ?? 180;
     const staleCutoff = new Date(Date.now() - staleDays * 24 * 60 * 60 * 1000);
 
@@ -1140,6 +1559,16 @@ export const itemsService = {
           code: 'stale-cost',
           severity: 'warn',
           message: `Cost hasn't been updated in ${ageDays} days — margins may be drifting. Re-import a recent invoice for this item.`
+        });
+      }
+
+      // 4. A counted quantity that cannot mean what its unit says.
+      const badCount = badCountByItem.get(item.id);
+      if (badCount) {
+        issues.push({
+          code: 'count-out-of-scale',
+          severity: 'error',
+          message: badCount.message
         });
       }
 

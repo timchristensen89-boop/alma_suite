@@ -48,9 +48,7 @@
     "build": "pnpm -r --if-present build",
     "start": "pnpm --filter @alma/api start",
     "typecheck": "pnpm -r --if-present typecheck",
-    "lint": "pnpm -r --if-present lint",
-    "dev:comms": "concurrently \"pnpm --filter @alma/api dev\" \"pnpm --filter @alma/comms-web dev\"",
-    "dev:comms-web": "pnpm --filter @alma/comms-web dev"
+    "lint": "pnpm -r --if-present lint"
   },
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.10",
@@ -69,6 +67,7 @@
     "nodemailer": "^8.0.6",
     "passkit-generator": "^3.5.7",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "4.2.67",
     "qrcode": "^1.5.4",
     "stripe": "^22.1.0",
     "zod": "^3.24.3"

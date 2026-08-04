@@ -48,6 +48,11 @@ const PUBLIC_PREFIXES = [
   '/api/staff/invites/by-token/',
   '/api/reserve/public-widget/',
   '/api/reserve/public/',
+  // Gift card artwork for the public buy page. Read-only image bytes the venue
+  // chose to publish, and the buy page is unauthenticated by definition — the
+  // whole point is that a stranger can use it. The service only ever serves
+  // the two known settings image fields, never an arbitrary key.
+  '/api/gift-cards/assets/',
   '/api/public/venue-snapshot'
 ];
 
@@ -82,6 +87,36 @@ function isWrite(req: Request) {
   return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
 }
 
+// A read-only account: every ENABLED app access carries permissions.readOnly.
+// Deliberately checked even for isAdmin accounts — the flag is only ever set
+// on purpose (e.g. an external administrator/accountant viewer login), and a
+// read-only admin can see everything but change nothing.
+function isReadOnlyAccount(user: AuthUser) {
+  const enabled = user.appAccess.filter((access) => access.status === 'ENABLED');
+  if (enabled.length === 0) return false;
+  return enabled.every((access) => {
+    const perms = access.permissions;
+    return Boolean(perms && typeof perms === 'object' && (perms as { readOnly?: unknown }).readOnly === true);
+  });
+}
+
+/**
+ * API surfaces the ALMA Staff app exposes to an ordinary staff member.
+ *
+ * These are the pages in the staff app's own navigation — Report an issue,
+ * Today's checks, Temperatures, Academy, Handbook. A new hire is created with
+ * STAFF access only, so anything here that demanded COMPLIANCE was a dead link
+ * for the people it was built for.
+ */
+const STAFF_APP_SURFACES = [
+  '/api/issues',
+  '/api/incidents',
+  '/api/checklists',
+  '/api/temperatures',
+  '/api/training',
+  '/api/handbook-documents'
+];
+
 function isStaffWriteAllowed(req: Request) {
   if (!isWrite(req)) return true;
   if (req.path.startsWith('/api/issues')) return true;
@@ -91,7 +126,6 @@ function isStaffWriteAllowed(req: Request) {
   if (req.path.startsWith('/api/audits/runs') && !req.path.includes('/export/')) return true;
   if (req.path === '/api/communications/chat' && req.method === 'POST') return true;
   if (req.path.startsWith('/api/messages/threads') && req.method === 'POST') return true;
-  if (req.path === '/api/comms/threads' && req.method === 'POST') return true;
   if (/^\/api\/messages\/threads\/[^/]+\/messages$/.test(req.path) && req.method === 'POST') return true;
   if (/^\/api\/messages\/threads\/[^/]+\/read$/.test(req.path) && req.method === 'POST') return true;
   if (/^\/api\/messages\/threads\/[^/]+\/acknowledge$/.test(req.path) && req.method === 'POST') return true;
@@ -102,6 +136,19 @@ function isStaffWriteAllowed(req: Request) {
   if (req.path === '/api/device/pin-logout' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/pin' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/leave' && req.method === 'POST') return true;
+  // Availability is the staff member's own to state. The service still checks
+  // ownership on every one of these — this allowlist only decides whether a
+  // non-manager may attempt the write at all.
+  if (req.path === '/api/staff/me/availability' && req.method === 'PUT') return true;
+  // Claiming an open shift is a request, not an assignment — the service still
+  // refuses clashes, leave and other venues, and a manager decides the outcome.
+  if (/^\/api\/staff\/me\/open-shifts\/[^/]+\/(claim|withdraw)$/.test(req.path) && req.method === 'POST') return true;
+  // Offering your own shift for swap is likewise a request, not a handover:
+  // the shift stays yours, and stays costed against you, until a manager
+  // approves someone taking it. The service checks you own the shift.
+  if (/^\/api\/staff\/me\/shifts\/[^/]+\/(offer-swap|cancel-swap)$/.test(req.path) && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/unavailability' && req.method === 'POST') return true;
+  if (/^\/api\/staff\/unavailability\/[^/]+$/.test(req.path) && req.method === 'DELETE') return true;
   if (req.path === '/api/staff/me/clock/in' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/clock/out' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/clock-in' && req.method === 'POST') return true;
@@ -168,6 +215,13 @@ export async function authMiddleware(
     return next(new HttpError(403, 'Shared-device sign-in only lets you read the venue board. Sign in as a staff PIN to take this action.'));
   }
 
+  // Read-only accounts can view everything their access allows but never
+  // change anything. /api/auth stays open so they can sign out and manage
+  // their own password.
+  if (isWrite(req) && !req.path.startsWith('/api/auth') && isReadOnlyAccount(req.user)) {
+    return next(new HttpError(403, 'This account is read-only — viewing is fine, changes are off.'));
+  }
+
   const settingsRequest = req.path.startsWith('/api/settings') || req.path.startsWith('/api/shift-task-rules');
 
   if (settingsRequest && !hasSettingsAccess(req.user)) {
@@ -179,7 +233,21 @@ export async function authMiddleware(
       if (!hasAnyEnabledAppAccess(req.user, ['STAFF', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Your Alma Staff access is turned off. Ask an Alma admin to enable it.'));
       }
-    } else if (req.path.startsWith('/api/reports')) {
+    } else if (STAFF_APP_SURFACES.some((prefix) => req.path.startsWith(prefix))) {
+      // Pages the ALMA Staff app puts in its own navigation: report an issue,
+      // today's checks, fridge temperatures, the academy, the handbook.
+      //
+      // A new hire is created with STAFF access and nothing else, so requiring
+      // Compliance here meant a brand-new floor staffer could open "Report an
+      // issue" and be told Compliance isn't enabled on their account. The write
+      // allowlist below already says staff may raise an issue and complete a
+      // checklist run — this gate was contradicting it. Manager-only actions on
+      // these routes are still enforced by that allowlist and by the routes.
+      if (!hasAnyEnabledAppAccess(req.user, ['STAFF', 'COMPLIANCE', 'TRAINING'])) {
+        return next(new HttpError(403, 'Your Alma Staff access is turned off. Ask an Alma admin to enable it.'));
+      }
+    } else if (req.path.startsWith('/api/reports') || req.path.startsWith('/api/forecast')) {
+      // /api/forecast is part of the Reports app (Reports → Forecast section).
       if (!hasAnyEnabledAppAccess(req.user, ['REPORTS', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Alma Reports is restricted to managers and admins. Ask an Alma admin if you need access.'));
       }
@@ -195,7 +263,7 @@ export async function authMiddleware(
       if (!hasAnyEnabledAppAccess(req.user, ['GIFTCARDS', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Gift Cards isn’t enabled on your account. Ask a manager.'));
       }
-    } else if (req.path.startsWith('/api/notifications') || req.path.startsWith('/api/messages') || req.path.startsWith('/api/comms') || req.path.startsWith('/api/communications')) {
+    } else if (req.path.startsWith('/api/notifications') || req.path.startsWith('/api/messages') || req.path.startsWith('/api/communications')) {
       if (!hasAnyEnabledAppAccess(req.user, ['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS'])) {
         return next(new HttpError(403, 'Your Alma Suite access is turned off. Ask an Alma admin.'));
       }

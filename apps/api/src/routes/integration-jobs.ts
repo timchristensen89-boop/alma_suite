@@ -5,9 +5,12 @@ import { HttpError } from '../lib/http.js';
 import { adminService } from '../services/admin.service.js';
 import { checklistService } from '../services/checklist.service.js';
 import { deputyService } from '../services/deputy.service.js';
+import { forecastService } from '../services/forecast.service.js';
 import { giftCardService } from '../services/gift-card.service.js';
+import { guestCrmService } from '../services/guest-crm.service.js';
 import { integrationService } from '../services/integration.service.js';
 import { marketingService } from '../services/marketing.service.js';
+import { onboardingChaseService } from '../services/onboarding-chase.service.js';
 import { reportsService } from '../services/reports.service.js';
 import { temperatureService } from '../services/temperature.service.js';
 
@@ -36,6 +39,17 @@ integrationJobsRouter.use((req, _res, next) => {
     return;
   }
   next();
+});
+
+// Nightly forecast snapshot: regenerates the 13-week outlook for every venue
+// so ForecastDaySnapshot accumulates one prediction per lead-time per day,
+// which is what powers the Forecast accuracy report.
+integrationJobsRouter.post('/forecast/snapshot', async (_req, res, next) => {
+  try {
+    res.json(await forecastService.runScheduledSnapshot());
+  } catch (error) {
+    next(error);
+  }
 });
 
 integrationJobsRouter.post('/square/sync', async (req, res, next) => {
@@ -76,6 +90,44 @@ integrationJobsRouter.post('/xero/import', async (req, res, next) => {
   }
 });
 
+// Backfill: fetch the original PDF attachment from Xero for existing
+// XERO-source supplier invoices that have no stored document. Body:
+// { days? (default 90), limit? (default 200) }. Idempotent — invoices that
+// already hold a document are skipped, so re-running is safe. Responds with
+// needsReconnect:true when Xero must be reconnected once to grant the
+// accounting.attachments.read scope.
+integrationJobsRouter.post('/xero/backfill-attachments', async (req, res, next) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const days = Number(body.days);
+    const limit = Number(body.limit);
+    res.json(await integrationService.backfillXeroBillAttachments({
+      days: Number.isFinite(days) ? days : undefined,
+      limit: Number.isFinite(limit) ? limit : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Lightspeed O-Series (Kounta) POS sales sync — scheduled cron entrypoint.
+// Body: { lookbackDays? } (default 3). Sums order totals per site per Sydney
+// day into the same SalesActualEntry rows the Square sync writes. Responds
+// 200 { skipped: true, reason } when Lightspeed is not configured or not
+// connected, so the cron line can exist on the VPS before credentials do.
+integrationJobsRouter.post('/lightspeed/sales-sync', async (req, res, next) => {
+  try {
+    const lookbackDays = Number((req.body ?? {}).lookbackDays);
+    res.json(
+      await integrationService.runScheduledLightspeedSalesSync({
+        lookbackDays: Number.isFinite(lookbackDays) ? lookbackDays : undefined
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Deputy sync — invoked by Cloud Scheduler. Runs employee, document, and
 // roster sync in order so document sync can match newly-imported employees.
 integrationJobsRouter.post('/deputy/sync', async (_req, res, next) => {
@@ -100,6 +152,34 @@ integrationJobsRouter.post('/run', async (req, res, next) => {
 integrationJobsRouter.post('/gift-cards/drain', async (_req, res, next) => {
   try {
     res.json(await giftCardService.drainScheduledGiftCardSends());
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Moves gift cards to the state time has already put them in: past their
+// three-year expiry, or an abandoned checkout that never paid. Nightly is
+// often enough — both are day-scale facts, not minute-scale.
+integrationJobsRouter.post('/gift-cards/sweep', async (req, res, next) => {
+  try {
+    const hours = Number((req.body ?? {}).abandonedAfterHours);
+    res.json(
+      await giftCardService.sweepGiftCardLifecycle(
+        Number.isFinite(hours) ? { abandonedAfterHours: hours } : {}
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Guest CRM nightly: roll reservations up onto the guest, then re-apply the
+// automatic tags to the result. Order matters — tags read the rollups.
+integrationJobsRouter.post('/guests/refresh', async (_req, res, next) => {
+  try {
+    const rollups = await guestCrmService.rebuildGuestRollups();
+    const tags = await guestCrmService.applyAutomaticTags();
+    res.json({ rollups, tags });
   } catch (error) {
     next(error);
   }
@@ -184,6 +264,21 @@ integrationJobsRouter.post('/staff-consumption-prompt', async (_req, res, next) 
       note: 'Weekly nudge issued. Head chef logs food spend, venue manager logs drinks spend. Both feed the staff-meal COGS line in Reports.',
       ranAt: new Date().toISOString()
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Daily: nudge new starters who have not finished onboarding, and tell managers
+ * which invites are about to expire or already have.
+ *
+ * Before this ran, 20 of 33 invites expired unused with nobody told.
+ * `{"dryRun": true}` reports what it would send without sending anything.
+ */
+integrationJobsRouter.post('/staff/onboarding-chase', async (req, res, next) => {
+  try {
+    res.json(await onboardingChaseService.run(req.body ?? {}));
   } catch (error) {
     next(error);
   }

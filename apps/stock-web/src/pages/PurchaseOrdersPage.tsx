@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import type { StockItem, StockInvoicesPayload, StockSupplierInvoice } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, Textarea } from '@alma/ui';
 import { StockItemPicker } from '../components/StockItemPicker';
@@ -116,6 +116,249 @@ function statusTone(status: PurchaseOrderStatus): 'positive' | 'warning' | 'dang
   }
 }
 
+type SuggestionLine = {
+  stockItemId: string;
+  description: string;
+  unit: string | null;
+  orderedQuantity: number;
+  unitCostCents: number | null;
+  lineTotalCents: number | null;
+  onHand: number;
+  parLevel: number;
+  onOrder: number;
+  lastPurchasedAt: string | null;
+  priceMovement: number | null;
+};
+
+type SuggestionsPayload = {
+  venue: string | null;
+  suppliers: Array<{ supplierId: string | null; supplierName: string; lines: SuggestionLine[]; subtotalCents: number }>;
+  itemsBelowPar: number;
+  itemsWithNoSupplier: number;
+  /** Lines kept out of the totals because the par behind them cannot be right. */
+  needsCheck?: Array<SuggestionLine & { supplierName: string; shareOfSuggested: number }>;
+  needsCheckTotalCents?: number;
+  needsVenue: boolean;
+  generatedAt: string;
+};
+
+/**
+ * Below par, grouped by who to buy it from, ready to become an order.
+ *
+ * This is the step that did not exist. Production had 664 low-stock notices
+ * and not one purchase order ever raised — the app could say what was running
+ * out, and then the trail went cold. Quantities are already in whole purchase
+ * units at the last price actually paid, so nothing has to be retyped.
+ */
+function SuggestedOrders({
+  venue,
+  canManage,
+  onCreated
+}: {
+  venue: string;
+  canManage: boolean;
+  onCreated: () => void;
+}) {
+  const [payload, setPayload] = useState<SuggestionsPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  // Quantities the buyer has adjusted, keyed by item. A suggestion is a
+  // starting point, not an instruction.
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [excluded, setExcluded] = useState<Record<string, boolean>>({});
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const query = venue ? `?venue=${encodeURIComponent(venue)}` : '';
+      setPayload(await api<SuggestionsPayload>(`/api/purchase-orders/suggestions${query}`));
+    } catch {
+      setPayload(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [venue]);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  async function createOrder(group: SuggestionsPayload['suppliers'][number]) {
+    const lines = group.lines
+      .filter((line) => !excluded[line.stockItemId])
+      .map((line) => ({
+        stockItemId: line.stockItemId,
+        description: line.description,
+        unit: line.unit,
+        orderedQuantity: Number(edits[line.stockItemId] ?? line.orderedQuantity),
+        unitCostCents: line.unitCostCents ?? 0
+      }))
+      .filter((line) => line.orderedQuantity > 0);
+
+    if (lines.length === 0) {
+      setMessage('Nothing selected to order.');
+      return;
+    }
+
+    setBusy(group.supplierId ?? '__none__');
+    setMessage(null);
+    try {
+      await api('/api/purchase-orders', {
+        method: 'POST',
+        body: JSON.stringify({
+          supplierId: group.supplierId,
+          supplierName: group.supplierName,
+          venue,
+          notes: 'Raised from below-par suggestion',
+          lines
+        })
+      });
+      setMessage(`Draft order raised for ${group.supplierName} — ${lines.length} line${lines.length === 1 ? '' : 's'}.`);
+      await reload();
+      onCreated();
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : 'Could not raise that order.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (!loading && (!payload || payload.itemsBelowPar === 0)) return null;
+
+  return (
+    <Card
+      title="Needs ordering"
+      subtitle="Everything below par for this venue, grouped by who you buy it from, at the last price you actually paid."
+      action={payload ? <Badge tone="warning">{payload.itemsBelowPar} below par</Badge> : null}
+      padding="none"
+    >
+      {loading ? <Spinner label="Working out what is short…" /> : null}
+      {payload?.needsVenue ? (
+        <EmptyState
+          title="Choose a venue"
+          description="Par levels are set per venue, so there is nothing to compare stock against until one is picked."
+        />
+      ) : null}
+      {message ? <p className="subtle" style={{ padding: '6px 12px' }}>{message}</p> : null}
+
+      {/* Order lines left out of the totals because the count behind the par
+          was made in the wrong unit — 21,724 bottles of gin, not 29. Shown
+          rather than hidden: the stock may still need ordering, the item just
+          has to be fixed first. */}
+      {payload?.needsCheck && payload.needsCheck.length > 0 ? (
+        <div className="stock-buying-needs-check">
+          <strong>
+            {payload.needsCheck.length} line{payload.needsCheck.length === 1 ? '' : 's'} held back —
+            {' '}{money(payload.needsCheckTotalCents ?? 0)} of suggestions that cannot be right
+          </strong>
+          <p className="subtle small">
+            The last count of these came to far more than the venue holds, so the par worked out from it is wrong.
+            Fix the count unit on the item, then recount.
+          </p>
+          <ul>
+            {payload.needsCheck.map((line) => (
+              <li key={line.stockItemId}>
+                <strong>{line.description}</strong>
+                <span className="subtle">
+                  {' '}— would order {line.orderedQuantity.toLocaleString()} {line.unit ?? 'units'} for{' '}
+                  {money(line.lineTotalCents ?? 0)} (on hand {line.onHand}, par {line.parLevel})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {(payload?.suppliers ?? []).map((group) => {
+        const key = group.supplierId ?? '__none__';
+        const isOpen = open === key;
+        const unknownSupplier = group.supplierId === null;
+        return (
+          <section key={key} className="stock-buying-group">
+            <button
+              type="button"
+              className="stock-buying-group-head"
+              onClick={() => setOpen(isOpen ? null : key)}
+            >
+              <strong>{group.supplierName}</strong>
+              <span className="subtle">
+                {group.lines.length} line{group.lines.length === 1 ? '' : 's'}
+                {group.subtotalCents > 0 ? ` · about ${money(group.subtotalCents)}` : ''}
+              </span>
+              {unknownSupplier ? (
+                <Badge tone="neutral">Match their invoices to know who to order from</Badge>
+              ) : null}
+            </button>
+
+            {isOpen ? (
+              <div className="stock-buying-rows">
+                {group.lines.map((line) => {
+                  const value = edits[line.stockItemId] ?? String(line.orderedQuantity);
+                  const off = Boolean(excluded[line.stockItemId]);
+                  return (
+                    <div key={line.stockItemId} className="stock-buying-row" style={off ? { opacity: 0.45 } : undefined}>
+                      <span>
+                        <strong>{line.description}</strong>
+                        <span className="subtle">
+                          on hand {line.onHand} / par {line.parLevel}
+                          {line.onOrder > 0 ? ` · ${line.onOrder} already on order` : ''}
+                          {line.unitCostCents === null
+                            ? ' · never bought — no price'
+                            : ` · ${money(line.unitCostCents)} per ${line.unit ?? 'unit'}`}
+                          {line.priceMovement !== null && line.priceMovement >= 0.15
+                            ? ` · up ${Math.round(line.priceMovement * 100)}% on the best price paid`
+                            : ''}
+                        </span>
+                      </span>
+                      <span className="stock-buying-price">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={value}
+                          disabled={off || !canManage}
+                          onChange={(event) =>
+                            setEdits((current) => ({ ...current, [line.stockItemId]: event.target.value }))
+                          }
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setExcluded((current) => ({ ...current, [line.stockItemId]: !off }))
+                          }
+                        >
+                          {off ? 'Include' : 'Skip'}
+                        </Button>
+                      </span>
+                    </div>
+                  );
+                })}
+                <div className="stock-buying-row">
+                  <span className="subtle">
+                    {unknownSupplier
+                      ? 'Raising this still records the order — the supplier name can be set on the draft.'
+                      : 'Creates a draft order you can adjust and send.'}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={busy === key || !canManage}
+                    onClick={() => void createOrder(group)}
+                  >
+                    {busy === key ? 'Raising…' : `Raise draft order`}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        );
+      })}
+    </Card>
+  );
+}
+
 export function PurchaseOrdersPage() {
   useDocumentTitle('Purchase orders');
   const { user } = useAuth();
@@ -162,7 +405,7 @@ export function PurchaseOrdersPage() {
   // Stock items power the line picker; invoices power the match picker. Both non-fatal.
   useEffect(() => {
     let cancelled = false;
-    api<{ items: StockItem[] }>('/api/items')
+    api<{ items: StockItem[] }>('/api/items/picker')
       .then((payload) => { if (!cancelled) setItems(payload.items ?? []); })
       .catch(() => { if (!cancelled) setItems([]); });
     api<StockInvoicesPayload>('/api/invoices')
@@ -359,6 +602,14 @@ export function PurchaseOrdersPage() {
 
   return (
     <div className="page-stack">
+      {view === 'orders' ? (
+        <SuggestedOrders
+          venue={selectedVenue}
+          canManage={canManage}
+          onCreated={() => void load(selectedVenue)}
+        />
+      ) : null}
+
       <Card
         title="Purchase orders"
         subtitle="Raise orders to suppliers, receive stock against them, and match to the supplier invoice."

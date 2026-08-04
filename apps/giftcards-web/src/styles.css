@@ -1244,6 +1244,15 @@
    ========================================================= */
 .alma-giftcards-page {
   --gc-paper:        #FAF6EE;
+  /* Boxes were painted in --gc-paper, the same colour as the page behind them,
+     so an amount tile and the background were literally indistinguishable and
+     only the hairline border said anything was there. --gc-surface is one
+     considered step off the paper: enough to read as a raised object at a
+     glance, not so much that the page turns into a grid of grey rectangles. */
+  --gc-surface:      #F3EDE0;
+  /* Inputs stay near-white, because a field should look like somewhere you
+     type rather than another panel. */
+  --gc-input:        #FFFDF8;
   --gc-bone:         #EFE8DC;
   --gc-shell:        #F5DCCE;
   --gc-clay:         #EEF0E9;
@@ -1694,7 +1703,7 @@
 /* ── Quick info pill row ── */
 .alma-giftcards-quickinfo {
   padding: 22px 36px;
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   border-bottom: 1px solid var(--gc-hair);
   display: flex;
   gap: 36px;
@@ -1827,7 +1836,7 @@
   max-height: min(92vh, 940px);
   overflow: auto;
   border-radius: 18px;
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   color: var(--gc-ink);
   border: 1px solid rgba(255, 241, 230, 0.2);
   box-shadow: 0 40px 100px rgba(0, 0, 0, 0.32);
@@ -1920,7 +1929,7 @@
 /* ── Configurator ── */
 .alma-giftcards-configure {
   padding: 110px 36px 130px;
-  background: var(--gc-paper);
+  background: var(--gc-surface);
 }
 .alma-giftcards-configure__head {
   display: flex;
@@ -1949,7 +1958,14 @@
 }
 
 /* ── Preview column (sticky) ── */
-.alma-giftcards-preview { position: sticky; top: 110px; }
+.alma-giftcards-preview {
+  position: sticky;
+  top: 110px;
+  /* A gift card is a physical object about the size of a hand. Letting the
+     preview fill a wide column rendered it half a metre across on a desktop,
+     which reads as a banner rather than the thing you are buying. */
+  max-width: 480px;
+}
 .alma-giftcards-preview__head {
   display: flex;
   justify-content: space-between;
@@ -2092,7 +2108,7 @@
 .alma-giftcards-amount {
   padding: 18px 8px 16px;
   border: 1px solid var(--gc-hair);
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   border-radius: 12px;
   cursor: pointer;
   transition: all 200ms;
@@ -2190,7 +2206,7 @@
 .alma-giftcards-design {
   cursor: pointer;
   border: 1px solid var(--gc-hair);
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   border-radius: 14px;
   padding: 14px;
   transition: border-color 200ms, transform 200ms;
@@ -2266,7 +2282,7 @@
 .alma-giftcards-toggle {
   cursor: pointer;
   border: 1px solid var(--gc-hair);
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   border-radius: 12px;
   padding: 16px 18px;
   display: flex;
@@ -2320,9 +2336,11 @@
 .alma-giftcards-field textarea,
 .alma-giftcards-field select {
   padding: 14px 16px;
-  border: 1px solid var(--gc-hair);
+  /* A firmer hairline than the panels: a field has to invite typing, and the
+     lighter fill alone is too quiet to say "this one is yours". */
+  border: 1px solid var(--gc-hair-strong);
   border-radius: 12px;
-  background: var(--gc-paper);
+  background: var(--gc-input);
   font-family: var(--gc-sans);
   font-size: 15px;
   color: var(--gc-ink);
@@ -2527,7 +2545,7 @@
 /* ── Venues ── */
 .alma-giftcards-venues {
   padding: 110px 36px;
-  background: var(--gc-paper);
+  background: var(--gc-surface);
 }
 .alma-giftcards-venues__head { margin-bottom: 48px; }
 .alma-giftcards-venues__head .alma-giftcards-h1 { max-width: 18ch; }
@@ -2586,7 +2604,7 @@
 /* ── FAQ ── */
 .alma-giftcards-faq {
   padding: 110px 36px 130px;
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   border-top: 1px solid var(--gc-hair);
 }
 .alma-giftcards-faq__container { max-width: 920px; }
@@ -3060,4 +3078,438 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-warning {
 html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   background: var(--tone-danger-bg);
   color: var(--tone-danger-fg);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Gift Cards back office · suite editorial vocabulary pass (ov-prime,
+   ov-two). Shared primitives live in apps/web/src/styles.css (including
+   the .ov-two > * min-width guard); no Gift Cards-specific glue is needed.
+   Public storefront styles above are untouched.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ==================================================================
+   Counter screen — the iPad on the pass.
+
+   Sized for a thumb on a wet hand and for reading across the pass, so
+   every target is at least 56px and the numbers that matter (the card
+   number, the balance) are the largest thing on screen. Dark, because
+   it sits in a room where a bright white screen is a nuisance.
+   ================================================================== */
+.counter {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(135% 120% at 26% 18%, #2f3f2b 0%, #243421 44%, #1a2717 78%, #121c10 100%);
+  color: #efe0cf;
+  font-family: 'Jost', system-ui, sans-serif;
+  /* A counter iPad is handled constantly — a stray long-press selecting
+     text and popping the magnifier is pure noise mid-service. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.counter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 26px;
+  border-bottom: 1px solid rgba(231, 205, 139, 0.22);
+}
+
+.counter-brand {
+  font-size: 13px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: #cdb488;
+}
+
+.counter-modes {
+  display: flex;
+  gap: 8px;
+}
+
+.counter-modes button {
+  min-height: 56px;
+  padding: 0 26px;
+  border: 1px solid rgba(231, 205, 139, 0.3);
+  border-radius: 999px;
+  background: transparent;
+  color: #cdb488;
+  font: inherit;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.counter-modes button.is-on {
+  background: #e7cd8b;
+  border-color: #e7cd8b;
+  color: #1a2717;
+}
+
+.counter-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 30px 26px 44px;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.counter-kicker {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: #cdb488;
+}
+
+/* Amount buttons: three across on an iPad, two on a phone. */
+.counter-amounts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.counter-amounts button {
+  min-height: 78px;
+  border: 1px solid rgba(231, 205, 139, 0.32);
+  border-radius: 16px;
+  background: rgba(255, 251, 238, 0.04);
+  color: #efe0cf;
+  font: inherit;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.counter-amounts button.is-on {
+  background: #e7cd8b;
+  border-color: #e7cd8b;
+  color: #1a2717;
+}
+
+.counter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.counter-field span {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: #cdb488;
+}
+
+.counter-field input {
+  min-height: 64px;
+  padding: 0 18px;
+  border: 1px solid rgba(231, 205, 139, 0.32);
+  border-radius: 14px;
+  background: rgba(255, 251, 238, 0.05);
+  color: #efe0cf;
+  font: inherit;
+  /* 16px or larger, or iOS zooms the whole page on focus. */
+  font-size: 22px;
+}
+
+.counter-field input:focus {
+  outline: 2px solid #e7cd8b;
+  outline-offset: 1px;
+}
+
+.counter-optional {
+  display: grid;
+  gap: 14px;
+}
+
+.counter-primary,
+.counter-secondary {
+  min-height: 74px;
+  border-radius: 16px;
+  font: inherit;
+  font-size: 21px;
+  cursor: pointer;
+}
+
+.counter-primary {
+  border: none;
+  background: #e7cd8b;
+  color: #1a2717;
+}
+
+.counter-primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.counter-secondary {
+  border: 1px solid rgba(231, 205, 139, 0.32);
+  background: transparent;
+  color: #cdb488;
+}
+
+.counter-note {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: rgba(239, 224, 207, 0.66);
+}
+
+.counter-error {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(190, 74, 60, 0.18);
+  border: 1px solid rgba(224, 122, 95, 0.5);
+  color: #f3c9bd;
+  font-size: 17px;
+}
+
+.counter-lookup {
+  display: flex;
+  gap: 12px;
+}
+
+.counter-code-input {
+  flex: 1;
+  min-height: 74px;
+  padding: 0 20px;
+  border: 1px solid rgba(231, 205, 139, 0.32);
+  border-radius: 14px;
+  background: rgba(255, 251, 238, 0.05);
+  color: #efe0cf;
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 26px;
+  letter-spacing: 0.08em;
+}
+
+.counter-lookup button {
+  min-width: 120px;
+  min-height: 74px;
+  border: none;
+  border-radius: 14px;
+  background: #e7cd8b;
+  color: #1a2717;
+  font: inherit;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.counter-card-found {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid rgba(231, 205, 139, 0.26);
+  border-radius: 20px;
+  background: rgba(255, 251, 238, 0.04);
+}
+
+/* The balance is what the guest leans over to read. */
+.counter-balance {
+  margin: 0;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 76px;
+  line-height: 0.9;
+  color: #efe0cf;
+}
+
+.counter-issued {
+  align-items: center;
+  text-align: center;
+  justify-content: center;
+}
+
+/* The number staff copy onto the physical card. Monospace so a 0 is never
+   mistaken for an O while somebody is writing it by hand. */
+.counter-code {
+  margin: 0;
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 64px;
+  letter-spacing: 0.06em;
+  color: #e7cd8b;
+  word-break: break-all;
+}
+
+.counter-issued-value {
+  margin: 0;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 34px;
+  color: #efe0cf;
+}
+
+.counter-issued .counter-primary {
+  width: 100%;
+  max-width: 380px;
+  margin-top: 12px;
+}
+
+@media (max-width: 560px) {
+  .counter-amounts { grid-template-columns: repeat(2, 1fr); }
+  .counter-code { font-size: 44px; }
+  .counter-balance { font-size: 60px; }
+  .counter-bar { flex-direction: column; align-items: stretch; }
+}
+
+/* Gift card artwork — gradient-filled text (the gold foil, and the flat inks).
+   As a real class rather than an inline style: React does not reliably emit
+   -webkit-background-clip, so inline the property computed to border-box and
+   the gradient painted the whole box instead of the glyphs — a solid bar where
+   the amount should be. */
+.alma-card-ink {
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* Callers set background-IMAGE, never the `background` shorthand — the
+     shorthand resets background-clip and the gradient fills the whole box. */
+}
+
+
+/* ── Counter: tender picker, Stripe hand-off, balance ─────────────────── */
+.counter-tenders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.counter-tenders button {
+  display: grid;
+  gap: 3px;
+  padding: 14px 16px;
+  /* Same generous floor as the rest of this screen — it is used at arm's
+     length, one-handed, by someone mid-service. */
+  min-height: 68px;
+  border: 1px solid rgba(231, 205, 139, 0.32);
+  border-radius: 14px;
+  background: rgba(255, 251, 238, 0.04);
+  color: #efe0cf;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.counter-tenders button strong { font-size: 15px; }
+.counter-tenders button small { font-size: 12px; opacity: 0.62; }
+.counter-tenders button.is-on {
+  background: #e7cd8b;
+  border-color: #e7cd8b;
+  color: #1a2717;
+}
+.counter-tenders button.is-on small { opacity: 0.75; }
+
+.counter-pay { text-align: center; }
+.counter-qr {
+  width: 220px;
+  height: 220px;
+  margin: 8px auto 18px;
+  display: block;
+  border-radius: 16px;
+  background: #fff;
+  padding: 10px;
+}
+.counter-secondary {
+  min-height: 56px;
+  padding: 0 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(31, 53, 36, 0.25);
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.counter-balance { text-align: center; margin-top: 26px; }
+.counter-code-input {
+  font-size: 24px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+
+/* ── Counter on a phone ───────────────────────────────────────────────── */
+/*
+ * The counter was built for an iPad on the pass. On an iPhone the same screen
+ * is held one-handed, mid-service, and three things break: the shell runs
+ * under the Dynamic Island and the home indicator, the header eats a fifth of
+ * the screen, and the button you came to press is below the fold behind a
+ * scroll.
+ */
+.counter {
+  /* dvh, not vh: iOS Safari's toolbar shrinks the viewport as you scroll, and
+     vh keeps measuring the tall version — leaving the bottom of the screen
+     under the browser chrome. */
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  box-sizing: border-box;
+}
+
+@media (max-width: 560px) {
+  .counter-bar {
+    padding: 12px 16px;
+    gap: 10px;
+  }
+  /* The wordmark is the first thing to go — whoever is holding the phone
+     knows what app they opened. */
+  .counter-brand { display: none; }
+  .counter-modes {
+    width: 100%;
+    gap: 6px;
+  }
+  .counter-modes button {
+    flex: 1;
+    min-height: 48px;
+    padding: 0 10px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .counter-body { padding: 20px 16px 10px; }
+
+  .counter-amounts { gap: 8px; }
+  .counter-amounts button { min-height: 60px; font-size: 20px; }
+
+  .counter-tenders {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .counter-tenders button {
+    min-height: 60px;
+    padding: 10px 12px;
+  }
+  .counter-tenders button strong { font-size: 14px; }
+  .counter-tenders button small { font-size: 11px; }
+
+  /* The action follows you down the page instead of hiding under the fold.
+     Held one-handed, the bottom of the screen is the only place a thumb
+     reliably reaches. */
+  .counter-primary {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin-top: auto;
+    /* The page scrolls underneath a sticky element, so it needs its own solid
+       ground and a fade above it — otherwise the tender buttons read straight
+       through the label. */
+    box-shadow:
+      0 -10px 0 0 #16210f,
+      0 -30px 26px -12px rgba(18, 28, 16, 0.95);
+  }
+
+  .counter-code { font-size: 34px; letter-spacing: 0.1em; }
+  .counter-qr { width: 200px; height: 200px; }
+}
+
+/* Landscape on a phone is short, not narrow — claw back vertical space. */
+@media (max-height: 480px) and (max-width: 900px) {
+  .counter-bar { padding: 8px 16px; }
+  .counter-body { padding: 14px 16px; }
+  .counter-amounts button { min-height: 52px; }
 }

@@ -9,6 +9,14 @@ type InviteEmailInput = {
   note?: string | null;
   inviteLink: string;
   expiresAt: Date;
+  /**
+   * Handbook documents to send with the invite.
+   *
+   * A new starter gets one email before their first shift, so whatever they
+   * need to read has to be in it. The caller decides which documents apply to
+   * their venue; this just carries them.
+   */
+  attachments?: EmailAttachment[];
 };
 
 type GiftCardEmailInput = {
@@ -112,24 +120,60 @@ function formatMoney(cents: number) {
   return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(cents / 100);
 }
 
+/**
+ * Designs the email knows how to colour — the current set plus the retired
+ * ones, which an older row can still name. Anything else falls through to the
+ * settings colours rather than being forced into a design it is not.
+ */
+const EMAIL_KNOWN_DESIGNS = [
+  'heritage', 'bold', 'minimal', 'thanks', 'birthday', 'congrats', 'love', 'celebrate',
+  'forest', 'shell', 'avalon', 'stalma', 'summer'
+];
+
 function normaliseGiftCardDesign(value: string | null | undefined) {
-  return ['forest', 'shell', 'avalon', 'stalma', 'thanks', 'summer'].includes(value ?? '') ? value! : 'forest';
+  return EMAIL_KNOWN_DESIGNS.includes(value ?? '') ? value! : 'heritage';
 }
 
+/**
+ * Email colours for a design.
+ *
+ * The email cannot use the real artwork — mail clients have no CSS masks and
+ * no background-clip — so it renders a simplified card in the design's own
+ * colours. Kept in step with cardArt/palettes.ts by hand; the two cannot share
+ * code across the API/web boundary, so the pairing is stated here explicitly.
+ *
+ * Retired designs still map, because an old row can still name one.
+ */
 function giftCardPalette(design: string | null | undefined, primaryColor: string, accentColor: string) {
+  const heritage = { background: '#1a2717', foreground: '#efe0cf', accent: '#e7cd8b', label: 'Heritage' };
+  const bold = { background: '#f5dcce', foreground: '#22301f', accent: '#4a5c40', label: 'Bold' };
+  const minimal = { background: '#efe8db', foreground: '#4a3f3a', accent: '#8a736b', label: 'Minimal' };
+
   switch (normaliseGiftCardDesign(design)) {
-    case 'shell':
-      return { background: '#f5dcce', foreground: '#3d2a2a', accent: '#684a4a', label: 'Coastal shell' };
-    case 'avalon':
-      return { background: '#244f2a', foreground: '#fff1e6', accent: '#d6e0cd', label: 'Alma Avalon' };
-    case 'stalma':
-      return { background: '#3d2a2a', foreground: '#fff1e6', accent: '#f5dcce', label: 'St Alma' };
-    case 'thanks':
-      return { background: '#efe8dc', foreground: '#14241a', accent: '#796042', label: 'Thank you' };
+    case 'bold':
+    case 'birthday':
+    case 'celebrate':
+    // Retired, mapped the same way the web artwork maps them.
     case 'summer':
-      return { background: '#a85432', foreground: '#fff1e6', accent: '#ffd0b2', label: 'Long afternoons' };
+      return bold;
+    case 'minimal':
+    case 'congrats':
+    case 'shell':
+    case 'stalma':
+      return minimal;
+    case 'heritage':
+    case 'thanks':
+    case 'love':
+    case 'forest':
+    case 'avalon':
+      return heritage;
     default:
-      return { background: primaryColor || '#1f3524', foreground: '#fff1e6', accent: accentColor || '#b98216', label: 'Forest classic' };
+      return {
+        background: primaryColor || heritage.background,
+        foreground: heritage.foreground,
+        accent: accentColor || heritage.accent,
+        label: heritage.label
+      };
   }
 }
 
@@ -168,8 +212,17 @@ async function deliverEmail(input: {
   text: string;
   html: string;
   attachments?: EmailAttachment[];
+  /**
+   * Overrides the house sender for this message.
+   *
+   * The default is the operational address staff mail goes out from, which is
+   * right for a roster reminder and wrong for a customer who just paid for a
+   * gift card — they should hear from the venue, not from onboarding@.
+   */
+  from?: string;
 }): Promise<EmailDeliveryResult> {
-  if (resendApiKey && resendFrom) {
+  const sender = input.from?.trim() || resendFrom;
+  if (resendApiKey && sender) {
     try {
       const attachments = input.attachments?.map((attachment) => ({
         filename: attachment.filename,
@@ -185,7 +238,7 @@ async function deliverEmail(input: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: resendFrom,
+          from: sender,
           to: [input.to],
           reply_to: replyTo || undefined,
           subject: input.subject,
@@ -205,7 +258,7 @@ async function deliverEmail(input: {
           status: response.status,
           to: input.to,
           subject: input.subject,
-          from: resendFrom,
+          from: sender,
           reason: message,
           body: errorBody
         });
@@ -228,7 +281,7 @@ async function deliverEmail(input: {
 
   try {
     await transporter.sendMail({
-      from: mailFrom,
+      from: input.from?.trim() || mailFrom,
       replyTo,
       to: input.to,
       subject: input.subject,
@@ -272,6 +325,8 @@ export const mailService = {
     const safeRoleTitle = escapeHtml(input.roleTitle);
     const safeInviteLink = escapeHtml(input.inviteLink);
     const safeNote = note ? escapeHtml(note) : '';
+    const attachments = input.attachments ?? [];
+    const attachmentNames = attachments.map((file) => file.filename);
     const subject = 'Complete your ALMA onboarding';
     const text = [
       `Hi ${input.firstName},`,
@@ -283,6 +338,10 @@ export const mailService = {
       'Open your private onboarding link:',
       input.inviteLink,
       '',
+      // Attachments are easy to miss on a phone, so they are named in the body.
+      attachmentNames.length
+        ? `Attached to this email, please read before your first shift:\n${attachmentNames.map((name) => `- ${name}`).join('\n')}\n`
+        : '',
       `This link expires on ${expiry}. If you didn't expect this email you can ignore it.`
     ]
       .filter(Boolean)
@@ -315,6 +374,16 @@ export const mailService = {
             Complete onboarding
           </a>
         </p>
+        ${
+          attachmentNames.length
+            ? `<div style="border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin:0 0 22px;background:#f8fafc">
+          <div style="font-size:12px;font-weight:700;color:#0f172a;margin:0 0 8px">Attached — please read before your first shift</div>
+          <ul style="margin:0;padding-left:18px;font-size:13px;color:#475569">
+            ${attachmentNames.map((name) => `<li style="margin:0 0 4px">${escapeHtml(name)}</li>`).join('')}
+          </ul>
+        </div>`
+            : ''
+        }
         <p style="font-size:13px;color:#475569;margin:0 0 6px">
           This private link expires on ${escapeHtml(expiry)}.
         </p>
@@ -325,7 +394,132 @@ export const mailService = {
       </div>
     `;
 
-    return deliverEmail({ to: input.to, subject, text, html });
+    return deliverEmail({
+      to: input.to,
+      subject,
+      text,
+      html,
+      ...(attachments.length ? { attachments } : {})
+    });
+  },
+
+  /**
+   * Nudge a new starter who has not finished their onboarding form.
+   *
+   * 20 of 33 invites expired unused because the link was sent once and never
+   * mentioned again. Short, specific, and it says how long they have left —
+   * a reminder that does not give a deadline reads as optional.
+   */
+  async sendOnboardingReminder(input: {
+    to: string;
+    firstName: string;
+    inviteLink: string;
+    daysLeft: number;
+    venue?: string | null;
+    attachments?: EmailAttachment[];
+  }): Promise<EmailDeliveryResult> {
+    const deadline =
+      input.daysLeft <= 0
+        ? 'today'
+        : input.daysLeft === 1
+          ? 'tomorrow'
+          : `in ${input.daysLeft} days`;
+    const venueLine = input.venue ? ` at ${input.venue}` : '';
+    const subject = `Finish your ALMA onboarding — link expires ${deadline}`;
+    const text = [
+      `Hi ${input.firstName},`,
+      '',
+      `Your onboarding form${venueLine} is still waiting. It takes about five minutes, and we need it before your first pay run — tax file number, super and bank details.`,
+      '',
+      input.inviteLink,
+      '',
+      `The link expires ${deadline}. If it has already expired, ask your manager to send a new one.`
+    ].join('\n');
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#0f172a;max-width:560px;margin:0 auto;padding:24px">
+        <div style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#64748b;margin-bottom:18px">
+          ALMA Suites · Staff
+        </div>
+        <p style="font-size:16px;margin:0 0 12px">Hi ${escapeHtml(input.firstName)},</p>
+        <p style="font-size:14px;margin:0 0 18px">
+          Your onboarding form${escapeHtml(venueLine)} is still waiting. It takes about five minutes, and we
+          need it before your first pay run — tax file number, super and bank details.
+        </p>
+        <p style="margin:0 0 22px">
+          <a href="${escapeHtml(input.inviteLink)}" style="display:inline-block;background:${BRAND_ACCENT};color:#ffffff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:8px;font-size:14px">
+            Finish onboarding
+          </a>
+        </p>
+        <p style="font-size:13px;color:#475569;margin:0">
+          The link expires ${escapeHtml(deadline)}. If it has already expired, ask your manager for a new one.
+        </p>
+      </div>
+    `;
+    return deliverEmail({
+      to: input.to,
+      subject,
+      text,
+      html,
+      ...(input.attachments?.length ? { attachments: input.attachments } : {})
+    });
+  },
+
+  /**
+   * Tell a manager which onboarding invites are about to die, and which
+   * already have.
+   *
+   * The failure this exists for is silence: an invite expiring changed nothing
+   * anybody could see, so nineteen people ended up on the roster with no tax
+   * or bank details and payroll chased them by hand.
+   */
+  async sendOnboardingChaseDigest(input: {
+    to: string;
+    expiring: Array<{ name: string; email: string | null; daysLeft: number }>;
+    expired: Array<{ name: string; email: string | null; daysAgo: number }>;
+  }): Promise<EmailDeliveryResult> {
+    const total = input.expiring.length + input.expired.length;
+    const subject =
+      input.expired.length > 0
+        ? `${input.expired.length} onboarding link${input.expired.length === 1 ? '' : 's'} expired unused`
+        : `${total} onboarding link${total === 1 ? '' : 's'} about to expire`;
+
+    const lines = [
+      'Onboarding links that need a decision:',
+      '',
+      ...input.expiring.map(
+        (row) => `- ${row.name} (${row.email ?? 'no email'}) — expires in ${row.daysLeft} day${row.daysLeft === 1 ? '' : 's'}`
+      ),
+      ...input.expired.map(
+        (row) => `- ${row.name} (${row.email ?? 'no email'}) — EXPIRED ${row.daysAgo} day${row.daysAgo === 1 ? '' : 's'} ago, never completed`
+      ),
+      '',
+      'Resend from Staff → People → Invites. Anyone already rostered without finishing this has no tax file number or bank details on file.'
+    ];
+
+    const row = (name: string, email: string | null, detail: string, urgent: boolean) => `
+      <tr>
+        <td style="padding:8px 12px 8px 0;font-size:14px;font-weight:600;color:#0f172a">${escapeHtml(name)}</td>
+        <td style="padding:8px 12px 8px 0;font-size:13px;color:#475569">${escapeHtml(email ?? 'no email')}</td>
+        <td style="padding:8px 0;font-size:13px;color:${urgent ? '#991b1b' : '#854d0e'};font-weight:600">${escapeHtml(detail)}</td>
+      </tr>`;
+
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#0f172a;max-width:640px;margin:0 auto;padding:24px">
+        <div style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#64748b;margin-bottom:18px">
+          ALMA Suites · Staff
+        </div>
+        <p style="font-size:16px;margin:0 0 16px">Onboarding links that need a decision</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;margin:0 0 20px">
+          ${input.expired.map((r) => row(r.name, r.email, `Expired ${r.daysAgo}d ago — never completed`, true)).join('')}
+          ${input.expiring.map((r) => row(r.name, r.email, `Expires in ${r.daysLeft}d`, false)).join('')}
+        </table>
+        <p style="font-size:13px;color:#475569;margin:0">
+          Resend from Staff → People → Invites. Anyone already rostered without finishing this has no tax file
+          number or bank details on file.
+        </p>
+      </div>
+    `;
+    return deliverEmail({ to: input.to, subject, text: lines.join('\n'), html });
   },
 
   async sendPasswordReset(input: PasswordResetEmailInput): Promise<EmailDeliveryResult> {
@@ -542,7 +736,17 @@ export const mailService = {
       </div>
     `;
 
-    return deliverEmail({ to: input.to, subject, text, html, attachments });
+    // A gift card is the one email here a customer receives, so it goes out
+    // from the venue's own address rather than the staff operations one.
+    // GIFTCARD_FROM overrides; otherwise the house sender still applies.
+    return deliverEmail({
+      to: input.to,
+      subject,
+      text,
+      html,
+      attachments,
+      from: process.env.GIFTCARD_FROM?.trim() || undefined
+    });
   },
 
   /**

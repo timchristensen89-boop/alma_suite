@@ -29,7 +29,9 @@ function isLocalHttpUrl(value: string) {
 }
 
 const localCorsOrigins = parseCorsOrigins(
-  'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:5177,http://localhost:5178,http://localhost:5179,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,http://127.0.0.1:5176,http://127.0.0.1:5177,http://127.0.0.1:5178,http://127.0.0.1:5179'
+  // 5180 is admin-web's dev port (in prod it is same-origin via Firebase
+  // rewrites, so only local dev needs it allowed); 5190 is home-web.
+  'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:5177,http://localhost:5178,http://localhost:5179,http://localhost:5180,http://localhost:5190,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,http://127.0.0.1:5176,http://127.0.0.1:5177,http://127.0.0.1:5178,http://127.0.0.1:5179,http://127.0.0.1:5180,http://127.0.0.1:5190'
 );
 
 const configuredCorsOrigins = unique([
@@ -43,7 +45,6 @@ const configuredCorsOrigins = unique([
   ...parseCorsOrigins(process.env.MARKETING_WEB_URL),
   ...parseCorsOrigins(process.env.GIFTCARDS_WEB_URL),
   ...parseCorsOrigins(process.env.GIFT_CARDS_WEB_URL),
-  ...parseCorsOrigins(process.env.COMMS_WEB_URL),
   // Admin app (alma-suite-admin.web.app) — was missing from the CORS
   // allowlist, which meant the API never sent
   // Access-Control-Allow-Origin in response to admin-web. Most calls
@@ -65,7 +66,7 @@ if (isProduction) {
   }
   if (configuredCorsOrigins.length === 0) {
     throw new Error(
-      'At least one production frontend origin is required via CORS_ORIGIN, FRONTEND_URL, COMPLIANCE_WEB_URL, STOCK_WEB_URL, STAFF_WEB_URL, REPORTS_WEB_URL, RESERVE_WEB_URL, MARKETING_WEB_URL, GIFTCARDS_WEB_URL, or COMMS_WEB_URL'
+      'At least one production frontend origin is required via CORS_ORIGIN, FRONTEND_URL, COMPLIANCE_WEB_URL, STOCK_WEB_URL, STAFF_WEB_URL, REPORTS_WEB_URL, RESERVE_WEB_URL, MARKETING_WEB_URL, or GIFTCARDS_WEB_URL'
     );
   }
   const localOrigin = configuredCorsOrigins.find(isLocalHttpUrl);
@@ -160,6 +161,26 @@ export const env = {
       // matches the value we registered on the webhook subscription.
       // Compared in constant time before recording the event.
       webhookSecret: process.env.DEPUTY_WEBHOOK_SECRET ?? ''
+    },
+    lightspeed: {
+      // Lightspeed O-Series (formerly Kounta) POS. Wire details mirror the
+      // tested kounta client in alma-web-platform/packages/kounta: API + token
+      // endpoint live under https://api.kounta.com/v1, authorize on
+      // my.kounta.com. All hosts are env-overridable so a partner-provisioned
+      // base needs no code change.
+      clientId: process.env.LIGHTSPEED_CLIENT_ID ?? '',
+      clientSecret: process.env.LIGHTSPEED_CLIENT_SECRET ?? '',
+      redirectUrl:
+        process.env.LIGHTSPEED_REDIRECT_URL ??
+        `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/lightspeed/callback`,
+      // VERIFY: authorize URL + accepted params (client_id, redirect_uri,
+      // response_type=code, state) against apidoc.kounta.com once partner
+      // credentials exist.
+      authorizeUrl: process.env.LIGHTSPEED_AUTHORIZE_URL ?? 'https://my.kounta.com/authorize',
+      // VERIFY: token endpoint is POST `${oauthBase}/token.json` with Basic
+      // client auth (matches the reference client's TokenManager).
+      oauthBase: process.env.LIGHTSPEED_OAUTH_BASE ?? 'https://api.kounta.com/v1',
+      apiBase: process.env.LIGHTSPEED_API_BASE ?? 'https://api.kounta.com/v1'
     },
     meta: {
       appId: process.env.META_APP_ID ?? '',

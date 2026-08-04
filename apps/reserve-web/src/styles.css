@@ -3096,3 +3096,58 @@ html[data-theme='dark'] .service-panel-tab-head strong { color: #BFE6C8; }
 .service-tab-items li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 12.5px; }
 .service-tab-items li span:last-child { color: var(--color-text-muted); white-space: nowrap; }
 .service-tab-items li.is-more { color: var(--color-text-muted); font-size: 12px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Reserve dashboard · suite editorial vocabulary pass (ov-two, sage band,
+   mini bars). Shared primitives live in apps/web/src/styles.css; only the
+   Reserve-specific glue lives here (rv- prefix).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Panel body padding for EditorialPanel content on the dashboard. */
+.reserve-page .rv-panel-body {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px 18px;
+}
+
+/* Sage band: elevate the booking summary cards to white tiles, matching the
+   .alma-bigstat treatment the band applies elsewhere in the suite. */
+.reserve-page .alma-band-sage .reserve-summary-card {
+  background: var(--color-elevated);
+  border-color: rgba(var(--ink-forest-rgb), 0.08);
+  border-radius: 12px;
+}
+
+/* Covers on the books by day — label + relative mini bar + count. */
+.reserve-page .rv-covers-days {
+  display: grid;
+  gap: 7px;
+  padding: 2px 2px 8px;
+}
+
+.reserve-page .rv-covers-day {
+  display: grid;
+  grid-template-columns: minmax(104px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.reserve-page .rv-covers-day .ov-venue-bar {
+  margin-top: 0;
+  max-width: none;
+}
+
+.reserve-page .rv-covers-day-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(var(--ink-forest-rgb), 0.6);
+  white-space: nowrap;
+}
+
+.reserve-page .rv-covers-day-count {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-forest);
+}

@@ -46,9 +46,18 @@ checklistsRouter.delete('/templates/:id', requireAdmin, async (req, res, next) =
   }
 });
 
-checklistsRouter.get('/runs', async (_req, res, next) => {
+checklistsRouter.get('/runs', async (req, res, next) => {
   try {
-    res.json(await checklistService.listRuns());
+    res.json(
+      await checklistService.listRuns({
+        date: typeof req.query.date === 'string' ? req.query.date : undefined,
+        // ?today=1 lets a client ask for the venue's today without having to
+        // work out what that is from its own clock.
+        today: req.query.today === '1' || req.query.today === 'true',
+        status: typeof req.query.status === 'string' ? req.query.status : undefined,
+        limit: Number(req.query.limit) || undefined
+      })
+    );
   } catch (error) {
     next(error);
   }

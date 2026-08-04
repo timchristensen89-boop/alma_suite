@@ -18,7 +18,6 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteFeedbackWidget,
   SuiteInboxWidget,
   ThemeToggle,
   TopBar,
@@ -453,7 +452,6 @@ function AdminTopBar() {
             userName={user ? `${user.firstName} ${user.lastName}` : undefined}
             canAnnounce={canAdmin(user)}
           />
-          <SuiteFeedbackWidget appId="settings" api={api} userName={user ? `${user.firstName} ${user.lastName}` : undefined} />
           <ThemeToggle />
           <SuiteClock />
           <UserMenu />

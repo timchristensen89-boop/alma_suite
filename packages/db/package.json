@@ -16,6 +16,7 @@
     "seed:prod": "tsx prisma/seed-prod.ts",
     "seed:beta": "tsx prisma/seed-beta.ts",
     "create:master-user": "tsx prisma/create-master-user.ts",
+    "create:readonly-viewer": "tsx prisma/create-readonly-viewer.ts",
     "import:alma-control": "tsx ../../scripts/import-alma-control.ts",
     "import:compliance-documents": "tsx prisma/import-compliance-documents.ts",
     "import:sevenrooms-reserve": "tsx prisma/import-sevenrooms-reserve.ts",

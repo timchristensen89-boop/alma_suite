@@ -38,6 +38,7 @@ import {
   Button,
   Card,
   DocumentIcon,
+  EditorialPanel,
   EmptyState,
   GearIcon,
   Input,
@@ -49,7 +50,6 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteFeedbackWidget,
   SuiteInboxWidget,
   Textarea,
   ThemeToggle,
@@ -1881,7 +1881,6 @@ function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () =>
             userName={`${user.firstName} ${user.lastName}`}
             canAnnounce={user.role !== 'STAFF'}
           />
-          <SuiteFeedbackWidget appId="RESERVE" api={api} userName={`${user.firstName} ${user.lastName}`} />
           <ThemeToggle />
           <SuiteClock />
           <SuiteSignOutButton onClick={() => void onLogout()} />
@@ -3787,10 +3786,9 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
             {showDashboard ? (
             <section id="dashboard">
-              <Card title="Today and upcoming" subtitle={scopedVenueParam ?? 'All venues'}>
+              <Card title="Today's bookings" subtitle={scopedVenueParam ?? 'All venues'}>
               {loading ? <Spinner label="Loading reserve dashboard..." /> : null}
               {!loading && dashboard ? (
-                <div className="reserve-section-grid">
                   <div className="reserve-stack">
                     {(() => {
                       // Split into earlier (departed/seated/completed) vs upcoming (confirmed/pending)
@@ -3871,36 +3869,78 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       );
                     })()}
                   </div>
-
-                  <div className="reserve-stack">
-                    <div className="reserve-section-heading">
-                      <strong>Upcoming bookings</strong>
-                      <Badge tone="neutral">{dashboard.upcomingReservations.length}</Badge>
-                    </div>
-                    {dashboard.upcomingReservations.slice(0, 6).map((reservation) => (
-                      <div key={reservation.id} className="reserve-summary-card">
-                        <strong>{reservation.guestName || fullName(reservation.guest)}</strong>
-                        <span>{reservation.venue} · {formatDateTime(reservation.startsAt)} · {reservation.covers} guests</span>
-                      </div>
-                    ))}
-                    <div className="reserve-section-heading">
-                      <strong>Recent no-shows</strong>
-                      <Badge tone="warning">{dashboard.recentNoShows.length}</Badge>
-                    </div>
-                    {dashboard.recentNoShows.length === 0 ? (
-                      <p className="subtle">No recent no-shows in this venue scope.</p>
-                    ) : (
-                      dashboard.recentNoShows.map((reservation) => (
-                        <div key={reservation.id} className="reserve-summary-card">
-                          <strong>{reservation.guestName || fullName(reservation.guest)}</strong>
-                          <span>{reservation.venue} · {formatDateTime(reservation.startsAt)}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
               ) : null}
               </Card>
+
+              {/* Upcoming bookings + recent no-shows — paired editorial
+                  panels (ov-two). The forward "on the books" block wears the
+                  sage band per the suite vocabulary, with covers-by-day mini
+                  bars for a relative read of the week ahead. */}
+              {!loading && dashboard ? (
+                <div className="ov-two">
+                  <EditorialPanel
+                    className="alma-band-sage"
+                    eyebrow="Next 7 days · on the books"
+                    title="Upcoming bookings"
+                    actions={<Badge tone="neutral">{dashboard.upcomingReservations.length}</Badge>}
+                  >
+                    <div className="rv-panel-body">
+                      {(() => {
+                        // Covers by day — presentational rollup of the
+                        // bookings already loaded for this dashboard.
+                        const byDay = new Map<string, number>();
+                        for (const reservation of dashboard.upcomingReservations) {
+                          if (reservation.status === 'CANCELLED' || reservation.status === 'NO_SHOW') continue;
+                          const dayKey = reservation.startsAt.slice(0, 10);
+                          byDay.set(dayKey, (byDay.get(dayKey) ?? 0) + reservation.covers);
+                        }
+                        const days = Array.from(byDay.entries()).sort(([a], [b]) => a.localeCompare(b));
+                        if (days.length === 0) return null;
+                        const maxDayCovers = Math.max(1, ...days.map(([, covers]) => covers));
+                        return (
+                          <div className="rv-covers-days" aria-label="Covers on the books by day">
+                            {days.map(([day, covers]) => (
+                              <div key={day} className="rv-covers-day">
+                                <span className="rv-covers-day-label">
+                                  {new Date(`${day}T12:00:00`).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                </span>
+                                <span className="ov-venue-bar" aria-hidden="true">
+                                  <span style={{ width: `${Math.round((covers / maxDayCovers) * 100)}%` }} />
+                                </span>
+                                <span className="rv-covers-day-count">{covers}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                      {dashboard.upcomingReservations.slice(0, 6).map((reservation) => (
+                        <div key={reservation.id} className="reserve-summary-card">
+                          <strong>{reservation.guestName || fullName(reservation.guest)}</strong>
+                          <span>{reservation.venue} · {formatDateTime(reservation.startsAt)} · {reservation.covers} guests</span>
+                        </div>
+                      ))}
+                    </div>
+                  </EditorialPanel>
+                  <EditorialPanel
+                    eyebrow="Guest follow-up"
+                    title="Recent no-shows"
+                    actions={<Badge tone="warning">{dashboard.recentNoShows.length}</Badge>}
+                  >
+                    <div className="rv-panel-body">
+                      {dashboard.recentNoShows.length === 0 ? (
+                        <p className="subtle">No recent no-shows in this venue scope.</p>
+                      ) : (
+                        dashboard.recentNoShows.map((reservation) => (
+                          <div key={reservation.id} className="reserve-summary-card">
+                            <strong>{reservation.guestName || fullName(reservation.guest)}</strong>
+                            <span>{reservation.venue} · {formatDateTime(reservation.startsAt)}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </EditorialPanel>
+                </div>
+              ) : null}
             </section>
             ) : null}
 

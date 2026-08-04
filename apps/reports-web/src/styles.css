@@ -27,8 +27,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  justify-content: flex-end;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 10px;
 }
 
 .reports-week-controls .field {
@@ -467,6 +467,8 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  /* Money and counts line up column-to-column even in left-aligned cells. */
+  font-variant-numeric: tabular-nums;
 }
 
 .report-table th,
@@ -484,10 +486,27 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
+  /* A firmer rule under the header separates it from the body. */
+  border-bottom: 1px solid var(--color-border-strong);
+}
+
+.report-table tbody tr {
+  transition: background 100ms ease;
+}
+
+.report-table tbody tr:hover {
+  background: var(--color-surface-hover);
 }
 
 .report-table tr:last-child td {
   border-bottom: none;
+}
+
+/* Right-align numeric columns where the markup opts in (class="num"), so
+   money reads down a clean edge. */
+.report-table th.num,
+.report-table td.num {
+  text-align: right;
 }
 
 .report-error {
@@ -854,6 +873,92 @@
 }
 
 /* ── Prime cost hero — editorial paper-cream chrome ──────────── */
+/* Booked-covers line under the venue forecast bars. */
+.sales-booked-line {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted, #6B655C);
+}
+.sales-booked-line strong { color: var(--color-text, #2C2A26); }
+
+/* Covers-ahead table: day rows × venue columns with a total bar per day. */
+.covers-ahead-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.covers-ahead-table th,
+.covers-ahead-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(var(--ink-forest-rgb), 0.08);
+  text-align: left;
+  white-space: nowrap;
+}
+.covers-ahead-table th {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted, #6B655C);
+}
+.covers-ahead-num { text-align: right !important; font-variant-numeric: tabular-nums; }
+.covers-ahead-table tr.is-weekend td { background: rgba(var(--ink-forest-rgb), 0.04); font-weight: 600; }
+.covers-ahead-bar-cell { width: 30%; min-width: 120px; }
+.covers-ahead-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--color-accent, #684A4A);
+  opacity: 0.75;
+  min-width: 2px;
+}
+
+/* Plain-English lead line at the top of a report — the one-sentence "what this
+   tells you / where you stand" read before the numbers. */
+.report-lead {
+  margin: 0 0 18px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--color-text, #2C2A26);
+}
+.report-lead strong { font-weight: 600; }
+
+/* Cost triangle — the three headline cost ratios for the week, each read as a
+   plain traffic light against its target. */
+.cost-triangle {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.cost-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.1);
+  border-left-width: 4px;
+  border-radius: 14px;
+  background: #F8F6F1;
+}
+.cost-tile.is-positive { border-left-color: #4F7A57; }
+.cost-tile.is-warning { border-left-color: #C99A3F; }
+.cost-tile.is-danger { border-left-color: #9A3A2E; }
+.cost-tile.is-neutral { border-left-color: rgba(var(--ink-forest-rgb), 0.2); }
+.cost-tile-label { font-size: 12.5px; font-weight: 600; color: var(--color-text, #2C2A26); letter-spacing: 0.01em; }
+.cost-tile-label em { font-style: normal; font-weight: 500; color: var(--color-text-muted, #6B655C); }
+.cost-tile-value { font-family: var(--font-display, 'Cormorant Garamond', serif); font-size: 2.4rem; line-height: 1; }
+.cost-tile.is-positive .cost-tile-value { color: #3F6A47; }
+.cost-tile.is-warning .cost-tile-value { color: #A67A24; }
+.cost-tile.is-danger .cost-tile-value { color: #9A3A2E; }
+.cost-tile-target { font-size: 12px; font-weight: 600; }
+.cost-tile.is-positive .cost-tile-target { color: #4F7A57; }
+.cost-tile.is-warning .cost-tile-target { color: #A67A24; }
+.cost-tile.is-danger .cost-tile-target { color: #9A3A2E; }
+.cost-tile.is-neutral .cost-tile-target { color: var(--color-text-muted, #6B655C); }
+.cost-tile-hint { font-size: 11.5px; color: var(--color-text-muted, #6B655C); }
+@media (max-width: 720px) {
+  .cost-triangle { grid-template-columns: 1fr; }
+}
+html[data-theme='dark'] .cost-tile { background: rgba(255, 255, 255, 0.03); }
+
 .prime-cost-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr);
@@ -1258,6 +1363,20 @@
   font-weight: 500;
   line-height: 1.05;
   letter-spacing: -0.005em;
+}
+
+/* Keep the section header readable when the action cluster (week nav + export
+   buttons) is wide: let it wrap below the title instead of crushing the
+   title/description down to one word per line. */
+.report-active-section > .card > .card-header {
+  flex-wrap: wrap;
+}
+.report-active-section > .card > .card-header > .card-header-text {
+  flex: 1 1 280px;
+  min-width: 240px;
+}
+.report-active-section > .card > .card-header > .card-action {
+  flex: 0 1 auto;
 }
 
 /* Prev/next period steppers (roster-style round icon buttons). */
@@ -1963,4 +2082,628 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
 .recipe-preview-edit {
   appearance: none; border: 1px solid var(--color-accent, #B5772F); background: var(--color-accent-soft, #FAF0DC);
   color: var(--color-accent-text, #3D2810); border-radius: 8px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+
+/* ── Forecast page — token-based, dark-mode safe ──────────────────────────── */
+
+.forecast-page {
+  gap: 32px;
+}
+
+/* Hero tiles: big black tabular numerals over cream, a whisper of accent. */
+.forecast-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+}
+
+.forecast-hero-metric {
+  border-top: 3px solid var(--color-accent);
+}
+
+.forecast-hero-inner {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-height: 108px;
+}
+
+.forecast-hero-value {
+  font-size: 1.7rem;
+  line-height: 1.15;
+  color: var(--color-ink-black);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.forecast-hero-inner small {
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.forecast-hero-badge {
+  margin-top: 2px;
+}
+
+.forecast-hero-label {
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+
+/* Data-quality banner: the page's one loud element, warning-toned. */
+.forecast-warnings {
+  border: 1px solid var(--tone-warning-dot);
+  border-left-width: 4px;
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+  border-radius: 12px;
+  padding: 14px 18px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.forecast-warnings ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Venue tabs + scenario pills: raised pills, accent when active. */
+.forecast-venue-tabs,
+.forecast-scenario {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.forecast-venue-tabs button,
+.forecast-scenario button {
+  border: 1px solid var(--color-border);
+  background: var(--color-elevated);
+  color: var(--color-text);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.forecast-venue-tabs button:hover,
+.forecast-scenario button:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
+}
+
+.forecast-venue-tabs button.is-active,
+.forecast-scenario button.is-active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.forecast-venue-tabs button:focus-visible,
+.forecast-scenario button:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Financial tables: quiet chrome, tabular numerals, right-aligned money. */
+.forecast-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.forecast-table th {
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border-strong);
+  white-space: nowrap;
+}
+
+.forecast-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+/* The movements column stacks multiple lines by design. */
+.forecast-table td.forecast-components {
+  white-space: normal;
+}
+
+.forecast-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.forecast-table tbody tr {
+  transition: background 100ms ease;
+}
+
+.forecast-table tbody tr:hover {
+  background: var(--color-surface-hover);
+}
+
+.forecast-table th.num,
+.forecast-table td.num {
+  text-align: right;
+}
+
+.forecast-table td:first-child,
+.forecast-table th:first-child {
+  padding-left: 4px;
+  white-space: nowrap;
+}
+
+.forecast-row-today {
+  background: var(--color-accent-soft);
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+.forecast-row-today:hover {
+  background: var(--color-accent-soft) !important;
+}
+
+.forecast-row-closed td {
+  color: var(--color-text-subtle);
+}
+
+.forecast-up {
+  color: var(--tone-positive-fg);
+}
+
+.forecast-down {
+  color: var(--tone-danger-fg);
+}
+
+.forecast-components {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+  font-size: 0.82rem;
+}
+
+.forecast-notes {
+  margin: 16px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+/* Assumptions + accuracy panels. */
+.forecast-assumption-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-border);
+  line-height: 1.55;
+}
+
+.forecast-assumption-row:last-of-type {
+  border-bottom: none;
+}
+
+.forecast-assumption-row strong {
+  color: var(--color-ink-black);
+}
+
+.forecast-accuracy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.forecast-accuracy-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--color-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.forecast-accuracy-cell strong {
+  font-size: 1.4rem;
+  color: var(--color-ink-black);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Assumptions editor. */
+.forecast-config {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.forecast-config h4 {
+  margin: 10px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--color-border);
+}
+
+.forecast-fixed-cost-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.forecast-config-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 6px;
+}
+
+@media (max-width: 900px) {
+  .forecast-page {
+    gap: 22px;
+  }
+
+  .forecast-table th,
+  .forecast-table td {
+    padding: 9px 10px;
+  }
+
+  .forecast-fixed-cost-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.forecast-range {
+  font-size: 0.76rem;
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+.forecast-outlook-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Reports design pass — hierarchy + colour (scoped to the Reports app only)
+   The metric cards were the same cream as their containing panel, so they
+   blended in. Lift them onto white with a soft shadow so the numbers read as
+   distinct tiles, and bring the traffic-light colour to status at a glance.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.report-active-section .stat-card,
+.reports-section .stat-card {
+  background: var(--color-elevated);
+  border-color: rgba(var(--ink-forest-rgb), 0.08);
+  box-shadow: 0 1px 3px rgba(var(--ink-forest-rgb), 0.05);
+  transition: box-shadow 150ms ease, transform 150ms ease, border-color 150ms ease;
+}
+
+.report-active-section .stat-card:hover,
+.reports-section .stat-card:hover {
+  box-shadow: 0 6px 18px rgba(var(--ink-forest-rgb), 0.10);
+  transform: translateY(-1px);
+}
+
+/* Status colour, scannable: a tone stripe down the left of any toned metric. */
+.report-active-section .stat-card.tone-positive { border-left: 3px solid var(--tone-positive-dot); }
+.report-active-section .stat-card.tone-warning  { border-left: 3px solid var(--tone-warning-dot); }
+.report-active-section .stat-card.tone-danger   { border-left: 3px solid var(--tone-danger-dot); }
+.report-active-section .stat-card.tone-info      { border-left: 3px solid var(--tone-info-dot); }
+
+/* Cost triangle: give each tile a faint wash of its tone so "on target" reads
+   green and "over" reads amber/red without having to parse the number. */
+.report-active-section .cost-tile.is-positive { background: color-mix(in srgb, var(--tone-positive-dot) 7%, var(--color-elevated)); }
+.report-active-section .cost-tile.is-warning  { background: color-mix(in srgb, var(--tone-warning-dot) 10%, var(--color-elevated)); }
+.report-active-section .cost-tile.is-danger   { background: color-mix(in srgb, var(--tone-danger-dot) 8%, var(--color-elevated)); }
+.report-active-section .cost-tile.is-neutral  { background: var(--color-elevated); }
+
+/* ── Projected supplier spend ─────────────────────────────────────────────── */
+
+.supplier-spend-bucket-row td {
+  background: var(--color-surface-muted);
+  border-top: 2px solid rgba(var(--ink-forest-rgb), 0.12);
+}
+
+.supplier-spend-total-row td {
+  border-top: 2px solid rgba(var(--ink-forest-rgb), 0.18);
+  background: var(--color-surface);
+}
+
+.supplier-spend-notes {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  display: grid;
+  gap: 4px;
+}
+
+.supplier-spend-method {
+  margin-top: 12px;
+  max-width: 72ch;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Recomposed report sections — helpers for the shared editorial vocabulary
+   (ov-prime / ov-two / ov-library / mini bars) used across Sales, Labour,
+   Food & Bev Cost, Menu Engineering, and Exports.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Currency figures run longer than percentages, so the money variants of the
+   prime feature panel step the type down a size. */
+.rs-prime-main-money .ov-prime-value {
+  font-size: clamp(34px, 4.2vw, 54px);
+  overflow-wrap: anywhere;
+}
+
+.rs-prime-cols-money .ov-prime-col-value {
+  font-size: clamp(24px, 2.4vw, 34px);
+  overflow-wrap: anywhere;
+}
+
+/* Mini bar sitting under a right-aligned numeric table cell. */
+.rs-bar-right {
+  margin-left: auto;
+  max-width: 120px;
+}
+
+/* Export library rows disable while their dataset is empty. */
+.rs-export-library .ov-library-row:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rs-export-library .ov-library-row:disabled:hover {
+  background: transparent;
+}
+
+/* ── Forecasting module ─────────────────────────────────────────────────── */
+
+.fc-entity-line {
+  margin: 0 0 12px;
+}
+
+.fc-warning {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fc-nav {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.fc-nav-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-elevated);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.fc-nav-item:hover {
+  border-color: var(--color-border-strong);
+}
+
+.fc-nav-item.is-active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.fc-nav-item:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.fc-nav-label {
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.fc-nav-blurb {
+  font-size: 11.5px;
+  opacity: 0.72;
+  line-height: 1.35;
+}
+
+.fc-source-note {
+  max-width: 42ch;
+  font-size: 11.5px;
+}
+
+/* ── Sales entry ────────────────────────────────────────────────────────── */
+
+.se-basis {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--color-surface-muted);
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.1);
+  margin-bottom: 12px;
+}
+
+.se-basis-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13.5px;
+}
+
+.se-basis-label .subtle {
+  font-size: 12px;
+}
+
+.se-input {
+  width: 100%;
+  max-width: 160px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-elevated);
+  color: var(--color-text);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.se-input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.se-input.is-invalid {
+  border-color: var(--tone-danger-dot);
+  background: var(--tone-danger-bg);
+}
+
+.se-grid td {
+  vertical-align: middle;
+}
+
+.se-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.se-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
+.se-success {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--tone-positive-bg);
+  color: var(--tone-positive-fg);
+  font-size: 13.5px;
+}
+
+.se-file {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 13.5px;
+}
+
+.se-preview {
+  margin-top: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+/* Deliberate conflict warning — the day already has another source. */
+.se-warning {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(180, 130, 30, 0.1);
+  border: 1px solid rgba(180, 130, 30, 0.28);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.se-warning p {
+  margin: 4px 0 8px;
+}
+
+.se-warning ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.se-recorded {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Report chunk loading — holds the section's place while it arrives. */
+.report-section-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 240px;
+  padding: 40px 0;
+  color: var(--color-text-muted, inherit);
+  font-size: 13.5px;
+}
+
+/* ── Phone: stop one wide child dragging the whole report sideways ────────
+   Found by driving the Overview signed in at 375px: the page scrolled
+   horizontally, and 174 elements sat past the right edge. None of them was
+   the cause.
+
+   `.report-section-stack` is a grid, and a grid's implicit column is `auto`,
+   which is never narrower than its widest child's min-content. One child —
+   `.alma-page-grid-kpis`, two KPI tracks side by side — has a min-content of
+   388px. That set the column to 388px, and every sibling stretched to match,
+   so the hero, the sources strip, the prime-cost panel and both `.ov-two`
+   blocks were all 65px too wide because of a grid none of them are in.
+
+   `minmax(0, 1fr)` lets the column shrink below its content, which is what
+   turns "the page scrolls sideways" into "the one wide thing scrolls".
+   The KPI grid then stacks, because two columns of numbers do not fit a
+   phone and never did. */
+@media (max-width: 860px) {
+  .report-section-stack,
+  .report-detail-grid,
+  .ov-two,
+  .ov-prime {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .alma-page-grid-kpis {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  /* Grid and flex children default to min-width:auto, which is the same trap
+     one level down. */
+  .report-section-stack > *,
+  .report-detail-grid > *,
+  .ov-two > *,
+  .alma-page-grid-kpis > * {
+    min-width: 0;
+  }
 }

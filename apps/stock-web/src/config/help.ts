@@ -134,6 +134,16 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     ],
     tips: ['Pair this with Price movement to catch dishes squeezed by rising ingredient costs.']
   },
+  '/buying': {
+    title: 'Buying',
+    intro: 'Who supplies each item and what it last cost, worked out from the invoices already entered.',
+    features: [
+      { name: 'Derived, not maintained', desc: 'Reads supplier and price from matched invoice lines, so there is no price list to keep up.' },
+      { name: 'Per-unit prices', desc: 'Corrects for invoices that record a whole delivery as one unit, so a heavier delivery is not read as a price rise.' },
+      { name: 'Prices that moved', desc: 'Items now costing 15% or more above the best price ever paid for them.' }
+    ],
+    tips: ['Items with no purchase history are grouped last — they are a gap to work through, not a supplier to order from.']
+  },
   '/price-movement': {
     title: 'Supplier price changes',
     intro: 'How supplier prices have changed over time, so cost creep doesn\'t go unnoticed.',

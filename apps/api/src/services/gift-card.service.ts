@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
@@ -338,15 +338,84 @@ async function createGiftCardReservingPromo(
   });
 }
 
+/**
+ * An image the venue uploaded, held inline in the settings JSON as a base64
+ * data URL.
+ *
+ * Serving it that way put 103.5 KB of the public config's 104 KB on the wire
+ * for every single visitor to the buy page — 99.5% of the payload, repeated on
+ * every load, and impossible to cache or put behind a CDN because it lives
+ * inside a JSON API response.
+ *
+ * These helpers swap the blob for a URL pointing at an endpoint that serves
+ * the same bytes once, with a long cache. Nothing has to be migrated: the
+ * bytes stay where they are, they just stop travelling with the config.
+ */
+const INLINE_IMAGE_FIELDS = ['heroImageUrl', 'artworkUrl'] as const;
+type InlineImageField = (typeof INLINE_IMAGE_FIELDS)[number];
+
+function isInlineImage(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith('data:image/');
+}
+
+/**
+ * Replace inline images with a URL to the asset endpoint.
+ *
+ * The URL carries a short hash of the content, so a new upload is a new URL
+ * and the cached copy of the old one is never served in its place.
+ */
+function withHostedImages<T extends Record<string, unknown>>(settings: T): T {
+  const out = { ...settings };
+  for (const field of INLINE_IMAGE_FIELDS) {
+    const value = out[field];
+    if (!isInlineImage(value)) continue;
+    const fingerprint = createHash('sha256').update(value).digest('hex').slice(0, 16);
+    // Absolute, because the buy page is served from a different origin to the
+    // API — a relative path would resolve against the site and 404.
+    (out as Record<string, unknown>)[field] =
+      `${env.publicApiUrl.replace(/\/$/, '')}/api/gift-cards/assets/${field}/${fingerprint}`;
+  }
+  return out;
+}
+
+/** The bytes behind one of those URLs, for the asset endpoint to send. */
+async function readSettingsImage(field: string): Promise<{ mimeType: string; body: Buffer } | null> {
+  if (!INLINE_IMAGE_FIELDS.includes(field as InlineImageField)) return null;
+  const settings = await getGiftCardSettings();
+  const value = (settings as Record<string, unknown>)[field];
+  if (!isInlineImage(value)) return null;
+  const match = value.match(/^data:([^;]+);base64,(.*)$/s);
+  if (!match) return null;
+  return { mimeType: match[1]!, body: Buffer.from(match[2]!, 'base64') };
+}
+
+/**
+ * A card number nobody is using yet.
+ *
+ * Retries on collision rather than trusting one draw: the code is only 8 hex
+ * characters, and handing a guest a number that already belongs to somebody
+ * else's balance is the one failure that must not happen. Ten attempts is far
+ * past the point of paranoia and still costs nothing.
+ */
+async function issueUnusedCode(): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = `ALMA-${randomBytes(4).toString('hex').toUpperCase()}`;
+    const taken = await prisma.giftCard.findUnique({ where: { code: candidate }, select: { id: true } });
+    if (!taken) return candidate;
+  }
+  throw new HttpError(500, 'Could not issue a free card number. Try again.');
+}
+
 export const giftCardService = {
   canManagePromoCodes,
+  readSettingsImage,
 
   async getPublicSettings() {
-    return getGiftCardSettings();
+    return withHostedImages(await getGiftCardSettings());
   },
 
   async getPublicConfig(): Promise<GiftCardPublicConfig> {
-    const settings = await getGiftCardSettings();
+    const settings = withHostedImages(await getGiftCardSettings());
     if (settings.testCheckoutEnabled) {
       return {
         settings,
@@ -464,7 +533,13 @@ export const giftCardService = {
     return quote;
   },
 
-  async createCheckout(input: unknown) {
+  /**
+   * `counter` marks a sale a staff member is ringing up face to face. The
+   * customer still pays through Stripe — they scan a QR and tap on their own
+   * phone — so no card details ever touch the iPad, and the venue needs no
+   * reader hardware. The flag only changes how the sale is labelled.
+   */
+  async createCheckout(input: unknown, options: { counter?: boolean; soldByStaffId?: string | null } = {}) {
     const data = giftCardCheckoutInputSchema.parse(input);
     const settings = await getGiftCardSettings();
     const promoResult = data.promoCode?.trim()
@@ -555,6 +630,9 @@ export const giftCardService = {
         design: data.design ?? null,
         promoCodeId: promoResult?.promo.id ?? null,
         promoCodeSnapshot: promoResult?.promo.code ?? null,
+        saleChannel: options.counter ? 'COUNTER' : 'ONLINE',
+        tender: 'STRIPE',
+        soldByStaffId: options.counter ? options.soldByStaffId ?? null : null,
         expiresAt,
         scheduledDeliveryAt
       },
@@ -780,7 +858,13 @@ export const giftCardService = {
       throw new HttpError(400, 'Activation payload required');
     }
     const data = input as Record<string, unknown>;
-    const codeRaw = typeof data.code === 'string' ? data.code.trim().toUpperCase() : '';
+    // A counter sale can go two ways round. Either the venue has pre-printed
+    // cards and staff type the code from the one they just handed over, or
+    // they have blanks and need the system to issue a number to write on.
+    // Only the first was possible before, which is the wrong way round for a
+    // venue that has not ordered pre-printed stock yet.
+    const typedCode = typeof data.code === 'string' ? data.code.trim().toUpperCase() : '';
+    const codeRaw = typedCode || (await issueUnusedCode());
     const initialValueCents = typeof data.initialValueCents === 'number' ? Math.round(data.initialValueCents) : NaN;
     const purchaserName = typeof data.purchaserName === 'string' && data.purchaserName.trim()
       ? data.purchaserName.trim()
@@ -795,8 +879,19 @@ export const giftCardService = {
       ? data.recipientEmail.trim().toLowerCase()
       : null;
 
+    // How the money was taken. A counter sale usually goes through the venue's
+    // own POS, and recording that here is what lets gift card revenue reconcile
+    // against takings instead of appearing from nowhere. COMP is a giveaway —
+    // real card, no money, and worth being able to tell apart later.
+    const TENDERS = ['CARD', 'CASH', 'EFTPOS', 'STRIPE', 'COMP'] as const;
+    const tenderRaw = typeof data.tender === 'string' ? data.tender.trim().toUpperCase() : '';
+    const tender = (TENDERS as readonly string[]).includes(tenderRaw) ? tenderRaw : 'CARD';
+    const tenderReference = typeof data.tenderReference === 'string' && data.tenderReference.trim()
+      ? data.tenderReference.trim().slice(0, 64)
+      : null;
+
     if (!codeRaw || !/^[A-Z0-9-]+$/.test(codeRaw)) {
-      throw new HttpError(400, 'Card code is required and must contain only letters, numbers, and dashes.');
+      throw new HttpError(400, 'A card code may only contain letters, numbers and dashes.');
     }
     if (!Number.isFinite(initialValueCents) || initialValueCents < 500) {
       throw new HttpError(400, 'Initial value must be at least $5.');
@@ -821,7 +916,6 @@ export const giftCardService = {
         initialValueCents,
         balanceCents: initialValueCents,
         discountCents: 0,
-        amountPaidCents: initialValueCents,
         currency: 'aud',
         purchaserName,
         purchaserEmail,
@@ -832,7 +926,14 @@ export const giftCardService = {
         promoCodeSnapshot: 'PHYSICAL_COUNTER',
         testMode: false,
         stripeCheckoutSessionId: `physical:${Date.now()}`,
-        paidAt: new Date(),
+        // A comped card was never paid for. Leaving paidAt set would put it in
+        // the sold-value total and overstate what the venue actually took.
+        paidAt: tender === 'COMP' ? null : new Date(),
+        amountPaidCents: tender === 'COMP' ? 0 : initialValueCents,
+        saleChannel: 'COUNTER',
+        tender,
+        tenderReference,
+        soldByStaffId: actor?.id ?? null,
         expiresAt
       },
       include: { redemptions: true }
@@ -963,6 +1064,99 @@ export const giftCardService = {
   // Returns counts so the scheduler logs are useful. Designed to be
   // safely re-runnable: if a send fails the card stays in the queue
   // (emailedAt stays null + emailError is set by sendGiftCardEmail).
+  /**
+   * Move gift cards to the state they have actually reached.
+   *
+   * Two transitions had no owner. A card past its three-year expiry stayed
+   * ACTIVE forever — the counter refused it, but it still counted as an
+   * outstanding liability on every report, and cancel() guarded on an EXPIRED
+   * status nothing could ever produce. And a checkout the buyer abandoned sat
+   * in PENDING_PAYMENT indefinitely, inflating what looked like sold cards.
+   *
+   * Both are time-based facts, so a sweep is the right shape. Nothing here
+   * touches money: an expired card keeps its balance so the figure survives
+   * for anyone who has to honour it as a goodwill gesture, and an abandoned
+   * checkout is cancelled with a reason rather than deleted.
+   */
+  async sweepGiftCardLifecycle(input: { abandonedAfterHours?: number } = {}) {
+    const now = new Date();
+    // Long enough that a slow Stripe redirect or a buyer who wandered off mid
+    // payment is never cancelled out from under a real payment.
+    const abandonedAfterHours = Math.min(Math.max(input.abandonedAfterHours ?? 24, 1), 24 * 30);
+    const abandonedBefore = new Date(now.getTime() - abandonedAfterHours * 3600_000);
+
+    const expired = await prisma.giftCard.updateMany({
+      where: { status: 'ACTIVE', expiresAt: { lt: now, not: null } },
+      data: { status: 'EXPIRED' }
+    });
+
+    // Stale pending cards are NOT simply cancelled. A buyer who paid and then
+    // closed the tab before the success page loaded, on a webhook that never
+    // arrived, has a paid card sitting in PENDING_PAYMENT — cancelling that on
+    // a timer would take money and give nothing back. Stripe is the authority,
+    // so ask it about every stale card that got as far as a checkout session.
+    const stale = await prisma.giftCard.findMany({
+      where: { status: 'PENDING_PAYMENT', createdAt: { lt: abandonedBefore } },
+      select: { id: true, stripeCheckoutSessionId: true },
+      take: 200
+    });
+
+    let abandoned = 0;
+    let recovered = 0;
+    let unresolved = 0;
+    for (const card of stale) {
+      if (!card.stripeCheckoutSessionId || !stripe) {
+        // Never reached Stripe at all — safe to close off.
+        const closed = await prisma.giftCard.updateMany({
+          where: { id: card.id, status: 'PENDING_PAYMENT' },
+          data: {
+            status: 'CANCELLED',
+            balanceCents: 0,
+            cancelledAt: now,
+            cancelReason: `Checkout abandoned — no payment within ${abandonedAfterHours}h.`
+          }
+        });
+        abandoned += closed.count;
+        continue;
+      }
+      try {
+        const session = await stripe.checkout.sessions.retrieve(card.stripeCheckoutSessionId, {
+          expand: ['payment_intent']
+        });
+        if (isStripePaymentConfirmed(session)) {
+          // The webhook was lost. Activate and send it now — late is recoverable,
+          // cancelled is not.
+          await this.handleCheckoutCompleted(session);
+          recovered += 1;
+        } else if (session.status === 'expired' || session.payment_status === 'unpaid') {
+          await this.disregardUnconfirmedCheckout(session, `Checkout abandoned — Stripe reports no payment after ${abandonedAfterHours}h.`);
+          abandoned += 1;
+        } else {
+          // Still open at Stripe. Leave it and look again tomorrow.
+          unresolved += 1;
+        }
+      } catch (error) {
+        // A Stripe outage must never cancel a card. Leave it pending.
+        unresolved += 1;
+        console.error('[gift-cards] lifecycle sweep could not reach Stripe', {
+          giftCardId: card.id,
+          reason: error instanceof Error ? error.message : 'unknown'
+        });
+      }
+    }
+
+    return {
+      expired: expired.count,
+      abandoned,
+      /** Paid cards whose webhook never arrived, activated by this sweep. */
+      recovered,
+      /** Still open at Stripe, or Stripe was unreachable — left pending. */
+      unresolved,
+      abandonedAfterHours,
+      generatedAt: now.toISOString()
+    };
+  },
+
   async drainScheduledGiftCardSends() {
     const settings = await getGiftCardSettings();
     const due = await prisma.giftCard.findMany({

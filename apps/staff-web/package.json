@@ -7,16 +7,28 @@
     "dev": "vite",
     "build": "node ../../scripts/validate-vite-production-env.mjs && tsc --noEmit -p tsconfig.app.json && vite build",
     "start": "vite preview --host 0.0.0.0",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "check:offline-queue": "tsx src/lib/offline-queue.check.ts",
+    "build:native": "node ../../scripts/validate-vite-production-env.mjs && tsc --noEmit -p tsconfig.app.json && ALMA_NATIVE=1 vite build",
+    "cap:sync": "pnpm run build:native && cap sync",
+    "cap:ios": "pnpm run cap:sync && cap open ios",
+    "cap:android": "pnpm run cap:sync && cap open android"
   },
   "dependencies": {
     "@alma/shared": "workspace:*",
     "@alma/ui": "workspace:*",
+    "@capacitor/android": "^7.6.8",
+    "@capacitor/core": "^7.6.8",
+    "@capacitor/ios": "^7.6.8",
+    "@capacitor/preferences": "^7.0.4",
+    "@capacitor/splash-screen": "^7.0.5",
+    "@capacitor/status-bar": "^7.0.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.8",
     "@types/react": "^18.3.20",
     "@types/react-dom": "^18.3.6",
     "@vitejs/plugin-react": "^4.3.4",

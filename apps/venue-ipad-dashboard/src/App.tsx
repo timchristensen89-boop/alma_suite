@@ -95,6 +95,60 @@ function useVenueSnapshot(venueId: string | undefined) {
   return { snapshot, loading, stale };
 }
 
+// Tonight's service sheet — today's live bookings with floor-team context.
+// Served behind the device session (guest names/notes are personal data), so
+// the hook fails silently to null when the device isn't signed in.
+type TonightReservation = {
+  id: string;
+  venue: string;
+  startsAt: string;
+  covers: number;
+  status: string;
+  servicePeriod: string;
+  guestName: string | null;
+  occasion: string | null;
+  notes: string | null;
+  specialRequests: string | null;
+  area: string | null;
+  seated: boolean;
+  guest: {
+    totalVisits: number;
+    noShowCount: number;
+    lastVisitAt: string | null;
+    allergyNotes: string | null;
+    dietaryNotes: string | null;
+    tags: string[];
+  } | null;
+};
+
+function useTonightService(venueId: string | undefined) {
+  const [reservations, setReservations] = useState<TonightReservation[] | null>(null);
+
+  useEffect(() => {
+    if (!venueId) return;
+    const venueName = VENUE_NAMES[venueId] ?? '';
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const data = await api<{ reservations: TonightReservation[] }>(
+          `/api/device/tonight-service${venueName ? `?venue=${encodeURIComponent(venueName)}` : ''}`
+        );
+        if (!cancelled) setReservations(data.reservations);
+      } catch {
+        if (!cancelled) setReservations(null);
+      }
+    };
+    void tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [venueId]);
+
+  return reservations;
+}
+
 type PermissionKey =
   | 'checklists.run'
   | 'giftCards.sell'
@@ -307,6 +361,7 @@ function VenueHomePage({ auth, onRequestStaffPin, onSwitchStaff, requirePin }: P
   const venue = venueById(venueId);
   const { snapshot, stale: snapshotStale } = useVenueSnapshot(venueId);
   const taskSummary = useTaskSummary(Boolean(auth.staff));
+  const tonight = useTonightService(venueId);
   if (!venue) return <Navigate to="/venue" replace />;
 
   const tools = toolsForVenue(venue, taskSummary);
@@ -353,6 +408,48 @@ function VenueHomePage({ auth, onRequestStaffPin, onSwitchStaff, requirePin }: P
           <p className="ipad-live-updated">
             {snapshotStale ? 'Not live · showing last-known data' : `Live data · last refreshed ${lastUpdated}`}
           </p>
+        ) : null}
+
+        {/* Tonight's service — today's live bookings with floor-team context.
+            Only renders when the device session can fetch it (guest data). */}
+        {tonight !== null ? (
+          <section className="section-block tonight-service">
+            <div className="section-header">
+              <div>
+                <p className="eyebrow">Tonight's service</p>
+                <h2>{tonight.length === 0 ? 'No bookings today' : `${tonight.length} booking${tonight.length === 1 ? '' : 's'} · ${tonight.reduce((sum, r) => sum + r.covers, 0)} covers`}</h2>
+              </div>
+            </div>
+            {tonight.length > 0 ? (
+              <ul className="tonight-list">
+                {tonight.map((booking) => {
+                  const time = new Date(booking.startsAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+                  const isRegular = (booking.guest?.totalVisits ?? 0) >= 5;
+                  const hasNoShows = (booking.guest?.noShowCount ?? 0) > 0;
+                  const allergies = booking.guest?.allergyNotes || booking.guest?.dietaryNotes || null;
+                  const requests = booking.specialRequests || booking.notes || null;
+                  return (
+                    <li key={booking.id} className={`tonight-row${booking.seated ? ' is-seated' : ''}`}>
+                      <span className="tonight-time">{time}</span>
+                      <span className="tonight-main">
+                        <strong>{booking.guestName || 'Guest'}</strong>
+                        <span className="tonight-covers">×{booking.covers}</span>
+                        {booking.area ? <span className="tonight-area">{booking.area}</span> : null}
+                        {booking.seated ? <span className="tonight-badge is-positive">Seated</span> : null}
+                        {isRegular ? <span className="tonight-badge is-positive">Regular · {booking.guest?.totalVisits} visits</span> : null}
+                        {hasNoShows ? <span className="tonight-badge is-warning">{booking.guest?.noShowCount} past no-show{(booking.guest?.noShowCount ?? 0) === 1 ? '' : 's'}</span> : null}
+                        {booking.occasion ? <span className="tonight-badge is-neutral">{booking.occasion}</span> : null}
+                        {allergies ? <span className="tonight-badge is-danger">⚠ {allergies}</span> : null}
+                      </span>
+                      {requests ? <span className="tonight-notes">{requests}</span> : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="tonight-empty">Nothing on the books today — walk-ins only.</p>
+            )}
+          </section>
         ) : null}
 
         <div className="stats-grid">

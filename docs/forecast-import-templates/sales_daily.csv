@@ -1,0 +1,3 @@
+date,company_code,venue_code,gross_sales_inc_gst,net_sales_ex_gst,gst,discounts,refunds,service_charges,tips,transactions,covers,source
+2026-07-01,TCC,AVALON,4210.55,3827.77,382.78,120.00,0.00,0.00,85.00,142,186,square_export
+2026-07-02,AF,FRESHWATER,3980.10,3618.27,361.83,85.50,45.00,0.00,62.50,131,170,manual_count

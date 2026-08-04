@@ -1,15 +1,24 @@
 import { createHash } from 'node:crypto';
+import Anthropic from '@anthropic-ai/sdk';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
   invoiceExclusionRuleInputSchema,
+  aliasKey,
+  matchInvoiceLine,
+  suggestItems,
   normaliseSupplierName,
+  stockInvoiceMatchingStatusSchema,
   stockInvoiceDeleteInputSchema,
   stockInvoiceImportInputSchema,
   stockInvoiceLineRematchInputSchema,
   stockInvoiceMarkNeedsReviewInputSchema,
   stockInvoiceMarkNoItemInputSchema,
   stockInvoiceRipInputSchema,
+  stockInvoiceOcrInputSchema,
+  stockInvoicePasteLinesInputSchema,
+  parseInvoicePaste,
+  reconcilePaste,
   type InvoiceExclusionRule,
   type StockInvoiceApplyAllCostsResult,
   type StockInvoiceAssignee,
@@ -20,6 +29,8 @@ import {
   type StockInvoiceTriageStatus,
   type StockInvoicesPayload,
   type StockInvoicesSummary,
+  type StockUnmatchedSpendPayload,
+  type StockUnmatchedSpendRow,
   type StockSupplierInvoice,
   type StockSupplierInvoiceLine
 } from '@alma/shared';
@@ -61,7 +72,9 @@ const assigneeSelect = {
 const invoiceInclude = {
   lines: { include: { item: { select: lineItemSelect } } },
   triagedBy: { select: assigneeSelect },
-  assignedTo: { select: assigneeSelect }
+  assignedTo: { select: assigneeSelect },
+  // Metadata only (not the blob) so list queries stay light.
+  document: { select: { id: true } }
 } satisfies Prisma.SupplierInvoiceInclude;
 
 type InvoiceRow = Prisma.SupplierInvoiceGetPayload<{ include: typeof invoiceInclude }>;
@@ -208,14 +221,11 @@ function buildHash(parts: Array<string | number | null | undefined>) {
 }
 
 function matchingStatus(value: string): StockInvoiceMatchingStatus {
-  if (
-    value === 'AUTO_MATCHED' ||
-    value === 'MANUAL_MATCHED' ||
-    value === 'NEEDS_REVIEW'
-  ) {
-    return value;
-  }
-  return 'NEEDS_REVIEW';
+  // Parsed against the schema rather than a second hand-written list — the
+  // duplicate list here silently coerced NON_STOCK back to NEEDS_REVIEW, so
+  // charge lines kept reappearing in the queue after being set aside.
+  const parsed = stockInvoiceMatchingStatusSchema.safeParse(value);
+  return parsed.success ? parsed.data : 'NEEDS_REVIEW';
 }
 
 function triageStatusValue(value: string): StockInvoiceTriageStatus {
@@ -356,30 +366,24 @@ function normaliseInvoice(
   };
 }
 
+/**
+ * Wraps the shared matcher so the service, its tests and any review screen all
+ * decide a match the same way. The old logic here was exact SKU, exact name,
+ * or item-name-as-substring — which left 71% of production lines unmatched
+ * because supplier descriptions interleave brand, pack size and order
+ * commentary through the product name.
+ */
 function findItemMatch(
   line: NormalisedLine,
-  items: MatchItemRow[]
+  items: MatchItemRow[],
+  context: { supplierName?: string | null; aliases?: Map<string, string> } = {}
 ): { itemId: string | null; status: StockInvoiceMatchingStatus } {
-  const code = normaliseKey(line.itemCode ?? '');
-  if (code) {
-    const skuMatch = items.find((item) => item.sku && normaliseKey(item.sku) === code);
-    if (skuMatch) return { itemId: skuMatch.id, status: 'AUTO_MATCHED' };
-  }
-
-  const description = normaliseMatchText(line.description);
-  const exact = items.find((item) => normaliseMatchText(item.name) === description);
-  if (exact) return { itemId: exact.id, status: 'AUTO_MATCHED' };
-
-  const contained = [...items]
-    .filter((item) => {
-      const name = normaliseMatchText(item.name);
-      return name.length >= 4 && description.includes(name);
-    })
-    .sort((a, b) => b.name.length - a.name.length)[0];
-
-  return contained
-    ? { itemId: contained.id, status: 'AUTO_MATCHED' }
-    : { itemId: null, status: 'NEEDS_REVIEW' };
+  const match = matchInvoiceLine(
+    { description: line.description, itemCode: line.itemCode },
+    items.map((item) => ({ id: item.id, name: item.name, sku: item.sku })),
+    context
+  );
+  return { itemId: match.itemId, status: match.status };
 }
 
 async function ensureSupplier(
@@ -412,6 +416,42 @@ async function ensureSupplier(
     data: { name, email: supplierEmail, status: 'ACTIVE' }
   });
   return created.id;
+}
+
+/**
+ * Apply a freshly-taught alias to the lines already in the review queue.
+ *
+ * Supplier wording repeats verbatim: 471 unmatched lines in production are only
+ * 138 distinct descriptions, and the worst offender wears the same words eleven
+ * times. Teaching the alias without sweeping them means a manager answers the
+ * same question eleven times.
+ *
+ * Scoped to lines that are still unmatched — a manual match somebody made by
+ * hand is never overwritten — and to the supplier the alias was learned from
+ * when it is supplier-specific.
+ */
+async function applyAliasToWaitingLines(
+  key: string,
+  itemId: string,
+  supplierId: string | null,
+  exceptLineId: string
+): Promise<number> {
+  const candidates = await prisma.supplierInvoiceLine.findMany({
+    where: {
+      id: { not: exceptLineId },
+      itemId: null,
+      matchingStatus: 'NEEDS_REVIEW',
+      ...(supplierId ? { invoice: { supplierId } } : {})
+    },
+    select: { id: true, description: true }
+  });
+  const ids = candidates.filter((line) => aliasKey(line.description) === key).map((line) => line.id);
+  if (ids.length === 0) return 0;
+  const result = await prisma.supplierInvoiceLine.updateMany({
+    where: { id: { in: ids } },
+    data: { itemId, matchingStatus: 'AUTO_MATCHED' }
+  });
+  return result.count;
 }
 
 function toLinePayload(row: InvoiceLineRow): StockSupplierInvoiceLine {
@@ -468,6 +508,7 @@ function toInvoicePayload(row: InvoiceRow): StockSupplierInvoice {
     totalCents: row.totalCents,
     sourceFileName: row.sourceFileName,
     sourceFileType: row.sourceFileType,
+    hasDocument: Boolean(row.document),
     importedAt: row.importedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -677,7 +718,11 @@ export const invoicesService = {
     const toExclude: Array<{ id: string; label: string }> = [];
     for (const inv of pending) {
       const fields: Record<ExclusionField, string> = {
-        title: (inv.sourceFileName ?? '').toLowerCase(),
+        // Mirror exclusionMatchFields: Xero-synced invoices carry no
+        // sourceFileName, so their visible "title" is the invoiceNumber —
+        // a title rule must match that here too, or the sweep never fires
+        // for Xero rows even though the same rule fires at import time.
+        title: `${inv.sourceFileName ?? ''} ${inv.invoiceNumber ?? ''}`.trim().toLowerCase(),
         body: inv.lines.map((line) => line.description ?? '').join(' ').toLowerCase(),
         supplier: (inv.supplierName ?? '').toLowerCase(),
         invoiceNumber: (inv.invoiceNumber ?? '').toLowerCase()
@@ -923,12 +968,151 @@ export const invoicesService = {
     };
   },
 
+  // Read a scanned/photographed invoice (PDF or image) with Claude vision and
+  // return the same shape as ripInvoiceText, so the existing import → match flow
+  // handles it unchanged. Gated on ANTHROPIC_API_KEY — no key, clear error.
+  async ocrInvoiceImage(input: unknown): Promise<StockInvoiceRipResult> {
+    const data = stockInvoiceOcrInputSchema.parse(input);
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new HttpError(
+        503,
+        'Invoice OCR is not configured. Set ANTHROPIC_API_KEY on the stock-api to enable it.'
+      );
+    }
+
+    const client = new Anthropic({ apiKey });
+    const source =
+      data.mimeType === 'application/pdf'
+        ? ({ type: 'base64', media_type: 'application/pdf', data: data.fileBase64 } as const)
+        : ({ type: 'base64', media_type: data.mimeType, data: data.fileBase64 } as const);
+    const fileBlock =
+      data.mimeType === 'application/pdf'
+        ? ({ type: 'document', source } as const)
+        : ({ type: 'image', source } as const);
+
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        supplierName: { type: 'string' },
+        invoiceNumber: { type: 'string' },
+        invoiceDate: { type: 'string' },
+        total: { type: 'number' },
+        lineItems: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              description: { type: 'string' },
+              quantity: { type: 'number' },
+              unitAmount: { type: 'number' },
+              lineAmount: { type: 'number' }
+            },
+            required: ['description', 'quantity', 'unitAmount', 'lineAmount']
+          }
+        }
+      },
+      required: ['supplierName', 'invoiceNumber', 'invoiceDate', 'total', 'lineItems']
+    };
+
+    let message;
+    try {
+      message = await client.messages.create({
+        model: 'claude-opus-4-8',
+        max_tokens: 8000,
+        // Constrain the response to our invoice schema so parsing can't drift.
+        output_config: { format: { type: 'json_schema', schema } },
+        messages: [
+          {
+            role: 'user',
+            content: [
+              fileBlock,
+              {
+                type: 'text',
+                text:
+                  'Extract this supplier invoice. Return the supplier name, invoice number, ' +
+                  'invoice date (ISO YYYY-MM-DD if you can), the invoice total, and every line ' +
+                  'item with its description, quantity, unit price (ex-GST unit amount), and line ' +
+                  'total. Use the printed unit price for unitAmount and the printed line total for ' +
+                  'lineAmount. If a value is genuinely absent, use 0. Do not invent lines.'
+              }
+            ]
+          }
+        ]
+        // output_config is a valid Messages API field; SDK typings lag it.
+      } as unknown as Anthropic.MessageCreateParamsNonStreaming);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'unknown error';
+      throw new HttpError(502, `Invoice OCR failed: ${detail}`);
+    }
+
+    const textBlock = message.content.find((block) => block.type === 'text');
+    const raw = textBlock && 'text' in textBlock ? textBlock.text : '';
+    let parsed: {
+      supplierName?: string;
+      invoiceNumber?: string;
+      invoiceDate?: string;
+      total?: number;
+      lineItems?: Array<{ description?: string; quantity?: number; unitAmount?: number; lineAmount?: number }>;
+    };
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new HttpError(502, 'Invoice OCR returned an unreadable result. Try a clearer scan.');
+    }
+
+    const warnings: string[] = [];
+    const supplierName = optionalText(parsed.supplierName) ?? 'Unknown supplier';
+    const invoiceNumber = optionalText(parsed.invoiceNumber);
+    const lineItems = (parsed.lineItems ?? [])
+      .map((line) => ({
+        Description: optionalText(line.description) ?? '',
+        Quantity: Number(line.quantity ?? 0) || 0,
+        UnitAmount: Number(line.unitAmount ?? 0) || 0,
+        LineAmount: Number(line.lineAmount ?? 0) || 0
+      }))
+      .filter((line) => line.Description.length > 0);
+    if (!invoiceNumber) warnings.push('Could not read an invoice number — check before importing.');
+    if (lineItems.length === 0) warnings.push('No line items were read — the scan may be too low quality.');
+
+    return {
+      warnings,
+      invoices: [
+        {
+          Contact: { Name: supplierName },
+          InvoiceNumber: invoiceNumber ?? buildHash([supplierName, String(parsed.total ?? ''), data.sourceFileName]),
+          Date: optionalText(parsed.invoiceDate) ?? undefined,
+          Total: typeof parsed.total === 'number' ? parsed.total : undefined,
+          LineItems: lineItems,
+          sourceMetadata: {
+            ocrScanned: true,
+            sourceFileName: data.sourceFileName ?? null
+          }
+        }
+      ]
+    };
+  },
+
+  // Stream the original uploaded scan back so the invoice screen can open it.
+  async getDocument(invoiceId: string): Promise<{ fileName: string | null; mimeType: string; data: Buffer }> {
+    const doc = await prisma.supplierInvoiceDocument.findUnique({ where: { invoiceId } });
+    if (!doc) throw new HttpError(404, 'No original document is stored for this invoice.');
+    return { fileName: doc.fileName, mimeType: doc.mimeType, data: Buffer.from(doc.data) };
+  },
+
   async importInvoices(input: unknown): Promise<StockInvoiceImportResult> {
     const data = stockInvoiceImportInputSchema.parse(normaliseImportBody(input));
     const source = data.source.trim().toUpperCase();
     const sourceFileName = optionalText(data.sourceFileName) ?? 'Manual invoice import';
     const sourceFileType = optionalText(data.sourceFileType);
     const venue = optionalText(data.venue);
+    // Original uploaded scan, kept against the created invoice so a manager can
+    // reopen it and enter lines by hand when OCR only read a total.
+    const documentBuffer = data.documentBase64 ? Buffer.from(data.documentBase64, 'base64') : null;
+    const documentMimeType = optionalText(data.documentMimeType);
+    const documentFileName = optionalText(data.documentFileName);
     const defaults = {
       source,
       venue,
@@ -1020,6 +1204,33 @@ export const invoicesService = {
         else createdCount += 1;
         importedInvoiceIds.push(invoice.id);
 
+        if (documentBuffer && documentMimeType) {
+          await tx.supplierInvoiceDocument.upsert({
+            where: { invoiceId: invoice.id },
+            create: {
+              invoiceId: invoice.id,
+              fileName: documentFileName,
+              mimeType: documentMimeType,
+              data: documentBuffer
+            },
+            update: { fileName: documentFileName, mimeType: documentMimeType, data: documentBuffer }
+          });
+        }
+
+        // Matches somebody already confirmed for this supplier's wording, so an
+        // import never re-asks a question that has been answered.
+        const aliasRows = await tx.stockItemAlias.findMany({
+          where: { OR: [{ supplierId: null }, ...(invoice.supplierId ? [{ supplierId: invoice.supplierId }] : [])] },
+          select: { aliasKey: true, supplierId: true, stockItemId: true }
+        });
+        const importAliases = new Map<string, string>();
+        for (const row of aliasRows) {
+          // A supplier-specific alias wins over a global one: the same words
+          // can mean different products in two catalogues.
+          if (row.supplierId === null && importAliases.has(row.aliasKey)) continue;
+          importAliases.set(row.aliasKey, row.stockItemId);
+        }
+
         const lineKeys = invoiceInput.lines.map((line) => line.lineKey);
         await tx.supplierInvoiceLine.deleteMany({
           where: {
@@ -1037,7 +1248,10 @@ export const invoicesService = {
               }
             }
           });
-          const autoMatch = findItemMatch(line, matchItems);
+          const autoMatch = findItemMatch(line, matchItems, {
+            supplierName: invoiceInput.supplierName,
+            aliases: importAliases
+          });
           const preserveManualMatch =
             existingLine?.matchingStatus === 'MANUAL_MATCHED' && existingLine.itemId;
           const itemId = preserveManualMatch ? existingLine.itemId : autoMatch.itemId;
@@ -1149,7 +1363,140 @@ export const invoicesService = {
       include: { item: { select: lineItemSelect } }
     });
 
+    // Remember the answer. The same supplier wording recurs verbatim month
+    // after month, and without this every occurrence asks again — which is why
+    // the review queue never shrank however much of it got cleared.
+    if (itemId) {
+      const invoice = await prisma.supplierInvoice.findUnique({
+        where: { id: existing.supplierInvoiceId },
+        select: { supplierId: true }
+      });
+      const key = aliasKey(existing.description);
+      if (key) {
+        // Not an upsert: the unique key includes a nullable supplierId, and a
+        // NULL cannot be targeted by a compound unique lookup.
+        const supplierId = invoice?.supplierId ?? null;
+        const current = await prisma.stockItemAlias.findFirst({ where: { aliasKey: key, supplierId } });
+        if (current) {
+          await prisma.stockItemAlias.update({
+            where: { id: current.id },
+            data: { stockItemId: itemId, sourceText: existing.description }
+          });
+        } else {
+          await prisma.stockItemAlias.create({
+            data: { aliasKey: key, supplierId, stockItemId: itemId, sourceText: existing.description }
+          });
+        }
+        // ...and apply it to the lines already waiting. The alias only used to
+        // help the *next* import, so identifying "BEEF SHORT RIBS GRAINFED
+        // 3 RIB" cleared one line and left the other ten sitting in the queue
+        // wearing the same words. One decision should settle all of them.
+        await applyAliasToWaitingLines(key, itemId, supplierId, lineId);
+      }
+    }
+
     return toLinePayload(line);
+  },
+
+  /**
+   * Load remembered matches for a supplier. A supplier-specific alias wins over
+   * a global one for the same wording — the same words can mean different
+   * products in two catalogues.
+   */
+  async loadAliases(supplierId: string | null): Promise<Map<string, string>> {
+    const rows = await prisma.stockItemAlias.findMany({
+      where: { OR: [{ supplierId: null }, ...(supplierId ? [{ supplierId }] : [])] },
+      select: { aliasKey: true, supplierId: true, stockItemId: true }
+    });
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      if (row.supplierId === null && map.has(row.aliasKey)) continue;
+      map.set(row.aliasKey, row.stockItemId);
+    }
+    return map;
+  },
+
+  /**
+   * Re-run matching over lines that never found an item.
+   *
+   * Needed because matching improves — a better matcher, a new alias, or a
+   * stock item that did not exist when the invoice arrived. Without this the
+   * backlog stays exactly as wrong as the day it was imported.
+   *
+   * Only ever touches NEEDS_REVIEW lines: a match a human made is never
+   * second-guessed by a machine.
+   */
+  async rematchUnresolved(options: { invoiceId?: string | null; dryRun?: boolean } = {}) {
+    const lines = await prisma.supplierInvoiceLine.findMany({
+      where: {
+        matchingStatus: 'NEEDS_REVIEW',
+        ...(options.invoiceId ? { supplierInvoiceId: options.invoiceId } : {})
+      },
+      select: {
+        id: true, description: true, itemCode: true,
+        invoice: { select: { supplierId: true, supplierName: true } }
+      }
+    });
+    const items = await prisma.stockItem.findMany({ where: { status: 'ACTIVE' }, select: matchItemSelect });
+    const candidates = items.map((item) => ({ id: item.id, name: item.name, sku: item.sku }));
+
+    const aliasCache = new Map<string, Map<string, string>>();
+    let matched = 0;
+    let nonStock = 0;
+    const updates: Array<{ id: string; itemId: string | null; status: StockInvoiceMatchingStatus }> = [];
+
+    for (const line of lines) {
+      const supplierId = line.invoice?.supplierId ?? null;
+      const cacheKey = supplierId ?? '__global__';
+      if (!aliasCache.has(cacheKey)) aliasCache.set(cacheKey, await this.loadAliases(supplierId));
+      const result = matchInvoiceLine(
+        { description: line.description, itemCode: line.itemCode },
+        candidates,
+        { supplierName: line.invoice?.supplierName ?? null, aliases: aliasCache.get(cacheKey) }
+      );
+      if (result.status === 'NON_STOCK') {
+        nonStock += 1;
+        updates.push({ id: line.id, itemId: null, status: 'NON_STOCK' });
+      } else if (result.itemId) {
+        matched += 1;
+        updates.push({ id: line.id, itemId: result.itemId, status: 'AUTO_MATCHED' });
+      }
+    }
+
+    if (!options.dryRun) {
+      for (const update of updates) {
+        await prisma.supplierInvoiceLine.update({
+          where: { id: update.id },
+          data: { itemId: update.itemId, matchingStatus: update.status }
+        });
+      }
+    }
+
+    return {
+      examined: lines.length,
+      matched,
+      nonStock,
+      stillNeedsReview: lines.length - matched - nonStock,
+      dryRun: Boolean(options.dryRun)
+    };
+  },
+
+  /** Ranked candidates for a line a human has to decide. */
+  async suggestionsForLine(lineId: string) {
+    const line = await prisma.supplierInvoiceLine.findUnique({
+      where: { id: lineId },
+      select: { description: true }
+    });
+    if (!line) throw new HttpError(404, 'Invoice line not found');
+    const items = await prisma.stockItem.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, name: true, sku: true, unit: true }
+    });
+    return suggestItems(line.description, items, 6).map((row) => ({
+      itemId: row.item.id,
+      name: row.item.name,
+      confidence: row.confidence
+    }));
   },
 
   async applyLineCost(lineId: string): Promise<StockSupplierInvoiceLine> {
@@ -1246,6 +1593,278 @@ export const invoicesService = {
       skippedCount: skipped.length,
       skipped,
       invoice: await getInvoicePayload(invoiceId)
+    };
+  },
+
+  /**
+   * Rebuild an invoice's lines from text pasted off the original document.
+   *
+   * Some bills arrive as one summary line — a Xero sync that carried a single
+   * "Alcoholic Beverages $1,035.25" row, or a scan OCR only read the total
+   * from. Everything on that invoice then sits uncosted, and there was no way
+   * to get the detail in short of retyping it as a new invoice.
+   *
+   * A manager selects the table on the PDF, pastes it here, and the existing
+   * lines are replaced with the real ones — matched to stock items by the same
+   * matcher the importer uses, so aliases and manual matches behave identically.
+   *
+   * Two things this deliberately does NOT do. It never edits the invoice
+   * header: the supplier's own total is the thing worth reconciling against,
+   * so overwriting it would destroy the only independent check there is. And
+   * it refuses to write when the lines do not add up to that total, unless the
+   * caller says otherwise — a variance nearly always means a row was left out
+   * of the selection.
+   */
+  async pasteLines(invoiceId: string, input: unknown) {
+    const data = stockInvoicePasteLinesInputSchema.parse(input);
+    const invoice = await prisma.supplierInvoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        supplierName: true,
+        supplierId: true,
+        subtotalCents: true,
+        taxCents: true,
+        totalCents: true
+      }
+    });
+    if (!invoice) throw new HttpError(404, 'That invoice no longer exists.');
+
+    const parsed = parseInvoicePaste(data.text);
+    const reconciliation = reconcilePaste(parsed, invoice);
+
+    const preview = {
+      dryRun: data.dryRun === true,
+      applied: false,
+      lines: parsed.lines,
+      columnsApplied: parsed.columnsApplied,
+      warnings: parsed.warnings,
+      unparsed: parsed.unparsed,
+      parsedSubtotalCents: parsed.subtotalCents,
+      parsedTaxCents: parsed.taxCents,
+      parsedTotalCents: parsed.totalCents,
+      invoiceTotalCents: invoice.totalCents,
+      ...reconciliation,
+      matchedCount: 0,
+      needsReviewCount: 0,
+      replacedLineCount: 0
+    };
+
+    if (data.dryRun) {
+      // Match on the preview too, so the screen can show what will and won't
+      // find a stock item before anything is written.
+      const matchItems = await prisma.stockItem.findMany({
+        where: { status: 'ACTIVE' },
+        select: matchItemSelect,
+        orderBy: { name: 'asc' }
+      });
+      const aliases = await invoicesService.loadAliases(invoice.supplierId);
+      let matched = 0;
+      for (const line of parsed.lines) {
+        const match = findItemMatch(
+          { description: line.description, itemCode: line.itemCode } as NormalisedLine,
+          matchItems,
+          { supplierName: invoice.supplierName, aliases }
+        );
+        if (match.itemId) matched += 1;
+      }
+      return { ...preview, matchedCount: matched, needsReviewCount: parsed.lines.length - matched };
+    }
+
+    if (parsed.lines.length === 0) {
+      throw new HttpError(400, 'No item lines could be read from that text.');
+    }
+
+    if (!reconciliation.matches && data.acceptVariance !== true) {
+      const variance = reconciliation.totalVarianceCents / 100;
+      throw new HttpError(
+        400,
+        `Those lines come to $${(parsed.totalCents / 100).toFixed(2)} but the invoice total is $${(
+          invoice.totalCents / 100
+        ).toFixed(2)} — ${variance > 0 ? '$' + variance.toFixed(2) + ' over' : '$' + Math.abs(variance).toFixed(2) + ' short'}. Check for a row missed off the copy, or confirm to save anyway.`
+      );
+    }
+
+    const matchItems = await prisma.stockItem.findMany({
+      where: { status: 'ACTIVE' },
+      select: matchItemSelect,
+      orderBy: { name: 'asc' }
+    });
+    const aliases = await invoicesService.loadAliases(invoice.supplierId);
+
+    let matchedCount = 0;
+    let needsReviewCount = 0;
+    let replacedLineCount = 0;
+
+    await prisma.$transaction(async (tx) => {
+      // Replace wholesale. A pasted table is the whole invoice, so keeping old
+      // lines alongside it would double the cost of everything on the bill.
+      const removed = await tx.supplierInvoiceLine.deleteMany({ where: { supplierInvoiceId: invoiceId } });
+      replacedLineCount = removed.count;
+
+      for (const line of parsed.lines) {
+        const normalised: NormalisedLine = {
+          lineNumber: line.lineNumber,
+          // Stable per invoice and per line, so pasting twice updates in place
+          // rather than stacking duplicates.
+          lineKey: buildHash(['paste', line.lineNumber, line.itemCode, line.description, line.lineAmountCents]),
+          externalLineId: null,
+          description: line.description,
+          itemCode: line.itemCode,
+          accountCode: null,
+          quantity: line.quantity,
+          unit: line.pack,
+          unitAmountCents: line.unitAmountCents,
+          lineAmountCents: line.lineAmountCents,
+          taxAmountCents: line.taxAmountCents,
+          sourceMetadata: {
+            pastedFromDocument: true,
+            printedQuantity: line.printedQuantity,
+            pack: line.pack,
+            parseWarnings: line.warnings
+          }
+        };
+        const match = findItemMatch(normalised, matchItems, {
+          supplierName: invoice.supplierName,
+          aliases
+        });
+        if (match.itemId) matchedCount += 1;
+        else needsReviewCount += 1;
+
+        await tx.supplierInvoiceLine.create({
+          data: {
+            supplierInvoiceId: invoiceId,
+            lineNumber: normalised.lineNumber,
+            lineKey: normalised.lineKey,
+            description: normalised.description,
+            itemCode: normalised.itemCode,
+            quantity: normalised.quantity,
+            unit: normalised.unit,
+            unitAmountCents: normalised.unitAmountCents,
+            lineAmountCents: normalised.lineAmountCents,
+            taxAmountCents: normalised.taxAmountCents,
+            itemId: match.itemId,
+            matchingStatus: match.status,
+            notes: line.warnings.length > 0 ? line.warnings.join(' ') : null,
+            sourceMetadata: toJson(normalised.sourceMetadata)
+          }
+        });
+      }
+
+      // The invoice was a single unreviewed line; now it has real ones waiting
+      // to be matched, so put it back in the triage queue rather than leaving
+      // it looking done.
+      await tx.supplierInvoice.update({
+        where: { id: invoiceId },
+        data: { triageStatus: needsReviewCount > 0 ? 'PENDING' : 'REVIEWED' }
+      });
+    });
+
+    return {
+      ...preview,
+      applied: true,
+      matchedCount,
+      needsReviewCount,
+      replacedLineCount,
+      invoice: await getInvoicePayload(invoiceId)
+    };
+  },
+
+  /**
+   * Where the unattributed spend actually is.
+   *
+   * 471 lines sit unmatched in production, but they are only 138 distinct
+   * descriptions and $45,593 of spend — and 88% of that money is in the top
+   * twenty wordings. Reviewed one line at a time that is 471 decisions; grouped
+   * by what the supplier calls it, it is an afternoon.
+   *
+   * Two different problems live in this list and they need opposite actions,
+   * so they are separated rather than piled together:
+   *
+   *  - A *summary line* — "Alcoholic Beverages", "Xero bill line", a bare
+   *    supplier name — is not a product and will never match an item. It needs
+   *    the invoice's real lines pasted in. That is the single biggest chunk:
+   *    $15,290 of Paramount alone.
+   *  - A *real product* the venue buys — beef short ribs, snapper fillets —
+   *    that simply is not in the catalogue yet.
+   */
+  async unmatchedSpend(): Promise<StockUnmatchedSpendPayload> {
+    const lines = await prisma.supplierInvoiceLine.findMany({
+      where: { itemId: null, matchingStatus: 'NEEDS_REVIEW' },
+      select: {
+        id: true,
+        description: true,
+        lineAmountCents: true,
+        invoice: { select: { id: true, supplierName: true, invoiceDate: true, lines: { select: { id: true } } } }
+      }
+    });
+
+    const groups = new Map<string, {
+      description: string;
+      lineCount: number;
+      totalCents: number;
+      suppliers: Set<string>;
+      lastSeen: Date | null;
+      invoiceIds: Set<string>;
+      summaryLineInvoices: number;
+    }>();
+
+    for (const line of lines) {
+      // The supplier's order commentary — ". Ordered: 1 unit, Supplied Qty: 1
+      // unit" — is appended to otherwise identical descriptions, so the same
+      // product appears twice in the queue. Group on the wording without it.
+      const clean = line.description.replace(/\.\s*Ordered:.*$/i, '').trim() || line.description;
+      const key = clean.toLowerCase();
+      const group = groups.get(key) ?? {
+        description: clean,
+        lineCount: 0,
+        totalCents: 0,
+        suppliers: new Set<string>(),
+        lastSeen: null as Date | null,
+        invoiceIds: new Set<string>(),
+        summaryLineInvoices: 0
+      };
+      group.lineCount += 1;
+      group.totalCents += line.lineAmountCents;
+      if (line.invoice?.supplierName) group.suppliers.add(line.invoice.supplierName);
+      if (line.invoice?.invoiceDate && (!group.lastSeen || line.invoice.invoiceDate > group.lastSeen)) {
+        group.lastSeen = line.invoice.invoiceDate;
+      }
+      if (line.invoice?.id) {
+        group.invoiceIds.add(line.invoice.id);
+        // An invoice with one line is a bill that arrived summarised.
+        if ((line.invoice.lines?.length ?? 0) <= 1) group.summaryLineInvoices += 1;
+      }
+      groups.set(key, group);
+    }
+
+    const rows: StockUnmatchedSpendRow[] = [...groups.values()]
+      .map((group) => ({
+        description: group.description,
+        lineCount: group.lineCount,
+        totalCents: group.totalCents,
+        suppliers: [...group.suppliers].sort(),
+        lastSeen: group.lastSeen?.toISOString() ?? null,
+        invoiceIds: [...group.invoiceIds],
+        // Every line of it came off a one-line invoice: there is no product to
+        // create here, the bill needs its detail pasted in.
+        looksSummarised: group.summaryLineInvoices >= group.lineCount && group.lineCount > 0
+      }))
+      .sort((a, b) => b.totalCents - a.totalCents);
+
+    const totalCents = rows.reduce((sum, row) => sum + row.totalCents, 0);
+    const summarisedCents = rows
+      .filter((row) => row.looksSummarised)
+      .reduce((sum, row) => sum + row.totalCents, 0);
+
+    return {
+      rows: rows.slice(0, 60),
+      distinctDescriptions: rows.length,
+      lineCount: lines.length,
+      totalCents,
+      // Split out because the two halves need opposite actions.
+      summarisedCents,
+      catalogueGapCents: totalCents - summarisedCents
     };
   },
 

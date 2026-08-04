@@ -1,33 +1,56 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, accessibleSuiteApps, useDismissibleLayer } from '@alma/ui';
+import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteInboxWidget, SuiteSignOutButton, TaskBar, type TaskBarItem, ThemeToggle, TopBar, accessibleSuiteApps, useDismissibleLayer } from '@alma/ui';
 import { STOCK_HELP } from './config/help';
 import { DashboardPage } from './pages/DashboardPage';
-import { ItemsPage } from './pages/ItemsPage';
-import { ConfigHealthPage } from './pages/ConfigHealthPage';
-import { StocktakePage } from './pages/StocktakePage';
-import { TransfersPage } from './pages/TransfersPage';
-import { SuppliersPage } from './pages/SuppliersPage';
-import { InvoicesPage } from './pages/InvoicesPage';
-import { DeliveriesPage } from './pages/DeliveriesPage';
-import { PurchaseOrdersPage } from './pages/PurchaseOrdersPage';
-import { RecipesPage } from './pages/RecipesPage';
-import { DishMarginPage } from './pages/DishMarginPage';
-import { PriceMovementPage } from './pages/PriceMovementPage';
-import { ReorderNoticesPage } from './pages/ReorderNoticesPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { WastagePage } from './pages/WastagePage';
-import { StaffUsagePage } from './pages/StaffUsagePage';
 import { LoginPage } from './pages/LoginPage';
-import { NotFoundPage } from './pages/NotFoundPage';
 import { StockBrand } from './components/StockBrand';
 import { NAV_ITEMS, type NavItem } from './config/navigation';
 import { HubLayout, type HubTab } from './components/HubTabs';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
-import { IconChevronDown, IconExternal } from './lib/icons';
+import {
+  IconChevronDown,
+  IconDashboard,
+  IconDeliveries,
+  IconExternal,
+  IconInvoices,
+  IconItems,
+  IconPrep,
+  IconPriceChange,
+  IconRecipes,
+  IconReorder,
+  IconStocktake,
+  IconSuppliers,
+  IconTransfer,
+  IconWastage
+} from './lib/icons';
 import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
+
+// Routes load on demand. Every page used to ship in one chunk, so opening the
+// stocktake screen also downloaded recipes, invoices, dish margin and the rest —
+// on a phone in a cool room, over venue wifi. Dashboard and Login stay eager:
+// they are the first paint and the gate in front of it.
+const ItemsPage = lazy(() => import('./pages/ItemsPage').then((m) => ({ default: m.ItemsPage })));
+const ConfigHealthPage = lazy(() => import('./pages/ConfigHealthPage').then((m) => ({ default: m.ConfigHealthPage })));
+const StocktakePage = lazy(() => import('./pages/StocktakePage').then((m) => ({ default: m.StocktakePage })));
+const StocktakeTemplatesPage = lazy(() => import('./pages/StocktakeTemplatesPage').then((m) => ({ default: m.StocktakeTemplatesPage })));
+const TransfersPage = lazy(() => import('./pages/TransfersPage').then((m) => ({ default: m.TransfersPage })));
+const SuppliersPage = lazy(() => import('./pages/SuppliersPage').then((m) => ({ default: m.SuppliersPage })));
+const InvoicesPage = lazy(() => import('./pages/InvoicesPage').then((m) => ({ default: m.InvoicesPage })));
+const DeliveriesPage = lazy(() => import('./pages/DeliveriesPage').then((m) => ({ default: m.DeliveriesPage })));
+const PurchaseOrdersPage = lazy(() => import('./pages/PurchaseOrdersPage').then((m) => ({ default: m.PurchaseOrdersPage })));
+const RecipesPage = lazy(() => import('./pages/RecipesPage').then((m) => ({ default: m.RecipesPage })));
+const DishMarginPage = lazy(() => import('./pages/DishMarginPage').then((m) => ({ default: m.DishMarginPage })));
+const BuyingPage = lazy(() => import('./pages/BuyingPage').then((m) => ({ default: m.BuyingPage })));
+const PriceMovementPage = lazy(() => import('./pages/PriceMovementPage').then((m) => ({ default: m.PriceMovementPage })));
+const ReorderNoticesPage = lazy(() => import('./pages/ReorderNoticesPage').then((m) => ({ default: m.ReorderNoticesPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const WastagePage = lazy(() => import('./pages/WastagePage').then((m) => ({ default: m.WastagePage })));
+const StaffUsagePage = lazy(() => import('./pages/StaffUsagePage').then((m) => ({ default: m.StaffUsagePage })));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
+
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 
@@ -40,6 +63,7 @@ const ITEMS_TABS: HubTab[] = [
 ];
 const STOCK_COUNT_TABS: HubTab[] = [
   { to: '/stocktake', label: 'Count' },
+  { to: '/stocktake-templates', label: 'Templates' },
   { to: '/wastage', label: 'Wastage' },
   { to: '/staff-usage', label: 'Staff usage' },
   { to: '/transfers', label: 'Transfers' }
@@ -49,6 +73,7 @@ const PURCHASING_TABS: HubTab[] = [
   { to: '/purchase-orders', label: 'Purchase orders' },
   { to: '/deliveries', label: 'Deliveries' },
   { to: '/suppliers', label: 'Suppliers' },
+  { to: '/buying', label: 'Buying' },
   { to: '/price-movement', label: 'Price changes' }
 ];
 const RECIPE_TABS: HubTab[] = [
@@ -196,7 +221,6 @@ function TopBarWithContext() {
               userName={`${user.firstName} ${user.lastName}`}
               canAnnounce={user.role !== 'STAFF'}
             />
-            <SuiteFeedbackWidget appId="STOCK" api={api} userName={`${user.firstName} ${user.lastName}`} />
             <ThemeToggle />
             <SuiteClock />
             <SuiteSignOutButton
@@ -212,6 +236,58 @@ function TopBarWithContext() {
   );
 }
 
+/**
+ * The jobs a stock person opens the app to do, in the order they reach for them.
+ *
+ * Not the sidebar. The sidebar is how the app is organised — Items, Purchasing,
+ * Recipes — and organisation is not what somebody standing in a cool room with
+ * a phone is trying to do. They are counting, writing off a broken bottle,
+ * moving a keg between venues, checking a delivery in, or raising an order.
+ */
+const STOCK_TASKS: Array<{ to: string; label: string; icon: ReactNode; match?: string[] }> = [
+  // Icons are named here rather than looked up from NAV_ITEMS. Most of these
+  // are hub sub-pages — /wastage, /transfers, /deliveries, /purchase-orders —
+  // so the sidebar has no entry for them and the lookup returned undefined:
+  // the bar shipped with a single icon on Count and bare labels either side.
+  { to: '/stocktake', label: 'Count', icon: <IconStocktake />, match: ['/stocktake-templates'] },
+  { to: '/wastage', label: 'Wastage', icon: <IconWastage /> },
+  { to: '/transfers', label: 'Transfer', icon: <IconTransfer /> },
+  { to: '/deliveries', label: 'Delivery', icon: <IconDeliveries /> },
+  { to: '/purchase-orders', label: 'Orders', icon: <IconReorder />, match: ['/buying'] },
+  { to: '/', label: 'Home', icon: <IconDashboard /> },
+  { to: '/items', label: 'Items', icon: <IconItems />, match: ['/items/health', '/reorder'] },
+  { to: '/invoices', label: 'Invoices', icon: <IconInvoices /> },
+  { to: '/recipes', label: 'Recipes', icon: <IconRecipes /> },
+  { to: '/suppliers', label: 'Suppliers', icon: <IconSuppliers /> },
+  { to: '/staff-usage', label: 'Staff usage', icon: <IconPrep /> },
+  { to: '/price-movement', label: 'Prices', icon: <IconPriceChange /> }
+];
+
+function StockTaskBar() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const items: TaskBarItem[] = STOCK_TASKS.map((task) => ({
+    key: task.to,
+    label: task.label,
+    href: task.to,
+    icon: task.icon,
+    active: [task.to, ...(task.match ?? [])].some((path) =>
+      path === '/' ? location.pathname === '/' : location.pathname === path || location.pathname.startsWith(`${path}/`)
+    )
+  }));
+  return (
+    <TaskBar
+      items={items}
+      label="Stock actions"
+      onNavigate={(item, event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        navigate(item.href);
+      }}
+    />
+  );
+}
+
 function StockAppShell() {
   const { user } = useAuth();
   return (
@@ -221,6 +297,13 @@ function StockAppShell() {
       topBar={<TopBarWithContext />}
     >
       <AppAccessGate user={user} appId="STOCK" appName="Stock" apps={suiteApps}>
+      <Suspense
+        fallback={
+          <div className="route-loading" role="status" aria-live="polite">
+            <Spinner />
+          </div>
+        }
+      >
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/settings" element={<SettingsPage />} />
@@ -233,6 +316,7 @@ function StockAppShell() {
 
         {/* Stock count hub */}
         <Route path="/stocktake" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakePage /></HubLayout>} />
+        <Route path="/stocktake-templates" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakeTemplatesPage /></HubLayout>} />
         <Route path="/wastage" element={<HubLayout tabs={STOCK_COUNT_TABS}><WastagePage /></HubLayout>} />
         <Route path="/staff-usage" element={<HubLayout tabs={STOCK_COUNT_TABS}><StaffUsagePage /></HubLayout>} />
         <Route path="/transfers" element={<HubLayout tabs={STOCK_COUNT_TABS}><TransfersPage /></HubLayout>} />
@@ -242,6 +326,7 @@ function StockAppShell() {
         <Route path="/purchase-orders" element={<HubLayout tabs={PURCHASING_TABS}><PurchaseOrdersPage /></HubLayout>} />
         <Route path="/deliveries" element={<HubLayout tabs={PURCHASING_TABS}><DeliveriesPage /></HubLayout>} />
         <Route path="/suppliers" element={<HubLayout tabs={PURCHASING_TABS}><SuppliersPage /></HubLayout>} />
+        <Route path="/buying" element={<HubLayout tabs={PURCHASING_TABS}><BuyingPage /></HubLayout>} />
         <Route path="/price-movement" element={<HubLayout tabs={PURCHASING_TABS}><PriceMovementPage /></HubLayout>} />
 
         {/* Recipes hub */}
@@ -255,7 +340,9 @@ function StockAppShell() {
 
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </Suspense>
       </AppAccessGate>
+      <StockTaskBar />
     </AppShell>
   );
 }

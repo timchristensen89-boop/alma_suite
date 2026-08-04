@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { Request } from 'express';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { Prisma, type IntegrationConnection } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { z } from 'zod';
@@ -23,14 +24,22 @@ import type {
   XeroSupplierContactsImportResult,
   XeroSupplierContactsPreviewPayload,
   XeroSupplierContactPreview,
-  XeroConnectionHealthPayload
+  XeroConnectionHealthPayload,
+  XeroTimesheetPushResult,
+  XeroTimesheetPushRow
 } from '@alma/shared';
 import {
   squareMenuAutoMatchInputSchema,
   squareMenuMappingQuerySchema,
   squareMenuMappingUpdateSchema,
   xeroSupplierBillsImportInputSchema,
-  xeroSupplierContactsImportInputSchema
+  xeroSupplierContactsImportInputSchema,
+  entryHours,
+  groupIntoPeriods,
+  hasHours,
+  unitsForPeriod,
+  splitUnitsByDay,
+  classifyEarningsRateName
 } from '@alma/shared';
 import { env } from '../env.js';
 import {
@@ -42,7 +51,7 @@ import {
 import { HttpError } from '../lib/http.js';
 import { deputyService } from './deputy.service.js';
 
-type Provider = 'SQUARE' | 'XERO' | 'DEPUTY';
+type Provider = 'SQUARE' | 'XERO' | 'DEPUTY' | 'LIGHTSPEED';
 type SquareAccountKey = 'primary' | 'secondary';
 type ImportRunMode = 'MANUAL' | 'SCHEDULED';
 
@@ -52,6 +61,7 @@ const DEFAULT_SCHEDULED_XERO_BILLS_LIMIT = 100;
 const DEFAULT_SCHEDULED_XERO_CONTACTS_LIMIT = 500;
 const DEFAULT_SCHEDULED_SQUARE_SALES_LOOKBACK_DAYS = 7;
 const DEFAULT_SQUARE_PAYMENT_IMPORT_LIMIT = 1000;
+const DEFAULT_SCHEDULED_LIGHTSPEED_SALES_LOOKBACK_DAYS = 3;
 
 const SQUARE_SCOPES = [
   'MERCHANT_PROFILE_READ',
@@ -66,14 +76,34 @@ const XERO_SCOPES = [
   'profile',
   'email',
   'offline_access',
+  // The "Alma Control" Xero app was created after 2 March 2026, so it can
+  // ONLY request the new GRANULAR scopes — the broad accounting.transactions
+  // / accounting.reports scopes are rejected by login.xero.com with an opaque
+  // invalid_scope page. The app's Configuration page lists exactly which
+  // scopes it may request; check there before touching this list.
   'accounting.invoices.read',
+  // Original supplier PDF attached to each accountant-entered bill — the
+  // stock system's line extraction works from that PDF, so bill imports
+  // fetch it into SupplierInvoiceDocument. Connections authorised before
+  // this scope existed must be RECONNECTED once to grant it; until then the
+  // attachment fetch degrades to a warning and bill data still imports.
+  'accounting.attachments.read',
   'accounting.contacts.read',
   'accounting.settings.read',
+  // P&L report totals for the projected supplier spend report. Connections
+  // authorised before this scope existed must be RECONNECTED once to grant it.
+  'accounting.reports.profitandloss.read',
   'payroll.employees.read',
-  'payroll.timesheets.read'
+  'payroll.timesheets.read',
+  // Write scope, for pushing approved Alma timesheets into Xero as drafts.
+  // Read alone is not enough — Xero rejects the POST with a bare 403 and no
+  // hint that a scope is the reason, so pushTimesheetsToXero checks the
+  // recorded grant first and asks for a reconnect by name.
+  'payroll.timesheets'
 ];
 const XERO_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const SQUARE_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+const LIGHTSPEED_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 // Scoped to MESSAGING + INSIGHTS only. Publishing (pages_manage_posts /
 // instagram_content_publish) is intentionally NOT requested — social posts are
@@ -121,6 +151,12 @@ const PROVIDER_COPY: Record<Provider, {
     key: 'deputy',
     label: 'Deputy',
     powers: ['Roster shifts', 'employee records', 'compliance documents'],
+    requiredSetup: ['Client ID', 'client secret', 'redirect URL']
+  },
+  LIGHTSPEED: {
+    key: 'lightspeed',
+    label: 'Lightspeed POS',
+    powers: ['Live sales', 'product movement', 'site status'],
     requiredSetup: ['Client ID', 'client secret', 'redirect URL']
   }
 };
@@ -210,7 +246,7 @@ function readMetaState(state: string): { actorId: string | null } | null {
 
 function normaliseProvider(provider: string): Provider {
   const value = provider.trim().toUpperCase();
-  if (value === 'SQUARE' || value === 'XERO' || value === 'DEPUTY') return value;
+  if (value === 'SQUARE' || value === 'XERO' || value === 'DEPUTY' || value === 'LIGHTSPEED') return value;
   throw new HttpError(404, 'Integration provider not found.');
 }
 
@@ -301,6 +337,31 @@ function providerConfig(provider: Provider, accountKey: SquareAccountKey = 'prim
       apiBaseUrl: null,
       apiVersion: null,
       redirectUri: env.integrations.deputy.redirectUrl,
+      webhookUrl: null,
+      webhookConfigured: false
+    };
+  }
+  if (provider === 'LIGHTSPEED') {
+    const configured = Boolean(
+      env.integrations.lightspeed.clientId &&
+        env.integrations.lightspeed.clientSecret &&
+        env.integrations.lightspeed.redirectUrl
+    );
+    return {
+      configured,
+      oauthConfigured: configured,
+      missingConfig: null,
+      missingLabels: [],
+      missingEnvVars: [
+        env.integrations.lightspeed.clientId ? null : 'LIGHTSPEED_CLIENT_ID',
+        env.integrations.lightspeed.clientSecret ? null : 'LIGHTSPEED_CLIENT_SECRET',
+        env.integrations.lightspeed.redirectUrl ? null : 'LIGHTSPEED_REDIRECT_URL'
+      ].filter((value): value is string => Boolean(value)),
+      environment: null,
+      oauthBaseUrl: env.integrations.lightspeed.oauthBase,
+      apiBaseUrl: env.integrations.lightspeed.apiBase,
+      apiVersion: null,
+      redirectUri: env.integrations.lightspeed.redirectUrl,
       webhookUrl: null,
       webhookConfigured: false
     };
@@ -838,6 +899,8 @@ async function providerStatus(provider: Provider, accountKey: SquareAccountKey =
     lastSyncAt: toIso(connection?.lastSyncAt),
     lastSyncStatus: connection?.lastSyncStatus ?? null,
     lastError: connection?.lastError ?? null,
+    syncPausedAt: connection?.syncPausedAt?.toISOString() ?? null,
+    syncPausedReason: connection?.syncPausedReason ?? null,
     scopes: scopesFromJson(connection?.scopes),
     environment: config.environment,
     apiVersion: config.apiVersion,
@@ -973,6 +1036,299 @@ async function exchangeDeputyToken(code: string): Promise<DeputyTokenResponse> {
   return json as DeputyTokenResponse;
 }
 
+// ─── Lightspeed O-Series (formerly Kounta) POS ──────────────────────────────
+// The venues switched POS from Square to Lightspeed O-Series. Wire format
+// mirrors the tested kounta client in alma-web-platform/packages/kounta:
+// token endpoint POST {oauthBase}/token.json with Basic client auth, API under
+// https://api.kounta.com/v1, X-Next-Page cursor pagination, one refresh-then-
+// retry on 401. No live credentials existed when this was written, so every
+// unverifiable wire detail carries a // VERIFY marker — confirm each against
+// apidoc.kounta.com (Lightspeed O-Series API docs) once credentials exist.
+
+type LightspeedTokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  token_type?: string;
+  scope?: string;
+};
+
+type LightspeedCompany = {
+  id?: number | string;
+  name?: string;
+};
+
+type LightspeedSite = {
+  id?: number | string;
+  name?: string;
+};
+
+type LightspeedOrder = {
+  id?: number | string;
+  status?: string;
+  // VERIFY: order total field name/units. The reference kounta client treats
+  // money as GST-INCLUSIVE decimal dollars (string or number) — see
+  // KountaProduct.price / KountaOrder.total in packages/kounta/src/types.ts.
+  total?: number | string;
+  // VERIFY: field name for the GST portion of the order, if the payload
+  // provides one at all (used to store ex-GST sales exactly; otherwise we
+  // back out 10% AU GST from the inclusive total).
+  total_tax?: number | string;
+  created_at?: string;
+  updated_at?: string;
+  site_id?: number | string;
+};
+
+// VERIFY: the order-status vocabulary. Statuses that must NOT count as sales
+// (voided/cancelled/deleted) are excluded; anything else is summed. The
+// reference client only reads `status` opaquely, so this list is a guess.
+const LIGHTSPEED_ORDER_EXCLUDED_STATUSES = new Set(['DELETED', 'CANCELLED', 'VOIDED', 'REJECTED', 'REFUNDED']);
+
+function lightspeedApiBase() {
+  return env.integrations.lightspeed.apiBase.replace(/\/+$/, '');
+}
+
+async function exchangeLightspeedToken(code: string): Promise<LightspeedTokenResponse> {
+  const cfg = env.integrations.lightspeed;
+  const credentials = Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString('base64');
+  // VERIFY: authorization-code exchange — POST {oauthBase}/token.json with
+  // Basic client auth and grant_type=authorization_code, returning
+  // { access_token, refresh_token, expires_in }. The refresh-token grant on
+  // this endpoint is confirmed by the reference client (auth.ts); the
+  // authorization_code grant on the same endpoint is the standard pattern but
+  // has not been exercised against the live API.
+  const response = await fetch(`${cfg.oauthBase.replace(/\/+$/, '')}/token.json`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json'
+    },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: cfg.redirectUrl
+    })
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new HttpError(502, 'Lightspeed token exchange failed.', body);
+  }
+  return body as LightspeedTokenResponse;
+}
+
+async function refreshLightspeedToken(refreshToken: string): Promise<LightspeedTokenResponse> {
+  const cfg = env.integrations.lightspeed;
+  const credentials = Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString('base64');
+  // Matches the reference client's TokenManager.refresh(): POST
+  // {oauthBase}/token.json, Basic client auth, grant_type=refresh_token →
+  // { access_token, expires_in }. VERIFY whether the response also carries a
+  // rotated refresh_token (Kounta rotates refresh tokens on use).
+  const response = await fetch(`${cfg.oauthBase.replace(/\/+$/, '')}/token.json`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json'
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken
+    })
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new HttpError(502, 'Lightspeed token refresh failed.', {
+      status: response.status,
+      category: safeXeroErrorCategory(response.status)
+    });
+  }
+  return body as LightspeedTokenResponse;
+}
+
+async function refreshLightspeedConnection(connection: IntegrationConnection) {
+  if (!connection.refreshTokenEncrypted) {
+    throw new HttpError(409, 'Lightspeed refresh token is missing.');
+  }
+
+  const token = await refreshLightspeedToken(decryptIntegrationSecret(connection.refreshTokenEncrypted));
+  if (!token.access_token) {
+    throw new HttpError(502, 'Lightspeed did not return a refreshed access token.');
+  }
+
+  return prisma.integrationConnection.update({
+    where: { id: connection.id },
+    data: {
+      tokenEncrypted: encryptIntegrationSecret(token.access_token),
+      // Kounta ROTATES refresh tokens on use — when the refresh response
+      // carries a new refresh_token it MUST be persisted or the next refresh
+      // fails and the connection dies. VERIFY: whether every refresh response
+      // includes refresh_token; when it is omitted the stored one is kept
+      // (the reference client's refresh response only documents
+      // access_token + expires_in).
+      ...(token.refresh_token ? { refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token) } : {}),
+      tokenExpiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+      scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : scopesFromJson(connection.scopes),
+      status: 'CONNECTED',
+      lastError: null
+    }
+  });
+}
+
+async function validLightspeedToken(connection: IntegrationConnection) {
+  const expiresAt = connection.tokenExpiresAt?.getTime();
+  const shouldRefresh =
+    !connection.tokenEncrypted ||
+    !expiresAt ||
+    expiresAt <= Date.now() + LIGHTSPEED_TOKEN_REFRESH_BUFFER_MS;
+
+  if (shouldRefresh) {
+    const refreshed = await refreshLightspeedConnection(connection);
+    if (!refreshed.tokenEncrypted) throw new HttpError(409, 'Lightspeed access token is missing after refresh.');
+    return {
+      accessToken: decryptIntegrationSecret(refreshed.tokenEncrypted),
+      connection: refreshed,
+      tokenStatus: 'refreshed' as const
+    };
+  }
+
+  if (!connection.tokenEncrypted) {
+    throw new HttpError(409, 'Lightspeed access token is missing.');
+  }
+
+  return {
+    accessToken: decryptIntegrationSecret(connection.tokenEncrypted),
+    connection,
+    tokenStatus: 'healthy' as const
+  };
+}
+
+type LightspeedPageResult<T> = {
+  data: T;
+  nextPage: string | null;
+  connection: IntegrationConnection;
+  tokenStatus: 'healthy' | 'refreshed';
+};
+
+async function lightspeedGetJson<T>(
+  path: string,
+  input: {
+    connection: IntegrationConnection;
+    retryAfterUnauthorized?: boolean;
+  }
+): Promise<LightspeedPageResult<T>> {
+  const { accessToken, connection, tokenStatus } = await validLightspeedToken(input.connection);
+  const url = path.startsWith('http') ? path : `${lightspeedApiBase()}/${path.replace(/^\/+/, '')}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/json'
+    }
+  });
+
+  // Single retry after a forced refresh on 401 — mirrors the reference
+  // client's invalidate-then-retry and the suite's xeroGetJson.
+  if (response.status === 401 && input.retryAfterUnauthorized !== false) {
+    const refreshed = await refreshLightspeedConnection(connection);
+    return lightspeedGetJson<T>(path, { connection: refreshed, retryAfterUnauthorized: false });
+  }
+
+  if (response.status === 429) {
+    throw new HttpError(429, 'Lightspeed rate limit reached. Try again later.', { category: 'rate_limited' });
+  }
+
+  if (!response.ok) {
+    const details = await safeResponseDetails(response);
+    const detailText = typeof details.detail === 'string' ? details.detail.trim() : '';
+    throw new HttpError(
+      502,
+      `Lightspeed request failed (HTTP ${details.status})${detailText ? `: ${detailText.slice(0, 200)}` : ''}`,
+      details
+    );
+  }
+
+  return {
+    data: (await response.json().catch(() => null)) as T,
+    // VERIFY: Kounta paginates with an X-Next-Page header carrying the next
+    // page URL/path (confirmed in the reference client's http.ts).
+    nextPage: response.headers.get('x-next-page'),
+    connection,
+    tokenStatus
+  };
+}
+
+// Follow X-Next-Page cursors, concatenating JSON arrays — the Lightspeed
+// equivalent of the reference client's kountaRequestAll.
+async function lightspeedGetAll<T>(
+  path: string,
+  input: { connection: IntegrationConnection }
+): Promise<{ items: T[]; connection: IntegrationConnection }> {
+  const items: T[] = [];
+  let connection: IntegrationConnection = input.connection;
+  let nextPath: string | null = path;
+  let guard = 0;
+  while (nextPath && guard++ < 200) {
+    const page: LightspeedPageResult<T> = await lightspeedGetJson<T>(nextPath, { connection });
+    connection = page.connection;
+    if (Array.isArray(page.data)) items.push(...(page.data as T[]));
+    else if (page.data != null) items.push(page.data);
+    nextPath = page.nextPage;
+  }
+  return { items, connection };
+}
+
+// Company discovery after connect: which Kounta company this authorisation
+// covers. VERIFY: GET /companies/me.json → { id, name } (task brief; the
+// reference client is constructed with a known companyId and never calls it).
+async function fetchLightspeedCompany(accessToken: string): Promise<{ id: string | null; name: string | null }> {
+  const response = await fetch(`${lightspeedApiBase()}/companies/me.json`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/json'
+    }
+  });
+  if (!response.ok) {
+    const details = await safeResponseDetails(response);
+    throw new HttpError(502, `Lightspeed company lookup failed (HTTP ${details.status}).`, details);
+  }
+  const body = (await response.json().catch(() => ({}))) as LightspeedCompany;
+  return {
+    id: body.id != null && trimText(body.id) ? String(body.id) : null,
+    name: optionalText(body.name)
+  };
+}
+
+async function connectedLightspeedConnection() {
+  const connection = await connectionSelect('LIGHTSPEED');
+  if (!connection || connection.status !== 'CONNECTED') {
+    throw new HttpError(409, 'Lightspeed is not connected.');
+  }
+  if (!connection.providerAccountId) {
+    throw new HttpError(409, 'Lightspeed company is not selected.');
+  }
+  assertNotPaused(connection, 'Lightspeed');
+  return connection;
+}
+
+// Ex-GST cents for one Lightspeed order, mirroring the Square sales import's
+// "net sales ex GST" convention so SalesActualEntry rows stay comparable.
+function lightspeedOrderNetCents(order: LightspeedOrder) {
+  const totalCents = moneyToCents(order.total);
+  if (totalCents <= 0) return 0;
+  // Prefer the payload's own tax figure when present; otherwise assume the
+  // total is GST-inclusive (AU) and back out the 10% GST — the same
+  // AU_GST_DIVISOR treatment squarePaymentAmountCents applies. VERIFY both
+  // the inclusive-total assumption and the total_tax field name.
+  const taxCents = moneyToCents(order.total_tax);
+  if (taxCents > 0 && taxCents < totalCents) return totalCents - taxCents;
+  return Math.max(0, Math.round(totalCents / AU_GST_DIVISOR));
+}
+
 async function exchangeSquareToken(code: string, accountKey: SquareAccountKey) {
   const config = providerConfig('SQUARE', accountKey);
   const account = squareAccountConfig(accountKey);
@@ -1103,11 +1459,28 @@ async function squareGetJsonWithAccessToken<T>(path: string, accessToken: string
   return response.json() as Promise<T>;
 }
 
+/**
+ * Refuse to touch a provider whose sync is paused.
+ *
+ * Every provider call funnels through the connected*Connection() helpers, so
+ * this is the one place that cannot be bypassed — scheduled jobs, "sync now",
+ * and backfills all hit it. That matters because reports sum
+ * SalesActualEntry.salesCents across sources for a venue+day: a feed left
+ * running while a venue enters sales by hand silently doubles the day.
+ */
+function assertNotPaused(connection: { syncPausedAt: Date | null; syncPausedReason: string | null }, label: string) {
+  if (!connection.syncPausedAt) return;
+  const since = connection.syncPausedAt.toISOString().slice(0, 10);
+  const reason = connection.syncPausedReason ? ` (${connection.syncPausedReason})` : '';
+  throw new HttpError(409, `${label} syncing is paused since ${since}${reason}. Resume it under Admin → Integrations.`);
+}
+
 async function connectedSquareConnection(accountKey: SquareAccountKey) {
   const connection = await connectionSelect('SQUARE', accountKey);
   if (!connection || connection.status !== 'CONNECTED') {
     throw new HttpError(409, `${squareAccountConfig(accountKey).label} Square is not connected.`);
   }
+  assertNotPaused(connection, `${squareAccountConfig(accountKey).label} Square`);
   return connection;
 }
 
@@ -1493,10 +1866,31 @@ function squareOrderLineGrossCents(line: SquareOrderLineItem) {
   return Number.isFinite(quantity) && quantity > 0 ? Math.round(base * quantity) : Math.max(0, Math.round(base));
 }
 
+/**
+ * A line's net sales, ex-GST.
+ *
+ * Square's `total_money` is GST *inclusive* — the forecast normaliser has said
+ * so since it was written — and this took it as "net sales" regardless. The two
+ * revenue figures on the reports page were 9.3% apart because of it: the daily
+ * sales import lands ex-GST at $2,624,237 for FY25/26 while these item rows
+ * summed to $2,867,429. Month by month the ratio sat between 1.091 and 1.102,
+ * which is GST and nothing else. Prime cost reads the first, menu profitability
+ * reads the second, and both were on the same screen.
+ *
+ * Ex-GST is the basis a P&L wants, so the tax is taken back off: by subtraction
+ * where Square reports it, and by backing it out of the inclusive total only
+ * where it does not. GST-free lines report no tax and are left alone, which is
+ * why the observed ratio is a little under a clean 1.10.
+ */
 function squareOrderLineNetCents(line: SquareOrderLineItem) {
-  return typeof line.total_money?.amount === 'number'
-    ? Math.max(0, Math.round(line.total_money.amount))
-    : squareOrderLineGrossCents(line);
+  const totalIncGst =
+    typeof line.total_money?.amount === 'number'
+      ? Math.max(0, Math.round(line.total_money.amount))
+      : squareOrderLineGrossCents(line);
+  const taxCents = typeof line.total_tax_money?.amount === 'number'
+    ? Math.max(0, Math.round(line.total_tax_money.amount))
+    : 0;
+  return Math.max(0, totalIncGst - taxCents);
 }
 
 function squareOrderLineQuantity(line: SquareOrderLineItem) {
@@ -2106,6 +2500,163 @@ async function xeroGetJson<T>(
   };
 }
 
+// Writing twin of xeroGetJson — same auth/tenant/401-refresh-retry discipline,
+// for the one place the suite sends data TO Xero (payroll timesheet drafts).
+//
+// Payroll write errors are worth surfacing verbatim. Xero answers a rejected
+// timesheet with a per-object ValidationErrors array, and the message inside
+// it ("Timesheet period does not match the employee's payroll calendar") is
+// the only thing that tells a manager what to fix — a generic "Xero request
+// failed" sends them to their accountant instead.
+async function xeroPostJson<T>(
+  path: string,
+  input: {
+    connection: IntegrationConnection;
+    body: unknown;
+    tenantId?: string;
+    retryAfterUnauthorized?: boolean;
+  }
+): Promise<{ data: T; connection: IntegrationConnection }> {
+  const { accessToken, connection } = await validXeroToken(input.connection);
+  const tenantId = input.tenantId ?? connection.providerAccountId ?? '';
+  if (!tenantId) throw new HttpError(409, 'Xero tenant is not selected.');
+
+  const response = await fetch(`https://api.xero.com${path}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'xero-tenant-id': tenantId
+    },
+    body: JSON.stringify(input.body)
+  });
+
+  if (response.status === 401 && input.retryAfterUnauthorized !== false) {
+    const refreshed = await refreshXeroConnection(connection);
+    return xeroPostJson<T>(path, {
+      connection: refreshed,
+      body: input.body,
+      tenantId: input.tenantId,
+      retryAfterUnauthorized: false
+    });
+  }
+
+  if (response.status === 429) {
+    throw new HttpError(429, 'Xero rate limit reached. Try again later.', { category: 'rate_limited' });
+  }
+
+  if (!response.ok) {
+    const details = await safeResponseDetails(response);
+    const detailText = typeof details.detail === 'string' ? details.detail.trim() : '';
+    throw new HttpError(
+      502,
+      `Xero rejected the request (HTTP ${details.status})${detailText ? `: ${xeroValidationMessage(detailText)}` : ''}`,
+      details
+    );
+  }
+
+  return { data: await response.json() as T, connection };
+}
+
+/**
+ * Pull the human-readable line out of a Xero payroll error body.
+ *
+ * Xero returns either { Message } or { Elements: [{ ValidationErrors: [{ Message }] }] }
+ * depending on which layer rejected it. Falling back to the raw text keeps
+ * unknown shapes visible rather than swallowing them.
+ */
+function xeroValidationMessage(body: string): string {
+  const LIMIT = 600;
+  try {
+    const parsed = JSON.parse(body) as {
+      Message?: string;
+      Elements?: Array<{ ValidationErrors?: Array<{ Message?: string }> }>;
+    };
+    const validation = (parsed.Elements ?? [])
+      .flatMap((element) => element.ValidationErrors ?? [])
+      .map((error) => error.Message)
+      .filter((message): message is string => Boolean(message));
+    if (validation.length > 0) return validation.join('; ').slice(0, LIMIT);
+    if (parsed.Message) return parsed.Message.slice(0, LIMIT);
+  } catch {
+    // Not JSON. Payroll answers some rejections in XML, where the sentence
+    // worth reading is inside <Message>.
+    const xml = /<Message>([\s\S]*?)<\/Message>/.exec(body);
+    if (xml?.[1]) {
+      return xml[1]
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .trim()
+        .slice(0, LIMIT);
+    }
+  }
+  return body.slice(0, LIMIT);
+}
+
+// Binary twin of xeroGetJson — same auth/tenant/401-refresh-retry discipline,
+// but returns the raw response body as a Buffer. Used to download bill
+// attachments (Xero returns the file bytes when Accept matches the
+// attachment's MimeType instead of application/json).
+async function xeroGetBinary(
+  path: string,
+  input: {
+    connection: IntegrationConnection;
+    accept: string;
+    retryAfterUnauthorized?: boolean;
+    tenantId?: string;
+  }
+): Promise<{ data: Buffer; connection: IntegrationConnection; tokenStatus: 'healthy' | 'refreshed' }> {
+  const { accessToken, connection, tokenStatus } = await validXeroToken(input.connection);
+  const tenantId = input.tenantId ?? connection.providerAccountId ?? '';
+  if (!tenantId) {
+    throw new HttpError(409, 'Xero tenant is not selected.');
+  }
+
+  const response = await fetch(`https://api.xero.com${path}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': input.accept,
+      'xero-tenant-id': tenantId
+    }
+  });
+
+  if (response.status === 401 && input.retryAfterUnauthorized !== false) {
+    const refreshed = await refreshXeroConnection(connection);
+    return xeroGetBinary(path, {
+      connection: refreshed,
+      accept: input.accept,
+      retryAfterUnauthorized: false,
+      tenantId: input.tenantId
+    });
+  }
+
+  if (response.status === 429) {
+    throw new HttpError(429, 'Xero rate limit reached. Try again later.', {
+      category: 'rate_limited'
+    });
+  }
+
+  if (!response.ok) {
+    const details = await safeResponseDetails(response);
+    const detailText = typeof details.detail === 'string' ? details.detail.trim() : '';
+    throw new HttpError(
+      502,
+      `Xero request failed (HTTP ${details.status})${detailText ? `: ${detailText.slice(0, 200)}` : ''}`,
+      details
+    );
+  }
+
+  return {
+    data: Buffer.from(await response.arrayBuffer()),
+    connection,
+    tokenStatus
+  };
+}
+
 async function connectedXeroConnection() {
   const connection = await connectionSelect('XERO');
   if (!connection || connection.status !== 'CONNECTED') {
@@ -2114,6 +2665,7 @@ async function connectedXeroConnection() {
   if (!connection.providerAccountId) {
     throw new HttpError(409, 'Xero tenant is not selected.');
   }
+  assertNotPaused(connection, 'Xero');
   return connection;
 }
 
@@ -2133,6 +2685,364 @@ async function xeroContacts(limit: number, tenantId?: string) {
     connection: response.connection,
     contacts: (response.data.Contacts ?? []).slice(0, limit)
   };
+}
+
+// ── Xero Profit & Loss (monthly trend) ─────────────────────────────────────
+// Monthly Income + Cost of Sales totals straight from the Xero P&L report,
+// per tenant (venue) and summed for the group. This is the trusted basis for
+// COGS-vs-sales trending: P&L totals hold up even while individual supplier
+// invoice imports are still patchy.
+
+export type XeroPlBucket = 'food' | 'beverage' | 'other';
+
+export type XeroPlMonth = {
+  /** First day of the month, YYYY-MM-DD. */
+  month: string;
+  salesCents: number;
+  cogsCents: number;
+  foodCogsCents: number;
+  bevCogsCents: number;
+  otherCogsCents: number;
+  accounts: Array<{ name: string; cents: number; bucket: XeroPlBucket }>;
+};
+
+export type XeroPlTrend = {
+  months: XeroPlMonth[]; // ascending, group totals across tenants
+  perVenue: Record<string, XeroPlMonth[]>;
+  tenants: Array<{ id: string; name: string | null; venue: string | null }>;
+};
+
+const PL_BEV_PATTERN = /bever|liquor|wine|beer|spirit|drink|coffee|alcohol|keg|brew|bar\b/i;
+const PL_FOOD_PATTERN = /food|produce|meat|seafood|fish|bakery|dairy|grocer|kitchen|butch|veg|fruit|consumab|dry good|frozen|chill|pantry/i;
+
+function classifyPlAccount(name: string): XeroPlBucket {
+  if (PL_BEV_PATTERN.test(name)) return 'beverage';
+  if (PL_FOOD_PATTERN.test(name)) return 'food';
+  return 'other';
+}
+
+type XeroReportCell = { Value?: string };
+type XeroReportRow = {
+  RowType?: string;
+  Title?: string;
+  Cells?: XeroReportCell[];
+  Rows?: XeroReportRow[];
+};
+
+function plCellCents(cell: XeroReportCell | undefined): number {
+  const raw = (cell?.Value ?? '').replace(/,/g, '').trim();
+  if (!raw) return 0;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
+}
+
+function monthKeyFromUtc(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+// Parse one tenant's P&L report into monthly rows. Column order is taken from
+// the header row when its cells parse as dates; otherwise falls back to the
+// documented Xero ordering (primary period first, then one month back per
+// comparison column).
+function parseXeroProfitAndLoss(report: XeroReportRow | undefined, primaryMonthEnd: Date, columns: number): XeroPlMonth[] {
+  const rows = report?.Rows ?? [];
+  const monthKeys: string[] = [];
+  const header = rows.find((row) => row.RowType === 'Header');
+  const headerCells = header?.Cells?.slice(1) ?? [];
+  for (let i = 0; i < columns; i += 1) {
+    const parsed = headerCells[i]?.Value ? new Date(String(headerCells[i]!.Value)) : null;
+    if (parsed && !Number.isNaN(parsed.getTime())) {
+      monthKeys.push(monthKeyFromUtc(parsed));
+    } else {
+      const fallback = new Date(Date.UTC(primaryMonthEnd.getUTCFullYear(), primaryMonthEnd.getUTCMonth() - i, 1));
+      monthKeys.push(monthKeyFromUtc(fallback));
+    }
+  }
+
+  const months: XeroPlMonth[] = monthKeys.map((month) => ({
+    month,
+    salesCents: 0,
+    cogsCents: 0,
+    foodCogsCents: 0,
+    bevCogsCents: 0,
+    otherCogsCents: 0,
+    accounts: []
+  }));
+
+  const isIncomeSection = (title: string) => /income|revenue/i.test(title) && !/other income/i.test(title);
+  const isCogsSection = (title: string) => /cost of sales|cost of goods|direct cost/i.test(title);
+
+  for (const section of rows) {
+    if (section.RowType !== 'Section') continue;
+    const title = section.Title ?? '';
+    const income = isIncomeSection(title);
+    const cogs = isCogsSection(title);
+    if (!income && !cogs) continue;
+
+    const sectionRows = section.Rows ?? [];
+    const summary = sectionRows.find(
+      (row) => row.RowType === 'SummaryRow' && /^total/i.test(String(row.Cells?.[0]?.Value ?? ''))
+    );
+
+    for (let i = 0; i < months.length; i += 1) {
+      const target = months[i];
+      if (!target) continue;
+      // Prefer the section's Total summary row; fall back to summing rows.
+      let totalCents = 0;
+      if (summary) {
+        totalCents = plCellCents(summary.Cells?.[i + 1]);
+      } else {
+        for (const row of sectionRows) {
+          if (row.RowType !== 'Row') continue;
+          totalCents += plCellCents(row.Cells?.[i + 1]);
+        }
+      }
+      if (income) target.salesCents += totalCents;
+      if (cogs) target.cogsCents += totalCents;
+    }
+
+    if (cogs) {
+      for (const row of sectionRows) {
+        if (row.RowType !== 'Row') continue;
+        const name = String(row.Cells?.[0]?.Value ?? '').trim();
+        if (!name) continue;
+        const bucket = classifyPlAccount(name);
+        for (let i = 0; i < months.length; i += 1) {
+          const target = months[i];
+          if (!target) continue;
+          const cents = plCellCents(row.Cells?.[i + 1]);
+          if (cents === 0) continue;
+          if (bucket === 'beverage') target.bevCogsCents += cents;
+          else if (bucket === 'food') target.foodCogsCents += cents;
+          else target.otherCogsCents += cents;
+          const existing = target.accounts.find((account) => account.name === name);
+          if (existing) existing.cents += cents;
+          else target.accounts.push({ name, cents, bucket });
+        }
+      }
+    }
+  }
+
+  return months.reverse(); // newest-first from Xero → ascending
+}
+
+// ── Xero supplier spend (COGS bill lines per contact) ──────────────────────
+// Trailing ACCPAY spend per supplier, straight from Xero, counting ONLY the
+// bill lines posted to Direct Costs (COGS) accounts — so landlords, card
+// processors and utilities never pollute the food/beverage splits. Each COGS
+// account is bucketed food/bev with the SAME name classifier the P&L trend
+// uses, keeping supplier shares consistent with the P&L basis. The local
+// SupplierInvoice table is NOT the source (it only holds the handful of
+// suppliers the import pipeline has matched).
+
+export type XeroSupplierSpendRow = {
+  name: string;
+  /** Ex-GST cents posted to Direct Costs accounts only. */
+  cents: number;
+  bucket: XeroPlBucket;
+  venue: string | null;
+};
+
+export type XeroCogsAccountUsage = {
+  name: string;
+  bucket: XeroPlBucket;
+  cents: number;
+};
+
+const XERO_BILL_STATUSES = new Set(['AUTHORISED', 'PAID', 'SUBMITTED']);
+const XERO_BILL_PAGE_CAP = 10; // 10 × 100 bills per tenant is months of history
+
+// One vendor, several contact records. "X Pty Ltd T/AS Y" merges into Y
+// automatically; entities whose legal name shares nothing with the trading
+// name are mapped here (keys lowercase).
+const XERO_SUPPLIER_ALIASES: Record<string, string> = {
+  'whittaker distilleries': 'Manly Spirits Co',
+  'whittaker distilleries pty ltd': 'Manly Spirits Co'
+};
+
+// Contacts whose bills are miscoded to Direct Costs accounts in Xero but are
+// NOT supplier COGS (professional costs etc.) — excluded from the spend split
+// until the bookkeeping recodes them. Keys lowercase, matched after aliasing.
+const XERO_SUPPLIER_EXCLUDE = new Set<string>([
+  'dtg migration services' // migration agent — professional cost, not COGS
+]);
+
+// Merge key + display name for a Xero contact: trading name after T/AS or
+// T/A when present, then the alias table.
+function canonicalSupplierName(raw: string): { key: string; display: string } {
+  let display = raw.trim();
+  const tradingAs = display.match(/t\/a s?\.?\s+(.+)$/i) ?? display.match(/t\/as\.?\s+(.+)$/i) ?? display.match(/\bt\/a\.?\s+(.+)$/i) ?? display.match(/trading as\s+(.+)$/i);
+  if (tradingAs?.[1]) display = tradingAs[1].trim();
+  const alias = XERO_SUPPLIER_ALIASES[display.toLowerCase()] ?? XERO_SUPPLIER_ALIASES[raw.trim().toLowerCase()];
+  if (alias) display = alias;
+  return { key: display.toLowerCase(), display };
+}
+
+async function xeroSupplierSpend(
+  days: number
+): Promise<{ rows: XeroSupplierSpendRow[]; accounts: XeroCogsAccountUsage[] }> {
+  const connection = await connectedXeroConnection();
+  const tenantList = xeroTenantsFromConnection(connection);
+  const tenants = tenantList.length > 0
+    ? tenantList
+    : connection.providerAccountId
+      ? [{ id: connection.providerAccountId, name: null }]
+      : [];
+  if (tenants.length === 0) throw new HttpError(409, 'Xero tenant is not selected.');
+
+  const venues = await configuredVenueNames();
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const whereClause = encodeURIComponent(
+    `Type=="ACCPAY" AND Date >= DateTime(${since.getUTCFullYear()}, ${since.getUTCMonth() + 1}, ${since.getUTCDate()})`
+  );
+
+  // Accumulate per contact, case-insensitively — the same supplier often has
+  // differently-cased contact records across the two organisations.
+  const accumulator = new Map<
+    string,
+    { name: string; venue: string | null; byBucket: Map<XeroPlBucket, number> }
+  >();
+  const accountUsage = new Map<string, XeroCogsAccountUsage>();
+
+  let activeConnection = connection;
+  for (const tenant of tenants) {
+    const venue = resolveVenueFromTenantName(tenant.name, venues);
+
+    // COGS account codes for this org: Type DIRECTCOSTS, bucketed by name.
+    const accountsResponse = await xeroGetJson<{
+      Accounts?: Array<{ Code?: string; Name?: string; Type?: string }>;
+    }>('/api.xro/2.0/Accounts', { connection: activeConnection, tenantId: tenant.id });
+    activeConnection = accountsResponse.connection;
+    const cogsBucketByCode = new Map<string, { bucket: XeroPlBucket; name: string }>();
+    for (const account of accountsResponse.data.Accounts ?? []) {
+      if (trimText(account.Type).toUpperCase() !== 'DIRECTCOSTS') continue;
+      const code = optionalText(account.Code);
+      const name = optionalText(account.Name);
+      if (!code || !name) continue;
+      cogsBucketByCode.set(code, { bucket: classifyPlAccount(name), name });
+    }
+
+    for (let page = 1; page <= XERO_BILL_PAGE_CAP; page += 1) {
+      const response = await xeroGetJson<{ Invoices?: XeroInvoice[] }>(
+        `/api.xro/2.0/Invoices?where=${whereClause}&order=Date%20DESC&page=${page}`,
+        { connection: activeConnection, tenantId: tenant.id }
+      );
+      activeConnection = response.connection;
+      const invoices = response.data.Invoices ?? [];
+      for (const invoice of invoices) {
+        if (invoice.Type && invoice.Type !== 'ACCPAY') continue;
+        if (!XERO_BILL_STATUSES.has(trimText(invoice.Status).toUpperCase())) continue;
+        const name = optionalText(invoice.Contact?.Name);
+        if (!name) continue;
+        for (const line of invoice.LineItems ?? []) {
+          const code = optionalText(line.AccountCode);
+          if (!code) continue;
+          const account = cogsBucketByCode.get(code);
+          if (!account) continue; // not a Direct Costs line — rent, fees, etc.
+          const cents = Math.round((line.LineAmount ?? 0) * 100);
+          if (cents === 0) continue;
+          const canonical = canonicalSupplierName(name);
+          if (XERO_SUPPLIER_EXCLUDE.has(canonical.key)) continue;
+          const entry = accumulator.get(canonical.key) ?? { name: canonical.display, venue, byBucket: new Map() };
+          // Prefer the mixed-case variant of the contact name for display.
+          if (entry.name === entry.name.toUpperCase() && canonical.display !== canonical.display.toUpperCase()) {
+            entry.name = canonical.display;
+          }
+          entry.byBucket.set(account.bucket, (entry.byBucket.get(account.bucket) ?? 0) + cents);
+          accumulator.set(canonical.key, entry);
+
+          const usageKey = account.name.toLowerCase();
+          const usage = accountUsage.get(usageKey) ?? { name: account.name, bucket: account.bucket, cents: 0 };
+          usage.cents += cents;
+          accountUsage.set(usageKey, usage);
+        }
+      }
+      if (invoices.length < 100) break;
+    }
+  }
+
+  const rows: XeroSupplierSpendRow[] = [];
+  for (const entry of accumulator.values()) {
+    const foodCents = entry.byBucket.get('food') ?? 0;
+    const bevCents = entry.byBucket.get('beverage') ?? 0;
+    const otherCents = entry.byBucket.get('other') ?? 0;
+    const total = foodCents + bevCents + otherCents;
+    if (total <= 0) continue;
+    // A real food/bev bucket always beats the generic "other" — a supplier
+    // with any classified spend belongs with its category even when some
+    // lines hit a generic Purchases account.
+    const bucket: XeroPlBucket =
+      foodCents > 0 || bevCents > 0 ? (bevCents > foodCents ? 'beverage' : 'food') : 'other';
+    rows.push({ name: entry.name, cents: total, bucket, venue: entry.venue });
+  }
+  const accounts = [...accountUsage.values()].sort((a, b) => b.cents - a.cents);
+  return { rows, accounts };
+}
+
+async function xeroProfitAndLossTrend(monthCount: number): Promise<XeroPlTrend> {
+  const connection = await connectedXeroConnection();
+  const columns = Math.max(2, Math.min(12, Math.floor(monthCount)));
+
+  // Primary period = last full calendar month (a part-month would drag the
+  // trend down); comparison periods walk backwards from it.
+  const now = new Date();
+  const primaryStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const primaryEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+  const fmt = (date: Date) => date.toISOString().slice(0, 10);
+
+  const tenantList = xeroTenantsFromConnection(connection);
+  const tenants = tenantList.length > 0
+    ? tenantList
+    : connection.providerAccountId
+      ? [{ id: connection.providerAccountId, name: null }]
+      : [];
+  if (tenants.length === 0) throw new HttpError(409, 'Xero tenant is not selected.');
+
+  const venues = await configuredVenueNames();
+  const path =
+    `/api.xro/2.0/Reports/ProfitAndLoss?fromDate=${fmt(primaryStart)}&toDate=${fmt(primaryEnd)}` +
+    `&timeframe=MONTH&periods=${columns - 1}&standardLayout=true`;
+
+  const perVenue: Record<string, XeroPlMonth[]> = {};
+  const groupByMonth = new Map<string, XeroPlMonth>();
+  const tenantSummaries: XeroPlTrend['tenants'] = [];
+
+  let activeConnection = connection;
+  for (const tenant of tenants) {
+    const response = await xeroGetJson<{ Reports?: XeroReportRow[] }>(path, {
+      connection: activeConnection,
+      tenantId: tenant.id
+    });
+    activeConnection = response.connection;
+    const months = parseXeroProfitAndLoss(response.data.Reports?.[0], primaryEnd, columns);
+    const venue = resolveVenueFromTenantName(tenant.name, venues);
+    tenantSummaries.push({ id: tenant.id, name: tenant.name, venue });
+    if (venue) perVenue[venue] = months;
+
+    for (const month of months) {
+      const existing = groupByMonth.get(month.month);
+      if (!existing) {
+        groupByMonth.set(month.month, {
+          ...month,
+          accounts: month.accounts.map((account) => ({ ...account }))
+        });
+        continue;
+      }
+      existing.salesCents += month.salesCents;
+      existing.cogsCents += month.cogsCents;
+      existing.foodCogsCents += month.foodCogsCents;
+      existing.bevCogsCents += month.bevCogsCents;
+      existing.otherCogsCents += month.otherCogsCents;
+      for (const account of month.accounts) {
+        const merged = existing.accounts.find((entry) => entry.name === account.name);
+        if (merged) merged.cents += account.cents;
+        else existing.accounts.push({ ...account });
+      }
+    }
+  }
+
+  const months = [...groupByMonth.values()].sort((a, b) => a.month.localeCompare(b.month));
+  return { months, perVenue, tenants: tenantSummaries };
 }
 
 function defaultBillDates(query: Record<string, unknown>) {
@@ -2172,6 +3082,288 @@ async function xeroBills(query: Record<string, unknown>, limit: number, tenantId
     end,
     bills: invoices
   };
+}
+
+// ── Xero bill PDF attachments ────────────────────────────────────────────
+// Accountant-entered bills in Xero carry the original supplier invoice as a
+// PDF attachment. The stock system's line extraction (OCR ripper) and the
+// manual key-in screen both work from that PDF, so bill imports pull it into
+// SupplierInvoiceDocument — the exact table the stock-api upload path writes
+// and stock-web serves back via GET /api/invoices/:id/document.
+
+type XeroAttachment = {
+  AttachmentID?: string;
+  FileName?: string;
+  Url?: string;
+  MimeType?: string;
+  ContentLength?: number;
+};
+
+// Guard the bytea column against absurd payloads. Xero rejects attachment
+// uploads above ~25MB, so anything larger than this is malformed anyway.
+const XERO_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+
+function isXeroAuthError(error: unknown) {
+  if (!(error instanceof HttpError)) return false;
+  if (error.statusCode === 401 || error.statusCode === 403) return true;
+  const details = error.details as { status?: number; category?: string } | undefined;
+  return details?.status === 401 || details?.status === 403 ||
+    details?.category === 'unauthorized' || details?.category === 'forbidden';
+}
+
+function isXeroNotFoundError(error: unknown) {
+  if (!(error instanceof HttpError)) return false;
+  const details = error.details as { status?: number; category?: string } | undefined;
+  return details?.status === 404 || details?.category === 'not_found';
+}
+
+function isXeroRateLimitError(error: unknown) {
+  if (!(error instanceof HttpError)) return false;
+  const details = error.details as { category?: string } | undefined;
+  return error.statusCode === 429 || details?.category === 'rate_limited';
+}
+
+// Prefer the PDF (the original invoice); fall back to the first attachment so
+// a photo/scan still lands. Returns null when the bill has no usable file.
+function pickXeroBillAttachment(attachments: XeroAttachment[]): XeroAttachment | null {
+  const usable = attachments.filter((attachment) => optionalText(attachment.FileName));
+  if (usable.length === 0) return null;
+  const pdf = usable.find((attachment) =>
+    trimText(attachment.MimeType).toLowerCase() === 'application/pdf' ||
+    trimText(attachment.FileName).toLowerCase().endsWith('.pdf')
+  );
+  return pdf ?? usable[0] ?? null;
+}
+
+type XeroAttachmentTarget = {
+  invoiceId: string;
+  billId: string;
+  label: string;
+  // Tenant candidates in preference order. The attachments list 404s when the
+  // bill lives in a different org, so the fetch walks this list until one hits.
+  tenantIds: Array<string | undefined>;
+};
+
+// Fetches one bill's attachment and stores it against the SupplierInvoice.
+// `state.connection` is threaded through because Xero rotates refresh tokens —
+// callers must keep passing the freshest connection row between calls.
+// Fallback when a bill has no attachment: GENERATE an expense document from
+// the bill data we already hold. Xero cannot render ACCPAY bills as PDFs —
+// verified live 2026-07-25, the invoice endpoint 404s on Accept:
+// application/pdf for bills (it renders sales invoices only) — so bills that
+// entered Xero through feeds get a clearly-labelled generated document
+// instead. Same storage slot the stock invoice screen opens as "the
+// original"; the label makes clear it is not the supplier's own paper.
+async function generateExpensePdfDocument(
+  state: { connection: IntegrationConnection; renderFailures: string[] },
+  target: XeroAttachmentTarget
+): Promise<boolean> {
+  const invoice = await prisma.supplierInvoice.findUnique({
+    where: { id: target.invoiceId },
+    include: { lines: { orderBy: { lineNumber: 'asc' } } }
+  });
+  if (!invoice) return false;
+
+  try {
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const PAGE_WIDTH = 595.28;
+    const PAGE_HEIGHT = 841.89;
+    let page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    const margin = 48;
+    let y = PAGE_HEIGHT - margin;
+    const ink = rgb(0.12, 0.2, 0.14);
+    const muted = rgb(0.45, 0.48, 0.45);
+    const money = (cents: number | null | undefined) =>
+      ((cents ?? 0) / 100).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
+    const line = (text: string, size: number, opts: { bold?: boolean; dim?: boolean; x?: number } = {}) => {
+      if (y < margin + size + 6) {
+        page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+        y = PAGE_HEIGHT - margin;
+      }
+      page.drawText(text.slice(0, 110), {
+        x: opts.x ?? margin,
+        y,
+        size,
+        font: opts.bold ? fontBold : font,
+        color: opts.dim ? muted : ink
+      });
+      y -= size + 6;
+    };
+
+    line('EXPENSE DOCUMENT', 9, { dim: true });
+    line(invoice.supplierName ?? 'Unknown supplier', 20, { bold: true });
+    y -= 4;
+    line(`Invoice ${invoice.invoiceNumber ?? invoice.invoiceKey}`, 11);
+    if (invoice.invoiceDate) line(`Invoice date ${invoice.invoiceDate.toISOString().slice(0, 10)}`, 10, { dim: true });
+    if (invoice.venue) line(`Venue ${invoice.venue}`, 10, { dim: true });
+    y -= 10;
+
+    if (invoice.lines.length > 0) {
+      line('Description', 9, { bold: true });
+      y += 15; // reposition amount header on the same row
+      page.drawText('Amount ex GST', {
+        x: PAGE_WIDTH - margin - 90,
+        y,
+        size: 9,
+        font: fontBold,
+        color: ink
+      });
+      y -= 15;
+      for (const row of invoice.lines) {
+        const description = (row.description || row.itemCode || 'Line item').slice(0, 78);
+        const amount = money(row.lineAmountCents);
+        if (y < margin + 16) {
+          page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+          y = PAGE_HEIGHT - margin;
+        }
+        page.drawText(description, { x: margin, y, size: 9.5, font, color: ink });
+        page.drawText(amount, { x: PAGE_WIDTH - margin - font.widthOfTextAtSize(amount, 9.5), y, size: 9.5, font, color: ink });
+        y -= 15;
+      }
+      y -= 8;
+    }
+
+    line(`Subtotal ${money(invoice.subtotalCents)}`, 10);
+    line(`GST ${money(invoice.taxCents)}`, 10);
+    line(`Total ${money(invoice.totalCents ?? invoice.subtotalCents)}`, 12, { bold: true });
+    y -= 14;
+    line('Generated by Alma Suite from Xero bill data.', 8, { dim: true });
+    line('The supplier attached no original document in Xero.', 8, { dim: true });
+
+    const bytes = await pdf.save();
+    await prisma.supplierInvoiceDocument.upsert({
+      where: { invoiceId: target.invoiceId },
+      create: {
+        invoiceId: target.invoiceId,
+        fileName: `alma-expense-${(invoice.invoiceNumber ?? target.billId.slice(0, 8)).replace(/[^A-Za-z0-9-]+/g, '-')}.pdf`,
+        mimeType: 'application/pdf',
+        data: new Uint8Array(bytes)
+      },
+      update: {}
+    });
+    return true;
+  } catch (error) {
+    if (state.renderFailures.length < 3) {
+      state.renderFailures.push(`${target.label}: expense document generation failed (${safeErrorMessage(error)})`);
+    }
+    return false;
+  }
+}
+
+async function fetchAndStoreXeroBillAttachment(
+  state: { connection: IntegrationConnection; renderFailures: string[] },
+  target: XeroAttachmentTarget
+): Promise<'stored' | 'rendered' | 'already_stored' | 'no_attachment' | 'not_found'> {
+  // Idempotency: one document per invoice. Never clobber an existing one —
+  // it may be a manual upload a manager already keyed lines from.
+  const existing = await prisma.supplierInvoiceDocument.findUnique({
+    where: { invoiceId: target.invoiceId },
+    select: { id: true }
+  });
+  if (existing) return 'already_stored';
+
+  for (const tenantId of target.tenantIds) {
+    let listed: { data: { Attachments?: XeroAttachment[] }; connection: IntegrationConnection };
+    try {
+      listed = await xeroGetJson<{ Attachments?: XeroAttachment[] }>(
+        `/api.xro/2.0/Invoices/${encodeURIComponent(target.billId)}/Attachments`,
+        { connection: state.connection, tenantId }
+      );
+    } catch (error) {
+      if (isXeroNotFoundError(error)) continue; // bill lives in another tenant
+      throw error;
+    }
+    state.connection = listed.connection;
+
+    const attachment = pickXeroBillAttachment(listed.data.Attachments ?? []);
+    if (!attachment) {
+      return (await generateExpensePdfDocument(state, target)) ? 'rendered' : 'no_attachment';
+    }
+    if (typeof attachment.ContentLength === 'number' && attachment.ContentLength > XERO_ATTACHMENT_MAX_BYTES) {
+      return (await generateExpensePdfDocument(state, target)) ? 'rendered' : 'no_attachment';
+    }
+
+    const fileName = trimText(attachment.FileName);
+    // VERIFY: Xero documents MimeType on every attachment row; default kept
+    // as a belt-and-braces fallback only.
+    const mimeType = optionalText(attachment.MimeType) ?? 'application/pdf';
+    const binary = await xeroGetBinary(
+      `/api.xro/2.0/Invoices/${encodeURIComponent(target.billId)}/Attachments/${encodeURIComponent(fileName)}`,
+      { connection: state.connection, tenantId, accept: mimeType }
+    );
+    state.connection = binary.connection;
+    if (binary.data.byteLength === 0 || binary.data.byteLength > XERO_ATTACHMENT_MAX_BYTES) {
+      return (await generateExpensePdfDocument(state, target)) ? 'rendered' : 'no_attachment';
+    }
+
+    // create-or-skip: the pre-check above makes create the normal path; the
+    // empty update guards a concurrent writer without overwriting its file.
+    // Copy into a fresh Uint8Array — Prisma 6 types Bytes columns as
+    // Uint8Array<ArrayBuffer>, which Buffer's ArrayBufferLike doesn't satisfy.
+    await prisma.supplierInvoiceDocument.upsert({
+      where: { invoiceId: target.invoiceId },
+      create: {
+        invoiceId: target.invoiceId,
+        fileName,
+        mimeType,
+        data: new Uint8Array(binary.data)
+      },
+      update: {}
+    });
+    return 'stored';
+  }
+  return 'not_found';
+}
+
+// Batch driver shared by the import path and the backfill job. Network-only —
+// call it AFTER the import transaction has committed. Auth failures (the
+// accounting.attachments.read scope not granted yet) and rate limits stop the
+// batch with a warning; everything else degrades per-bill so one bad
+// attachment never blocks the rest.
+async function fetchXeroAttachmentsForInvoices(
+  connection: IntegrationConnection,
+  targets: XeroAttachmentTarget[]
+): Promise<{ fetched: number; missing: number; rendered: number; warnings: string[]; authBlocked: boolean }> {
+  const state = { connection, renderFailures: [] as string[] };
+  let fetched = 0;
+  let missing = 0;
+  let rendered = 0;
+  const warnings: string[] = [];
+  let authBlocked = false;
+
+  for (const target of targets) {
+    try {
+      const outcome = await fetchAndStoreXeroBillAttachment(state, target);
+      if (outcome === 'stored') fetched += 1;
+      else if (outcome === 'rendered') {
+        fetched += 1;
+        rendered += 1;
+      } else if (outcome === 'no_attachment') missing += 1;
+      else if (outcome === 'not_found') {
+        missing += 1;
+        warnings.push(`${target.label}: bill was not found in any connected Xero org, so no PDF was fetched.`);
+      }
+      // 'already_stored' → idempotent re-run, nothing to do.
+    } catch (error) {
+      if (isXeroAuthError(error)) {
+        warnings.push(
+          'Xero needs reconnecting to grant attachment access (accounting.attachments.read) — bill data imported, PDFs skipped.'
+        );
+        authBlocked = true;
+        break;
+      }
+      if (isXeroRateLimitError(error)) {
+        warnings.push('Xero rate limit reached while fetching attachments — re-run the attachment backfill later to pick up the rest.');
+        break;
+      }
+      warnings.push(`${target.label}: attachment fetch failed (${safeErrorMessage(error)}).`);
+    }
+  }
+
+  warnings.push(...state.renderFailures);
+  return { fetched, missing, rendered, warnings, authBlocked };
 }
 
 function supplierContactPreview(contact: XeroContact, suppliers: ExistingSupplier[]): XeroSupplierContactPreview | null {
@@ -2588,6 +3780,15 @@ async function recordWebhook(provider: Provider, rawBody: string, accountKey: Sq
 export const integrationService = {
   normaliseProvider,
 
+  // Monthly Income + Cost of Sales trend from the Xero P&L report (group +
+  // per-venue). Basis for projected supplier spend — see supplier-spend.service.
+  xeroProfitAndLossTrend,
+
+  // Trailing ACCPAY bill totals per supplier straight from Xero — the share
+  // basis for projected supplier spend (local imports only cover a handful
+  // of suppliers; Xero has all of them).
+  xeroSupplierSpend,
+
   // Live open Square tickets for a venue — used by the Reserve service map. Walks
   // every connected Square account, finds the location(s) matching the venue, and
   // returns each open ticket with its name (table identifier), total and items.
@@ -2804,11 +4005,12 @@ export const integrationService = {
   },
 
   async status(): Promise<IntegrationStatusPayload> {
-    const [primarySquare, secondarySquare, xero, deputy, xeroScheduledImport, syncRuns] = await Promise.all([
+    const [primarySquare, secondarySquare, xero, deputy, lightspeed, xeroScheduledImport, syncRuns] = await Promise.all([
       providerStatus('SQUARE', 'primary'),
       providerStatus('SQUARE', 'secondary'),
       providerStatus('XERO'),
       providerStatus('DEPUTY'),
+      providerStatus('LIGHTSPEED'),
       xeroScheduledImportStatus(),
       latestSyncRuns()
     ]);
@@ -2822,6 +4024,7 @@ export const integrationService = {
       },
       xero,
       deputy,
+      lightspeed,
       xeroScheduledImport,
       meta: await metaStatus(),
       latestSyncRuns: syncRuns,
@@ -4414,6 +5617,52 @@ export const integrationService = {
     let lineCount = 0;
     const warnings: string[] = [];
 
+    // Invoice exclusion rules (managed in Stock → Invoices) must gate EVERY
+    // import path. This function serves both the manual picker and the
+    // scheduled sync — without this check the scheduler recreated excluded
+    // invoices on its next run, which read as "exclusion rules don't work".
+    // Semantics mirror stock-api exclusionMatchFields: Xero bills have no
+    // source file name, so "title" is the invoice number; "body" is the line
+    // descriptions; ALL conditions in a rule must match (AND).
+    const exclusionRules = (
+      await prisma.invoiceExclusionRule.findMany({ where: { enabled: true } })
+    )
+      .map((row) => ({
+        name: row.name,
+        conditions: (Array.isArray(row.conditions) ? row.conditions : [])
+          .map((entry) => {
+            if (typeof entry !== 'object' || entry === null) return null;
+            const record = entry as Record<string, unknown>;
+            const field = trimText(record.field);
+            const value = trimText(record.value).toLowerCase();
+            if (!value || !['title', 'body', 'supplier', 'invoiceNumber'].includes(field)) return null;
+            return { field: field as 'title' | 'body' | 'supplier' | 'invoiceNumber', value };
+          })
+          .filter((entry): entry is { field: 'title' | 'body' | 'supplier' | 'invoiceNumber'; value: string } => entry !== null)
+      }))
+      .filter((rule) => rule.conditions.length > 0);
+    const exclusionRuleForBill = (bill: XeroInvoice): string | null => {
+      if (exclusionRules.length === 0) return null;
+      const invoiceNumber = (optionalText(bill.InvoiceNumber) ?? optionalText(bill.Reference) ?? '').toLowerCase();
+      const fields = {
+        title: invoiceNumber,
+        body: (bill.LineItems ?? []).map((line) => line.Description ?? '').join(' ').toLowerCase(),
+        supplier: (optionalText(bill.Contact?.Name) ?? '').toLowerCase(),
+        invoiceNumber
+      };
+      for (const rule of exclusionRules) {
+        if (rule.conditions.every((condition) => fields[condition.field].includes(condition.value))) {
+          return rule.name;
+        }
+      }
+      return null;
+    };
+    let excludedCount = 0;
+    // Bills created in this run, so their original PDF attachments can be
+    // fetched from Xero AFTER the transaction commits (network calls must
+    // never run inside the prisma transaction).
+    const createdForAttachments: XeroAttachmentTarget[] = [];
+
     await prisma.$transaction(async (tx) => {
       for (const bill of selectedBills) {
         const id = xeroBillId(bill);
@@ -4426,6 +5675,14 @@ export const integrationService = {
         if (duplicate.duplicateStatus !== 'new') {
           duplicateCount += 1;
           warnings.push(`${billInvoiceNumber(bill) ?? maskIdentifier(id)} was skipped as a duplicate.`);
+          continue;
+        }
+
+        const matchedExclusion = exclusionRuleForBill(bill);
+        if (matchedExclusion) {
+          excludedCount += 1;
+          skippedCount += 1;
+          warnings.push(`${billInvoiceNumber(bill) ?? maskIdentifier(id)} excluded by rule "${matchedExclusion}".`);
           continue;
         }
 
@@ -4478,9 +5735,18 @@ export const integrationService = {
               importedFrom: 'xero',
               reference: optionalText(bill.Reference),
               importedBy: actor.email ?? actor.id,
-              importedAt: new Date().toISOString()
+              importedAt: new Date().toISOString(),
+              // Which Xero org the bill came from — lets the attachment
+              // backfill hit the right tenant first instead of probing all.
+              xeroTenantId: options?.tenantId ?? connection.providerAccountId ?? null
             }
           }
+        });
+        createdForAttachments.push({
+          invoiceId: invoice.id,
+          billId: id,
+          label: billInvoiceNumber(bill) ?? maskIdentifier(id) ?? 'Xero bill',
+          tenantIds: [options?.tenantId]
         });
 
         for (const [index, line] of (bill.LineItems ?? []).entries()) {
@@ -4576,13 +5842,28 @@ export const integrationService = {
       });
     });
 
+    // Fetch each new bill's original PDF attachment from Xero now that the
+    // transaction has committed. The PDF lands in SupplierInvoiceDocument —
+    // the same storage the stock-api upload path writes — so the invoice
+    // screen's "open the original" link and the OCR line ripper work for
+    // Xero-imported bills. Failures degrade to warnings: the bill import
+    // itself has already succeeded and must stay succeeded.
+    let attachmentsFetched = 0;
+    let attachmentsMissing = 0;
+    if (createdForAttachments.length > 0) {
+      const attachmentResult = await fetchXeroAttachmentsForInvoices(connection, createdForAttachments);
+      attachmentsFetched = attachmentResult.fetched;
+      attachmentsMissing = attachmentResult.missing;
+      warnings.push(...attachmentResult.warnings);
+    }
+
     await recordEvent({
       provider: 'XERO',
       connectionId: connection.id,
       eventType: options?.eventType ?? 'SUPPLIER_BILLS_IMPORTED',
-      summary: `Xero supplier bill import finished: ${importedCount} imported, ${skippedCount} skipped, ${duplicateCount} duplicate.`,
+      summary: `Xero supplier bill import finished: ${importedCount} imported, ${skippedCount} skipped (${excludedCount} by exclusion rule), ${duplicateCount} duplicate, ${attachmentsFetched} PDF attachment${attachmentsFetched === 1 ? '' : 's'} stored.`,
       actor,
-      metadata: { importedCount, skippedCount, duplicateCount, supplierCreatedCount, lineCount, syncType: options?.syncType ?? 'MANUAL' }
+      metadata: { importedCount, skippedCount, excludedCount, duplicateCount, supplierCreatedCount, lineCount, attachmentsFetched, attachmentsMissing, syncType: options?.syncType ?? 'MANUAL' }
     });
 
     return {
@@ -4592,6 +5873,8 @@ export const integrationService = {
       duplicateCount,
       supplierCreatedCount,
       lineCount,
+      attachmentsFetched,
+      attachmentsMissing,
       warnings
     };
   },
@@ -5394,6 +6677,297 @@ export const integrationService = {
     };
   },
 
+  // Sites list for connection status / venue-mapping preview — which
+  // Lightspeed sites exist on the connected company and which configured
+  // venue each one resolves to. Read-only; no rows are written.
+  async lightspeedSites() {
+    const connection = await connectedLightspeedConnection();
+    const companyId = connection.providerAccountId ?? '';
+    // GET /companies/{companyId}/sites.json — path + X-Next-Page pagination
+    // confirmed by the tested reference client (packages/kounta/src/client.ts).
+    const sitesResult = await lightspeedGetAll<LightspeedSite>(`companies/${companyId}/sites.json`, { connection });
+    const venues = await configuredVenueNames();
+    return {
+      provider: 'lightspeed' as const,
+      generatedAt: new Date().toISOString(),
+      companyId,
+      companyName: connection.providerAccountName,
+      sites: sitesResult.items
+        .filter((site) => site.id != null)
+        .map((site) => {
+          const name = optionalText(site.name) ?? `Site ${site.id}`;
+          return {
+            id: String(site.id),
+            name,
+            // Same matching the Xero tenant resolver uses: exact, then
+            // contains either way, then freshwater→St Alma / avalon→Alma
+            // Avalon alias keywords.
+            venue: resolveVenueFromTenantName(name, venues)
+          };
+        })
+    };
+  },
+
+  // Scheduled Lightspeed sales sync — the Lightspeed counterpart of the
+  // Square scheduled sales import. Writes the SAME SalesActualEntry rows the
+  // Square sync writes (UTC-midnight serviceDate of the Sydney date key,
+  // idempotent per-venue/day/source upsert) so Reports dashboards and the
+  // Forecast engine keep working unchanged; readers aggregate SalesActualEntry
+  // across all sources without filtering, so 'lightspeed:{siteId}' rows are
+  // counted automatically. Returns { skipped: true, reason } instead of
+  // failing when Lightspeed is not configured/connected, so the cron line can
+  // exist before credentials do.
+  async runScheduledLightspeedSalesSync(input: Record<string, unknown> = {}) {
+    const lookbackDays = clampLimit(input.lookbackDays, DEFAULT_SCHEDULED_LIGHTSPEED_SALES_LOOKBACK_DAYS, 90);
+    const base = {
+      provider: 'lightspeed' as const,
+      mode: 'scheduled' as const,
+      generatedAt: new Date().toISOString(),
+      lookbackDays
+    };
+
+    const status = await providerStatus('LIGHTSPEED');
+    if (!status.configured || !status.connected) {
+      return {
+        ...base,
+        status: 'skipped' as const,
+        skipped: true,
+        reason: status.connectBlockedReason
+          ?? (!status.configured ? 'Lightspeed is not configured.' : 'Lightspeed is not connected.'),
+        sitesRead: 0,
+        ordersRead: 0,
+        skippedOrderCount: 0,
+        salesRowsUpserted: 0,
+        totalSalesCents: 0,
+        warnings: [] as string[]
+      };
+    }
+
+    let connection: IntegrationConnection | null = null;
+    try {
+      let conn: IntegrationConnection = await connectedLightspeedConnection();
+      connection = conn;
+      const companyId = conn.providerAccountId ?? '';
+      const venues = await configuredVenueNames();
+      const warnings: string[] = [];
+
+      // Window start pinned to Sydney local midnight so a Sydney service day
+      // is always replaced whole — the upsert below REPLACES each
+      // (venue, serviceDate, source, externalId) day-row, so a partial-day
+      // window would silently shrink that day's total.
+      const todaySydneyKey = dateKeyInTimeZone(new Date(), 'Australia/Sydney');
+      const windowStart = sydneyMidnightUtc(addSydneyDays(todaySydneyKey, 1 - lookbackDays));
+
+      const sitesResult = await lightspeedGetAll<LightspeedSite>(`companies/${companyId}/sites.json`, { connection: conn });
+      conn = sitesResult.connection;
+      connection = conn;
+      const sites = sitesResult.items.filter((site) => site.id != null);
+
+      const grouped = new Map<string, {
+        venue: string;
+        serviceDateKey: string;
+        serviceDate: Date;
+        source: string;
+        externalId: string;
+        salesCents: number;
+        orderCount: number;
+        siteId: string;
+        siteName: string;
+      }>();
+      let ordersRead = 0;
+      let skippedOrderCount = 0;
+
+      for (const site of sites) {
+        const siteId = String(site.id);
+        const siteName = optionalText(site.name) ?? `Site ${siteId}`;
+        const resolvedVenue = resolveVenueFromTenantName(siteName, venues);
+        if (!resolvedVenue) {
+          warnings.push(`Lightspeed site "${siteName}" did not match a configured venue — its sales were stored under the site name.`);
+        }
+        const venue = resolvedVenue ?? siteName;
+
+        // VERIFY: order-listing filter params. The reference client lists
+        // orders unfiltered (companies/{id}/orders.json, X-Next-Page paging);
+        // created_gte + site_id are assumed query params per the task brief —
+        // confirm names/format against apidoc.kounta.com. If a filter is not
+        // supported the loop still works (it just pages more and drops
+        // out-of-window orders below).
+        const ordersPath = `companies/${companyId}/orders.json?created_gte=${encodeURIComponent(windowStart.toISOString())}&site_id=${encodeURIComponent(siteId)}`;
+        const ordersResult = await lightspeedGetAll<LightspeedOrder>(ordersPath, { connection: conn });
+        conn = ordersResult.connection;
+        connection = conn;
+
+        for (const order of ordersResult.items) {
+          ordersRead += 1;
+          const orderStatus = trimText(order.status).toUpperCase();
+          if (orderStatus && LIGHTSPEED_ORDER_EXCLUDED_STATUSES.has(orderStatus)) {
+            skippedOrderCount += 1;
+            continue;
+          }
+          const orderDate = providerDate(order.created_at);
+          if (!orderDate || orderDate < windowStart) {
+            skippedOrderCount += 1;
+            continue;
+          }
+          const amountCents = lightspeedOrderNetCents(order);
+          if (amountCents <= 0) {
+            skippedOrderCount += 1;
+            continue;
+          }
+
+          const serviceDateKey = dateKeyInTimeZone(orderDate, 'Australia/Sydney');
+          // Source key shape 'lightspeed:{siteId}' parallels Square's
+          // 'square:{accountKey}'; externalId mirrors Square's
+          // `${source}:{locationId}:{dateKey}` day-bucket id. Reports read
+          // SalesActualEntry without filtering on source, so no reader
+          // changes are needed for these rows to count.
+          const source = `lightspeed:${siteId}`;
+          const externalId = `${source}:${serviceDateKey}`;
+          const key = `${venue}|${serviceDateKey}|${externalId}`;
+          const existing = grouped.get(key) ?? {
+            venue,
+            serviceDateKey,
+            serviceDate: startOfUtcDate(serviceDateKey),
+            source,
+            externalId,
+            salesCents: 0,
+            orderCount: 0,
+            siteId,
+            siteName
+          };
+          existing.salesCents += amountCents;
+          existing.orderCount += 1;
+          grouped.set(key, existing);
+        }
+      }
+
+      const rows = Array.from(grouped.values());
+      const connectionId = conn.id;
+      await prisma.$transaction(async (tx) => {
+        for (const row of rows) {
+          await tx.salesActualEntry.upsert({
+            where: {
+              venue_serviceDate_source_externalId: {
+                venue: row.venue,
+                serviceDate: row.serviceDate,
+                source: row.source,
+                externalId: row.externalId
+              }
+            },
+            create: {
+              venue: row.venue,
+              serviceDate: row.serviceDate,
+              salesCents: row.salesCents,
+              source: row.source,
+              externalId: row.externalId,
+              notes: `Lightspeed ${row.siteName}: net sales (ex GST) from ${row.orderCount} orders.`,
+              importedById: integrationSchedulerActor.id
+            },
+            update: {
+              salesCents: row.salesCents,
+              notes: `Lightspeed ${row.siteName}: net sales (ex GST) from ${row.orderCount} orders.`,
+              importedById: integrationSchedulerActor.id
+            }
+          });
+        }
+
+        await tx.integrationConnection.update({
+          where: { id: connectionId },
+          data: {
+            lastSyncAt: new Date(),
+            lastSyncStatus: 'SUCCESS',
+            lastError: null
+          }
+        });
+        await tx.integrationSyncRun.create({
+          data: {
+            provider: 'LIGHTSPEED',
+            connectionId,
+            syncType: 'SCHEDULED',
+            status: 'SUCCESS',
+            finishedAt: new Date(),
+            recordsImported: rows.length,
+            recordsUpdated: ordersRead,
+            errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
+          }
+        });
+      });
+
+      await recordEvent({
+        provider: 'LIGHTSPEED',
+        connectionId,
+        eventType: 'SCHEDULED_LIGHTSPEED_SALES_IMPORTED',
+        summary: `Lightspeed sales sync finished: ${rows.length} day-rows from ${ordersRead} orders across ${sites.length} sites.`,
+        actor: integrationSchedulerActor,
+        metadata: {
+          lookbackDays,
+          sitesRead: sites.length,
+          ordersRead,
+          skippedOrderCount,
+          salesRowsUpserted: rows.length
+        }
+      });
+
+      return {
+        ...base,
+        status: 'synced' as const,
+        skipped: false,
+        sitesRead: sites.length,
+        ordersRead,
+        skippedOrderCount,
+        salesRowsUpserted: rows.length,
+        totalSalesCents: rows.reduce((sum, row) => sum + row.salesCents, 0),
+        rows: rows.map((row) => ({
+          venue: row.venue,
+          serviceDate: row.serviceDateKey,
+          source: row.source,
+          externalId: row.externalId,
+          salesCents: row.salesCents,
+          orderCount: row.orderCount,
+          siteId: row.siteId,
+          siteName: row.siteName
+        })),
+        warnings
+      };
+    } catch (error) {
+      // Mirror runScheduledSquareSync: a failed scheduled run records the
+      // error (sync run + event) and reports it in the response body rather
+      // than 500ing the scheduler.
+      if (connection) {
+        await prisma.integrationSyncRun.create({
+          data: {
+            provider: 'LIGHTSPEED',
+            connectionId: connection.id,
+            syncType: 'SCHEDULED',
+            status: 'ERROR',
+            finishedAt: new Date(),
+            errorSummary: safeErrorMessage(error).slice(0, 500)
+          }
+        }).catch(() => undefined);
+        await recordEvent({
+          provider: 'LIGHTSPEED',
+          connectionId: connection.id,
+          eventType: 'SCHEDULED_LIGHTSPEED_SALES_FAILED',
+          summary: 'Lightspeed scheduled sales sync failed.',
+          actor: integrationSchedulerActor,
+          metadata: { lookbackDays, message: safeErrorMessage(error) }
+        }).catch(() => undefined);
+      }
+      return {
+        ...base,
+        status: 'error' as const,
+        skipped: false,
+        message: safeErrorMessage(error),
+        sitesRead: 0,
+        ordersRead: 0,
+        skippedOrderCount: 0,
+        salesRowsUpserted: 0,
+        totalSalesCents: 0,
+        warnings: [] as string[]
+      };
+    }
+  },
+
   async runScheduledIntegrationImports(input: Record<string, unknown> = {}) {
     const includeSquare = input.includeSquare !== false;
     const includeXero = input.includeXero !== false;
@@ -5476,6 +7050,19 @@ export const integrationService = {
       url.searchParams.set('scope', env.integrations.deputy.scope);
       url.searchParams.set('state', rawState);
       return { provider: 'deputy', authorizationUrl: url.toString(), expiresAt: expiresAt.toISOString() };
+    }
+
+    if (provider === 'LIGHTSPEED') {
+      // VERIFY: Kounta/Lightspeed O-Series authorize URL + params —
+      // https://my.kounta.com/authorize?client_id&redirect_uri&response_type=code&state.
+      // No scope param is sent: Kounta OAuth apps are granted app-level access
+      // rather than per-scope grants (VERIFY against apidoc.kounta.com).
+      const url = new URL(env.integrations.lightspeed.authorizeUrl);
+      url.searchParams.set('client_id', env.integrations.lightspeed.clientId);
+      url.searchParams.set('redirect_uri', env.integrations.lightspeed.redirectUrl);
+      url.searchParams.set('response_type', 'code');
+      url.searchParams.set('state', rawState);
+      return { provider: 'lightspeed', authorizationUrl: url.toString(), expiresAt: expiresAt.toISOString() };
     }
 
     const url = new URL('https://login.xero.com/identity/connect/authorize');
@@ -5647,6 +7234,56 @@ export const integrationService = {
           summary: `Deputy connected — tenant endpoint ${token.endpoint}.`,
           metadata: { endpoint: token.endpoint }
         });
+      } else if (provider === 'LIGHTSPEED') {
+        const config = providerConfig('LIGHTSPEED');
+        if (!config.oauthConfigured) throw new HttpError(503, 'Lightspeed OAuth configuration is missing.');
+        const token = await exchangeLightspeedToken(code);
+        if (!token.access_token || !token.refresh_token) throw new HttpError(502, 'Lightspeed did not return OAuth tokens.');
+        // Which Kounta company this authorisation covers — providerAccountId
+        // scopes every subsequent /companies/{id}/... API call.
+        const company = await fetchLightspeedCompany(token.access_token);
+        if (!company.id) throw new HttpError(502, 'Lightspeed did not return a company id.');
+        const existing = await connectionSelect('LIGHTSPEED');
+        const connection = await prisma.integrationConnection.upsert({
+          where: { id: existing?.id ?? '__new_lightspeed_connection__' },
+          update: {
+            status: 'CONNECTED',
+            connectedAt: new Date(),
+            disconnectedAt: null,
+            lastError: null,
+            providerAccountId: company.id,
+            providerAccountName: company.name ?? company.id,
+            scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : [],
+            tokenEncrypted: encryptIntegrationSecret(token.access_token),
+            refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token),
+            tokenExpiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+            metadata: { companyName: company.name },
+            updatedByUserId: stateRow.createdByUserId
+          },
+          create: {
+            provider: 'LIGHTSPEED',
+            status: 'CONNECTED',
+            connectedAt: new Date(),
+            providerAccountId: company.id,
+            providerAccountName: company.name ?? company.id,
+            scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : [],
+            tokenEncrypted: encryptIntegrationSecret(token.access_token),
+            refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token),
+            tokenExpiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+            metadata: { companyName: company.name },
+            updatedByUserId: stateRow.createdByUserId
+          }
+        });
+        await prisma.integrationSyncRun.create({
+          data: { provider, connectionId: connection.id, syncType: 'OAUTH_CALLBACK', status: 'SUCCESS', finishedAt: new Date() }
+        });
+        await recordEvent({
+          provider,
+          connectionId: connection.id,
+          eventType: 'CONNECTED',
+          summary: `Lightspeed connected — company ${company.name ?? company.id}.`,
+          metadata: { companyId: company.id, companyName: company.name }
+        });
       } else {
         const token = await exchangeXeroToken(code);
         if (!token.access_token || !token.refresh_token) throw new HttpError(502, 'Xero did not return OAuth tokens.');
@@ -5751,6 +7388,53 @@ export const integrationService = {
     return { ok: true };
   },
 
+  /**
+   * Pause or resume syncing without disconnecting.
+   *
+   * Disconnecting clears the OAuth tokens, so coming back means a full
+   * re-authorisation in the provider's dashboard. Pausing leaves the grant
+   * intact and just stops the data flowing, which is what a venue between POS
+   * systems actually needs: reports sum SalesActualEntry across sources for a
+   * venue+day, so a feed left running alongside hand-entered sales counts the
+   * day twice.
+   */
+  async setSyncPaused(
+    providerInput: string,
+    input: { paused: boolean; reason?: string | null },
+    actor: AuthUser,
+    accountInput?: unknown
+  ) {
+    const provider = normaliseProvider(providerInput);
+    const accountKey = provider === 'SQUARE' ? normaliseSquareAccountKey(accountInput) : undefined;
+    const connection = await connectionSelect(provider, accountKey);
+    if (!connection) throw new HttpError(404, 'Integration connection not found.');
+
+    const label = provider === 'SQUARE' && accountKey
+      ? `${squareAccountConfig(accountKey).label} Square`
+      : PROVIDER_COPY[provider].label;
+    const reason = input.reason?.trim() || null;
+
+    await prisma.integrationConnection.update({
+      where: { id: connection.id },
+      data: {
+        syncPausedAt: input.paused ? (connection.syncPausedAt ?? new Date()) : null,
+        syncPausedReason: input.paused ? reason : null,
+        updatedByUserId: actor.id
+      }
+    });
+    await recordEvent({
+      provider,
+      connectionId: connection.id,
+      eventType: input.paused ? 'SYNC_PAUSED' : 'SYNC_RESUMED',
+      summary: input.paused
+        ? `${label} syncing paused${reason ? ` — ${reason}` : ''}. Tokens kept.`
+        : `${label} syncing resumed.`,
+      actor,
+      metadata: accountKey ? { accountKey } : {}
+    });
+    return { ok: true, provider: PROVIDER_COPY[provider].key, paused: input.paused };
+  },
+
   async test(providerInput: string, actor: AuthUser, accountInput?: unknown) {
     const provider = normaliseProvider(providerInput);
     if (provider === 'SQUARE') {
@@ -5796,33 +7480,114 @@ export const integrationService = {
     return recordWebhook('SQUARE', rawBody, accountKey);
   },
 
-  async syncXeroPayRates(actor: AuthUser): Promise<XeroPayRateSyncResult> {
+  /**
+   * Pull each employee's ordinary hourly rate out of Xero Payroll onto their
+   * Alma profile.
+   *
+   * Two things make this less obvious than it looks. Xero's employee LIST is a
+   * summary and carries no pay template, so the rate has to come from the
+   * individual employee record — reading it off the list silently skipped
+   * every single employee. And a group with more than one Xero organisation
+   * has its people split across them, so the list has to be walked per tenant.
+   *
+   * Detail records are only fetched for employees that matched an Alma profile
+   * and are actually rate-managed, so the call count stays close to the number
+   * of people whose rate we intend to write.
+   */
+  /**
+   * Pull each employee's ordinary hourly rate out of Xero Payroll onto their
+   * Alma profile.
+   *
+   * Two things make this less obvious than it looks. Xero's employee LIST is a
+   * summary and carries no pay template, so the rate has to come from the
+   * individual employee record — reading it off the list silently skipped
+   * every single employee. And a group with more than one Xero organisation
+   * has its people split across them, so the list has to be walked per tenant.
+   *
+   * Detail records are only fetched for employees that matched an Alma profile
+   * and are actually rate-managed, so the call count stays close to the number
+   * of people whose rate we intend to write.
+   */
+  /**
+   * Read-only payroll dump for one employee, plus the organisation's pay items.
+   * Diagnostic only — used when a rate doesn't come across and the question is
+   * what shape Xero is actually returning.
+   */
+  async debugXeroPayroll(_actor: AuthUser, name: string) {
     const connection = await connectedXeroConnection();
+    const tenants = xeroTenantsFromConnection(connection);
+    const out: unknown[] = [];
+    for (const tenant of tenants) {
+      const list = await xeroGetJson<{ Employees?: Array<{ EmployeeID: string; FirstName: string; LastName: string; Status: string }> }>(
+        '/payroll.xro/1.0/Employees',
+        { connection, tenantId: tenant.id }
+      );
+      const match = (list.data.Employees ?? []).find(
+        (e) => e.Status === 'ACTIVE' && `${e.FirstName} ${e.LastName}`.toLowerCase().includes(name.toLowerCase())
+      );
+      if (!match) continue;
+      const detail = await xeroGetJson<unknown>(`/payroll.xro/1.0/Employees/${match.EmployeeID}`, { connection, tenantId: tenant.id });
+      const payItems = await xeroGetJson<unknown>('/payroll.xro/1.0/PayItems', { connection, tenantId: tenant.id });
+      out.push({ tenant: tenant.name, employee: detail.data, payItems: payItems.data });
+    }
+    return out;
+  },
 
+  async syncXeroPayRates(actor: AuthUser, options: { dryRun?: boolean } = {}): Promise<XeroPayRateSyncResult> {
+    const connection = await connectedXeroConnection();
+    const recordedTenants = xeroTenantsFromConnection(connection);
+    const tenants = recordedTenants.length > 0
+      ? recordedTenants
+      : connection.providerAccountId
+        ? [{ id: connection.providerAccountId, name: connection.providerAccountName ?? null }]
+        : [];
+    if (tenants.length === 0) throw new HttpError(409, 'No Xero tenant is connected.');
+
+    type XeroEarningsLine = {
+      EarningsRateID?: string;
+      EarningsType?: string;
+      RatePerUnit?: number;
+      NormalNumberOfUnits?: number;
+    };
     type XeroPayrollEmployee = {
       EmployeeID: string;
       FirstName: string;
       LastName: string;
       Email?: string;
       Status: string;
-      PayTemplate?: {
-        EarningsLines?: Array<{
-          EarningsRateID?: string;
-          EarningsType?: string;
-          RatePerUnit?: number;
-          NormalNumberOfUnits?: number;
-        }>;
-      };
+      OrdinaryEarningsRateID?: string;
+      PayTemplate?: { EarningsLines?: XeroEarningsLine[] };
+    };
+    type XeroEarningsRate = {
+      EarningsRateID: string;
+      Name?: string;
+      EarningsType?: string;
+      RatePerUnit?: number;
     };
 
-    const response = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
-      '/payroll.xro/1.0/Employees',
-      { connection }
-    );
-
-    const xeroEmployees = (response.data.Employees ?? []).filter(
-      (e) => e.Status === 'ACTIVE'
-    );
+    // The hourly rate usually is NOT on the employee. Alma's staff are on award
+    // pay items ("Casual F&B Gr2 Weekdays", $33.85/hr) and their template lines
+    // just say CalculationType: USEEARNINGSRATE — the money lives on the pay
+    // item they point at. Reading only the employee found no rate for anyone.
+    const payItemsByTenant = new Map<string, Map<string, XeroEarningsRate>>();
+    const payItemsFor = async (tenant: string) => {
+      const cached = payItemsByTenant.get(tenant);
+      if (cached) return cached;
+      let byId = new Map<string, XeroEarningsRate>();
+      try {
+        const response = await xeroGetJson<{ PayItems?: { EarningsRates?: XeroEarningsRate[] } }>(
+          '/payroll.xro/1.0/PayItems',
+          { connection, tenantId: tenant }
+        );
+        byId = new Map(
+          (response.data.PayItems?.EarningsRates ?? []).map((rate) => [rate.EarningsRateID.toLowerCase(), rate])
+        );
+      } catch {
+        // Reported per employee below as "no rate found".
+      }
+      payItemsByTenant.set(tenant, byId);
+      return byId;
+    };
 
     const staffProfiles = await prisma.staffProfile.findMany({
       where: { mergedIntoStaffProfileId: null },
@@ -5838,20 +7603,16 @@ export const integrationService = {
     });
 
     const byXeroId = new Map(
-      staffProfiles
-        .filter((p) => p.xeroEmployeeId)
-        .map((p) => [p.xeroEmployeeId!.toLowerCase(), p])
+      staffProfiles.filter((p) => p.xeroEmployeeId).map((p) => [p.xeroEmployeeId!.toLowerCase(), p])
     );
     const byEmail = new Map(
-      staffProfiles
-        .filter((p) => p.email)
-        .map((p) => [p.email!.toLowerCase(), p])
+      staffProfiles.filter((p) => p.email).map((p) => [p.email!.toLowerCase(), p])
     );
     // Name fallback (accent/case-insensitive) for staff with no Xero ID and a
     // non-matching/absent email — catches the bulk that would otherwise be
     // left unmatched. Only used when the name is unambiguous (one staffer).
     const xeroNameKey = (first: string, last: string) =>
-      `${first} ${last}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+      `${first} ${last}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
     const byName = new Map<string, typeof staffProfiles>();
     for (const p of staffProfiles) {
       const key = xeroNameKey(p.firstName, p.lastName);
@@ -5862,85 +7623,623 @@ export const integrationService = {
 
     const updated: XeroPayRateSyncResult['updated'] = [];
     const unmatched: XeroPayRateSyncResult['unmatched'] = [];
-    let skipped = 0;
+    const skippedDetail: NonNullable<XeroPayRateSyncResult['skippedDetail']> = [];
+    const tenantResults: NonNullable<XeroPayRateSyncResult['tenants']> = [];
+    // One Alma profile must not be written twice if two organisations both
+    // claim the same person — first tenant to match wins.
+    const handledProfileIds = new Set<string>();
+    let lastConnectionId = connection.id;
 
-    for (const emp of xeroEmployees) {
-      const earningsLine = emp.PayTemplate?.EarningsLines?.find(
-        (l) => l.EarningsType === 'ORDINARYTIMEEARNINGS'
-      ) ?? emp.PayTemplate?.EarningsLines?.[0];
+    for (const tenant of tenants) {
+      let tenantEmployees = 0;
+      let tenantError: string | null = null;
+      try {
+        const listResponse = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+          '/payroll.xro/1.0/Employees',
+          { connection, tenantId: tenant.id }
+        );
+        lastConnectionId = listResponse.connection.id;
+        const active = (listResponse.data.Employees ?? []).filter((employee) => employee.Status === 'ACTIVE');
+        tenantEmployees = active.length;
 
-      const ratePerUnit = earningsLine?.RatePerUnit;
-      if (!ratePerUnit || ratePerUnit <= 0) {
-        skipped++;
-        continue;
-      }
+        for (const emp of active) {
+          const nameList = byName.get(xeroNameKey(emp.FirstName, emp.LastName)) ?? [];
+          const profile =
+            byXeroId.get(emp.EmployeeID.toLowerCase()) ??
+            (emp.Email ? byEmail.get(emp.Email.toLowerCase()) : undefined) ??
+            (nameList.length === 1 ? nameList[0] : undefined);
 
-      const nameList = byName.get(xeroNameKey(emp.FirstName, emp.LastName)) ?? [];
-      const profile =
-        byXeroId.get(emp.EmployeeID.toLowerCase()) ??
-        (emp.Email ? byEmail.get(emp.Email.toLowerCase()) : undefined) ??
-        (nameList.length === 1 ? nameList[0] : undefined);
+          if (!profile) {
+            unmatched.push({
+              xeroEmployeeId: emp.EmployeeID,
+              firstName: emp.FirstName,
+              lastName: emp.LastName,
+              email: emp.Email ?? null
+            });
+            continue;
+          }
+          if (handledProfileIds.has(profile.id)) continue;
 
-      if (!profile) {
-        unmatched.push({
-          xeroEmployeeId: emp.EmployeeID,
-          firstName: emp.FirstName,
-          lastName: emp.LastName,
-          email: emp.Email ?? null
-        });
-        continue;
-      }
+          const displayName = `${profile.firstName} ${profile.lastName}`.trim();
 
-      // The Alma profile is the source of truth for salaried and cash-paid
-      // staff: if a manager has set a manual full-time salary or cash wages,
-      // don't let Xero's hourly rate clobber it. Still stamp the Xero link.
-      if (profile.payProfile?.payMode === 'MANUAL_FULL_TIME' || profile.payProfile?.payMode === 'CASH') {
-        if (!profile.xeroEmployeeId) {
-          await prisma.staffProfile.update({ where: { id: profile.id }, data: { xeroEmployeeId: emp.EmployeeID } });
+          // The Alma profile is the source of truth for salaried and cash-paid
+          // staff: if a manager has set a manual full-time salary or cash wages,
+          // don't let Xero's hourly rate clobber it. Still stamp the Xero link.
+          if (profile.payProfile?.payMode === 'MANUAL_FULL_TIME' || profile.payProfile?.payMode === 'CASH') {
+            if (!profile.xeroEmployeeId && !options.dryRun) {
+              await prisma.staffProfile.update({ where: { id: profile.id }, data: { xeroEmployeeId: emp.EmployeeID } });
+            }
+            handledProfileIds.add(profile.id);
+            skippedDetail.push({ name: displayName, reason: `Paid as ${profile.payProfile.payMode === 'CASH' ? 'cash' : 'salary'} in Alma — rate left alone.` });
+            continue;
+          }
+
+          // The rate lives on the pay template, which only the individual
+          // employee record carries.
+          let detail: XeroPayrollEmployee | null = null;
+          try {
+            const detailResponse = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+              `/payroll.xro/1.0/Employees/${encodeURIComponent(emp.EmployeeID)}`,
+              { connection, tenantId: tenant.id }
+            );
+            detail = detailResponse.data.Employees?.[0] ?? null;
+          } catch (error) {
+            skippedDetail.push({ name: displayName, reason: `Xero would not return their record: ${error instanceof Error ? error.message : 'unknown error'}` });
+            handledProfileIds.add(profile.id);
+            continue;
+          }
+
+          const lines = detail?.PayTemplate?.EarningsLines ?? [];
+          const payItems = await payItemsFor(tenant.id);
+          const rateOf = (id: string | undefined) =>
+            id ? payItems.get(id.toLowerCase())?.RatePerUnit : undefined;
+
+          // Order matters. An explicit rate typed onto the employee's own line
+          // overrides the pay item; otherwise their nominated ordinary rate;
+          // otherwise the first ordinary-time line that resolves to a rate.
+          const ordinaryRateId = detail?.OrdinaryEarningsRateID ?? emp.OrdinaryEarningsRateID;
+          const ratePerUnit =
+            lines.find((line) => (line.RatePerUnit ?? 0) > 0)?.RatePerUnit ??
+            rateOf(ordinaryRateId) ??
+            lines
+              .map((line) => ({ line, item: line.EarningsRateID ? payItems.get(line.EarningsRateID.toLowerCase()) : undefined }))
+              .find((entry) => entry.item?.EarningsType === 'ORDINARYTIMEEARNINGS' && (entry.item?.RatePerUnit ?? 0) > 0)
+              ?.item?.RatePerUnit;
+
+          if (!ratePerUnit || ratePerUnit <= 0) {
+            handledProfileIds.add(profile.id);
+            skippedDetail.push({
+              name: displayName,
+              reason: lines.length === 0
+                ? 'No pay template in Xero — set their ordinary earnings rate there.'
+                : ordinaryRateId
+                  ? 'Their ordinary earnings rate has no hourly amount set in Xero.'
+                  : 'No ordinary earnings rate is nominated for them in Xero.'
+            });
+            continue;
+          }
+
+          handledProfileIds.add(profile.id);
+          const newPayRateCents = Math.round(ratePerUnit * 100);
+          if (!options.dryRun) {
+            await prisma.staffProfile.update({
+              where: { id: profile.id },
+              // Stamp the Xero link so future syncs match by id even when first
+              // matched by name/email.
+              data: { payRateCents: newPayRateCents, xeroEmployeeId: emp.EmployeeID }
+            });
+          }
+
+          updated.push({
+            staffId: profile.id,
+            firstName: profile.firstName,
+            lastName: profile.lastName,
+            previousPayRateCents: profile.payRateCents,
+            newPayRateCents,
+            xeroEmployeeId: emp.EmployeeID
+          });
         }
-        skipped++;
-        continue;
+      } catch (error) {
+        // One organisation failing must not lose the other's rates.
+        tenantError = error instanceof Error ? error.message : 'Xero request failed.';
       }
-
-      const newPayRateCents = Math.round(ratePerUnit * 100);
-      await prisma.staffProfile.update({
-        where: { id: profile.id },
-        // Stamp the Xero link so future syncs match by id even when first
-        // matched by name/email.
-        data: { payRateCents: newPayRateCents, xeroEmployeeId: emp.EmployeeID }
-      });
-
-      updated.push({
-        staffId: profile.id,
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        previousPayRateCents: profile.payRateCents,
-        newPayRateCents,
-        xeroEmployeeId: emp.EmployeeID
-      });
+      tenantResults.push({ tenantId: tenant.id, tenantName: tenant.name, employees: tenantEmployees, error: tenantError });
     }
 
-    await recordEvent({
-      provider: 'XERO',
-      connectionId: response.connection.id,
-      eventType: 'DATA_IMPORTED',
-      summary: `Xero pay rates synced: ${updated.length} updated, ${unmatched.length} unmatched, ${skipped} skipped.`,
-      actor,
-      metadata: {
-        tokenStatus: response.tokenStatus,
-        synced: updated.length,
-        unmatched: unmatched.length,
-        skipped
-      }
-    });
+    const skipped = skippedDetail.length;
+
+    if (!options.dryRun) {
+      await recordEvent({
+        provider: 'XERO',
+        connectionId: lastConnectionId,
+        eventType: 'DATA_IMPORTED',
+        summary: `Xero pay rates synced: ${updated.length} updated, ${unmatched.length} unmatched, ${skipped} skipped.`,
+        actor,
+        metadata: {
+          synced: updated.length,
+          unmatched: unmatched.length,
+          skipped,
+          tenants: tenantResults.length
+        }
+      });
+    }
 
     return {
       synced: updated.length,
       skipped,
       notMatched: unmatched.length,
       updated,
-      unmatched
+      unmatched,
+      skippedDetail,
+      tenants: tenantResults,
+      dryRun: options.dryRun === true
     };
+  },
+
+  // Push approved Alma timesheets INTO Xero Payroll as draft timesheets, so a
+  // pay run can be prepared from Alma's approvals without anyone rekeying a
+  // CSV. The opposite direction of syncXeroTimesheets.
+  //
+  // Xero's shape dictates the work: one timesheet per employee per *pay
+  // period*, boundaries set by that employee's payroll calendar, hours as a
+  // flat array of one number per day across the whole period. A week selected
+  // in Alma can therefore split across two Xero periods, and does whenever a
+  // fortnightly calendar cuts mid-week. The arithmetic lives in @alma/shared
+  // where it is tested; this function is the plumbing around it.
+  //
+  // Drafts, never approved timesheets: the pay run is the payroll operator's
+  // decision, and a draft is reversible in Xero while an approved one is a
+  // support ticket.
+  async pushTimesheetsToXero(
+    actor: AuthUser,
+    input: { start: string; end: string; venue?: string | null; dryRun?: boolean; staffProfileIds?: string[] }
+  ): Promise<XeroTimesheetPushResult> {
+    const start = new Date(input.start);
+    const end = new Date(input.end);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new HttpError(400, 'Push start and end dates are required.');
+    }
+    if (end <= start) throw new HttpError(400, 'Push end date must be after the start date.');
+
+    // Same venue rule the CSV export applies: an admin sees what they ask for,
+    // a manager only ever their own venue. Payroll is the last place to let a
+    // request parameter widen someone's reach.
+    // 'all' is this app's sentinel for "every venue", not a venue name. Passed
+    // through it becomes `venue = 'all'`, which matches nothing and reports a
+    // silent zero — the timesheet list guards the same way.
+    const rawVenue = input.venue?.trim() || '';
+    const requestedVenue = rawVenue === 'all' ? '' : rawVenue;
+    let scopedVenue: string | undefined;
+    if (actor.isAdmin || actor.role === 'ADMIN') {
+      scopedVenue = requestedVenue || undefined;
+    } else {
+      if (!actor.venue) throw new HttpError(403, 'Manager venue access is not configured.');
+      if (requestedVenue && requestedVenue !== actor.venue) {
+        throw new HttpError(403, 'Managers cannot push another venue’s timesheets.');
+      }
+      scopedVenue = actor.venue;
+    }
+
+    const connection = await connectedXeroConnection();
+    // Alma runs more than one Xero organisation (one per entity), and a single
+    // OAuth grant covers them all. An employee exists in exactly one of them,
+    // so every lookup and the POST itself have to be aimed at the tenant that
+    // actually holds them — asking only the default tenant made every employee
+    // in the other organisation look like they had been deleted from Xero.
+    const recordedTenants = xeroTenantsFromConnection(connection);
+    const tenants = recordedTenants.length > 0
+      ? recordedTenants
+      : connection.providerAccountId
+        ? [{ id: connection.providerAccountId, name: connection.providerAccountName ?? null }]
+        : [];
+    if (tenants.length === 0) throw new HttpError(409, 'No Xero tenant is connected.');
+
+    // Xero answers a POST made without the write scope with a bare 403 and no
+    // indication that the scope is why. Check the recorded grant first so the
+    // manager is told to reconnect rather than left guessing.
+    const grantedScopes = scopesFromJson(connection.scopes).map((scope) => scope.toLowerCase());
+    if (grantedScopes.length > 0 && !grantedScopes.includes('payroll.timesheets')) {
+      throw new HttpError(
+        409,
+        'Your Xero connection can read payroll but not write to it, so timesheets can’t be pushed. Disconnect Xero in Admin and reconnect it — you’ll be asked to grant timesheet access — then push again.'
+      );
+    }
+
+    const warnings: string[] = [];
+    const results: XeroTimesheetPushRow[] = [];
+
+    // An empty list means "everyone in the window" — a caller that wants to
+    // push nobody simply doesn't call. Only a non-empty selection narrows it,
+    // so a UI bug that sends [] can never silently push the whole payroll.
+    const selectedStaffIds = (input.staffProfileIds ?? []).filter((id) => typeof id === 'string' && id.length > 0);
+
+    const entries = await prisma.timesheet.findMany({
+      where: {
+        status: 'APPROVED',
+        paymentMethod: { not: 'CASH' },
+        workDate: { gte: start, lt: end },
+        ...(selectedStaffIds.length > 0 ? { staffProfileId: { in: selectedStaffIds } } : {}),
+        ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
+      },
+      orderBy: [{ workDate: 'asc' }, { clockInAt: 'asc' }],
+      include: {
+        staffProfile: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            xeroEmployeeId: true,
+            xeroEarningsRateId: true,
+            mergedIntoStaffProfileId: true
+          }
+        }
+      }
+    });
+
+    if (entries.length === 0) {
+      return {
+        pushed: 0,
+        failed: 0,
+        skipped: 0,
+        markedExported: 0,
+        results: [],
+        warnings: [
+          selectedStaffIds.length > 0
+            ? 'No approved timesheets for the selected staff in this period.'
+            : 'No approved timesheets in this period. Only APPROVED shifts are pushed — approve them first.'
+        ]
+      };
+    }
+
+    type XeroPayrollEmployee = {
+      EmployeeID: string;
+      FirstName: string;
+      LastName: string;
+      Status?: string;
+      PayrollCalendarID?: string;
+      OrdinaryEarningsRateID?: string;
+      PayTemplate?: { EarningsLines?: Array<{ EarningsRateID?: string }> };
+    };
+    type XeroPayrollCalendar = { PayrollCalendarID: string; CalendarType: string; StartDate?: string };
+
+    // Pay items are per-organisation and carry the award rate NAMES, which are
+    // the only way to tell a Saturday rate from a weekday one — Xero types them
+    // all as ORDINARYTIMEEARNINGS. Fetched once per organisation on first use.
+    type XeroEarningsRateItem = { EarningsRateID: string; Name?: string };
+    const payItemsByTenant = new Map<string, Map<string, XeroEarningsRateItem>>();
+    const payItemsForTenant = async (tenant: string) => {
+      const cached = payItemsByTenant.get(tenant);
+      if (cached) return cached;
+      let byId = new Map<string, XeroEarningsRateItem>();
+      try {
+        const response = await xeroGetJson<{ PayItems?: { EarningsRates?: XeroEarningsRateItem[] } }>(
+          '/payroll.xro/1.0/PayItems',
+          { connection, tenantId: tenant }
+        );
+        byId = new Map(
+          (response.data.PayItems?.EarningsRates ?? []).map((rate) => [rate.EarningsRateID.toLowerCase(), rate])
+        );
+      } catch {
+        // Without pay items every hour lands on the weekday rate, which is the
+        // old behaviour rather than a failure — warn instead of aborting.
+        warnings.push(`Could not read pay items for ${tenant}; weekend hours went on the ordinary rate.`);
+      }
+      payItemsByTenant.set(tenant, byId);
+      return byId;
+    };
+
+    // Payroll calendars are per-organisation, fetched once each on first use.
+    const calendarsByTenant = new Map<string, Map<string, XeroPayrollCalendar>>();
+    const calendarsFor = async (tenant: string) => {
+      const cached = calendarsByTenant.get(tenant);
+      if (cached) return cached;
+      let byId = new Map<string, XeroPayrollCalendar>();
+      try {
+        const response = await xeroGetJson<{ PayrollCalendars?: XeroPayrollCalendar[] }>(
+          '/payroll.xro/1.0/PayrollCalendars',
+          { connection, tenantId: tenant }
+        );
+        byId = new Map(
+          (response.data.PayrollCalendars ?? []).map((calendar) => [calendar.PayrollCalendarID.toLowerCase(), calendar])
+        );
+      } catch (error) {
+        warnings.push(`Could not read payroll calendars for ${tenant}: ${error instanceof Error ? error.message : 'unknown error'}`);
+      }
+      calendarsByTenant.set(tenant, byId);
+      return byId;
+    };
+
+    // Employees are fetched one at a time, not from the list endpoint. Xero's
+    // employee LIST returns a summary with no pay template, and the ordinary
+    // earnings rate lives in the template — so a list-based lookup would fail
+    // every employee whose rate isn't also filled in on their Alma profile,
+    // which today is all of them. The individual record carries both the
+    // calendar and the rate, and we only fetch the handful being pushed.
+    //
+    // Each id is tried against every connected organisation until one answers,
+    // and the winning tenant travels with the employee so the timesheet is
+    // posted to the org that actually employs them.
+    type ResolvedEmployee = { employee: XeroPayrollEmployee; tenantId: string; tenantName: string | null };
+    const employeeCache = new Map<string, ResolvedEmployee | null>();
+    const fetchEmployee = async (id: string): Promise<ResolvedEmployee | null> => {
+      const key = id.toLowerCase();
+      const cached = employeeCache.get(key);
+      if (cached !== undefined) return cached;
+      let resolved: ResolvedEmployee | null = null;
+      for (const tenant of tenants) {
+        try {
+          const response = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+            `/payroll.xro/1.0/Employees/${encodeURIComponent(id)}`,
+            { connection, tenantId: tenant.id }
+          );
+          const employee = response.data.Employees?.[0];
+          if (employee) {
+            resolved = { employee, tenantId: tenant.id, tenantName: tenant.name };
+            break;
+          }
+        } catch {
+          // A 404 just means "not this organisation" — keep asking the others,
+          // and report per employee below rather than aborting the payroll.
+        }
+      }
+      employeeCache.set(key, resolved);
+      return resolved;
+    };
+
+    // A merged duplicate keeps its own roster and timesheet history by design —
+    // the merge archives the profile rather than moving the rows. Payroll
+    // identity, though, belongs to the surviving profile: the Xero employee
+    // link and earnings rate live there. Resolve through the merge pointer so
+    // a person's shifts from both profiles push as one employee, and group by
+    // the surviving id so they land in a single timesheet per pay period
+    // instead of two competing ones.
+    const mergedTargetIds = [
+      ...new Set(
+        entries
+          .map((entry) => entry.staffProfile.mergedIntoStaffProfileId)
+          .filter((id): id is string => Boolean(id))
+      )
+    ];
+    const canonicalProfiles = mergedTargetIds.length
+      ? await prisma.staffProfile.findMany({
+          where: { id: { in: mergedTargetIds } },
+          select: { id: true, firstName: true, lastName: true, xeroEmployeeId: true, xeroEarningsRateId: true }
+        })
+      : [];
+    const canonicalById = new Map(canonicalProfiles.map((profile) => [profile.id, profile]));
+
+    const byStaff = new Map<string, typeof entries>();
+    for (const entry of entries) {
+      const key = entry.staffProfile.mergedIntoStaffProfileId ?? entry.staffProfileId;
+      const list = byStaff.get(key) ?? [];
+      list.push(entry);
+      byStaff.set(key, list);
+    }
+
+    let publicHolidayWarned = false;
+    const exportBatchId = `xero-push-${Date.now()}`;
+    const exportedIds: string[] = [];
+    let pushed = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const [staffProfileId, staffEntries] of byStaff) {
+      const ownProfile = staffEntries[0]?.staffProfile;
+      if (!ownProfile) continue;
+      // The surviving profile when these rows came from a merged duplicate.
+      const canonical = canonicalById.get(staffProfileId);
+      const profile = canonical
+        ? { ...ownProfile, xeroEmployeeId: canonical.xeroEmployeeId, xeroEarningsRateId: canonical.xeroEarningsRateId }
+        : ownProfile;
+      const name = canonical
+        ? `${canonical.firstName} ${canonical.lastName}`.trim()
+        : `${ownProfile.firstName} ${ownProfile.lastName}`.trim();
+      const fail = (message: string) => {
+        failed += 1;
+        results.push({ employee: name, staffProfileId, status: 'failed', message, hours: 0, periodStart: null, periodEnd: null, xeroTimesheetId: null });
+      };
+
+      const xeroEmployeeId = staffEntries.find((entry) => entry.xeroEmployeeId)?.xeroEmployeeId ?? profile.xeroEmployeeId;
+      if (!xeroEmployeeId) {
+        fail('No Xero employee is linked to this staff profile. Link them in Admin → Xero employees, then push again.');
+        continue;
+      }
+      const resolved = await fetchEmployee(xeroEmployeeId);
+      if (!resolved) {
+        fail(
+          `Xero has no employee ${xeroEmployeeId} in ${tenants.length === 1 ? 'the connected organisation' : `any of the ${tenants.length} connected organisations`}. Re-link the staff profile, then push again.`
+        );
+        continue;
+      }
+      const { employee, tenantId: employeeTenantId } = resolved;
+
+      const calendarsById = await calendarsFor(employeeTenantId);
+      const calendar = employee.PayrollCalendarID ? calendarsById.get(employee.PayrollCalendarID.toLowerCase()) : undefined;
+      if (!calendar) {
+        fail('This employee is not on a Xero payroll calendar, so Xero has no pay period to file the hours against.');
+        continue;
+      }
+      const calendarStart = parseXeroDate(calendar.StartDate);
+      if (!calendarStart) {
+        fail(`Xero payroll calendar "${calendar.CalendarType}" has no start date, so its pay periods can’t be worked out.`);
+        continue;
+      }
+
+      // Earnings rate: the timesheet's own override, then the staff profile's,
+      // then whatever Xero says is the employee's ordinary rate. Without one
+      // there is no valid line to send.
+      const earningsRateId =
+        staffEntries.find((entry) => entry.xeroEarningsRateId)?.xeroEarningsRateId ??
+        profile.xeroEarningsRateId ??
+        employee.OrdinaryEarningsRateID ??
+        employee.PayTemplate?.EarningsLines?.find((line) => line.EarningsRateID)?.EarningsRateID;
+      if (!earningsRateId) {
+        fail('No Xero earnings rate for this employee. Set an ordinary earnings rate on their Xero pay template, or fill the Xero earnings rate field on their Alma profile.');
+        continue;
+      }
+
+      // Weekend hours are paid on their own award rate, and Xero models that
+      // as a separate earnings rate rather than a loading — so a Saturday
+      // shift needs its own timesheet line or it is silently paid at the
+      // weekday rate. The rates available to this employee are whatever their
+      // pay template lists; classification is by name, because every one of
+      // them is ORDINARYTIMEEARNINGS to Xero.
+      const templateRateIds = (employee.PayTemplate?.EarningsLines ?? [])
+        .map((line) => line.EarningsRateID)
+        .filter((id): id is string => Boolean(id));
+      const tenantPayItems = await payItemsForTenant(employeeTenantId);
+      const rateIdFor: Partial<Record<'weekday' | 'saturday' | 'sunday' | 'publicHoliday', string>> = {};
+      for (const id of templateRateIds) {
+        const kind = classifyEarningsRateName(tenantPayItems.get(id.toLowerCase())?.Name);
+        if (kind && !rateIdFor[kind]) rateIdFor[kind] = id;
+      }
+      // The employee's nominated ordinary rate wins for weekdays — it is the
+      // one payroll chose for them, whatever its name happens to be.
+      rateIdFor.weekday = earningsRateId;
+      if (rateIdFor.publicHoliday && !publicHolidayWarned) {
+        // A date alone doesn't say whether it was a public holiday, and
+        // guessing one wrong is a payroll error. Say so rather than silently
+        // paying a holiday at the weekday rate.
+        warnings.push('Public holiday hours are not detected — they go on the ordinary rate. Check those days on the drafts in Xero.');
+        publicHolidayWarned = true;
+      }
+
+      const groups = groupIntoPeriods(
+        staffEntries.map((entry) => ({ workDate: entry.workDate, hours: entryHours(entry), id: entry.id })),
+        calendarStart,
+        calendar.CalendarType
+      );
+      if (groups.length === 0) {
+        fail(`Xero payroll calendar type "${calendar.CalendarType}" doesn’t take timesheets. Only weekly, fortnightly and four-weekly calendars do.`);
+        continue;
+      }
+
+      for (const group of groups) {
+        const units = unitsForPeriod(group.entries, group.period);
+        const byDay = splitUnitsByDay(group.entries, group.period);
+        // One line per rate that actually has hours. A weekend rate the
+        // employee doesn't have falls back to the weekday rate rather than
+        // dropping the hours — underpaying is bad, losing them is worse.
+        const lines: Array<{ EarningsRateID: string; NumberOfUnits: number[] }> = [];
+        const weekdayUnits = [...byDay.weekday];
+        for (const kind of ['saturday', 'sunday'] as const) {
+          const kindUnits = byDay[kind];
+          if (!hasHours(kindUnits)) continue;
+          const rateId = rateIdFor[kind];
+          if (rateId && rateId !== rateIdFor.weekday) {
+            lines.push({ EarningsRateID: rateId, NumberOfUnits: kindUnits });
+          } else {
+            kindUnits.forEach((value, index) => {
+              weekdayUnits[index] = Math.round(((weekdayUnits[index] ?? 0) + value) * 100) / 100;
+            });
+          }
+        }
+        if (hasHours(weekdayUnits)) {
+          lines.unshift({ EarningsRateID: rateIdFor.weekday!, NumberOfUnits: weekdayUnits });
+        }
+        if (!hasHours(units)) {
+          skipped += 1;
+          results.push({ employee: name, staffProfileId, status: 'skipped', message: 'No paid hours in this pay period.', hours: 0, periodStart: group.period.start, periodEnd: group.period.end, xeroTimesheetId: null });
+          continue;
+        }
+
+        const totalHours = Math.round(units.reduce((sum, value) => sum + value, 0) * 100) / 100;
+        const rateSummary = ([
+          hasHours(weekdayUnits) ? `${weekdayUnits.reduce((a, b) => a + b, 0).toFixed(2)}h weekday` : null,
+          hasHours(byDay.saturday) && rateIdFor.saturday && rateIdFor.saturday !== rateIdFor.weekday
+            ? `${byDay.saturday.reduce((a, b) => a + b, 0).toFixed(2)}h Saturday`
+            : null,
+          hasHours(byDay.sunday) && rateIdFor.sunday && rateIdFor.sunday !== rateIdFor.weekday
+            ? `${byDay.sunday.reduce((a, b) => a + b, 0).toFixed(2)}h Sunday`
+            : null
+        ].filter(Boolean) as string[]).join(', ');
+
+        // A dry run does every lookup and builds the real payload, but stops
+        // before writing. It is the only way to see which employees would fail
+        // without creating drafts in Xero that someone then has to delete.
+        if (input.dryRun) {
+          pushed += 1;
+          results.push({
+            employee: name,
+            staffProfileId,
+            status: 'pushed',
+            message: `Would send ${totalHours.toFixed(2)}h to ${resolved.tenantName ?? employeeTenantId} across ${lines.length} rate${lines.length === 1 ? '' : 's'} (${rateSummary}).`,
+            hours: totalHours,
+            periodStart: group.period.start,
+            periodEnd: group.period.end,
+            xeroTimesheetId: null
+          });
+          continue;
+        }
+
+        try {
+          const response = await xeroPostJson<{ Timesheets?: Array<{ TimesheetID?: string; Status?: string }> }>(
+            '/payroll.xro/1.0/Timesheets',
+            {
+              connection,
+              tenantId: employeeTenantId,
+              // A bare array, not { Timesheets: [...] }. The AU Payroll API
+              // wraps collections on the way out but expects the raw array on
+              // the way in, and rejects the wrapped form with a deserialization
+              // error that never names the property it choked on.
+              body: [
+                {
+                  EmployeeID: employee.EmployeeID,
+                  StartDate: group.period.start,
+                  EndDate: group.period.end,
+                  Status: 'DRAFT',
+                  TimesheetLines: lines
+                }
+              ]
+            }
+          );
+          const created = response.data.Timesheets?.[0];
+          pushed += 1;
+          exportedIds.push(...group.entries.map((entry) => entry.id));
+          results.push({
+            employee: name,
+            staffProfileId,
+            status: 'pushed',
+            message: `${totalHours.toFixed(2)}h as a draft timesheet in ${resolved.tenantName ?? employeeTenantId} (${rateSummary}).`,
+            hours: totalHours,
+            periodStart: group.period.start,
+            periodEnd: group.period.end,
+            xeroTimesheetId: created?.TimesheetID ?? null
+          });
+        } catch (error) {
+          // One employee's rejection must not abandon the rest of the payroll.
+          failed += 1;
+          results.push({
+            employee: name,
+            staffProfileId,
+            status: 'failed',
+            message: error instanceof Error ? error.message : 'Xero rejected this timesheet.',
+            hours: totalHours,
+            periodStart: group.period.start,
+            periodEnd: group.period.end,
+            xeroTimesheetId: null
+          });
+        }
+      }
+    }
+
+    // Only rows Xero actually accepted are marked exported. Marking on a
+    // partial failure would hide the unpushed hours from the next attempt.
+    let markedExported = 0;
+    if (exportedIds.length > 0 && !input.dryRun) {
+      const updated = await prisma.timesheet.updateMany({
+        where: { id: { in: exportedIds } },
+        data: { status: 'EXPORTED', exportedAt: new Date(), xeroExportBatchId: exportBatchId }
+      });
+      markedExported = updated.count;
+    }
+
+    if (failed > 0) {
+      warnings.push('Pushed timesheets are drafts in Xero — review them there before running pay.');
+    }
+
+    return { pushed, failed, skipped, markedExported, results, warnings };
   },
 
   // Import worked hours FROM Xero Payroll timesheets into Alma's Timesheet
@@ -6668,6 +8967,99 @@ export const integrationService = {
       tenantCount: result.tenantCount,
       billCandidates,
       billsImported,
+      warnings: result.warnings
+    };
+  },
+
+  // Fetch the original PDF attachment from Xero for existing XERO-source
+  // supplier invoices that have no stored document (bills imported before
+  // the attachment fetch shipped, or runs that hit the missing-scope
+  // warning). Secret-guarded via /api/integration-jobs. Idempotent —
+  // invoices that already have a document are skipped before any network
+  // call, so re-running never duplicates or overwrites files.
+  async backfillXeroBillAttachments(input: { days?: number; limit?: number } = {}) {
+    const days = clampLimit(input.days, 90, 365);
+    const limit = clampLimit(input.limit, 200, 1000);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    const connection = await connectedXeroConnection();
+    const recordedTenants = xeroTenantsFromConnection(connection);
+    const tenantIds = recordedTenants.length > 0
+      ? recordedTenants.map((tenant) => tenant.id)
+      : connection.providerAccountId
+        ? [connection.providerAccountId]
+        : [];
+    if (tenantIds.length === 0) {
+      throw new HttpError(409, 'No Xero tenants are connected.');
+    }
+
+    const invoices = await prisma.supplierInvoice.findMany({
+      where: {
+        source: 'XERO',
+        externalInvoiceId: { not: null },
+        document: { is: null },
+        OR: [
+          { invoiceDate: { gte: cutoff } },
+          { invoiceDate: null, importedAt: { gte: cutoff } }
+        ]
+      },
+      select: { id: true, externalInvoiceId: true, invoiceNumber: true, sourceMetadata: true },
+      orderBy: { importedAt: 'desc' },
+      take: limit
+    });
+
+    const targets: XeroAttachmentTarget[] = invoices.map((invoice) => {
+      const metadata =
+        invoice.sourceMetadata && typeof invoice.sourceMetadata === 'object' && !Array.isArray(invoice.sourceMetadata)
+          ? invoice.sourceMetadata as Record<string, unknown>
+          : null;
+      const recordedTenantId = optionalText(metadata?.xeroTenantId);
+      // Hit the tenant the bill was imported from first. Older rows don't
+      // record one, so fall back to probing every connected org — the
+      // attachments list 404s on the wrong tenant and the fetch moves on.
+      const orderedTenantIds = recordedTenantId
+        ? [recordedTenantId, ...tenantIds.filter((id) => id !== recordedTenantId)]
+        : tenantIds;
+      return {
+        invoiceId: invoice.id,
+        billId: invoice.externalInvoiceId as string,
+        label: invoice.invoiceNumber ?? maskIdentifier(invoice.externalInvoiceId) ?? 'Xero bill',
+        tenantIds: orderedTenantIds
+      };
+    });
+
+    const result = await fetchXeroAttachmentsForInvoices(connection, targets);
+
+    await recordEvent({
+      provider: 'XERO',
+      connectionId: connection.id,
+      eventType: 'XERO_BILL_ATTACHMENTS_BACKFILLED',
+      summary: `Xero attachment backfill: ${result.fetched} PDF${result.fetched === 1 ? '' : 's'} stored (${result.rendered} rendered by Xero), ${result.missing} with no document possible, ${targets.length} candidate bill${targets.length === 1 ? '' : 's'}.`,
+      actor: integrationSchedulerActor,
+      metadata: {
+        days,
+        limit,
+        candidates: targets.length,
+        attachmentsFetched: result.fetched,
+        attachmentsRendered: result.rendered,
+        attachmentsMissing: result.missing,
+        needsReconnect: result.authBlocked,
+        warnings: result.warnings.slice(0, 10)
+      }
+    });
+
+    return {
+      provider: 'xero' as const,
+      mode: 'attachments-backfill' as const,
+      generatedAt: new Date().toISOString(),
+      days,
+      limit,
+      candidates: targets.length,
+      attachmentsFetched: result.fetched,
+      attachmentsRendered: result.rendered,
+      attachmentsMissing: result.missing,
+      needsReconnect: result.authBlocked,
       warnings: result.warnings
     };
   },

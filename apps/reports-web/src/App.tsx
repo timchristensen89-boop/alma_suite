@@ -1,5 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
+import { Suspense, lazy, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SortableTable } from './components/SortableTable';
 import { RecipePreviewModal } from './components/RecipePreviewModal';
 import type {
@@ -11,6 +10,8 @@ import type {
   MonthlyRecapPayload,
   MonthlyRecapPeriod,
   RosterForecastSnapshot,
+  ForecastOutlookPayload,
+  ForecastDay,
   RosterShift,
   SalesActualSummary,
   SalesItemActualSummary,
@@ -19,6 +20,7 @@ import type {
   StockItemsPayload,
   StockItemsSummary,
   StocktakesSummary,
+  StockValueByCategory,
   Timesheet
 } from '@alma/shared';
 import { defaultCasualRateCents } from '@alma/shared';
@@ -44,13 +46,12 @@ import {
   accessibleSuiteApps,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteFeedbackWidget,
   SuiteInboxWidget,
   ThemeToggle,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { SuiteSignOutButton } from '@alma/ui';
+import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import {
   clearApiAuthTokens,
   consumeSuiteHandoffToken,
@@ -62,7 +63,17 @@ import {
 } from './lib/api';
 import { COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForWeek, normaliseHistoricalVenue, isVenueOpenOnDate } from './data/historicalSales';
-import { BarChart, Donut, HBars, TrendLine, CHART_COLORS, CHART_PALETTE } from './components/Charts';
+import { Donut, HBars, TrendLine, CHART_COLORS } from './components/Charts';
+
+// The heavy report pages load on demand. They are whole reports in their own
+// right — the forecasting module alone is 581 lines plus its charts — and
+// most visits never open them.
+const StaffCostingReportPage = lazy(() => import('./pages/StaffCostingReportPage').then((m) => ({ default: m.StaffCostingReportPage })));
+const ForecastPage = lazy(() => import('./pages/ForecastPage').then((m) => ({ default: m.ForecastPage })));
+const SupplierSpendPage = lazy(() => import('./pages/SupplierSpendPage').then((m) => ({ default: m.SupplierSpendPage })));
+const ForecastModulePage = lazy(() => import('./pages/ForecastModulePage').then((m) => ({ default: m.ForecastModulePage })));
+const SalesEntryPage = lazy(() => import('./pages/SalesEntryPage').then((m) => ({ default: m.SalesEntryPage })));
+
 
 type SuiteSummary = {
   incidents?: { total?: number; open?: number; followUp?: number };
@@ -98,7 +109,17 @@ type MenuCogsPayload = {
   missingComponents?: Array<{ itemName: string; venue: string; menu: string; units: number; type: 'star' | 'bb' }>;
   missingComponentCount?: number;
   missingComponentUnits?: number;
-  totals: { revenueCents: number; cogsCents: number; grossMarginCents: number; foodCostPct: number | null };
+  totals: {
+    revenueCents: number;
+    cogsCents: number;
+    grossMarginCents: number;
+    foodCostPct: number | null;
+    /** Every item sold in the period, so the share below can be read. */
+    allItemsRevenueCents?: number;
+    /** What share of the period's takings these set menus are, 0-100. */
+    shareOfSalesPct?: number | null;
+    scope?: 'set-menus';
+  };
 };
 
 type ReportsData = {
@@ -114,7 +135,7 @@ type ReportsData = {
   menuCogs: MenuCogsPayload | null;
   primeCost: ReportsPrimeCostPayload | null;
   tips: StaffTipsSummary | null;
-  stockItems: StockItemsPayload | null;
+  stockValue: StockValueByCategory | null;
   stockSummary: StockItemsSummary | null;
   stocktakes: StocktakesSummary | null;
   recipes: RecipesSummary | null;
@@ -174,6 +195,8 @@ type SalesTrendVenueRow = {
   historicalSalesCents: number;
   previousHistoricalSalesCents: number;
   predictedSalesCents: number;
+  bookedCovers: number;
+  bookedEstimateCents: number;
   trendPercent: number | null;
   forecastVarianceCents: number;
   paceLabel: string;
@@ -182,6 +205,10 @@ type SalesTrendVenueRow = {
 type ReportSectionId =
   | 'overview'
   | 'sales'
+  | 'forecast'
+  | 'supplier-spend'
+  | 'forecast-module'
+  | 'sales-entry'
   | 'staff'
   | 'compliance'
   | 'stock'
@@ -199,95 +226,154 @@ type ReportNavItem = {
   title: string;
   description: string;
   icon: JSX.Element;
+  // 'core' = the daily P&L reports an operator lives in; 'more' = secondary
+  // reports tucked behind a group so they don't crowd the nav.
+  group: 'core' | 'more';
+  // Reachable by id, but deliberately not listed anywhere in the UI. The route
+  // stays live so existing links keep working; it simply is not advertised.
+  hidden?: boolean;
 };
+
+// Plain-restaurant cost targets (% of sales) used for the at-a-glance tone on
+// the "This Week" cost triangle. Prime can be overridden per-venue by admins.
+const COST_TARGETS = { food: 30, labour: 30, prime: 60 };
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const REPORTS_FORECAST_STORAGE_KEY = 'alma.reports.forecast.v1';
 const REPORTS_MENU_FILTERS_STORAGE_KEY = 'alma.reports.menu-filters.v1';
 const REPORT_NAV_ITEMS: ReportNavItem[] = [
+  // ── Core: the daily P&L an operator actually runs the restaurant on ──
   {
     id: 'overview',
-    label: 'Overview',
-    title: 'Reports Overview',
-    description: 'High-level attention signals across the suite.',
-    icon: <ChartIcon />
+    label: 'This Week',
+    title: 'This Week',
+    description: 'Your week at a glance: takings, the cost triangle, covers, and what needs attention.',
+    icon: <ChartIcon />,
+    group: 'core'
   },
   {
     id: 'sales',
     label: 'Sales',
-    title: 'Sales Reports',
-    description: 'Venue sales, trends, and sales forecasting for Alma Avalon and St Alma.',
-    icon: <ChartIcon />
+    title: 'Sales',
+    description: 'Takings by venue and day, plus forecast vs actual for Alma Avalon and St Alma.',
+    icon: <ChartIcon />,
+    group: 'core'
+  },
+  {
+    id: 'forecast',
+    label: 'Forecast',
+    title: 'Forecast',
+    description: 'The weeks ahead: covers, sales, wages, COGS and the 13-week cash runway — predicted from your own trading history.',
+    icon: <ChartIcon />,
+    group: 'core'
+  },
+  {
+    id: 'sales-entry',
+    label: 'Enter sales',
+    title: 'Sales entry',
+    description: 'Type takings by hand or upload a file. This is what feeds the forecast now the POS is not connected.',
+    icon: <ChartIcon />,
+    group: 'core'
+  },
+  {
+    id: 'forecast-module',
+    label: 'Forecasting',
+    title: 'Forecasting module',
+    description: 'Entity-separated cash, margin and creditor modelling for Two Cooked Chooks and Alma Freshwater.',
+    icon: <ChartIcon />,
+    group: 'core',
+    // Unlinked on purpose: this is the creditor-facing model, not an operating
+    // report. The route still resolves for anyone who has the link.
+    hidden: true
+  },
+  {
+    id: 'supplier-spend',
+    label: 'Supplier spend',
+    title: 'Projected supplier spend',
+    description: 'Projected spend per supplier per week: the COGS trend from Xero P&L totals applied to the sales forecast, split food and beverage, then by supplier share.',
+    icon: <ChartIcon />,
+    group: 'core'
   },
   {
     id: 'staff',
-    label: 'Staff',
-    title: 'Staff Reports',
-    description: 'Active staff, leave, payroll readiness, and recent management events.',
-    icon: <ChartIcon />
-  },
-  {
-    id: 'compliance',
-    label: 'Compliance',
-    title: 'Compliance Reports',
-    description: 'Outstanding compliance records, expiring items, and venue attention signals.',
-    icon: <DocumentIcon />
+    label: 'Labour',
+    title: 'Labour (wages)',
+    description: 'Wage cost vs sales by venue, payroll readiness, tips, and staff attention.',
+    icon: <ChartIcon />,
+    group: 'core'
   },
   {
     id: 'stock',
-    label: 'Stock',
-    title: 'Stock Reports',
-    description: 'Catalogue health, venue stock status, low stock, and stocktake review signals.',
-    icon: <DocumentIcon />
+    label: 'Food & Bev Cost',
+    title: 'Food & Bev Cost (COGS)',
+    description: 'What you spent to sell — food cost %, purchases, wastage, and stock value.',
+    icon: <DocumentIcon />,
+    group: 'core'
   },
   {
     id: 'menu-engineering',
-    label: 'Menu Engineering',
-    title: 'Menu Engineering',
-    description: 'Readiness for item sales, recipe costs, COGS, margin, and menu action decisions.',
-    icon: <ChartIcon />
+    label: 'Menu',
+    title: 'Menu',
+    description: 'Which dishes make money and which lose it — sales, cost, and margin per item.',
+    icon: <ChartIcon />,
+    group: 'core'
   },
   {
     id: 'monthly-recap',
     label: 'Monthly Recap',
     title: 'Monthly Recap',
-    description: 'Month vs last year + FY-to-date: sales, wages, COGS, prime cost and recommendations. Export or email.',
-    icon: <ChartIcon />
+    description: 'The month closed out: sales, labour, food cost and total cost vs target and last year.',
+    icon: <ChartIcon />,
+    group: 'core'
+  },
+  // ── More: secondary reports, kept out of the daily flow ──
+  {
+    id: 'compliance',
+    label: 'Compliance',
+    title: 'Compliance Reports',
+    description: 'Outstanding compliance records, expiring items, and venue attention signals.',
+    icon: <DocumentIcon />,
+    group: 'more'
   },
   {
     id: 'reserve',
     label: 'Reserve',
     title: 'Reserve Reports',
     description: 'Bookings, covers, cancellations, no-shows, and guest mix.',
-    icon: <ChartIcon />
+    icon: <ChartIcon />,
+    group: 'more'
   },
   {
     id: 'marketing',
     label: 'Marketing',
     title: 'Marketing Reports',
     description: 'Guest CRM reach, consent, campaigns, and simulated sends.',
-    icon: <DocumentIcon />
+    icon: <DocumentIcon />,
+    group: 'more'
   },
   {
     id: 'content',
     label: 'Content',
     title: 'Content Reports',
     description: 'Scheduled posts, approvals, simulated publishing, and social setup readiness.',
-    icon: <DocumentIcon />
+    icon: <DocumentIcon />,
+    group: 'more'
   },
   {
     id: 'gift-cards',
     label: 'Gift Cards',
     title: 'Gift Card Reports',
     description: 'Pending gift card orders, value, fulfilment, and payment readiness.',
-    icon: <DocumentIcon />
+    icon: <DocumentIcon />,
+    group: 'more'
   },
   {
     id: 'exports',
     label: 'Exports',
     title: 'Exports',
     description: 'Read-only CSV downloads and weekly summary exports.',
-    icon: <DocumentIcon />
+    icon: <DocumentIcon />,
+    group: 'more'
   }
 ];
 
@@ -300,7 +386,6 @@ const LEGACY_REPORT_HASHES: Record<string, ReportSectionId> = {
   '#report-content': 'content',
   '#report-giftcards': 'gift-cards',
   '#giftcards': 'gift-cards',
-  '#forecast': 'sales',
   '#wages': 'staff',
   '#cogs': 'stock',
   '#menu-engineering': 'menu-engineering',
@@ -311,6 +396,60 @@ const LEGACY_REPORT_HASHES: Record<string, ReportSectionId> = {
 function reportHash(section: ReportSectionId) {
   return `#${section}`;
 }
+
+/**
+ * The numbers an operator checks on a phone, in the order they ask for them.
+ *
+ * Reports has sixteen sections in the sidebar, which is right at a desk and
+ * useless standing in a kitchen wanting one figure. These are the five worth a
+ * thumb: what we took, what it cost to buy, what it cost to staff, and the two
+ * screens that explain a bad answer.
+ */
+const REPORT_TASKS: Array<{ id: ReportSectionId; label: string }> = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'sales', label: 'Sales' },
+  { id: 'menu-engineering', label: 'COGS' },
+  { id: 'staff', label: 'Wages' },
+  { id: 'stock', label: 'Stock' },
+  { id: 'forecast', label: 'Forecast' },
+  { id: 'supplier-spend', label: 'Suppliers' },
+  { id: 'monthly-recap', label: 'Recap' },
+  { id: 'compliance', label: 'Compliance' },
+  { id: 'gift-cards', label: 'Gift cards' },
+  { id: 'exports', label: 'Exports' }
+];
+
+function ReportsTaskBar({
+  activeSection,
+  onSelect
+}: {
+  activeSection: ReportSectionId;
+  onSelect: (section: ReportSectionId) => void;
+}) {
+  // Reports navigates by hash, not by route, so the bar drives the same
+  // section setter the sidebar does rather than pushing a URL.
+  const items: TaskBarItem[] = REPORT_TASKS.filter((task) =>
+    REPORT_NAV_ITEMS.some((nav) => nav.id === task.id && !nav.hidden)
+  ).map((task) => ({
+    key: task.id,
+    label: task.label,
+    href: reportHash(task.id),
+    icon: REPORT_NAV_ITEMS.find((nav) => nav.id === task.id)?.icon,
+    active: activeSection === task.id
+  }));
+  return (
+    <TaskBar
+      items={items}
+      label="Report sections"
+      onNavigate={(item, event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        onSelect(item.key as ReportSectionId);
+      }}
+    />
+  );
+}
+
 
 function reportSectionFromHash(hash: string): ReportSectionId {
   if (hash in LEGACY_REPORT_HASHES) return LEGACY_REPORT_HASHES[hash]!;
@@ -398,14 +537,6 @@ function periodFromPreset(key: PeriodPresetKey, now: Date = new Date()): { start
   }
 }
 
-// Map a period span (in days) to the closest overview-range bucket the API
-// accepts ('7' | '30' | '90'), so the overview widens to match the chosen period.
-function overviewRangeForSpan(start: Date, end: Date): '7' | '30' | '90' {
-  const spanDays = Math.round((end.getTime() - start.getTime()) / 86400000);
-  if (spanDays <= 7) return '7';
-  if (spanDays <= 31) return '30';
-  return '90';
-}
 
 function formatCurrency(cents: number) {
   return new Intl.NumberFormat(undefined, {
@@ -525,7 +656,13 @@ function RecapCharts({ recap }: { recap: MonthlyRecapPayload }) {
 
 function MonthlyRecapSection({ venues }: { venues: string[] }) {
   const [month, setMonth] = useState(() => {
+    // Default to the LAST COMPLETE month, not the in-progress current month.
+    // A partial month has only part-month sales/wages and no closing stocktake,
+    // so its COGS collapses to just that month's purchases (a misleading ~2%).
+    // The ‹ › controls still let you step to the current month if wanted.
     const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [venue, setVenue] = useState('');
@@ -635,7 +772,8 @@ function MonthlyRecapSection({ venues }: { venues: string[] }) {
           <p className="report-error">{error}</p>
         ) : recap ? (
           <>
-            <div className="recap-grid">
+            {/* The month and the FY-to-date read as a pair. */}
+            <div className="ov-two">
               <RecapCard title={recap.monthCurrent.label} period={recap.monthCurrent} compare={recap.monthPriorYear} compareLabel="last year" />
               <RecapCard title={recap.ytdLabel} period={recap.ytdCurrent} compare={recap.ytdPriorYear} compareLabel="prior FY" />
             </div>
@@ -981,7 +1119,24 @@ function SidebarNav({
         className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
       >
         <li className="sidebar-nav-section">Reports</li>
-        {REPORT_NAV_ITEMS.map((item) => (
+        {REPORT_NAV_ITEMS.filter((item) => item.group === 'core' && !item.hidden).map((item) => (
+          <li key={item.id}>
+            <a
+              href={reportHash(item.id)}
+              className={item.id === activeSection ? 'active' : undefined}
+              onClick={(event) => {
+                event.preventDefault();
+                onSectionChange(item.id);
+                setMobileMenuOpen(false);
+              }}
+            >
+              <span className="sidebar-nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </a>
+          </li>
+        ))}
+        <li className="sidebar-nav-section">More</li>
+        {REPORT_NAV_ITEMS.filter((item) => item.group === 'more' && !item.hidden).map((item) => (
           <li key={item.id}>
             <a
               href={reportHash(item.id)}
@@ -1007,7 +1162,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [selectedWeekStart, setSelectedWeekStart] = useState(() => isoDate(startOfWeek(new Date())));
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
-  const [overviewRange, setOverviewRange] = useState<'7' | '30' | '90'>('30');
   // Recipe popup opened from a clickable menu-profitability row.
   const [recipePreview, setRecipePreview] = useState<{ id: string; title: string | null } | null>(null);
   // Menu-engineering buckets that are expanded (collapsed by default).
@@ -1030,12 +1184,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       window.open(href, '_blank', 'noopener');
     }
   }
-  // Top-of-report period preset (drives the date-range state below).
+  // Top-of-report period preset — the single source of truth for every figure
+  // on the page that is measured over a span of time.
+  //
+  // It used not to be. The money reports (sales, item sales, menu profitability,
+  // menu COGS, prime cost, tips) were all fetched with weekStart..weekEnd, which
+  // is always exactly seven days, while the overview cards were fetched with a
+  // separate 7/30/90 selector. So choosing "Last financial year" showed one
+  // week of revenue beside ninety days of stock, under a heading saying "Last
+  // financial year". Three controls, three different windows, one page.
   const [periodPreset, setPeriodPreset] = useState<PeriodPresetKey>('this-week');
-  const periodLabel = useMemo(
-    () => PERIOD_PRESETS.find((preset) => preset.key === periodPreset)?.label ?? 'This week',
-    [periodPreset]
-  );
+  const period = useMemo(() => periodFromPreset(periodPreset), [periodPreset]);
+  const periodLabel = period.label;
+  const periodStartIso = period.start.toISOString();
+  const periodEndIso = period.end.toISOString();
   // Menu Engineering filters persist across refreshes (like the forecast inputs)
   // so an analyst doesn't re-pick account/venue/category/mapping every visit.
   const storedMenuFilters = loadJsonDraft<{
@@ -1064,7 +1226,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     menuCogs: null,
     primeCost: null,
     tips: null,
-    stockItems: null,
+    stockValue: null,
     stockSummary: null,
     stocktakes: null,
     recipes: null
@@ -1083,7 +1245,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // 8-week forecast vs actual history for the sales section chart.
   const [forecastHistory, setForecastHistory] = useState<Array<{ weekStart: string; forecastCents: number; actualCents: number; variance: number | null }>>([]);
   const activeReport = REPORT_NAV_ITEMS.find((item) => item.id === activeSection) ?? REPORT_NAV_ITEMS[0]!;
-  const overviewWindowLabel = `Last ${data.overview?.rangeDays ?? overviewRange} days`;
+  // The heading now names the period being shown rather than a bucket that
+  // may not have matched it.
+  const overviewWindowLabel = periodLabel;
   const weekWindowLabel = `${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}`;
 
   const load = useCallback(async () => {
@@ -1092,36 +1256,82 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setStockMessage(null);
     try {
       const menuProfitabilityParams = new URLSearchParams({
-        start: weekStart.toISOString(),
-        end: weekEnd.toISOString(),
+        start: periodStartIso,
+        end: periodEndIso,
         accountKey: menuAccountKey,
         mappingStatus: menuMappingStatus
       });
       if (menuVenue) menuProfitabilityParams.set('venue', menuVenue);
       if (menuCategory) menuProfitabilityParams.set('category', menuCategory);
-      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, menuCogs, primeCost, tips] = await Promise.all([
-        staffApi<ReportsOverviewPayload>(`/api/reports/overview?range=${overviewRange}`),
+      // allSettled, not all: twelve reports load here, and with Promise.all a
+      // single failing endpoint rejected the batch, skipped setData entirely
+      // and left the whole page showing one error with no figures — even
+      // though eleven had returned fine. A report you cannot see is worse than
+      // a report with one section missing, so what arrives is rendered and
+      // what did not is named.
+      const settled = await Promise.allSettled([
+        staffApi<ReportsOverviewPayload>(
+          `/api/reports/overview?start=${encodeURIComponent(periodStartIso)}&end=${encodeURIComponent(periodEndIso)}`
+        ),
         staffApi<SuiteSummary>('/api/summary'),
         staffApi<StaffProfile[]>('/api/staff'),
         staffApi<Timesheet[]>(`/api/staff/timesheets?start=${isoDate(weekStart)}&end=${isoDate(weekEnd)}&status=all`),
         staffApi<RosterShift[]>(`/api/staff/roster?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<RosterForecastSnapshot[]>(`/api/staff/roster/forecast-snapshots?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
-        staffApi<SalesActualSummary>(`/api/reports/sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
-        staffApi<SalesItemActualSummary>(`/api/reports/item-sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
+        // Money is measured over the chosen period, not over whichever week the
+        // period happens to start in. Roster, timesheets and the forecast above
+        // stay on the week, because those panels have their own week navigator
+        // and a roster only means anything a week at a time.
+        staffApi<SalesActualSummary>(`/api/reports/sales?start=${periodStartIso}&end=${periodEndIso}`),
+        staffApi<SalesItemActualSummary>(`/api/reports/item-sales?start=${periodStartIso}&end=${periodEndIso}`),
         staffApi<ReportsMenuProfitabilityPayload>(`/api/reports/menu-profitability?${menuProfitabilityParams.toString()}`),
-        staffApi<MenuCogsPayload>(`/api/reports/menu-cogs?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}${menuVenue ? `&venue=${encodeURIComponent(menuVenue)}` : ''}`).catch(() => null),
-        staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
-        staffApi<StaffTipsSummary>(`/api/staff/tips?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`)
+        staffApi<MenuCogsPayload>(`/api/reports/menu-cogs?start=${periodStartIso}&end=${periodEndIso}${menuVenue ? `&venue=${encodeURIComponent(menuVenue)}` : ''}`).catch(() => null),
+        staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${periodStartIso}&end=${periodEndIso}`),
+        staffApi<StaffTipsSummary>(`/api/staff/tips?start=${periodStartIso}&end=${periodEndIso}`)
       ]);
 
-      let stockItems: StockItemsPayload | null = null;
+      const SECTION_LABELS = [
+        'overview', 'suite summary', 'staff', 'timesheets', 'roster', 'roster forecast',
+        'sales', 'item sales', 'menu profitability', 'menu COGS', 'prime cost', 'tips'
+      ];
+      const value = <T,>(index: number): T | null =>
+        settled[index]!.status === 'fulfilled' ? ((settled[index] as PromiseFulfilledResult<T>).value) : null;
+      const missing = SECTION_LABELS.filter((_, index) => settled[index]!.status === 'rejected');
+
+      // ReportsData already declares every one of these nullable, so a missing
+      // section flows through as null and its panel renders its own empty
+      // state — which is why partial loading is safe here rather than a
+      // deferred crash.
+      const overview = value<ReportsOverviewPayload>(0);
+      const summary = value<SuiteSummary>(1);
+      const staff = value<StaffProfile[]>(2) ?? [];
+      const timesheets = value<Timesheet[]>(3) ?? [];
+      const roster = value<RosterShift[]>(4) ?? [];
+      const rosterForecastSnapshots = value<RosterForecastSnapshot[]>(5) ?? [];
+      const actualSales = value<SalesActualSummary>(6);
+      const itemSales = value<SalesItemActualSummary>(7);
+      const menuProfitability = value<ReportsMenuProfitabilityPayload>(8);
+      const menuCogs = value<MenuCogsPayload>(9);
+      const primeCost = value<ReportsPrimeCostPayload>(10);
+      const tips = value<StaffTipsSummary>(11);
+
+      setMessage(
+        missing.length === 0
+          ? null
+          : `Could not load ${missing.join(', ')}. Everything else below is current — reload to try again.`
+      );
+
+      let stockValue: StockValueByCategory | null = null;
       let stockSummary: StockItemsSummary | null = null;
       let stocktakes: StocktakesSummary | null = null;
       let recipes: RecipesSummary | null = null;
 
       try {
-        [stockItems, stockSummary, stocktakes, recipes] = await Promise.all([
-          stockApi<StockItemsPayload>('/api/items'),
+        [stockValue, stockSummary, stocktakes, recipes] = await Promise.all([
+          // Was stockApi<StockItemsPayload>('/api/items') — the full 402 KB
+          // catalogue, downloaded only to total stock value and group it by
+          // category. The server does the arithmetic now.
+          stockApi<StockValueByCategory>('/api/items/value-by-category'),
           stockApi<StockItemsSummary>('/api/items/summary'),
           stockApi<StocktakesSummary>('/api/stocktake/summary'),
           stockApi<RecipesSummary>('/api/recipes/summary')
@@ -1130,13 +1340,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         setStockMessage(error instanceof Error ? error.message : 'Could not load stock reports.');
       }
 
-      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, menuCogs, primeCost, tips, stockItems, stockSummary, stocktakes, recipes });
+      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, menuCogs, primeCost, tips, stockValue, stockSummary, stocktakes, recipes });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not load reports.');
     } finally {
       setLoading(false);
     }
-  }, [menuAccountKey, menuCategory, menuMappingStatus, menuVenue, overviewRange, weekEnd, weekStart]);
+  }, [menuAccountKey, menuCategory, menuMappingStatus, menuVenue, periodStartIso, periodEndIso, weekEnd, weekStart]);
 
   useEffect(() => {
     void load();
@@ -1377,6 +1587,48 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       .values()
   ).sort((a, b) => b.costCents - a.costCents);
 
+  // Live forecast engine outlook — the single basis for every prediction on
+  // this page. The legacy hardcoded historical table remains only as a
+  // fallback for weeks outside the 13-week horizon or a failed fetch.
+  const [engineOutlook, setEngineOutlook] = useState<ForecastOutlookPayload | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void staffApi<ForecastOutlookPayload>('/api/forecast/outlook?weeks=13')
+      .then((next) => {
+        if (!cancelled) setEngineOutlook(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const engineSalesByVenueDay = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const venueOutlook of engineOutlook?.venues ?? []) {
+      for (const day of venueOutlook.days) {
+        map.set(`${venueOutlook.venue}|${day.date}`, day.salesForecastCents);
+      }
+    }
+    return map;
+  }, [engineOutlook]);
+  const engineDayCents = useCallback(
+    (venue: string, dateKey: string): number | null => engineSalesByVenueDay.get(`${venue}|${dateKey}`) ?? null,
+    [engineSalesByVenueDay]
+  );
+  // Week total only when EVERY day of the week is inside the engine horizon.
+  const engineWeekCents = useCallback(
+    (venue: string, weekStartDate: Date): number | null => {
+      let total = 0;
+      for (let i = 0; i < 7; i += 1) {
+        const value = engineSalesByVenueDay.get(`${venue}|${localIsoDate(addDays(weekStartDate, i))}`);
+        if (value == null) return null;
+        total += value;
+      }
+      return total;
+    },
+    [engineSalesByVenueDay]
+  );
+
   useEffect(() => {
     if (!venues.length) return;
     setForecastInputs((current) => {
@@ -1384,14 +1636,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       let changed = false;
       for (const venue of venues) {
         if (!next[venue]) {
-          const historical = historicalSalesForWeek(venue, weekStart);
-          next[venue] = { sales: centsInput(Math.round(historical.total * 100)), targetWagePercent: '32' };
+          const baselineCents = engineWeekCents(venue, weekStart) ?? Math.round(historicalSalesForWeek(venue, weekStart).total * 100);
+          next[venue] = { sales: centsInput(baselineCents), targetWagePercent: '32' };
           changed = true;
         }
       }
       return changed ? next : current;
     });
-  }, [venues, weekStart]);
+  }, [engineWeekCents, venues, weekStart]);
 
   function updateForecastInput(venue: string, patch: Partial<ForecastInput>) {
     setForecastInputs((current) => ({
@@ -1409,10 +1661,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const next = { ...current };
       const targetVenues = venue ? [venue] : venues;
       for (const targetVenue of targetVenues) {
-        const historical = historicalSalesForWeek(targetVenue, weekStart);
-        if (historical.total <= 0) continue;
+        const baselineCents = engineWeekCents(targetVenue, weekStart) ?? Math.round(historicalSalesForWeek(targetVenue, weekStart).total * 100);
+        if (baselineCents <= 0) continue;
         next[targetVenue] = {
-          sales: centsInput(Math.round(historical.total * 100)),
+          sales: centsInput(baselineCents),
           targetWagePercent: current[targetVenue]?.targetWagePercent ?? '32'
         };
       }
@@ -1571,8 +1823,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const forecastRows = useMemo<ForecastVenueRow[]>(() => {
     return venues.map((venue) => {
       const input = forecastInputs[venue] ?? { sales: '', targetWagePercent: '32' };
-      const historical = historicalSalesForWeek(venue, weekStart);
-      const historicalSalesCents = Math.round(historical.total * 100);
+      const engineWeekTotal = engineWeekCents(venue, weekStart);
+      const historicalSalesCents = engineWeekTotal ?? Math.round(historicalSalesForWeek(venue, weekStart).total * 100);
       const historicalSource = normaliseHistoricalVenue(venue);
       const forecastSalesCents = parseMoneyCents(input.sales);
       const targetWagePercent = parsePercent(input.targetWagePercent);
@@ -1580,7 +1832,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const shifts = data.roster.filter((shift) => (shift.venue ?? shift.staffProfile?.venue ?? 'Unassigned') === venue);
       const planned = shifts.reduce(
         (total, shift) => {
-          const member = staffById.get(shift.staffProfileId);
+          // An open shift has nobody on it yet; it still costs hours, priced at
+          // the average rate rather than dropped from the plan.
+          const member = shift.staffProfileId ? staffById.get(shift.staffProfileId) : undefined;
           const rateCents = resolvedWage(member).rateCents || averageRateCents;
           const hours = rosterShiftHours(shift);
           total.hours += hours;
@@ -1720,22 +1974,48 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       return map;
     }, new Map<string, SalesActualSummary['entries']>());
   }, [data.actualSales?.entries]);
+  // Group average spend per cover (Square net sales ÷ item units sold) — used
+  // to turn booked covers into a dollars-on-the-books floor for the forecast.
+  const avgSpendPerCoverCents = useMemo(() => {
+    const salesCents = (data.actualSales?.entries ?? []).reduce((sum, entry) => sum + entry.salesCents, 0);
+    const quantity = data.itemSales?.totalQuantity ?? 0;
+    return quantity > 0 ? salesCents / quantity : 0;
+  }, [data.actualSales, data.itemSales]);
+
   const salesTrendRows = useMemo<SalesTrendVenueRow[]>(() => {
+    const todayKey = isoDate(new Date());
+    const weekEndKey = isoDate(addDays(weekStart, 7));
+    const weekStartKey = isoDate(weekStart);
     return salesReportVenues.map((venue) => {
+      const engineWeekTotal = engineWeekCents(venue, weekStart);
       const historical = historicalSalesForWeek(venue, weekStart);
-      const previousHistorical = historicalSalesForWeek(venue, addDays(weekStart, -7));
       const entries = actualSalesEntriesByVenue.get(venue) ?? [];
       const actualSalesCents = entries.reduce((sum, entry) => sum + entry.salesCents, 0);
       const actualDates = new Set(entries.map((entry) => isoDate(new Date(entry.serviceDate))));
-      const actualHistoricalCents = historical.days
-        .filter((day) => actualDates.has(localIsoDate(day.date)))
-        .reduce((sum, day) => sum + Math.round(day.sales * 100), 0);
-      const historicalSalesCents = Math.round(historical.total * 100);
-      const previousHistoricalSalesCents = Math.round(previousHistorical.total * 100);
+      // Engine days ARE the baseline when the week is in horizon (past days in
+      // it already carry actuals, so the pace ratio self-normalises to 1 and
+      // the prediction converges on the engine's week figure).
+      const actualHistoricalCents = engineWeekTotal != null
+        ? Array.from(actualDates).reduce((sum, key) => sum + (engineDayCents(venue, key) ?? 0), 0)
+        : historical.days
+            .filter((day) => actualDates.has(localIsoDate(day.date)))
+            .reduce((sum, day) => sum + Math.round(day.sales * 100), 0);
+      const historicalSalesCents = engineWeekTotal ?? Math.round(historical.total * 100);
+      const previousHistoricalSalesCents =
+        engineWeekCents(venue, addDays(weekStart, -7)) ?? Math.round(historicalSalesForWeek(venue, addDays(weekStart, -7)).total * 100);
       const manualForecastCents = parseMoneyCents(forecastInputs[venue]?.sales ?? '');
-      const predictedSalesCents = actualSalesCents > 0 && actualHistoricalCents > 0
+      // Covers already booked for the REMAINING days of this week — a floor
+      // under the prediction (strong bookings raise it; sparse bookings never
+      // lower it). serviceDate keys are local dates, so string-compare works.
+      const bookedRows = (data.overview?.reserve.coversAhead ?? []).filter(
+        (row) => row.venue === venue && row.date >= weekStartKey && row.date < weekEndKey && row.date >= todayKey
+      );
+      const bookedCovers = bookedRows.reduce((sum, row) => sum + row.covers, 0);
+      const bookedEstimateCents = Math.round(bookedCovers * avgSpendPerCoverCents);
+      const basePredictedCents = actualSalesCents > 0 && actualHistoricalCents > 0
         ? Math.round(actualSalesCents * (historicalSalesCents / actualHistoricalCents))
         : manualForecastCents || historicalSalesCents;
+      const predictedSalesCents = Math.max(basePredictedCents, actualSalesCents + bookedEstimateCents);
       const trendPercent = previousHistoricalSalesCents > 0
         ? ((predictedSalesCents - previousHistoricalSalesCents) / previousHistoricalSalesCents) * 100
         : null;
@@ -1751,18 +2031,24 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         historicalSalesCents,
         previousHistoricalSalesCents,
         predictedSalesCents,
+        bookedCovers,
+        bookedEstimateCents,
         trendPercent,
         forecastVarianceCents,
-        paceLabel: actualSalesCents > 0 && actualHistoricalCents > 0
-          ? 'Actual pace vs matching historical days'
-          : manualForecastCents > 0
-            ? 'Manual forecast'
-            : historicalSalesCents > 0
-              ? 'Historical baseline'
-              : 'Missing sales history'
+        paceLabel: predictedSalesCents > basePredictedCents
+          ? 'Bookings on the books (raised the forecast)'
+          : engineWeekTotal != null
+            ? 'Forecast engine (your history, trend + bookings)'
+            : actualSalesCents > 0 && actualHistoricalCents > 0
+              ? 'Actual pace vs matching historical days'
+              : manualForecastCents > 0
+                ? 'Manual forecast'
+                : historicalSalesCents > 0
+                  ? 'Historical baseline'
+                  : 'Missing sales history'
       };
     });
-  }, [actualSalesEntriesByVenue, forecastInputs, salesReportVenues, weekStart]);
+  }, [actualSalesEntriesByVenue, avgSpendPerCoverCents, data.overview, engineDayCents, engineWeekCents, forecastInputs, salesReportVenues, weekStart]);
   const salesDailyRows = useMemo(() => {
     return Array.from({ length: 7 }, (_, index) => {
       const date = addDays(weekStart, index);
@@ -1777,7 +2063,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           const actualSalesCents = (actualSalesEntriesByVenue.get(venue) ?? [])
             .filter((entry) => isoDate(new Date(entry.serviceDate)) === dateKey)
             .reduce((sum, entry) => sum + entry.salesCents, 0);
-          const historicalSalesCents = Math.round((historicalSalesForWeek(venue, weekStart).days[index]?.sales ?? 0) * 100);
+          const historicalSalesCents = engineDayCents(venue, dateKey) ?? Math.round((historicalSalesForWeek(venue, weekStart).days[index]?.sales ?? 0) * 100);
           const historicalWeekCents = salesTrendRows.find((row) => row.venue === venue)?.historicalSalesCents ?? 0;
           const manualForecastCents = parseMoneyCents(forecastInputs[venue]?.sales ?? '');
           const forecastSalesCents = manualForecastCents > 0 && historicalWeekCents > 0
@@ -1787,7 +2073,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         })
       };
     });
-  }, [actualSalesEntriesByVenue, forecastInputs, salesReportVenues, salesTrendRows, weekStart]);
+  }, [actualSalesEntriesByVenue, engineDayCents, forecastInputs, salesReportVenues, salesTrendRows, weekStart]);
   const salesGraphMaxCents = Math.max(
     1,
     ...salesTrendRows.flatMap((row) => [row.actualSalesCents, row.manualForecastCents, row.predictedSalesCents, row.historicalSalesCents])
@@ -1797,58 +2083,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     ...salesDailyRows.flatMap((day) => day.venues.flatMap((row) => [row.actualSalesCents, row.forecastSalesCents, row.historicalSalesCents]))
   );
 
-  const venueStockValueRows = (data.stockItems?.venueStockItems ?? []).filter(
-    (row) => row.active && row.stockItem?.status === 'ACTIVE'
-  );
-  const stockCostUsesVenueRows = venueStockValueRows.length > 0;
-  const stockValueCents = stockCostUsesVenueRows
-    ? venueStockValueRows.reduce(
-        (sum, row) => sum + Math.round((row.onHand ?? 0) * (row.stockItem?.avgCostCents ?? 0)),
-        0
-      )
-    : data.stockItems?.items.reduce(
-        (sum, item) => sum + Math.round(item.onHand * (item.avgCostCents ?? 0)),
-        0
-      ) ?? 0;
+  const stockCostUsesVenueRows = data.stockValue?.basis === 'VENUE_ROWS';
+  const stockValueCents = data.stockValue?.totalValueCents ?? 0;
 
-  const categoryValueRows = (
-    stockCostUsesVenueRows
-      ? Array.from(
-          venueStockValueRows
-            .reduce((map, row) => {
-              const category = row.stockItem?.category?.name ?? 'Uncategorised';
-              const current =
-                map.get(category) ?? { category, itemCount: 0, valueCents: 0, lowStock: 0 };
-              const threshold =
-                row.reorderPoint ??
-                row.parLevel ??
-                row.stockItem?.reorderPoint ??
-                row.stockItem?.parLevel ??
-                0;
-              current.itemCount += 1;
-              current.valueCents += Math.round((row.onHand ?? 0) * (row.stockItem?.avgCostCents ?? 0));
-              if (row.onHand !== null && threshold > 0 && row.onHand <= threshold) {
-                current.lowStock += 1;
-              }
-              map.set(category, current);
-              return map;
-            }, new Map<string, { category: string; itemCount: number; valueCents: number; lowStock: number }>())
-            .values()
-        )
-      : Array.from(
-          (data.stockItems?.items ?? [])
-            .reduce((map, item) => {
-              const category = item.category?.name ?? 'Uncategorised';
-              const current =
-                map.get(category) ?? { category, itemCount: 0, valueCents: 0, lowStock: 0 };
-              current.itemCount += 1;
-              current.valueCents += Math.round(item.onHand * (item.avgCostCents ?? 0));
-              map.set(category, current);
-              return map;
-            }, new Map<string, { category: string; itemCount: number; valueCents: number; lowStock: number }>())
-            .values()
-        )
-  ).sort((a, b) => b.valueCents - a.valueCents);
+  const categoryValueRows = data.stockValue?.categories ?? [];
   const stockCategoryCountLabel = stockCostUsesVenueRows ? 'Venue rows' : 'Items';
   const stockLowStockLabel = stockCostUsesVenueRows ? 'Low stock venue rows' : 'Low stock';
 
@@ -1859,16 +2097,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setPeriodPreset('this-week');
   }
 
-  // Apply a top-of-report period preset. Aligns the week-shaped reports to the
-  // week containing the preset's start, and widens the overview range to match
-  // the preset span so the existing data-loading effect refetches accordingly.
+  // Apply a top-of-report period preset. Everything measured over a span now
+  // reads the preset directly, so the only thing left to do here is move the
+  // week-shaped panels (roster, timesheets) to the week the period starts in.
   function applyPeriodPreset(key: PeriodPresetKey) {
-    const period = periodFromPreset(key);
-    const alignedWeekStart = isoDate(startOfWeek(period.start));
-    const nextOverviewRange = overviewRangeForSpan(period.start, period.end);
     setPeriodPreset(key);
-    setSelectedWeekStart(alignedWeekStart);
-    setOverviewRange(nextOverviewRange);
+    setSelectedWeekStart(isoDate(startOfWeek(periodFromPreset(key).start)));
   }
 
   function selectReportSection(section: ReportSectionId) {
@@ -1976,7 +2210,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     id: ReportSectionId;
     title: string;
     description: string;
-    children: JSX.Element;
+    children: ReactNode;
     action?: JSX.Element;
   }) {
     const label = id === 'exports' || id === 'menu-engineering' ? weekWindowLabel : overviewWindowLabel;
@@ -2071,8 +2305,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     const actualCogsCentsForRange = primeTotals?.cogsCents ?? 0;
     const theoreticalCogsCents = data.menuProfitability?.totals.estimatedCogsCents ?? null;
     const theoreticalFoodCostPct = data.menuProfitability?.totals.foodCostPercent ?? null;
-    const overviewCogsIsActual = actualCogsCentsForRange > 0;
-    const overviewCogsCents = overviewCogsIsActual ? actualCogsCentsForRange : (theoreticalCogsCents ?? 0);
+    // The weekly snapshot is NOT bracketed by two stocktakes (counts are monthly),
+    // so weekly "actual" COGS collapses to just this week's purchases — a stray
+    // mid-week invoice reads as a ~0% food cost. Prefer THEORETICAL (recipe × Square
+    // units sold), which is live and meaningful weekly; fall back to actual only when
+    // theoretical isn't available (Square items not yet mapped to recipes). The
+    // canonical actual COGS stays on the Monthly Recap / Prime Cost reports.
+    const hasTheoretical = theoreticalCogsCents != null && theoreticalCogsCents > 0;
+    const overviewCogsIsActual = !hasTheoretical && actualCogsCentsForRange > 0;
+    const overviewCogsCents = hasTheoretical ? theoreticalCogsCents : actualCogsCentsForRange;
     const itemSalesQuantity = data.itemSales?.totalQuantity ?? 0;
     const coversForRange = itemSalesQuantity > 0 ? itemSalesQuantity : (data.overview?.reserve.coversToday ?? 0);
     const noShowsForRange = data.overview?.reserve.noShows ?? 0;
@@ -2153,6 +2394,45 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         }
       : null);
 
+    // ── Weekly overview COGS: use THEORETICAL food cost ──────────────────────
+    // Actual stock-based COGS collapses to ~0 on a weekly window (stocktakes are
+    // monthly), which zeroes the By-venue COGS % and makes prime cost = wages
+    // only. Show theoretical food cost consistently: group total from
+    // menu-profitability, split across venues by sales share, folded into prime
+    // cost. The dedicated Prime Cost / Monthly Recap reports keep actual COGS.
+    const pctOf = (n: number, d: number): number | null => (d > 0 ? (n / d) * 100 : null);
+    const overviewTotalSalesCents = totalsRow?.salesCents ?? venueRows.reduce((s, v) => s + v.salesCents, 0);
+    // Each venue's OWN theoretical COGS, summed from that venue's menu-profitability
+    // rows (recipe cost × its own units sold) — so venues show their real, differing
+    // food cost, not a uniform group average. Falls back to a sales-share split only
+    // for a venue with no rows of its own.
+    const theoreticalCogsByVenue = new Map<string, number>();
+    for (const row of data.menuProfitability?.rows ?? []) {
+      if (row.estimatedCogsCents == null) continue;
+      theoreticalCogsByVenue.set(row.venue, (theoreticalCogsByVenue.get(row.venue) ?? 0) + row.estimatedCogsCents);
+    }
+    const overviewGroupCogsCents = hasTheoretical ? overviewCogsCents : (totalsRow?.cogsCents ?? 0);
+    const overviewVenueRows = venueRows.map((row) => {
+      const cogsCents = hasTheoretical
+        ? (theoreticalCogsByVenue.get(row.venue)
+            ?? (overviewTotalSalesCents > 0 ? Math.round(overviewGroupCogsCents * (row.salesCents / overviewTotalSalesCents)) : 0))
+        : row.cogsCents;
+      return {
+        ...row,
+        cogsCents,
+        cogsPercent: pctOf(cogsCents, row.salesCents),
+        primeCostPercent: pctOf(row.wageCents + cogsCents, row.salesCents)
+      };
+    });
+    const overviewTotalsRow = totalsRow
+      ? {
+          ...totalsRow,
+          cogsCents: overviewGroupCogsCents,
+          cogsPercent: pctOf(overviewGroupCogsCents, overviewTotalSalesCents),
+          primeCostPercent: pctOf((totalsRow.wageCents ?? 0) + overviewGroupCogsCents, overviewTotalSalesCents)
+        }
+      : totalsRow;
+
     return (
       <SectionShell
         id="overview"
@@ -2171,60 +2451,75 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             const variancePct = primeTotals?.primeCostPercent != null
               ? primeTotals.primeCostPercent - primeCostTarget
               : null;
+            const salesIncomplete = primeTotals?.primeCostPercent != null && primeTotals.primeCostPercent > 120;
+            // Editorial headline: one plain-spoken line that carries the tone
+            // of the week (the design's "Running hot, worth a look.").
+            const headline = loading
+              ? 'Pulling the week together.'
+              : salesCentsForRange === 0
+                ? 'Waiting on the numbers.'
+                : salesIncomplete
+                  ? 'Sales look short, check the import.'
+                  : variancePct != null && variancePct > 5
+                    ? 'Running hot, worth a look.'
+                    : variancePct != null && variancePct > 0
+                      ? 'Warm, keep an eye on it.'
+                      : 'Inside the guides, good week.'
             const sub = (() => {
               if (loading) return 'Loading the week in numbers.';
-              if (salesCentsForRange === 0) return 'No sales imported for the period yet — connect a source to see this week shape up.';
-              if (variancePct != null && variancePct > 5) {
-                return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — running hot vs the ${primeCostTarget.toFixed(0)}% target.`;
+              if (salesCentsForRange === 0) return 'No sales recorded for the period yet — enter this week\u2019s takings under Enter sales.';
+              if (salesIncomplete) {
+                return 'Sales look incomplete for this week — check the Square import before trusting the cost %.';
               }
-              if (variancePct != null && variancePct < -5) {
-                return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — well inside guide for the week.`;
+              if (primeTotals?.primeCostPercent != null) {
+                return `Total operating cost is ${primeTotals.primeCostPercent.toFixed(1)}% of sales this week, against the ${primeCostTarget.toFixed(0)}% guide. Reports are read-only and scoped to the venues you have access to.`;
               }
-              return `Signed in as ${user.firstName}`;
+              return 'Reports are read-only and scoped to the venues you have access to.';
             })();
+            const stocktakesWaiting = data.overview?.stock.stocktakesReadyForReview ?? 0;
             return (
-              <AlmaHomeBubble
-                app="reports"
-                appName="Reports"
-                appIcon={<ChartIcon />}
-                eyebrow="Reports command"
-                description="High-level attention signals across the suite. Reports are read-only and scoped to the venues you have access to."
-                statusLabel="Overview"
-                statusHint={sub}
-                statusDot={variancePct != null && variancePct > 5 ? 'terracotta' : variancePct != null && variancePct < -5 ? 'forest' : 'amber'}
-                actions={
-                  <>
-                    <button
-                      type="button"
-                      className="alma-home-bubble-btn alma-home-bubble-btn--primary"
-                      onClick={() => void load()}
-                    >
-                      Refresh →
-                    </button>
-                    <button
-                      type="button"
-                      className="alma-home-bubble-btn alma-home-bubble-btn--ghost"
-                      onClick={exportOverviewCsv}
-                    >
-                      Export overview
-                    </button>
-                  </>
-                }
-              />
+              <section className={`ov-hero is-${heroTone}`}>
+                <div className="ov-hero-top">
+                  <div className="ov-hero-main">
+                    <div className="ov-hero-eyebrow">Reports command · {weekWindowLabel}</div>
+                    <h2 className="ov-hero-headline">{headline}</h2>
+                    <p className="ov-hero-sub">{sub}</p>
+                  </div>
+                  <div className="ov-hero-pills">
+                    {primeTotals?.primeCostPercent != null && !salesIncomplete ? (
+                      <AlmaPill kind={heroTone === 'danger' ? 'danger' : heroTone === 'warning' ? 'warn' : 'success'}>
+                        Prime cost {primeTotals.primeCostPercent.toFixed(1)}%
+                      </AlmaPill>
+                    ) : null}
+                    {stocktakesWaiting > 0 ? (
+                      <AlmaPill kind="warn">{stocktakesWaiting} stocktake{stocktakesWaiting === 1 ? '' : 's'} awaiting review</AlmaPill>
+                    ) : null}
+                    {attentionCount > 0 ? (
+                      <AlmaPill kind="neutral">{attentionCount} attention item{attentionCount === 1 ? '' : 's'} open</AlmaPill>
+                    ) : null}
+                    <div className="ov-hero-actions">
+                      <button type="button" className="alma-home-bubble-btn alma-home-bubble-btn--primary" onClick={() => void load()}>
+                        Refresh →
+                      </button>
+                      <button type="button" className="alma-home-bubble-btn alma-home-bubble-btn--ghost" onClick={exportOverviewCsv}>
+                        Export overview
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {/* Data lineage inside the band — when a number looks wrong,
+                    this is where the operator checks first. */}
+                <p className="ov-hero-sources" aria-label="Report data sources">
+                  <span className="ov-hero-sources-label">Sources</span>
+                  <span>Sales <strong>Square</strong></span>
+                  <span>Wages <strong>Alma roster + Xero pay rates</strong></span>
+                  <span>Bills <strong>Xero</strong></span>
+                  <span>Temperatures <strong>Govee</strong></span>
+                  <span>Stock <strong>Alma</strong></span>
+                </p>
+              </section>
             );
           })()}
-
-          {/* Data sources hairline — every report depends on data flowing
-              from external systems. Make the lineage visible so when a
-              number looks wrong, the operator knows where to check. */}
-          <p className="alma-reports-sources" aria-label="Report data sources">
-            <span className="alma-reports-sources-label">Sources</span>
-            <span>Sales <strong>Square</strong></span>
-            <span>Wages <strong>Alma roster + Xero pay rates</strong></span>
-            <span>Bills <strong>Xero</strong></span>
-            <span>Temperatures <strong>Govee</strong></span>
-            <span>Stock <strong>Alma</strong></span>
-          </p>
 
           {/* Stocktake status widget (Sprint 2.4 / Loaded replacement #16).
               Tells the operator whether stock value + COGS in this report
@@ -2237,7 +2532,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <BigStat
               eyebrow={`Takings · ${weekWindowLabel}`}
               value={formatCurrency(salesCentsForRange)}
-              sub={data.primeCost?.sources.sales === 'missing' ? 'Sales import missing' : 'Group total'}
+              sub={data.primeCost?.sources.sales === 'missing' ? 'No sales recorded yet' : 'Group total'}
               delta={takingsDelta}
               trend={salesTrend}
               sparkColor="#684A4A"
@@ -2252,7 +2547,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <BigStat
               eyebrow="Avg per cover"
               value={avgPerCoverCents > 0 ? formatCurrency(avgPerCoverCents) : '—'}
-              sub={coversForRange > 0 ? `${coversForRange.toLocaleString()} covers` : 'Awaiting Square import'}
+              sub={coversForRange > 0 ? `${coversForRange.toLocaleString()} covers` : 'No covers recorded'}
             />
             <BigStat
               eyebrow="No-show rate"
@@ -2262,11 +2557,169 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             />
           </div>
 
-          {/* By venue — editorial panel using primeCost venues data */}
+          {/* Prime cost feature — the one panel for the three numbers a
+              restaurant lives or dies on: total operating cost with a five
+              week trend, then labour and food read against their targets. */}
+          {(() => {
+            const primeTarget = (() => {
+              const vals = Object.values(primeTargets);
+              return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : COST_TARGETS.prime;
+            })();
+            const costTone = (pct: number | null, target: number): 'positive' | 'warning' | 'danger' | 'neutral' =>
+              pct == null ? 'neutral' : pct <= target ? 'positive' : pct <= target + 5 ? 'warning' : 'danger';
+            // A cost ratio above ~120% of sales can't happen in a trading
+            // restaurant — it means sales didn't fully import for the window.
+            // Say that plainly instead of flashing a false red alarm.
+            const IMPLAUSIBLE = 120;
+            const primePct = overviewTotalsRow?.primeCostPercent ?? null;
+            const incomplete = primePct != null && primePct > IMPLAUSIBLE;
+            const primeToneNow = incomplete ? 'neutral' : costTone(primePct, primeTarget);
+            const columns = [
+              {
+                label: 'Labour · Wages',
+                pct: primeTotals?.wagePercent ?? null,
+                target: COST_TARGETS.labour,
+                hint: 'Wages divided by sales, against the target guide.'
+              },
+              {
+                label: 'Food & bev · COGS',
+                pct: overviewTotalsRow?.cogsPercent ?? null,
+                target: COST_TARGETS.food,
+                hint: hasTheoretical ? 'Estimated from recipes times units sold.' : 'From purchases this week.'
+              }
+            ];
+            return (
+              <section className={`ov-prime is-${primeToneNow}`} aria-label="Cost triangle for the week">
+                <div className="ov-prime-main">
+                  <span className="ov-prime-label">Total operating cost · Prime</span>
+                  <div className="ov-prime-row">
+                    <span className="ov-prime-value">
+                      {primePct == null || incomplete ? '—' : `${primePct.toFixed(1)}%`}
+                    </span>
+                    <div className="ov-prime-trend" aria-label="5 week prime cost trend">
+                      {trendPoints.map((point, i) => {
+                        const pct = point.primeCostPercent;
+                        const height = pct != null ? Math.max(10, (pct / trendMaxPct) * 100) : 8;
+                        const barTone = pct == null ? 'muted' : pct >= 65 ? 'danger' : pct >= 55 ? 'warning' : 'positive';
+                        const isCurrent = i === trendPoints.length - 1;
+                        return (
+                          <div key={point.weekStart} className={`ov-prime-bar is-${barTone}${isCurrent ? ' is-current' : ''}`}>
+                            <div className="ov-prime-bar-fill" style={{ height: `${height}%` }} />
+                            <span>{pct != null ? `${pct.toFixed(0)}` : '—'}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <span className="ov-prime-note">
+                    {incomplete
+                      ? 'Sales data looks incomplete — check the Square import before trusting the cost %.'
+                      : primePct == null
+                        ? `Aim at or under ${primeTarget.toFixed(0)}% of sales.`
+                        : primePct > primeTarget
+                          ? <>{(primePct - primeTarget).toFixed(1)} pts over the {primeTarget.toFixed(0)}% guide. Food + labour, divided by sales of <strong>{formatCurrency(primeTotals?.salesCents ?? 0)}</strong>.</>
+                          : <>Inside the {primeTarget.toFixed(0)}% guide. Food + labour, divided by sales of <strong>{formatCurrency(primeTotals?.salesCents ?? 0)}</strong>.</>}
+                  </span>
+                </div>
+                {columns.map((column) => {
+                  const colIncomplete = column.pct != null && column.pct > IMPLAUSIBLE;
+                  const tone = colIncomplete ? 'neutral' : costTone(column.pct, column.target);
+                  const over = column.pct != null && column.pct > column.target;
+                  return (
+                    <div key={column.label} className={`ov-prime-col is-${tone}`}>
+                      <span className="ov-prime-label">{column.label}</span>
+                      <span className="ov-prime-col-value">
+                        {column.pct == null || colIncomplete ? '—' : `${column.pct.toFixed(1)}%`}
+                      </span>
+                      <span className="ov-prime-col-pill">
+                        <AlmaPill kind={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warn' : tone === 'positive' ? 'success' : 'neutral'}>
+                          {column.pct == null || colIncomplete
+                            ? 'Awaiting data'
+                            : over
+                              ? `${(column.pct - column.target).toFixed(1)} pts over target`
+                              : 'On target'}
+                        </AlmaPill>
+                      </span>
+                      <span className="ov-prime-col-hint">{column.hint}</span>
+                    </div>
+                  );
+                })}
+              </section>
+            );
+          })()}
+
+          {/* Week ahead — the forward glance, straight from the forecast
+              engine (same model the Forecast tab, roster and ordering use).
+              Turns "This Week" from a rear-view mirror into a windscreen. */}
+          {(() => {
+            const todayKey = isoDate(new Date());
+            const rows: ForecastDay[] = [];
+            for (const v of engineOutlook?.venues ?? []) {
+              const start = v.days.findIndex((d) => d.date >= todayKey);
+              if (start < 0) continue;
+              v.days.slice(start, start + 7).forEach((d, i) => {
+                const existing = rows[i];
+                if (!existing) {
+                  rows[i] = { ...d };
+                } else {
+                  existing.salesForecastCents += d.salesForecastCents;
+                  existing.expectedCovers += d.expectedCovers;
+                  existing.bookedCovers += d.bookedCovers;
+                  existing.wagesForecastCents += d.wagesForecastCents;
+                  existing.cogsForecastCents += d.cogsForecastCents;
+                }
+              });
+            }
+            if (rows.length === 0) return null;
+            const sales = rows.reduce((s, d) => s + d.salesForecastCents, 0);
+            const covers = rows.reduce((s, d) => s + d.expectedCovers, 0);
+            const booked = rows.reduce((s, d) => s + d.bookedCovers, 0);
+            const wages = rows.reduce((s, d) => s + d.wagesForecastCents, 0);
+            const cogs = rows.reduce((s, d) => s + d.cogsForecastCents, 0);
+            const primePct = sales > 0 ? ((wages + cogs) / sales) * 100 : null;
+            const busiest = [...rows].sort((a, b) => b.salesForecastCents - a.salesForecastCents)[0];
+            const primeTargetPct = (() => {
+              const vals = Object.values(primeTargets);
+              return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : COST_TARGETS.prime;
+            })();
+            return (
+              <EditorialPanel
+                className="alma-band-sage"
+                eyebrow="Week ahead · next 7 days"
+                title="What's coming"
+                actions={sectionButton('forecast', 'Open the full forecast')}
+              >
+                <div className="alma-page-grid-kpis">
+                  <BigStat eyebrow="Forecast takings" value={formatCurrency(sales)} sub="Predicted from your trading history" />
+                  <BigStat
+                    eyebrow="Expected covers"
+                    value={covers.toLocaleString()}
+                    sub={booked > 0 ? `${booked.toLocaleString()} already booked` : 'From weekday history'}
+                  />
+                  <BigStat
+                    eyebrow="Forecast prime cost"
+                    value={primePct != null ? `${primePct.toFixed(1)}%` : '—'}
+                    sub={primePct == null ? 'Awaiting data' : primePct <= primeTargetPct ? `Inside the ${primeTargetPct.toFixed(0)}% guide` : `${(primePct - primeTargetPct).toFixed(0)} pts over guide`}
+                    delta={primePct != null && primePct > primeTargetPct ? 'watch' : undefined}
+                  />
+                  <BigStat
+                    eyebrow="Busiest day"
+                    value={busiest ? new Date(`${busiest.date}T00:00:00Z`).toLocaleDateString('en-AU', { weekday: 'short', timeZone: 'UTC' }) : '—'}
+                    sub={busiest ? formatCurrency(busiest.salesForecastCents) : ''}
+                  />
+                </div>
+              </EditorialPanel>
+            );
+          })()}
+
+          {/* Where the money went + group prime donut — paired, per the
+              overview redesign. The venue rows carry a small sales bar so
+              relative size reads without the separate bar chart. */}
           {venueRows.length > 0 && totalsRow ? (
+            <div className="ov-two">
             <EditorialPanel
               eyebrow={`This week · ${weekWindowLabel}`}
-              title="By venue"
+              title="Where the money went"
               actions={
                 <Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>
                   Export CSV
@@ -2277,13 +2730,22 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 <div className="alma-venue-table-head">
                   <span>Venue</span>
                   <span>Sales</span>
-                  <span>Wages %</span>
-                  <span>COGS %</span>
-                  <span>Prime cost</span>
+                  <span>Labour %</span>
+                  <span>Food %</span>
+                  <span>Total cost</span>
                 </div>
-                {venueRows.map((row) => (
+                {overviewVenueRows.map((row) => (
                   <div className="alma-venue-row" key={row.venue}>
-                    <span className="alma-venue-name">{row.venue}</span>
+                    <span className="alma-venue-name">
+                      {row.venue}
+                      <span className="ov-venue-bar" aria-hidden="true">
+                        <span
+                          style={{
+                            width: `${Math.round((row.salesCents / Math.max(...overviewVenueRows.map((r) => r.salesCents), 1)) * 100)}%`
+                          }}
+                        />
+                      </span>
+                    </span>
                     <span className="alma-venue-num">{formatCurrency(row.salesCents)}</span>
                     <span className="alma-venue-num">{formatPercent(row.wagePercent)}</span>
                     <span className="alma-venue-num">{formatPercent(row.cogsPercent)}</span>
@@ -2304,162 +2766,104 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   <span className="alma-venue-name">Group total</span>
                   <span className="alma-venue-num">{formatCurrency(totalsRow.salesCents)}</span>
                   <span className="alma-venue-num">{formatPercent(totalsRow.wagePercent)}</span>
-                  <span className="alma-venue-num">{formatPercent(totalsRow.cogsPercent)}</span>
+                  <span className="alma-venue-num">{formatPercent(overviewTotalsRow?.cogsPercent)}</span>
                   <span>
-                    <AlmaPill kind={totalsRow.primeCostPercent == null
+                    <AlmaPill kind={overviewTotalsRow?.primeCostPercent == null
                       ? 'neutral'
-                      : totalsRow.primeCostPercent >= 65
+                      : overviewTotalsRow.primeCostPercent >= 65
                         ? 'danger'
-                        : totalsRow.primeCostPercent >= 55
+                        : overviewTotalsRow.primeCostPercent >= 55
                           ? 'warn'
                           : 'success'}>
-                      {totalsRow.primeCostPercent != null ? `${totalsRow.primeCostPercent.toFixed(1)}%` : '—'}
+                      {overviewTotalsRow?.primeCostPercent != null ? `${overviewTotalsRow.primeCostPercent.toFixed(1)}%` : '—'}
                     </AlmaPill>
                   </span>
                 </div>
               </div>
             </EditorialPanel>
-          ) : null}
-
-          {venueRows.length > 0 && totalsRow ? (
-            <div className="report-chart-grid">
-              <div className="report-chart-panel">
-                <h5 className="report-chart-title">Sales by venue · {weekWindowLabel}</h5>
-                <BarChart
-                  data={venueRows.map((r, i) => ({ label: r.venue, value: r.salesCents, color: CHART_PALETTE[i % CHART_PALETTE.length] }))}
-                  format={(v) => formatCurrency(v)}
-                  emptyLabel="No venue sales imported yet."
-                />
-              </div>
-              <div className="report-chart-panel">
-                <h5 className="report-chart-title">Group prime cost</h5>
+            <EditorialPanel eyebrow="This week" title="Group prime cost">
+              <div className="ov-donut">
                 <Donut
-                  size={130}
+                  size={140}
                   segments={[
-                    { label: 'COGS', value: primeTotals?.cogsCents ?? 0, color: CHART_COLORS.danger },
+                    { label: 'COGS', value: overviewGroupCogsCents, color: CHART_COLORS.danger },
                     { label: 'Wages', value: primeTotals?.approvedWageCents ?? actualApprovedWageCostCents, color: CHART_COLORS.accent },
                     {
                       label: 'Gross profit',
-                      value: Math.max(0, totalsRow.salesCents - (primeTotals?.cogsCents ?? 0) - (primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)),
+                      value: Math.max(0, totalsRow.salesCents - overviewGroupCogsCents - (primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)),
                       color: CHART_COLORS.positive
                     }
                   ]}
-                  centerValue={totalsRow.primeCostPercent != null ? `${totalsRow.primeCostPercent.toFixed(0)}%` : '—'}
+                  centerValue={overviewTotalsRow?.primeCostPercent != null ? `${overviewTotalsRow.primeCostPercent.toFixed(0)}%` : '—'}
                   centerLabel="prime cost"
                   format={(v) => formatCurrency(v)}
                   emptyLabel="No prime cost data yet."
                 />
+                <p className="ov-donut-note">
+                  {formatCurrency(Math.max(0, totalsRow.salesCents - overviewGroupCogsCents - (primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)))}{' '}
+                  gross profit left after food and labour this week.
+                </p>
               </div>
+            </EditorialPanel>
             </div>
           ) : null}
 
-          {/* Top dishes — editorial panel */}
-          {topDishes.length > 0 ? (
-            <EditorialPanel
-              eyebrow={`This week · ${weekWindowLabel}`}
-              title="Top dishes"
-              actions={
-                <Button type="button" size="sm" variant="ghost" onClick={() => selectReportSection('sales')}>
-                  Open sales detail
-                </Button>
-              }
-            >
-              <div className="alma-top-dishes">
-                {topDishes.map((dish, index) => (
-                  <div className="alma-top-dish-row" key={dish.name}>
-                    <span className="alma-top-dish-rank">{index + 1}</span>
-                    <span className="alma-top-dish-name">{dish.name}</span>
-                    <span className="alma-top-dish-count">{dish.quantity.toLocaleString()}</span>
-                    <span className="alma-top-dish-sales">{formatCurrency(dish.netSalesCents)}</span>
-                  </div>
+          {/* Top dishes + report library — paired, per the overview
+              redesign. The library replaces the old metric-card grids as the
+              way into each detailed report; the dollar figures those cards
+              carried now live in the prime feature panel above. */}
+          <div className="ov-two">
+            {topDishes.length > 0 ? (
+              <EditorialPanel
+                eyebrow={`This week · ${weekWindowLabel}`}
+                title="Top dishes"
+                actions={
+                  <Button type="button" size="sm" variant="ghost" onClick={() => selectReportSection('sales')}>
+                    Open sales detail
+                  </Button>
+                }
+              >
+                <div className="alma-top-dishes">
+                  {topDishes.map((dish, index) => (
+                    <div className="alma-top-dish-row" key={dish.name}>
+                      <span className="alma-top-dish-rank">{index + 1}</span>
+                      <span className="alma-top-dish-name">
+                        {dish.name}
+                        <span className="ov-dish-bar" aria-hidden="true">
+                          <span style={{ width: `${Math.round((dish.quantity / Math.max(topDishes[0]?.quantity ?? 1, 1)) * 100)}%` }} />
+                        </span>
+                      </span>
+                      <span className="alma-top-dish-count">{dish.quantity.toLocaleString()}</span>
+                      <span className="alma-top-dish-sales">{formatCurrency(dish.netSalesCents)}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="ov-dish-footnote">Units sold, Square actuals.</p>
+              </EditorialPanel>
+            ) : null}
+            <EditorialPanel eyebrow="Report library" title="Go deeper">
+              <div className="ov-library">
+                {REPORT_NAV_ITEMS.filter((item) =>
+                  ['monthly-recap', 'compliance', 'reserve', 'marketing', 'content', 'gift-cards', 'exports'].includes(item.id)
+                ).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="ov-library-row"
+                    onClick={() => selectReportSection(item.id)}
+                  >
+                    <span className="ov-library-initial">{item.label.charAt(0)}</span>
+                    <span className="ov-library-text">
+                      <span className="ov-library-name">{item.label}</span>
+                      <span className="ov-library-blurb">{item.description}</span>
+                    </span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+                      <path d="M7 17L17 7M9 7h8v8" />
+                    </svg>
+                  </button>
                 ))}
               </div>
             </EditorialPanel>
-          ) : null}
-
-          {/* Prime cost hero — the single most important metric */}
-          <button
-            type="button"
-            className={`prime-cost-hero is-${heroTone}`}
-            onClick={() => selectReportSection('stock')}
-            aria-label="Open prime cost detail"
-          >
-            <div className="prime-cost-hero-main">
-              <span className="prime-cost-hero-eyebrow">Prime cost · {weekWindowLabel}</span>
-              <span className="prime-cost-hero-value">
-                {currentPct != null ? `${currentPct.toFixed(1)}%` : '—'}
-              </span>
-              <span className="prime-cost-hero-split">
-                Wages {formatPercent(primeTotals?.wagePercent)}
-                <span aria-hidden="true">·</span>
-                COGS {formatPercent(primeTotals?.cogsPercent)}
-                <span aria-hidden="true">·</span>
-                Sales {formatCurrency(primeTotals?.salesCents ?? 0)}
-              </span>
-            </div>
-            <div className="prime-cost-hero-trend" aria-label="5 week prime cost trend">
-              {trendPoints.map((point, i) => {
-                const pct = point.primeCostPercent;
-                const height = pct != null ? Math.max(8, (pct / trendMaxPct) * 100) : 6;
-                const barTone = pct == null ? 'muted' : pct >= 65 ? 'danger' : pct >= 55 ? 'warning' : 'positive';
-                const isCurrent = i === trendPoints.length - 1;
-                return (
-                  <div key={point.weekStart} className={`prime-cost-hero-bar is-${barTone}${isCurrent ? ' is-current' : ''}`}>
-                    <div className="prime-cost-hero-bar-fill" style={{ height: `${height}%` }} />
-                    <span className="prime-cost-hero-bar-label">
-                      {pct != null ? `${pct.toFixed(0)}%` : '—'}
-                    </span>
-                    <small>
-                      {new Date(point.weekStart).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-                    </small>
-                  </div>
-                );
-              })}
-            </div>
-          </button>
-
-          {/* Venue comparison panel removed — replaced by the editorial
-              "By venue" panel above. The new panel uses the same primeCost
-              data with the editorial chrome (eyebrow + Cormorant title +
-              AlmaPill prime cost) and merges the group total row in. */}
-
-          <div className="stats-grid report-metric-grid">
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('compliance')} aria-label="Open attention reports">
-              <StatCard label="Attention items" value={attentionCount} hint="Across staff, compliance, stock, content, and gift cards" loading={loading} />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('staff')} aria-label="Open staff reports">
-              <StatCard label="Active staff" value={data.overview?.staff.totalActiveStaff ?? 0} hint="Current staff profiles" loading={loading} />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('reserve')} aria-label="Open reserve reports">
-              <StatCard label="Bookings today" value={data.overview?.reserve.bookingsToday ?? 0} hint={`${data.overview?.reserve.coversToday ?? 0} covers`} loading={loading} />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open stock reports">
-              <StatCard label="Low stock" value={data.overview?.stock.lowStockCount ?? 0} hint="Venue stock rows" loading={loading} />
-            </button>
-          </div>
-
-          <div className="stats-grid report-metric-grid">
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('sales')} aria-label="Open sales reports">
-              <StatCard label="Sales" value={formatCurrency(primeTotals?.salesCents ?? 0)} hint={data.primeCost?.sources.sales === 'missing' ? 'Missing sales import' : 'ex-GST net · Square Net Sales'} loading={loading} />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('staff')} aria-label="Open wage reports">
-              <StatCard label="Wages" value={formatCurrency(primeTotals?.wageCents ?? 0)} hint={data.primeCost?.sources.wages === 'roster_estimate' ? 'Roster estimate' : `${formatPercent(primeTotals?.wagePercent)} of sales`} loading={loading} />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open COGS reports">
-              <StatCard
-                label="COGS"
-                value={formatCurrency(overviewCogsCents)}
-                hint={overviewCogsIsActual
-                  ? `${formatPercent(primeTotals?.cogsPercent)} of sales · actual`
-                  : theoreticalCogsCents != null
-                    ? `${formatPercent(theoreticalFoodCostPct)} of sales · theoretical (recipe × sales)`
-                    : 'Map Square items to recipes in Stock to see food cost'}
-                loading={loading}
-              />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open data quality detail">
-              <StatCard label="Data quality" value={qualityLabel(primeTotals?.sourceQuality) ?? '—'} hint="Sales · wages · COGS sources" loading={loading} />
-            </button>
           </div>
 
           <div className="report-detail-grid">
@@ -2538,7 +2942,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <div className="report-panel">
               <h4>Open detailed reports</h4>
               <div className="report-shortcut-grid">
-                {REPORT_NAV_ITEMS.filter((item) => item.id !== 'overview').map((item) => (
+                {REPORT_NAV_ITEMS.filter((item) => item.id !== 'overview' && !item.hidden).map((item) => (
                   <button
                     key={item.id}
                     type="button"
@@ -2557,26 +2961,125 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     );
   }
 
+  // Covers on the books for the next 14 days — day rows × venue columns.
+  // The demand signal for rostering and prep: shared by Sales + Bookings.
+  function renderCoversAhead(venueFilter: string) {
+    const rows = (data.overview?.reserve.coversAhead ?? []).filter(
+      (row) => !venueFilter || row.venue === venueFilter
+    );
+    const venues = Array.from(new Set(rows.map((row) => row.venue))).sort();
+    const byDate = new Map<string, Map<string, { covers: number; bookings: number }>>();
+    for (const row of rows) {
+      const day = byDate.get(row.date) ?? new Map();
+      day.set(row.venue, { covers: row.covers, bookings: row.bookings });
+      byDate.set(row.date, day);
+    }
+    const dates = Array.from(byDate.keys()).sort();
+    const maxDayCovers = Math.max(
+      1,
+      ...dates.map((date) =>
+        venues.reduce((sum, venue) => sum + (byDate.get(date)?.get(venue)?.covers ?? 0), 0)
+      )
+    );
+    return (
+      <div className="report-panel">
+        <h4>Covers on the books — next 14 days</h4>
+        {dates.length === 0 ? (
+          <p className="subtle">Nothing on the books for the next 14 days yet. Bookings land here automatically from SevenRooms.</p>
+        ) : (
+          <div className="table-scroll">
+            <table className="covers-ahead-table">
+              <thead>
+                <tr>
+                  <th>Day</th>
+                  {venues.map((venue) => (
+                    <th key={venue} className="covers-ahead-num">{venue}</th>
+                  ))}
+                  <th className="covers-ahead-num">Covers</th>
+                  <th className="covers-ahead-bar-cell" aria-hidden="true" />
+                </tr>
+              </thead>
+              <tbody>
+                {dates.map((date) => {
+                  const day = byDate.get(date)!;
+                  const total = venues.reduce((sum, venue) => sum + (day.get(venue)?.covers ?? 0), 0);
+                  const parsed = new Date(`${date}T12:00:00`);
+                  const weekday = parsed.toLocaleDateString(undefined, { weekday: 'short' });
+                  const label = parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+                  const isWeekend = parsed.getDay() === 0 || parsed.getDay() === 6;
+                  return (
+                    <tr key={date} className={isWeekend ? 'is-weekend' : undefined}>
+                      <td>{weekday} {label}</td>
+                      {venues.map((venue) => {
+                        const cell = day.get(venue);
+                        return (
+                          <td key={venue} className="covers-ahead-num">
+                            {cell ? `${cell.covers}` : '—'}
+                            {cell && cell.bookings > 0 ? <span className="subtle"> ({cell.bookings})</span> : null}
+                          </td>
+                        );
+                      })}
+                      <td className="covers-ahead-num"><strong>{total}</strong></td>
+                      <td className="covers-ahead-bar-cell">
+                        <div className="covers-ahead-bar" style={{ width: `${(total / maxDayCovers) * 100}%` }} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="subtle">Live bookings only (pending, confirmed, seated) — covers (bookings). Use the big days to roster up and order ahead.</p>
+      </div>
+    );
+  }
+
   function renderSalesSection() {
     const totalForecastCents = salesTrendRows.reduce((sum, row) => sum + row.manualForecastCents, 0);
     const totalHistoricalCents = salesTrendRows.reduce((sum, row) => sum + row.historicalSalesCents, 0);
     const totalPredictedCents = salesTrendRows.reduce((sum, row) => sum + row.predictedSalesCents, 0);
     const importedDays = salesTrendRows.reduce((sum, row) => sum + row.actualDays, 0);
     const missingHistoryCount = salesTrendRows.filter((row) => row.historicalSalesCents <= 0).length;
+    // Presentation only: relative-size read for the imported sales rows table.
+    const importedSalesMaxCents = Math.max(1, ...(data.actualSales?.entries ?? []).map((entry) => entry.salesCents));
 
     return (
       <SectionShell
         id="sales"
-        title="Sales Reports"
-        description="Alma Avalon and St Alma sales actuals, daily trends, historical baseline, and weekly prediction"
+        title="Sales"
+        description="Takings by venue and day, forecast vs actual, and covers on the books ahead"
       >
         <div className="report-section-stack">
-          <div className="stats-grid report-metric-grid">
-            <StatCard label="Actual imported" value={formatCurrency(actualSalesCents)} hint={`${importedDays} venue day${importedDays === 1 ? '' : 's'} imported`} loading={loading} />
-            <StatCard label="Manual forecast" value={formatCurrency(totalForecastCents)} hint="Editable venue inputs" loading={loading} />
-            <StatCard label="Predicted sales" value={formatCurrency(totalPredictedCents)} hint="Current pace, forecast, or history" loading={loading} />
-            <StatCard label="Historical baseline" value={formatCurrency(totalHistoricalCents)} hint={missingHistoryCount ? `${missingHistoryCount} missing baseline${missingHistoryCount === 1 ? '' : 's'}` : 'Selected week baseline'} loading={loading} />
-          </div>
+          {/* Takings feature — the section's one headline figure. The
+              forecast, prediction, and baseline read alongside it instead of
+              repeating in a metric-card grid. */}
+          <section className="ov-prime is-neutral rs-prime-main-money rs-prime-cols-money" aria-label="Takings for the week">
+            <div className="ov-prime-main">
+              <span className="ov-prime-label">Takings · actual imported</span>
+              <div className="ov-prime-row">
+                <span className="ov-prime-value">{formatCurrency(actualSalesCents)}</span>
+              </div>
+              <span className="ov-prime-note">
+                <strong>{importedDays}</strong> venue day{importedDays === 1 ? '' : 's'} imported · {weekWindowLabel}.
+              </span>
+            </div>
+            <div className="ov-prime-col">
+              <span className="ov-prime-label">Manual forecast</span>
+              <span className="ov-prime-col-value">{formatCurrency(totalForecastCents)}</span>
+              <span className="ov-prime-col-hint">Editable venue inputs</span>
+            </div>
+            <div className="ov-prime-col">
+              <span className="ov-prime-label">Predicted sales</span>
+              <span className="ov-prime-col-value">{formatCurrency(totalPredictedCents)}</span>
+              <span className="ov-prime-col-hint">Current pace, forecast, or history</span>
+            </div>
+            <div className="ov-prime-col">
+              <span className="ov-prime-label">Historical baseline</span>
+              <span className="ov-prime-col-value">{formatCurrency(totalHistoricalCents)}</span>
+              <span className="ov-prime-col-hint">{missingHistoryCount ? `${missingHistoryCount} missing baseline${missingHistoryCount === 1 ? '' : 's'}` : 'Selected week baseline'}</span>
+            </div>
+          </section>
 
           {data.actualSales?.entries.length ? null : (
             <p className="report-warning-text">No imported sales actuals are available for this week. The predicted sales value falls back to manual forecast first, then historical baseline.</p>
@@ -2595,6 +3098,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               />
             </div>
           ) : null}
+
+          {renderCoversAhead(salesVenue)}
 
           <div className="sales-venue-grid">
             {(salesVenue ? salesTrendRows.filter((row) => row.venue === salesVenue) : salesTrendRows).map((row) => {
@@ -2627,6 +3132,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       </div>
                     ))}
                   </div>
+
+                  {row.bookedCovers > 0 ? (
+                    <p className="sales-booked-line">
+                      On the books for the rest of this week: <strong>{row.bookedCovers} covers</strong>
+                      {row.bookedEstimateCents > 0 ? <> ≈ <strong>{formatCurrency(row.bookedEstimateCents)}</strong> at avg spend</> : null}
+                      {row.paceLabel === 'Bookings on the books (raised the forecast)' ? ' — raised the prediction.' : '.'}
+                    </p>
+                  ) : null}
 
                   <div className="form-grid two">
                     <Input
@@ -2701,9 +3214,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </div>
           </div>
 
+          {/* The two eight-week reads pair side by side — same window, two
+              angles (level and accuracy). */}
+          {forecastHistory.some((w) => w.forecastCents > 0 || w.actualCents > 0) ? (
+          <div className="ov-two">
           {forecastHistory.filter((w) => w.actualCents > 0).length >= 2 ? (
-            <div className="report-panel">
-              <h4>Actual sales trend · last 8 weeks</h4>
+            <EditorialPanel eyebrow="Last 8 weeks" title="Actual sales trend">
               <TrendLine
                 points={forecastHistory.map((w) => ({
                   label: new Date(w.weekStart).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
@@ -2712,13 +3228,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 format={(v) => formatCurrency(v)}
                 color={CHART_COLORS.accent}
               />
-            </div>
+            </EditorialPanel>
           ) : null}
 
           {/* 8-week forecast vs actual */}
           {forecastHistory.some((w) => w.forecastCents > 0 || w.actualCents > 0) ? (
-            <div className="report-panel">
-              <h4>Forecast vs actual · last 8 weeks</h4>
+            <EditorialPanel eyebrow="Last 8 weeks" title="Forecast vs actual">
               <p className="subtle" style={{ marginTop: -4 }}>
                 Side-by-side bars per week. Variance shows how the forecast compared to imported actuals.
               </p>
@@ -2770,7 +3285,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   </>
                 );
               })()}
-            </div>
+            </EditorialPanel>
+          ) : null}
+          </div>
           ) : null}
 
           <div className="report-panel">
@@ -2785,7 +3302,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   columns={[
                     { key: 'date', label: 'Date', sortValue: (e) => e.serviceDate, render: (e) => new Date(e.serviceDate).toLocaleDateString() },
                     { key: 'venue', label: 'Venue', sortValue: (e) => e.venue, render: (e) => e.venue },
-                    { key: 'sales', label: 'Sales', align: 'right', sortValue: (e) => e.salesCents, render: (e) => formatCurrency(e.salesCents) },
+                    { key: 'sales', label: 'Sales', align: 'right', sortValue: (e) => e.salesCents, render: (e) => (
+                      <>
+                        {formatCurrency(e.salesCents)}
+                        <span className="ov-dish-bar rs-bar-right" aria-hidden="true">
+                          <span style={{ width: `${Math.round((e.salesCents / importedSalesMaxCents) * 100)}%` }} />
+                        </span>
+                      </>
+                    ) },
                     { key: 'source', label: 'Source', sortValue: (e) => e.source, render: (e) => e.source },
                     { key: 'notes', label: 'Notes', sortValue: (e) => e.notes || e.externalId || 'Imported actual', render: (e) => e.notes || e.externalId || 'Imported actual' }
                   ]}
@@ -2811,11 +3335,58 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="staff"
-        title="Staff Reports"
-        description="Active staff, leave, clocking, payroll readiness, and wage costing"
+        title="Labour (wages)"
+        description="Wage cost vs sales, payroll readiness, tips, and staff needing attention"
         action={<Button type="button" size="sm" variant="secondary" onClick={exportWagesCsv} disabled={!wageRows.length}>Export wages CSV</Button>}
       >
         <div className="report-section-stack">
+          {/* Labour feature — the section's one headline ratio, with the
+              payroll dollars alongside instead of a second metric-card grid. */}
+          {(() => {
+            const labourPct = primeTotals?.wagePercent ?? null;
+            const incomplete = labourPct != null && labourPct > 120;
+            const tipsPoolCents = data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0;
+            const payroll = wageTotals.approvedCostCents + tipsPoolCents;
+            const tone = incomplete || labourPct == null
+              ? 'neutral'
+              : labourPct <= COST_TARGETS.labour
+                ? 'positive'
+                : labourPct <= COST_TARGETS.labour + 5
+                  ? 'warning'
+                  : 'danger';
+            return (
+              <section className={`ov-prime is-${tone} rs-prime-cols-money`} aria-label="Labour cost for the week">
+                <div className="ov-prime-main">
+                  <span className="ov-prime-label">Labour · wages % of sales</span>
+                  <div className="ov-prime-row">
+                    <span className="ov-prime-value">{labourPct == null || incomplete ? '—' : formatPercent(labourPct)}</span>
+                  </div>
+                  <span className="ov-prime-note">
+                    {incomplete
+                      ? <>Sales look incomplete for this week, so the labour % isn't reliable yet — check the Square import. Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>
+                      : labourPct != null
+                        ? <>Aim for ≤ {COST_TARGETS.labour}%. Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>
+                        : <>Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>}
+                  </span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Projected wages</span>
+                  <span className="ov-prime-col-value">{formatCurrency(wageTotals.projectedCostCents)}</span>
+                  <span className="ov-prime-col-hint">{roundHours(wageTotals.hours)} total</span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Approved wages</span>
+                  <span className="ov-prime-col-value">{formatCurrency(wageTotals.approvedCostCents)}</span>
+                  <span className="ov-prime-col-hint">{roundHours(wageTotals.approvedHours)} approved</span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Payroll total</span>
+                  <span className="ov-prime-col-value">{formatCurrency(payroll)}</span>
+                  <span className="ov-prime-col-hint">Approved wages + {formatCurrency(tipsPoolCents)} tips pool (after breakage deduction)</span>
+                </div>
+              </section>
+            );
+          })()}
           <div className="stats-grid report-metric-grid">
             <StatCard label="Active staff" value={data.overview?.staff.totalActiveStaff ?? activeStaff.length} hint="Current profiles" loading={loading} />
             <StatCard label="Pending leave" value={data.overview?.staff.pendingLeaveCount ?? 0} hint="Awaiting manager decision" loading={loading} />
@@ -2823,15 +3394,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <StatCard label="Awaiting approval" value={data.timesheets.filter((item) => item.status === 'SUBMITTED').length} hint={weekWindowLabel} loading={loading} />
           </div>
 
-          <div className="stats-grid report-metric-grid">
-            <StatCard label="Projected wages" value={formatCurrency(wageTotals.projectedCostCents)} hint={`${roundHours(wageTotals.hours)}h total`} loading={loading} />
-            <StatCard label="Approved wages" value={formatCurrency(wageTotals.approvedCostCents)} hint={`${roundHours(wageTotals.approvedHours)}h approved`} loading={loading} />
-            <StatCard label="Weekly tips pool" value={formatCurrency(data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
-            <StatCard label="Payroll total" value={formatCurrency(wageTotals.approvedCostCents + (data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0))} hint="Approved wages + tips" loading={loading} />
-          </div>
-
-          <div className="report-detail-grid">
-            <ActionPanel
+          <ActionPanel
               title="Staff attention"
               description="Expand to see the affected staff rows and the safest next action."
               count={staffAttentionCount}
@@ -2867,10 +3430,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
               ))}
               {submittedTimesheets.length > 8 ? <p className="subtle">{submittedTimesheets.length - 8} more timesheets waiting.</p> : null}
-            </ActionPanel>
+          </ActionPanel>
 
-            <div className="report-panel">
-              <h4>Wages by venue</h4>
+          {/* Two reads of the same payroll dollars — by venue and by person —
+              paired instead of a metric list plus a duplicating bar chart. */}
+          <div className="ov-two">
+            <EditorialPanel eyebrow={weekWindowLabel} title="Wages by venue">
               {(data.primeCost?.venues ?? []).filter((venue) => venue.venue && venue.venue !== 'Both').length ? (
                 (data.primeCost?.venues ?? []).filter((venue) => venue.venue && venue.venue !== 'Both').map((venue) => (
                   <Metric
@@ -2884,35 +3449,18 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               ) : (
                 <p className="subtle">No timesheets found for this week.</p>
               )}
-              <Metric label="Approved wages" value={formatCurrency(primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)} tone="positive" hint="Approved/exported timesheets only" />
-            </div>
+            </EditorialPanel>
+            <EditorialPanel eyebrow={weekWindowLabel} title="Top payroll">
+              <HBars
+                data={[...wageRows]
+                  .sort((a, b) => b.approvedCostCents + b.tipsCents - (a.approvedCostCents + a.tipsCents))
+                  .slice(0, 6)
+                  .map((r) => ({ label: r.name, value: r.approvedCostCents + r.tipsCents }))}
+                format={(v) => formatCurrency(v)}
+                emptyLabel="No approved payroll yet."
+              />
+            </EditorialPanel>
           </div>
-
-          {(data.primeCost?.venues ?? []).filter((v) => v.venue && v.venue !== 'Both').length || wageRows.length ? (
-            <div className="report-chart-grid">
-              <div className="report-chart-panel">
-                <h5 className="report-chart-title">Wages by venue</h5>
-                <BarChart
-                  data={(data.primeCost?.venues ?? [])
-                    .filter((v) => v.venue && v.venue !== 'Both')
-                    .map((v, i) => ({ label: v.venue, value: v.wageCents, color: CHART_PALETTE[i % CHART_PALETTE.length] }))}
-                  format={(v) => formatCurrency(v)}
-                  emptyLabel="No venue wages for this week."
-                />
-              </div>
-              <div className="report-chart-panel">
-                <h5 className="report-chart-title">Top payroll — {weekWindowLabel}</h5>
-                <HBars
-                  data={[...wageRows]
-                    .sort((a, b) => b.approvedCostCents + b.tipsCents - (a.approvedCostCents + a.tipsCents))
-                    .slice(0, 6)
-                    .map((r) => ({ label: r.name, value: r.approvedCostCents + r.tipsCents }))}
-                  format={(v) => formatCurrency(v)}
-                  emptyLabel="No approved payroll yet."
-                />
-              </div>
-            </div>
-          ) : null}
 
           {wageRows.length ? (
             <div className="report-panel">
@@ -2978,7 +3526,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <div className="report-panel" style={{ gridColumn: '1 / -1' }}>
               <h4>Staff costing detail</h4>
               <p className="subtle">Wage cost, cost per hour, section mix, variance, and labour charts. Moved here from Admin so wage reporting lives in one place.</p>
-              <StaffCostingReportPage />
+              <Suspense fallback={<div className="report-section-loading"><Spinner /></div>}>
+                <StaffCostingReportPage />
+              </Suspense>
             </div>
           </div>
         </div>
@@ -2990,9 +3540,23 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="compliance"
-        title="Compliance Reports"
-        description="Outstanding compliance, expired records, expiring records, and venue attention"
+        title="Compliance"
+        description="Staff records, licences, and food-safety temperature logs — what's current and what needs attention"
       >
+        {(() => {
+          const attention =
+            (data.overview?.compliance.expiredStaffRecords ?? 0) +
+            (data.overview?.compliance.pendingStaffRecords ?? 0) +
+            (data.summary?.issues?.critical ?? 0) +
+            (data.overview?.compliance.missingTemperatureReadingsToday ?? 0);
+          return (
+            <p className="report-lead">
+              {attention > 0
+                ? <>Have a look — <strong>{attention} item{attention === 1 ? '' : 's'}</strong> need attention: expired or pending staff records, critical issues, or missing temperature logs today.</>
+                : <>All clear — staff records, licences and food-safety temperature logs are current.</>}
+            </p>
+          );
+        })()}
         <div className="report-detail-grid">
           <div className="report-panel">
             <h4>Record attention</h4>
@@ -3015,14 +3579,78 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   }
 
   function renderStockSection() {
+    // Weekly actual COGS (opening + purchases − closing) collapses to $0 because
+    // stocktakes are monthly, so nothing brackets a single week. Fall back to
+    // THEORETICAL food cost (recipe cost × Square units sold) — the same figure
+    // the "This Week" report uses — so a food cost always shows. Labelled clearly.
+    const stockTheoreticalCogsCents = data.menuProfitability?.totals.estimatedCogsCents ?? null;
+    const stockTheoreticalFoodPct = data.menuProfitability?.totals.foodCostPercent ?? null;
+    const stockActualCogsCents = primeTotals?.cogsCents ?? 0;
+    const stockUsingTheoretical =
+      stockActualCogsCents <= 0 && stockTheoreticalCogsCents != null && stockTheoreticalCogsCents > 0;
+    const stockDisplayCogsCents = stockUsingTheoretical ? stockTheoreticalCogsCents! : stockActualCogsCents;
+    const stockSalesCents = primeTotals?.salesCents ?? 0;
+    const stockDisplayCogsPct = stockUsingTheoretical
+      ? stockTheoreticalFoodPct
+      : (primeTotals?.cogsPercent ?? null);
+    const stockLabourCents = primeTotals?.wageCents ?? 0;
+    const stockDisplayPrimeCents = stockUsingTheoretical
+      ? stockLabourCents + stockDisplayCogsCents
+      : (primeTotals?.primeCostCents ?? 0);
+    const stockDisplayPrimePct = stockSalesCents > 0
+      ? (stockDisplayPrimeCents / stockSalesCents) * 100
+      : (primeTotals?.primeCostPercent ?? null);
+    // Presentation only: relative-size read for the category value table.
+    const categoryValueMaxCents = Math.max(1, ...categoryValueRows.map((row) => row.valueCents));
     return (
       <SectionShell
         id="stock"
-        title="Stock Reports"
-        description="Catalogue health, venue stock status, low stock, and stocktake review"
+        title="Food &amp; Bev Cost (COGS)"
+        description="What you spent to sell — food cost %, purchases, wastage, and stock value"
       >
         <div className="report-section-stack">
           {stockMessage ? <p className="error-text">{stockMessage}</p> : null}
+          {/* Food-cost feature — the section's one headline ratio, with prime,
+              purchases, and wastage alongside instead of a second metric grid. */}
+          {(() => {
+            const tone = stockDisplayCogsCents <= 0 || stockDisplayCogsPct == null
+              ? 'neutral'
+              : stockDisplayCogsPct <= COST_TARGETS.food
+                ? 'positive'
+                : stockDisplayCogsPct <= COST_TARGETS.food + 5
+                  ? 'warning'
+                  : 'danger';
+            return (
+              <section className={`ov-prime is-${tone} rs-prime-cols-money`} aria-label="Food and beverage cost for the week">
+                <div className="ov-prime-main">
+                  <span className="ov-prime-label">Food &amp; bev · COGS % of sales</span>
+                  <div className="ov-prime-row">
+                    <span className="ov-prime-value">{stockDisplayCogsCents > 0 ? formatPercent(stockDisplayCogsPct) : '—'}</span>
+                  </div>
+                  <span className="ov-prime-note">
+                    {stockDisplayCogsCents > 0
+                      ? <>Aim for ≤ {COST_TARGETS.food}%. Food &amp; bev cost of <strong>{formatCurrency(stockDisplayCogsCents)}</strong>{stockUsingTheoretical ? ' (estimated from recipes — no stocktake brackets this week yet)' : primeTotals?.cogsSource !== 'stock_bounded' ? ' (bills recorded so far only — likely understated until stocktakes bracket the period)' : ' (actual: opening + purchases − closing)'}.</>
+                      : <>No food cost to show yet — take a stocktake, or map your Square items to recipes in Stock, to see it here.</>}
+                  </span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Total operating cost · Prime</span>
+                  <span className="ov-prime-col-value">{formatCurrency(stockDisplayPrimeCents)}</span>
+                  <span className="ov-prime-col-hint">{formatPercent(stockDisplayPrimePct)} of sales · food + labour</span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Purchases (ex-GST)</span>
+                  <span className="ov-prime-col-value">{formatCurrency(primeTotals?.purchasesCents ?? 0)}</span>
+                  <span className="ov-prime-col-hint">Finalised supplier bills, net of GST</span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Wastage cost</span>
+                  <span className="ov-prime-col-value">{formatCurrency(primeTotals?.wastageCents ?? 0)}</span>
+                  <span className="ov-prime-col-hint">Recorded wastage (informational)</span>
+                </div>
+              </section>
+            );
+          })()}
           <div className="stats-grid report-metric-grid">
             <StatCard label="Active catalogue items" value={data.overview?.stock.activeStockItems ?? data.stockSummary?.activeItems ?? 0} hint="Global catalogue" loading={loading} />
             <StatCard label="Low stock" value={data.overview?.stock.lowStockCount ?? data.stockSummary?.lowStockItems ?? 0} hint="Venue-aware rows" loading={loading} />
@@ -3030,59 +3658,31 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <StatCard label="Ready for review" value={data.overview?.stock.stocktakesReadyForReview ?? 0} hint="Submitted stocktakes" loading={loading} />
           </div>
 
-          <div className="stats-grid report-metric-grid">
-            <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={primeTotals ? `${formatPercent(primeTotals.cogsPercent)} of sales · ${primeTotals.cogsSource === 'stock_bounded' ? 'opening + purchases − closing' : 'purchases only (est.)'}` : 'No data'} loading={loading} />
-            <StatCard label="Prime cost" value={formatCurrency(primeTotals?.primeCostCents ?? 0)} hint={`${formatPercent(primeTotals?.primeCostPercent)} of sales`} loading={loading} />
-            <StatCard label="Purchases (ex-GST)" value={formatCurrency(primeTotals?.purchasesCents ?? 0)} hint="Finalised supplier bills, net of GST" loading={loading} />
-            <StatCard label="Wastage cost" value={formatCurrency(primeTotals?.wastageCents ?? 0)} hint="Recorded wastage (informational)" loading={loading} />
-          </div>
-
-          <div className="report-chart-grid">
-            <div className="report-chart-panel">
-              <h5 className="report-chart-title">Prime cost composition</h5>
+          {/* Cost split and stock health paired; the by-category values live
+              once, in the table below, with a relative-size bar per row. */}
+          <div className="ov-two">
+            <EditorialPanel eyebrow={weekWindowLabel} title="Where each sales dollar goes">
               <Donut
                 size={130}
                 segments={[
-                  { label: 'COGS', value: primeTotals?.cogsCents ?? 0, color: CHART_COLORS.danger },
-                  { label: 'Wages', value: primeTotals?.approvedWageCents ?? actualApprovedWageCostCents, color: CHART_COLORS.accent }
+                  { label: 'Food & bev', value: stockDisplayCogsCents, color: CHART_COLORS.danger },
+                  { label: 'Labour', value: stockLabourCents, color: CHART_COLORS.accent }
                 ]}
-                centerValue={formatPercent(primeTotals?.primeCostPercent)}
-                centerLabel="prime %"
+                centerValue={formatPercent(stockDisplayPrimePct)}
+                centerLabel="total cost %"
                 format={(v) => formatCurrency(v)}
                 emptyLabel="No prime cost data yet."
               />
-            </div>
-            <div className="report-chart-panel">
-              <h5 className="report-chart-title">Stock value by category</h5>
-              <HBars
-                data={categoryValueRows.slice(0, 8).map((c) => ({ label: c.category, value: c.valueCents }))}
-                format={(v) => formatCurrency(v)}
-                emptyLabel="No stock value to show."
-              />
-            </div>
-          </div>
-
-          <div className="report-detail-grid">
-            <div className="report-panel">
-              <h4>Stock health</h4>
+            </EditorialPanel>
+            <EditorialPanel eyebrow="Stock on hand" title="Stock health">
               <Metric label="Current stock value" value={formatCurrency(stockValueCents)} tone="info" />
               <Metric label={stockLowStockLabel} value={data.stockSummary?.lowStockItems ?? 0} tone={(data.stockSummary?.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'} />
               <Metric label="Latest stocktake value" value={formatCurrency(data.stocktakes?.totalValueCents ?? 0)} tone="neutral" />
-            </div>
-
-            <div className="report-panel">
-              <h4>Prime cost data quality</h4>
-              <Metric label="Sales source" value={data.primeCost?.sources.sales.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.sales === 'missing' ? 'warning' : 'positive'} />
-              <Metric label="Wage source" value={data.primeCost?.sources.wages.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.wages === 'missing' ? 'warning' : 'positive'} />
-              <Metric label="COGS source" value={data.primeCost?.sources.cogs.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.cogs === 'missing' ? 'warning' : 'positive'} />
-              {(data.primeCost?.warnings ?? []).map((warning) => (
-                <p key={warning} className="subtle">{warning}</p>
-              ))}
-            </div>
+            </EditorialPanel>
           </div>
 
           <div className="report-panel">
-            <h4>Prime cost by venue</h4>
+            <h4>Cost by venue</h4>
             <div className="table-scroll">
               {(data.primeCost?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both').length ? (
                 <SortableTable
@@ -3092,12 +3692,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   columns={[
                     { key: 'venue', label: 'Venue', sortValue: (r) => r.venue, render: (r) => r.venue },
                     { key: 'sales', label: 'Sales', align: 'right', sortValue: (r) => r.salesCents, render: (r) => formatCurrency(r.salesCents) },
-                    { key: 'wages', label: 'Wages', align: 'right', sortValue: (r) => r.wageCents, render: (r) => formatCurrency(r.wageCents) },
-                    { key: 'wagePct', label: 'Wage %', align: 'right', sortValue: (r) => r.wagePercent, render: (r) => formatPercent(r.wagePercent) },
-                    { key: 'cogs', label: 'COGS', align: 'right', sortValue: (r) => r.cogsCents, render: (r) => formatCurrency(r.cogsCents) },
-                    { key: 'cogsPct', label: 'COGS %', align: 'right', sortValue: (r) => r.cogsPercent, render: (r) => formatPercent(r.cogsPercent) },
-                    { key: 'prime', label: 'Prime cost', align: 'right', sortValue: (r) => r.primeCostCents, render: (r) => formatCurrency(r.primeCostCents) },
-                    { key: 'primePct', label: 'Prime %', align: 'right', sortValue: (r) => r.primeCostPercent, render: (r) => formatPercent(r.primeCostPercent) },
+                    { key: 'wages', label: 'Labour', align: 'right', sortValue: (r) => r.wageCents, render: (r) => formatCurrency(r.wageCents) },
+                    { key: 'wagePct', label: 'Labour %', align: 'right', sortValue: (r) => r.wagePercent, render: (r) => formatPercent(r.wagePercent) },
+                    { key: 'cogs', label: 'Food & bev', align: 'right', sortValue: (r) => r.cogsCents, render: (r) => formatCurrency(r.cogsCents) },
+                    { key: 'cogsPct', label: 'Food %', align: 'right', sortValue: (r) => r.cogsPercent, render: (r) => formatPercent(r.cogsPercent) },
+                    { key: 'prime', label: 'Total cost', align: 'right', sortValue: (r) => r.primeCostCents, render: (r) => formatCurrency(r.primeCostCents) },
+                    { key: 'primePct', label: 'Total %', align: 'right', sortValue: (r) => r.primeCostPercent, render: (r) => formatPercent(r.primeCostPercent) },
                     { key: 'quality', label: 'Quality', sortValue: (r) => r.sourceQuality, render: (r) => qualityLabel(r.sourceQuality) }
                   ]}
                 />
@@ -3107,9 +3707,18 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </div>
           </div>
 
-          <div className="report-detail-grid">
-            <div className="report-panel">
-              <h4>Stocktake variance attention</h4>
+          {/* Data quality and variance attention paired — both answer "can I
+              trust this week's food cost?". */}
+          <div className="ov-two">
+            <EditorialPanel eyebrow={weekWindowLabel} title="Cost data quality">
+              <Metric label="Sales source" value={data.primeCost?.sources.sales.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.sales === 'missing' ? 'warning' : 'positive'} />
+              <Metric label="Labour source" value={data.primeCost?.sources.wages.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.wages === 'missing' ? 'warning' : 'positive'} />
+              <Metric label="Food cost source" value={data.primeCost?.sources.cogs.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.cogs === 'missing' ? 'warning' : 'positive'} />
+              {(data.primeCost?.warnings ?? []).map((warning) => (
+                <p key={warning} className="subtle">{warning}</p>
+              ))}
+            </EditorialPanel>
+            <EditorialPanel eyebrow={overviewWindowLabel} title="Stocktake variance attention">
               <div className="table-scroll">
                 {data.overview?.stock.highestVarianceLines.length ? (
                   <SortableTable
@@ -3127,7 +3736,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   <p className="subtle">No submitted stocktake variances in this range.</p>
                 )}
               </div>
-            </div>
+            </EditorialPanel>
           </div>
 
           <div className="report-panel">
@@ -3139,7 +3748,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   rowKey={(row) => row.category}
                   defaultSortKey="value"
                   columns={[
-                    { key: 'category', label: 'Category', sortValue: (r) => r.category, render: (r) => r.category },
+                    { key: 'category', label: 'Category', sortValue: (r) => r.category, render: (r) => (
+                      <>
+                        {r.category}
+                        <span className="ov-dish-bar" aria-hidden="true">
+                          <span style={{ width: `${Math.round((r.valueCents / categoryValueMaxCents) * 100)}%` }} />
+                        </span>
+                      </>
+                    ) },
                     { key: 'count', label: stockCategoryCountLabel, align: 'right', sortValue: (r) => r.itemCount, render: (r) => r.itemCount },
                     { key: 'low', label: stockLowStockLabel, align: 'right', sortValue: (r) => r.lowStock, render: (r) => r.lowStock },
                     { key: 'value', label: 'Value', align: 'right', sortValue: (r) => r.valueCents, render: (r) => formatCurrency(r.valueCents) }
@@ -3203,6 +3819,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       }
       return [...merged, ...passthrough];
     })();
+    // Presentation only: relative-size read for the ranking tables.
+    const menuRowsMaxQty = Math.max(1, ...menuRowsDisplay.map((row) => row.quantitySold));
     const mappedMenuRows = menuProfit?.totals.mappedRows ?? 0;
     const menuEstimatedCogs = menuProfit?.totals.estimatedCogsCents;
     const menuGrossProfit = menuProfit?.totals.grossProfitCents;
@@ -3338,6 +3956,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   <div className="report-chart-grid" style={{ marginTop: 16 }}>
                     <div>
                       <h5 className="report-chart-title">Revenue split — all set menus</h5>
+                      {/*
+                        Say what this covers. The figure below is the food cost
+                        of four set menus, and it sits on the same screen as
+                        menu profitability's food cost for everything sold — on
+                        FY25/26 those read 39.5% and 25.8%, which looks like a
+                        contradiction until you know the two are measuring
+                        different things.
+                      */}
+                      {mc.totals.shareOfSalesPct != null ? (
+                        <p className="subtle" style={{ margin: '0 0 8px', fontSize: 12 }}>
+                          Set menus only — {mc.totals.shareOfSalesPct}% of takings for this period.
+                          Menu engineering covers the other {Math.round((100 - mc.totals.shareOfSalesPct) * 10) / 10}%.
+                        </p>
+                      ) : null}
                       <Donut
                         size={130}
                         segments={[
@@ -3513,6 +4145,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       <>
                         <strong>{r.squareItem}</strong>
                         <span className="subtle">{[r.variationName, r.categoryName, r.accountKey].filter(Boolean).join(' · ')}</span>
+                        <span className="ov-dish-bar" aria-hidden="true">
+                          <span style={{ width: `${Math.round((r.quantitySold / menuRowsMaxQty) * 100)}%` }} />
+                        </span>
                       </>
                     ) },
                     { key: 'recipe', label: 'Recipe', sortValue: (r) => r.almaRecipeTitle ?? 'Not mapped', render: (r) => r.almaRecipeTitle ?? 'Not mapped' },
@@ -3523,7 +4158,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     { key: 'cogs', label: 'COGS', align: 'right', sortValue: (r) => r.estimatedCogsCents, render: (r) => (r.estimatedCogsCents === null ? '—' : formatCurrency(r.estimatedCogsCents)) },
                     { key: 'gp', label: 'Gross profit', align: 'right', sortValue: (r) => r.grossProfitCents, render: (r) => (r.grossProfitCents === null ? '—' : formatCurrency(r.grossProfitCents)) },
                     { key: 'foodCost', label: 'Food cost %', align: 'right', sortValue: (r) => r.foodCostPercent, render: (r) => formatPercent(r.foodCostPercent) },
-                    { key: 'status', label: 'Status', sortValue: (r) => r.mappingStatus, render: (r) => <Badge tone={menuMappingTone(r.mappingStatus)}>{menuMappingLabel(r.mappingStatus)}</Badge> }
+                    { key: 'status', label: 'Status', sortValue: (r) => (r.dataQuality.includes('suspect_batch_cost') ? 'suspect_batch_cost' : r.mappingStatus), render: (r) => r.dataQuality.includes('suspect_batch_cost')
+                      ? <Badge tone="danger">batch cost — set yield</Badge>
+                      : <Badge tone={menuMappingTone(r.mappingStatus)}>{menuMappingLabel(r.mappingStatus)}</Badge> }
                   ]}
                 />
               ) : (
@@ -3618,7 +4255,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                             <tbody>
                               {row.items.map((item) => (
                                 <tr key={item.key}>
-                                  <td><strong>{item.squareItem}</strong>{item.almaRecipeTitle ? <span className="subtle"> · {item.almaRecipeTitle}</span> : null}</td>
+                                  <td>
+                                    <strong>{item.squareItem}</strong>{item.almaRecipeTitle ? <span className="subtle"> · {item.almaRecipeTitle}</span> : null}
+                                    <span className="ov-dish-bar" aria-hidden="true">
+                                      <span style={{ width: `${Math.round((item.netSalesCents / Math.max(1, ...row.items.map((i) => i.netSalesCents))) * 100)}%` }} />
+                                    </span>
+                                  </td>
                                   <td style={{ textAlign: 'right' }}>{item.quantitySold.toLocaleString()}</td>
                                   <td style={{ textAlign: 'right' }}>{formatCurrency(item.netSalesCents)}</td>
                                   <td style={{ textAlign: 'right' }}>{item.foodCostPercent == null ? '—' : `${item.foodCostPercent.toFixed(1)}%`}</td>
@@ -3675,17 +4317,64 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="reserve"
-        title="Reserve Reports"
-        description="Bookings, covers, cancellations, no-shows, and guest mix"
+        title="Bookings & covers"
+        description="Reservations, covers, cancellations, no-shows, and new guests"
       >
+        <p className="report-lead">
+          <strong>{data.overview?.reserve.coversToday ?? 0} covers</strong> booked today · {data.overview?.reserve.upcomingBookings ?? 0} upcoming booking{(data.overview?.reserve.upcomingBookings ?? 0) === 1 ? '' : 's'} on the books.
+        </p>
         <div className="stats-grid report-metric-grid">
           <StatCard label="Bookings today" value={data.overview?.reserve.bookingsToday ?? 0} hint={`${data.overview?.reserve.coversToday ?? 0} covers`} loading={loading} />
           <StatCard label="Upcoming bookings" value={data.overview?.reserve.upcomingBookings ?? 0} hint="Future reservations" loading={loading} />
           <StatCard label="Cancellations" value={data.overview?.reserve.cancellations ?? 0} hint={overviewWindowLabel} loading={loading} />
           <StatCard label="No shows" value={data.overview?.reserve.noShows ?? 0} hint={overviewWindowLabel} loading={loading} />
           <StatCard label="New guests" value={data.overview?.reserve.newGuests ?? 0} hint={overviewWindowLabel} loading={loading} />
-          <StatCard label="Covers today" value={data.overview?.reserve.coversToday ?? 0} hint="Booked covers" loading={loading} />
         </div>
+        {renderCoversAhead('')}
+        {(() => {
+          const noShowCovers = data.overview?.reserve.noShowCovers ?? 0;
+          const lostCents = Math.round(noShowCovers * avgSpendPerCoverCents);
+          const repeats = data.overview?.reserve.repeatNoShowGuests ?? [];
+          return (
+            <div className="report-detail-grid">
+              <div className="report-panel">
+                <h4>What no-shows cost you</h4>
+                <Metric label="No-show covers" value={noShowCovers} tone={noShowCovers > 0 ? 'warning' : 'positive'} hint={overviewWindowLabel} />
+                <Metric
+                  label="Estimated revenue lost"
+                  value={lostCents > 0 ? formatCurrency(lostCents) : noShowCovers > 0 ? '—' : formatCurrency(0)}
+                  tone={lostCents > 0 ? 'danger' : 'positive'}
+                  hint={avgSpendPerCoverCents > 0 ? `${noShowCovers} covers × ${formatCurrency(avgSpendPerCoverCents)} avg spend` : 'Needs Square sales for avg spend'}
+                />
+                <p className="subtle">Every no-show cover is a seat you turned other bookings away from. If this number grows, deposits or card-on-file (set up in SevenRooms) pay for themselves fast.</p>
+              </div>
+              <div className="report-panel">
+                <h4>Repeat no-showers</h4>
+                {repeats.length === 0 ? (
+                  <p className="subtle">No guest has more than one no-show on record — nothing to act on.</p>
+                ) : (
+                  <>
+                    <div className="table-scroll">
+                      <SortableTable
+                        rows={repeats}
+                        rowKey={(row) => row.guestId}
+                        defaultSortKey="noShows"
+                        columns={[
+                          { key: 'name', label: 'Guest', sortValue: (r) => r.name, render: (r) => r.name },
+                          { key: 'noShows', label: 'No-shows', align: 'right', sortValue: (r) => r.noShows, render: (r) => r.noShows },
+                          { key: 'covers', label: 'Covers lost', align: 'right', sortValue: (r) => r.noShowCovers, render: (r) => r.noShowCovers },
+                          { key: 'visits', label: 'Completed visits', align: 'right', sortValue: (r) => r.totalVisits, render: (r) => r.totalVisits },
+                          { key: 'last', label: 'Last no-show', sortValue: (r) => r.lastNoShowAt ?? '', render: (r) => (r.lastNoShowAt ? new Date(r.lastNoShowAt).toLocaleDateString() : '—') }
+                        ]}
+                      />
+                    </div>
+                    <p className="subtle">Candidates for card-on-file or a deposit when they next book — set that per-guest in SevenRooms.</p>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </SectionShell>
     );
   }
@@ -3694,9 +4383,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="marketing"
-        title="Marketing Reports"
-        description="Guest CRM reach, consent, campaigns, lapsed guests, and simulated sends"
+        title="Marketing & guests"
+        description="Your guest database, email consent, repeat visitors, and campaigns"
       >
+        <p className="report-lead">
+          <strong>{(data.overview?.marketing.totalGuests ?? 0).toLocaleString()} guests</strong> on file · {(data.overview?.marketing.optedInGuests ?? 0).toLocaleString()} opted in to email you can market to.
+        </p>
         <div className="stats-grid report-metric-grid">
           <StatCard label="Total guests" value={data.overview?.marketing.totalGuests ?? 0} hint="Reserve and Marketing guest profiles" loading={loading} />
           <StatCard label="Opted-in guests" value={data.overview?.marketing.optedInGuests ?? 0} hint="Email marketing consent" loading={loading} />
@@ -3713,9 +4405,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="content"
-        title="Content Reports"
-        description="Scheduled posts, approvals, simulated publish attempts, and social setup readiness"
+        title="Social content"
+        description="Scheduled posts, the approval queue, uploaded assets, and social account setup"
       >
+        <p className="report-lead">
+          <strong>{data.overview?.content.scheduledPostsThisWeek ?? 0} post{(data.overview?.content.scheduledPostsThisWeek ?? 0) === 1 ? '' : 's'}</strong> scheduled this week · {data.overview?.content.postsNeedingApproval ?? 0} waiting for your approval.
+        </p>
         <div className="stats-grid report-metric-grid">
           <StatCard label="Scheduled posts" value={data.overview?.content.scheduledPostsThisWeek ?? 0} hint="This week" loading={loading} />
           <StatCard label="Needs approval" value={data.overview?.content.postsNeedingApproval ?? 0} hint="Review queue" loading={loading} />
@@ -3731,9 +4426,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="gift-cards"
-        title="Gift Card Reports"
-        description="Pending gift card orders, pending value, fulfilment, and setup state"
+        title="Gift cards"
+        description="Gift-card orders waiting to be fulfilled, their value, and what's already done"
       >
+        <p className="report-lead">
+          {(data.overview?.giftCards.pendingOrders ?? 0) > 0
+            ? <><strong>{data.overview?.giftCards.pendingOrders} order{(data.overview?.giftCards.pendingOrders ?? 0) === 1 ? '' : 's'}</strong> pending — {formatCurrency(data.overview?.giftCards.totalPendingAmountCents ?? 0)} of gift cards to send out.</>
+            : <>No gift-card orders are waiting to be fulfilled.</>}
+        </p>
         <div className="report-detail-grid">
           <ActionPanel
             title="Gift card order actions"
@@ -3782,26 +4482,40 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       <SectionShell
         id="exports"
         title="Exports"
-        description="Read-only downloads for management reporting"
+        description="Read-only downloads for your accountant, bookkeeper, or your own records"
       >
+        <p className="report-lead">
+          Download this week's numbers as CSV, or copy a weekly summary to paste into an email. Nothing here changes live data.
+        </p>
         <div className="report-detail-grid">
           <div className="report-panel">
             <h4>Available exports</h4>
-            <div className="reports-export-actions spacious">
-              <Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>
-                Download overview CSV
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={exportPerformanceCsv} disabled={!venuePerformanceRows.length}>
-                Download performance CSV
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={exportWagesCsv} disabled={!wageRows.length}>
-                Download wage CSV
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => void copyWeeklySummary()}>
-                Copy weekly summary
-              </Button>
-              {exportMessage ? <span className="subtle">{exportMessage}</span> : null}
+            {/* Download list as ov-library rows — same actions, library read. */}
+            <div className="ov-library rs-export-library">
+              {[
+                { key: 'overview', label: 'Download overview CSV', onClick: exportOverviewCsv, disabled: false },
+                { key: 'performance', label: 'Download performance CSV', onClick: exportPerformanceCsv, disabled: !venuePerformanceRows.length },
+                { key: 'wages', label: 'Download wage CSV', onClick: exportWagesCsv, disabled: !wageRows.length },
+                { key: 'summary', label: 'Copy weekly summary', onClick: () => void copyWeeklySummary(), disabled: false }
+              ].map((row) => (
+                <button
+                  key={row.key}
+                  type="button"
+                  className="ov-library-row"
+                  onClick={row.onClick}
+                  disabled={row.disabled}
+                >
+                  <span className="ov-library-initial">{row.label.startsWith('Copy') ? 'C' : row.label.replace('Download ', '').charAt(0).toUpperCase()}</span>
+                  <span className="ov-library-text">
+                    <span className="ov-library-name">{row.label}</span>
+                  </span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+                    <path d="M7 17L17 7M9 7h8v8" />
+                  </svg>
+                </button>
+              ))}
             </div>
+            {exportMessage ? <span className="subtle">{exportMessage}</span> : null}
           </div>
 
           <div className="report-panel">
@@ -3819,6 +4533,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     switch (activeSection) {
       case 'sales':
         return renderSalesSection();
+      case 'forecast':
+        return <ForecastPage />;
+      case 'supplier-spend':
+        return <SupplierSpendPage />;
+      case 'forecast-module':
+        return <ForecastModulePage />;
+      case 'sales-entry':
+        return <SalesEntryPage />;
       case 'staff':
         return renderStaffSection();
       case 'compliance':
@@ -3864,7 +4586,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 userName={`${user.firstName} ${user.lastName}`}
                 canAnnounce={user.role !== 'STAFF'}
               />
-              <SuiteFeedbackWidget appId="REPORTS" api={staffApi} userName={`${user.firstName} ${user.lastName}`} />
               <ThemeToggle />
               <SuiteClock />
               <ReportsUserMenu user={user} onLogout={onLogout} />
@@ -3876,20 +4597,25 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       <div className="page-stack reports-page">
         {message ? <p className="error-text">{message}</p> : null}
         {loading ? <Spinner label={`Loading ${activeReport.label.toLowerCase()} reports`} /> : null}
-        {renderActiveReportSection()}
+        <Suspense
+          fallback={
+            <div className="report-section-loading" role="status" aria-live="polite">
+              <Spinner /> Loading report…
+            </div>
+          }
+        >
+          {renderActiveReportSection()}
+        </Suspense>
 
-        <Card title="Report controls" subtitle="Choose the reporting range without changing production data.">
+        {/*
+          The "Overview range" select used to live here, offering 7/30/90 days
+          alongside the period picker at the top of the report. Two controls,
+          two answers, no way to tell which a given card was showing. The period
+          picker now drives every figure measured over a span, so this is the
+          week navigator for the roster-shaped panels and nothing else.
+        */}
+        <Card title="Report controls" subtitle={`Showing ${periodLabel.toLowerCase()}. The week below moves the roster and timesheet panels.`}>
           <div className="reports-week-controls">
-            <Select
-              label="Overview range"
-              value={overviewRange}
-              onChange={(event) => setOverviewRange(event.currentTarget.value as '7' | '30' | '90')}
-              options={[
-                { label: 'Last 7 days', value: '7' },
-                { label: 'Last 30 days', value: '30' },
-                { label: 'Last 90 days', value: '90' }
-              ]}
-            />
             <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(-7)}>
               Prev week
             </Button>
@@ -3917,6 +4643,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           />
         ) : null}
       </div>
+      <ReportsTaskBar activeSection={activeSection} onSelect={selectReportSection} />
     </AppShell>
   );
 

@@ -1,6 +1,6 @@
 /**
  * /api/messages — legacy route kept for backwards compatibility with the
- * staff-web CommunicationsPage. New code should use /api/comms instead.
+ * staff-web CommunicationsPage and the suite inbox widget.
  * Both routes use the same messaging.service.ts functions.
  */
 import { Router } from 'express';

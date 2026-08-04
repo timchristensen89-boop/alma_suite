@@ -152,12 +152,40 @@ function allowedResetOrigins(requestOrigin?: string | null) {
   return origins;
 }
 
+/**
+ * The page a reset link should open.
+ *
+ * Two things were wrong here and together they made self-service reset
+ * impossible. The configured values are bare origins, and nothing appended the
+ * path, so the link landed on the app's home screen with a dangling ?token= —
+ * both apps read the token on /reset-password and nothing reads it at the root.
+ * And COMPLIANCE_WEB_URL was consulted before STAFF_WEB_URL, so a floor staffer
+ * asking to reset their password was sent to Alma Compliance, an app they
+ * cannot even sign in to.
+ *
+ * So: send them back to the app they asked from, and always land on the form.
+ * 20 of 29 active staff have no password; this is the door they come in by.
+ */
 function resetBaseUrl(input: string | undefined, requestOrigin?: string | null) {
+  const allowed = allowedResetOrigins(requestOrigin);
+  // The origin the request came from wins: whichever app they opened is the one
+  // they expect the link to return them to.
+  const fromRequest = (() => {
+    if (!requestOrigin) return '';
+    try {
+      const origin = new URL(requestOrigin).origin;
+      return allowed.has(origin) ? origin : '';
+    } catch {
+      return '';
+    }
+  })();
+
   const candidate =
     input?.trim() ||
     process.env.PASSWORD_RESET_BASE_URL ||
-    process.env.COMPLIANCE_WEB_URL ||
+    fromRequest ||
     process.env.STAFF_WEB_URL ||
+    process.env.COMPLIANCE_WEB_URL ||
     '';
   if (!candidate) {
     throw new HttpError(400, 'Password reset URL is not configured.');
@@ -167,8 +195,13 @@ function resetBaseUrl(input: string | undefined, requestOrigin?: string | null) 
   if (!['http:', 'https:'].includes(url.protocol)) {
     throw new HttpError(400, 'Password reset URL must be HTTP or HTTPS.');
   }
-  if (!allowedResetOrigins(requestOrigin).has(url.origin)) {
+  if (!allowed.has(url.origin)) {
     throw new HttpError(400, 'Password reset URL is not an allowed app origin.');
+  }
+  // A bare origin needs the path to the form. Callers that already point at a
+  // page (the welcome email passes .../reset-password) are left alone.
+  if (url.pathname === '' || url.pathname === '/') {
+    url.pathname = '/reset-password';
   }
   return url;
 }

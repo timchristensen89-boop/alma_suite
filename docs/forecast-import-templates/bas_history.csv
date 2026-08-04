@@ -1,0 +1,3 @@
+company_code,period_start,period_end,accounting_basis,g1_gross_sales,gst_1a,gst_1b,net_gst,payg,total_statement,due_date,paid_date,status
+TCC,2026-04-01,2026-06-30,CASH,318000.00,28909.09,10400.00,18509.09,18200.00,36709.09,2026-07-28,,DRAFT
+AF,2026-01-01,2026-03-31,CASH,402000.00,36545.45,12100.00,24445.45,22400.00,46845.45,2026-04-28,2026-04-28,PAID

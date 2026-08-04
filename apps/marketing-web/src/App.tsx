@@ -33,6 +33,7 @@ import {
   Card,
   ChartIcon,
   DocumentIcon,
+  EditorialPanel,
   EmptyState,
   GearIcon,
   Input,
@@ -44,7 +45,6 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteFeedbackWidget,
   SuiteInboxWidget,
   Textarea,
   ThemeToggle,
@@ -1445,7 +1445,6 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                 userName={`${user.firstName} ${user.lastName}`}
                 canAnnounce={user.role !== 'STAFF'}
               />
-              <SuiteFeedbackWidget appId="MARKETING" api={api} userName={`${user.firstName} ${user.lastName}`} />
               <ThemeToggle />
               <SuiteClock />
               <SuiteSignOutButton onClick={() => void onLogout()} />
@@ -1540,10 +1539,13 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                   .slice(0, 8);
                 if (upcoming.length === 0) return null;
                 return (
-                  <Card
+                  <EditorialPanel
+                    className="alma-band-sage"
+                    eyebrow="Next 30 days · upcoming"
                     title="Upcoming birthdays"
-                    subtitle={`${upcoming.length} guest${upcoming.length === 1 ? '' : 's'} with a birthday in the next 30 days — drop them a line.`}
                   >
+                    <div className="mk-panel-body">
+                    <p className="mk-panel-note">{`${upcoming.length} guest${upcoming.length === 1 ? '' : 's'} with a birthday in the next 30 days — drop them a line.`}</p>
                     <div className="birthday-list">
                       {upcoming.map((guest) => {
                         const bday = new Date(guest.birthday!);
@@ -1585,66 +1587,85 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                         );
                       })}
                     </div>
-                  </Card>
+                    </div>
+                  </EditorialPanel>
                 );
               })()}
 
-              <Card title="Recent activity" subtitle={venueParam || 'All venues'}>
               {loading ? <Spinner label="Loading marketing dashboard..." /> : null}
+              {/* Recent activity — paired editorial panels (ov-two):
+                  reservations on one side, campaigns + automations on the
+                  other. Same data, same order, suite vocabulary chrome. */}
               {!loading && overview ? (
-                <div className="marketing-section-grid">
-                  <div className="marketing-stack">
-                    <div className="marketing-section-heading">
-                      <strong>Recent reservations</strong>
-                      <Badge tone="neutral">{recentReservations.length}</Badge>
+                <div className="ov-two">
+                  <EditorialPanel
+                    eyebrow={venueParam || 'All venues'}
+                    title="Recent reservations"
+                    actions={<Badge tone="neutral">{recentReservations.length}</Badge>}
+                  >
+                    <div className="mk-panel-body">
+                      {recentReservations.slice(0, 8).map((reservation) => (
+                        <div key={reservation.id} className="marketing-summary-card">
+                          <strong>{reservation.guestName || fullName(reservation.guest)}</strong>
+                          <span>{reservation.venue} · {dateTimeLabel(reservation.startsAt)} · {reservation.status.replace('_', ' ')}</span>
+                        </div>
+                      ))}
                     </div>
-                    {recentReservations.slice(0, 8).map((reservation) => (
-                      <div key={reservation.id} className="marketing-summary-card">
-                        <strong>{reservation.guestName || fullName(reservation.guest)}</strong>
-                        <span>{reservation.venue} · {dateTimeLabel(reservation.startsAt)} · {reservation.status.replace('_', ' ')}</span>
+                  </EditorialPanel>
+                  <EditorialPanel
+                    eyebrow={venueParam || 'All venues'}
+                    title="Campaigns and automations"
+                  >
+                    <div className="mk-panel-body">
+                      <div className="marketing-section-heading">
+                        <strong>Recent campaigns</strong>
+                        <Badge tone="neutral">{campaigns.length}</Badge>
                       </div>
-                    ))}
-                  </div>
-                  <div className="marketing-stack">
-                    <div className="marketing-section-heading">
-                      <strong>Recent campaigns</strong>
-                      <Badge tone="neutral">{campaigns.length}</Badge>
+                      {campaigns.slice(0, 6).map((campaign) => (
+                        <div key={campaign.id} className="marketing-summary-card">
+                          <strong>{campaign.name}</strong>
+                          <span>{campaign.channel} · {campaign.status} · {campaign.recipients.length} recipients</span>
+                        </div>
+                      ))}
+                      <div className="marketing-section-heading">
+                        <strong>Automations</strong>
+                        <Badge tone="neutral">{automations.filter((automation) => automation.active).length} active</Badge>
+                      </div>
+                      {automations.slice(0, 4).map((automation) => (
+                        <div key={automation.id} className="marketing-summary-card">
+                          <strong>{automation.name}</strong>
+                          <span>{automation.triggerType.replace(/_/g, ' ').toLowerCase()} · {automation.active ? 'active' : 'inactive'}</span>
+                        </div>
+                      ))}
                     </div>
-                    {campaigns.slice(0, 6).map((campaign) => (
-                      <div key={campaign.id} className="marketing-summary-card">
-                        <strong>{campaign.name}</strong>
-                        <span>{campaign.channel} · {campaign.status} · {campaign.recipients.length} recipients</span>
-                      </div>
-                    ))}
-                    <div className="marketing-section-heading">
-                      <strong>Automations</strong>
-                      <Badge tone="neutral">{automations.filter((automation) => automation.active).length} active</Badge>
-                    </div>
-                    {automations.slice(0, 4).map((automation) => (
-                      <div key={automation.id} className="marketing-summary-card">
-                        <strong>{automation.name}</strong>
-                        <span>{automation.triggerType.replace(/_/g, ' ').toLowerCase()} · {automation.active ? 'active' : 'inactive'}</span>
-                      </div>
-                    ))}
-                  </div>
+                  </EditorialPanel>
                 </div>
               ) : null}
+              {/* Section launcher — ov-library navigational rows into each
+                  marketing section. Same buttons and handlers as before. */}
               {!loading && overview ? (
-                <div className="marketing-section-grid marketing-section-launcher" aria-label="Marketing sections">
-                  {MARKETING_NAV_ITEMS.filter((item) => item.href !== '/').map((item) => (
-                    <button
-                      key={item.href}
-                      type="button"
-                      className="marketing-summary-card marketing-section-link"
-                      onClick={() => navigateMarketingPath(item.href)}
-                    >
-                      <strong>{item.label}</strong>
-                      <span>{item.description}</span>
-                    </button>
-                  ))}
-                </div>
+                <EditorialPanel eyebrow="Marketing library" title="Go deeper">
+                  <div className="ov-library" aria-label="Marketing sections">
+                    {MARKETING_NAV_ITEMS.filter((item) => item.href !== '/').map((item) => (
+                      <button
+                        key={item.href}
+                        type="button"
+                        className="ov-library-row"
+                        onClick={() => navigateMarketingPath(item.href)}
+                      >
+                        <span className="ov-library-initial">{item.label.charAt(0)}</span>
+                        <span className="ov-library-text">
+                          <span className="ov-library-name">{item.label}</span>
+                          <span className="ov-library-blurb">{item.description}</span>
+                        </span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+                          <path d="M7 17L17 7M9 7h8v8" />
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                </EditorialPanel>
               ) : null}
-              </Card>
             </section>
             ) : null}
 

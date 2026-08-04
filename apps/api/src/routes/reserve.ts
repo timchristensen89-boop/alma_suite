@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireManager } from '../lib/auth-middleware.js';
 import { HttpError } from '../lib/http.js';
 import { reserveService } from '../services/reserve.service.js';
+import { guestCrmService } from '../services/guest-crm.service.js';
 
 export const reserveRouter = Router();
 
@@ -27,6 +28,38 @@ reserveRouter.get('/diary', requireManager, async (req, res, next) => {
         venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
       })
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+// What the guest database holds, and honestly what it doesn't. Above
+// /guests/:id so "summary" is never read as a guest id.
+reserveRouter.get('/guests/summary', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await guestCrmService.summary());
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Recompute on demand. The nightly job does the same thing; this is for after
+// an import, when waiting until tomorrow to see the effect is no use.
+reserveRouter.post('/guests/refresh', requireManager, async (req, res, next) => {
+  try {
+    const dryRun = (req.body ?? {}).dryRun === true;
+    const rollups = dryRun ? null : await guestCrmService.rebuildGuestRollups();
+    const tags = await guestCrmService.applyAutomaticTags({ dryRun });
+    res.json({ rollups, tags });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Give the shipped tags a starting rule where they define nothing.
+reserveRouter.post('/guests/seed-tag-rules', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await guestCrmService.seedDefaultTagRules());
   } catch (error) {
     next(error);
   }

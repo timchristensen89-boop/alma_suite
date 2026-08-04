@@ -27,6 +27,16 @@ invoicesRouter.get('/cogs-lines', async (req, res, next) => {
   }
 });
 
+// Where the unattributed supplier spend actually sits, grouped by the wording
+// the supplier uses rather than one line at a time.
+invoicesRouter.get('/unmatched-spend', async (_req, res, next) => {
+  try {
+    res.json(await invoicesService.unmatchedSpend());
+  } catch (error) {
+    next(error);
+  }
+});
+
 invoicesRouter.get('/summary', async (_req, res, next) => {
   try {
     res.json(await invoicesService.summary());
@@ -55,6 +65,15 @@ invoicesRouter.post('/import', async (req, res, next) => {
   try {
     requireStockManager(req.user);
     res.status(201).json(await invoicesService.importInvoices(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+invoicesRouter.post('/ocr', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.ocrInvoiceImage(req.body));
   } catch (error) {
     next(error);
   }
@@ -115,6 +134,23 @@ invoicesRouter.get('/:id', async (req, res, next) => {
   }
 });
 
+// Serve the original uploaded scan inline so a manager can read it while keying
+// in lines OCR missed. Manager-gated like the rest of the invoice surface.
+invoicesRouter.get('/:id/document', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    const doc = await invoicesService.getDocument(String(req.params.id));
+    res.setHeader('Content-Type', doc.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${(doc.fileName ?? 'invoice').replace(/"/g, '')}"`
+    );
+    res.send(doc.data);
+  } catch (error) {
+    next(error);
+  }
+});
+
 invoicesRouter.post('/:id/mark-no-item', async (req, res, next) => {
   try {
     requireStockManager(req.user);
@@ -137,6 +173,18 @@ invoicesRouter.post('/:id/mark-needs-review', async (req, res, next) => {
   }
 });
 
+// Rebuild an invoice's lines from text pasted off the original document, for
+// bills that arrived as a single summary line. Post { dryRun: true } first —
+// the screen previews before it replaces anything.
+invoicesRouter.post('/:id/paste-lines', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.pasteLines(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 invoicesRouter.post('/:id/reset-triage', async (req, res, next) => {
   try {
     requireStockManager(req.user);
@@ -150,6 +198,32 @@ invoicesRouter.delete('/:id', async (req, res, next) => {
   try {
     requireStockManager(req.user);
     res.json(await invoicesService.deleteInvoice(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Re-run matching over everything that never found an item. Matching improves
+// — a better matcher, a newly-learned alias, a stock item that did not exist
+// when the invoice arrived — and without this the backlog stays as wrong as
+// the day it was imported. `?dryRun=1` reports what would change.
+invoicesRouter.post('/rematch-unresolved', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.rematchUnresolved({
+      invoiceId: typeof req.body?.invoiceId === 'string' ? req.body.invoiceId : null,
+      dryRun: req.query.dryRun === '1' || req.body?.dryRun === true
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Ranked candidates for a line somebody has to decide, so the common case is
+// one tap rather than searching 716 items.
+invoicesRouter.get('/lines/:lineId/suggestions', async (req, res, next) => {
+  try {
+    res.json(await invoicesService.suggestionsForLine(String(req.params.lineId)));
   } catch (error) {
     next(error);
   }

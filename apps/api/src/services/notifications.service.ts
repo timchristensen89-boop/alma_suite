@@ -1,6 +1,6 @@
 import type { AuthUser } from '@alma/shared';
 import { prisma } from '@alma/db';
-import { listCommsInbox } from './comms.service.js';
+import { listInboxForUser } from './messaging.service.js';
 
 export type NotificationTone = 'danger' | 'warning' | 'info' | 'positive';
 
@@ -56,7 +56,8 @@ export type SuiteNotification = {
 const APP_URLS = {
   compliance: (process.env.COMPLIANCE_WEB_URL ?? process.env.FRONTEND_URL ?? 'https://alma-compliance.web.app').replace(/\/+$/, ''),
   staff: (process.env.STAFF_WEB_URL ?? 'https://alma-staff.web.app').replace(/\/+$/, ''),
-  comms: (process.env.COMMS_WEB_URL ?? 'https://alma-comms.web.app').replace(/\/+$/, ''),
+  // The Comms app is retired; its notices live on the Staff noticeboard.
+  comms: (process.env.STAFF_WEB_URL ?? 'https://alma-staff.web.app').replace(/\/+$/, ''),
   admin: (process.env.ADMIN_WEB_URL ?? 'https://alma-suite-admin.web.app').replace(/\/+$/, '')
 };
 
@@ -105,7 +106,7 @@ export const notificationsService = {
     const notifications: SuiteNotification[] = [];
     const mutedCategories = await this.mutedCategorySet(actor);
 
-    const commsThreads = await listCommsInbox(actor).catch(() => []);
+    const commsThreads = await listInboxForUser(actor).catch(() => []);
     for (const thread of commsThreads.filter((item) => item.unread || item.actionRequired).slice(0, 12)) {
       notifications.push(notification({
         id: `comms-${thread.id}`,
@@ -215,7 +216,7 @@ export const notificationsService = {
       // Integration sync failure: only surface errors from the last 2 days so the
       // alert clears once a later sync succeeds / time passes.
       const syncFailCutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-      const [outOfRangeTemps, expiringRecords, openIncidents, openTimesheets, failedSyncRuns] = await Promise.all([
+      const [outOfRangeTemps, expiringRecords, openIncidents, openTimesheets, failedSyncRuns, forecastHealth] = await Promise.all([
         prisma.temperatureLog.findMany({
           where: {
             status: 'OUT_OF_RANGE',
@@ -265,6 +266,11 @@ export const notificationsService = {
           where: { status: 'ERROR', finishedAt: { gte: syncFailCutoff } },
           orderBy: { finishedAt: 'desc' },
           take: 5
+        })
+      ,
+        prisma.forecastConfig.findUnique({
+          where: { id: 'singleton' },
+          select: { lastRunAt: true, lastWarnings: true }
         })
       ]);
 
@@ -347,6 +353,40 @@ export const notificationsService = {
           appLabel: 'Admin',
           createdAt: (run.finishedAt ?? now).toISOString()
         }));
+      }
+
+      // Forecast engine health, stamped by the nightly snapshot job. Admin-only,
+      // same as the sync failures — the fix always lives in Admin/ops land.
+      if (actor.isAdmin && forecastHealth?.lastRunAt) {
+        const staleMs = now.getTime() - forecastHealth.lastRunAt.getTime();
+        const engineWarnings = Array.isArray(forecastHealth.lastWarnings)
+          ? forecastHealth.lastWarnings.filter((item): item is string => typeof item === 'string')
+          : [];
+        if (staleMs > 48 * 60 * 60 * 1000) {
+          notifications.push(notification({
+            id: 'forecast-engine-stale',
+            category: 'INTEGRATION_FAILED',
+            tone: 'danger',
+            title: 'Forecast snapshots have stopped running',
+            description: `Last nightly forecast run was ${Math.floor(staleMs / (24 * 60 * 60 * 1000))} days ago — check the VPS cron and the API.`,
+            to: '/integrations/health',
+            appId: 'admin',
+            appLabel: 'Admin',
+            createdAt: forecastHealth.lastRunAt.toISOString()
+          }));
+        } else if (engineWarnings.length > 0) {
+          notifications.push(notification({
+            id: 'forecast-data-quality',
+            category: 'INTEGRATION_FAILED',
+            tone: 'warning',
+            title: `Forecast data quality: ${engineWarnings.length} warning${engineWarnings.length === 1 ? '' : 's'}`,
+            description: engineWarnings[0]!.slice(0, 140),
+            to: '/integrations/health',
+            appId: 'admin',
+            appLabel: 'Admin',
+            createdAt: forecastHealth.lastRunAt.toISOString()
+          }));
+        }
       }
     }
 

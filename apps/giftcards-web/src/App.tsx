@@ -1,4 +1,6 @@
 import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CardArtGallery } from './cardArt/Gallery';
+import { CounterApp } from './CounterApp';
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
 import {
   DEFAULT_GIFT_CARD_SETTINGS,
@@ -17,7 +19,7 @@ import {
   type GiftCardPublic,
   type GiftCardSettings
 } from '@alma/shared';
-import { GIFT_CARD_DESIGN_META, GiftCardArt, isGiftCardDesign } from './giftCardArt';
+import { DEFAULT_GIFT_CARD_DESIGN, GIFT_CARD_DESIGN_META, GiftCardArt, isGiftCardDesign, resolveGiftCardDesign } from './giftCardArt';
 import {
   AppShell,
   ActionFeedback,
@@ -39,7 +41,6 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteFeedbackWidget,
   SuiteInboxWidget,
   Textarea,
   ThemeToggle,
@@ -78,9 +79,15 @@ const GIFTCARD_NAV_ITEMS = [
     icon: <SearchIcon />
   },
   {
+    href: '/counter',
+    label: 'Sell at the counter',
+    description: 'Take payment, issue a number, check a balance',
+    icon: <SearchIcon />
+  },
+  {
     href: '/activate#activate',
-    label: 'Activate physical',
-    description: 'Sell a pre-printed card at the counter',
+    label: 'Activate pre-printed',
+    description: 'A card that already has a number on it',
     icon: <SearchIcon />
   },
   {
@@ -274,7 +281,7 @@ function PublicGiftCardShop() {
   const [walletConfig, setWalletConfig] = useState<WalletConfig | null>(null);
   const [amountCents, setAmountCents] = useState(12000);
   const [customAmount, setCustomAmount] = useState('');
-  const [design, setDesign] = useState<GiftCardDesign>('forest');
+  const [design, setDesign] = useState<GiftCardDesign>(DEFAULT_GIFT_CARD_DESIGN);
   // Scheduled delivery — when deliverMode='later', deliverDate (YYYY-MM-DD)
   // is resolved to 07:00 venue-local and posted as scheduledDeliveryAt.
   // Server defers the email until the /jobs/gift-cards/drain scheduler
@@ -593,7 +600,7 @@ function PublicGiftCardShop() {
               <div className="alma-giftcards-checkout__complete">
                 <div className="alma-giftcards-checkout__art">
                   <GiftCardArt
-                    design={isGiftCardDesign(paidCard.design) ? paidCard.design : 'forest'}
+                    design={resolveGiftCardDesign(paidCard.design)}
                     amount={Math.round(paidCard.initialValueCents / 100)}
                     code={paidCard.code}
                     recipient={paidCard.recipientName ?? undefined}
@@ -635,7 +642,7 @@ function PublicGiftCardShop() {
             </h2>
             <div style={{ maxWidth: 480, margin: '8px 0', position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
               <GiftCardArt
-                design={isGiftCardDesign(paidCard.design) ? paidCard.design : 'forest'}
+                design={resolveGiftCardDesign(paidCard.design)}
                 amount={Math.round(paidCard.initialValueCents / 100)}
                 code={paidCard.code}
                 recipient={paidCard.recipientName ?? undefined}
@@ -698,7 +705,7 @@ function PublicGiftCardShop() {
               <div className="alma-giftcards-cardstack__bg alma-giftcards-cardstack__bg--back" aria-hidden="true" />
               <div className="alma-giftcards-cardstack__bg alma-giftcards-cardstack__bg--mid" aria-hidden="true" />
               <div style={{ position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
-                <GiftCardArt design="forest" amount={120} code="ALMA-7C92F0" />
+                <GiftCardArt design={DEFAULT_GIFT_CARD_DESIGN} amount={120} code="ALMA-7C92F0" />
               </div>
             </div>
           </div>
@@ -1177,7 +1184,7 @@ function PublicGiftCardShop() {
           </details>
           <details className="alma-giftcards-faq__item">
             <summary>What if the amount doesn't get used in one visit?</summary>
-            <p>The remaining balance stays on the same reference for next time. We'll show it on the receipt. They can check the balance at any time by emailing hello@alma.com.au with the reference, or asking at either venue.</p>
+            <p>The remaining balance stays on the same reference for next time. We'll show it on the receipt. They can check the balance at any time by emailing enquiries@almagroup.com.au with the reference, or asking at either venue.</p>
           </details>
           <details className="alma-giftcards-faq__item">
             <summary>Can I send it to someone overseas?</summary>
@@ -1289,7 +1296,7 @@ function PrintableGiftCardPage() {
           <div className="giftcards-print-brand">ALMA Gift Cards</div>
           <div style={{ position: 'relative', width: '100%', maxWidth: 540, aspectRatio: '1.586 / 1', margin: '0 auto 18px' }}>
             <GiftCardArt
-              design={isGiftCardDesign(card.design) ? card.design : 'forest'}
+              design={resolveGiftCardDesign(card.design)}
               amount={Math.round(card.balanceCents / 100)}
               code={card.code}
               recipient={card.recipientName ?? undefined}
@@ -1845,7 +1852,6 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 userName={`${user.firstName} ${user.lastName}`}
                 canAnnounce={user.role !== 'STAFF'}
               />
-              <SuiteFeedbackWidget appId="GIFTCARDS" api={api} userName={`${user.firstName} ${user.lastName}`} />
               <ThemeToggle />
               <SuiteClock />
               <SuiteSignOutButton onClick={() => void onLogout()} />
@@ -1905,6 +1911,28 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         {message && !messageTarget ? <p className={message.includes('Could') || message.includes('not') || message.includes('low') ? 'error-text' : 'subtle'}>{message}</p> : null}
         {activeGiftCardPage === 'orders' ? (
           <>
+            {/* Pending orders — the screen's headline metric, in the suite's
+                ov-prime feature panel. Same count the Order actions panel
+                below acts on. */}
+            <section
+              className={`ov-prime is-${orderActionItems.length > 0 ? 'warning' : 'positive'}`}
+              aria-label="Gift card orders needing action"
+            >
+              <div className="ov-prime-main">
+                <span className="ov-prime-label">Fulfilment · Orders needing action</span>
+                <div className="ov-prime-row">
+                  <span className="ov-prime-value">{loading ? '—' : orderActionItems.length}</span>
+                </div>
+                <span className="ov-prime-note">
+                  {loading
+                    ? 'Loading card data…'
+                    : orderActionItems.length === 0
+                      ? 'No gift card orders need action.'
+                      : 'Cards that need payment, email, expiry, or manager follow-up.'}
+                </span>
+              </div>
+            </section>
+
             {/* Revenue dashboard — month-over-month view of issued/redeemed/outstanding */}
             {(() => {
               const now = new Date();
@@ -1973,6 +2001,8 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 <StatCard label="Outstanding" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Liability on the books" loading={loading} />
               </button>
             </div>
+            {/* Order actions + recent cards — paired panels (ov-two). */}
+            <div className="ov-two">
             <ActionPanel
               title="Order actions"
               description="Cards that need payment, email, expiry, or manager follow-up."
@@ -2022,6 +2052,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 ))}
               </div>
             </Card>
+            </div>
           </>
         ) : null}
 
@@ -2256,12 +2287,27 @@ function GiftCardAdminApp() {
 }
 
 export function App() {
+  // The counter screen is the in-venue iPad: sell a card to somebody standing
+  // there, or take one off a bill. Deliberately its own route rather than a
+  // tab inside the manager dashboard, which is a desk tool full of controls a
+  // busy floor should not be able to reach.
+  // A contact sheet of every layout in every palette. Not linked from
+  // anywhere — it exists so the artwork can be judged side by side rather
+  // than one card at a time inside the buy flow.
+  const isArtPath = window.location.pathname.startsWith('/card-art');
+  const isCounterPath = window.location.pathname.startsWith('/counter');
   const isRedeemPath = window.location.pathname.startsWith('/redeem');
   const isOrdersPath = window.location.pathname.startsWith('/orders');
   const isAdminPath = window.location.pathname.startsWith('/admin');
   const isPrintPath = window.location.pathname.startsWith('/print');
+  // /activate is in the staff nav and has its own page copy, but was missing
+  // from this dispatch — so it fell through to the customer shop. A staff
+  // member following their own menu landed on the buy page.
+  const isActivatePath = window.location.pathname.startsWith('/activate');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
-  if (!isRedeemPath && !isOrdersPath && !isAdminPath) return <PublicGiftCardShop />;
+  if (isArtPath) return <CardArtGallery />;
+  if (isCounterPath) return <CounterApp />;
+  if (!isRedeemPath && !isOrdersPath && !isAdminPath && !isActivatePath) return <PublicGiftCardShop />;
   return <GiftCardAdminApp />;
 }

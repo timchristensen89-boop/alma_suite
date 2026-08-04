@@ -577,6 +577,147 @@ staffRouter.get('/roster', async (req, res, next) => {
   }
 });
 
+// The staff app's own view — no id in the URL, so a staff member never needs
+// to know their profile id to manage their own availability.
+staffRouter.get('/me/availability', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listAvailability(req.user.id, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.put('/me/availability', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.replaceAvailability(req.user.id, req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/unavailability', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.status(201).json(await staffService.addUnavailability(req.user.id, req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Open shifts and claims ──────────────────────────────────────────────────
+staffRouter.get('/me/open-shifts', async (req, res, next) => {
+  try {
+    res.json(await staffService.listOpenShifts(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/open-shifts/:id/claim', async (req, res, next) => {
+  try {
+    res.status(201).json(await staffService.claimOpenShift(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/open-shifts/:id/withdraw', async (req, res, next) => {
+  try {
+    res.json(await staffService.withdrawClaim(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Offer one of your own shifts to the team, or take the offer back down.
+staffRouter.post('/me/shifts/:id/offer-swap', async (req, res, next) => {
+  try {
+    res.status(201).json(await staffService.offerShiftForSwap(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/shifts/:id/cancel-swap', async (req, res, next) => {
+  try {
+    res.json(await staffService.cancelShiftSwap(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/roster/claims', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.listPendingClaims(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/roster/claims/:id/decide', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.decideClaim(String(req.params.id), req.body?.approve !== false, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Availability ────────────────────────────────────────────────────────────
+// Staff manage their own; managers can view and edit anyone in their scope.
+// The service enforces that split, so these stay unguarded by requireManager —
+// a staff member editing their own availability is the primary use.
+staffRouter.get('/:id/availability', async (req, res, next) => {
+  try {
+    res.json(await staffService.listAvailability(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.put('/:id/availability', async (req, res, next) => {
+  try {
+    res.json(await staffService.replaceAvailability(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/:id/unavailability', async (req, res, next) => {
+  try {
+    res.status(201).json(await staffService.addUnavailability(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.delete('/unavailability/:id', async (req, res, next) => {
+  try {
+    res.json(await staffService.removeUnavailability(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Everything the roster board needs in one call: the shift-eligible team with
+// only the fields the board renders, plus the shifts for the window. Replaces
+// the board's old GET /api/staff (63 fields and embedded relations per person)
+// + GET /api/staff/roster pair, which was refetched after every edit.
+staffRouter.get('/roster-board', requireManager, async (req, res, next) => {
+  try {
+    res.json(
+      await staffService.rosterBoard(
+        typeof req.query.start === 'string' ? req.query.start : undefined,
+        typeof req.query.end === 'string' ? req.query.end : undefined,
+        req.user
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Read-only published team roster — visible to every authenticated user
 // (staff included) so they can see a copy of the live roster. Published
 // shifts only, venue-scoped. No manager guard.
@@ -745,6 +886,39 @@ staffRouter.post('/timesheets/:id/cash-paid', requireManager, async (req, res, n
 staffRouter.post('/timesheets/export/xero', requireManager, async (req, res, next) => {
   try {
     const result = await staffService.exportTimesheetsForXero(req.body, req.user);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Push approved timesheets into Xero Payroll as drafts. The CSV export above
+// is the fallback for when the Xero connection can't be used; this is the path
+// the "Push to Xero" button has always called.
+staffRouter.post('/timesheets/push/xero', requireManager, async (req, res, next) => {
+  try {
+    const body = (req.body ?? {}) as {
+      start?: unknown;
+      end?: unknown;
+      venue?: unknown;
+      dryRun?: unknown;
+      staffProfileIds?: unknown;
+    };
+    if (typeof body.start !== 'string' || typeof body.end !== 'string') {
+      res.status(400).json({ message: 'Push start and end dates are required.' });
+      return;
+    }
+    const result = await integrationService.pushTimesheetsToXero(req.user!, {
+      start: body.start,
+      end: body.end,
+      venue: typeof body.venue === 'string' ? body.venue : null,
+      // Preview: same lookups, no write. Worth having in front of a pay run —
+      // it names the employees who would fail before anything lands in Xero.
+      dryRun: body.dryRun === true,
+      staffProfileIds: Array.isArray(body.staffProfileIds)
+        ? body.staffProfileIds.filter((id): id is string => typeof id === 'string')
+        : undefined
+    });
     res.json(result);
   } catch (error) {
     next(error);
@@ -1197,7 +1371,7 @@ staffRouter.delete('/:id/records/:recordId', requireManager, async (req, res, ne
 
 staffRouter.post('/:id/onboarding/approve', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.approveOnboarding(String(req.params.id), req.user));
+    res.json(await staffService.approveOnboarding(String(req.params.id), req.user, req.body));
   } catch (error) {
     next(error);
   }

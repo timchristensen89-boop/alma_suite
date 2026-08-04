@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { integrationService } from '../services/integration.service.js';
 import { deputyService } from '../services/deputy.service.js';
+import { sevenroomsService } from '../services/sevenrooms.service.js';
 
 export const integrationsRouter = Router();
 
@@ -124,6 +125,32 @@ integrationsRouter.get('/deputy/connect', async (req, res, next) => {
   }
 });
 
+// Lightspeed O-Series (formerly Kounta) POS. The OAuth callback is handled by
+// the generic /:provider/callback route above (state validation + token
+// exchange live in integrationService.handleCallback), and connect /
+// disconnect / test flow through the generic /:provider routes below via
+// normaliseProvider — this GET mirrors the Square/Deputy browser-redirect
+// convenience only.
+integrationsRouter.get('/lightspeed/connect', async (req, res, next) => {
+  try {
+    const payload = await integrationService.startConnect('lightspeed', req.user!);
+    res.redirect(302, payload.authorizationUrl);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Sites preview for connection status / venue mapping — read-only list of the
+// connected company's sites and which configured venue each resolves to.
+// 409s with "Lightspeed is not connected." until OAuth completes.
+integrationsRouter.get('/lightspeed/sites', async (_req, res, next) => {
+  try {
+    res.json(await integrationService.lightspeedSites());
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.get('/', async (_req, res, next) => {
   try {
     res.json(await integrationService.status());
@@ -136,7 +163,15 @@ integrationsRouter.get('/:provider/status', async (_req, res, next) => {
   try {
     const payload = await integrationService.status();
     const provider = integrationService.normaliseProvider(String(_req.params.provider));
-    res.json(provider === 'SQUARE' ? (payload.squareAccounts ?? { primary: payload.square }) : payload.xero);
+    res.json(
+      provider === 'SQUARE'
+        ? (payload.squareAccounts ?? { primary: payload.square })
+        : provider === 'DEPUTY'
+          ? payload.deputy
+          : provider === 'LIGHTSPEED'
+            ? payload.lightspeed
+            : payload.xero
+    );
   } catch (error) {
     next(error);
   }
@@ -200,7 +235,12 @@ integrationsRouter.post('/square/import-customers', async (req, res, next) => {
 
 // Pull Square item-level sales — payment totals are imported by /import-sales;
 // this one breaks orders down to the line-item level so Reports can do
-// menu-engineering. Body: { start, end, venue?, locationId? }
+// menu-engineering.
+//
+// Body: { startDate, endDate, account?, orderLimit? }. Note startDate/endDate,
+// not start/end — the sibling tips import uses start/end, and this one silently
+// falls back to a 7-day lookback when startDate is missing rather than
+// complaining, so the wrong names cost a whole backfill before anyone noticed.
 integrationsRouter.post('/square/import-item-sales', async (req, res, next) => {
   try {
     res.json(await integrationService.importSquareItemSales({
@@ -235,7 +275,10 @@ integrationsRouter.post('/xero/health-check', async (req, res, next) => {
 
 integrationsRouter.post('/xero/sync-pay-rates', async (req, res, next) => {
   try {
-    res.json(await integrationService.syncXeroPayRates(req.user!));
+    // dryRun reads everything and writes nothing — a rate sync overwrites what
+    // managers see on every profile, so being able to look first matters.
+    const dryRun = (req.body ?? {}).dryRun === true;
+    res.json(await integrationService.syncXeroPayRates(req.user!, { dryRun }));
   } catch (error) {
     next(error);
   }
@@ -375,6 +418,38 @@ integrationsRouter.post('/:provider/disconnect', async (req, res, next) => {
   }
 });
 
+// Pause / resume syncing while KEEPING the OAuth grant, so switching a venue
+// between POS systems does not require a full re-authorisation to come back.
+integrationsRouter.post('/:provider/pause', async (req, res, next) => {
+  try {
+    res.json(
+      await integrationService.setSyncPaused(
+        String(req.params.provider),
+        { paused: true, reason: typeof req.body?.reason === 'string' ? req.body.reason : null },
+        req.user!,
+        req.query.account ?? req.body?.account
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/:provider/resume', async (req, res, next) => {
+  try {
+    res.json(
+      await integrationService.setSyncPaused(
+        String(req.params.provider),
+        { paused: false },
+        req.user!,
+        req.query.account ?? req.body?.account
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.post('/:provider/test', async (req, res, next) => {
   try {
     res.json(await integrationService.test(String(req.params.provider), req.user!, req.query.account ?? req.body?.account));
@@ -402,6 +477,16 @@ export async function xeroWebhookReceiver(req: Request, res: Response, next: Nex
 export async function deputyWebhookReceiver(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await integrationService.handleDeputyWebhook(req));
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Inbound reservation email from SevenRooms (via Resend Inbound). Token-guarded
+// in the service; lands ReserveGuest + ReserveReservation rows for the reports.
+export async function sevenroomsInboundEmailReceiver(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await sevenroomsService.handleInboundEmail(req));
   } catch (error) {
     next(error);
   }

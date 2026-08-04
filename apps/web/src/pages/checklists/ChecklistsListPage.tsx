@@ -7,6 +7,7 @@ import type {
   ShiftTaskListResponse,
   StartAssignedChecklistResult
 } from '@alma/shared';
+import { describeChecklistCadence, isChecklistCadence } from '@alma/shared';
 import {
   Badge,
   Button,
@@ -289,6 +290,14 @@ export function ChecklistsListPage() {
                   <Badge tone="muted">
                     {template.items.length}{' '}
                     {template.items.length === 1 ? 'item' : 'items'}
+                  </Badge>
+                  {/* Whether this raises itself is the first thing you want to
+                      know about a template, so it sits next to the item count. */}
+                  <Badge tone={template.cadence === 'MANUAL' ? 'muted' : 'info'}>
+                    {describeChecklistCadence(
+                      isChecklistCadence(template.cadence) ? template.cadence : 'DAILY',
+                      template.cadenceDay
+                    )}
                   </Badge>
                 </div>
 

@@ -356,10 +356,15 @@ export function SuiteInboxWidget({
 
   const loadMessagesUnread = useCallback(async () => {
     try {
-      const inbox = await api<Array<{ unread?: boolean; actionRequired?: boolean }>>(commsApiPath('/comms/inbox'));
-      setMessagesUnread(
-        Array.isArray(inbox) ? inbox.filter((thread) => thread.unread || thread.actionRequired).length : 0
+      // /api/comms is gone with the standalone Comms app; /api/messages is the
+      // same messaging.service behind a different prefix. It answers
+      // { threads: [...] }, not a bare array — reading it as an array is why
+      // this badge always showed zero.
+      const inbox = await api<{ threads?: Array<{ unread?: boolean; actionRequired?: boolean }> }>(
+        commsApiPath('/messages/inbox')
       );
+      const threads = inbox?.threads ?? [];
+      setMessagesUnread(threads.filter((thread) => thread.unread || thread.actionRequired).length);
     } catch {
       setMessagesUnread(0);
     }

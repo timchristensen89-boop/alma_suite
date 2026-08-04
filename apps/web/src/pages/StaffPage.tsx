@@ -75,7 +75,15 @@ export function StaffPage() {
   const [resettingPasswordFor, setResettingPasswordFor] = useState<string | null>(null);
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [mergeOpen, setMergeOpen] = useState(false);
-  const visibleStaff = staff.data ?? [];
+  const allStaff = staff.data ?? [];
+  // Certificates are a live obligation: whether the person pouring drinks
+  // tonight holds a current RSA. Somebody who left in March is a record, not a
+  // question, and mixing them in means scanning past people who cannot be
+  // out of compliance because they are not working.
+  const activeStaff = allStaff.filter((member) => (member.employmentStatus ?? '').toUpperCase() === 'ACTIVE');
+  const inactiveStaff = allStaff.filter((member) => (member.employmentStatus ?? '').toUpperCase() !== 'ACTIVE');
+  const [showInactive, setShowInactive] = useState(false);
+  const visibleStaff = showInactive ? allStaff : activeStaff;
   const selectedStaff = visibleStaff.filter((member) => selectedStaffIds.includes(member.id));
   const canManageStaff = Boolean(
     auth.user?.isAdmin ||
@@ -226,7 +234,16 @@ export function StaffPage() {
                   <strong style={{ color: 'var(--color-text)' }}>
                     {visibleStaff.length}
                   </strong>{' '}
-                  {visibleStaff.length === 1 ? 'staff member' : 'staff members'}
+                  {showInactive
+                    ? visibleStaff.length === 1 ? 'staff member' : 'staff members'
+                    : activeStaff.length === 1 ? 'active staff member' : 'active staff'}
+                  {inactiveStaff.length > 0 ? (
+                    <button type="button" className="staff-inactive-toggle" onClick={() => setShowInactive((open) => !open)}>
+                      {showInactive
+                        ? 'Hide past staff'
+                        : `Show ${inactiveStaff.length} past ${inactiveStaff.length === 1 ? 'member' : 'members'}`}
+                    </button>
+                  ) : null}
                 </>
               )}
             </span>

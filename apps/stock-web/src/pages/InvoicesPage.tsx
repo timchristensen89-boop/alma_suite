@@ -17,8 +17,10 @@ import type {
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { IconInvoices } from '../lib/icons';
 import { InvoiceExclusionRulesCard } from '../components/InvoiceExclusionRulesCard';
+import { InvoicePasteLinesPanel } from '../components/InvoicePasteLinesPanel';
+import { UnmatchedSpendCard } from '../components/UnmatchedSpendCard';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { ApiError, api } from '../lib/api';
+import { ApiError, api, apiBlob } from '../lib/api';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
@@ -94,6 +96,8 @@ function replaceLine(
     ...invoice,
     lines,
     matchedLineCount: lines.filter((line) => line.itemId).length,
+    // NON_STOCK lines are charges and fees. Counting them as needing review
+    // asks for work that cannot be done — a quarter of the queue was these.
     needsReviewLineCount: lines.filter((line) => line.matchingStatus === 'NEEDS_REVIEW').length,
     lineCount: lines.length
   };
@@ -147,7 +151,7 @@ export function InvoicesPage() {
     try {
       const [invoicePayload, itemPayload, invoiceSummary, assigneePayload] = await Promise.all([
         api<StockInvoicesPayload>(`/api/invoices${showNoItem ? '?includeNoItem=1' : ''}`),
-        api<StockItemsPayload>('/api/items'),
+        api<StockItemsPayload>('/api/items/picker'),
         api<StockInvoicesSummary>('/api/invoices/summary'),
         api<StockInvoiceAssigneesPayload>('/api/invoices/assignees')
       ]);
@@ -341,6 +345,119 @@ export function InvoicesPage() {
       showFeedback(
         target,
         err instanceof ApiError || err instanceof Error ? err.message : 'Could not import invoices',
+        'error'
+      );
+    } finally {
+      setBusyTarget(null);
+    }
+  }
+
+  // Open the original stored scan in a new tab. Auth is a Bearer token, so we
+  // fetch the blob with credentials and hand the browser an object URL.
+  async function openInvoiceDocument(invoice: StockSupplierInvoice) {
+    const target = `invoice-doc-${invoice.id}`;
+    try {
+      const blob = await apiBlob(`/api/invoices/${invoice.id}/document`);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      // Revoke after the tab has had time to load the resource.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      showFeedback(
+        target,
+        error instanceof ApiError ? error.message : 'Could not open the original scan.',
+        'error'
+      );
+    }
+  }
+
+  // Scan a PDF/photo of an invoice with Claude vision, then run it through the
+  // same import → match flow as a pasted invoice.
+  async function importScannedInvoice(file: File | null | undefined) {
+    const target = 'invoice-ocr';
+    if (!file) return;
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to import invoices.', 'error');
+      return;
+    }
+    const okType = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type);
+    if (!okType) {
+      showFeedback(target, 'Attach a PDF or image (PNG/JPG) of the invoice.', 'error');
+      return;
+    }
+    if (file.size > 18 * 1024 * 1024) {
+      showFeedback(target, 'File is too large — keep scans under 18 MB.', 'error');
+      return;
+    }
+
+    setBusyTarget(target);
+    setFeedbackTarget(target);
+    setFeedbackMessage(null);
+    try {
+      const fileBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Could not read the file'));
+        reader.onload = () => {
+          const result = String(reader.result ?? '');
+          const comma = result.indexOf(',');
+          resolve(comma >= 0 ? result.slice(comma + 1) : result);
+        };
+        reader.readAsDataURL(file);
+      });
+
+      const ripped = await api<StockInvoiceRipResult>('/api/invoices/ocr', {
+        method: 'POST',
+        body: JSON.stringify({ fileBase64, mimeType: file.type, sourceFileName: sourceFileName || file.name, venue })
+      });
+      if (!ripped.invoices?.length) throw new Error('No invoice could be read from that file.');
+
+      const confirmed = confirmDangerousAction({
+        title: 'Import scanned invoice?',
+        message:
+          'Claude read this invoice from the file. Review the item matches after import — this does not change stock balances.',
+        confirmationText: 'IMPORT INVOICES'
+      });
+      if (!confirmed) return;
+
+      const result = await api<StockInvoiceImportResult>('/api/invoices/import', {
+        method: 'POST',
+        body: JSON.stringify({
+          source: 'RIPPED',
+          venue,
+          sourceFileName: sourceFileName || file.name,
+          sourceFileType: file.type,
+          sourceMetadata: { ripWarnings: ripped.warnings, ocrScanned: true },
+          documentBase64: fileBase64,
+          documentMimeType: file.type,
+          documentFileName: sourceFileName || file.name,
+          confirmationText: 'IMPORT INVOICES',
+          invoices: ripped.invoices
+        })
+      });
+
+      setPayload((current) => mergeInvoices(current, result.invoices));
+      setSelectedInvoiceId(result.invoices[0]?.id ?? selectedInvoiceId);
+      setSummary((current) =>
+        current
+          ? {
+              ...current,
+              totalInvoices: current.totalInvoices + result.createdCount,
+              needsReviewLines: current.needsReviewLines + result.needsReviewLineCount,
+              matchedLines: current.matchedLines + result.matchedLineCount,
+              importedThisWeek: current.importedThisWeek + result.createdCount
+            }
+          : current
+      );
+      const warn = ripped.warnings.length ? ` ${ripped.warnings.join(' ')}` : '';
+      showFeedback(
+        target,
+        `Scanned & imported ${result.importedCount} invoice with ${result.matchedLineCount} matched line${result.matchedLineCount === 1 ? '' : 's'}.${warn}`,
+        result.needsReviewLineCount || ripped.warnings.length ? 'info' : 'success'
+      );
+    } catch (err) {
+      showFeedback(
+        target,
+        err instanceof ApiError || err instanceof Error ? err.message : 'Could not scan the invoice',
         'error'
       );
     } finally {
@@ -754,6 +871,20 @@ export function InvoicesPage() {
         />
       </div>
 
+      <RematchBacklog canManage={canManage} onDone={() => void loadInvoices()} />
+
+      {/* Re-running the matcher only helps where the wording is already known.
+          This says where the money that never matches actually is, so the
+          catalogue gaps and the summarised bills can be worked worst-first. */}
+      {canManage ? (
+        <UnmatchedSpendCard
+          onOpenInvoice={(id) => {
+            setSelectedInvoiceId(id);
+            document.querySelector('.stock-invoice-table')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+        />
+      ) : null}
+
       <Card
         title="Add invoices"
         subtitle="Paste a Xero invoice or plain invoice text, then review item matches before costs are applied."
@@ -801,6 +932,26 @@ export function InvoicesPage() {
                 tone={feedbackTone}
               />
             </div>
+            <div className="stock-invoice-import-action">
+              <label className={`stock-ocr-upload${!canManage || busyTarget === 'invoice-ocr' ? ' is-disabled' : ''}`}>
+                <input
+                  type="file"
+                  accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
+                  disabled={!canManage || busyTarget === 'invoice-ocr'}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = '';
+                    void importScannedInvoice(file);
+                  }}
+                />
+                {busyTarget === 'invoice-ocr' ? 'Scanning…' : '📷 Scan invoice (PDF / photo)'}
+              </label>
+              <span className="subtle">Reads a scanned or photographed invoice with Claude and imports it.</span>
+              <ActionFeedback
+                message={feedbackTarget === 'invoice-ocr' ? feedbackMessage : null}
+                tone={feedbackTone}
+              />
+            </div>
           </div>
         </div>
       </Card>
@@ -843,6 +994,15 @@ export function InvoicesPage() {
               description={error}
             />
           ) : payload && payload.invoices.length > 0 ? (
+            <>
+            {/* The list is capped server-side. Saying so beats a manager
+                concluding an older invoice was never imported. */}
+            {summary && summary.totalInvoices > payload.invoices.length ? (
+              <p className="subtle small" style={{ margin: '0 0 8px' }}>
+                Showing the {payload.invoices.length} most recent of {summary.totalInvoices} invoices. Use search to
+                find an older one.
+              </p>
+            ) : null}
             <div className="table-card stock-invoice-table">
               <table>
                 <thead>
@@ -866,7 +1026,10 @@ export function InvoicesPage() {
                         <td>
                           <span className="cell-stack">
                             <strong>{invoice.invoiceNumber ?? invoice.invoiceKey.slice(0, 8)}</strong>
-                            <span className="subtle">{invoice.sourceFileName ?? invoice.source}</span>
+                            <span className="subtle">
+                              {invoice.hasDocument ? '📎 ' : ''}
+                              {invoice.sourceFileName ?? invoice.source}
+                            </span>
                           </span>
                         </td>
                         <td>{invoice.supplierName}</td>
@@ -888,6 +1051,7 @@ export function InvoicesPage() {
                 </tbody>
               </table>
             </div>
+            </>
           ) : (
             <EmptyState
               icon={<IconInvoices size={24} />}
@@ -911,6 +1075,28 @@ export function InvoicesPage() {
         >
           {selectedInvoice ? (
             <>
+              {selectedInvoice.hasDocument ? (
+                <div className="stock-invoice-doc-bar">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void openInvoiceDocument(selectedInvoice)}
+                  >
+                    📎 View original scan
+                  </Button>
+                  <span className="subtle">Open the uploaded file to key in any lines OCR missed.</span>
+                  <ActionFeedback
+                    message={feedbackTarget === `invoice-doc-${selectedInvoice.id}` ? feedbackMessage : null}
+                    tone={feedbackTone}
+                  />
+                </div>
+              ) : null}
+              <InvoicePasteLinesPanel
+                invoice={selectedInvoice}
+                canManage={canManage}
+                onApplied={() => loadInvoices()}
+              />
               <InvoiceTriagePanel
                 invoice={selectedInvoice}
                 assigneeOptions={assigneeOptions}
@@ -1091,6 +1277,132 @@ type ItemSearchSelectProps = {
   onCreateNew: () => void;
   disabled?: boolean;
 };
+
+/**
+ * Re-run matching over every line that never found an item.
+ *
+ * Matching gets better over time — an improved matcher, a newly-learned alias,
+ * a stock item created after the invoice arrived. Without a way to re-run it,
+ * the backlog stays exactly as wrong as the day it was imported, which is how
+ * 995 lines accumulated.
+ *
+ * Shows what it WILL do before doing it, because the alternative is a button
+ * that silently rewrites hundreds of rows.
+ */
+function RematchBacklog({ canManage, onDone }: { canManage: boolean; onDone: () => void }) {
+  type Result = { examined: number; matched: number; nonStock: number; stillNeedsReview: number; dryRun: boolean };
+  const [preview, setPreview] = useState<Result | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function run(dryRun: boolean) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await api<Result>(`/api/invoices/rematch-unresolved${dryRun ? '?dryRun=1' : ''}`, {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      if (dryRun) {
+        setPreview(result);
+      } else {
+        setPreview(null);
+        setMessage(`Matched ${result.matched}, set ${result.nonStock} aside as charges. ${result.stillNeedsReview} still need a decision.`);
+        onDone();
+      }
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : 'Could not re-run matching.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!canManage) return null;
+
+  return (
+    <Card
+      title="Unmatched lines"
+      subtitle="Re-run matching over lines that never found a stock item. A match somebody made by hand is never overwritten."
+    >
+      <div className="stock-invoice-suggestions">
+        <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void run(true)}>
+          {busy ? 'Checking...' : 'Check what would change'}
+        </Button>
+        {preview ? (
+          <>
+            <span className="subtle">
+              {preview.examined} unmatched · would match {preview.matched} · {preview.nonStock} are charges, not stock · {preview.stillNeedsReview} still need a person
+            </span>
+            <Button type="button" size="sm" disabled={busy} onClick={() => void run(false)}>
+              Apply
+            </Button>
+          </>
+        ) : null}
+        {message ? <span className="subtle">{message}</span> : null}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Ranked candidates for a line nobody has matched yet.
+ *
+ * The alternative is searching a 716-item catalogue by hand for every line,
+ * which is why 995 of them were still sitting unmatched. Loaded per line and
+ * only for lines that need it, so opening an invoice does not fetch
+ * suggestions nobody will look at.
+ */
+function LineSuggestions({
+  lineId,
+  disabled,
+  onPick
+}: {
+  lineId: string;
+  disabled: boolean;
+  onPick: (itemId: string) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<Array<{ itemId: string; name: string; confidence: number }>>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await api<Array<{ itemId: string; name: string; confidence: number }>>(
+          `/api/invoices/lines/${lineId}/suggestions`
+        );
+        if (!cancelled) setSuggestions(rows);
+      } catch {
+        // A line with no suggestions is the normal case for an unknown
+        // product, and is not worth an error message.
+        if (!cancelled) setSuggestions([]);
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [lineId]);
+
+  if (!loaded || suggestions.length === 0) return null;
+
+  return (
+    <div className="stock-invoice-suggestions">
+      <span className="subtle">Did you mean</span>
+      {suggestions.map((suggestion) => (
+        <button
+          key={suggestion.itemId}
+          type="button"
+          className="stock-invoice-suggestion"
+          disabled={disabled}
+          onClick={() => onPick(suggestion.itemId)}
+          title={`${Math.round(suggestion.confidence * 100)}% of this item's name appears in the description`}
+        >
+          {suggestion.name}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function ItemSearchSelect({ items, value, onChange, onCreateNew, disabled }: ItemSearchSelectProps) {
   const [open, setOpen] = useState(false);
@@ -1375,10 +1687,24 @@ function InvoiceLineReview({
                   Qty {line.quantity} {line.unit ?? ''} - unit {formatCurrency(line.unitAmountCents, invoice.currencyCode)} - line {formatCurrency(line.lineAmountCents, invoice.currencyCode)}
                 </p>
               </div>
-              <Badge tone={line.matchingStatus === 'NEEDS_REVIEW' ? 'warning' : 'positive'} dot>
-                {line.matchingStatus === 'NEEDS_REVIEW' ? 'Needs review' : 'Matched'}
+              <Badge
+                tone={line.matchingStatus === 'NEEDS_REVIEW' ? 'warning' : line.matchingStatus === 'NON_STOCK' ? 'neutral' : 'positive'}
+                dot
+              >
+                {line.matchingStatus === 'NEEDS_REVIEW'
+                  ? 'Needs review'
+                  : line.matchingStatus === 'NON_STOCK'
+                    ? 'Not stock'
+                    : 'Matched'}
               </Badge>
             </div>
+            {line.matchingStatus === 'NEEDS_REVIEW' ? (
+              <LineSuggestions
+                lineId={line.id}
+                disabled={!canManage}
+                onPick={(itemId) => onDraftChange(line.id, itemId)}
+              />
+            ) : null}
             <div className="stock-invoice-line-actions">
               <ItemSearchSelect
                 items={items}

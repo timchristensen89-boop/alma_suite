@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Navigate,
   NavLink,
@@ -7,7 +7,7 @@ import {
   useLocation,
   useNavigate
 } from 'react-router-dom';
-import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
+import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteInboxWidget, SuiteSignOutButton, TaskBar, type TaskBarItem, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { LoginPage } from './pages/LoginPage';
@@ -49,9 +49,19 @@ import { withSuiteAppLinks } from './config/suiteLinks';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { canAdmin, canManage, type BetaRole } from './lib/rbac';
 import {
+  IconCheck,
+  IconChecklist,
   IconChevronDown,
+  IconDashboard,
   IconHandbook,
-  IconSettings
+  IconIncident,
+  IconInbox,
+  IconIssues,
+  IconMap,
+  IconPlus,
+  IconSettings,
+  IconStaff,
+  IconTemperature
 } from './lib/icons';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -197,12 +207,66 @@ function TopBarWithContext() {
             userName={user ? `${user.firstName} ${user.lastName}` : undefined}
             canAnnounce={canManage(user)}
           />
-          <SuiteFeedbackWidget appId="COMPLIANCE" api={api} userName={user ? `${user.firstName} ${user.lastName}` : undefined} />
           <ThemeToggle />
           <SuiteClock />
           <UserMenu />
         </>
       }
+    />
+  );
+}
+
+/**
+ * The compliance jobs somebody does standing up, on a phone, mid-shift.
+ *
+ * Temperatures and checklists get done walking the floor; an incident gets
+ * logged the moment it happens or not at all. Those belong under a thumb, not
+ * three taps into a sidebar written for a desk.
+ */
+const COMPLIANCE_TASKS: Array<{ to: string; label: string; icon: ReactNode; match?: string[] }> = [
+  // Named here rather than looked up from NAV_ITEMS: "Log issue" is /issues/new,
+  // which has no sidebar entry, so the lookup returned undefined and the bar
+  // shipped with a bare label sitting between four icons.
+  { to: '/', label: 'Home', icon: <IconDashboard /> },
+  { to: '/checklists', label: 'Checks', icon: <IconChecklist />, match: ['/checklists/runs'] },
+  { to: '/temperatures', label: 'Temps', icon: <IconTemperature /> },
+  { to: '/issues/new', label: 'Log issue', icon: <IconPlus /> },
+  { to: '/incidents', label: 'Incidents', icon: <IconIncident /> },
+  { to: '/issues', label: 'Issues', icon: <IconIssues /> },
+  { to: '/audits', label: 'Audits', icon: <IconCheck /> },
+  { to: '/licences', label: 'Licences', icon: <IconMap /> },
+  { to: '/handbook', label: 'Handbook', icon: <IconInbox /> },
+  { to: '/staff', label: 'Staff', icon: <IconStaff /> }
+];
+
+function ComplianceTaskBar() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const allowed = new Set(navItemsForRole(user).map((item) => item.to));
+  const items: TaskBarItem[] = COMPLIANCE_TASKS.filter(
+    // Only offer what this person's own nav already grants them; the routes
+    // themselves are role-gated, and a bar full of locked doors is worse than
+    // a shorter bar.
+    (task) => allowed.has(task.to) || allowed.has(`/${task.to.split('/')[1] ?? ''}`)
+  ).map((task) => ({
+    key: task.to,
+    label: task.label,
+    href: task.to,
+    icon: task.icon,
+    active: [task.to, ...(task.match ?? [])].some((path) =>
+      path === '/' ? location.pathname === '/' : location.pathname === path || location.pathname.startsWith(`${path}/`)
+    )
+  }));
+  return (
+    <TaskBar
+      items={items}
+      label="Compliance actions"
+      onNavigate={(item, event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        navigate(item.href);
+      }}
     />
   );
 }
@@ -228,6 +292,7 @@ function AuthenticatedApp() {
     { to: '/handbook/onboarding', label: 'Onboarding' },
     { to: '/handbook/maintenance', label: 'Maintenance' }
   ];
+
   return (
     <AppShell
       sidebar={<SidebarNav />}
@@ -275,6 +340,7 @@ function AuthenticatedApp() {
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </ErrorBoundary>
+      <ComplianceTaskBar />
     </AppShell>
   );
 }

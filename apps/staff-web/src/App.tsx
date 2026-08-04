@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, DragEvent, MouseEvent, ReactNode } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, DragEvent, FormEvent, MouseEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { HubLayout, useHubTabBadge, type HubTab } from './components/HubTabs';
 import type {
@@ -33,7 +33,10 @@ import type {
   StaffLeaveType,
   StaffManagementEvent,
   StaffManagerDashboardPayload,
+  FatigueWarning,
   StaffMyRosterPayload,
+  StaffOpenShift,
+  StaffShiftClaim,
   StaffAwardEmploymentType,
   ManualFullTimePayFrequency,
   StaffPayProfileInput,
@@ -50,6 +53,8 @@ import type {
   TrainingOverview
 } from '@alma/shared';
 import {
+  checkAvailability,
+  type AvailabilityRule,
   AWARD_RATE_SETS,
   DEFAULT_STAFF_AWARD_CODE,
   DEFAULT_STAFF_AWARD_CLASSIFICATION,
@@ -70,6 +75,7 @@ import {
   Card,
   CapIcon,
   EditorialAppHeader,
+  EditorialPanel,
   ChartIcon,
   DocumentIcon,
   EmptyState,
@@ -85,17 +91,16 @@ import {
   SuiteAppSwitcher,
   accessibleSuiteApps,
   SuiteClock,
-  SuiteFeedbackWidget,
   SuiteInboxWidget,
   Textarea,
   ThemeToggle,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { SuiteSignOutButton } from '@alma/ui';
+import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import { LoginPage } from './LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
-import { api, createSuiteHandoffUrl } from './lib/api';
+import { api, apiBlob, apiQueued, createSuiteHandoffUrl, flushQueue, queuedRequestCount } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import {
@@ -117,13 +122,17 @@ import {
   IconFiles,
   IconFileSignature,
   IconFileText,
+  IconIssues,
   IconMail,
+  IconPackageCheck,
+  IconTemperature,
   IconTriangle,
   IconUserPlus,
   IconUsers,
   IconWallet
 } from '../../web/src/lib/icons';
 import { historicalSalesForDate, normaliseHistoricalVenue } from './data/historicalSales';
+import type { ForecastOutlookPayload } from '@alma/shared';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 
@@ -344,10 +353,17 @@ const NAV_ITEMS = [
     match: ['/academy']
   },
   {
-    to: 'https://alma-comms.web.app',
-    label: 'Comms',
-    description: 'Announcements, group chats, and messaging permissions',
+    // The standalone Comms app is gone; the board it existed for lives here.
+    to: '/noticeboard',
+    label: 'Noticeboard',
+    description: 'Notices from managers, pinned for the team',
     icon: <IconMail />
+  },
+  {
+    to: '/handbook',
+    label: 'Handbook',
+    description: 'Policies and guides sent to every new starter',
+    icon: <DocumentIcon />
   },
   {
     to: '/settings',
@@ -414,6 +430,12 @@ const STAFF_MEMBER_NAV_ITEMS = [
     icon: <IconCalendarClock />
   },
   {
+    to: '/availability',
+    label: 'Availability',
+    description: 'When you can and cannot work',
+    icon: <IconCalendarCheck />
+  },
+  {
     to: '/leave',
     label: 'Leave',
     description: 'Request leave and view approvals',
@@ -449,10 +471,41 @@ const STAFF_MEMBER_NAV_ITEMS = [
     description: 'My documents, training and reminders',
     icon: <IconFileLock />
   },
+  // The jobs that used to mean leaving for another site.
+  {
+    to: '/checks',
+    label: "Today's checks",
+    description: 'Opening, closing and food safety checklists',
+    icon: <IconChecklist />
+  },
+  {
+    to: '/temperatures',
+    label: 'Fridge temps',
+    description: 'Log a probe reading',
+    icon: <IconTemperature />
+  },
+  {
+    to: '/report',
+    label: 'Report a problem',
+    description: 'Something broken, unsafe or not right',
+    icon: <IconIssues />
+  },
+  {
+    to: '/stocktake',
+    label: 'Stocktake',
+    description: 'Count stock',
+    icon: <IconPackageCheck />
+  },
   {
     to: '/documents',
     label: 'Documents',
     description: 'Requests and uploads',
+    icon: <DocumentIcon />
+  },
+  {
+    to: '/handbook',
+    label: 'Handbook',
+    description: 'Policies and guides, the ones you were emailed when you joined',
     icon: <DocumentIcon />
   },
   {
@@ -785,11 +838,6 @@ function TopBarWithContext() {
               userName={`${user.firstName} ${user.lastName}`}
               canAnnounce={canManageCommunications(user)}
             />
-            <SuiteFeedbackWidget
-              appId="STAFF"
-              api={api}
-              userName={`${user.firstName} ${user.lastName}`}
-            />
             <ThemeToggle />
             <SuiteClock />
             <SuiteSignOutButton
@@ -827,6 +875,139 @@ function currentPage(pathname: string, items = NAV_ITEMS) {
     }
   );
 }
+
+/**
+ * The handful of destinations a staff member opens every shift.
+ *
+ * The mobile nav is a dropdown: tap to open, tap to choose. Fine for a
+ * settings page nobody visits twice, wrong for clocking on — which happens
+ * twice a day, in a doorway, usually late. A bottom bar makes the things that
+ * actually get used one tap from anywhere, and puts them where a thumb
+ * already is.
+ *
+ * Paths not in a person's nav are dropped rather than shown broken, so a
+ * manager and a casual get different bars from the same component.
+ */
+const BOTTOM_TAB_PATHS = ['/', '/clock', '/roster', '/checks'] as const;
+
+/**
+ * A standing note that something is waiting to send.
+ *
+ * A queue you cannot see is a queue you find out about at the pay run. This
+ * sits above everything until it drains, and offers to try now rather than
+ * making someone guess whether the app is stuck.
+ */
+function OfflineQueueBanner() {
+  const [pending, setPending] = useState(() => queuedRequestCount());
+  const [trying, setTrying] = useState(false);
+
+  useEffect(() => {
+    // Cheap poll: localStorage has no change event within the same tab, and
+    // the count only moves when the person acts or the connection returns.
+    const timer = window.setInterval(() => setPending(queuedRequestCount()), 3000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (pending === 0) return null;
+
+  return (
+    <div className="offline-banner" role="status">
+      <span>
+        {pending} {pending === 1 ? 'thing' : 'things'} saved on this phone, waiting for a connection.
+      </span>
+      <button
+        type="button"
+        disabled={trying}
+        onClick={async () => {
+          setTrying(true);
+          await flushQueue();
+          setPending(queuedRequestCount());
+          setTrying(false);
+        }}
+      >
+        {trying ? 'Trying…' : 'Try now'}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The jobs staff actually open the app to do, in the order they reach for them.
+ *
+ * The bar used to carry the app's four sections. Sections are how the app is
+ * organised; they are not what somebody is holding their phone to do. A closing
+ * shift wants Clock, a rostered week wants Leave, and neither wants to go
+ * through a menu to find it. Everything past the first five sits behind More.
+ *
+ * One list covers both managers and floor staff: whatever the person's own nav
+ * does not contain is simply dropped, so nobody is offered a screen they cannot
+ * open.
+ */
+const TASK_ORDER: Array<{ to: string; label: string }> = [
+  { to: '/', label: 'Home' },
+  { to: '/clock', label: 'Clock' },
+  { to: '/manager', label: 'Today' },
+  { to: '/roster', label: 'Roster' },
+  { to: '/leave', label: 'Leave' },
+  { to: '/checks', label: 'Checks' },
+  { to: '/profiles', label: 'People' },
+  { to: '/availability', label: 'Availability' },
+  { to: '/timesheets', label: 'Timesheets' },
+  { to: '/tips', label: 'Tips' },
+  { to: '/my-pay', label: 'My pay' },
+  { to: '/temperatures', label: 'Temps' },
+  { to: '/noticeboard', label: 'Notices' },
+  { to: '/handbook', label: 'Handbook' },
+  { to: '/academy', label: 'Academy' },
+  { to: '/documents', label: 'Documents' },
+  { to: '/compliance', label: 'Compliance' },
+  { to: '/report', label: 'Report issue' },
+  { to: '/stocktake', label: 'Stocktake' },
+  { to: '/communications', label: 'Messages' }
+];
+
+function BottomTabs({ items }: { items: typeof NAV_ITEMS }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const toTask = (item: (typeof items)[number], label: string): TaskBarItem => ({
+    key: item.to,
+    label,
+    href: item.to,
+    icon: item.icon,
+    active: staffNavMatches(item, location.pathname)
+  });
+
+  const ordered = TASK_ORDER.flatMap((task) => {
+    const item = items.find((navItem) => navItem.to === task.to);
+    return item ? [toTask(item, task.label)] : [];
+  });
+  // Anything this person can reach that TASK_ORDER does not name goes on the
+  // end. The mobile nav dropdown is hidden on phones now that this bar exists,
+  // so a screen missing from both would simply be unreachable — and the list
+  // above is hand-written, which is exactly the kind of thing that goes stale.
+  const named = new Set(ordered.map((task) => task.key));
+  const rest = items.filter((item) => !named.has(item.to)).map((item) => toTask(item, item.label));
+  const tasks: TaskBarItem[] = [...ordered, ...rest];
+
+  // One tab is not a tab bar. Below two, the dropdown alone is less clutter.
+  if (tasks.length < 2) return null;
+
+  return (
+    <TaskBar
+      items={tasks}
+      label="Staff actions"
+      onNavigate={(item, event) => {
+        // Keep it a real link for middle-click and long-press, but navigate in
+        //-app on a plain tap rather than reloading the whole bundle.
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        navigate(item.href);
+      }}
+    />
+  );
+}
+
 
 function SidebarNav({ items = NAV_ITEMS }: { items?: typeof NAV_ITEMS }) {
   const location = useLocation();
@@ -1258,6 +1439,9 @@ function StaffHome({
         </div>
       </Card>
 
+      {/* Record expiry + training chase — two sides of the same follow-up
+          job, so they sit side by side in the suite's ov-two pair grid. */}
+      <div className="ov-two">
       {/* HR + compliance record expiry — bucketed callouts at 7/30/60/90 days */}
       {(() => {
         const today = new Date();
@@ -1360,6 +1544,7 @@ function StaffHome({
           </Card>
         );
       })()}
+      </div>
     </div>
   );
 }
@@ -1761,9 +1946,14 @@ function StaffMemberHome({
     setMessageTarget('clock');
     try {
       if (action === 'clock-in') {
+        // Only today's shift. `nextShift` is simply the earliest upcoming one
+        // and can be days away, so falling back to it attached this morning's
+        // hours to a shift next Tuesday — and roster-versus-actual then
+        // compared the wrong two things. No shift now means no shift: the
+        // server records an unattached session, which is the truth.
         await api('/api/staff/me/clock/in', {
           method: 'POST',
-          body: JSON.stringify({ rosterShiftId: todayShift?.id || nextShift?.id || '' })
+          body: JSON.stringify({ rosterShiftId: todayShift?.id || '' })
         });
       } else if (action === 'clock-out') {
         await api('/api/staff/me/clock/out', { method: 'POST', body: JSON.stringify({}) });
@@ -1883,6 +2073,7 @@ function StaffMemberHome({
           <Button type="button" variant="secondary" onClick={() => navigate('/leave')}>Request leave</Button>
           <Button type="button" variant="ghost" onClick={() => navigate('/compliance')}>Compliance</Button>
           <Button type="button" variant="ghost" onClick={() => navigate('/documents')}>Documents</Button>
+          <Button type="button" variant="ghost" onClick={() => navigate('/handbook')}>Handbook</Button>
         </div>
       </Card>
 
@@ -2093,6 +2284,9 @@ function StaffMemberRosterPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  // Offering or cancelling changes what the open-shifts card should show, and
+  // that card owns its own fetch. Bumping this re-pulls it.
+  const [swapRefresh, setSwapRefresh] = useState(0);
 
   const loadRoster = useCallback(async () => {
     setLoading(true);
@@ -2136,6 +2330,44 @@ function StaffMemberRosterPage() {
     }
   }
 
+  // Offering is not dropping: the shift stays yours, and stays costed against
+  // you, until a manager approves somebody taking it.
+  async function offerSwap(shift: RosterShift) {
+    const note = window.prompt('Anything your team should know? (optional)') ?? '';
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(shift.id);
+    try {
+      await api(`/api/staff/me/shifts/${shift.id}/offer-swap`, {
+        method: 'POST',
+        body: JSON.stringify({ note: note.trim() || null })
+      });
+      await loadRoster();
+      setSwapRefresh((n) => n + 1);
+      setMessage('Offered to the team. It stays yours until someone takes it.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not offer that shift.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function cancelSwap(shift: RosterShift) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(shift.id);
+    try {
+      await api(`/api/staff/me/shifts/${shift.id}/cancel-swap`, { method: 'POST', body: JSON.stringify({}) });
+      await loadRoster();
+      setSwapRefresh((n) => n + 1);
+      setMessage('Taken back off the board.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not cancel that offer.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -2152,6 +2384,8 @@ function StaffMemberRosterPage() {
       </div>
 
       {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      <OpenShiftsCard onClaimApproved={loadRoster} refreshKey={swapRefresh} />
 
       <Card title="Upcoming shifts" subtitle="Upcoming rostered shifts and confirmations." padding="none">
         {loading ? <Spinner label="Loading roster…" /> : null}
@@ -2170,6 +2404,18 @@ function StaffMemberRosterPage() {
                 {!shift.confirmation && shift.status === 'PUBLISHED' ? (
                   <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void confirmShift(shift)}>
                     {saving ? 'Saving…' : 'Confirm'}
+                  </Button>
+                ) : null}
+                {shift.status === 'PUBLISHED' && shift.offeredAt ? (
+                  <>
+                    <Badge tone="info">Offered to team</Badge>
+                    <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void cancelSwap(shift)}>
+                      Take back
+                    </Button>
+                  </>
+                ) : shift.status === 'PUBLISHED' ? (
+                  <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void offerSwap(shift)}>
+                    Offer swap
                   </Button>
                 ) : null}
                 <ActionFeedback message={messageTarget === shift.id ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
@@ -2199,6 +2445,257 @@ function StaffMemberRosterPage() {
 
       <PublishedRosterView />
     </div>
+  );
+}
+
+// Manager side of open shifts: who has put their hand up, and the decision.
+// Approving assigns the shift and closes every other request on it in one
+// transaction, so two people can never both be told yes.
+function ShiftClaimsPanel({ onDecided }: { onDecided: () => Promise<void> }) {
+  const [claims, setClaims] = useState<StaffShiftClaim[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setClaims(await api<StaffShiftClaim[]>('/api/staff/roster/claims'));
+    } catch {
+      // A manager who cannot see claims (or an older API) should not break the
+      // roster board — the panel simply stays hidden.
+      setClaims([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function decide(claim: StaffShiftClaim, approve: boolean) {
+    setBusyId(claim.id);
+    setMessage(null);
+    setMessageTarget(claim.id);
+    try {
+      await api(`/api/staff/roster/claims/${claim.id}/decide`, { method: 'POST', body: JSON.stringify({ approve }) });
+      await Promise.all([load(), onDecided()]);
+      setMessage(approve ? 'Shift assigned.' : 'Request declined.');
+      setMessageTarget(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save that decision.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (claims.length === 0) return null;
+
+  // Several people can ask for the same shift, so group by shift: the decision
+  // is really "who gets this one", not a queue of unrelated approvals.
+  const byShift = new Map<string, StaffShiftClaim[]>();
+  for (const claim of claims) {
+    if (!claim.shift) continue;
+    const list = byShift.get(claim.shift.id) ?? [];
+    list.push(claim);
+    byShift.set(claim.shift.id, list);
+  }
+
+  return (
+    <Card
+      title="Shift requests"
+      subtitle="Staff asking to work an open shift, or to take a shift a teammate has offered to swap. Approving assigns it and declines the rest."
+      padding="none"
+      action={<Badge tone="warning">{claims.length} waiting</Badge>}
+    >
+      {message && !messageTarget ? <p className="subtle" style={{ padding: '0 1rem' }}>{message}</p> : null}
+      <div className="staff-mobile-shift-list">
+        {[...byShift.values()].map((group) => {
+          const shift = group[0]!.shift!;
+          return (
+            <div key={shift.id} className="staff-mobile-shift-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '0.5rem' }}>
+              <span>
+                <strong>
+                  {new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })} · {timeOf(shift.startsAt)}-{timeOf(shift.endsAt)}
+                  {shift.isSwap ? <Badge tone="info">Swap</Badge> : null}
+                </strong>
+                <span className="subtle">
+                  {shift.area || shift.roleTitle || 'Shift'} · {shift.venue || 'No venue'}
+                  {group.length > 1 ? ` · ${group.length} people want it` : ''}
+                </span>
+                <span className="subtle">
+                  {shift.isSwap && shift.offeredBy
+                    ? `Currently ${shift.offeredBy.firstName} ${shift.offeredBy.lastName}’s shift — approving moves it off them`
+                    : 'Nobody rostered on'}
+                  {shift.offerNote ? ` — “${shift.offerNote}”` : ''}
+                </span>
+              </span>
+              {group.map((claim) => (
+                <span key={claim.id} className="staff-row-actions" style={{ justifyContent: 'space-between' }}>
+                  <span>
+                    <strong>{claim.staffProfile?.firstName} {claim.staffProfile?.lastName}</strong>
+                    <span className="subtle">
+                      {claim.staffProfile?.roleTitle || 'No role'}
+                      {claim.note ? ` · “${claim.note}”` : ''}
+                    </span>
+                  </span>
+                  <span className="staff-row-actions">
+                    <Button type="button" size="sm" disabled={busyId === claim.id} onClick={() => void decide(claim, true)}>
+                      {busyId === claim.id ? 'Saving…' : shift.isSwap ? 'Approve swap' : 'Give them the shift'}
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={busyId === claim.id} onClick={() => void decide(claim, false)}>
+                      Decline
+                    </Button>
+                    <ActionFeedback message={messageTarget === claim.id ? message : null} tone="error" />
+                  </span>
+                </span>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// Shifts published with nobody on them. Staff put their hand up here; a
+// manager decides. Hidden entirely when there is nothing open, so the roster
+// page doesn't carry a permanently empty box.
+function OpenShiftsCard({ onClaimApproved, refreshKey = 0 }: { onClaimApproved: () => Promise<void>; refreshKey?: number }) {
+  const [shifts, setShifts] = useState<StaffOpenShift[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setShifts(await api<StaffOpenShift[]>('/api/staff/me/open-shifts'));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load open shifts.');
+      setMessageTarget(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load, refreshKey]);
+
+  async function claim(shift: StaffOpenShift) {
+    setBusyId(shift.id);
+    setMessage(null);
+    setMessageTarget(shift.id);
+    try {
+      await api(`/api/staff/me/open-shifts/${shift.id}/claim`, {
+        method: 'POST',
+        body: JSON.stringify({ note: noteFor === shift.id ? note.trim() || null : null })
+      });
+      setNoteFor(null);
+      setNote('');
+      await load();
+      setMessage('Requested. Your manager will confirm.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not request that shift.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function withdraw(shift: StaffOpenShift) {
+    setBusyId(shift.id);
+    setMessage(null);
+    setMessageTarget(shift.id);
+    try {
+      await api(`/api/staff/me/open-shifts/${shift.id}/withdraw`, { method: 'POST', body: JSON.stringify({}) });
+      await load();
+      // An approved claim that gets withdrawn frees the shift again, so the
+      // viewer's own roster above may now be out of date.
+      await onClaimApproved();
+      setMessage('Request withdrawn.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not withdraw that request.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (!loading && shifts.length === 0) return null;
+
+  return (
+    <Card
+      title="Shifts you can pick up"
+      subtitle="Shifts that still need somebody, and shifts your team have offered to swap. Put your hand up and a manager will confirm."
+      padding="none"
+      action={<Badge tone="warning">{shifts.length} available</Badge>}
+    >
+      {loading ? <Spinner label="Loading open shifts…" /> : null}
+      {message && !messageTarget ? <p className="error-text" style={{ padding: '0 1rem' }}>{message}</p> : null}
+      <div className="staff-mobile-shift-list">
+        {shifts.map((shift) => (
+          <div key={shift.id} className="staff-mobile-shift-card">
+            <span>
+              <strong>
+                {new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}
+                {shift.isSwap ? <Badge tone="info">Swap</Badge> : null}
+              </strong>
+              <span className="subtle">{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)} · {shift.area || shift.roleTitle || 'Shift'} · {shift.venue || 'No venue'}</span>
+              <span className="subtle">
+                {shift.isSwap && shift.offeredBy
+                  ? `${shift.offeredBy.firstName} ${shift.offeredBy.lastName} wants to swap this`
+                  : 'Nobody rostered on'}
+                {shift.offerNote ? ` — “${shift.offerNote}”` : ''}
+              </span>
+              <span className="subtle">
+                {shift.breakMinutes ? `${shift.breakMinutes}m break` : 'No break planned'}
+                {shift.claimCount > 0 ? ` · ${shift.claimCount} ${shift.claimCount === 1 ? 'person has' : 'people have'} asked` : ' · Nobody has asked yet'}
+                {shift.notes ? ` · ${shift.notes}` : ''}
+              </span>
+              {noteFor === shift.id ? (
+                <Input
+                  autoFocus
+                  placeholder="Anything your manager should know? (optional)"
+                  value={note}
+                  maxLength={300}
+                  onChange={(event) => setNote(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void claim(shift);
+                    if (event.key === 'Escape') { setNoteFor(null); setNote(''); }
+                  }}
+                />
+              ) : null}
+            </span>
+            <span className="staff-row-actions">
+              {shift.myClaimStatus === 'PENDING' ? (
+                <>
+                  <Badge tone="info">Requested</Badge>
+                  <Button type="button" size="sm" variant="ghost" disabled={busyId === shift.id} onClick={() => void withdraw(shift)}>
+                    {busyId === shift.id ? 'Working…' : 'Withdraw'}
+                  </Button>
+                </>
+              ) : noteFor === shift.id ? (
+                <>
+                  <Button type="button" size="sm" disabled={busyId === shift.id} onClick={() => void claim(shift)}>
+                    {busyId === shift.id ? 'Sending…' : 'Send request'}
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => { setNoteFor(null); setNote(''); }}>Cancel</Button>
+                </>
+              ) : (
+                <>
+                  <Button type="button" size="sm" disabled={busyId === shift.id} onClick={() => void claim(shift)}>
+                    {busyId === shift.id ? 'Sending…' : 'I can work this'}
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => { setNoteFor(shift.id); setNote(''); }}>Add note</Button>
+                </>
+              )}
+              <ActionFeedback message={messageTarget === shift.id ? message : null} tone={message?.includes('Could') || message?.includes('already') ? 'error' : 'success'} />
+            </span>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -2375,25 +2872,37 @@ function StaffMemberClockPage() {
     setSaving(true);
     setMessage(null);
     setMessageTarget(action);
+    // The moment the button was pressed. If this has to be queued, that is the
+    // time recorded — not whenever the wifi comes back.
+    const occurredAt = new Date().toISOString();
     try {
+      let outcome = { sent: true };
       if (action === 'clock-in') {
-        await api('/api/staff/me/clock/in', { method: 'POST', body: JSON.stringify({ rosterShiftId: selectedShiftId }) });
+        outcome = await apiQueued('/api/staff/me/clock/in', {
+          body: JSON.stringify({ rosterShiftId: selectedShiftId, occurredAt })
+        });
       } else if (action === 'clock-out') {
-        await api('/api/staff/me/clock/out', { method: 'POST', body: JSON.stringify({}) });
+        outcome = await apiQueued('/api/staff/me/clock/out', { body: JSON.stringify({ occurredAt }) });
       } else if (action === 'break-start') {
-        await api('/api/staff/me/clock/break/start', { method: 'POST', body: JSON.stringify({}) });
+        outcome = await apiQueued('/api/staff/me/clock/break/start', { body: JSON.stringify({ occurredAt }) });
       } else {
-        await api('/api/staff/me/clock/break/end', { method: 'POST', body: JSON.stringify({}) });
+        outcome = await apiQueued('/api/staff/me/clock/break/end', { body: JSON.stringify({ occurredAt }) });
       }
-      await loadClock();
-      setMessage(
+      if (outcome.sent) await loadClock();
+      const done =
         action === 'clock-in'
           ? 'Clocked in.'
           : action === 'clock-out'
             ? 'Clocked out.'
             : action === 'break-start'
               ? 'Break started.'
-              : 'Break ended.'
+              : 'Break ended.';
+      // Say what actually happened. Claiming success on something still
+      // sitting in a queue is how people find out at the pay run.
+      setMessage(
+        outcome.sent
+          ? done
+          : `Saved at ${new Date(occurredAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}. No connection — it'll send itself when you're back on.`
       );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not update your clock status.');
@@ -2599,6 +3108,1120 @@ function StaffMemberLeavePage() {
   );
 }
 
+
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** "17:30" -> 1050. Empty string means "no bound". */
+function timeToMinute(value: string): number | null {
+  if (!value.trim()) return null;
+  const [h, m] = value.split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+function minuteToTime(minute: number | null | undefined): string {
+  if (minute == null) return '';
+  const h = Math.floor(minute / 60) % 24;
+  return `${String(h).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+}
+
+type AvailabilityDraftRow = { weekday: number; start: string; end: string; available: boolean; note: string };
+
+/**
+ * Staff-facing availability.
+ *
+ * Deliberately a week of seven rows rather than a list you add to: everyone
+ * has exactly seven days, and a fixed shape is quicker to fill in and quicker
+ * to read back than a builder. "All day" is the default for a day you mark,
+ * because most people think in days first and hours second.
+ *
+ * Saying nothing is a valid answer and is what an untouched week means — the
+ * roster treats no rows as no objection, so a blank week is not a trap.
+ */
+function StaffMemberAvailabilityPage() {
+  const [rows, setRows] = useState<AvailabilityDraftRow[]>(() =>
+    WEEKDAY_NAMES.map((_, weekday) => ({ weekday, start: '', end: '', available: true, note: '' }))
+  );
+  const [touched, setTouched] = useState<Set<number>>(new Set());
+  const [blocks, setBlocks] = useState<Array<{ id: string; startsAt: string; endsAt: string; reason: string | null }>>([]);
+  const [blockStart, setBlockStart] = useState('');
+  const [blockEnd, setBlockEnd] = useState('');
+  const [blockReason, setBlockReason] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api<{
+        rules: Array<{ weekday: number; startMinute: number | null; endMinute: number | null; available: boolean; note: string | null }>;
+        blocks: Array<{ id: string; startsAt: string; endsAt: string; reason: string | null }>;
+      }>('/api/staff/me/availability');
+      const next = WEEKDAY_NAMES.map((_, weekday) => ({ weekday, start: '', end: '', available: true, note: '' }));
+      const stated = new Set<number>();
+      for (const rule of data.rules) {
+        next[rule.weekday] = {
+          weekday: rule.weekday,
+          start: minuteToTime(rule.startMinute),
+          end: minuteToTime(rule.endMinute),
+          available: rule.available,
+          note: rule.note ?? ''
+        };
+        stated.add(rule.weekday);
+      }
+      setRows(next);
+      setTouched(stated);
+      setBlocks(data.blocks);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load your availability.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  function update(weekday: number, patch: Partial<AvailabilityDraftRow>) {
+    setRows((current) => current.map((row) => (row.weekday === weekday ? { ...row, ...patch } : row)));
+    setTouched((current) => new Set(current).add(weekday));
+  }
+
+  async function save() {
+    setMessageTarget('availability');
+    setSaving(true);
+    setMessage(null);
+    try {
+      // Only days actually touched are sent. An untouched day stays unstated,
+      // which is not the same as being available all day.
+      const payload = rows
+        .filter((row) => touched.has(row.weekday))
+        .map((row) => ({
+          weekday: row.weekday,
+          startMinute: timeToMinute(row.start),
+          endMinute: timeToMinute(row.end),
+          available: row.available,
+          note: row.note.trim() || null
+        }));
+      const invalid = payload.find((r) => r.startMinute != null && r.endMinute != null && r.endMinute <= r.startMinute);
+      if (invalid) {
+        setMessage(`${WEEKDAY_NAMES[invalid.weekday]}: the finish time needs to be after the start time.`);
+        setSaving(false);
+        return;
+      }
+      await api('/api/staff/me/availability', { method: 'PUT', body: JSON.stringify({ rules: payload }) });
+      setMessage('Availability saved. Your manager sees this when building the roster.');
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save your availability.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addBlock() {
+    setMessageTarget('block');
+    if (!blockStart || !blockEnd || blockEnd < blockStart) {
+      setMessage('Pick a start and finish date for the time you are away.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api('/api/staff/me/unavailability', {
+        method: 'POST',
+        body: JSON.stringify({
+          startsAt: new Date(`${blockStart}T00:00:00`).toISOString(),
+          // Inclusive of the last day: away "14th to 16th" means you are back on the 17th.
+          endsAt: new Date(`${blockEnd}T23:59:59`).toISOString(),
+          reason: blockReason.trim() || null
+        })
+      });
+      setBlockStart(''); setBlockEnd(''); setBlockReason('');
+      setMessage('Added. Your manager will see this on the roster.');
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save that.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeBlock(id: string) {
+    setSaving(true);
+    try {
+      await api(`/api/staff/unavailability/${id}`, { method: 'DELETE' });
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not remove that.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const statedDays = rows.filter((row) => touched.has(row.weekday)).length;
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Availability"
+        title="My availability"
+        description="Tell your manager when you can and cannot work. This guides the roster — it does not lock it, so talk to your manager about anything that matters."
+      />
+
+      <div className="stats-grid">
+        <StatCard label="Days set" value={statedDays} hint="Untouched days stay unstated" loading={loading} />
+        <StatCard label="Away periods" value={blocks.length} hint="One-off dates you cannot work" loading={loading} />
+      </div>
+
+      {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      <Card
+        title="A normal week"
+        subtitle="Only the days you set are sent. Leave a day untouched if it varies or you would rather talk about it."
+      >
+        {loading ? <Spinner label="Loading…" /> : (
+          <div className="availability-week">
+            {rows.map((row) => (
+              <div key={row.weekday} className={`availability-day${touched.has(row.weekday) ? ' is-set' : ''}`}>
+                <div className="availability-day-name">
+                  <strong>{WEEKDAY_NAMES[row.weekday]}</strong>
+                  {touched.has(row.weekday) ? null : <span className="subtle">not set</span>}
+                </div>
+                <Select
+                  label=""
+                  value={row.available ? 'yes' : 'no'}
+                  onChange={(event) => update(row.weekday, { available: event.currentTarget.value === 'yes' })}
+                  options={[{ label: 'Can work', value: 'yes' }, { label: 'Cannot work', value: 'no' }]}
+                />
+                <Input label="From" type="time" value={row.start} onChange={(event) => update(row.weekday, { start: event.currentTarget.value })} />
+                <Input label="Until" type="time" value={row.end} onChange={(event) => update(row.weekday, { end: event.currentTarget.value })} />
+                <Input label="Note" value={row.note} placeholder="optional" onChange={(event) => update(row.weekday, { note: event.currentTarget.value })} />
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="subtle">Leave both times blank for a whole day.</p>
+        <div className="toolbar-right">
+          <Button type="button" disabled={saving || loading} onClick={() => void save()}>
+            {saving ? 'Saving…' : 'Save my week'}
+          </Button>
+          <ActionFeedback message={messageTarget === 'availability' ? message : null} tone={message?.includes('Could') || message?.includes('needs to be') ? 'error' : 'success'} />
+        </div>
+      </Card>
+
+      <Card title="Away on specific dates" subtitle="A wedding, a trip, exams — anything that is not formal leave.">
+        <div className="form-grid two">
+          <Input label="From" type="date" value={blockStart} onChange={(event) => setBlockStart(event.currentTarget.value)} />
+          <Input label="Until" type="date" value={blockEnd} onChange={(event) => setBlockEnd(event.currentTarget.value)} />
+          <Input label="Reason" value={blockReason} placeholder="optional" onChange={(event) => setBlockReason(event.currentTarget.value)} />
+        </div>
+        <div className="toolbar-right">
+          <Button type="button" variant="secondary" disabled={saving} onClick={() => void addBlock()}>Add</Button>
+          <ActionFeedback message={messageTarget === 'block' ? message : null} tone={message?.includes('Could') || message?.includes('Pick a') ? 'error' : 'success'} />
+        </div>
+        {blocks.length > 0 ? (
+          <div className="staff-expiry-list">
+            {blocks.map((block) => (
+              <div key={block.id} className="staff-expiry-row">
+                <span>
+                  <strong>{formatRange(new Date(block.startsAt), new Date(block.endsAt))}</strong>
+                  {block.reason ? <span className="subtle">{block.reason}</span> : null}
+                </span>
+                <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void removeBlock(block.id)}>Remove</Button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <p className="subtle">Taking paid leave? Use the Leave page instead so it is approved and recorded.</p>
+      </Card>
+    </div>
+  );
+}
+
+/**
+ * The noticeboard: what a venue would have pinned by the roster.
+ *
+ * Everyone signed in can read it; managers post, pin and clear notices from
+ * the same screen rather than a separate admin surface. Pinned notices sit
+ * first, then newest — the same order the API returns, which is the order a
+ * board is actually read in.
+ */
+function NoticeboardPage() {
+  const { user } = useAuth();
+  const canPost = canManageCommunications(user);
+  const [notices, setNotices] = useState<SuiteAnnouncement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [composing, setComposing] = useState(false);
+  const [draft, setDraft] = useState({ title: '', body: '', pinned: false, expiresAt: '' });
+
+  const loadNotices = useCallback(async () => {
+    setLoading(true);
+    try {
+      const payload = await api<{ notices: SuiteAnnouncement[] }>('/api/communications/notices?appId=STAFF');
+      setNotices(payload.notices);
+      setMessage(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load the noticeboard.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadNotices();
+  }, [loadNotices]);
+
+  async function postNotice(event: FormEvent) {
+    event.preventDefault();
+    if (!draft.title.trim() || !draft.body.trim() || saving) return;
+    setSaving(true);
+    try {
+      await api('/api/communications/announcements', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: draft.title.trim(),
+          body: draft.body.trim(),
+          appId: 'STAFF',
+          pinned: draft.pinned,
+          expiresAt: draft.expiresAt || undefined
+        })
+      });
+      setDraft({ title: '', body: '', pinned: false, expiresAt: '' });
+      setComposing(false);
+      await loadNotices();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not post the notice.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function mutate(id: string, init: RequestInit) {
+    setSaving(true);
+    try {
+      await api(`/api/communications/announcements/${id}`, init);
+      await loadNotices();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update the notice.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const pinned = notices.filter((notice) => notice.pinned);
+
+  return (
+    <div className="page-stack staff-noticeboard-page">
+      <PageHeader
+        eyebrow="Noticeboard"
+        title="What the team needs to know"
+        description="Notices from managers — rosters, closures, changes and anything worth reading before service."
+        actions={
+          canPost ? (
+            <Button type="button" onClick={() => setComposing((open) => !open)}>
+              {composing ? 'Cancel' : 'Post a notice'}
+            </Button>
+          ) : undefined
+        }
+      />
+
+      {message ? <p className="error-text">{message}</p> : null}
+
+      {canPost && composing ? (
+        <Card title="New notice" subtitle="Everyone with Staff access sees this.">
+          <form className="notice-form" onSubmit={postNotice}>
+            <Input
+              label="Title"
+              value={draft.title}
+              onChange={(event) => {
+                const { value } = event.currentTarget;
+                setDraft((current) => ({ ...current, title: value }));
+              }}
+              required
+            />
+            <Textarea
+              label="Message"
+              rows={4}
+              value={draft.body}
+              onChange={(event) => {
+                const { value } = event.currentTarget;
+                setDraft((current) => ({ ...current, body: value }));
+              }}
+              required
+            />
+            <div className="notice-form-row">
+              <label className="notice-form-check">
+                <input
+                  type="checkbox"
+                  checked={draft.pinned}
+                  onChange={(event) => {
+                    const { checked } = event.currentTarget;
+                    setDraft((current) => ({ ...current, pinned: checked }));
+                  }}
+                />
+                Pin to the top
+              </label>
+              <Input
+                label="Clear it after (optional)"
+                type="date"
+                value={draft.expiresAt}
+                onChange={(event) => {
+                const { value } = event.currentTarget;
+                setDraft((current) => ({ ...current, expiresAt: value }));
+              }}
+              />
+            </div>
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Posting…' : 'Post notice'}
+            </Button>
+          </form>
+        </Card>
+      ) : null}
+
+      {loading ? (
+        <Card><Spinner /></Card>
+      ) : notices.length === 0 ? (
+        <EmptyState
+          title="Nothing on the board"
+          description={canPost ? 'Post the first notice — it shows up for everyone with Staff access.' : 'Managers will post here when there is something to say.'}
+        />
+      ) : (
+        <div className="notice-list">
+          {notices.map((notice) => (
+            <article key={notice.id} className={`notice ${notice.pinned ? 'is-pinned' : ''}`}>
+              <header className="notice-head">
+                <h3>{notice.title}</h3>
+                {notice.pinned ? <Badge tone="positive">Pinned</Badge> : null}
+              </header>
+              {/* Notices are typed as plain text with line breaks — respecting
+                  them is the difference between a list and a wall of words. */}
+              <p className="notice-body">{notice.body}</p>
+              <footer className="notice-meta">
+                <span>
+                  {notice.createdByName || 'ALMA'} · {formatDateTime(notice.createdAt)}
+                  {notice.expiresAt ? ` · clears ${new Date(notice.expiresAt).toLocaleDateString()}` : ''}
+                </span>
+                {canPost ? (
+                  <span className="notice-actions">
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void mutate(notice.id, { method: 'PATCH', body: JSON.stringify({ pinned: !notice.pinned }) })}
+                    >
+                      {notice.pinned ? 'Unpin' : 'Pin'}
+                    </button>
+                    <button
+                      type="button"
+                      className="is-destructive"
+                      disabled={saving}
+                      onClick={() => {
+                        if (window.confirm(`Remove "${notice.title}" from the board?`)) {
+                          void mutate(notice.id, { method: 'DELETE' });
+                        }
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </span>
+                ) : null}
+              </footer>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {pinned.length > 3 ? (
+        <p className="subtle">
+          {pinned.length} notices are pinned. A board where everything is pinned reads the same as one where nothing is.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Report a problem, from the floor.
+ *
+ * The full issue form lives in the compliance app and asks for severity,
+ * category, area, assignee, due date and resolution notes — right for a
+ * manager triaging a list, wrong for somebody standing in front of a broken
+ * fridge with one hand free. This asks what only they can answer and lets the
+ * area rules pick the assignee.
+ */
+type StaffChecklistItem = {
+  id: string;
+  label: string;
+  description: string | null;
+  position: number;
+  result: 'PENDING' | 'PASS' | 'FAIL' | 'NA';
+  notes: string | null;
+};
+
+type StaffChecklistRun = {
+  id: string;
+  status: string;
+  runDate: string;
+  area: string | null;
+  template: { id: string; name: string };
+  items: StaffChecklistItem[];
+};
+
+/**
+ * Today's checks, done from the floor.
+ *
+ * The scheduler raises a run from every due template at 04:30, so by the time
+ * someone opens the venue there are ten waiting. Until now the only place to
+ * complete one was the compliance site on a laptop, which is not where opening
+ * checks happen.
+ *
+ * A failed item is the interesting one: it offers to raise an issue there and
+ * then, because the alternative is somebody meaning to report it later and not.
+ */
+type FridgeAsset = {
+  id: string;
+  name: string;
+  venue: string | null;
+  area: string | null;
+  assetType: string;
+  minTempC: number;
+  maxTempC: number;
+  integrationProvider: string | null;
+  lastReadingAt: string | null;
+  logs: Array<{ id: string; temperatureC: number; recordedAt: string; source: string | null }>;
+};
+
+/**
+ * Fridge temperatures, logged from the floor.
+ *
+ * Most fridges have a Govee sensor reporting hourly, but not all of them do,
+ * and a sensor that has gone quiet still needs a reading in the book. This is
+ * the manual path: what each one is sitting at, and a way to write down what
+ * the probe says.
+ *
+ * Out of range asks what was done about it, because a temperature log with no
+ * corrective action is a record of a problem nobody addressed.
+ */
+/**
+ * Hands off to the stocktake counting screen, already signed in.
+ *
+ * Counting lives in the stock app and is 2,000 lines of screen that was tuned
+ * for exactly this job earlier — a second, thinner copy here would be a worse
+ * version of a good thing, and two places to fix every counting bug. What was
+ * actually missing is that reaching it meant signing in again.
+ *
+ * The suite handoff mints a short-lived token, so the tap lands on the count
+ * with a live session. When the native shell arrives this becomes a webview
+ * inside the same app and the seam disappears entirely.
+ */
+function StocktakeHandoffPage() {
+  const [failed, setFailed] = useState(false);
+  const target = `${STOCK_WEB_URL.replace(/\/+$/, '')}/`;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const href = await createSuiteHandoffUrl(target);
+        if (!cancelled) window.location.href = href;
+      } catch {
+        // Without a handoff the plain link still works — it just asks them to
+        // sign in, which beats a dead end.
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [target]);
+
+  return (
+    <div className="page-stack">
+      <PageHeader eyebrow="Stock" title="Opening the count" description="Taking you to the stocktake screen." />
+      <Card>
+        {failed ? (
+          <>
+            <p className="subtle">Couldn't sign you in automatically.</p>
+            <Button type="button" onClick={() => window.location.assign(target)}>Open stocktake</Button>
+          </>
+        ) : (
+          <Spinner />
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function TemperaturesPage() {
+  const { user } = useAuth();
+  const [assets, setAssets] = useState<FridgeAsset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [reading, setReading] = useState('');
+  const [action, setAction] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setAssets(await api<FridgeAsset[]>('/api/temperatures/assets'));
+      setMessage(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load the fridges.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const parsed = Number(reading.replace(/[^0-9.-]/g, ''));
+  const openAsset = assets.find((asset) => asset.id === openId) ?? null;
+  // Whether the number being typed is already outside the safe band — asked
+  // for before saving, not after, so the person is still standing there.
+  const outOfRange =
+    openAsset && Number.isFinite(parsed) && reading.trim() !== ''
+      ? parsed < openAsset.minTempC || parsed > openAsset.maxTempC
+      : false;
+
+  async function saveReading() {
+    if (!openAsset || !Number.isFinite(parsed) || reading.trim() === '' || saving) return;
+    if (outOfRange && !action.trim()) return;
+    setSaving(true);
+    try {
+      await api(`/api/temperatures/assets/${openAsset.id}/logs`, {
+        method: 'POST',
+        body: JSON.stringify({
+          temperatureC: parsed,
+          correctiveAction: action.trim(),
+          recordedBy: user ? `${user.firstName} ${user.lastName}`.trim() : ''
+        })
+      });
+      setOpenId(null);
+      setReading('');
+      setAction('');
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'That reading did not save.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Food safety"
+        title="Fridge temperatures"
+        description="Sensored fridges report themselves. The rest need a probe reading, and so does any sensor that has gone quiet."
+      />
+      {message ? <p className="error-text">{message}</p> : null}
+
+      {loading ? (
+        <Card><Spinner /></Card>
+      ) : (
+        <div className="fridge-list">
+          {assets.map((asset) => {
+            const latest = asset.logs[0];
+            const inRange = latest ? latest.temperatureC >= asset.minTempC && latest.temperatureC <= asset.maxTempC : null;
+            const stale =
+              !asset.lastReadingAt || Date.now() - new Date(asset.lastReadingAt).getTime() > 6 * 3600_000;
+            return (
+              <article key={asset.id} className={`fridge ${inRange === false ? 'is-out' : ''}`}>
+                <div className="fridge-head">
+                  <div className="fridge-text">
+                    <strong>{asset.name.trim()}</strong>
+                    <small>{[asset.area, asset.venue].filter(Boolean).join(' · ') || asset.assetType}</small>
+                  </div>
+                  <div className="fridge-reading">
+                    {latest ? (
+                      <>
+                        <span className={inRange ? 'is-ok' : 'is-bad'}>{latest.temperatureC.toFixed(1)}°</span>
+                        <small>{new Date(latest.recordedAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}</small>
+                      </>
+                    ) : (
+                      <span className="is-none">—</span>
+                    )}
+                  </div>
+                </div>
+                <div className="fridge-meta">
+                  <span>Safe {asset.minTempC}° to {asset.maxTempC}°</span>
+                  {/* A sensor that stopped reporting looks identical to a cold
+                      fridge unless you say so. */}
+                  {asset.integrationProvider && stale ? <Badge tone="warning">Sensor quiet</Badge> : null}
+                  {!asset.integrationProvider ? <Badge tone="muted">Manual only</Badge> : null}
+                </div>
+
+                {openId === asset.id ? (
+                  <div className="fridge-form">
+                    <Input
+                      label="What does the probe say?"
+                      inputMode="decimal"
+                      value={reading}
+                      onChange={(event) => {
+                        const { value } = event.currentTarget;
+                        setReading(value);
+                      }}
+                      placeholder="3.5"
+                    />
+                    {outOfRange ? (
+                      <>
+                        <p className="fridge-warning">
+                          That's outside {asset.minTempC}°–{asset.maxTempC}°. What did you do about it?
+                        </p>
+                        <Textarea
+                          label="What you did"
+                          rows={2}
+                          value={action}
+                          onChange={(event) => {
+                            const { value } = event.currentTarget;
+                            setAction(value);
+                          }}
+                          placeholder="Moved stock to the walk-in, called the fridge tech."
+                        />
+                      </>
+                    ) : null}
+                    <div className="fridge-form-actions">
+                      <Button
+                        type="button"
+                        disabled={saving || reading.trim() === '' || !Number.isFinite(parsed) || (outOfRange && !action.trim())}
+                        onClick={() => void saveReading()}
+                      >
+                        {saving ? 'Saving…' : 'Log it'}
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={() => { setOpenId(null); setReading(''); setAction(''); }}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button type="button" variant="secondary" onClick={() => { setOpenId(asset.id); setReading(''); setAction(''); }}>
+                    Log a reading
+                  </Button>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TodayChecksPage() {
+  const [runs, setRuns] = useState<StaffChecklistRun[]>([]);
+  const [openRunId, setOpenRunId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [failNoteFor, setFailNoteFor] = useState<string | null>(null);
+  const [failNote, setFailNote] = useState('');
+  const [raiseIssue, setRaiseIssue] = useState(true);
+
+  const loadRuns = useCallback(async () => {
+    setLoading(true);
+    try {
+      // ?today=1 rather than sending our own date: the phone's toISOString()
+      // gives the UTC day, which through a Sydney morning is yesterday — the
+      // board would read empty with ten checks sitting on it.
+      setRuns(await api<StaffChecklistRun[]>('/api/checklists/runs?today=1&status=OPEN'));
+      setMessage(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load today’s checks.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRuns();
+  }, [loadRuns]);
+
+  async function setResult(
+    run: StaffChecklistRun,
+    item: StaffChecklistItem,
+    result: StaffChecklistItem['result'],
+    options: { notes?: string; createIssue?: boolean } = {}
+  ) {
+    setSavingItemId(item.id);
+    try {
+      await api(`/api/checklists/runs/${run.id}/items/${item.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          result,
+          notes: options.notes ?? item.notes ?? '',
+          createIssue: options.createIssue ?? false,
+          issueTitle: options.createIssue ? `${item.label} — ${run.template.name}` : '',
+          issueCategory: 'Maintenance',
+          issueSeverity: 'MEDIUM'
+        })
+      });
+      // Update in place. Reloading the whole list would scroll a half-finished
+      // checklist back to the top, which is maddening halfway down sixteen items.
+      setRuns((current) =>
+        current.map((entry) =>
+          entry.id !== run.id
+            ? entry
+            : {
+                ...entry,
+                items: entry.items.map((existing) =>
+                  existing.id === item.id ? { ...existing, result, notes: options.notes ?? existing.notes } : existing
+                )
+              }
+        )
+      );
+      setMessage(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'That did not save. Try again.');
+    } finally {
+      setSavingItemId(null);
+      setFailNoteFor(null);
+      setFailNote('');
+      setRaiseIssue(true);
+    }
+  }
+
+  const openRun = runs.find((run) => run.id === openRunId) ?? null;
+
+  if (openRun) {
+    const done = openRun.items.filter((item) => item.result !== 'PENDING').length;
+    return (
+      <div className="page-stack">
+        <PageHeader
+          eyebrow={openRun.area ?? 'Checks'}
+          title={openRun.template.name}
+          description={`${done} of ${openRun.items.length} done`}
+          actions={<Button type="button" variant="secondary" onClick={() => setOpenRunId(null)}>Back</Button>}
+        />
+        {message ? <p className="error-text">{message}</p> : null}
+        <div className="check-list">
+          {openRun.items.map((item) => (
+            <article key={item.id} className={`check-item is-${item.result.toLowerCase()}`}>
+              <div className="check-item-text">
+                <strong>{item.label}</strong>
+                {item.description ? <span>{item.description}</span> : null}
+                {item.notes ? <em>{item.notes}</em> : null}
+              </div>
+              {failNoteFor === item.id ? (
+                <div className="check-fail-form">
+                  <Textarea
+                    label="What's wrong?"
+                    rows={2}
+                    value={failNote}
+                    onChange={(event) => {
+                      const { value } = event.currentTarget;
+                      setFailNote(value);
+                    }}
+                  />
+                  <label className="check-fail-raise">
+                    <input
+                      type="checkbox"
+                      checked={raiseIssue}
+                      onChange={(event) => {
+                        const { checked } = event.currentTarget;
+                        setRaiseIssue(checked);
+                      }}
+                    />
+                    Report this so someone fixes it
+                  </label>
+                  <div className="check-fail-actions">
+                    <Button
+                      type="button"
+                      disabled={savingItemId === item.id}
+                      onClick={() => void setResult(openRun, item, 'FAIL', { notes: failNote, createIssue: raiseIssue })}
+                    >
+                      {savingItemId === item.id ? 'Saving…' : 'Save'}
+                    </Button>
+                    <Button type="button" variant="secondary" onClick={() => { setFailNoteFor(null); setFailNote(''); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="check-item-actions">
+                  <button
+                    type="button"
+                    className={item.result === 'PASS' ? 'is-on is-pass' : ''}
+                    disabled={savingItemId === item.id}
+                    onClick={() => void setResult(openRun, item, 'PASS')}
+                  >
+                    OK
+                  </button>
+                  <button
+                    type="button"
+                    className={item.result === 'FAIL' ? 'is-on is-fail' : ''}
+                    disabled={savingItemId === item.id}
+                    onClick={() => { setFailNoteFor(item.id); setFailNote(item.notes ?? ''); }}
+                  >
+                    Not OK
+                  </button>
+                  <button
+                    type="button"
+                    className={item.result === 'NA' ? 'is-on' : ''}
+                    disabled={savingItemId === item.id}
+                    onClick={() => void setResult(openRun, item, 'NA')}
+                  >
+                    N/A
+                  </button>
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Today"
+        title="Checks to run"
+        description="Raised automatically each morning. Anything not done by close shows on the manager's readiness board."
+      />
+      {message ? <p className="error-text">{message}</p> : null}
+      {loading ? (
+        <Card><Spinner /></Card>
+      ) : runs.length === 0 ? (
+        <EmptyState title="Nothing outstanding" description="Every check raised for today has been completed." />
+      ) : (
+        <div className="check-runs">
+          {runs.map((run) => {
+            const done = run.items.filter((item) => item.result !== 'PENDING').length;
+            const failed = run.items.filter((item) => item.result === 'FAIL').length;
+            return (
+              <button key={run.id} type="button" className="check-run" onClick={() => setOpenRunId(run.id)}>
+                <span className="check-run-text">
+                  <strong>{run.template.name}</strong>
+                  <small>{run.area ?? 'Whole venue'}</small>
+                </span>
+                <span className="check-run-progress">
+                  <Badge tone={done === run.items.length ? 'positive' : failed ? 'warning' : 'muted'}>
+                    {done}/{run.items.length}
+                  </Badge>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReportIssuePage() {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [severity, setSeverity] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'>('MEDIUM');
+  const [area, setArea] = useState('');
+  const [category, setCategory] = useState('');
+  const [areas, setAreas] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [sent, setSent] = useState<{ title: string } | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Both lists are admin-managed and small. If either call fails the form
+    // still works — area and category simply become free text.
+    void Promise.all([
+      api<string[]>('/api/issues/areas').catch(() => []),
+      api<string[]>('/api/issues/categories').catch(() => [])
+    ]).then(([areaNames, categoryNames]) => {
+      setAreas(areaNames);
+      setCategories(categoryNames);
+      setCategory((current) => current || categoryNames[0] || 'Maintenance');
+    });
+  }, []);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (title.trim().length < 3 || description.trim().length < 3 || saving) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api('/api/issues', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim(),
+          severity,
+          category: category.trim() || 'Maintenance',
+          area: area.trim(),
+          status: 'OPEN'
+        })
+      });
+      setSent({ title: title.trim() });
+      setTitle('');
+      setDescription('');
+      setSeverity('MEDIUM');
+      setArea('');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not send that. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (sent) {
+    return (
+      <div className="page-stack">
+        <PageHeader eyebrow="Reported" title="Thanks — that's logged" description={`"${sent.title}" has gone to whoever looks after that area.`} />
+        <Card>
+          <p className="subtle">You don't need to do anything else. If it's urgent as well as logged, tell a manager on shift.</p>
+          <Button type="button" onClick={() => setSent(null)}>Report another</Button>
+        </Card>
+        <MyReportedIssues />
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Report"
+        title="Something needs fixing"
+        description="Broken, unsafe, out of stock, not right — log it here and it reaches the person who owns that area."
+      />
+
+      {message ? <p className="error-text">{message}</p> : null}
+
+      <Card>
+        <form className="issue-form" onSubmit={submit}>
+          <Input
+            label="What's wrong?"
+            value={title}
+            onChange={(event) => {
+              const { value } = event.currentTarget;
+              setTitle(value);
+            }}
+            placeholder="Bar fridge door won't seal"
+            required
+          />
+          <Textarea
+            label="Anything else worth knowing"
+            rows={3}
+            value={description}
+            onChange={(event) => {
+              const { value } = event.currentTarget;
+              setDescription(value);
+            }}
+            placeholder="Where it is, when it started, what you've already tried."
+            required
+          />
+
+          {/* Severity as buttons, not a dropdown — it is the one field that
+              changes how fast this gets looked at, and it should be a single
+              tap rather than a picker. */}
+          <div className="issue-severity">
+            <span className="issue-field-label">How bad is it?</span>
+            <div className="issue-severity-options">
+              {([
+                { id: 'LOW', label: 'Minor', hint: 'Annoying' },
+                { id: 'MEDIUM', label: 'Should fix', hint: 'Soon' },
+                { id: 'HIGH', label: 'Urgent', hint: 'Today' },
+                { id: 'CRITICAL', label: 'Stop work', hint: 'Unsafe' }
+              ] as const).map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={severity === option.id ? 'is-on' : ''}
+                  onClick={() => setSeverity(option.id)}
+                >
+                  <strong>{option.label}</strong>
+                  <small>{option.hint}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="issue-form-row">
+            <Select
+              label="Where"
+              value={area}
+              onChange={(event) => setArea(event.currentTarget.value)}
+              options={[{ value: '', label: 'Not sure' }, ...areas.map((name) => ({ value: name, label: name }))]}
+            />
+            <Select
+              label="What kind"
+              value={category}
+              onChange={(event) => setCategory(event.currentTarget.value)}
+              options={
+                categories.length
+                  ? categories.map((name) => ({ value: name, label: name }))
+                  : [{ value: 'Maintenance', label: 'Maintenance' }]
+              }
+            />
+          </div>
+
+          <Button type="submit" disabled={saving || title.trim().length < 3 || description.trim().length < 3}>
+            {saving ? 'Sending…' : 'Report it'}
+          </Button>
+        </form>
+      </Card>
+
+      <MyReportedIssues />
+    </div>
+  );
+}
+
+/**
+ * What you've reported, and what happened to it.
+ *
+ * Without this, reporting a fault is shouting into a hole — you never learn
+ * whether anyone picked it up, which is exactly how people stop bothering.
+ */
+function MyReportedIssues() {
+  const [issues, setIssues] = useState<Array<{
+    id: string;
+    title: string;
+    status: string;
+    severity: string;
+    assignee: string | null;
+    createdAt: string;
+  }> | null>(null);
+
+  useEffect(() => {
+    // A failure here must not take the report form down with it.
+    void api<typeof issues>('/api/issues/mine?limit=20')
+      .then((rows) => setIssues(rows ?? []))
+      .catch(() => setIssues([]));
+  }, []);
+
+  if (!issues || issues.length === 0) return null;
+
+  const open = issues.filter((issue) => !['RESOLVED', 'CLOSED'].includes(issue.status));
+
+  return (
+    <Card title="What you've reported" subtitle={open.length ? `${open.length} still open` : 'All sorted'}>
+      <div className="my-issues">
+        {issues.map((issue) => {
+          const done = ['RESOLVED', 'CLOSED'].includes(issue.status);
+          return (
+            <div key={issue.id} className={`my-issue ${done ? 'is-done' : ''}`}>
+              <div className="my-issue-text">
+                <strong>{issue.title}</strong>
+                <small>
+                  {new Date(issue.createdAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                  {issue.assignee ? ` · with ${issue.assignee}` : ' · not picked up yet'}
+                </small>
+              </div>
+              <Badge tone={done ? 'positive' : issue.status === 'IN_PROGRESS' ? 'info' : 'muted'}>
+                {done ? 'Done' : issue.status.replace('_', ' ').toLowerCase()}
+              </Badge>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function StaffMemberCompliancePage() {
   const [home, setHome] = useState<StaffDailyHomePayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2668,6 +4291,129 @@ function StaffMemberCompliancePage() {
             </div>
           ))}
         </div>
+      </Card>
+    </div>
+  );
+}
+
+type HandbookDocumentSummary = {
+  id: string;
+  title: string;
+  description: string | null;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  venue: string | null;
+  sendOnOnboarding: boolean;
+};
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * The handbook, on the phone in their pocket.
+ *
+ * New starters are emailed the policies with their invite, and an email from
+ * six weeks ago is not where anybody looks for the allergen matrix mid-service.
+ * This is the same set of documents, scoped to their venue, always to hand.
+ */
+function StaffHandbookPage() {
+  const [documents, setDocuments] = useState<HandbookDocumentSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setDocuments(await api<HandbookDocumentSummary[]>('/api/handbook-documents'));
+      setMessage(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load the handbook.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function openDocument(doc: HandbookDocumentSummary) {
+    setOpeningId(doc.id);
+    setMessage(null);
+    try {
+      const blob = await apiBlob(`/api/handbook-documents/${doc.id}/file`);
+      const url = URL.createObjectURL(blob);
+      const opened = window.open(url, '_blank', 'noopener');
+      if (!opened) {
+        // Popup blocked, which is the norm inside a webview — download instead.
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = doc.fileName;
+        link.click();
+      }
+      // Revoked late: revoking straight away closes the tab that just opened.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not open that document.');
+    } finally {
+      setOpeningId(null);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Handbook"
+        title="Policies & guides"
+        description="The documents you were sent when you joined, plus anything added since."
+        actions={
+          <Button type="button" variant="secondary" disabled={loading} onClick={() => void load()}>
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        }
+      />
+
+      {message ? <p className="error-text">{message}</p> : null}
+
+      <Card title="Documents" subtitle="Tap to open. PDFs open in your phone's viewer.">
+        {loading ? <Spinner label="Loading the handbook…" /> : null}
+        {!loading && documents.length === 0 ? (
+          <EmptyState
+            title="Nothing here yet"
+            description="When a manager adds a policy or a guide, it will appear here and go out with new starter invites."
+          />
+        ) : null}
+        {documents.length > 0 ? (
+          <div className="staff-expiry-list">
+            {documents.map((doc) => (
+              <div key={doc.id} className="staff-expiry-row">
+                <span>
+                  <strong>{doc.title}</strong>
+                  {doc.description ? <span className="subtle">{doc.description}</span> : null}
+                  <span className="subtle">
+                    {doc.mimeType.startsWith('image/') ? 'Image' : 'PDF'} · {formatFileSize(doc.sizeBytes)}
+                    {doc.venue ? ` · ${doc.venue}` : ''}
+                  </span>
+                </span>
+                <span className="staff-row-actions">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={openingId === doc.id}
+                    onClick={() => void openDocument(doc)}
+                  >
+                    {openingId === doc.id ? 'Opening…' : 'Open'}
+                  </Button>
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </Card>
     </div>
   );
@@ -3568,6 +5314,18 @@ function StaffProfileWorkspacePage({
   canOpenPayChanges: boolean;
 }) {
   const { staffId, section } = useParams();
+  // The list response no longer carries every profile's shifts (it was 68% of
+  // that payload). A profile page wants them, so it asks for its own member.
+  const [memberDetail, setMemberDetail] = useState<StaffProfile | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setMemberDetail(null);
+    if (!staffId) return;
+    void api<StaffProfile>(`/api/staff/${staffId}`)
+      .then((full) => { if (!cancelled) setMemberDetail(full); })
+      .catch(() => { if (!cancelled) setMemberDetail(null); });
+    return () => { cancelled = true; };
+  }, [staffId]);
   const navigate = useNavigate();
   const { user } = useAuth();
   const activeSection = normaliseStaffProfileSection(section);
@@ -3635,7 +5393,7 @@ function StaffProfileWorkspacePage({
   });
   const rightToWorkRecords = profileHrRecords.filter((record) => record.recordType === 'RIGHT_TO_WORK' && canOpenRightToWork);
   const payRecords = profileHrRecords.filter((record) => record.recordType === 'PAY_CHANGE' && canOpenPayChanges);
-  const recentShifts = [...member.rosterShifts]
+  const recentShifts = [...(memberDetail?.rosterShifts ?? member.rosterShifts ?? [])]
     .sort((left, right) => new Date(right.startsAt).getTime() - new Date(left.startsAt).getTime())
     .slice(0, 6);
   const sectionTitle = STAFF_PROFILE_SECTIONS.find((item) => item.id === activeSection)?.label ?? 'Personal';
@@ -4556,7 +6314,7 @@ function StaffProfileWorkspacePage({
           <div className="stats-grid staff-profile-stats">
             <StatCard label="Documents" value={member.records.length + visibleHrRecords.length} hint={`${attentionDocuments} need attention`} />
             <StatCard label="Training" value={member.trainingRecords.length} hint={`Level ${member.trainingLevel ?? 0}`} />
-            <StatCard label="Shifts" value={member.rosterShifts.length} hint="Roster records" />
+            <StatCard label="Shifts" value={member._count?.rosterShifts ?? memberDetail?.rosterShifts?.length ?? 0} hint="Roster records" />
             <StatCard label="PIN" value={member.pinUpdatedAt ? 'Set' : 'Not set'} hint={member.pinUpdatedAt ? profileDate(member.pinUpdatedAt) : 'Staff iPad access'} />
           </div>
           {renderSection()}
@@ -6793,11 +8551,13 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
 
 function AdminPage({
   staff,
+  roster,
   selectedId,
   setSelectedId,
   reload
 }: {
   staff: StaffProfile[];
+  roster: RosterShift[];
   selectedId: string;
   setSelectedId: (id: string) => void;
   reload: () => Promise<void>;
@@ -6857,9 +8617,12 @@ function AdminPage({
     () => new Set(closedDaysByScope[rosterSettingsScopeKey] ?? []),
     [closedDaysByScope, rosterSettingsScopeKey]
   );
+  // Areas come from the roster itself. They used to be read off a copy of the
+  // shifts embedded in every staff profile; with that copy gone this reads the
+  // real roster, which is the same data one step closer to source.
   const rosterAreaSource = useMemo(
-    () => staff.flatMap((member) => (member.rosterShifts ?? []).map((shift) => shift.area || 'Shift')),
-    [staff]
+    () => roster.map((shift) => shift.area || 'Shift'),
+    [roster]
   );
   const adminRosterAreas = useMemo(
     () => mergeRosterAreas(rosterAreaSettings, rosterAreaSource),
@@ -9405,6 +11168,87 @@ function RosterPage({
   } | null>(null);
   const [mobileSelectedDay, setMobileSelectedDay] = useState(() => toDateInput(new Date()));
   const isMobileRoster = useRosterMobileMode();
+
+  // ── Optimistic board state ────────────────────────────────────────────────
+  //
+  // The board owns its shifts. Every edit used to POST and then refetch the
+  // whole staff list AND the whole roster (~335 KB here, far more on a full
+  // team), with a global loading flag that blanked the board mid-edit. Placing
+  // a shift now paints immediately and reconciles with the server's row when
+  // it lands; if the request fails the board snaps back and says why.
+  const [shifts, setShifts] = useState<RosterShift[]>(roster);
+  // Times for click-to-add. They follow the last shift placed or edited, so
+  // rostering a row of identical shifts is a row of single clicks.
+  const [quickTimes, setQuickTimes] = useState({ start: '10:00', end: '16:00', breakMinutes: '30' });
+  // Stated availability, loaded with the board so it is visible while placing
+  // shifts rather than discovered after publishing.
+  const [availabilityRules, setAvailabilityRules] = useState<Array<AvailabilityRule & { staffProfileId: string }>>([]);
+  const [unavailability, setUnavailability] = useState<Array<{ staffProfileId: string; startsAt: string; endsAt: string; reason: string | null }>>([]);
+  // Fatigue is computed by the API, which can see the shifts either side of the
+  // displayed week. A run of days or a short rest gap straddles the boundary,
+  // so the board cannot work it out from what it holds.
+  const [fatigue, setFatigue] = useState<Array<{ shiftId: string; staffProfileId: string; warnings: FatigueWarning[] }>>([]);
+  // One level of undo for the last board action. Quick-add makes a stray click
+  // cheap to make, so it has to be cheap to take back.
+  const [lastUndo, setLastUndo] = useState<{ label: string; run: () => Promise<void> } | null>(null);
+  const [boardBusy, setBoardBusy] = useState(false);
+
+  /** Refresh just the board, without the global loading flash. */
+  const refreshBoard = useCallback(async (start: Date, end: Date) => {
+    const query = `?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
+    const board = await api<{
+      shifts: RosterShift[];
+      availability?: Array<AvailabilityRule & { staffProfileId: string }>;
+      unavailability?: Array<{ staffProfileId: string; startsAt: string; endsAt: string; reason: string | null }>;
+      fatigue?: Array<{ shiftId: string; staffProfileId: string; warnings: FatigueWarning[] }>;
+    }>(`/api/staff/roster-board${query}`);
+    setShifts(board.shifts);
+    setAvailabilityRules(board.availability ?? []);
+    setUnavailability(board.unavailability ?? []);
+    setFatigue(board.fatigue ?? []);
+  }, []);
+
+  /**
+   * Apply a change immediately, then run the server call.
+   *
+   * On failure the previous shifts are restored, so a rejected save can never
+   * leave the board showing a shift that does not exist. `settle` folds the
+   * server's authoritative row back in — ids, computed fields and all.
+   */
+  const optimistic = useCallback(
+    async <T,>(
+      apply: (current: RosterShift[]) => RosterShift[],
+      request: () => Promise<T>,
+      settle?: (result: T, current: RosterShift[]) => RosterShift[],
+    ): Promise<T | null> => {
+      let snapshot: RosterShift[] = [];
+      setShifts((current) => { snapshot = current; return apply(current); });
+      setBoardBusy(true);
+      try {
+        const result = await request();
+        if (settle) setShifts((current) => settle(result, current));
+        return result;
+      } catch (error) {
+        setShifts(snapshot);
+        // Clear the target so the failure lands in the board's own message
+        // area. Targeted messages only render beside the control that set
+        // them, and a rolled-back edit must never revert silently — the shift
+        // disappearing and reappearing with no explanation is worse than the
+        // slow version it replaced.
+        setMessageTarget(null);
+        const reason = error instanceof Error ? error.message.replace(/\.\s*$/, '') : '';
+        setMessage(
+          reason
+            ? `Could not save that change — ${reason}. The board has been put back as it was.`
+            : 'Could not save that change. The board has been put back as it was.'
+        );
+        return null;
+      } finally {
+        setBoardBusy(false);
+      }
+    },
+    [],
+  );
   const days = useMemo(() => weekDays(weekStart, boardDays), [boardDays, weekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, boardDays), [boardDays, weekStart]);
   const venues = useMemo(() => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]), [staff]);
@@ -9420,10 +11264,34 @@ function RosterPage({
   );
   // O(1) pay-rate lookups — avoids O(N) staff.find() inside every reduce/map
   const staffById = useMemo(() => new Map(staff.map((m) => [m.id, m])), [staff]);
-  const venueRoster = useMemo(() => roster
+
+  /**
+   * Availability verdict for a proposed shift.
+   *
+   * Deliberately advisory: a manager who has spoken to someone must still be
+   * able to place the shift. Leave clashes and double-bookings stay hard
+   * blocks; stated availability is a warning, because it goes stale and the
+   * manager is the one holding the conversation.
+   */
+  const availabilityFor = useCallback(
+    (memberId: string, startsAt: Date, endsAt: Date) => checkAvailability(
+      startsAt,
+      endsAt,
+      availabilityRules.filter((rule) => rule.staffProfileId === memberId),
+      unavailability
+        .filter((block) => block.staffProfileId === memberId)
+        .map((block) => ({ startsAt: new Date(block.startsAt), endsAt: new Date(block.endsAt), reason: block.reason }))
+    ),
+    [availabilityRules, unavailability]
+  );
+  const fatigueByShift = useMemo(
+    () => new Map(fatigue.map((entry) => [entry.shiftId, entry.warnings])),
+    [fatigue]
+  );
+  const venueRoster = useMemo(() => shifts
     .filter((shift) => venueFilter === 'all' || shift.venue === venueFilter || shift.staffProfile?.venue === venueFilter)
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
-    [roster, venueFilter]
+    [shifts, venueFilter]
   );
   const visibleRoster = useMemo(() => venueRoster
     .filter((shift) => statusFilter === 'all' || shift.status === statusFilter),
@@ -9440,7 +11308,7 @@ function RosterPage({
     return rates.length ? Math.round(rates.reduce((sum, rate) => sum + rate, 0) / rates.length) : 3200;
   }, [activeStaff]);
   const rosterCostCents = useMemo(() => visibleRoster.reduce((sum, shift) => {
-    const member = staffById.get(shift.staffProfileId);
+    const member = shift.staffProfileId ? staffById.get(shift.staffProfileId) : undefined;
     // Use the staffer's effective hourly cost; fall back to the roster average
     // when they have no usable rate (or it was clamped away as bad data).
     const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
@@ -9467,18 +11335,59 @@ function RosterPage({
     (day: Date) => rosterClosedVenueScope.filter((venue) => isVenueClosedOnDate(venue, day)),
     [isVenueClosedOnDate, rosterClosedVenueScope]
   );
+  // Live forecast engine outlook (13 weeks from the current Monday). When a
+  // viewed day is inside the horizon, the engine's prediction replaces the
+  // legacy hardcoded historical table as the baseline; the static table stays
+  // as the fallback for past weeks and for when the fetch fails.
+  const [engineOutlook, setEngineOutlook] = useState<ForecastOutlookPayload | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void api<ForecastOutlookPayload>('/api/forecast/outlook?weeks=13')
+      .then((next) => {
+        if (!cancelled) setEngineOutlook(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const engineSalesByVenueDay = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const venueOutlook of engineOutlook?.venues ?? []) {
+      for (const day of venueOutlook.days) {
+        map.set(`${venueOutlook.venue}|${day.date}`, day.salesForecastCents);
+      }
+    }
+    return map;
+  }, [engineOutlook]);
+  const engineSalesCentsForDate = useCallback(
+    (venue: string, day: Date): number | null => {
+      const key = `${venue}|${toDateInput(day)}`;
+      return engineSalesByVenueDay.has(key) ? engineSalesByVenueDay.get(key)! : null;
+    },
+    [engineSalesByVenueDay]
+  );
+  // Engine first, hardcoded table as fallback — one place, used everywhere a
+  // baseline is read so the numbers can never disagree within the page.
+  const baselineSalesCentsForDate = useCallback(
+    (venue: string, day: Date): number => {
+      const engine = engineSalesCentsForDate(venue, day);
+      if (engine != null) return engine;
+      return Math.round(historicalSalesForDate(venue, day) * 100);
+    },
+    [engineSalesCentsForDate]
+  );
+
   const isDayClosedForCurrentView = useCallback(
     (day: Date) => rosterClosedVenueScope.length > 0 && rosterClosedVenueScope.every((venue) => isVenueClosedOnDate(venue, day)),
     [isVenueClosedOnDate, rosterClosedVenueScope]
   );
   const closedDayCount = useMemo(() => days.reduce((sum, day) => sum + closedVenuesForDay(day).length, 0), [closedVenuesForDay, days]);
   const historicalDailyForecast = useMemo(() => days.reduce((map, day) => {
-    const cents = Math.round(
-      forecastVenues.reduce((sum, venue) => sum + historicalSalesForDate(venue, day), 0) * 100
-    );
+    const cents = forecastVenues.reduce((sum, venue) => sum + baselineSalesCentsForDate(venue, day), 0);
     map[toDateInput(day)] = cents;
     return map;
-  }, {} as Record<string, number>), [days, forecastVenues]);
+  }, {} as Record<string, number>), [baselineSalesCentsForDate, days, forecastVenues]);
   const historicalForecastSalesCents = useMemo(() => Object.values(historicalDailyForecast).reduce((sum, cents) => sum + cents, 0), [historicalDailyForecast]);
   const forecastHasManualDailyInputs = useMemo(() => days.some((day) => parseMoneyCents(dailyForecastSales[toDateInput(day)] ?? '') > 0), [dailyForecastSales, days]);
   // Sum of MANUAL per-day forecast inputs only. Previously this fell
@@ -9515,7 +11424,7 @@ function RosterPage({
   const dailySummaries = useMemo(() => days.map((day) => {
     const shifts = visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), day));
     const plannedCostCents = shifts.reduce((sum, shift) => {
-      const member = staffById.get(shift.staffProfileId);
+      const member = shift.staffProfileId ? staffById.get(shift.staffProfileId) : undefined;
       const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
       return sum + Math.round(shiftHours(shift) * rateCents);
     }, 0);
@@ -9537,7 +11446,13 @@ function RosterPage({
   const mobileSelectedDate = useMemo(() => new Date(`${mobileSelectedDay}T00:00:00`), [mobileSelectedDay]);
   const mobileSelectedSummary = useMemo(() => dailySummaries.find((summary) => sameDay(summary.day, mobileSelectedDate)), [dailySummaries, mobileSelectedDate]);
   const mobileDayShifts = useMemo(() => visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), mobileSelectedDate)), [mobileSelectedDate, visibleRoster]);
-  const rowSearch = useMemo(() => search.trim().toLowerCase(), [search]);
+  // The input stays on `search` so typing is never laggy; the row rebuild —
+  // which filters and regroups every shift on the board — runs off the
+  // deferred copy and is allowed to fall a frame behind. Without this every
+  // keystroke recomputed the whole board synchronously before the character
+  // appeared.
+  const deferredSearch = useDeferredValue(search);
+  const rowSearch = useMemo(() => deferredSearch.trim().toLowerCase(), [deferredSearch]);
   const allRosterAreas = useMemo(
     () => mergeRosterAreas(rosterAreaSettings, visibleRoster.map((shift) => shift.area || 'Shift')),
     [rosterAreaSettings, visibleRoster]
@@ -9549,7 +11464,7 @@ function RosterPage({
     [visibleRoster]
   );
   const unallocatedShiftCount = useMemo(
-    () => visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length,
+    () => visibleRoster.filter(isOpenShift).length,
     [visibleRoster]
   );
   const hiddenAreaNames = useMemo(() => new Set(rosterAreaSettings.hidden.map(normaliseRosterAreaKey)), [rosterAreaSettings.hidden]);
@@ -9609,11 +11524,11 @@ function RosterPage({
     const shifts = visibleRoster.filter((shift) => shift.venue === venue || shift.staffProfile?.venue === venue);
     const plannedHours = shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
     const plannedCostCents = shifts.reduce((sum, shift) => {
-      const member = staffById.get(shift.staffProfileId);
+      const member = shift.staffProfileId ? staffById.get(shift.staffProfileId) : undefined;
       const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
       return sum + Math.round(shiftHours(shift) * rateCents);
     }, 0);
-    const historicalSalesCents = Math.round(days.reduce((sum, day) => sum + historicalSalesForDate(venue, day), 0) * 100);
+    const historicalSalesCents = days.reduce((sum, day) => sum + baselineSalesCentsForDate(venue, day), 0);
     const dayKeys = days.map((day) => toDateInput(day));
     const manualDailyCents = dayKeys.reduce((sum, key) => sum + parseMoneyCents(dailyForecastSales[key] ?? ''), 0);
     const selectedSalesCents =
@@ -9636,7 +11551,7 @@ function RosterPage({
     };
   }), [averageRateCents, dailyForecastSales, days, forecastSales, forecastVenues, staffById, targetWagePercent, venueFilter, visibleRoster]);
   const publishWarnings = useMemo(() => {
-    const unallocatedCount = visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length;
+    const unallocatedCount = visibleRoster.filter(isOpenShift).length;
     const noVenueCount = visibleRoster.filter((shift) => !shift.venue && !shift.staffProfile?.venue).length;
     const overlapCount = countRosterOverlaps(visibleRoster);
     return [
@@ -9703,7 +11618,7 @@ function RosterPage({
   const selectedShiftHours = shiftTimeRange(date, startTime, endTime);
   const shiftConflicts = useMemo(() => {
     if (!selectedShiftHours || !staffProfileId) return [];
-    return roster.filter((shift) => {
+    return shifts.filter((shift) => {
       if (shift.id === editingShift?.id) return false;
       if (shift.staffProfileId !== staffProfileId) return false;
       if (shift.status === 'CANCELLED') return false;
@@ -9714,7 +11629,7 @@ function RosterPage({
         new Date(shift.endsAt)
       );
     });
-  }, [editingShift?.id, roster, selectedShiftHours, staffProfileId]);
+  }, [editingShift?.id, shifts, selectedShiftHours, staffProfileId]);
   // Leave clashes — if the staff is on approved/pending leave during the
   // shift window, surface it so we can hard-block the save.
   const shiftLeaveClashes = useMemo(() => {
@@ -9798,9 +11713,29 @@ function RosterPage({
     if (!staffProfileId && activeStaff[0]) setStaffProfileId(activeStaff[0].id);
   }, [activeStaff, staffProfileId]);
 
+  // Seed from the parent's load, and whenever the parent genuinely refetches.
+  //
+  // The parent fetches the roster without a window, so its prop holds every
+  // shift it knows about. Taking it wholesale made every board aggregate —
+  // shift count, hours, labour cost, wage % against budget — sum months of
+  // roster while the header said one week, and put shifts from other weeks in
+  // the "needs filling" queue. Narrow it to the window on screen; the board
+  // fetch below then replaces it with the server's authoritative rows.
   useEffect(() => {
-    void reload(weekStart, weekEnd);
-  }, [reload, weekEnd, weekStart]);
+    setShifts(roster.filter((shift) => {
+      const startsAt = new Date(shift.startsAt);
+      return startsAt >= weekStart && startsAt < weekEnd;
+    }));
+  }, [roster, weekEnd, weekStart]);
+
+  // Changing week fetches the board for that window only. It used to refetch
+  // the entire staff list as well and raise the global loading flag, so paging
+  // between weeks blanked the screen for a payload the board never read.
+  useEffect(() => {
+    void refreshBoard(weekStart, weekEnd).catch(() => {
+      setMessage('Could not load that week. Check your connection and try again.');
+    });
+  }, [refreshBoard, weekEnd, weekStart]);
 
   // Pull leave overlapping the displayed roster window — PENDING and
   // APPROVED only, so cancelled/rejected leave doesn't ghost the cells.
@@ -9906,9 +11841,7 @@ function RosterPage({
   function applyHistoricalForecast() {
     setMessageTarget('forecast');
     const nextDailyForecast = days.reduce((draft, day) => {
-      const cents = Math.round(
-        forecastVenues.reduce((sum, venue) => sum + historicalSalesForDate(venue, day), 0) * 100
-      );
+      const cents = forecastVenues.reduce((sum, venue) => sum + baselineSalesCentsForDate(venue, day), 0);
       draft[toDateInput(day)] = cents > 0 ? String(Math.round(cents / 100)) : '';
       return draft;
     }, {} as Record<string, string>);
@@ -9929,8 +11862,12 @@ function RosterPage({
 
   async function saveShift() {
     setMessageTarget('shift-save');
-    const effectiveStaffProfileId = staffProfileId || activeStaff[0]?.id || '';
-    if (!effectiveStaffProfileId) {
+    // Editing a shift that is deliberately open must not quietly hand it to
+    // whoever happens to be first in the list. On an open shift, "nobody
+    // chosen" means it stays open — the manager has to pick someone on purpose.
+    const editingOpenShift = editingShift != null && editingShift.staffProfileId == null;
+    const effectiveStaffProfileId = staffProfileId || (editingOpenShift ? '' : activeStaff[0]?.id || '');
+    if (!effectiveStaffProfileId && !editingOpenShift) {
       setMessage('Choose a team member before adding the shift.');
       return;
     }
@@ -9963,22 +11900,44 @@ function RosterPage({
     setMessage(null);
     try {
       const member = staff.find((item) => item.id === effectiveStaffProfileId);
-      await api(editingShift ? `/api/staff/roster/${editingShift.id}` : '/api/staff/roster', {
-        method: editingShift ? 'PATCH' : 'POST',
-        body: JSON.stringify({
-          staffProfileId: effectiveStaffProfileId,
-          venue: shiftVenue || member?.venue || '',
-          area: area || 'Floor',
-          roleTitle: roleTitle || member?.roleTitle || '',
-          startsAt: range.startsAt.toISOString(),
-          endsAt: range.endsAt.toISOString(),
-          breakMinutes: Number(breakMinutes) || 0,
-          status: shiftStatus,
-          notes: shiftNotes.trim()
-        })
-      });
-      await reload(weekStart, weekEnd);
-      setMessage(editingShift ? 'Shift updated.' : 'Shift added to the draft roster.');
+      const body = {
+        // Empty means open: the API takes null and leaves the shift unfilled.
+        staffProfileId: effectiveStaffProfileId || null,
+        venue: shiftVenue || member?.venue || '',
+        area: area || 'Floor',
+        roleTitle: roleTitle || member?.roleTitle || '',
+        startsAt: range.startsAt.toISOString(),
+        endsAt: range.endsAt.toISOString(),
+        breakMinutes: Number(breakMinutes) || 0,
+        status: shiftStatus,
+        notes: shiftNotes.trim()
+      };
+      const editingId = editingShift?.id ?? null;
+      // Painted straight away under a temporary id, then swapped for the
+      // server's row. The temp id is only ever local, so a failed save leaves
+      // nothing behind.
+      const tempId = `pending-${Date.now()}`;
+      const draft: RosterShift = {
+        ...(editingShift ?? {}),
+        ...body,
+        id: editingId ?? tempId,
+        staffProfile: member
+          ? { id: member.id, firstName: member.firstName, lastName: member.lastName, roleTitle: member.roleTitle, venue: member.venue, employmentStatus: member.employmentStatus }
+          : editingShift?.staffProfile
+      } as RosterShift;
+
+      const saved = await optimistic(
+        (current) => (editingId ? current.map((s) => (s.id === editingId ? draft : s)) : [...current, draft]),
+        () => api<RosterShift>(editingId ? `/api/staff/roster/${editingId}` : '/api/staff/roster', {
+          method: editingId ? 'PATCH' : 'POST',
+          body: JSON.stringify(body)
+        }),
+        (result, current) => current.map((s) => (s.id === (editingId ?? tempId) ? { ...s, ...result } : s))
+      );
+      if (saved === null) return;
+
+      setQuickTimes({ start: startTime, end: endTime, breakMinutes: String(Number(breakMinutes) || 0) });
+      setMessage(editingId ? 'Shift updated.' : 'Shift added to the draft roster.');
       setEditingShift(null);
       closeShiftPanel();
       setRoleTitle('');
@@ -9994,7 +11953,7 @@ function RosterPage({
     setShiftContextMenu(null);
     setEditingShift(shift);
     openShiftPanel();
-    setStaffProfileId(shift.staffProfileId);
+    setStaffProfileId(shift.staffProfileId ?? '');
     setShiftVenue(shift.venue ?? shift.staffProfile?.venue ?? '');
     setDate(toDateInput(new Date(shift.startsAt)));
     setStartTime(toTimeInput(new Date(shift.startsAt)));
@@ -10015,12 +11974,41 @@ function RosterPage({
     setMessage(null);
     setMessageTarget('shift-delete');
     try {
-      await api(`/api/staff/roster/${shift.id}`, { method: 'DELETE' });
-      await reload(weekStart, weekEnd);
+      const removed = await optimistic(
+        (current) => current.filter((s) => s.id !== shift.id),
+        () => api(`/api/staff/roster/${shift.id}`, { method: 'DELETE' })
+      );
+      if (removed === null) return;
       if (editingShift?.id === shift.id) {
         closeShiftPanel();
       }
       setMessage('Shift deleted.');
+      setMessageTarget(null);
+      setLastUndo({
+        label: 'Undo delete',
+        run: async () => {
+          // Recreated rather than restored: the row is gone server-side, so
+          // this posts the same shift back and the board takes the new id.
+          const body = {
+            staffProfileId: shift.staffProfileId,
+            venue: shift.venue ?? '',
+            area: shift.area ?? 'Floor',
+            roleTitle: shift.roleTitle ?? '',
+            startsAt: shift.startsAt,
+            endsAt: shift.endsAt,
+            breakMinutes: shift.breakMinutes,
+            status: shift.status,
+            notes: shift.notes ?? ''
+          };
+          const tempId = `pending-${Date.now()}`;
+          await optimistic(
+            (current) => [...current, { ...shift, id: tempId } as RosterShift],
+            () => api<RosterShift>('/api/staff/roster', { method: 'POST', body: JSON.stringify(body) }),
+            (result, current) => current.map((s) => (s.id === tempId ? { ...s, ...result } : s))
+          );
+          setMessage('Shift restored.');
+        }
+      });
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not delete shift.');
     } finally {
@@ -10064,7 +12052,7 @@ function RosterPage({
       confirmMessage = `RESET ALL ROSTER DATA for ${venueLabel}? This permanently deletes every shift across every week. This cannot be undone.`;
       body = { start: weekStart.toISOString(), end: weekEnd.toISOString(), venue: venueParam, filter: 'reset-all' };
     } else if (scope === 'unallocated') {
-      scopeCount = visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length;
+      scopeCount = visibleRoster.filter(isOpenShift).length;
       confirmMessage = `Delete ${scopeCount} unallocated shift${scopeCount === 1 ? '' : 's'} for ${venueLabel} this week? This cannot be undone.`;
       body = { start: weekStart.toISOString(), end: weekEnd.toISOString(), venue: venueParam, filter: 'unallocated' };
     } else {
@@ -10092,7 +12080,7 @@ function RosterPage({
         method: 'POST',
         body: JSON.stringify(body)
       });
-      await reload(weekStart, weekEnd);
+      await refreshBoard(weekStart, weekEnd);
       setMessage(`Deleted ${deleted} shift${deleted === 1 ? '' : 's'}.`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not delete shifts.');
@@ -10144,7 +12132,7 @@ function RosterPage({
           }
         })
       });
-      await reload(weekStart, weekEnd);
+      await refreshBoard(weekStart, weekEnd);
       setPublishPreviewOpen(false);
       setMessage('Draft roster published.');
     } catch (err) {
@@ -10174,7 +12162,7 @@ function RosterPage({
           notes: shift.notes ?? ''
         })
       });
-      await reload(weekStart, weekEnd);
+      await refreshBoard(weekStart, weekEnd);
       setMessage('Shift copied as a draft.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not copy shift.');
@@ -10217,7 +12205,7 @@ function RosterPage({
       if (result.roster) parts.push(`${result.roster.shiftsCreated} shifts`);
       if (result.employees) parts.push(`${result.employees.created} new staff, ${result.employees.updated} updated`);
       if (result.documents) parts.push(`${result.documents.complianceCreated + result.documents.reviewsCreated} docs`);
-      await reload(weekStart, weekEnd);
+      await refreshBoard(weekStart, weekEnd);
       setMessage(`Deputy sync complete${parts.length ? ` — ${parts.join(', ')}` : ''}.`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not sync Deputy.');
@@ -10266,7 +12254,7 @@ function RosterPage({
           });
         })
       );
-      await reload(weekStart, weekEnd);
+      await refreshBoard(weekStart, weekEnd);
       setMessage(shiftsToCopy.length ? `Copied ${shiftsToCopy.length} shifts from last week.` : 'No uncopied shifts found last week.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not copy last week.');
@@ -10293,6 +12281,111 @@ function RosterPage({
       const next = new Set(prev);
       if (next.has(venue)) next.delete(venue); else next.add(venue);
       return next;
+    });
+  }
+
+  /**
+   * Click an empty cell, get a shift.
+   *
+   * Building a week meant opening the shift modal once per shift and
+   * confirming it — sixty times for a full roster. Deputy's speed comes from
+   * placing a shift on the click and correcting it after, so that is what this
+   * does: the times carry over from the last shift placed, so a run of
+   * identical shifts is a run of single clicks. The modal is still there for a
+   * fully specified shift, and clicking an existing card still opens it.
+   *
+   * The same leave, closed-venue and double-booking guards as the modal apply.
+   * Nothing is placed silently that the modal would have refused.
+   */
+  async function quickAddShift(row: (typeof scheduleRows)[number], day: Date) {
+    if ('isVenueHeader' in row && row.isVenueHeader) {
+      setMessage('Choose an area row under this venue before adding a shift.');
+      return;
+    }
+    const targetVenue = scheduleRowVenue(row);
+    if (isVenueClosedOnDate(targetVenue, day)) {
+      setMessage(`${targetVenue || 'This venue'} is marked closed. Re-open that venue day before adding shifts.`);
+      return;
+    }
+
+    const member = viewMode === 'team' && row.member
+      ? row.member
+      : activeStaff.find((m) => m.id === staffProfileId && (!row.venue || m.venue === row.venue))
+        ?? activeStaff.find((m) => m.venue === row.venue)
+        ?? activeStaff[0];
+    if (!member) {
+      setMessage('No one is available to roster here yet. Add a team member first.');
+      return;
+    }
+
+    const range = shiftTimeRange(toDateInput(day), quickTimes.start, quickTimes.end);
+    if (!range) {
+      setMessage('Check the default shift times.');
+      return;
+    }
+
+    // Same hard blocks the modal enforces — a faster path must not be a
+    // looser one.
+    const onLeave = leaveOverlays.find(
+      (leave) => leave.staffProfileId === member.id
+        && leave.status !== 'CANCELLED' && leave.status !== 'DECLINED'
+        && leaveOverlapsDay(leave, range.startsAt)
+    );
+    if (onLeave) {
+      setMessage(`${member.firstName} is on ${onLeave.type.toLowerCase().replace('_', ' ')} that day. Resolve the leave first.`);
+      return;
+    }
+    const clash = shifts.find(
+      (shift) => shift.staffProfileId === member.id
+        && shift.status !== 'CANCELLED'
+        && rangesOverlap(range.startsAt, range.endsAt, new Date(shift.startsAt), new Date(shift.endsAt))
+    );
+    if (clash) {
+      setMessage(`${member.firstName} is already rostered ${timeOf(clash.startsAt)}–${timeOf(clash.endsAt)}. Pick another person or time.`);
+      return;
+    }
+
+    const body = {
+      staffProfileId: member.id,
+      venue: row.venue || member.venue || '',
+      area: (viewMode === 'team' ? area : row.area || row.label) || 'Floor',
+      roleTitle: member.roleTitle || '',
+      startsAt: range.startsAt.toISOString(),
+      endsAt: range.endsAt.toISOString(),
+      breakMinutes: Number(quickTimes.breakMinutes) || 0,
+      status: 'DRAFT' as RosterShift['status'],
+      notes: ''
+    };
+    const tempId = `pending-${Date.now()}`;
+    const draft = {
+      ...body,
+      id: tempId,
+      staffProfile: { id: member.id, firstName: member.firstName, lastName: member.lastName, roleTitle: member.roleTitle, venue: member.venue, employmentStatus: member.employmentStatus }
+    } as RosterShift;
+
+    setMessageTarget(null);
+    const created = await optimistic(
+      (current) => [...current, draft],
+      () => api<RosterShift>('/api/staff/roster', { method: 'POST', body: JSON.stringify(body) }),
+      (result, current) => current.map((s) => (s.id === tempId ? { ...s, ...result } : s))
+    );
+    if (created === null) return;
+
+    const verdict = availabilityFor(member.id, range.startsAt, range.endsAt);
+    setMessage(
+      verdict.kind === 'AVAILABLE' || verdict.kind === 'NOT_STATED'
+        ? `${member.firstName} · ${quickTimes.start}–${quickTimes.end}`
+        : `${member.firstName} · ${quickTimes.start}–${quickTimes.end} — heads up, ${member.firstName} is ${verdict.detail}.`
+    );
+    setLastUndo({
+      label: `Undo ${member.firstName}'s shift`,
+      run: async () => {
+        await optimistic(
+          (current) => current.filter((s) => s.id !== created.id && s.id !== tempId),
+          () => api(`/api/staff/roster/${created.id}`, { method: 'DELETE' })
+        );
+        setMessage('Shift removed.');
+      }
     });
   }
 
@@ -10380,30 +12473,32 @@ function RosterPage({
     const movedEndsAt =
       endsAt <= startsAt ? addDays(endsAt, 1) : endsAt;
 
-    setSaving(true);
     setMessage(null);
-    try {
-      await api(`/api/staff/roster/${shift.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          staffProfileId: targetMember?.id ?? shift.staffProfileId,
-          venue: targetVenue,
-          area: targetArea,
-          roleTitle: shift.roleTitle ?? targetMember?.roleTitle ?? '',
-          startsAt: startsAt.toISOString(),
-          endsAt: movedEndsAt.toISOString(),
-          breakMinutes: shift.breakMinutes,
-          status: shift.status,
-          notes: shift.notes ?? ''
-        })
-      });
-      await reload(weekStart, weekEnd);
+    const body = {
+      staffProfileId: targetMember?.id ?? shift.staffProfileId,
+      venue: targetVenue,
+      area: targetArea,
+      roleTitle: shift.roleTitle ?? targetMember?.roleTitle ?? '',
+      startsAt: startsAt.toISOString(),
+      endsAt: movedEndsAt.toISOString(),
+      breakMinutes: shift.breakMinutes,
+      status: shift.status,
+      notes: shift.notes ?? ''
+    };
+    // The card lands where it was dropped on this frame. Waiting for a round
+    // trip before the shift moves is what made dragging feel broken.
+    const moved = await optimistic(
+      (current) => current.map((s) => (s.id === shift.id
+        ? { ...s, ...body, staffProfile: targetMember
+            ? { id: targetMember.id, firstName: targetMember.firstName, lastName: targetMember.lastName, roleTitle: targetMember.roleTitle, venue: targetMember.venue, employmentStatus: targetMember.employmentStatus }
+            : s.staffProfile } as RosterShift
+        : s)),
+      () => api<RosterShift>(`/api/staff/roster/${shift.id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+      (result, current) => current.map((s) => (s.id === shift.id ? { ...s, ...result } : s))
+    );
+    setDraggingShiftId(null);
+    if (moved !== null) {
       setMessage(`Moved shift to ${row.label} on ${day.toLocaleDateString(undefined, { weekday: 'short' })}.`);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not move shift.');
-    } finally {
-      setSaving(false);
-      setDraggingShiftId(null);
     }
   }
 
@@ -10432,30 +12527,26 @@ function RosterPage({
     const memberId = data.slice('staff:'.length);
     const member = staffById.get(memberId);
     if (!member) return;
-    setSaving(true);
     setMessage(null);
-    try {
-      await api(`/api/staff/roster/${shift.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          staffProfileId: member.id,
-          venue: member.venue ?? shift.venue,
-          area: shift.area,
-          roleTitle: member.roleTitle ?? shift.roleTitle ?? '',
-          startsAt: shift.startsAt,
-          endsAt: shift.endsAt,
-          breakMinutes: shift.breakMinutes,
-          status: shift.status,
-          notes: shift.notes ?? ''
-        })
-      });
-      await reload(weekStart, weekEnd);
-      setMessage(`Assigned ${member.firstName} ${member.lastName} to shift.`);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not reassign shift.');
-    } finally {
-      setSaving(false);
-    }
+    const body = {
+      staffProfileId: member.id,
+      venue: member.venue ?? shift.venue,
+      area: shift.area,
+      roleTitle: member.roleTitle ?? shift.roleTitle ?? '',
+      startsAt: shift.startsAt,
+      endsAt: shift.endsAt,
+      breakMinutes: shift.breakMinutes,
+      status: shift.status,
+      notes: shift.notes ?? ''
+    };
+    const assigned = await optimistic(
+      (current) => current.map((s) => (s.id === shift.id
+        ? { ...s, ...body, staffProfile: { id: member.id, firstName: member.firstName, lastName: member.lastName, roleTitle: member.roleTitle, venue: member.venue, employmentStatus: member.employmentStatus } } as RosterShift
+        : s)),
+      () => api<RosterShift>(`/api/staff/roster/${shift.id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+      (result, current) => current.map((s) => (s.id === shift.id ? { ...s, ...result } : s))
+    );
+    if (assigned !== null) setMessage(`Assigned ${member.firstName} ${member.lastName} to shift.`);
   }
 
   async function handleDrop(event: DragEvent<HTMLButtonElement>, row: (typeof scheduleRows)[number], day: Date) {
@@ -10830,6 +12921,8 @@ function RosterPage({
         </div>
       ) : null}
 
+      <ShiftClaimsPanel onDecided={reload} />
+
       {historicalOpen ? (
         <div
           className="alma-historical-modal"
@@ -10954,6 +13047,15 @@ function RosterPage({
       {message && !messageTarget ? (
         <div className="deputy-roster-summary">
           <span className="deputy-roster-message">{message}</span>
+          {lastUndo ? (
+            <button
+              type="button"
+              className="roster-undo-button"
+              onClick={() => { const undo = lastUndo; setLastUndo(null); void undo.run(); }}
+            >
+              {lastUndo.label}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -11068,7 +13170,46 @@ function RosterPage({
             {/* The global day-head and day-summary rows are gone — each
                 venue now carries its own day labels + per-day summary
                 in the venue header row beneath. No group total at the
-                top until we add a per-venue comparison view. */}
+                top until we add a per-venue comparison view.
+
+                What stays is a slim week stepper, so you can jump a week
+                either way without scrolling back up to the page header. */}
+            <div className="deputy-board-weeknav">
+              <div className="deputy-board-weeknav-steps">
+                <button
+                  type="button"
+                  className="deputy-board-weeknav-btn"
+                  aria-label="Previous week"
+                  onClick={() => setRosterWeek(addDays(weekStart, -7))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 6 9 12 15 18" /></svg>
+                </button>
+                <button
+                  type="button"
+                  className="deputy-board-weeknav-btn"
+                  aria-label="Next week"
+                  onClick={() => setRosterWeek(addDays(weekStart, 7))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg>
+                </button>
+              </div>
+              <span className="deputy-board-weeknav-range">{formatRange(weekStart, rosterRangeEnd)}</span>
+              {sameDay(weekStart, startOfWeek(new Date())) ? (
+                <span className="deputy-board-weeknav-now">This week</span>
+              ) : (
+                <button
+                  type="button"
+                  className="deputy-board-weeknav-btn deputy-board-weeknav-btn--text"
+                  onClick={() => {
+                    const today = new Date();
+                    setRosterWeek(startOfWeek(today));
+                    setMobileSelectedDay(toDateInput(today));
+                  }}
+                >
+                  Back to this week
+                </button>
+              )}
+            </div>
 
             {scheduleRows.length === 0 ? (
               <div className="deputy-schedule-empty">No rows match the current filters.</div>
@@ -11098,13 +13239,13 @@ function RosterPage({
                         const dayShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
                         const dayHours = dayShifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
                         const dayCostCents = dayShifts.reduce((sum, shift) => {
-                          const member = staffById.get(shift.staffProfileId);
+                          const member = shift.staffProfileId ? staffById.get(shift.staffProfileId) : undefined;
                           const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
                           return sum + Math.round(shiftHours(shift) * rateCents);
                         }, 0);
                         const isClosed = isVenueClosedOnDate(row.venue, day);
                         const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                        const venueForecastCents = Math.round(historicalSalesForDate(row.venue, day) * 100);
+                        const venueForecastCents = baselineSalesCentsForDate(row.venue, day);
                         const wagePercent = venueForecastCents > 0 ? (dayCostCents / venueForecastCents) * 100 : 0;
                         const isOver = venueForecastCents > 0 && dayCostCents > Math.round(venueForecastCents * targetWagePercentParsed);
                         const hasCost = !isClosed && dayCostCents > 0;
@@ -11200,7 +13341,7 @@ function RosterPage({
                           type="button"
                           className={`deputy-schedule-cell ${cellShifts.length ? 'has-shifts' : ''} ${isClosed ? 'is-closed' : ''}${memberLeave ? ` has-leave is-leave-${memberLeave.status.toLowerCase()}` : ''}${isWeekend ? ' is-weekend' : ''}`}
                           aria-disabled={isClosed}
-                          onClick={() => prefillCell(row, day)}
+                          onClick={() => void quickAddShift(row, day)}
                           onDragOver={(event) => {
                             event.preventDefault();
                             event.dataTransfer.dropEffect = 'move';
@@ -11226,7 +13367,8 @@ function RosterPage({
                               draggable
                               role="button"
                               tabIndex={0}
-                              className={`deputy-shift-card deputy-shift-${shift.status.toLowerCase()} ${isDeputyImportedShift(shift) ? 'is-deputy-import' : ''} ${isUnallocatedProfile(shift.staffProfile) ? 'is-unallocated' : ''} ${draggingShiftId === shift.id ? 'is-dragging' : ''} ${staffDropTargetShiftId === shift.id ? 'is-staff-drop-target' : ''}`}
+                              className={`deputy-shift-card deputy-shift-${shift.status.toLowerCase()} ${isDeputyImportedShift(shift) ? 'is-deputy-import' : ''} ${isOpenShift(shift) ? 'is-unallocated' : ''} ${draggingShiftId === shift.id ? 'is-dragging' : ''} ${staffDropTargetShiftId === shift.id ? 'is-staff-drop-target' : ''} ${fatigueByShift.has(shift.id) ? 'has-fatigue' : ''}`}
+                              title={fatigueByShift.get(shift.id)?.map((w) => w.message).join('\n')}
                               style={areaStyle(shift.area || row.label)}
                               onDragStart={(event) => handleDragStart(event, shift)}
                               onDragEnd={() => setDraggingShiftId(null)}
@@ -11252,6 +13394,14 @@ function RosterPage({
                             >
                               <span className="deputy-shift-topline">
                                 <strong>{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)}</strong>
+                                {fatigueByShift.has(shift.id) ? (
+                                  <em
+                                    className="deputy-shift-fatigue-flag"
+                                    aria-label={fatigueByShift.get(shift.id)!.map((w) => w.message).join(' ')}
+                                  >
+                                    !
+                                  </em>
+                                ) : null}
                                 <em className={`deputy-shift-status-pill is-${shift.status.toLowerCase()}`}>
                                   {shift.status === 'PUBLISHED' ? 'Live' : shift.status.toLowerCase()}
                                 </em>
@@ -11344,7 +13494,7 @@ function RosterPage({
                     placeholder="28"
                   />
                   <p className="subtle roster-forecast-source">
-                    Baseline from previous years: {formatCents(historicalForecastSalesCents)} across {forecastVenues.length || 1} venue{forecastVenues.length === 1 ? '' : 's'}.
+                    Baseline from {engineOutlook ? 'the live forecast engine (your own trading history, bookings-aware)' : 'previous years'}: {formatCents(historicalForecastSalesCents)} across {forecastVenues.length || 1} venue{forecastVenues.length === 1 ? '' : 's'}.
                   </p>
                   <div className="roster-forecast-metrics roster-forecast-metrics-compact">
                     <div>
@@ -11453,7 +13603,7 @@ function RosterPage({
                     // Roster Redesign 1C: "Needs filling" queue — every unallocated
                     // shift this week as a prioritised, one-tap list.
                     const openShifts = visibleRoster
-                      .filter((shift) => isUnallocatedProfile(shift.staffProfile) && shift.status !== 'CANCELLED')
+                      .filter((shift) => isOpenShift(shift) && shift.status !== 'CANCELLED')
                       .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
                     if (!openShifts.length) return null;
                     return (
@@ -11731,7 +13881,7 @@ function RosterPage({
                         <strong>{shift.staffProfile?.firstName ?? 'Unallocated'} {shift.staffProfile?.lastName ?? ''}</strong>
                         <small>{shift.venue || shift.staffProfile?.venue || 'No venue set'}</small>
                       </span>
-                      <Badge tone={isUnallocatedProfile(shift.staffProfile) ? 'warning' : 'info'}>
+                      <Badge tone={isOpenShift(shift) ? 'warning' : 'info'}>
                         {roundHours(shiftHours(shift))}
                       </Badge>
                     </button>
@@ -11824,7 +13974,7 @@ function RosterPage({
         <DeputyImportModal
           onClose={() => setDeputyImportOpen(false)}
           onSuccess={async () => {
-            await reload(weekStart, weekEnd);
+            await refreshBoard(weekStart, weekEnd);
           }}
         />
       ) : null}
@@ -12131,7 +14281,7 @@ function MobileRosterView({
                               onClick={() => onOpenShift(shift)}
                             >
                               <span className="mobile-shift-avatar" aria-hidden="true">
-                                {shift.staffProfile && !isUnallocatedProfile(shift.staffProfile) ? initials(shift.staffProfile) : shiftArea.slice(0, 2).toUpperCase()}
+                                {shift.staffProfile && !isOpenShift(shift) ? initials(shift.staffProfile) : shiftArea.slice(0, 2).toUpperCase()}
                               </span>
                               <span className={`mobile-shift-status-dot is-${mobileRosterGroupClass(statusGroup)}`} aria-hidden="true" />
                               <span className="mobile-shift-main">
@@ -12209,7 +14359,7 @@ function rosterHourlyRateCents(member: StaffProfile): number | null {
 }
 
 function mobileRosterStatusGroup(shift: RosterShift): MobileRosterGroupKey {
-  if (isUnallocatedProfile(shift.staffProfile)) return 'unassigned';
+  if (isOpenShift(shift)) return 'unassigned';
   if (shift.status === 'COMPLETED' || shift.status === 'CANCELLED') return 'completed';
   const startsAt = new Date(shift.startsAt).getTime();
   const endsAt = new Date(shift.endsAt).getTime();
@@ -12236,18 +14386,19 @@ function mobileRosterStatusText(shift: RosterShift, group: MobileRosterGroupKey)
 }
 
 function rosterShiftStaffName(shift: RosterShift) {
-  if (isUnallocatedProfile(shift.staffProfile)) return 'Unassigned shift';
+  if (isOpenShift(shift)) return 'Unassigned shift';
   return `${shift.staffProfile?.firstName ?? ''} ${shift.staffProfile?.lastName ?? ''}`.trim() || 'Unassigned shift';
 }
 
 function countRosterOverlaps(shifts: RosterShift[]) {
   let conflicts = 0;
   const byStaff = shifts
-    .filter((shift) => shift.status !== 'CANCELLED')
+    // An open shift is on nobody's roster, so it cannot clash with anything.
+    .filter((shift) => shift.status !== 'CANCELLED' && shift.staffProfileId !== null)
     .reduce((groups, shift) => {
-      const group = groups.get(shift.staffProfileId) ?? [];
+      const group = groups.get(shift.staffProfileId!) ?? [];
       group.push(shift);
-      groups.set(shift.staffProfileId, group);
+      groups.set(shift.staffProfileId!, group);
       return groups;
     }, new Map<string, RosterShift[]>());
 
@@ -12422,6 +14573,16 @@ function isDeputyImportedProfile(member: { notes?: string | null; email?: string
 
 function isUnallocatedProfile(member: { firstName?: string | null; notes?: string | null } | null | undefined) {
   return Boolean(member?.firstName === 'Unallocated' || member?.notes?.includes('Deputy unallocated placeholder'));
+}
+
+/**
+ * A shift nobody is on. The real answer is a null staffProfileId; the
+ * placeholder-profile check stays for rosters imported from Deputy before the
+ * open-shift migration converted them.
+ */
+function isOpenShift(shift: { staffProfileId?: string | null; staffProfile?: { firstName?: string | null; notes?: string | null } | null }) {
+  if (shift.staffProfileId === null) return true;
+  return isUnallocatedProfile(shift.staffProfile);
 }
 
 function staffClockStateTone(state: StaffManagerOperationsPayload['todaysStaff'][number]['state']) {
@@ -12764,19 +14925,46 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
     }
   }
 
-  async function approveProfile(memberId: string) {
+  /**
+   * Approve a new starter.
+   *
+   * The API refuses when payroll details are missing and names them, because
+   * activating somebody with no tax file number or bank account is how 13 of
+   * the 30 active staff ended up needing chasing by hand. A manager who really
+   * does need them on Saturday's roster can still say so — they're asked for a
+   * reason, which is written onto the profile where payroll will see it.
+   */
+  async function approveProfile(memberId: string, options: { force?: boolean; reason?: string } = {}) {
     setSaving(true);
     setMessage(null);
     setMessageTarget(`profile:${memberId}`);
     try {
       await api<StaffProfile>(`/api/staff/${memberId}/onboarding/approve`, {
         method: 'POST',
-        body: JSON.stringify({})
+        body: JSON.stringify(options)
       });
       await reload();
-      setMessage('Onboarding approved and profile activated.');
+      setMessage(
+        options.force
+          ? 'Activated with onboarding gaps. Noted on their profile for payroll.'
+          : 'Onboarding approved and profile activated.'
+      );
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not approve onboarding.');
+      const text = err instanceof Error ? err.message : 'Could not approve onboarding.';
+      if (!options.force && text.includes("hasn't finished onboarding")) {
+        const reason = window.prompt(
+          `${text}\n\nTo activate them anyway, say why (this is saved on their profile):`
+        );
+        if (reason === null) {
+          setMessage(text);
+          setSaving(false);
+          return;
+        }
+        setSaving(false);
+        await approveProfile(memberId, { force: true, reason: reason.trim() || 'No reason given' });
+        return;
+      }
+      setMessage(text);
     } finally {
       setSaving(false);
     }
@@ -14707,7 +16895,7 @@ function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
             <strong>Sit with the team for 5 minutes.</strong> Three things: who's on, what we're pushing, what to watch.
           </li>
           <li>
-            <strong>Reply to last shift's handover.</strong> If anything's outstanding, acknowledge it in <a href="https://alma-comms.web.app/handover">Comms · Handover</a>.
+            <strong>Reply to last shift's handover.</strong> If anything's outstanding, acknowledge it on the <a href="/noticeboard">noticeboard</a>.
           </li>
           <li>
             <strong>Pre-walkthrough bookings.</strong> Open <a href="https://alma-reserve.web.app">Reserve</a> and read the night's notes.
@@ -14718,10 +16906,11 @@ function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
   );
 }
 
-function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
+function ManagerDashboardPage({ staff, roster }: { staff: StaffProfile[]; roster: RosterShift[] }) {
   const navigate = useNavigate();
   const [dashboard, setDashboard] = useState<StaffManagerDashboardPayload | null>(null);
   const [operations, setOperations] = useState<StaffManagerOperationsPayload | null>(null);
+  const [forecast, setForecast] = useState<ForecastOutlookPayload | null>(null);
   const [date, setDate] = useState(() => toDateInput(new Date()));
   const [venue, setVenue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -14758,6 +16947,38 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
       setLoading(false);
     }
   }, [date, venue]);
+
+  // Forecast outlook (same engine as Reports/roster) — powers the "Forecast
+  // today" pace metric and the week-ahead line. Non-blocking: a failure just
+  // hides those, the rest of the dashboard is unaffected.
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({ weeks: '13' });
+    if (venue) params.set('venue', venue);
+    void api<ForecastOutlookPayload>(`/api/forecast/outlook?${params.toString()}`)
+      .then((next) => {
+        if (!cancelled) setForecast(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [venue]);
+
+  // Engine forecast for the selected day and the 7 days ahead of it.
+  const forecastToday = useMemo(() => {
+    let today = 0;
+    let weekAhead = 0;
+    for (const v of forecast?.venues ?? []) {
+      const idx = v.days.findIndex((d) => d.date === date);
+      if (idx >= 0) today += v.days[idx]!.salesForecastCents;
+      const startAhead = v.days.findIndex((d) => d.date > date);
+      if (startAhead >= 0) {
+        weekAhead += v.days.slice(startAhead, startAhead + 7).reduce((sum, d) => sum + d.salesForecastCents, 0);
+      }
+    }
+    return { todayCents: today, weekAheadCents: weekAhead };
+  }, [forecast, date]);
 
   useEffect(() => {
     void loadDashboard();
@@ -14819,8 +17040,9 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
   const dayOfWeek = launchMonday.getDay();
   launchMonday.setDate(launchMonday.getDate() + (dayOfWeek === 1 ? 0 : dayOfWeek === 0 ? 1 : 8 - dayOfWeek));
   const launchMondayEnd = addDays(launchMonday, 1);
-  const mondayShiftCount = activeLaunchStaff
-    .flatMap((member) => member.rosterShifts ?? [])
+  const activeLaunchStaffIds = new Set(activeLaunchStaff.map((member) => member.id));
+  const mondayShiftCount = roster
+    .filter((shift) => shift.staffProfileId !== null && activeLaunchStaffIds.has(shift.staffProfileId))
     .filter((shift) => {
       const startsAt = new Date(shift.startsAt);
       return startsAt >= launchMonday && startsAt < launchMondayEnd && shift.status !== 'CANCELLED';
@@ -14901,7 +17123,22 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
         <div className="live-hero-metric">
           <span className="live-hero-label">Sales today</span>
           <span className="live-hero-value">{loading && !dashboard ? '—' : formatCents(dashboard?.totals.salesCents ?? 0)}</span>
-          <span className="live-hero-hint">{dashboard?.salesByVenue.length ? `${dashboard.salesByVenue.length} venue${dashboard.salesByVenue.length === 1 ? '' : 's'}` : 'No sales yet'}</span>
+          <span className="live-hero-hint">
+            {(() => {
+              const fc = forecastToday.todayCents;
+              const actual = dashboard?.totals.salesCents ?? 0;
+              if (fc <= 0) return dashboard?.salesByVenue.length ? `${dashboard.salesByVenue.length} venue${dashboard.salesByVenue.length === 1 ? '' : 's'}` : 'No sales yet';
+              // Only score actual-vs-forecast for a COMPLETED day — comparing a
+              // part-day's takings to the full-day forecast reads as "behind"
+              // all afternoon even when the day is on track.
+              const dayComplete = date < toDateInput(new Date());
+              if (dayComplete && actual > 0) {
+                const pct = Math.round(((actual - fc) / fc) * 100);
+                return `${formatCents(fc)} forecast · ${pct >= 0 ? '+' : ''}${pct}% actual`;
+              }
+              return `${formatCents(fc)} forecast today`;
+            })()}
+          </span>
         </div>
         <div className={`live-hero-metric ${wageTone}`}>
           <span className="live-hero-label">Wage cost</span>
@@ -14943,6 +17180,30 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
         <button type="button" onClick={() => window.location.assign(RESERVE_WEB_URL || '/')}>
           <strong>{operations?.metrics.bookingsToday ?? 0}</strong><span>Bookings</span>
         </button>
+      </div>
+
+      {/* ── Forecast glance — the forward-looking block, so it wears the
+          suite's sage band with elevated white tiles. Same engine outlook
+          the hero pace note reads from. ── */}
+      <div className="sd-forecast-band">
+        <EditorialPanel
+          className="alma-band-sage"
+          eyebrow="Forecast glance · next 7 days"
+          title="The week ahead"
+        >
+          <div className="alma-page-grid-kpis">
+            <BigStat
+              eyebrow="Today's target"
+              value={forecastToday.todayCents > 0 ? formatCents(forecastToday.todayCents) : '—'}
+              sub={forecastToday.todayCents > 0 ? 'Forecast sales today' : 'Forecast warming up'}
+            />
+            <BigStat
+              eyebrow="Week ahead"
+              value={forecastToday.weekAheadCents > 0 ? formatCents(forecastToday.weekAheadCents) : '—'}
+              sub={forecastToday.weekAheadCents > 0 ? 'Forecast sales, next 7 days' : 'Forecast warming up'}
+            />
+          </div>
+        </EditorialPanel>
       </div>
 
       {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'} style={{ padding: '0 24px' }}>{message}</p> : null}
@@ -15167,6 +17428,34 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   // Explorer rail selection (all / a venue / a staff member).
   const [selection, setSelection] = useState<TimesheetSelection>({ type: 'all' });
+  // Week review is a tall table and a manager reviewing one person doesn't
+  // want to scroll past everyone else. Collapsed state is remembered so it
+  // survives week navigation rather than springing open on every arrow press.
+  // Who gets pushed. Empty = everyone in the window, which is the common case;
+  // ticking anyone narrows it so a manager can push one person's corrected week
+  // without re-sending the whole payroll.
+  const [pushSelection, setPushSelection] = useState<string[]>([]);
+  // The per-employee outcome of the last push/preview. A one-line summary hid
+  // the only thing that matters when 11 of 19 fail — which people, and why.
+  const [pushResult, setPushResult] = useState<
+    | {
+        preview: boolean;
+        pushed: number;
+        failed: number;
+        skipped: number;
+        markedExported: number;
+        rows: { employee: string; status: string; message: string; periodStart: string | null; periodEnd: string | null }[];
+      }
+    | null
+  >(null);
+  const [reviewOpen, setReviewOpen] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem('alma.timesheets.reviewOpen') !== 'closed';
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('alma.timesheets.reviewOpen', reviewOpen ? 'open' : 'closed');
+  }, [reviewOpen]);
   // A STAFF member only ever sees their own hours (server forces this), so hide
   // the manager-only approval/payroll affordances from them.
   const { user: timesheetsViewer } = useAuth();
@@ -15236,11 +17525,31 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   // Roster & pay Turn 2: surface the needs-review count on the hub's Timesheets tab.
   useHubTabBadge('/timesheets', overallCounts.submitted);
 
-  // Roster & pay Turn 2: rostered hours per staff member inside the current
-  // range, from the roster prop the page already receives (no new API calls).
+  // The roster prop is loaded once, for the fortnight starting this Monday.
+  // Payroll review is always looking at a week that has already finished, so
+  // that window never contains the shifts being reviewed and every Rostered
+  // cell read "—". This page fetches the roster for its own range instead.
+  const [rangeRoster, setRangeRoster] = useState<RosterShift[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({ start: rangeStart.toISOString(), end: rangeEnd.toISOString() });
+    api<RosterShift[]>(`/api/staff/roster?${params.toString()}`)
+      .then((shifts) => {
+        if (!cancelled) setRangeRoster(shifts);
+      })
+      .catch(() => {
+        // Fall back to the prop rather than blanking the column outright.
+        if (!cancelled) setRangeRoster(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rangeStart, rangeEnd]);
+
+  // Rostered hours per staff member inside the current range.
   const rosteredHoursByStaff = useMemo(() => {
     const map = new Map<string, number>();
-    for (const shift of roster) {
+    for (const shift of rangeRoster ?? roster) {
       if (!shift.staffProfileId || shift.status === 'CANCELLED') continue;
       const startsAt = new Date(shift.startsAt);
       const endsAt = new Date(shift.endsAt);
@@ -15249,7 +17558,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
       map.set(shift.staffProfileId, (map.get(shift.staffProfileId) ?? 0) + hours);
     }
     return map;
-  }, [roster, rangeStart, rangeEnd]);
+  }, [rangeRoster, roster, rangeStart, rangeEnd]);
 
   // Groups filtered to the current explorer selection (shown in the detail pane).
   const visibleGroups = useMemo(() => {
@@ -15376,7 +17685,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   function prefillFromShift(shift: RosterShift) {
     setMessageTarget(`prefill:${shift.id}`);
     setSelectedRosterShiftId(shift.id);
-    setStaffProfileId(shift.staffProfileId);
+    setStaffProfileId(shift.staffProfileId ?? '');
     setWorkDate(toDateInput(new Date(shift.startsAt)));
     setStartTime(toTimeInput(new Date(shift.startsAt)));
     setEndTime(toTimeInput(new Date(shift.endsAt)));
@@ -15386,35 +17695,60 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     setMessage('Roster shift loaded. Adjust actual times before submitting.');
   }
 
+  /**
+   * Approving refetched the whole timesheet list — 122 KB here, and a manager
+   * approving a fortnight one row at a time paid it every time. The row now
+   * flips on the click and only rolls back if the server refuses.
+   */
   async function approve(id: string) {
-    setSaving(true);
     setMessage(null);
     setMessageTarget(`approve:${id}`);
+    const snapshot = timesheets;
+    setTimesheets((current) => current.map((sheet) =>
+      sheet.id === id ? { ...sheet, status: 'APPROVED', approvedAt: new Date().toISOString() } : sheet));
     try {
       await api(`/api/staff/timesheets/${id}/approve`, { method: 'POST', body: JSON.stringify({}) });
       setMessage('Timesheet approved.');
-      await loadTimesheets();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not approve timesheet.');
-    } finally {
-      setSaving(false);
+      setTimesheets(snapshot);
+      setMessage(err instanceof Error ? `Could not approve — ${err.message.replace(/\.\s*$/, '')}. Put back as it was.` : 'Could not approve timesheet.');
     }
   }
 
-  // Bulk-approve a whole group's outstanding timesheets in parallel.
+  /**
+   * Bulk-approve a group.
+   *
+   * This used Promise.all, so a single rejected row failed the whole call and
+   * the manager was told nothing was approved — while the rest had in fact
+   * gone through. The list then refetched and silently disagreed with the
+   * message. Now every row is attempted, only the ones that actually failed
+   * are put back, and the count reported is the count that succeeded.
+   */
   async function approveGroup(ids: string[]) {
     if (ids.length === 0) return;
     setMessageTarget('approve-group');
     setSaving(true);
     setMessage(null);
+    const snapshot = timesheets;
+    const pending = new Set(ids);
+    setTimesheets((current) => current.map((sheet) =>
+      pending.has(sheet.id) ? { ...sheet, status: 'APPROVED', approvedAt: new Date().toISOString() } : sheet));
     try {
-      await Promise.all(
+      const results = await Promise.allSettled(
         ids.map((id) => api(`/api/staff/timesheets/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }))
       );
-      setMessage(`Approved ${ids.length} timesheet${ids.length === 1 ? '' : 's'}.`);
-      await loadTimesheets();
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not approve timesheets.');
+      const failedIds = ids.filter((_, index) => results[index]!.status === 'rejected');
+      if (failedIds.length > 0) {
+        const failed = new Set(failedIds);
+        const before = new Map(snapshot.map((sheet) => [sheet.id, sheet]));
+        setTimesheets((current) => current.map((sheet) => (failed.has(sheet.id) ? before.get(sheet.id) ?? sheet : sheet)));
+      }
+      const approved = ids.length - failedIds.length;
+      setMessage(
+        failedIds.length === 0
+          ? `Approved ${approved} timesheet${approved === 1 ? '' : 's'}.`
+          : `Approved ${approved} of ${ids.length}. ${failedIds.length} could not be approved and ${failedIds.length === 1 ? 'has' : 'have'} been left as ${failedIds.length === 1 ? 'it was' : 'they were'}.`
+      );
     } finally {
       setSaving(false);
     }
@@ -15425,23 +17759,36 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     setSaving(true);
     setMessage(null);
     setMessageTarget(`reject:${id}`);
+    const snapshot = timesheets;
+    setTimesheets((current) => current.map((sheet) =>
+      sheet.id === id ? { ...sheet, status: 'REJECTED', rejectedAt: new Date().toISOString(), rejectionReason: reason } : sheet));
     try {
       await api(`/api/staff/timesheets/${id}/reject`, {
         method: 'POST',
         body: JSON.stringify({ reason })
       });
       setMessage('Timesheet rejected.');
-      await loadTimesheets();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not reject timesheet.');
+      // Without this the row keeps showing REJECTED after a failed call, which
+      // is worse than the refetch it replaced: the manager moves on believing
+      // the rejection stuck.
+      setTimesheets(snapshot);
+      setMessage(
+        err instanceof Error
+          ? `Could not reject — ${err.message.replace(/\.\s*$/, '')}. Put back as it was.`
+          : 'Could not reject timesheet.'
+      );
     } finally {
       setSaving(false);
     }
   }
 
   // Push approved Xero timesheets straight into Xero as draft timesheets.
-  async function pushToXero() {
+  // `preview` runs every lookup without writing, which is how you find out
+  // who isn't linked to a Xero employee before anything lands in the pay run.
+  async function pushToXero(preview = false) {
     if (
+      !preview &&
       !window.confirm(
         'Push approved Xero timesheets for this period straight into Xero as draft timesheets? Review them in Xero before the pay run.'
       )
@@ -15450,29 +17797,47 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     }
     setSaving(true);
     setMessage(null);
+    setPushResult(null);
     setMessageTarget('push');
     try {
       const result = await api<{
         pushed: number;
         failed: number;
-        results: { employee: string; status: string; message: string }[];
+        skipped: number;
+        markedExported: number;
+        results: { employee: string; status: string; message: string; periodStart: string | null; periodEnd: string | null }[];
+        warnings: string[];
       }>('/api/staff/timesheets/push/xero', {
         method: 'POST',
         body: JSON.stringify({
-          start: weekStart.toISOString(),
-          end: weekEnd.toISOString(),
-          venue: venueFilter
+          start: rangeStart.toISOString(),
+          end: rangeEnd.toISOString(),
+          venue: venueFilter === 'all' ? '' : venueFilter,
+          dryRun: preview,
+          staffProfileIds: pushSelection
         })
       });
-      const failures = result.results
-        .filter((entry) => entry.status === 'failed')
-        .map((entry) => `${entry.employee}: ${entry.message}`);
-      setMessage(
-        `Pushed ${result.pushed} employee timesheet${result.pushed === 1 ? '' : 's'} to Xero as drafts${
-          result.failed ? `. ${result.failed} failed — ${failures.join('; ')}` : '.'
-        }`
-      );
-      await loadTimesheets();
+      // A push can partly succeed — one employee missing a Xero link doesn't
+      // stop the rest — so the outcome is kept per employee and rendered as a
+      // list. The reason on a failed row is the only thing that says what to fix.
+      setPushResult({
+        preview,
+        pushed: result.pushed,
+        failed: result.failed,
+        skipped: result.skipped,
+        markedExported: result.markedExported,
+        rows: result.results
+      });
+      const parts = [
+        preview
+          ? `${result.pushed} timesheet${result.pushed === 1 ? '' : 's'} ready to push`
+          : `Pushed ${result.pushed} timesheet${result.pushed === 1 ? '' : 's'} to Xero as drafts`,
+        result.markedExported ? `${result.markedExported} shifts marked exported` : null,
+        result.skipped ? `${result.skipped} skipped (no hours)` : null,
+        result.failed ? `${result.failed} failed` : null
+      ].filter(Boolean);
+      setMessage(result.results.length === 0 ? (result.warnings[0] ?? 'Nothing to push.') : `${parts.join(' · ')}.`);
+      if (!preview) await loadTimesheets();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not push timesheets to Xero.');
     } finally {
@@ -15755,8 +18120,11 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
             <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(true)}>
               Export CSV
             </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void pushToXero(true)}>
+              {pushSelection.length ? `Preview ${pushSelection.length}` : 'Preview push'}
+            </Button>
             <Button type="button" size="sm" disabled={saving} onClick={() => void pushToXero()}>
-              Push to Xero
+              {pushSelection.length ? `Push ${pushSelection.length} to Xero` : 'Push all to Xero'}
             </Button>
           </div>
         ) : null}
@@ -15809,17 +18177,68 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         <p className={message.includes('Could') || message.includes('failed') ? 'error-text' : 'subtle'}>{message}</p>
       ) : null}
 
+      {/* Per-employee push outcome. A preview and a real push produce the same
+          shape, so a manager can read the list, fix the failures, and run it
+          again without guessing which name the summary was talking about. */}
+      {pushResult ? (
+        <div className="ts-push-result">
+          <div className="ts-push-result-head">
+            <strong>
+              {pushResult.rows.length === 0
+                ? 'Nothing to push'
+                : pushResult.preview
+                  ? 'Preview — nothing sent to Xero yet'
+                  : 'Pushed to Xero'}
+            </strong>
+            <span className="subtle">
+              {pushResult.rows.length === 0
+                ? (message ?? 'No approved timesheets matched.')
+                : `${pushResult.preview ? `${pushResult.pushed} ready` : `${pushResult.pushed} sent`}${
+                    pushResult.failed ? ` · ${pushResult.failed} failed` : ''
+                  }${pushResult.skipped ? ` · ${pushResult.skipped} skipped` : ''}`}
+            </span>
+            <button type="button" className="ts-push-result-close" onClick={() => setPushResult(null)} aria-label="Dismiss">
+              ×
+            </button>
+          </div>
+          <ul className="ts-push-result-list">
+            {pushResult.rows.map((row, index) => (
+              <li key={`${row.employee}-${row.periodStart ?? index}`} className={`is-${row.status}`}>
+                <span className="ts-push-result-name">{row.employee}</span>
+                <span className="ts-push-result-period">
+                  {row.periodStart ? `${row.periodStart} → ${row.periodEnd}` : '—'}
+                </span>
+                <span className="ts-push-result-message">{row.message}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {/* Roster & pay Turn 2: week review table — at-a-glance rostered vs worked
           per staff member, with per-staff and bulk approval (existing endpoints). */}
       {!loading && timesheets.length > 0 ? (
-        <div className="ts-review">
+        <div className={`ts-review ${reviewOpen ? '' : 'is-collapsed'}`}>
           <div className="pay-section-head">
+            <button
+              type="button"
+              className="ts-review-toggle"
+              aria-expanded={reviewOpen}
+              onClick={() => setReviewOpen((open) => !open)}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+              <span className="sr-only">{reviewOpen ? 'Collapse week review' : 'Expand week review'}</span>
+            </button>
             <div className="pay-section-head-text">
               <h3 className="pay-section-title">Week review</h3>
               <p className="pay-section-note">
                 {overallCounts.submitted > 0
                   ? `${overallCounts.submitted} shift${overallCounts.submitted === 1 ? ' needs' : 's need'} a look before pay runs Tuesday.`
                   : 'All clear.'}
+                {/* Collapsed, the totals are the only thing worth showing. */}
+                {reviewOpen ? null : ` · ${roundHours(allGroups.reduce((sum, group) => sum + group.totalHours, 0))}h worked across ${allGroups.length} staff.`}
               </p>
             </div>
             {isManagerView && overallCounts.submitted > 0 ? (
@@ -15839,10 +18258,27 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               </button>
             ) : null}
           </div>
-          <div className="ts-review-card">
+          <div className="ts-review-card" hidden={!reviewOpen}>
             <table className="ts-review-table">
               <thead>
                 <tr>
+                  {isManagerView ? (
+                    <th className="ts-review-pick">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all staff for the Xero push"
+                        checked={pushSelection.length > 0 && pushSelection.length === allGroups.length}
+                        ref={(node) => {
+                          // Partial selection reads as indeterminate, not unchecked —
+                          // an unchecked box next to five ticked rows is a lie.
+                          if (node) node.indeterminate = pushSelection.length > 0 && pushSelection.length < allGroups.length;
+                        }}
+                        onChange={(event) =>
+                          setPushSelection(event.currentTarget.checked ? allGroups.map((group) => group.id) : [])
+                        }
+                      />
+                    </th>
+                  ) : null}
                   <th>Staff</th>
                   <th className="is-num">Rostered</th>
                   <th className="is-num">Worked</th>
@@ -15869,7 +18305,25 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                         : null;
                   const restingStatus = group.entries[0]?.status ?? '';
                   return (
-                    <tr key={group.id}>
+                    <tr key={group.id} className={pushSelection.includes(group.id) ? 'is-picked' : undefined}>
+                      {isManagerView ? (
+                        <td className="ts-review-pick">
+                          <input
+                            type="checkbox"
+                            aria-label={`Include ${group.name} in the Xero push`}
+                            checked={pushSelection.includes(group.id)}
+                            onChange={(event) => {
+                              // Read `checked` before the updater runs: React
+                              // nulls currentTarget once the handler returns,
+                              // and a functional setState executes after that.
+                              const { checked } = event.currentTarget;
+                              setPushSelection((current) =>
+                                checked ? [...current, group.id] : current.filter((id) => id !== group.id)
+                              );
+                            }}
+                          />
+                        </td>
+                      ) : null}
                       <td>
                         <span className="ts-review-staff" style={areaStyle(group.roleTitle || '')}>
                           <span className="ts-review-avatar" aria-hidden>
@@ -15948,6 +18402,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   );
                   return (
                     <tr>
+                      {isManagerView ? <td className="ts-review-pick" /> : null}
                       <td>Week total</td>
                       <td className="is-num">{totals.hasRostered ? `${roundHours(totals.rostered)}h` : '—'}</td>
                       <td className="is-num ts-review-worked">{roundHours(totals.worked)}h</td>
@@ -17244,6 +19699,8 @@ function StaffShell() {
       sidebar={<SidebarNav items={navItems} />}
       topBar={<TopBarWithContext />}
     >
+      <OfflineQueueBanner />
+      <BottomTabs items={navItems} />
       {user?.accountType === 'VENUE_DEVICE' ? (
         <Routes>
           <Route path="/device" element={<DeviceHomePage />} />
@@ -17267,9 +19724,16 @@ function StaffShell() {
           <Route path="/" element={<StaffMemberHome staff={staff} loading={loading} reload={reload} />} />
           <Route path="/roster" element={<StaffMemberRosterPage />} />
           <Route path="/clock" element={<StaffMemberClockPage />} />
+          <Route path="/availability" element={<StaffMemberAvailabilityPage />} />
           <Route path="/leave" element={<StaffMemberLeavePage />} />
+          <Route path="/noticeboard" element={<NoticeboardPage />} />
+          <Route path="/report" element={<ReportIssuePage />} />
+          <Route path="/checks" element={<TodayChecksPage />} />
+          <Route path="/temperatures" element={<TemperaturesPage />} />
+          <Route path="/stocktake" element={<StocktakeHandoffPage />} />
           <Route path="/compliance" element={<StaffMemberCompliancePage />} />
           <Route path="/documents" element={<StaffMemberDocumentsPage />} />
+          <Route path="/handbook" element={<StaffHandbookPage />} />
           <Route path="/academy" element={<StaffMemberAcademyPage staff={staff} loading={loading} />} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />
@@ -17286,18 +19750,24 @@ function StaffShell() {
           <Route path="/" element={<StaffHome staff={staff} loading={loading} onSelect={setSelectedId} reload={reload} />} />
           <Route path="/brief" element={<HubLayout tabs={TODAY_TABS}><ManagerDailyBriefPage staff={staff} /></HubLayout>} />
           <Route path="/readiness" element={<HubLayout tabs={TODAY_TABS}><VenueReadinessPage staff={staff} /></HubLayout>} />
-          <Route path="/manager" element={<HubLayout tabs={TODAY_TABS}><ManagerDashboardPage staff={staff} /></HubLayout>} />
+          <Route path="/manager" element={<HubLayout tabs={TODAY_TABS}><ManagerDashboardPage staff={staff} roster={roster} /></HubLayout>} />
           <Route path="/clock" element={<HubLayout tabs={TODAY_TABS}><StaffMemberClockPage /></HubLayout>} />
           <Route path="/profiles" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><StaffProfilesPage staff={staff} roleTemplates={roleTemplates} loading={loading} onSelect={setSelectedId} reload={reload} /></HubLayout>} />
           <Route path="/invites" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><InvitesPage staff={staff} roleTemplates={roleTemplates} reloadStaff={reload} /></HubLayout>} />
           <Route path="/approvals" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><ApprovalsPage staff={staff} reload={reload} /></HubLayout>} />
-          <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
+          <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} roster={roster} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
           <Route path="/admin" element={canOpenSettings ? <AlmaAdminRedirect /> : <Navigate to="/" replace />} />
           <Route path="/access" element={<Navigate to="/profiles" replace />} />
           <Route path="/staff/:staffId" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/staff/:staffId/:section" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/roster" element={<HubLayout tabs={ROSTER_PAY_TABS}><RosterPage staff={staff} roster={roster} reload={reload} /></HubLayout>} />
           <Route path="/leave" element={<HubLayout tabs={ROSTER_PAY_TABS}><LeaveCalendarPage staff={staff} /></HubLayout>} />
+          <Route path="/noticeboard" element={<NoticeboardPage />} />
+          <Route path="/handbook" element={<StaffHandbookPage />} />
+          <Route path="/report" element={<ReportIssuePage />} />
+          <Route path="/checks" element={<TodayChecksPage />} />
+          <Route path="/temperatures" element={<TemperaturesPage />} />
+          <Route path="/stocktake" element={<StocktakeHandoffPage />} />
           <Route path="/compliance" element={<HubLayout tabs={COMPLIANCE_TABS}><StaffMemberCompliancePage /></HubLayout>} />
           <Route path="/academy" element={<HubLayout tabs={COMPLIANCE_TABS}><TrainingPage staff={staff} reloadStaff={reload} /></HubLayout>} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />

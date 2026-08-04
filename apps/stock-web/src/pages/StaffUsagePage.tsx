@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import type { StockItem, StockStaffUsageCategory, StockWastagePayload } from '@alma/shared';
+import type { StockOperationsItem, StockStaffUsageCategory, StockWastagePayload } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { StockItemPicker } from '../components/StockItemPicker';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -25,7 +25,7 @@ function qty(value: number, unit: string) {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)} ${unit}`;
 }
 
-function itemUnit(item: StockItem | undefined) {
+function itemUnit(item: StockOperationsItem | undefined) {
   return item?.venueStock?.unitOverride ?? item?.countUnit ?? item?.unit ?? '';
 }
 

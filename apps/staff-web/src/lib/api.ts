@@ -15,16 +15,32 @@ function requiredUrl(names: string[], localFallback: string) {
 const API_BASE_URL = requiredUrl(['VITE_API_URL', 'VITE_API_BASE_URL'], 'http://localhost:3018');
 const AUTH_TOKEN_KEY = 'alma.staff.session';
 
+/**
+ * Mirrors token writes into the native durable store.
+ *
+ * Injected rather than imported so this module stays free of Capacitor — the
+ * web build should not pull a native SDK into its bundle. main.tsx wires it
+ * when running inside the shell.
+ */
+let persistToken: (token: string | null) => void = () => undefined;
+
+export function setTokenPersister(fn: (token: string | null) => void) {
+  persistToken = fn;
+}
+
 export function setApiAuthToken(token: string | null | undefined) {
   if (!token) {
     window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    persistToken(null);
     return;
   }
   window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+  persistToken(token);
 }
 
 export function clearApiAuthToken() {
   window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  persistToken(null);
 }
 
 function requestHeaders(init?: RequestInit) {
@@ -122,4 +138,55 @@ export function installSuiteHandoff() {
       almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
     }).almaCreateSuiteHandoffUrl;
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Offline queue wiring                                                */
+/* ------------------------------------------------------------------ */
+
+import { createOfflineQueue } from './offline-queue';
+
+/**
+ * Fetch a binary endpoint as a Blob.
+ *
+ * The session is a bearer token in localStorage, so a plain <a href> to an
+ * authenticated endpoint gets a 401. Putting the token in the query string
+ * would fix that and leak the session into history and logs, so the bytes come
+ * back with the header and go to the browser as an object URL.
+ */
+export async function apiBlob(path: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}${normalisePath(path)}`, {
+    credentials: 'include',
+    headers: requestHeaders()
+  });
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearApiAuthToken();
+      throw new ApiError('Please sign in again.', response.status);
+    }
+    const errorBody = await response.json().catch(() => ({ message: 'Download failed' }));
+    throw new ApiError(errorBody.message ?? 'Download failed', response.status);
+  }
+  return response.blob();
+}
+
+const offlineQueue = createOfflineQueue({
+  send: (path, init) => api(path, init),
+  // ApiError with status 0 is the network-level failure api() raises when
+  // fetch itself could not complete.
+  isOffline: (error) => error instanceof ApiError && error.status === 0
+});
+
+export const apiQueued = offlineQueue.enqueue;
+export const flushQueue = offlineQueue.flush;
+export const queuedRequestCount = offlineQueue.count;
+
+if (typeof window !== 'undefined') {
+  // Coming back online is the obvious moment; returning to the tab is the one
+  // that actually catches a phone taken out of a pocket, because iOS often
+  // reports online before the connection really works.
+  window.addEventListener('online', () => void flushQueue());
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void flushQueue();
+  });
 }

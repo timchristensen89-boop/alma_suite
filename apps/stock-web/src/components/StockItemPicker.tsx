@@ -1,5 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { StockItem } from '@alma/shared';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+
+/**
+ * All the picker reads off an item. Kept minimal on purpose so callers can pass
+ * a lean payload — the operations screens send only these fields rather than
+ * the whole 715-item catalogue.
+ */
+type PickableItem = { id: string; name: string; sku: string | null };
 
 const USAGE_KEY = 'alma.stock.itemUsage';
 
@@ -22,12 +28,12 @@ function bumpUsage(id: string) {
   }
 }
 
-function labelFor(item: StockItem) {
+function labelFor(item: PickableItem) {
   return `${item.name}${item.sku ? ` · ${item.sku}` : ''}`;
 }
 
 type Props = {
-  items: StockItem[];
+  items: PickableItem[];
   value: string;
   onChange: (id: string) => void;
   label?: string;
@@ -40,7 +46,16 @@ type Props = {
  * this device). Replaces the plain <Select> wherever an item is chosen, so long
  * catalogues are searchable rather than an unwieldy dropdown.
  */
-export function StockItemPicker({ items, value, onChange, label = 'Item', placeholder = 'Search stock items…', disabled }: Props) {
+/**
+ * Memoised on purpose.
+ *
+ * A stocktake renders one of these per count line — 716 of them for a full
+ * count. Without memo, typing a quantity in any single line re-rendered every
+ * picker on the page, each of them re-reading usage from localStorage and
+ * re-scanning the whole catalogue. The parent passes stable callbacks so this
+ * actually holds.
+ */
+function StockItemPickerImpl({ items, value, onChange, label = 'Item', placeholder = 'Search stock items…', disabled }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [usageTick, setUsageTick] = useState(0);
@@ -59,7 +74,7 @@ export function StockItemPicker({ items, value, onChange, label = 'Item', placeh
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return [] as StockItem[];
+    if (!term) return [] as PickableItem[];
     return items
       .filter((item) => item.name.toLowerCase().includes(term) || (item.sku ?? '').toLowerCase().includes(term))
       .slice(0, 50);
@@ -150,3 +165,5 @@ export function StockItemPicker({ items, value, onChange, label = 'Item', placeh
     </div>
   );
 }
+
+export const StockItemPicker = memo(StockItemPickerImpl);

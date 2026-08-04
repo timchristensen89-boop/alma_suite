@@ -41,7 +41,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Stock count',
     description: 'Stocktakes, wastage, staff usage and transfers',
     icon: <IconStocktake />,
-    match: ['/wastage', '/staff-usage', '/transfers']
+    match: ['/stocktake-templates', '/wastage', '/staff-usage', '/transfers']
   },
   {
     to: '/items',
@@ -55,7 +55,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Purchasing',
     description: 'Invoices, purchase orders, deliveries, suppliers and price changes',
     icon: <IconInvoices />,
-    match: ['/purchase-orders', '/deliveries', '/suppliers', '/price-movement']
+    match: ['/purchase-orders', '/deliveries', '/suppliers', '/buying', '/price-movement']
   },
   {
     to: '/recipes',

@@ -36,8 +36,7 @@ export type AlmaAppIconKey =
   | 'cap'
   | 'produce'
   | 'people'
-  | 'gear'
-  | 'comms';
+  | 'gear';
 
 export type AlmaAppDefinition = {
   id: string;
@@ -221,8 +220,6 @@ export function getAlmaAppIcon(iconKey: AlmaAppIconKey, size = 22) {
       return <PeopleIcon {...props} />;
     case 'gear':
       return <GearIcon {...props} />;
-    case 'comms':
-      return <CommsGlyph {...props} />;
   }
 }
 
@@ -281,14 +278,6 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
     icon: <SearchIcon />
   },
   {
-    id: 'comms',
-    label: 'COMMS',
-    from: '#B4BCC5',
-    to: '#6E7682',
-    iconKey: 'comms',
-    icon: <CommsGlyph />
-  },
-  {
     id: 'giftcards',
     label: 'GIFTCARDS',
     from: '#F5DCCE',
@@ -312,7 +301,6 @@ export const ALMA_APP_LOGO_SRC = {
   reports: '/brand/alma-reports-logo.svg',
   staff: '/brand/alma-staff-logo.svg',
   reserve: '/brand/alma-reserve-logo.svg',
-  comms: '/brand/alma-comms-logo.svg',
   marketing: '/brand/alma-marketing-logo.svg',
   giftcards: '/brand/alma-giftcards-logo.svg',
   audits: '/brand/alma-audits-logo.svg',

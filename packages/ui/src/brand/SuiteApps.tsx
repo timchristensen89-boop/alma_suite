@@ -32,7 +32,7 @@ export type SuiteAppId =
   | 'stock'
   | 'staff'
   | 'reserve'
-  | 'marketing' | 'comms'
+  | 'marketing'
   | 'giftcards'
   | 'learning'
   | 'reports'
@@ -87,7 +87,6 @@ const LIFECYCLE_BY_APP: Partial<Record<SuiteAppId, SuiteAppLifecycle>> = {
   stock: 'pilot',
   staff: 'pilot',
   reports: 'pilot',
-  comms: 'pilot',
   giftcards: 'pilot',
   reserve: 'pilot',      // promoted from preview — booking confirmation emails working
   marketing: 'pilot',    // promoted from preview — live campaign send shipped with safety net
@@ -106,8 +105,7 @@ const ICON_FACTORY: Record<AlmaAppIconKey, () => ReactNode> = {
   cap: () => <CapIcon />,
   produce: () => <ProduceIcon />,
   people: () => <PeopleIcon />,
-  gear: () => <GearIcon />,
-  comms: () => <CommsGlyph />
+  gear: () => <GearIcon />
 };
 
 const LEGACY_APP_SEEDS: SuiteAppSeed[] = [];
@@ -123,7 +121,6 @@ const SUITE_APP_SEEDS: SuiteAppSeed[] = ALMA_APPS.map((app): SuiteAppSeed => ({
     app.id === 'staff' ||
     app.id === 'reserve' ||
     app.id === 'marketing' ||
-    app.id === 'comms' ||
     app.id === 'giftcards' ||
     app.id === 'reports' ||
     app.id === 'training' ||
@@ -150,7 +147,6 @@ const SUITE_APP_HOSTS: Partial<Record<SuiteAppId, string>> = {
   reports: 'https://alma-reports.web.app',
   marketing: 'https://alma-marketing.web.app',
   giftcards: 'https://alma-giftcards.web.app/redeem',
-  comms: 'https://alma-comms.web.app',
   settings: 'https://alma-suite-admin.web.app'
 };
 
@@ -184,7 +180,6 @@ type SuiteArea = 'service' | 'operations' | 'growth' | 'system';
 
 const SUITE_AREA_BY_APP: Partial<Record<SuiteAppId, SuiteArea>> = {
   reserve: 'service',
-  comms: 'service',
   stock: 'operations',
   staff: 'operations',
   compliance: 'operations',
@@ -211,7 +206,6 @@ const SUITE_AREA_ORDER: { id: SuiteArea; label: string }[] = [
 
 const SUITE_SHORT_LABEL: Partial<Record<SuiteAppId, string>> = {
   reserve: 'Bookings',
-  comms: 'Messages',
   stock: 'Inventory',
   staff: 'People & rosters',
   compliance: 'Audits & logs',
@@ -238,8 +232,6 @@ function descriptionFor(id: string) {
       return 'Reservations, guests, table diary, waitlist, and covers forecast.';
     case 'marketing':
       return 'Guest contacts, segments, campaign drafts, and send-ready lists.';
-    case 'comms':
-      return 'Messages, handovers, alerts, and operational follow-ups.';
     case 'giftcards':
       return 'Gift card sales, balances, redemptions, and Stripe checkout.';
     case 'policies':

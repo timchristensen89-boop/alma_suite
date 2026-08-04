@@ -303,6 +303,14 @@ export function ReorderNoticesPage() {
         {recommendationsLoading ? <Spinner label="Reviewing menu par recommendations" /> : null}
         {recommendations ? (
           <div className="stock-recommendation-stack">
+            {recommendations.summary.demand ? (
+              <div className={`stock-demand-banner${recommendations.summary.demand.factor > 1 ? ' is-up' : recommendations.summary.demand.factor < 1 ? ' is-down' : ''}`}>
+                <span className="stock-demand-icon" aria-hidden="true">
+                  {recommendations.summary.demand.factor > 1 ? '▲' : recommendations.summary.demand.factor < 1 ? '▼' : '●'}
+                </span>
+                <span>{recommendations.summary.demand.label}</span>
+              </div>
+            ) : null}
             <div className="stock-recommendation-summary">
               <Badge tone={recommendations.sales.source === 'missing' ? 'danger' : 'positive'}>
                 {recommendations.sales.daysWithSales} sales days

@@ -1,8 +1,19 @@
 import { Router } from 'express';
 import { requireManager } from '../lib/auth-middleware.js';
 import { reportsService } from '../services/reports.service.js';
+import { supplierSpendService } from '../services/supplier-spend.service.js';
 
 export const reportsRouter = Router();
+
+// Projected spend per supplier per week: Xero P&L COGS-vs-sales trend applied
+// to the sales forecast, split food/bev, then split by supplier share.
+reportsRouter.get('/projected-supplier-spend', requireManager, async (req, res, next) => {
+  try {
+    res.json(await supplierSpendService.projectedSpend(req.query, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
 
 reportsRouter.get('/overview', requireManager, async (req, res, next) => {
   try {
@@ -139,6 +150,41 @@ reportsRouter.get('/menu-cogs', requireManager, async (req, res, next) => {
 reportsRouter.post('/sales/import', requireManager, async (req, res, next) => {
   try {
     res.json(await reportsService.importActualSales(req.body, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Sales CSV upload. Defaults to a DRY RUN: nothing is written unless the
+// caller explicitly sets dryRun false, so a preview can never surprise anyone.
+reportsRouter.post('/sales/import-csv', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reportsService.importActualSalesCsv(req.body ?? {}, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reportsRouter.get('/sales/template.csv', requireManager, (_req, res) => {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="alma-sales-template.csv"');
+  res.send(reportsService.salesTemplate());
+});
+
+// Existing entries for a range, so the manual grid can prefill rather than
+// silently overwrite what is already recorded.
+reportsRouter.get('/sales/range', requireManager, async (req, res, next) => {
+  try {
+    res.json(
+      await reportsService.listActualSalesRange(
+        {
+          venue: typeof req.query.venue === 'string' ? req.query.venue : null,
+          from: String(req.query.from ?? ''),
+          to: String(req.query.to ?? '')
+        },
+        req.user!
+      )
+    );
   } catch (error) {
     next(error);
   }

@@ -1,5 +1,7 @@
 export { AppShell } from './layout/AppShell';
 export { PageHeader } from './layout/PageHeader';
+export { TaskBar, splitTaskBarItems } from './layout/TaskBar';
+export type { TaskBarItem } from './layout/TaskBar';
 export { TopBar } from './layout/TopBar';
 export { SuiteClock } from './layout/SuiteClock';
 export { SuiteCommsWidget } from './communications/SuiteCommsWidget';

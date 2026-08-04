@@ -1,3 +1,4 @@
+import { describeChecklistCadence, isChecklistCadence, isChecklistDue, venueDayBounds, venueDayKey } from '@alma/shared';
 import { prisma } from '@alma/db';
 import {
   ALMA_IMPORTED_CHECKLIST_TEMPLATES,
@@ -142,6 +143,10 @@ export const checklistService = {
       data: {
         name: data.name,
         area: data.area || null,
+        cadence: data.cadence,
+        // A day is only meaningful for the two cadences that use one; storing
+        // a stale weekday against a DAILY template would confuse the next edit.
+        cadenceDay: data.cadence === 'WEEKLY' || data.cadence === 'MONTHLY' ? data.cadenceDay ?? null : null,
         items: {
           create: data.items.map((item, index) => ({
             label: item.label,
@@ -161,7 +166,12 @@ export const checklistService = {
     return prisma.$transaction(async (tx) => {
       await tx.checklistTemplate.update({
         where: { id: existing.id },
-        data: { name: data.name, area: data.area || null }
+        data: {
+          name: data.name,
+          area: data.area || null,
+          cadence: data.cadence,
+          cadenceDay: data.cadence === 'WEEKLY' || data.cadence === 'MONTHLY' ? data.cadenceDay ?? null : null
+        }
       });
 
       // Replace items fully. Safe because ChecklistItem (from runs) references the
@@ -200,9 +210,32 @@ export const checklistService = {
     return { ok: true };
   },
 
-  async listRuns() {
+  /**
+   * Runs, newest first.
+   *
+   * Unfiltered this returns every run ever recorded with all of its items —
+   * fine when there were eight of them, and roughly 3,650 a year now the
+   * scheduler raises ten each morning. The filters exist so a phone can ask
+   * for today's open ones instead of the archive.
+   */
+  async listRuns(filters: { date?: string; status?: string; limit?: number; today?: boolean } = {}) {
+    let runDate: { gte: Date; lt: Date } | undefined;
+    // `today` means the venue's today, not the server's. Sydney is ten hours
+    // ahead of UTC, so for most of a morning shift the UTC date is still
+    // yesterday — a client sending its own toISOString() date would ask for
+    // the wrong day and find an empty board with ten checks sitting on it.
+    const day = filters.today ? venueDayKey(new Date()) : filters.date;
+    if (day) {
+      const bounds = venueDayBounds(day);
+      if (bounds) runDate = bounds;
+    }
     return prisma.checklistRun.findMany({
+      where: {
+        ...(runDate ? { runDate } : {}),
+        ...(filters.status && filters.status !== 'all' ? { status: filters.status as never } : {})
+      },
       orderBy: [{ runDate: 'desc' }],
+      take: Math.min(Math.max(filters.limit ?? 200, 1), 500),
       include: {
         template: { include: { items: { orderBy: [{ position: 'asc' }] } } },
         items: { include: { linkedIssue: true }, orderBy: [{ position: 'asc' }] }
@@ -397,6 +430,19 @@ export const checklistService = {
       // Skip if no items
       if (template.items.length === 0) {
         skipped.push({ templateId: template.id, templateName: template.name, reason: 'no items' });
+        continue;
+      }
+
+      // Only raise what is actually due today. Generating every template every
+      // day put four SOP reviews and a weekly walk on the board each morning,
+      // which is how the two lists that matter get ignored.
+      const cadence = isChecklistCadence(template.cadence) ? template.cadence : 'DAILY';
+      if (!isChecklistDue(now, cadence, template.cadenceDay)) {
+        skipped.push({
+          templateId: template.id,
+          templateName: template.name,
+          reason: cadence === 'MANUAL' ? 'started by hand only' : `not due today (${describeChecklistCadence(cadence, template.cadenceDay).toLowerCase()})`
+        });
         continue;
       }
 

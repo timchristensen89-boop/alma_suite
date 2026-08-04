@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type {
   ApplyStocktakeResult,
@@ -10,10 +10,14 @@ import type {
   Stocktake,
   StocktakeLineInput,
   StocktakeStatus,
+  StocktakeTemplate,
+  StocktakeTemplatesPayload,
+  StocktakeTemplateResolved,
   StocktakeWithLines,
   StocktakesPayload,
   StocktakesSummary
 } from '@alma/shared';
+import { IMPLAUSIBLE_COUNT_SHARE, IMPLAUSIBLE_COUNT_FLOOR_CENTS } from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { LoadedStocktakeImportCard } from '../components/LoadedStocktakeImportCard';
 import { StockItemPicker } from '../components/StockItemPicker';
@@ -261,6 +265,29 @@ function emptyDraft(items: StockItem[], blind = true): StocktakeDraft {
   };
 }
 
+// Seed a draft from a template's resolved item ids (walking order: area/category
+// then name), carrying the template's name, venue and blind default onto the count.
+function draftFromTemplate(
+  items: StockItem[],
+  resolvedItemIds: string[],
+  template: StocktakeTemplate,
+  blind: boolean
+): StocktakeDraft {
+  const order = new Map(resolvedItemIds.map((id, index) => [id, index] as const));
+  const chosen = items
+    .filter((item) => item.status === 'ACTIVE' && order.has(item.id))
+    .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  return {
+    name: `${template.name} ${new Date().toLocaleDateString()}`,
+    venue: template.venue ?? '',
+    template: template.name,
+    countedAt: formatDateTimeInput(new Date().toISOString()),
+    status: 'IN_PROGRESS',
+    notes: '',
+    lines: chosen.map((item) => emptyLine(item, blind))
+  };
+}
+
 function draftFromStocktake(stocktake: StocktakeWithLines): StocktakeDraft {
   return {
     name: stocktake.name,
@@ -314,6 +341,7 @@ export function StocktakePage() {
   const [deleting, setDeleting] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<null | 'submit' | 'approve'>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [lockingId, setLockingId] = useState<string | null>(null);
   const [reopeningId, setReopeningId] = useState<string | null>(null);
   // Data quality snapshot from /api/items/data-quality — fed by Sprint 1's
   // new dataQualityReport service. Renders as a Card above the stocktake
@@ -327,7 +355,7 @@ export function StocktakePage() {
       const [list, sum, itemPayload, quality] = await Promise.all([
         api<StocktakesPayload>('/api/stocktake'),
         api<StocktakesSummary>('/api/stocktake/summary'),
-        api<StockItemsPayload>('/api/items'),
+        api<StockItemsPayload>('/api/items/picker'),
         // Data quality is optional — gracefully degrade if the endpoint
         // isn't deployed yet so older builds don't break.
         api<DataQualityPayload>('/api/items/data-quality').catch(() => null)
@@ -437,6 +465,42 @@ export function StocktakePage() {
       setDetailError(err instanceof ApiError ? err.message : 'Could not refresh stocktake');
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  /**
+   * Lock a count so it becomes the baseline the next one is measured against.
+   *
+   * The variance report — counted versus what sales and deliveries say should
+   * be there, which is the whole reason to count — needs a previous LOCKED
+   * stocktake at the venue. In production **not one count had ever been
+   * locked**, because the API could do it and nothing in the app called it. So
+   * the report has always come back blank. Locking a single count turned it
+   * from 0 to 149 comparable lines.
+   */
+  async function lockStocktake(stocktake: Stocktake) {
+    if (!canManageReview) {
+      setError('Manager access is required to lock stocktakes.');
+      return;
+    }
+    const confirmed = confirmDangerousAction({
+      title: `Lock "${stocktake.name}"?`,
+      message:
+        'A locked count becomes the baseline the next count is measured against, and reports prefer it. ' +
+        'Lock it once you are happy the numbers are right — you can still reopen it with a reason.',
+      confirmationText: 'LOCK COUNT'
+    });
+    if (!confirmed) return;
+
+    setLockingId(stocktake.id);
+    setError(null);
+    try {
+      await api<Stocktake>(`/api/stocktake/${stocktake.id}/lock`, { method: 'POST' });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError || err instanceof Error ? err.message : 'Could not lock the stocktake.');
+    } finally {
+      setLockingId(null);
     }
   }
 
@@ -615,14 +679,27 @@ export function StocktakePage() {
     if (!confirmed) return;
     setBulkBusy('approve');
     setError(null);
-    const results = await Promise.allSettled(
-      targets.map((stocktake) => api(`/api/stocktake/${stocktake.id}/approve`, { method: 'POST' }))
-    );
-    const failed = results.filter((r) => r.status === 'rejected').length;
+    // Apply sequentially, NOT in parallel: each approval is a ledger transaction
+    // that reads then overwrites item on-hand, so two running at once on shared
+    // items deadlock and exhaust the DB connection pool (which reads as the whole
+    // section hanging). One at a time is also correct — each count sees the
+    // previous one's applied balances.
+    let failed = 0;
+    let lastError: string | null = null;
+    for (const stocktake of targets) {
+      try {
+        await api(`/api/stocktake/${stocktake.id}/approve`, { method: 'POST' });
+      } catch (err) {
+        failed += 1;
+        lastError = err instanceof ApiError ? err.message : 'Could not approve stocktake';
+      }
+    }
     setSelectedIds(new Set());
     setBulkBusy(null);
     await load();
-    if (failed) setError(`Approved ${results.length - failed} of ${results.length}; ${failed} could not be approved.`);
+    if (failed) {
+      setError(`Approved ${targets.length - failed} of ${targets.length}; ${failed} could not be approved${lastError ? ` (${lastError})` : ''}.`);
+    }
   }
 
   const cardTitle =
@@ -737,11 +814,25 @@ export function StocktakePage() {
                         type="button"
                         variant="secondary"
                         size="sm"
-                        disabled={applyingId === stocktake.id || !canManageReview}
+                        disabled={applyingId !== null || bulkBusy === 'approve' || !canManageReview}
                         title={canManageReview ? undefined : 'Manager access required'}
                         onClick={() => void applyStocktake(stocktake)}
                       >
                         {applyingId === stocktake.id ? 'Approving…' : 'Apply count to stock'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={lockingId !== null || !canManageReview}
+                        title={
+                          canManageReview
+                            ? 'Lock this count as the baseline the next one is measured against — the variance report needs it'
+                            : 'Manager access required'
+                        }
+                        onClick={() => void lockStocktake(stocktake)}
+                      >
+                        {lockingId === stocktake.id ? 'Locking…' : 'Lock as baseline'}
                       </Button>
                       <Button
                         type="button"
@@ -946,7 +1037,7 @@ export function StocktakePage() {
                                     type="button"
                                     variant="secondary"
                                     size="sm"
-                                    disabled={applyingId === stocktake.id || !canManageReview}
+                                    disabled={applyingId !== null || bulkBusy === 'approve' || !canManageReview}
                                     title={canManageReview ? undefined : 'Manager access required'}
                                     onClick={(event) => {
                                       event.stopPropagation();
@@ -1052,6 +1143,44 @@ function StocktakeForm({
   // defaults on for new counts. Walk-by-area orders entry by physical location.
   const [blind, setBlind] = useState(mode === 'create');
   const [walkByArea, setWalkByArea] = useState(false);
+  // Start-from-template (new counts only): pick a saved template to seed the
+  // draft with just that template's resolved items, in walking order.
+  const [templates, setTemplates] = useState<StocktakeTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [templateBusy, setTemplateBusy] = useState(false);
+  useEffect(() => {
+    if (mode !== 'create') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const payload = await api<StocktakeTemplatesPayload>('/api/stocktake-templates');
+        if (!cancelled) setTemplates(payload.templates.filter((template) => template.active));
+      } catch {
+        /* templates are optional — a blank list just means "Full count only" */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
+  async function applyTemplate(templateId: string) {
+    setSelectedTemplateId(templateId);
+    if (!templateId) {
+      setDraft(emptyDraft(items, blind));
+      return;
+    }
+    setTemplateBusy(true);
+    try {
+      const resolved = await api<StocktakeTemplateResolved>(`/api/stocktake-templates/${templateId}/resolve`);
+      setBlind(resolved.template.blindDefault);
+      setDraft(draftFromTemplate(items, resolved.items.map((item) => item.id), resolved.template, resolved.template.blindDefault));
+    } catch {
+      /* leave the current draft as-is on failure */
+    } finally {
+      setTemplateBusy(false);
+    }
+  }
 
   const countedCount = draft.lines.filter((line) => line.countedQty.trim() !== '').length;
   const progressPct = draft.lines.length ? Math.round((countedCount / draft.lines.length) * 100) : 0;
@@ -1063,6 +1192,71 @@ function StocktakeForm({
       (draft.lines[a]?.location || 'ZZZ').localeCompare(draft.lines[b]?.location || 'ZZZ')
     );
   }, [draft.lines, walkByArea]);
+
+  // One map, not a find() per row. Each count line looked its item up with
+  // items.find() over the whole catalogue, so a 716-line count did roughly
+  // half a million comparisons on every keystroke.
+  const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+
+  // Running value of the count so far. A single line worth a large share of it
+  // is how a millilitre count recorded as bottles announces itself — see
+  // count-scale.ts. Catching it here means the counter fixes it on the floor
+  // rather than a costing report finding it months later. Memoised: a full
+  // count is 716 rows and this runs on every keystroke otherwise.
+  const countTotalCents = useMemo(
+    () =>
+      draft.lines.reduce((total, line) => {
+        const item = line.itemId ? itemsById.get(line.itemId) : undefined;
+        if (!item) return total;
+        const raw = String(line.countedQty ?? '').trim();
+        if (raw === '') return total;
+        const qty = Number(raw);
+        if (!Number.isFinite(qty)) return total;
+        return total + Math.max(0, estimateLineValueCents(item, qty, line.unit || null).cents ?? 0);
+      }, 0),
+    [draft.lines, itemsById]
+  );
+
+  /**
+   * Count lines grouped by category, one collapsible section each.
+   *
+   * A full stocktake is a line per active item — 716 of them — and opening it
+   * as one flat list meant scrolling past everything to reach the section you
+   * were actually counting, with 3,500 inputs live in the DOM. Sections start
+   * closed, so the screen opens as ten headings and you open the one you are
+   * standing in front of. Collapsed lines are still part of the draft and
+   * still save; they are simply not rendered.
+   */
+  const categoryGroups = useMemo(() => {
+    const map = new Map<string, number[]>();
+    for (const index of orderedIndices) {
+      const line = draft.lines[index];
+      if (!line) continue;
+      const item = line.itemId ? itemsById.get(line.itemId) : undefined;
+      const key = item?.category?.name ?? item?.categoryName ?? 'Uncategorised';
+      const bucket = map.get(key);
+      if (bucket) bucket.push(index);
+      else map.set(key, [index]);
+    }
+    return [...map.entries()]
+      .map(([name, indices]) => ({
+        name,
+        indices,
+        counted: indices.filter((i) => String(draft.lines[i]?.countedQty ?? '').trim() !== '').length
+      }))
+      // Uncategorised last: it is a data-quality tail, not somewhere you walk to.
+      .sort((a, b) => (a.name === 'Uncategorised' ? 1 : b.name === 'Uncategorised' ? -1 : a.name.localeCompare(b.name)));
+  }, [orderedIndices, draft.lines, itemsById]);
+
+  const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
+  const toggleCategory = useCallback((name: string) => {
+    setOpenCategories((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
 
   function toggleBlind(next: boolean) {
     setBlind(next);
@@ -1084,6 +1278,29 @@ function StocktakeForm({
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
+  // One stable onChange per row index. An inline arrow would be a new function
+  // on every render, which defeats the memo on StockItemPicker entirely.
+  // Points at the latest selectLineItem so the cached per-row handlers never
+  // close over stale draft state.
+  const selectLineItemRef = useRef<(index: number, itemId: string) => void>(() => {});
+  const updateLineRef = useRef<(index: number, patch: Partial<LineDraft>) => void>(() => {});
+  const removeLineRef = useRef<(index: number) => void>(() => {});
+  const selectHandlers = useRef(new Map<number, (itemId: string) => void>());
+  // Pass these, never `ref.current` directly: the ref is reassigned on every
+  // render, so handing `.current` to a memoised child changes the prop every
+  // time and defeats the memo completely — which is exactly what happened on
+  // the first attempt here.
+  const onUpdateLine = useCallback((index: number, patch: Partial<LineDraft>) => updateLineRef.current(index, patch), []);
+  const onRemoveLine = useCallback((index: number) => removeLineRef.current(index), []);
+
+  const makeSelectLineItem = useCallback((index: number) => {
+    const existing = selectHandlers.current.get(index);
+    if (existing) return existing;
+    const handler = (itemId: string) => selectLineItemRef.current(index, itemId);
+    selectHandlers.current.set(index, handler);
+    return handler;
+  }, []);
+
   function updateLine(index: number, patch: Partial<LineDraft>) {
     setDraft((current) => ({
       ...current,
@@ -1091,8 +1308,12 @@ function StocktakeForm({
     }));
   }
 
+  selectLineItemRef.current = (index: number, itemId: string) => selectLineItem(index, itemId);
+  updateLineRef.current = updateLine;
+  removeLineRef.current = removeLine;
+
   function selectLineItem(index: number, itemId: string) {
-    const item = items.find((candidate) => candidate.id === itemId);
+    const item = itemsById.get(itemId);
     updateLine(index, {
       itemId,
       label: item?.name ?? '',
@@ -1162,6 +1383,24 @@ function StocktakeForm({
         void submit(draft.status, 'draft');
       }}
     >
+      {mode === 'create' && templates.length > 0 ? (
+        <div className="stocktake-template-start">
+          <Select
+            label="Start from template"
+            value={selectedTemplateId}
+            disabled={templateBusy}
+            onChange={(event) => void applyTemplate(event.currentTarget.value)}
+            options={[
+              { label: 'Full count — all active items', value: '' },
+              ...templates.map((template) => ({
+                label: `${template.name}${template.venue ? ` · ${template.venue}` : ''} (≈ ${template.resolvedItemCount} items)`,
+                value: template.id
+              }))
+            ]}
+          />
+          <span className="subtle">{templateBusy ? 'Loading template…' : 'Loads just that template’s items, in walking order.'}</span>
+        </div>
+      ) : null}
       <div className="form-grid three">
         <Input label="Name" required value={draft.name} onChange={(event) => update('name', event.currentTarget.value)} />
         <Input label="Venue" value={draft.venue} onChange={(event) => update('venue', event.currentTarget.value)} placeholder="Freshie, Avalon…" />
@@ -1196,52 +1435,42 @@ function StocktakeForm({
       </div>
 
       <div className="stocktake-count-lines">
-        {orderedIndices.map((index, displayPos) => {
-          const line = draft.lines[index];
-          if (!line) return null;
-          const prevIdx = displayPos > 0 ? orderedIndices[displayPos - 1] : undefined;
-          const prevLine = prevIdx !== undefined ? draft.lines[prevIdx] ?? null : null;
-          const showAreaHeader = walkByArea && (!prevLine || (prevLine.location || '') !== (line.location || ''));
+        {categoryGroups.map((group) => {
+          const open = openCategories.has(group.name);
           return (
-            <div key={index}>
-              {showAreaHeader ? (
-                <div className="stocktake-area-header">{line.location || 'No location'}</div>
-              ) : null}
-              <div className="stocktake-count-line">
-                <StockItemPicker
-                  label="Item"
-                  items={items}
-                  value={line.itemId}
-                  onChange={(itemId) => selectLineItem(index, itemId)}
-                />
-                <Input label="Label" required value={line.label} onChange={(event) => updateLine(index, { label: event.currentTarget.value })} />
-                <Input label="Qty" type="number" step="0.01" value={line.countedQty} onChange={(event) => updateLine(index, { countedQty: event.currentTarget.value })} />
-                <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
-                <Input label="Location" value={line.location} onChange={(event) => updateLine(index, { location: event.currentTarget.value })} />
-                <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(index)}>
-                  Remove
-                </Button>
-              </div>
-              {(() => {
-                const lineItem = line.itemId ? items.find((candidate) => candidate.id === line.itemId) : undefined;
-                if (!lineItem) return null;
-                const countRaw = String(line.countedQty ?? '').trim();
-                const countedQty = countRaw === '' ? null : Number(countRaw);
-                const estimate = estimateLineValueCents(lineItem, Number.isFinite(countedQty as number) ? (countedQty as number) : null, line.unit || null);
-                if (estimate.unitCostCents === null) {
-                  return <div className="stocktake-count-cost is-missing">No cost set for {lineItem.name} — value can't be checked</div>;
-                }
+            <div key={group.name} className="stocktake-category-group">
+              <button
+                type="button"
+                className={`stocktake-category-header${open ? ' is-open' : ''}`}
+                onClick={() => toggleCategory(group.name)}
+                aria-expanded={open}
+              >
+                <span className="stocktake-category-name">{open ? '▾' : '▸'} {group.name}</span>
+                <span className="stocktake-category-count">
+                  {group.counted} of {group.indices.length} counted
+                </span>
+              </button>
+              {open ? group.indices.map((index, displayPos) => {
+                const line = draft.lines[index];
+                if (!line) return null;
+                const prevIdx = displayPos > 0 ? group.indices[displayPos - 1] : undefined;
+                const prevLine = prevIdx !== undefined ? draft.lines[prevIdx] ?? null : null;
+                const showAreaHeader = walkByArea && (!prevLine || (prevLine.location || '') !== (line.location || ''));
                 return (
-                  <div className={`stocktake-count-cost${estimate.unitMismatch ? ' is-alert' : ''}`}>
-                    <span>{formatCurrency(estimate.unitCostCents)} / {estimate.countUnit}</span>
-                    {estimate.unitMismatch ? (
-                      <strong>⚠ unit “{line.unit}” ≠ {estimate.countUnit} — check against parent product</strong>
-                    ) : estimate.cents !== null ? (
-                      <strong>line value {formatCurrency(estimate.cents)}</strong>
-                    ) : null}
-                  </div>
+            <CountLineRow
+              key={index}
+              index={index}
+              line={line}
+              item={line.itemId ? itemsById.get(line.itemId) : undefined}
+              items={items}
+              countTotalCents={countTotalCents}
+              showAreaHeader={showAreaHeader}
+              onSelectItem={makeSelectLineItem(index)}
+                    onUpdate={onUpdateLine}
+                    onRemove={onRemoveLine}
+                  />
                 );
-              })()}
+              }) : null}
             </div>
           );
         })}
@@ -1261,6 +1490,99 @@ function StocktakeForm({
     </form>
   );
 }
+
+
+/**
+ * One count line, memoised.
+ *
+ * A full stocktake is one row per active item — 716 of them. Every row used to
+ * re-render on every keystroke anywhere in the count, each re-running the value
+ * estimate and re-rendering its item picker. updateLine replaces only the line
+ * being edited and leaves the other objects untouched, so comparing on `line`
+ * identity lets the other 715 rows sit still.
+ */
+const CountLineRow = memo(function CountLineRow({
+  index,
+  line,
+  item,
+  items,
+  countTotalCents,
+  showAreaHeader,
+  onSelectItem,
+  onUpdate,
+  onRemove
+}: {
+  index: number;
+  line: LineDraft;
+  item: StockItem | undefined;
+  items: StockItem[];
+  /** Value of the whole count so far, to judge this line against. */
+  countTotalCents: number;
+  showAreaHeader: boolean;
+  onSelectItem: (itemId: string) => void;
+  onUpdate: (index: number, patch: Partial<LineDraft>) => void;
+  onRemove: (index: number) => void;
+}) {
+  const countRaw = String(line.countedQty ?? '').trim();
+  const countedQty = countRaw === '' ? null : Number(countRaw);
+  const estimate = item
+    ? estimateLineValueCents(item, Number.isFinite(countedQty as number) ? (countedQty as number) : null, line.unit || null)
+    : null;
+
+  // A single line worth a large share of the whole count is not a count, it is
+  // a units mistake. The same rule the costing-health check uses, applied while
+  // the person is still standing in front of the shelf.
+  const outOfScale =
+    estimate?.cents != null &&
+    estimate.cents >= IMPLAUSIBLE_COUNT_FLOOR_CENTS &&
+    countTotalCents > 0 &&
+    estimate.cents / countTotalCents >= IMPLAUSIBLE_COUNT_SHARE;
+  // If the item knows how much its count unit holds, say what the number would
+  // mean read as that measure — usually the count they meant.
+  const measurePer = item?.measurePerCountUnit ?? null;
+  const asMeasure =
+    outOfScale && measurePer && measurePer > 0 && item?.measureUnit && countedQty
+      ? Math.round((countedQty / measurePer) * 100) / 100
+      : null;
+
+  return (
+    <div>
+      {showAreaHeader ? <div className="stocktake-area-header">{line.location || 'No location'}</div> : null}
+      <div className="stocktake-count-line">
+        <StockItemPicker label="Item" items={items} value={line.itemId} onChange={onSelectItem} />
+        <Input label="Label" required value={line.label} onChange={(event) => onUpdate(index, { label: event.currentTarget.value })} />
+        <Input label="Qty" type="number" step="0.01" value={line.countedQty} onChange={(event) => onUpdate(index, { countedQty: event.currentTarget.value })} />
+        <Input label="Unit" value={line.unit} onChange={(event) => onUpdate(index, { unit: event.currentTarget.value })} />
+        <Input label="Location" value={line.location} onChange={(event) => onUpdate(index, { location: event.currentTarget.value })} />
+        <Button type="button" variant="ghost" size="sm" onClick={() => onRemove(index)}>
+          Remove
+        </Button>
+      </div>
+      {item && estimate ? (
+        estimate.unitCostCents === null ? (
+          <div className="stocktake-count-cost is-missing">No cost set for {item.name} — value can&apos;t be checked</div>
+        ) : (
+          <div className={`stocktake-count-cost${estimate.unitMismatch || outOfScale ? ' is-alert' : ''}`}>
+            <span>{formatCurrency(estimate.unitCostCents)} / {estimate.countUnit}</span>
+            {estimate.unitMismatch ? (
+              <strong>⚠ unit “{line.unit}” ≠ {estimate.countUnit} — check against parent product</strong>
+            ) : outOfScale ? (
+              <strong>
+                ⚠ {formatCurrency(estimate.cents ?? 0)} — {Math.round(((estimate.cents ?? 0) / countTotalCents) * 100)}% of
+                this whole count.{' '}
+                {asMeasure !== null
+                  ? `If you counted ${item?.measureUnit}, that is about ${asMeasure} ${estimate.countUnit}.`
+                  : `Check you are counting ${estimate.countUnit}.`}
+              </strong>
+            ) : estimate.cents !== null ? (
+              <strong>line value {formatCurrency(estimate.cents)}</strong>
+            ) : null}
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+});
 
 // Response shape from GET /api/stocktake/:id/variance (the expected-vs-counted
 // usage analytic). Typed inline — the endpoint has no shared type yet.

@@ -32,7 +32,9 @@
       "url": "http://localhost:5173",
       "type": "vite",
       "group": "frontend",
-      "needs": ["api"]
+      "needs": [
+        "api"
+      ]
     },
     {
       "id": "staff-web",
@@ -44,7 +46,9 @@
       "url": "http://localhost:5175",
       "type": "vite",
       "group": "frontend",
-      "needs": ["api"]
+      "needs": [
+        "api"
+      ]
     },
     {
       "id": "reports-web",
@@ -56,7 +60,10 @@
       "url": "http://localhost:5176",
       "type": "vite",
       "group": "frontend",
-      "needs": ["api", "stock-api"]
+      "needs": [
+        "api",
+        "stock-api"
+      ]
     },
     {
       "id": "reserve-web",
@@ -68,7 +75,9 @@
       "url": "http://localhost:5177",
       "type": "vite",
       "group": "frontend",
-      "needs": ["api"]
+      "needs": [
+        "api"
+      ]
     },
     {
       "id": "marketing-web",
@@ -80,7 +89,9 @@
       "url": "http://localhost:5178",
       "type": "vite",
       "group": "frontend",
-      "needs": ["api"]
+      "needs": [
+        "api"
+      ]
     },
     {
       "id": "giftcards-web",
@@ -92,7 +103,9 @@
       "url": "http://localhost:5179",
       "type": "vite",
       "group": "frontend",
-      "needs": ["api"]
+      "needs": [
+        "api"
+      ]
     },
     {
       "id": "admin-web",
@@ -104,7 +117,9 @@
       "url": "http://localhost:5180",
       "type": "vite",
       "group": "frontend",
-      "needs": ["api"]
+      "needs": [
+        "api"
+      ]
     },
     {
       "id": "comms-web",
@@ -116,7 +131,9 @@
       "url": "http://localhost:5182",
       "type": "vite",
       "group": "frontend",
-      "needs": ["api"]
+      "needs": [
+        "api"
+      ]
     },
     {
       "id": "stock-web",
@@ -128,12 +145,14 @@
       "url": "http://localhost:5174",
       "type": "vite",
       "group": "frontend",
-      "needs": ["stock-api"]
+      "needs": [
+        "stock-api"
+      ]
     },
     {
       "id": "venue-ipad-dashboard",
       "label": "Venue iPad Dashboard",
-      "description": "Standalone venue iPad app — checklists, tasks, bookings (Vite, port 5198)",
+      "description": "Standalone venue iPad app \u2014 checklists, tasks, bookings (Vite, port 5198)",
       "command": "pnpm --filter @alma/venue-ipad-dashboard dev",
       "cwd": ".",
       "port": 5198,
@@ -144,15 +163,49 @@
     }
   ],
   "groups": {
-    "all": ["api", "stock-api", "web", "staff-web", "reports-web", "reserve-web", "marketing-web", "giftcards-web", "admin-web", "comms-web", "stock-web", "venue-ipad-dashboard"],
-    "core": ["api", "web", "staff-web"],
-    "backend": ["api", "stock-api"],
-    "stock": ["stock-api", "stock-web"],
-    "reports": ["api", "stock-api", "reports-web"],
-    "reserve": ["api", "reserve-web"],
-    "marketing": ["api", "marketing-web"],
-    "comms": ["api", "comms-web"],
-    "giftcards": ["api", "giftcards-web"]
+    "all": [
+      "api",
+      "stock-api",
+      "web",
+      "staff-web",
+      "reports-web",
+      "reserve-web",
+      "marketing-web",
+      "giftcards-web",
+      "admin-web",
+      "stock-web",
+      "venue-ipad-dashboard"
+    ],
+    "core": [
+      "api",
+      "web",
+      "staff-web"
+    ],
+    "backend": [
+      "api",
+      "stock-api"
+    ],
+    "stock": [
+      "stock-api",
+      "stock-web"
+    ],
+    "reports": [
+      "api",
+      "stock-api",
+      "reports-web"
+    ],
+    "reserve": [
+      "api",
+      "reserve-web"
+    ],
+    "marketing": [
+      "api",
+      "marketing-web"
+    ],
+    "giftcards": [
+      "api",
+      "giftcards-web"
+    ]
   },
   "rootCmd": "pnpm",
   "workspaceRoot": "."

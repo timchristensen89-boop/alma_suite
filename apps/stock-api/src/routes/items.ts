@@ -12,6 +12,26 @@ itemsRouter.get('/', async (req, res, next) => {
   }
 });
 
+// Lean catalogue for item pickers. Same venue scoping and on-hand merge as
+// GET /, without the fields only the Items editor reads.
+itemsRouter.get('/picker', async (req, res, next) => {
+  try {
+    res.json(await itemsService.picker(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Stock value and per-category rollup. Reports used to compute this in the
+// browser from the full catalogue.
+itemsRouter.get('/value-by-category', async (req, res, next) => {
+  try {
+    res.json(await itemsService.valueByCategory(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.get('/export.csv', async (req, res, next) => {
   try {
     const { filename, csv } = await itemsService.exportCsv();
@@ -65,6 +85,25 @@ itemsRouter.get('/config-health', async (req, res, next) => {
   try {
     const staleDays = typeof req.query.staleDays === 'string' ? Number(req.query.staleDays) : undefined;
     res.json(await itemsService.configHealth({ staleDays: Number.isFinite(staleDays) ? staleDays : undefined }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// The catalogue as a buyer sees it: who supplies each item and what was last
+// paid, derived from the invoices already entered rather than a price list
+// nobody maintains (0 rows in production).
+itemsRouter.get('/by-supplier', async (req, res, next) => {
+  try {
+    res.json(await itemsService.bySupplier(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+itemsRouter.get('/:id/purchase-history', async (req, res, next) => {
+  try {
+    res.json(await itemsService.purchaseFactsForItem(String(req.params.id)));
   } catch (error) {
     next(error);
   }
@@ -130,6 +169,15 @@ itemsRouter.post('/bulk', async (req, res, next) => {
   try {
     requireStockManager(req.user);
     res.json(await itemsService.bulkUpdate(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+itemsRouter.post('/merge', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await itemsService.mergeItems(req.body));
   } catch (error) {
     next(error);
   }

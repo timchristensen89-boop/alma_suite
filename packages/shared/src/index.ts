@@ -1,3 +1,22 @@
+export * from './availability.js';
+export * from './shift-claims.js';
+export * from './rostering-guards.js';
+export * from './invoice-matching.js';
+export * from './purchase-history.js';
+export * from './xero-timesheet-push.js';
+export * from './checklist-cadence.js';
+export * from './venue-day.js';
+export * from './guest-tags.js';
+export * from './guest-import.js';
+export * from './temperature-escalation.js';
+export * from './onboarding-completion.js';
+export * from './invoice-paste.js';
+export * from './count-scale.js';
+export * from './loaded-stocktake.js';
+export * from './loaded-count-units.js';
+export * from './clock-to-timesheet.js';
+import type { ParsedInvoiceLine } from './invoice-paste.js';
+import { CHECKLIST_CADENCES, type ChecklistCadence } from './checklist-cadence.js';
 import { z } from 'zod';
 import {
   AWARD_RATE_SETS,
@@ -106,7 +125,13 @@ export const stockReorderNoticeStatusSchema = z.enum(['OPEN', 'RESOLVED', 'DISMI
 export const stockInvoiceMatchingStatusSchema = z.enum([
   'AUTO_MATCHED',
   'MANUAL_MATCHED',
-  'NEEDS_REVIEW'
+  'NEEDS_REVIEW',
+  /**
+   * A charge, fee or header line — real on the invoice, but not a product and
+   * never matchable. Distinct from NEEDS_REVIEW so it stops asking for work
+   * nobody can do: these were a quarter of the production review queue.
+   */
+  'NON_STOCK'
 ]);
 export const stockInvoiceTriageStatusSchema = z.enum([
   'PENDING',
@@ -266,6 +291,11 @@ export const checklistTemplateItemInputSchema = z.object({
 export const checklistTemplateInputSchema = z.object({
   name: z.string().min(2),
   area: z.string().optional().or(z.literal('')),
+  // How often the daily scheduler raises a run from this template. Defaults to
+  // DAILY so an existing caller that doesn't send one keeps its behaviour.
+  cadence: z.enum(CHECKLIST_CADENCES).optional().default('DAILY'),
+  // Weekday (0 = Sunday) for WEEKLY, day of the month for MONTHLY.
+  cadenceDay: z.coerce.number().int().min(0).max(31).optional().nullable(),
   items: z.array(checklistTemplateItemInputSchema).min(1)
 });
 
@@ -889,7 +919,13 @@ export const suiteChatMessageUpdateSchema = z.object({
 });
 
 export const rosterShiftInputSchema = z.object({
-  staffProfileId: z.string().min(1),
+  /**
+   * NULL creates an OPEN shift — published work with nobody on it, which staff
+   * can then claim. Without this a manager could only ever roster a named
+   * person, and the only open shifts in the system would be ones the Deputy
+   * import happened to create.
+   */
+  staffProfileId: z.string().min(1).nullable(),
   venue: z.string().optional().or(z.literal('')),
   area: z.string().optional().or(z.literal('')),
   roleTitle: z.string().optional().or(z.literal('')),
@@ -963,12 +999,52 @@ export const staffShiftConfirmationInputSchema = z.object({
 });
 
 export const staffClockInInputSchema = z.object({
-  rosterShiftId: z.string().optional().or(z.literal(''))
+  rosterShiftId: z.string().optional().or(z.literal('')),
+  /**
+   * When the button was actually pressed, ISO.
+   *
+   * Only meaningful for a clock captured while offline and replayed later —
+   * without it a queued clock-on records the moment the wifi came back, which
+   * is worse than not queueing at all. The server clamps it: never in the
+   * future, never more than OFFLINE_CLOCK_MAX_AGE_HOURS ago.
+   */
+  occurredAt: z.string().optional().or(z.literal(''))
 });
 
 export const staffClockOutInputSchema = z.object({
-  note: z.string().trim().max(1000).optional().or(z.literal(''))
+  note: z.string().trim().max(1000).optional().or(z.literal('')),
+  occurredAt: z.string().optional().or(z.literal(''))
 });
+
+/**
+ * How far back a client-supplied clock time is trusted.
+ *
+ * Long enough to cover a dead patch of wifi or a phone that stayed in a pocket
+ * until the end of service; short enough that it cannot be used to write a
+ * shift into last week.
+ */
+export const OFFLINE_CLOCK_MAX_AGE_HOURS = 12;
+
+/**
+ * The instant to record for a clock event.
+ *
+ * Returns the clamped time and whether the client's value was used, so the
+ * caller can note an adjusted or rejected time rather than silently accepting
+ * whatever a phone said.
+ */
+export function resolveClockTime(
+  requested: string | undefined | null,
+  now: Date = new Date()
+): { at: Date; source: 'server' | 'offline'; adjusted: boolean } {
+  if (!requested) return { at: now, source: 'server', adjusted: false };
+  const parsed = new Date(requested);
+  if (Number.isNaN(parsed.getTime())) return { at: now, source: 'server', adjusted: false };
+  // A phone with a fast clock must not create a shift that has not happened.
+  if (parsed.getTime() > now.getTime()) return { at: now, source: 'offline', adjusted: true };
+  const floor = now.getTime() - OFFLINE_CLOCK_MAX_AGE_HOURS * 3600_000;
+  if (parsed.getTime() < floor) return { at: new Date(floor), source: 'offline', adjusted: true };
+  return { at: parsed, source: 'offline', adjusted: false };
+}
 
 export const staffClockBreakInputSchema = z.object({
   note: z.string().trim().max(1000).optional().or(z.literal(''))
@@ -1688,7 +1764,25 @@ export const googleReserveIntegrationSettingInputSchema = z.object({
   lastError: z.string().optional().or(z.literal(''))
 });
 
-export const GIFT_CARD_DESIGNS = ['forest', 'shell', 'avalon', 'stalma', 'thanks', 'summer'] as const;
+/**
+ * The designs a buyer can choose, from the AlmaCard artwork.
+ *
+ * Three finishes of the salmon lockup, then the greetings. The old six
+ * (forest / shell / avalon / stalma / thanks / summer) were retired when the
+ * new artwork landed — no issued card was using them, so nothing had to be
+ * kept alive for cards already in the wild. Anything unrecognised still falls
+ * back to heritage rather than rendering nothing.
+ */
+export const GIFT_CARD_DESIGNS = [
+  'heritage',
+  'bold',
+  'minimal',
+  'thanks',
+  'birthday',
+  'congrats',
+  'love',
+  'celebrate'
+] as const;
 export type GiftCardDesign = (typeof GIFT_CARD_DESIGNS)[number];
 export const giftCardDesignSchema = z.enum(GIFT_CARD_DESIGNS);
 
@@ -2265,7 +2359,7 @@ export type HomeOperationalSummary = {
   };
 };
 
-export type IntegrationProviderKey = 'square' | 'xero' | 'deputy';
+export type IntegrationProviderKey = 'square' | 'xero' | 'deputy' | 'lightspeed';
 export type AdminMetaConnectedPage = {
   id: string;
   name: string;
@@ -2344,6 +2438,9 @@ export type IntegrationProviderStatus = {
   lastSyncAt: string | null;
   lastSyncStatus: IntegrationSyncStatus | null;
   lastError: string | null;
+  /** Set while syncing is deliberately paused; the OAuth grant is still held. */
+  syncPausedAt?: string | null;
+  syncPausedReason?: string | null;
   scopes: string[];
   environment: string | null;
   apiVersion?: string | null;
@@ -2417,6 +2514,7 @@ export type IntegrationStatusPayload = {
   squareAccounts?: Record<SquareAccountKey, IntegrationProviderStatus>;
   xero: IntegrationProviderStatus;
   deputy: IntegrationProviderStatus;
+  lightspeed: IntegrationProviderStatus;
   xeroScheduledImport?: XeroScheduledImportStatus;
   meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];
@@ -2666,6 +2764,10 @@ export type XeroSupplierBillsImportResult = {
   duplicateCount: number;
   supplierCreatedCount: number;
   lineCount: number;
+  // Original PDF attachments pulled from Xero after import (optional —
+  // absent on synthetic results that never reached the attachment step).
+  attachmentsFetched?: number;
+  attachmentsMissing?: number;
   warnings: string[];
 };
 
@@ -2703,6 +2805,16 @@ export type XeroPayRateSyncResult = {
     lastName: string;
     email: string | null;
   }>;
+  /**
+   * Why each skipped employee was skipped. A bare count can't distinguish
+   * "correctly left alone because they're salaried" from "Xero had no rate
+   * for them", and those need opposite responses.
+   */
+  skippedDetail?: Array<{ name: string; reason: string }>;
+  /** Xero organisations the sync actually read, for a multi-entity group. */
+  tenants?: Array<{ tenantId: string; tenantName: string | null; employees: number; error: string | null }>;
+  /** True when nothing was written — a preview run. */
+  dryRun?: boolean;
 };
 
 export type XeroTimesheetSyncResult = {
@@ -2785,6 +2897,7 @@ export type AdminIntegrationsStatusPayload = {
   squareAccounts?: Record<SquareAccountKey, IntegrationProviderStatus>;
   xero: AdminIntegrationProviderStatus;
   deputy: AdminIntegrationProviderStatus;
+  lightspeed: AdminIntegrationProviderStatus;
   xeroScheduledImport?: XeroScheduledImportStatus;
   meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];
@@ -3421,7 +3534,8 @@ export type SuiteChatMessageUpdateInput = z.infer<typeof suiteChatMessageUpdateS
 
 export type RosterShift = {
   id: string;
-  staffProfileId: string;
+  /** NULL means the shift is open — nobody is on it yet. */
+  staffProfileId: string | null;
   venue: string | null;
   area: string | null;
   roleTitle: string | null;
@@ -3430,6 +3544,9 @@ export type RosterShift = {
   breakMinutes: number;
   status: RosterShiftStatus;
   notes: string | null;
+  /** Set when the holder has offered this shift to the team for swap. */
+  offeredAt?: string | null;
+  offerNote?: string | null;
   createdAt: string;
   updatedAt: string;
   staffProfile?: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue' | 'employmentStatus'>;
@@ -3579,7 +3696,7 @@ export type ReportsMenuProfitabilityRow = {
   estimatedCogsCents: number | null;
   grossProfitCents: number | null;
   foodCostPercent: number | null;
-  dataQuality: Array<'actual_sales' | 'mapped_recipe_cost' | 'missing_recipe' | 'missing_cost' | 'unmapped_square_item'>;
+  dataQuality: Array<'actual_sales' | 'mapped_recipe_cost' | 'missing_recipe' | 'missing_cost' | 'unmapped_square_item' | 'suspect_batch_cost'>;
 };
 
 export type ReportsMenuProfitabilityPayload = {
@@ -3622,8 +3739,19 @@ export type ReportsPrimeCostVenueRow = {
   cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'estimated' | 'closing_implausible';
   primeCostCents: number;
   wagePercent: number | null;
+  /**
+   * Null when supplier invoices do not cover the period.
+   *
+   * FY25/26 read COGS 2.7% and prime cost 31.8% against a real figure nearer
+   * 60%, because invoices only begin in April 2026 — three months of purchases
+   * divided by twelve months of sales. A percentage of sales is only a fact
+   * when both sides span the same days, so it is withheld rather than guessed.
+   * The dollar figures beside it remain true: they are what was recorded.
+   */
   cogsPercent: number | null;
   primeCostPercent: number | null;
+  /** 0–1: the fraction of the period supplier invoices actually cover. */
+  purchaseCoverage: number;
   timesheetHours: number;
   rosterHours: number;
   salesDays: number;
@@ -3685,6 +3813,8 @@ export type ReportsPrimeCostPayload = {
   totals: Omit<ReportsPrimeCostVenueRow, 'venue' | 'sourceQuality' | 'missing'> & {
     sourceQuality: ReportsPrimeCostVenueRow['sourceQuality'];
     missing: string[];
+    /** The date supplier invoices begin, when they do not cover the period. */
+    purchasesFrom: string | null;
   };
   venues: ReportsPrimeCostVenueRow[];
   sources: {
@@ -4466,6 +4596,47 @@ export type StaffMyRosterPayload = {
   pendingConfirmationCount: number;
 };
 
+/**
+ * A published shift with nobody on it, offered to the team. `myClaimStatus` is
+ * this viewer's own request on it, so the app can show "requested" instead of
+ * offering the button a second time.
+ */
+export type StaffOpenShift = {
+  id: string;
+  venue: string | null;
+  area: string | null;
+  roleTitle: string | null;
+  startsAt: string;
+  endsAt: string;
+  breakMinutes: number;
+  notes: string | null;
+  claimCount: number;
+  myClaimStatus: 'PENDING' | 'APPROVED' | 'DECLINED' | 'WITHDRAWN' | null;
+  /** True when this is somebody's shift they have offered to swap away. */
+  isSwap: boolean;
+  offeredBy: { id: string; firstName: string; lastName: string } | null;
+  offerNote: string | null;
+};
+
+export type StaffShiftClaim = {
+  id: string;
+  note: string | null;
+  requestedAt: string;
+  staffProfile: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue'> | null;
+  shift: {
+    id: string;
+    venue: string | null;
+    area: string | null;
+    roleTitle: string | null;
+    startsAt: string;
+    endsAt: string;
+    breakMinutes: number;
+    isSwap: boolean;
+    offeredBy: { id: string; firstName: string; lastName: string } | null;
+    offerNote: string | null;
+  } | null;
+};
+
 export type StaffClockStatusPayload = {
   activeSession: StaffClockSession | null;
   currentShift: RosterShift | null;
@@ -4710,7 +4881,15 @@ export type StaffProfile = {
   payProfile: StaffPayProfile | null;
   records: StaffComplianceRecord[];
   appAccess: StaffAppAccess[];
-  rosterShifts: RosterShift[];
+  /**
+   * Present on the DETAIL response (GET /api/staff/:id) only.
+   *
+   * The list response omits it — it was 68% of that payload and unbounded —
+   * so anything reading this from a list row must tolerate undefined and use
+   * `_count.rosterShifts` for a total instead.
+   */
+  rosterShifts?: RosterShift[];
+  _count?: { rosterShifts?: number };
   trainingRecords: StaffTrainingRecord[];
   // Field-level redaction sidecar (#16). Lists the field GROUPS the server
   // nulled out before sending — so the UI can show "Hidden — needs
@@ -4858,6 +5037,10 @@ export type ChecklistTemplate = {
   id: string;
   name: string;
   area: string | null;
+  /** How often the scheduler raises a run. See CHECKLIST_CADENCES. */
+  cadence: ChecklistCadence;
+  /** Weekday (0 = Sunday) for WEEKLY, day of the month for MONTHLY. */
+  cadenceDay: number | null;
   createdAt: string;
   updatedAt: string;
   items: ChecklistTemplateItem[];
@@ -5140,6 +5323,9 @@ export type StockItem = {
   name: string;
   categoryId: string | null;
   category: Pick<StockCategory, 'id' | 'name'> | null;
+  /** Flattened category name. Present on the picker payload, which omits the
+   *  nested category object; read it with `category?.name ?? categoryName`. */
+  categoryName?: string | null;
   unit: string;
   countUnit: string | null;
   conversionFactor: number;
@@ -5253,9 +5439,28 @@ export type StockWastageRecord = {
   stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'countUnit' | 'avgCostCents' | 'category'> | null;
 };
 
+/**
+ * The bit of a stock item these operations screens actually use.
+ *
+ * Wastage, staff usage and deliveries each shipped all 715 active items in
+ * full — roughly half a megabyte — to render a list that in production has
+ * never had a single row in it. The picker needs a name and a SKU to search
+ * on, and the form needs the unit to record against; nothing on these screens
+ * reads a par level, a cost or a timestamp.
+ */
+export type StockOperationsItem = {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+  countUnit: string | null;
+  /** Only the venue override is read; the rest of the venue row is not. */
+  venueStock: { unitOverride: string | null } | null;
+};
+
 export type StockWastagePayload = {
   records: StockWastageRecord[];
-  items: StockItem[];
+  items: StockOperationsItem[];
   venues: string[];
   scope: { venue: string | null; admin: boolean };
 };
@@ -5299,7 +5504,7 @@ export type StockDeliveryCheck = {
 
 export type StockDeliveryChecksPayload = {
   checks: StockDeliveryCheck[];
-  items: StockItem[];
+  items: StockOperationsItem[];
   suppliers: Supplier[];
   venues: string[];
   scope: { venue: string | null; admin: boolean };
@@ -5369,6 +5574,13 @@ export type StockMenuParRecommendationsPayload = {
     readyToOrder: number;
     missingItemSales: boolean;
     missingSupplierCount: number;
+    // Week-ahead demand from the forecast engine: factor >1 = busier than the
+    // trailing average, <1 = quieter, 1 = typical (or no forecast yet).
+    demand: {
+      factor: number;
+      available: boolean;
+      label: string;
+    };
   };
   recommendations: StockMenuParRecommendation[];
   warnings: string[];
@@ -5523,6 +5735,25 @@ export const stockItemBulkDeleteInputSchema = z.object({
     errorMap: () => ({ message: 'Type DELETE ITEMS to confirm catalogue deletion' })
   })
 });
+
+// Merge duplicate items into one parent. All history (recipes, invoices,
+// stocktakes, movements, POs…) repoints to the parent; per-venue stock is
+// summed where the parent already stocks that venue and otherwise moved onto
+// the parent (so one item ends up stocked at both venues); the duplicates are
+// archived.
+export const stockItemMergeInputSchema = z.object({
+  parentId: z.string().min(1, 'Pick the item to keep'),
+  duplicateIds: z.array(z.string().min(1)).min(1, 'Pick at least one item to merge in'),
+  confirmationText: z.literal('MERGE ITEMS', {
+    errorMap: () => ({ message: 'Type MERGE ITEMS to confirm the merge' })
+  })
+});
+export type StockItemMergeInput = z.infer<typeof stockItemMergeInputSchema>;
+export type StockItemMergeResult = {
+  parentId: string;
+  mergedCount: number;
+  venuesAdded: string[];
+};
 
 // Bulk-edit selected items. Each field is optional — only provided fields are
 // applied. `categoryId`/`countArea` null clears the value; `venue`+`venueActive`
@@ -5712,6 +5943,7 @@ export type StockSupplierInvoice = {
   totalCents: number;
   sourceFileName: string | null;
   sourceFileType: string | null;
+  hasDocument: boolean;
   importedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -5814,12 +6046,65 @@ export type StockInvoiceApplyAllCostsResult = {
   invoice: StockSupplierInvoice;
 };
 
+/**
+ * What comes back from pasting invoice text over an invoice's lines.
+ *
+ * Carries the full parse, not just a count, so the screen can show exactly what
+ * it read and what it could not before anything is written.
+ */
+export type StockInvoicePasteResult = {
+  dryRun: boolean;
+  applied: boolean;
+  lines: ParsedInvoiceLine[];
+  columnsApplied: string[];
+  warnings: string[];
+  unparsed: string[];
+  parsedSubtotalCents: number;
+  parsedTaxCents: number;
+  parsedTotalCents: number;
+  invoiceTotalCents: number;
+  totalVarianceCents: number;
+  subtotalVarianceCents: number;
+  taxVarianceCents: number;
+  matches: boolean;
+  matchedCount: number;
+  needsReviewCount: number;
+  replacedLineCount: number;
+  invoice?: StockSupplierInvoice;
+};
+
+/** One wording the supplier uses that no stock item answers to. */
+export type StockUnmatchedSpendRow = {
+  description: string;
+  lineCount: number;
+  totalCents: number;
+  suppliers: string[];
+  lastSeen: string | null;
+  invoiceIds: string[];
+  /** Every line came off a one-line bill — paste its detail, don't create an item. */
+  looksSummarised: boolean;
+};
+
+export type StockUnmatchedSpendPayload = {
+  rows: StockUnmatchedSpendRow[];
+  distinctDescriptions: number;
+  lineCount: number;
+  totalCents: number;
+  summarisedCents: number;
+  catalogueGapCents: number;
+};
+
 export const stockInvoiceImportInputSchema = z.object({
   source: z.string().min(1).default('XERO'),
   venue: z.string().optional().or(z.literal('')),
   sourceFileName: z.string().optional().or(z.literal('')),
   sourceFileType: z.string().optional().or(z.literal('')),
   sourceMetadata: z.record(z.unknown()).optional(),
+  // Original uploaded file (raw base64, data-URL prefix stripped) kept so the
+  // scanned invoice can be re-opened for manual entry when OCR misses lines.
+  documentBase64: z.string().optional(),
+  documentMimeType: z.string().optional(),
+  documentFileName: z.string().optional().or(z.literal('')),
   invoices: z.array(z.record(z.unknown())).min(1, 'At least one invoice is required'),
   confirmationText: z.literal('IMPORT INVOICES', {
     errorMap: () => ({ message: 'Type IMPORT INVOICES to confirm invoice import' })
@@ -5831,6 +6116,16 @@ export const stockInvoiceRipInputSchema = z.object({
   venue: z.string().optional().or(z.literal('')),
   sourceFileName: z.string().optional().or(z.literal(''))
 });
+
+// OCR: a scanned/photographed invoice (PDF or image) sent as base64 for a
+// vision model to read into the same shape ripInvoiceText produces.
+export const stockInvoiceOcrInputSchema = z.object({
+  fileBase64: z.string().min(1, 'Attach an invoice file'),
+  mimeType: z.enum(['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']),
+  sourceFileName: z.string().optional().or(z.literal('')),
+  venue: z.string().optional().or(z.literal(''))
+});
+export type StockInvoiceOcrInput = z.infer<typeof stockInvoiceOcrInputSchema>;
 
 export const stockInvoiceLineRematchInputSchema = z.object({
   itemId: z.string().min(1, 'Choose a stock item').or(z.literal('')),
@@ -5844,6 +6139,20 @@ export const stockInvoiceMarkNoItemInputSchema = z.object({
 export const stockInvoiceMarkNeedsReviewInputSchema = z.object({
   assigneeStaffProfileId: z.string().min(1, 'Pick a manager to review this invoice'),
   notes: z.string().optional().or(z.literal(''))
+});
+
+export const stockInvoicePasteLinesInputSchema = z.object({
+  text: z.string().min(1, 'Paste the invoice text first'),
+  /**
+   * Preview only. The screen always previews before it writes, because
+   * replacing the lines on an invoice is not something to discover afterwards.
+   */
+  dryRun: z.boolean().optional(),
+  /**
+   * Write the lines even when they do not add up to the invoice total. The
+   * screen asks; a variance usually means a row was missed off the copy.
+   */
+  acceptVariance: z.boolean().optional()
 });
 
 export const stockInvoiceDeleteInputSchema = z.object({
@@ -5864,6 +6173,7 @@ export type StockInvoiceMarkNeedsReviewInput = z.infer<
   typeof stockInvoiceMarkNeedsReviewInputSchema
 >;
 export type StockInvoiceDeleteInput = z.infer<typeof stockInvoiceDeleteInputSchema>;
+export type StockInvoicePasteLinesInput = z.infer<typeof stockInvoicePasteLinesInputSchema>;
 
 /* ------------------------------------------------------------------------- */
 /* Recipes                                                                    */
@@ -5992,7 +6302,9 @@ export type StockConfigHealthIssueCode =
   | 'no-avg-cost'
   | 'recipe-unit-mismatch'
   | 'measure-half-set'
-  | 'stale-cost';
+  | 'stale-cost'
+  /// A counted quantity that cannot mean what its unit says — see count-scale.ts.
+  | 'count-out-of-scale';
 
 export type StockConfigHealthIssue = {
   code: StockConfigHealthIssueCode;
@@ -6224,6 +6536,51 @@ export type Stocktake = {
 
 export type StocktakeWithLines = Stocktake & { lines: StocktakeLine[] };
 
+// Reusable stocktake template ("count sheet"). Base membership = items whose
+// countArea ∈ countAreas OR category ∈ categoryIds (empty base = all active
+// items), then + includeItemIds − excludeItemIds. resolvedItemCount is the
+// live count of active items the template currently resolves to.
+export type StocktakeTemplate = {
+  id: string;
+  name: string;
+  venue: string | null;
+  blindDefault: boolean;
+  countAreas: string[];
+  categoryIds: string[];
+  includeItemIds: string[];
+  excludeItemIds: string[];
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  resolvedItemCount: number;
+};
+
+export type StocktakeTemplatesPayload = {
+  templates: StocktakeTemplate[];
+  // Pickers: the distinct count areas + categories available to build a template.
+  countAreas: string[];
+  categories: Array<{ id: string; name: string }>;
+  venues: string[];
+};
+
+// The resolved concrete item list for starting a count from a template.
+export type StocktakeTemplateResolved = {
+  template: StocktakeTemplate;
+  items: Array<{ id: string; name: string; unit: string; countUnit: string | null; countArea: string | null; categoryName: string | null }>;
+};
+
+export const stocktakeTemplateInputSchema = z.object({
+  name: z.string().min(1, 'Template name is required'),
+  venue: z.string().optional().or(z.literal('')),
+  blindDefault: z.boolean().optional(),
+  countAreas: z.array(z.string()).optional(),
+  categoryIds: z.array(z.string()).optional(),
+  includeItemIds: z.array(z.string()).optional(),
+  excludeItemIds: z.array(z.string()).optional(),
+  active: z.boolean().optional()
+});
+export type StocktakeTemplateInput = z.infer<typeof stocktakeTemplateInputSchema>;
+
 export type StocktakesPayload = {
   stocktakes: Stocktake[];
 };
@@ -6288,7 +6645,16 @@ export type StockDashboardPayload = {
   recentSubmittedStocktakes: StocktakeReviewItem[];
 };
 
-export type ReportsRangeDays = 7 | 30 | 90;
+/**
+ * How many days the overview covers.
+ *
+ * Was `7 | 30 | 90`, which was the whole problem: the page offers "this month",
+ * "year to date (FY)" and "last financial year", and every one of them had to
+ * be squashed into one of three buckets measured back from now. "Last financial
+ * year" became the last 90 days. The overview now takes the real period, so
+ * this is simply the number of days it covers.
+ */
+export type ReportsRangeDays = number;
 
 export type ReportsStaffSummary = {
   totalActiveStaff: number;
@@ -6347,6 +6713,26 @@ export type ReportsReserveSummary = {
   cancellations: number;
   noShows: number;
   newGuests: number;
+  // Booked covers on the books for the next 14 days — the demand signal for
+  // rostering and prep. One row per day × venue with live (not cancelled)
+  // bookings; days with nothing on the books are omitted.
+  coversAhead: Array<{
+    date: string; // ISO yyyy-mm-dd
+    venue: string;
+    covers: number;
+    bookings: number;
+  }>;
+  // No-show economics: covers lost to no-shows in the report window, and the
+  // guests who do it repeatedly (candidates for card-on-file in SevenRooms).
+  noShowCovers: number;
+  repeatNoShowGuests: Array<{
+    guestId: string;
+    name: string;
+    noShows: number;
+    noShowCovers: number;
+    totalVisits: number;
+    lastNoShowAt: string | null;
+  }>;
 };
 
 export type ReportsMarketingSummary = {
@@ -6616,4 +7002,257 @@ export type AlmaTasksSummary = {
   byPriority: Record<AlmaTaskPriority, number>;
   byVenue: Array<{ venue: string | null; outstanding: number }>;
   oldestOpenAt: string | null;
+};
+
+// ── Forecasting engine (Reports → Forecast) ─────────────────────────────────
+// Server-computed forward outlook per venue per day: covers, sales, wages,
+// COGS, plus a 13-week cash-flow projection and forecast-accuracy tracking.
+
+export type ForecastDayMethod = {
+  sales: 'history' | 'history+bookings' | 'actual+pace' | 'manual';
+  wages: 'roster' | 'ratio';
+  cogs: 'trailing_actual' | 'theoretical' | 'target' | 'default';
+};
+
+export type ForecastDay = {
+  date: string; // YYYY-MM-DD (Sydney service date)
+  weekday: number; // 0=Sun..6=Sat
+  isPast: boolean;
+  isToday: boolean;
+  closed: boolean;
+  // NSW public holiday name for this date, when it is one. Holiday days keep
+  // their weekday baseline but are flagged so nobody reads them as normal.
+  holiday: string | null;
+  // Covers
+  bookedCovers: number;
+  expectedCovers: number;
+  // Sales
+  actualSalesCents: number | null;
+  baselineSalesCents: number;
+  salesForecastCents: number;
+  lastYearSalesCents: number | null;
+  // Costs
+  wagesForecastCents: number;
+  rosterCostCents: number | null; // present when wages method = roster
+  cogsForecastCents: number;
+  method: ForecastDayMethod;
+};
+
+// ── Projected supplier spend (reports) ─────────────────────────────────────
+
+export type SupplierSpendBucket = 'food' | 'beverage' | 'other';
+
+export type SupplierSpendWeek = {
+  weekStart: string; // Monday YYYY-MM-DD
+  salesForecastCents: number;
+  cogsCents: number;
+  foodCents: number;
+  bevCents: number;
+  otherCents: number;
+};
+
+export type SupplierSpendSupplier = {
+  name: string;
+  bucket: SupplierSpendBucket;
+  /** Share of its bucket, 0..1, from trailing invoice history. */
+  share: number;
+  /** Projected cents per week, aligned with payload.weeks. */
+  weekly: number[];
+  totalCents: number;
+  trailingCents: number;
+};
+
+export type SupplierSpendBasisMonth = {
+  month: string; // YYYY-MM-01
+  salesCents: number;
+  cogsCents: number;
+  cogsPct: number | null;
+  foodShare: number | null;
+  bevShare: number | null;
+  otherShare: number | null;
+};
+
+export type SupplierSpendPayload = {
+  generatedAt: string;
+  venue: string | null;
+  /** Venue names available for scoping (from the forecast outlook). */
+  venues: string[];
+  weeks: SupplierSpendWeek[];
+  suppliers: SupplierSpendSupplier[];
+  basis: {
+    plMonths: SupplierSpendBasisMonth[];
+    plSource: 'venue' | 'group';
+    projectedCogsPct: number;
+    cogsPctTrendPerMonth: number;
+    clamped: boolean;
+    split: { food: number; beverage: number; other: number };
+    supplierWindowDays: number;
+    /** Direct Costs accounts the shares were counted from, with their bucket. */
+    cogsAccounts: Array<{ name: string; bucket: SupplierSpendBucket; cents: number }>;
+    notes: string[];
+  };
+};
+
+export type ForecastWeek = {
+  weekStart: string; // Monday YYYY-MM-DD
+  salesForecastCents: number;
+  actualSalesCents: number;
+  lastYearSalesCents: number | null;
+  expectedCovers: number;
+  bookedCovers: number;
+  wagesForecastCents: number;
+  cogsForecastCents: number;
+  wagePct: number | null;
+  cogsPct: number | null;
+  primePct: number | null;
+};
+
+export type ForecastVenueOutlook = {
+  venue: string;
+  days: ForecastDay[];
+  weeks: ForecastWeek[];
+  assumptions: {
+    avgSpendPerCoverCents: number | null;
+    noShowRate: number; // fraction 0..1
+    trendFactor: number; // recent 4w vs prior 4w, clamped
+    trailingWagePct: number | null;
+    trailingCogsPct: number | null;
+    // Which signal the COGS % came from: stocktake-bounded actual, plausible
+    // purchases-only actual, recipe-theoretical, venue target, or the default.
+    cogsBasis: 'stock_bounded' | 'purchases' | 'theoretical' | 'target' | 'default';
+    cogsQuality: string | null;
+    targetWagePercent: number | null;
+    targetPrimeCostPercent: number | null;
+    closedWeekdays: number[];
+    historyDays: number;
+  };
+};
+
+export type ForecastOutlookPayload = {
+  generatedAt: string;
+  horizonWeeks: number;
+  venues: ForecastVenueOutlook[];
+  totals: {
+    weeks: ForecastWeek[];
+  };
+  // Data-quality alerts (stale Square feed, skipped venues, holiday-table
+  // coverage) — surfaced as a banner so estimates are never mistaken for
+  // clean data.
+  warnings: string[];
+};
+
+export type CashflowComponent =
+  | 'sales_settlement'
+  | 'supplier_bills_due'
+  | 'supplier_projected'
+  | 'net_wages'
+  | 'super_remittance'
+  | 'gst_remittance'
+  | 'fixed_costs';
+
+export type CashflowWeek = {
+  weekStart: string;
+  inflowCents: number;
+  outflowCents: number;
+  netCents: number;
+  closingBalanceCents: number;
+  components: Array<{ key: CashflowComponent; label: string; amountCents: number; direction: 'in' | 'out'; estimated: boolean }>;
+};
+
+export type ForecastFixedCost = {
+  id: string;
+  name: string;
+  amountCents: number;
+  cadence: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL';
+  // MONTHLY/QUARTERLY/ANNUAL: day of month it leaves the account (1-28).
+  dayOfMonth?: number;
+  // ANNUAL/QUARTERLY: anchor month 1-12 (quarterly = that month + every 3rd).
+  month?: number;
+};
+
+export type ForecastConfigPayload = {
+  openingBalanceCents: number;
+  openingBalanceDate: string | null;
+  supplierPaymentLagDays: number;
+  cardSettlementLagDays: number;
+  payrollFrequency: 'WEEKLY' | 'FORTNIGHTLY';
+  payrollPayWeekday: number; // 0=Sun..6=Sat
+  fixedCosts: ForecastFixedCost[];
+};
+
+export type ForecastCashflowPayload = {
+  generatedAt: string;
+  horizonWeeks: number;
+  config: ForecastConfigPayload;
+  openingBalanceCents: number;
+  weeks: CashflowWeek[];
+  lowestBalance: { weekStart: string; balanceCents: number } | null;
+  notes: string[];
+};
+
+export type ForecastAccuracyBucket = {
+  leadLabel: string; // e.g. "1 day out", "7 days out", "14 days out"
+  leadDaysMin: number;
+  leadDaysMax: number;
+  sampleDays: number;
+  salesMapePct: number | null; // mean absolute % error
+  salesBiasPct: number | null; // signed mean % error (+ = over-forecast)
+  coversMapePct: number | null;
+};
+
+export type ForecastAccuracyWeekRow = {
+  weekStart: string;
+  venue: string;
+  forecastSalesCents: number;
+  actualSalesCents: number;
+  variancePct: number | null;
+};
+
+export type ForecastAccuracyPayload = {
+  buckets: ForecastAccuracyBucket[];
+  recentWeeks: ForecastAccuracyWeekRow[];
+};
+
+export const forecastConfigUpdateSchema = z.object({
+  openingBalanceCents: z.number().int().min(-100_000_000_00).max(100_000_000_00).optional(),
+  openingBalanceDate: z.string().datetime().nullable().optional(),
+  supplierPaymentLagDays: z.number().int().min(0).max(90).optional(),
+  cardSettlementLagDays: z.number().int().min(0).max(14).optional(),
+  payrollFrequency: z.enum(['WEEKLY', 'FORTNIGHTLY']).optional(),
+  payrollPayWeekday: z.number().int().min(0).max(6).optional(),
+  fixedCosts: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(64),
+        name: z.string().min(1).max(120),
+        amountCents: z.number().int().min(0).max(100_000_000_00),
+        cadence: z.enum(['WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUAL']),
+        dayOfMonth: z.number().int().min(1).max(28).optional(),
+        month: z.number().int().min(1).max(12).optional()
+      })
+    )
+    .max(100)
+    .optional()
+});
+
+export type ForecastConfigUpdateInput = z.infer<typeof forecastConfigUpdateSchema>;
+
+export type ForecastBacktestPayload = {
+  // Walk-forward validation: the baseline model re-run as-of each past Monday
+  // against what the week actually took. Baseline-only (no bookings floor),
+  // so live accuracy should be at least this good.
+  sampleWeeks: number;
+  salesMapePct: number | null;
+  salesBiasPct: number | null;
+  weeks: ForecastAccuracyWeekRow[];
+};
+
+
+/** Server-computed stock value rollup (GET /api/items/value-by-category). */
+export type StockValueByCategory = {
+  totalValueCents: number;
+  /** Which source produced the figures: per-venue rows, or item-level on hand. */
+  basis: 'VENUE_ROWS' | 'ITEMS';
+  categories: Array<{ category: string; itemCount: number; valueCents: number; lowStock: number }>;
+  venue: string | null;
 };

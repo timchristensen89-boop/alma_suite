@@ -104,10 +104,10 @@ html[data-theme='dark'] .kiosk-wordmark__logo {
 
 /* The kiosk takes over the viewport while keeping the shared suite page tone. */
 body:has(.kiosk) {
-  /* Soft sage canvas (a suite tint) so the cream dashboard reads as a raised
-     card instead of blending into a white page. Swap to the pink alt
-     (#F6E7E1) for the warm option. Dark mode keeps the dark page below. */
-  background: #E7EFE0;
+  /* Seamless canvas: the page wears the same paper as the kiosk card, so the
+     whole screen reads as one warm surface (the interior bone/shell panels
+     carry the articulation). Dark mode keeps the dark page below. */
+  background: var(--kiosk-paper);
   min-height: 100vh;
   margin: 0;
   display: flex;
@@ -289,7 +289,10 @@ html[data-theme='dark'] body:has(.kiosk) {
   min-height: 96px;
   padding: 13px 12px;
   border: 1px solid var(--kiosk-hair);
-  background: rgba(255, 255, 255, 0.36);
+  /* Lift the tiles just off the panel — stronger white and a whisper of
+     shadow — while keeping the square editorial letterpress look. */
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 1px 2px rgba(31, 41, 33, 0.04);
 }
 .kiosk-ops__stat span,
 .kiosk-ops__stat em {

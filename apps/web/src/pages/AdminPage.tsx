@@ -1593,6 +1593,7 @@ function IntegrationCard({
   onDisconnect,
   onHealthCheck,
   onSyncPayRates,
+  onPreviewPayRates,
   onSyncTimesheets,
   onManageXeroLinks,
   onRefresh,
@@ -1611,6 +1612,7 @@ function IntegrationCard({
   onDisconnect: (integration: IntegrationProviderStatus) => void;
   onHealthCheck?: () => void;
   onSyncPayRates?: () => void;
+  onPreviewPayRates?: () => void;
   onSyncTimesheets?: () => void;
   onManageXeroLinks?: () => void;
   onRefresh?: () => void;
@@ -1627,6 +1629,7 @@ function IntegrationCard({
   const isBusy = busy === `${integration.provider}${accountSuffix}`;
   const isHealthBusy = busy === `${integration.provider}${accountSuffix}-health`;
   const isSyncPayRatesBusy = busy === 'xero-sync-pay-rates';
+  const isPreviewPayRatesBusy = busy === 'xero-preview-pay-rates';
   const isSyncTimesheetsBusy = busy === 'xero-sync-timesheets';
   const isManageLinksBusy = busy === 'xero-employees-load';
   const isRefreshBusy = busy === `square${accountSuffix}-refresh`;
@@ -1822,9 +1825,14 @@ function IntegrationCard({
               {isHealthBusy ? 'Checking...' : 'Check Xero health'}
             </Button>
           ) : null}
+          {isXero && onPreviewPayRates ? (
+            <Button variant="secondary" disabled={isPreviewPayRatesBusy || integration.status !== 'CONNECTED'} onClick={onPreviewPayRates}>
+              {isPreviewPayRatesBusy ? 'Checking rates...' : 'Preview pay rates'}
+            </Button>
+          ) : null}
           {isXero && onSyncPayRates ? (
             <Button variant="secondary" disabled={isSyncPayRatesBusy || integration.status !== 'CONNECTED'} onClick={onSyncPayRates}>
-              {isSyncPayRatesBusy ? 'Syncing pay rates...' : 'Sync pay rates from Xero'}
+              {isSyncPayRatesBusy ? 'Syncing pay rates...' : 'Apply pay rates from Xero'}
             </Button>
           ) : null}
           {isXero && onSyncTimesheets ? (
@@ -2394,13 +2402,17 @@ export function AdminPage({
     }
   }
 
-  async function syncXeroPayRates() {
-    setIntegrationBusy('xero-sync-pay-rates');
+  // A rate sync overwrites what every manager sees on every profile, and Xero's
+  // award pay items don't always agree with what Alma has stored — a preview
+  // run first is the difference between a considered change and a surprise.
+  async function syncXeroPayRates(dryRun = false) {
+    setIntegrationBusy(dryRun ? 'xero-preview-pay-rates' : 'xero-sync-pay-rates');
     setError(null);
     setXeroPayRateSyncResult(null);
     try {
       const result = await api<XeroPayRateSyncResult>('/api/integrations/xero/sync-pay-rates', {
-        method: 'POST'
+        method: 'POST',
+        body: JSON.stringify({ dryRun })
       });
       setXeroPayRateSyncResult(result);
     } catch (err) {
@@ -4161,7 +4173,13 @@ export function AdminPage({
                 : [
                     integrations.squareAccounts?.primary ?? integrations.square,
                     integrations.squareAccounts?.secondary,
-                    integrations.xero
+                    integrations.xero,
+                    // Lightspeed O-Series (Kounta) POS — the venues' Square
+                    // replacement. The generic IntegrationCard covers it:
+                    // Connect posts /api/integrations/lightspeed/connect and
+                    // follows authorizationUrl; Disconnect uses the generic
+                    // /:provider/disconnect route.
+                    integrations.lightspeed
                   ].filter((integration): integration is IntegrationProviderStatus => Boolean(integration))
               ).map((integration) => (
                 <IntegrationCard
@@ -4177,7 +4195,8 @@ export function AdminPage({
                         ? () => void checkSquareHealth(integration)
                         : undefined
                   }
-                  onSyncPayRates={integration.provider === 'xero' && showXero ? () => void syncXeroPayRates() : undefined}
+                  onSyncPayRates={integration.provider === 'xero' && showXero ? () => void syncXeroPayRates(false) : undefined}
+                  onPreviewPayRates={integration.provider === 'xero' && showXero ? () => void syncXeroPayRates(true) : undefined}
                   onSyncTimesheets={integration.provider === 'xero' && showXero ? () => void syncXeroTimesheets() : undefined}
                   onManageXeroLinks={integration.provider === 'xero' && showXero ? () => void loadXeroEmployees() : undefined}
                   onRefresh={integration.provider === 'square' ? () => void refreshSquareToken(integration) : undefined}
@@ -4248,27 +4267,55 @@ export function AdminPage({
             {xeroPayRateSyncResult ? (
               <AdminCollapsibleSection
                 title="Pay rates synced"
-                summary={`${xeroPayRateSyncResult.synced} updated · ${xeroPayRateSyncResult.notMatched} unmatched · ${xeroPayRateSyncResult.skipped} skipped`}
+                summary={`${xeroPayRateSyncResult.dryRun ? `${xeroPayRateSyncResult.synced} would change` : `${xeroPayRateSyncResult.synced} updated`} · ${xeroPayRateSyncResult.notMatched} unmatched · ${xeroPayRateSyncResult.skipped} skipped`}
                 defaultOpen
-                status={<Badge tone={xeroPayRateSyncResult.synced > 0 ? 'positive' : 'info'}>{xeroPayRateSyncResult.synced} updated</Badge>}
+                status={
+                  <Badge tone={xeroPayRateSyncResult.dryRun ? 'info' : xeroPayRateSyncResult.synced > 0 ? 'positive' : 'info'}>
+                    {xeroPayRateSyncResult.dryRun ? 'Preview — nothing saved' : `${xeroPayRateSyncResult.synced} updated`}
+                  </Badge>
+                }
               >
                 <Card>
                   <div className="admin-status-stack">
                     <StatusLine label="Updated" value={String(xeroPayRateSyncResult.synced)} tone="positive" />
                     <StatusLine label="Not matched" value={String(xeroPayRateSyncResult.notMatched)} tone={xeroPayRateSyncResult.notMatched > 0 ? 'warning' : 'muted'} />
-                    <StatusLine label="Skipped (no rate)" value={String(xeroPayRateSyncResult.skipped)} tone="muted" />
+                    <StatusLine label="Skipped" value={String(xeroPayRateSyncResult.skipped)} tone="muted" />
+                    {(xeroPayRateSyncResult.tenants ?? []).map((tenant) => (
+                      <StatusLine
+                        key={tenant.tenantId}
+                        label={tenant.tenantName ?? 'Xero organisation'}
+                        value={tenant.error ? tenant.error : `${tenant.employees} active`}
+                        tone={tenant.error ? 'warning' : 'muted'}
+                      />
+                    ))}
                   </div>
                   {xeroPayRateSyncResult.updated.length > 0 ? (
                     <div>
-                      <strong>Updated staff</strong>
+                      <strong>{xeroPayRateSyncResult.dryRun ? 'Rates that would change' : 'Updated staff'}</strong>
                       <div className="admin-status-stack">
                         {xeroPayRateSyncResult.updated.map((row) => (
                           <StatusLine
                             key={row.staffId}
                             label={`${row.firstName} ${row.lastName}`}
                             value={`$${(row.newPayRateCents / 100).toFixed(2)}/hr${row.previousPayRateCents !== null ? ` (was $${(row.previousPayRateCents / 100).toFixed(2)})` : ' (new)'}`}
-                            tone="positive"
+                            // A rate going DOWN is the case worth noticing — Xero's
+                            // award pay item can be lower than what Alma stored.
+                            tone={
+                              row.previousPayRateCents !== null && row.newPayRateCents < row.previousPayRateCents
+                                ? 'warning'
+                                : 'positive'
+                            }
                           />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {(xeroPayRateSyncResult.skippedDetail ?? []).length > 0 ? (
+                    <div>
+                      <strong>Left alone</strong>
+                      <div className="admin-status-stack">
+                        {(xeroPayRateSyncResult.skippedDetail ?? []).map((row) => (
+                          <StatusLine key={row.name} label={row.name} value={row.reason} tone="muted" />
                         ))}
                       </div>
                     </div>

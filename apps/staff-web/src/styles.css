@@ -6372,7 +6372,7 @@
 /* Hero metrics */
 .live-hero {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -8116,6 +8116,110 @@ html[data-theme='dark'] .leave-request-range { color: var(--color-text, #e6edf3)
   display: grid;
   gap: 14px;
 }
+/* Collapsed, only the heading row remains, so the section costs one line. */
+.ts-review.is-collapsed { gap: 0; }
+
+/* Visible to screen readers only — the collapse toggle is a bare chevron. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Chevron that opens and closes Week review. Rotates to point at the state
+   it will move to, which is the only affordance a heading-as-toggle gets. */
+.ts-review-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  margin-right: 10px;
+  border: 1px solid rgba(31, 53, 36, 0.14);
+  border-radius: 9px;
+  background: var(--color-elevated, #fff);
+  color: var(--color-text-muted, #475569);
+  cursor: pointer;
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+.ts-review-toggle:hover { background: var(--color-surface-muted, #f3f4ef); }
+.ts-review-toggle[aria-expanded='false'] { transform: rotate(-90deg); }
+
+/* Push-selection column: narrow, and it should not compete with the name. */
+.ts-review-table th.ts-review-pick,
+.ts-review-table td.ts-review-pick {
+  width: 36px;
+  padding-right: 0;
+  text-align: center;
+}
+.ts-review-table tr.is-picked td { background: rgba(31, 53, 36, 0.045); }
+
+/* Per-employee push outcome. Colour carries the status because the list is
+   read at a glance for "who failed", not word by word. */
+.ts-push-result {
+  margin: 14px 0 4px;
+  border: 1px solid rgba(31, 53, 36, 0.14);
+  border-radius: 14px;
+  background: var(--color-elevated, #fff);
+  overflow: hidden;
+}
+.ts-push-result-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(31, 53, 36, 0.09);
+}
+.ts-push-result-head strong { font-size: 13px; }
+.ts-push-result-close {
+  margin-left: auto;
+  border: none;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-text-muted, #475569);
+}
+.ts-push-result-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.ts-push-result-list li {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(0, 150px) minmax(0, 2fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 9px 16px;
+  border-bottom: 1px solid rgba(31, 53, 36, 0.06);
+  font-size: 12.5px;
+  border-left: 3px solid transparent;
+}
+.ts-push-result-list li:last-child { border-bottom: none; }
+.ts-push-result-list li.is-pushed { border-left-color: #2f7d4f; }
+.ts-push-result-list li.is-failed { border-left-color: #b23c3c; }
+.ts-push-result-list li.is-skipped { border-left-color: rgba(31, 53, 36, 0.2); }
+.ts-push-result-name { font-weight: 700; }
+.ts-push-result-period,
+.ts-push-result-message { color: var(--color-text-muted, #475569); }
+.ts-push-result-list li.is-failed .ts-push-result-message { color: #b23c3c; }
+
+@media (max-width: 720px) {
+  .ts-push-result-list li { grid-template-columns: 1fr; gap: 2px; }
+}
+
+html[data-theme='dark'] .ts-review-toggle,
+html[data-theme='dark'] .ts-push-result { background: var(--color-elevated, #1c2027); }
+html[data-theme='dark'] .ts-review-table tr.is-picked td { background: rgba(255, 255, 255, 0.05); }
 .ts-review-card {
   background: var(--color-elevated, #fff);
   border: 1px solid rgba(31, 53, 36, 0.12);
@@ -8419,3 +8523,496 @@ html[data-theme='dark'] .tips-distribution-card {
   border-color: var(--color-border, #30363d);
 }
 html[data-theme='dark'] .tips-distribution-avatar { background: var(--color-surface-muted, #22272e); }
+
+/* ── Manager dashboard: forecast glance sage band (suite editorial
+   vocabulary — .alma-band-sage lives in the shared stylesheet; these
+   rules only place the band inside the full-bleed live dashboard). ── */
+.sd-forecast-band {
+  padding: 16px 16px 0;
+}
+
+.sd-forecast-band .alma-page-grid-kpis {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 720px) {
+  .sd-forecast-band .alma-page-grid-kpis {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Undo beside the board message — quick-add makes a stray click cheap to
+   make, so taking it back has to be equally cheap and always in reach. */
+.roster-undo-button {
+  margin-left: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.roster-undo-button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.roster-undo-button:focus-visible {
+  outline: 2px solid var(--color-focus, currentColor);
+  outline-offset: 2px;
+}
+
+/* Availability — a fixed week of seven rows. Everyone has the same seven days,
+   so a fixed shape reads back faster than a list you build up. */
+.availability-week {
+  display: grid;
+  gap: 8px;
+}
+
+.availability-day {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(130px, 1fr) 110px 110px minmax(140px, 1.4fr);
+  gap: 10px;
+  align-items: end;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+
+/* A day that has been set reads as committed; the rest stay quiet. */
+.availability-day.is-set {
+  border-color: rgba(var(--ink-forest-rgb, 37 51 38), 0.34);
+  background: var(--color-surface-muted);
+}
+
+.availability-day-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 6px;
+}
+
+.availability-day-name .subtle {
+  font-size: 11.5px;
+}
+
+@media (max-width: 860px) {
+  .availability-day {
+    grid-template-columns: 1fr 1fr;
+  }
+  .availability-day-name {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Board week stepper — spans the full grid width as its own top row so the
+   ‹ › are reachable without scrolling back to the page header. */
+.deputy-board-weeknav {
+  grid-column: 1 / -1;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.deputy-board-weeknav-steps {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.deputy-board-weeknav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.deputy-board-weeknav-btn:hover {
+  background: var(--color-surface-muted, rgba(148, 163, 184, 0.12));
+  border-color: var(--color-text-muted, rgba(148, 163, 184, 0.6));
+}
+
+.deputy-board-weeknav-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.deputy-board-weeknav-btn--text {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.deputy-board-weeknav-range {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.deputy-board-weeknav-now {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, rgba(148, 163, 184, 0.9));
+}
+
+/* A rostering pattern the venue's own policy says to look at — short rest,
+   too many days in a row, or a heavy week. A warning, never a refusal: the
+   manager may well have a reason, and the roster still saves.
+
+   The badge carries the whole signal. An outline on the card was the obvious
+   alternative, but the roster deliberately keeps every card flat
+   (box-shadow: none !important, above) and it is not worth breaking that for
+   an accent the badge already provides. */
+.deputy-shift-fatigue-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: rgba(217, 119, 6, 0.16);
+  color: #b45309;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* The app carries its own theme on html[data-theme], and the user can switch
+   it independently of the OS. Keying off prefers-color-scheme picked the dark
+   amber while the board was showing light. */
+html[data-theme='dark'] .deputy-shift-fatigue-flag {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+}
+
+
+
+
+/* ── Noticeboard ─────────────────────────────────────────────────────── */
+.notice-list {
+  display: grid;
+  gap: 14px;
+}
+.notice {
+  background: var(--color-elevated, #fff);
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  border-radius: 16px;
+  padding: 18px 20px;
+  display: grid;
+  gap: 10px;
+}
+/* A pinned notice earns a left rule, not a different card — the board should
+   read as one surface with some things held at the top. */
+.notice.is-pinned { border-left: 3px solid var(--color-accent, #2f5d3a); }
+.notice-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.notice-head h3 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.25;
+}
+.notice-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  /* Notices are typed as plain text; keep the author's line breaks. */
+  white-space: pre-wrap;
+  color: var(--color-text, #1f2937);
+}
+.notice-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--color-text-muted, #475569);
+  border-top: 1px solid rgba(31, 53, 36, 0.08);
+  padding-top: 10px;
+}
+.notice-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+}
+.notice-actions button {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-text-muted, #475569);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.notice-actions button:disabled { opacity: 0.5; cursor: default; }
+.notice-actions button.is-destructive { color: #b23c3c; }
+
+.notice-form { display: grid; gap: 14px; }
+.notice-form-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 220px);
+  gap: 16px;
+  align-items: end;
+}
+.notice-form-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .notice-form-row { grid-template-columns: 1fr; align-items: start; }
+  .notice-meta { font-size: 11.5px; }
+  .notice-actions { margin-left: 0; }
+}
+
+html[data-theme='dark'] .notice { background: var(--color-elevated, #1c2027); }
+
+
+/* ── Report an issue (staff) ──────────────────────────────────────────── */
+.issue-form { display: grid; gap: 18px; }
+.issue-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.issue-field-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #475569);
+}
+/* Severity is the field that decides how fast this gets looked at, so it is
+   four buttons rather than a picker — one tap, and all four options visible
+   at once so the choice is a comparison instead of a guess. */
+.issue-severity-options {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.issue-severity-options button {
+  display: grid;
+  gap: 2px;
+  min-height: 62px;
+  padding: 8px 6px;
+  border: 1px solid rgba(31, 53, 36, 0.16);
+  border-radius: 12px;
+  background: var(--color-elevated, #fff);
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+.issue-severity-options button strong { font-size: 13px; }
+.issue-severity-options button small { font-size: 11px; opacity: 0.6; }
+.issue-severity-options button.is-on {
+  border-color: var(--color-accent, #2f5d3a);
+  background: var(--color-accent, #2f5d3a);
+  color: #f6f2e9;
+}
+.issue-severity-options button.is-on small { opacity: 0.8; }
+
+@media (max-width: 560px) {
+  .issue-form-row { grid-template-columns: 1fr; }
+  .issue-severity-options { grid-template-columns: 1fr 1fr; }
+}
+
+html[data-theme='dark'] .issue-severity-options button { background: var(--color-elevated, #1c2027); }
+
+
+/* ── Today's checks (staff) ───────────────────────────────────────────── */
+.check-runs { display: grid; gap: 10px; }
+.check-run {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-height: 72px;
+  padding: 14px 18px;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  border-radius: 14px;
+  background: var(--color-elevated, #fff);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.check-run-text { display: grid; gap: 2px; }
+.check-run-text small { font-size: 12px; color: var(--color-text-muted, #475569); }
+
+.check-list { display: grid; gap: 10px; }
+.check-item {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  border-left-width: 3px;
+  border-left-color: transparent;
+  border-radius: 14px;
+  background: var(--color-elevated, #fff);
+}
+/* Colour carries the state down the left edge, so a half-finished list is
+   scannable at a glance rather than read line by line. */
+.check-item.is-pass { border-left-color: #2f7d4f; }
+.check-item.is-fail { border-left-color: #b23c3c; }
+.check-item.is-na { border-left-color: rgba(31, 53, 36, 0.25); }
+.check-item-text { display: grid; gap: 3px; }
+.check-item-text strong { font-size: 15px; line-height: 1.35; }
+.check-item-text span { font-size: 13px; color: var(--color-text-muted, #475569); }
+.check-item-text em { font-size: 12.5px; color: #b23c3c; font-style: normal; }
+
+.check-item-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.check-item-actions button {
+  /* Pressed mid-service with wet hands — big, and far enough apart that a
+     mis-tap costs nothing. */
+  min-height: 52px;
+  border: 1px solid rgba(31, 53, 36, 0.18);
+  border-radius: 12px;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.check-item-actions button.is-on { color: #fff; border-color: transparent; }
+.check-item-actions button.is-on.is-pass { background: #2f7d4f; }
+.check-item-actions button.is-on.is-fail { background: #b23c3c; }
+.check-item-actions button.is-on:not(.is-pass):not(.is-fail) {
+  background: rgba(31, 53, 36, 0.55);
+}
+.check-item-actions button:disabled { opacity: 0.5; cursor: default; }
+
+.check-fail-form { display: grid; gap: 10px; }
+.check-fail-raise { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.check-fail-actions { display: flex; gap: 10px; }
+
+html[data-theme='dark'] .check-run,
+html[data-theme='dark'] .check-item { background: var(--color-elevated, #1c2027); }
+
+.my-issues { display: grid; gap: 2px; }
+.my-issue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid rgba(31, 53, 36, 0.07);
+}
+.my-issue:last-child { border-bottom: none; }
+.my-issue-text { display: grid; gap: 2px; min-width: 0; }
+.my-issue-text strong { font-size: 14px; }
+.my-issue-text small { font-size: 12px; color: var(--color-text-muted, #475569); }
+/* A finished item stays on the list but stops competing for attention. */
+.my-issue.is-done .my-issue-text strong { opacity: 0.55; }
+
+
+/* ── Fridge temperatures (staff) ──────────────────────────────────────── */
+.fridge-list { display: grid; gap: 12px; }
+.fridge {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  border-left-width: 3px;
+  border-left-color: transparent;
+  border-radius: 14px;
+  background: var(--color-elevated, #fff);
+}
+.fridge.is-out { border-left-color: #b23c3c; }
+.fridge-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.fridge-text { display: grid; gap: 2px; min-width: 0; }
+.fridge-text small { font-size: 12px; color: var(--color-text-muted, #475569); }
+.fridge-reading { display: grid; justify-items: end; gap: 1px; }
+/* The number is the whole point of the row, so it is the biggest thing in it. */
+.fridge-reading span { font-size: 27px; font-weight: 700; line-height: 1; }
+.fridge-reading span.is-ok { color: #2f7d4f; }
+.fridge-reading span.is-bad { color: #b23c3c; }
+.fridge-reading span.is-none { color: var(--color-text-muted, #475569); opacity: 0.5; }
+.fridge-reading small { font-size: 11px; color: var(--color-text-muted, #475569); }
+.fridge-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--color-text-muted, #475569);
+}
+.fridge-form { display: grid; gap: 12px; }
+.fridge-form-actions { display: flex; gap: 10px; }
+.fridge-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(178, 60, 60, 0.1);
+  color: #b23c3c;
+  font-size: 13px;
+}
+
+html[data-theme='dark'] .fridge { background: var(--color-elevated, #1c2027); }
+
+
+/* ── Bottom tab bar (phones) ──────────────────────────────────────────── */
+/* The bottom bar moved to <TaskBar> in @alma/ui, which ships its own styles so
+   the four apps cannot drift apart. The rules that lived here are gone rather
+   than kept alongside it: the old .app-shell-main / .page-stack bottom padding
+   would have stacked on top of the padding the shared bar applies to <body>,
+   leaving a dead strip above the bar on every screen. */
+html[data-theme='dark'] .alma-taskbar,
+html[data-theme='dark'] .alma-taskbar-sheet { background: var(--color-elevated, #1c2027); }
+
+
+/* ── Offline queue banner ─────────────────────────────────────────────── */
+.offline-banner {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 16px;
+  background: #8a6d1f;
+  color: #fdf6e6;
+  font-size: 13px;
+}
+.offline-banner button {
+  flex: none;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgba(253, 246, 230, 0.5);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.offline-banner button:disabled { opacity: 0.6; cursor: default; }

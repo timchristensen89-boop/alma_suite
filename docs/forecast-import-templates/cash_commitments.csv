@@ -1,0 +1,3 @@
+company_code,venue_code,description,category,start_date,end_date,frequency,amount,gst_treatment,payment_day,priority,scenario,active
+TCC,AVALON,Rent,RENT,2026-08-01,2027-07-31,MONTHLY,12828.77,EXCLUSIVE,1,CRITICAL,,true
+AF,FRESHWATER,NAB loan repayment,FINANCE_REPAYMENTS,2026-08-15,,MONTHLY,11656.00,FREE,15,CRITICAL,BASE,true

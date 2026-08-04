@@ -644,3 +644,35 @@ html[data-theme='dark'] {
   border-color: var(--color-accent);
   box-shadow: 0 6px 16px rgba(104, 74, 74, 0.10);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Marketing dashboard · suite editorial vocabulary pass (ov-two, sage band,
+   ov-library). Shared primitives live in apps/web/src/styles.css; only the
+   Marketing-specific glue lives here (mk- prefix).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Panel body padding for EditorialPanel content on the dashboard. */
+.marketing-page .mk-panel-body {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px 18px;
+}
+
+/* Short panel note (carries the former card subtitle copy). */
+.marketing-page .mk-panel-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: rgba(var(--ink-forest-rgb), 0.6);
+  line-height: 1.5;
+}
+
+/* Sage band: elevate birthday rows to white tiles, matching the
+   .alma-bigstat treatment the band applies elsewhere in the suite. */
+.marketing-page .alma-band-sage .birthday-row {
+  background: var(--color-elevated);
+  border-color: rgba(var(--ink-forest-rgb), 0.08);
+  border-left-color: #A87E3F;
+}
+
+/* ov-library breathing room inside panels comes from the shared
+   .alma-panel > .ov-library rule. */

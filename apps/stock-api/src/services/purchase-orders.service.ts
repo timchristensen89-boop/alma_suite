@@ -1,7 +1,13 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
-import type { AuthUser } from '@alma/shared';
+import {
+  orderQuantityToPar,
+  IMPLAUSIBLE_COUNT_SHARE,
+  IMPLAUSIBLE_COUNT_FLOOR_CENTS,
+  type AuthUser
+} from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { itemsService } from './items.service.js';
 
 // Purchase-order lifecycle: DRAFT → SENT → PARTIALLY_RECEIVED / RECEIVED → MATCHED.
 // Receiving posts DELIVERY_RECEIPT movements and lifts venue on-hand; matching
@@ -128,6 +134,175 @@ async function receiveIntoStock(
 }
 
 export const purchaseOrdersService = {
+  /**
+   * What needs ordering, grouped by who to buy it from.
+   *
+   * This is the step the app was missing entirely. Production had 664
+   * low-stock notices and zero purchase orders ever created: it could say what
+   * was running out, and then there was nowhere to go. Quantities come back in
+   * whole purchase units at the last price actually paid, so a suggestion can
+   * become an order without anybody retyping it.
+   */
+  async suggestions(actor?: AuthUser | null, requestedVenue?: string | null) {
+    const venue = actorVenueScope(actor, requestedVenue ?? null);
+
+    // Par levels are held per venue, not on the item — every one of the 716
+    // items has an item-level par of 0, while 444 and 506 venue rows carry
+    // real ones. Without a venue there is nothing to compare on-hand against,
+    // and returning an empty list would read as "nothing to order" when the
+    // truth is "you have not said where".
+    if (!venue) {
+      return {
+        venue: null,
+        suppliers: [],
+        itemsBelowPar: 0,
+        itemsWithNoSupplier: 0,
+        needsVenue: true,
+        generatedAt: new Date().toISOString()
+      };
+    }
+
+    const [items, facts, openOrderLines] = await Promise.all([
+      prisma.stockItem.findMany({
+        where: { status: 'ACTIVE' },
+        select: {
+          id: true, name: true, unit: true, countUnit: true, conversionFactor: true,
+          parLevel: true, reorderPoint: true, onHand: true, latestCostCents: true,
+          venueStock: { where: { venue }, select: { onHand: true, parLevel: true, reorderPoint: true } }
+        }
+      }),
+      itemsService.purchaseFacts(),
+      // Stock already on the way must not be ordered a second time.
+      prisma.purchaseOrderLine.findMany({
+        where: {
+          stockItemId: { not: null },
+          purchaseOrder: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] }, ...(venue ? { venue } : {}) }
+        },
+        select: { stockItemId: true, orderedQuantity: true, receivedQuantity: true }
+      })
+    ]);
+
+    const onOrderByItem = new Map<string, number>();
+    for (const line of openOrderLines) {
+      if (!line.stockItemId) continue;
+      const outstanding = Math.max(0, line.orderedQuantity - (line.receivedQuantity ?? 0));
+      onOrderByItem.set(line.stockItemId, (onOrderByItem.get(line.stockItemId) ?? 0) + outstanding);
+    }
+
+    const groups = new Map<string, {
+      supplierId: string | null;
+      supplierName: string;
+      lines: Array<Record<string, unknown>>;
+      subtotalCents: number;
+    }>();
+    let itemsBelowPar = 0;
+    let itemsWithNoSupplier = 0;
+
+    for (const item of items) {
+      const venueRow = Array.isArray(item.venueStock) ? item.venueStock[0] : null;
+      const onHand = venueRow?.onHand ?? item.onHand;
+      const parLevel = venueRow?.parLevel ?? item.parLevel;
+      if (!parLevel || parLevel <= 0) continue;
+
+      const factor = item.conversionFactor && item.conversionFactor > 0 ? item.conversionFactor : 1;
+      const onOrderCountUnits = (onOrderByItem.get(item.id) ?? 0) * factor;
+      const quantity = orderQuantityToPar({
+        onHand,
+        parLevel,
+        conversionFactor: factor,
+        onOrder: onOrderCountUnits
+      });
+      if (quantity <= 0) continue;
+      itemsBelowPar += 1;
+
+      const fact = facts.get(item.id) ?? null;
+      if (!fact?.supplierId) itemsWithNoSupplier += 1;
+
+      const key = fact?.supplierId ?? '__none__';
+      if (!groups.has(key)) {
+        groups.set(key, {
+          supplierId: fact?.supplierId ?? null,
+          supplierName: fact?.supplierName ?? 'No known supplier',
+          lines: [],
+          subtotalCents: 0
+        });
+      }
+      const group = groups.get(key)!;
+      // Null rather than 0 when nothing has ever been paid: a zero would total
+      // up into an order that looks free.
+      const unitCostCents = fact?.lastPriceCents ?? item.latestCostCents ?? null;
+      group.lines.push({
+        stockItemId: item.id,
+        description: item.name,
+        unit: item.unit,
+        orderedQuantity: quantity,
+        unitCostCents,
+        lineTotalCents: unitCostCents === null ? null : Math.round(unitCostCents * quantity),
+        onHand,
+        parLevel,
+        onOrder: onOrderByItem.get(item.id) ?? 0,
+        lastPurchasedAt: fact?.lastPurchasedAt ?? null,
+        priceMovement: fact?.priceMovement ?? null
+      });
+      if (unitCostCents !== null) group.subtotalCents += Math.round(unitCostCents * quantity);
+    }
+
+    // Par levels derived from a count made in the wrong unit produce order
+    // lines nobody would ever place: St Alma's suggestion was $2.17M, 99% of
+    // it five lines, the worst being 21,724 bottles of gin because someone
+    // counted millilitres. Proposing those alongside real ones makes the whole
+    // screen untrustworthy — which is why not one purchase order has ever been
+    // raised in production. So they come out of the totals and are listed
+    // separately for somebody to fix at the item.
+    const allLines = [...groups.values()].flatMap((group) => group.lines);
+    const suggestedTotal = allLines.reduce(
+      (sum, line) => sum + Math.max(0, Number(line.lineTotalCents) || 0),
+      0
+    );
+    const needsCheck: Array<Record<string, unknown>> = [];
+    if (suggestedTotal > 0) {
+      for (const group of groups.values()) {
+        const keep: Array<Record<string, unknown>> = [];
+        for (const line of group.lines) {
+          const cents = Math.max(0, Number(line.lineTotalCents) || 0);
+          const share = cents / suggestedTotal;
+          if (cents >= IMPLAUSIBLE_COUNT_FLOOR_CENTS && share >= IMPLAUSIBLE_COUNT_SHARE) {
+            needsCheck.push({ ...line, supplierName: group.supplierName, shareOfSuggested: Math.round(share * 100) / 100 });
+            group.subtotalCents -= cents;
+            continue;
+          }
+          keep.push(line);
+        }
+        group.lines = keep;
+      }
+    }
+
+    const suppliers = [...groups.values()]
+      .filter((group) => group.lines.length > 0)
+      .sort((a, b) => {
+        if (a.supplierId === null) return 1;
+        if (b.supplierId === null) return -1;
+        return b.subtotalCents - a.subtotalCents;
+      });
+
+    return {
+      venue,
+      suppliers,
+      // Order lines left out of the totals because the par behind them cannot
+      // be right. Named so the screen can say so rather than quietly dropping
+      // them: the stock still needs ordering, the par just needs fixing first.
+      needsCheck,
+      needsCheckTotalCents: needsCheck.reduce((sum, line) => sum + (Number(line.lineTotalCents) || 0), 0),
+      itemsBelowPar,
+      // Honest about the gap rather than quietly dropping these: an item with
+      // no purchase history still needs ordering, somebody just has to say
+      // from whom.
+      itemsWithNoSupplier,
+      needsVenue: false,
+      generatedAt: new Date().toISOString()
+    };
+  },
+
   async list(actor?: AuthUser | null, requestedVenue?: string | null) {
     const venue = actorVenueScope(actor, requestedVenue);
     const orders = await prisma.purchaseOrder.findMany({

@@ -1509,6 +1509,19 @@ tbody tr.row-detail:hover {
   background: var(--color-surface-muted);
 }
 
+/* Start-from-template picker at the top of a new count. */
+.stocktake-template-start {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  max-width: 520px;
+}
+
 /* Live per-line cost readout while counting — spots a wrong unit before submit. */
 .stocktake-count-cost {
   display: flex;
@@ -1556,6 +1569,173 @@ tbody tr.row-detail:hover {
 .stocktake-select-cell {
   width: 34px;
   text-align: center;
+}
+
+/* "Scan invoice (OCR)" upload — a styled label wrapping a hidden file input. */
+.stock-ocr-upload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+}
+.stock-ocr-upload:hover {
+  border-color: var(--color-accent, #684a4a);
+}
+.stock-ocr-upload input {
+  display: none;
+}
+.stock-ocr-upload.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.stock-invoice-doc-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+.stock-invoice-doc-bar .subtle {
+  font-size: 0.85rem;
+}
+
+/* Pasting the line-item table back onto an invoice that arrived summarised. */
+
+.stock-invoice-paste-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.stock-invoice-paste {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-muted);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stock-invoice-paste-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stock-invoice-paste-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stock-invoice-paste textarea {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.stock-invoice-paste-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.stock-invoice-paste-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+}
+
+.stock-invoice-paste-reconcile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  font-size: 13.5px;
+}
+
+.stock-invoice-paste-warning {
+  margin: 0;
+  font-size: 13px;
+  color: var(--tone-warning-fg);
+  background: var(--tone-warning-bg);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+/* Wide tables scroll inside their own box rather than pushing the page out. */
+.stock-invoice-paste-table-wrap {
+  overflow-x: auto;
+}
+
+.stock-invoice-paste-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.stock-invoice-paste-table th,
+.stock-invoice-paste-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.stock-invoice-paste-table th {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.stock-invoice-paste-table .numeric {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-invoice-paste-table tr.has-warning td {
+  background: var(--tone-warning-bg);
+}
+
+.stock-invoice-paste-line-warning {
+  display: block;
+  font-size: 12px;
+  color: var(--tone-warning-fg);
+}
+
+.stock-invoice-paste-unparsed {
+  font-size: 13px;
+}
+
+.stock-invoice-paste-unparsed ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-muted);
 }
 
 /* Inline link from a stocktake line / top-value row to the item's edit form. */
@@ -2473,6 +2653,25 @@ button.stocktake-line-group-title {
   border-radius: 12px; background: var(--color-accent-soft, #FAF0DC); display: grid; gap: 12px;
 }
 .stock-bulk-edit-title { font-size: 13px; font-weight: 600; color: var(--color-accent-text, #3D2810); }
+
+/* Merge-items panel + success banner */
+.stock-merge-message {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--color-accent, #B5772F);
+  border-radius: 12px; background: var(--color-accent-soft, #FAF0DC); font-weight: 600;
+}
+.stock-merge-message button {
+  border: 0; background: none; padding: 0; font: inherit; font-weight: 600;
+  color: var(--color-accent, #B5772F); text-decoration: underline; cursor: pointer;
+}
+.stock-merge-list { display: flex; flex-direction: column; gap: 6px; }
+.stock-merge-option {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface, #fff); cursor: pointer;
+}
+.stock-merge-option.is-parent { border-color: var(--color-accent, #B5772F); box-shadow: inset 0 0 0 1px var(--color-accent, #B5772F); }
+.stock-merge-name { font-weight: 600; }
+.stock-merge-actions { display: flex; justify-content: flex-end; }
 .stock-bulk-edit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; }
 .stock-bulk-edit-area { display: grid; gap: 4px; }
 .stock-bulk-edit-check { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--color-text); }
@@ -2896,4 +3095,311 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   .po-receive-row {
     grid-template-columns: 1fr;
   }
+}
+
+/* Stocktake templates — reusable count sheets. */
+.template-field {
+  display: grid;
+  gap: 8px;
+}
+.template-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.template-checks .check-row {
+  margin-top: 0;
+}
+.template-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.template-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted, var(--color-surface));
+  color: var(--color-text);
+  font-size: 12.5px;
+}
+.template-chip-remove {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 15px;
+  line-height: 1;
+}
+.template-chip-remove:hover {
+  color: var(--color-text);
+}
+
+/* Week-ahead demand banner on the reorder page — the forecast engine's
+   signal made visible to whoever is ordering. */
+.stock-demand-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted, var(--color-surface));
+  color: var(--color-text);
+}
+
+.stock-demand-banner .stock-demand-icon {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.stock-demand-banner.is-up {
+  border-color: color-mix(in srgb, var(--tone-warning-dot, #f59e0b) 55%, transparent);
+  background: color-mix(in srgb, var(--tone-warning-dot, #f59e0b) 12%, transparent);
+}
+
+.stock-demand-banner.is-up .stock-demand-icon {
+  color: var(--tone-warning-fg, #854d0e);
+}
+
+.stock-demand-banner.is-down {
+  border-color: color-mix(in srgb, var(--tone-positive-dot, #10b981) 45%, transparent);
+  background: color-mix(in srgb, var(--tone-positive-dot, #10b981) 10%, transparent);
+}
+
+.stock-demand-banner.is-down .stock-demand-icon {
+  color: var(--tone-positive-fg, #047857);
+}
+
+/* ── Dashboard: paired panels (suite editorial vocabulary) ──
+   Needs attention + stocktakes-ready sit side by side in the shared
+   .ov-two grid; in a half-width column the tables may compress further
+   before falling back to their horizontal scroll container. */
+.st-dashboard-pair .stock-dashboard-table-scroll table {
+  min-width: 560px;
+}
+
+/* Route chunk loading — keeps the shell steady while a page arrives instead
+   of collapsing the layout to nothing. */
+.route-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  padding: 48px 0;
+}
+
+/* Stocktake category sections — the count opens as a short list of headings,
+   and you open the one you're standing in front of. */
+.stocktake-category-group {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.stocktake-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 14px 18px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.stocktake-category-header:hover {
+  background: var(--color-surface-muted);
+}
+
+.stocktake-category-header.is-open {
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.stocktake-category-header:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.stocktake-category-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.stocktake-category-count {
+  font-size: 12.5px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Ranked match candidates under an unmatched invoice line. One tap instead of
+   searching the whole catalogue — the reason the review queue never shrank. */
+.stock-invoice-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 2px;
+}
+
+.stock-invoice-suggestion {
+  padding: 3px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.stock-invoice-suggestion:hover:not(:disabled) {
+  background: var(--color-surface-muted, rgba(148, 163, 184, 0.12));
+  border-color: var(--color-text-muted, rgba(148, 163, 184, 0.6));
+}
+
+.stock-invoice-suggestion:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Buying — where each item comes from and what it last cost, derived from
+   invoice history rather than a price list nobody maintains. */
+.stock-buying-movers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stock-buying-mover,
+.stock-buying-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.stock-buying-mover:last-child,
+.stock-buying-row:last-child {
+  border-bottom: none;
+}
+
+.stock-buying-mover > span,
+.stock-buying-row > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.stock-buying-price {
+  align-items: flex-end;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.stock-buying-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-muted, rgba(148, 163, 184, 0.08));
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.stock-buying-group-head:hover {
+  background: var(--color-surface-muted, rgba(148, 163, 184, 0.16));
+}
+
+/* Order suggestions held back because the par behind them cannot be right. */
+.stock-buying-needs-check {
+  margin: 0 12px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--tone-warning-dot);
+  border-radius: var(--radius-md);
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
+.stock-buying-needs-check p {
+  margin: 4px 0 8px;
+}
+.stock-buying-needs-check ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.stock-buying-needs-check li {
+  margin-bottom: 3px;
+}
+
+/* Unattributed supplier spend, grouped by the supplier's own wording. */
+.stock-unmatched-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  font-size: 13.5px;
+}
+.stock-unmatched-table-wrap {
+  overflow-x: auto;
+}
+.stock-unmatched-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.stock-unmatched-table th,
+.stock-unmatched-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+.stock-unmatched-table th {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.stock-unmatched-table .numeric {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.stock-unmatched-hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--tone-warning-fg);
+}
+.stock-unmatched-more {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-accent);
+  text-decoration: underline;
+  cursor: pointer;
 }

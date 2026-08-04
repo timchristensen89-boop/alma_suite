@@ -29,14 +29,24 @@ import {
   type StocktakeReviewItem
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { isSuspectRecipeCost } from '../lib/cogs-quality.js';
 import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { mailService } from './mail.service.js';
 import { integrationService } from './integration.service.js';
 import { deputyService } from './deputy.service.js';
 import { configuredSuperRateFraction } from './settings.service.js';
+import { buildSalesErrorCsv, parseSalesCsv, salesTemplateCsv, type GstBasis } from '../lib/sales-import.js';
 
 const reportsOverviewQuerySchema = z.object({
   range: z.coerce.number().int().optional().default(30),
+  /**
+   * The period actually being looked at. `range` could only ever say 7, 30 or
+   * 90 days back from now, so a page asking for "last financial year" was
+   * answered with the last 90 days and a page asking for "this month" on the
+   * 28th was answered with the last 30 — neither the period the user chose.
+   */
+  start: z.string().optional().or(z.literal('')),
+  end: z.string().optional().or(z.literal('')),
   venue: z.string().optional().or(z.literal(''))
 });
 
@@ -82,13 +92,35 @@ function salesVenueScope(actor?: AuthUser | null, requestedVenue?: string | null
 
 function rangeFromInput(input: unknown) {
   const query = reportsOverviewQuerySchema.parse(input ?? {});
+  const requestedVenue = query.venue?.trim() || null;
+
+  // An explicit period wins. The caller knows what it is showing a heading for;
+  // this used to throw that away and answer with a bucket measured back from
+  // now, so every preset except "this week" was answered with the wrong window.
+  if (query.start && query.end) {
+    const start = parseDate(query.start, 'start');
+    const end = parseDate(query.end, 'end');
+    if (end.getTime() <= start.getTime()) {
+      throw new HttpError(400, 'end must be after start');
+    }
+    const spanDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
+    return {
+      // rangeDays is what the payload reports back; keep it truthful about the
+      // window actually used rather than the bucket that was asked for.
+      rangeDays: spanDays as ReportsRangeDays,
+      requestedVenue,
+      start,
+      end
+    };
+  }
+
   const allowed = new Set([7, 30, 90]);
   const rangeDays = (allowed.has(query.range) ? query.range : 30) as ReportsRangeDays;
   const end = new Date();
   const start = new Date(end.getTime() - rangeDays * 24 * 60 * 60 * 1000);
   return {
     rangeDays,
-    requestedVenue: query.venue?.trim() || null,
+    requestedVenue,
     start,
     end
   };
@@ -482,18 +514,35 @@ async function buildStockSummary(
       orderBy: [{ submittedAt: 'desc' }, { updatedAt: 'desc' }],
       take: 6
     }),
+    // No `take` here, and deliberately.
+    //
+    // This used to take 100 with no orderBy, then sort those 100 by variance
+    // and show the top 8 — so "the highest variance lines" were the highest of
+    // an arbitrary hundred, in whatever order Postgres handed back. Measured
+    // against production: 2,287 lines qualified, the card showed a largest
+    // variance of 20 while the real largest was 1,093, and it listed the same
+    // item six times.
+    //
+    // Variance is `countedQty - onHand`, where on-hand is resolved per venue
+    // below, so it cannot be ordered or limited in the query. The whole
+    // candidate set has to come back to be ranked honestly. It is a few
+    // thousand narrow rows over one range and it is the only way the figure
+    // means what it says.
     prisma.stocktakeLine.findMany({
       where: {
         stocktake: {
           AND: [scope, { status: 'SUBMITTED', updatedAt: { gte: start } }]
         },
-        itemId: { not: null }
+        itemId: { not: null },
+        countedQty: { not: null }
       },
-      include: {
+      select: {
+        countedQty: true,
+        unit: true,
+        label: true,
         stocktake: { select: { id: true, name: true, venue: true, submittedAt: true, updatedAt: true } },
         item: { select: { id: true, name: true, onHand: true, unit: true } }
-      },
-      take: 100
+      }
     })
   ]);
 
@@ -529,8 +578,17 @@ async function buildStockSummary(
       };
     })
     .filter((line) => line.variance != null && Math.abs(line.variance) > 0.0001)
-    .sort((a, b) => Math.abs(b.variance ?? 0) - Math.abs(a.variance ?? 0))
-    .slice(0, 8);
+    .sort((a, b) => Math.abs(b.variance ?? 0) - Math.abs(a.variance ?? 0));
+
+  // One row per item, worst first. An item counted in six stocktakes over the
+  // range produced six rows, and the card filled up with a single tequila
+  // repeated — eight rows that named one problem instead of eight.
+  const worstByItem = new Map<string, (typeof highestVarianceLines)[number]>();
+  for (const line of highestVarianceLines) {
+    const key = `${line.venue ?? ''}:${line.itemName}`;
+    if (!worstByItem.has(key)) worstByItem.set(key, line);
+  }
+  const topVarianceLines = [...worstByItem.values()].slice(0, 8);
 
   return {
     activeStockItems: activeCatalogueItems,
@@ -543,7 +601,7 @@ async function buildStockSummary(
     recentlySubmittedStocktakes: recentlySubmittedStocktakes.map((row) =>
       toStocktakeReviewPayload(row, reviewVenueOnHandByKey)
     ),
-    highestVarianceLines,
+    highestVarianceLines: topVarianceLines,
     stockItemsVenueScoped: true
   };
 }
@@ -603,13 +661,77 @@ async function buildReserveSummary(
     })
   ]);
 
+  // Booked covers by day × venue for the next 14 days — the demand signal for
+  // rostering and prep. serviceDate is stored as UTC midnight of the local
+  // date, so grouping on it gives clean local-day buckets.
+  const aheadRows = await prisma.reserveReservation.groupBy({
+    by: ['serviceDate', 'venue'],
+    where: {
+      ...reservationWhere,
+      serviceDate: { gte: today, lt: addDays(today, 14) },
+      status: { in: ['PENDING', 'CONFIRMED', 'SEATED'] }
+    },
+    _sum: { covers: true },
+    _count: { _all: true }
+  });
+  const coversAhead = aheadRows
+    .map((row) => ({
+      date: row.serviceDate.toISOString().slice(0, 10),
+      venue: row.venue,
+      covers: row._sum.covers ?? 0,
+      bookings: row._count._all
+    }))
+    .sort((a, b) => (a.date === b.date ? a.venue.localeCompare(b.venue) : a.date.localeCompare(b.date)));
+
+  // No-show economics. Covers lost in the report window, plus repeat offenders
+  // (2+ no-shows all-time, computed from reservations — the imported SevenRooms
+  // history doesn't maintain ReserveGuest.noShowCount).
+  const [noShowCoversRow, noShowByGuest] = await Promise.all([
+    prisma.reserveReservation.aggregate({
+      _sum: { covers: true },
+      where: { ...reservationWhere, updatedAt: { gte: start, lte: end }, status: 'NO_SHOW' }
+    }),
+    prisma.reserveReservation.groupBy({
+      by: ['guestId'],
+      where: { ...reservationWhere, status: 'NO_SHOW' },
+      _count: { _all: true },
+      _sum: { covers: true },
+      _max: { startsAt: true }
+    })
+  ]);
+  const repeatRows = noShowByGuest
+    .filter((row) => row._count._all >= 2)
+    .sort((a, b) => b._count._all - a._count._all)
+    .slice(0, 8);
+  const repeatGuests = repeatRows.length
+    ? await prisma.reserveGuest.findMany({
+        where: { id: { in: repeatRows.map((row) => row.guestId) } },
+        select: { id: true, firstName: true, lastName: true, totalVisits: true, _count: { select: { reservations: { where: { status: 'COMPLETED' } } } } }
+      })
+    : [];
+  const guestById = new Map(repeatGuests.map((guest) => [guest.id, guest]));
+  const repeatNoShowGuests = repeatRows.map((row) => {
+    const guest = guestById.get(row.guestId);
+    return {
+      guestId: row.guestId,
+      name: guest ? `${guest.firstName} ${guest.lastName}`.trim() || 'Guest' : 'Guest',
+      noShows: row._count._all,
+      noShowCovers: row._sum.covers ?? 0,
+      totalVisits: guest ? Math.max(guest.totalVisits, guest._count.reservations) : 0,
+      lastNoShowAt: row._max.startsAt?.toISOString() ?? null
+    };
+  });
+
   return {
     bookingsToday,
     coversToday: coversTodayRows._sum.covers ?? 0,
     upcomingBookings,
     cancellations,
     noShows,
-    newGuests
+    newGuests,
+    coversAhead,
+    noShowCovers: noShowCoversRow._sum.covers ?? 0,
+    repeatNoShowGuests
   };
 }
 
@@ -727,7 +849,9 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
 }
 
-async function recapWageCents(venue: string | null, start: Date, end: Date): Promise<number> {
+// Exported: the forecast engine reuses this as the canonical "actual wages for
+// a period" figure (timesheet hours + salaried weekly fixed cost, super baked in).
+export async function recapWageCents(venue: string | null, start: Date, end: Date): Promise<number> {
   const superRate = await configuredSuperRateFraction();
   const [timesheets, salariedStaff] = await Promise.all([
     prisma.timesheet.findMany({
@@ -779,6 +903,10 @@ async function recapWageCents(venue: string | null, start: Date, end: Date): Pro
       select: { staffProfileId: true, venue: true, startsAt: true, endsAt: true, breakMinutes: true, staffProfile: { select: { venue: true } } }
     });
     for (const shift of shifts) {
+      // An open shift has nobody on it, so it carries no wage cost and belongs
+      // to no one's hours. It is counted as work that still needs filling, not
+      // as work someone is doing.
+      if (!shift.staffProfile || !shift.staffProfileId) continue;
       const v = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
       const h = rosterHours(shift);
       const m = rosterHoursByStaffVenue.get(shift.staffProfileId) ?? new Map<string, number>();
@@ -1053,6 +1181,10 @@ export const reportsService = {
       if (entry.status === 'APPROVED' || entry.status === 'EXPORTED') row.approvedWageCents += cost;
     }
     for (const shift of rosterShifts) {
+      // An open shift has nobody on it, so it carries no wage cost and belongs
+      // to no one's hours. It is counted as work that still needs filling, not
+      // as work someone is doing.
+      if (!shift.staffProfile || !shift.staffProfileId) continue;
       const row = rowFor(shift.venue || shift.staffProfile.venue);
       const hours = rosterHours(shift);
       const rate = staffCostingRate(shift.staffProfile, superRate);
@@ -1080,6 +1212,10 @@ export const reportsService = {
         select: { staffProfileId: true, venue: true, startsAt: true, endsAt: true, breakMinutes: true, staffProfile: { select: { venue: true } } }
       });
       for (const shift of salariedShifts) {
+        // An open shift has nobody on it, so it carries no wage cost and belongs
+        // to no one's hours. It is counted as work that still needs filling, not
+        // as work someone is doing.
+        if (!shift.staffProfile || !shift.staffProfileId) continue;
         const v = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
         const h = rosterHours(shift);
         const m = salariedRosterHoursByStaffVenue.get(shift.staffProfileId) ?? new Map<string, number>();
@@ -1148,6 +1284,35 @@ export const reportsService = {
         openingStockAvailable: false, closingStockAvailable: false, source: 'purchases_only', quality: 'estimated'
       };
 
+    /**
+     * How much of the period the purchase data actually covers.
+     *
+     * Prime cost read 31.8% for FY25/26 — wages 29.1% plus COGS 2.7% — against
+     * a real hospitality figure nearer 60%. Nothing was miscalculated: supplier
+     * invoices only begin in April 2026, so three months of purchases were
+     * being divided by twelve months of sales. The report already warned that
+     * COGS was purchases-only, but a warning beside a confident number loses;
+     * people read the number.
+     *
+     * A percentage of sales is only meaningful when both sides span the same
+     * days, so the covered fraction is measured and the COGS and prime-cost
+     * percentages are withheld when it does not. A blank says "we cannot tell
+     * you this" — which is true — where 2.7% says something false.
+     */
+    const firstInvoice = await prisma.supplierInvoice.findFirst({
+      where: { invoiceDate: { lt: end } },
+      orderBy: { invoiceDate: 'asc' },
+      select: { invoiceDate: true }
+    });
+    const periodMs = Math.max(1, end.getTime() - start.getTime());
+    const coveredFrom = firstInvoice?.invoiceDate
+      ? new Date(Math.max(start.getTime(), firstInvoice.invoiceDate.getTime()))
+      : end;
+    const purchaseCoverage = Math.min(1, Math.max(0, (end.getTime() - coveredFrom.getTime()) / periodMs));
+    /** Below this, a COGS percentage of sales is not a fact about the period. */
+    const MIN_PURCHASE_COVERAGE = 0.9;
+    const purchasesCoverPeriod = purchaseCoverage >= MIN_PURCHASE_COVERAGE;
+
     const venues = Array.from(rows.values()).map((row) => {
       const wageCents = row.wageCents || row.rosterWageEstimateCents;
       const cogs = cogsFor(row.venue);
@@ -1168,9 +1333,12 @@ export const reportsService = {
         cogsSource: cogs.source,
         cogsQuality: cogs.quality,
         primeCostCents,
+        // Wages span the whole period, so their percentage always stands.
         wagePercent: pct(wageCents, row.salesCents),
-        cogsPercent: pct(cogsCents, row.salesCents),
-        primeCostPercent: pct(primeCostCents, row.salesCents),
+        // COGS and prime cost do not, when purchases only cover part of it.
+        cogsPercent: purchasesCoverPeriod ? pct(cogsCents, row.salesCents) : null,
+        primeCostPercent: purchasesCoverPeriod ? pct(primeCostCents, row.salesCents) : null,
+        purchaseCoverage: Math.round(purchaseCoverage * 100) / 100,
         timesheetHours: Math.round(row.timesheetHours * 100) / 100,
         rosterHours: Math.round(row.rosterHours * 100) / 100,
         salesDays: row.salesDays.size,
@@ -1223,8 +1391,10 @@ export const reportsService = {
         cogsSource: allVenuesCogs.source,
         cogsQuality: allVenuesCogs.quality,
         wagePercent: pct(totalBase.wageCents, totalBase.salesCents),
-        cogsPercent: pct(totalBase.cogsCents, totalBase.salesCents),
-        primeCostPercent: pct(totalBase.primeCostCents, totalBase.salesCents),
+        cogsPercent: purchasesCoverPeriod ? pct(totalBase.cogsCents, totalBase.salesCents) : null,
+        primeCostPercent: purchasesCoverPeriod ? pct(totalBase.primeCostCents, totalBase.salesCents) : null,
+        purchaseCoverage: Math.round(purchaseCoverage * 100) / 100,
+        purchasesFrom: firstInvoice?.invoiceDate?.toISOString() ?? null,
         timesheetHours: Math.round(totalBase.timesheetHours * 100) / 100,
         rosterHours: Math.round(totalBase.rosterHours * 100) / 100,
         ...totalQuality
@@ -1237,6 +1407,19 @@ export const reportsService = {
         cogs: totalBase.salesCents === 0 && allVenuesCogs.cogsCents === 0 ? 'missing' : allVenuesCogs.source
       },
       warnings: [
+        // Said first, because it is the reason two of the headline figures are
+        // blank. A percentage of sales needs both sides to span the same days.
+        ...(purchasesCoverPeriod
+          ? []
+          : [
+              firstInvoice?.invoiceDate
+                ? `Supplier invoices only start ${firstInvoice.invoiceDate
+                    .toISOString()
+                    .slice(0, 10)}, covering ${Math.round(
+                    purchaseCoverage * 100
+                  )}% of this period, so COGS % and prime cost % are not shown. The dollar figures are the purchases actually recorded.`
+                : 'No supplier invoices fall in this period, so COGS % and prime cost % are not shown.'
+            ]),
         allVenuesCogs.source === 'stock_bounded'
           ? 'COGS is the canonical figure: opening stock + ex-GST purchases − closing stock for the period.'
           : 'COGS is estimated from ex-GST purchases only — lock an opening and closing stocktake at the period boundaries for a true opening + purchases − closing figure.',
@@ -1363,6 +1546,17 @@ export const reportsService = {
       if (row.mappingStatus === 'unmapped') dataQuality.push('unmapped_square_item');
       if (row.mappingStatus === 'missing_recipe') dataQuality.push('missing_recipe');
       if (row.mappingStatus === 'missing_cost') dataQuality.push('missing_cost');
+      // A recipe that costs as much as (or more than) it sells for is a
+      // batch/prep recipe costed per serve, not a real menu economics row.
+      // Keep it visible and flagged, but keep it out of every total (shared
+      // guard, tested). recipeCostCents is per serve; estimatedCogsCents is
+      // already cost × units, so pass quantity 1 against the row total.
+      if (
+        row.recipeCostCents !== null &&
+        isSuspectRecipeCost(row.recipeCostCents, row.netSalesCents, row.quantitySold)
+      ) {
+        dataQuality.push('suspect_batch_cost');
+      }
       return { ...row, estimatedCogsCents, grossProfitCents, foodCostPercent, dataQuality };
     });
 
@@ -1371,7 +1565,10 @@ export const reportsService = {
     }
     rows.sort((a, b) => b.netSalesCents - a.netSalesCents);
 
-    const rowsWithCost = rows.filter((row) => row.estimatedCogsCents !== null);
+    const suspectRows = rows.filter((row) => row.dataQuality.includes('suspect_batch_cost'));
+    const rowsWithCost = rows.filter(
+      (row) => row.estimatedCogsCents !== null && !row.dataQuality.includes('suspect_batch_cost')
+    );
     const estimatedCogsCents = rowsWithCost.length
       ? rowsWithCost.reduce((sum, row) => sum + (row.estimatedCogsCents ?? 0), 0)
       : null;
@@ -1400,7 +1597,10 @@ export const reportsService = {
       warnings: [
         ...(entries.length ? [] : ['No Square item-level sales were found for the selected period. Import Square item sales before using menu profitability.']),
         ...(rows.some((row) => row.mappingStatus === 'unmapped') ? ['Some Square items are not mapped to Alma recipes, so COGS and margin are incomplete.'] : []),
-        ...(rows.some((row) => row.mappingStatus === 'missing_cost') ? ['Some mapped recipes have no cost yet. Update recipe ingredients/costs in Stock.'] : [])
+        ...(rows.some((row) => row.mappingStatus === 'missing_cost') ? ['Some mapped recipes have no cost yet. Update recipe ingredients/costs in Stock.'] : []),
+        ...(suspectRows.length
+          ? [`${suspectRows.length} recipe${suspectRows.length === 1 ? ' costs' : 's cost'} more per serve than the dish sells for — almost certainly a batch recipe costed per serve (${suspectRows.slice(0, 3).map((row) => row.squareItem).join(', ')}). Set portion yields in Stock; these rows are flagged and excluded from the totals.`]
+          : [])
       ]
     };
   },
@@ -1646,6 +1846,30 @@ export const reportsService = {
     const totalRevenue = groups.reduce((s, g) => s + g.revenueCents, 0);
     const totalCogs = groups.reduce((s, g) => s + g.cogsCents, 0);
 
+    /**
+     * How much of the period's revenue these four menus are.
+     *
+     * This report covers the set menus only — the tasting menu, the grazing
+     * menu and the two bottomless lunches — because those are the ones whose
+     * cost has to be worked out from components rather than read off a line.
+     * That is the right scope for it, but nothing in the payload said so, and
+     * the number it produces sits on the same screen as menu profitability's.
+     * Measured over FY25/26 the two read 39.5% and 25.8%, which looks like one
+     * of them is broken; in fact one is the food cost of four set menus and the
+     * other is the food cost of everything sold.
+     *
+     * Reporting the share turns a contradiction into a comparison.
+     */
+    const periodRevenueAllItems = await prisma.salesItemActualEntry.aggregate({
+      _sum: { netSalesCents: true },
+      where: {
+        serviceDate: { gte: start, lt: end },
+        source: { startsWith: 'square-item:' },
+        ...(venueScope ? { venue: venueScope } : {})
+      }
+    });
+    const allItemsRevenueCents = periodRevenueAllItems._sum.netSalesCents ?? 0;
+
     return {
       generatedAt: new Date().toISOString(),
       startDate: start.toISOString(),
@@ -1659,7 +1883,13 @@ export const reportsService = {
         revenueCents: totalRevenue,
         cogsCents: totalCogs,
         grossMarginCents: totalRevenue - totalCogs,
-        foodCostPct: totalRevenue > 0 ? Math.round((totalCogs / totalRevenue) * 1000) / 10 : null
+        foodCostPct: totalRevenue > 0 ? Math.round((totalCogs / totalRevenue) * 1000) / 10 : null,
+        /** Every item sold in the period, so the share below can be read. */
+        allItemsRevenueCents,
+        /** What share of the period's takings these set menus are, 0-100. */
+        shareOfSalesPct:
+          allItemsRevenueCents > 0 ? Math.round((totalRevenue / allItemsRevenueCents) * 1000) / 10 : null,
+        scope: 'set-menus' as const
       }
     };
   },
@@ -1701,6 +1931,170 @@ export const reportsService = {
     }
 
     return { imported };
+  },
+
+  /**
+   * Preview or apply a sales CSV.
+   *
+   * With Square disconnected and the Lightspeed API not paid for, this and the
+   * manual grid are the PRIMARY way sales reach the forecast. Two safeguards
+   * matter most: the GST basis is explicit (SalesActualEntry stores ex-GST, and
+   * till takings are GST inclusive), and the write reuses the existing
+   * idempotent upsert so re-uploading a file cannot double count a day.
+   */
+  async importActualSalesCsv(
+    input: {
+      csv?: string;
+      gstBasis?: string;
+      venue?: string | null;
+      source?: string;
+      dryRun?: boolean;
+    },
+    actor?: AuthUser
+  ) {
+    if (typeof input.csv !== 'string' || input.csv.trim() === '') {
+      throw new HttpError(400, 'No CSV content was supplied.');
+    }
+    const basis: GstBasis = input.gstBasis === 'EXCLUSIVE' ? 'EXCLUSIVE' : 'INCLUSIVE';
+    const source = (input.source ?? 'csv').trim() || 'csv';
+
+    const venues = (await prisma.venue.findMany({ select: { name: true }, orderBy: { name: 'asc' } })).map((v) => v.name);
+    if (venues.length === 0) throw new HttpError(409, 'No venues are configured.');
+
+    // The selected venue is a FALLBACK for rows that do not name one — never a
+    // filter. Dropping a row because it names the other venue would lose a
+    // day's takings silently, which is the one thing this feed must not do.
+    // Also throws for a venue-scoped manager who selected someone else's venue.
+    const fallbackVenue = salesVenueScope(actor, input.venue ?? null);
+
+    const parsed = parseSalesCsv(input.csv, {
+      defaultBasis: basis,
+      venues,
+      defaultVenue: fallbackVenue
+    });
+
+    // Permission is enforced per row, and a refusal is reported rather than
+    // quietly skipped.
+    const rows: typeof parsed.rows = [];
+    const errors = [...parsed.errors];
+    for (const row of parsed.rows) {
+      try {
+        salesVenueScope(actor, row.venue);
+        rows.push(row);
+      } catch {
+        errors.push({
+          rowNumber: row.rowNumber,
+          column: 'venue',
+          message: `You do not have access to ${row.venue}, so this row was not imported.`
+        });
+      }
+    }
+    errors.sort((a, b) => a.rowNumber - b.rowNumber);
+
+    // Reports SUM salesCents across sources for a venue+day, so importing a day
+    // a POS feed already covers double counts it. Surface those days before
+    // anything is written rather than letting the total quietly inflate.
+    const clashes = rows.length
+      ? await prisma.salesActualEntry.findMany({
+          where: {
+            source: { not: source },
+            OR: rows.map((row) => ({ venue: row.venue, serviceDate: row.serviceDate }))
+          },
+          select: { venue: true, serviceDate: true, salesCents: true, source: true },
+          orderBy: { serviceDate: 'asc' }
+        })
+      : [];
+
+    const summary = {
+      totalRows: parsed.totalRows,
+      validRows: rows.length,
+      errorRows: errors.length,
+      clashes: clashes.map((entry) => ({
+        venue: entry.venue,
+        serviceDate: entry.serviceDate.toISOString().slice(0, 10),
+        salesCents: entry.salesCents,
+        source: entry.source
+      })),
+      duplicateRows: parsed.duplicateRowNumbers.length,
+      gstBasis: basis,
+      basisFromFile: parsed.basisFromFile,
+      errors: errors.slice(0, 200),
+      errorReportCsv: errors.length ? buildSalesErrorCsv(errors) : null,
+      preview: rows.slice(0, 14).map((row) => ({
+        rowNumber: row.rowNumber,
+        venue: row.venue,
+        serviceDate: row.serviceDate.toISOString().slice(0, 10),
+        enteredCents: row.enteredCents,
+        enteredBasis: row.enteredBasis,
+        salesCents: row.salesCents
+      }))
+    };
+
+    if (input.dryRun !== false) {
+      return { ...summary, applied: false, imported: 0 };
+    }
+
+    let imported = 0;
+    for (const row of rows) {
+      const externalId = `${row.venue}:${row.serviceDate.toISOString().slice(0, 10)}:${source}`;
+      await prisma.salesActualEntry.upsert({
+        where: {
+          venue_serviceDate_source_externalId: {
+            venue: row.venue,
+            serviceDate: row.serviceDate,
+            source,
+            externalId
+          }
+        },
+        create: {
+          venue: row.venue,
+          serviceDate: row.serviceDate,
+          salesCents: row.salesCents,
+          source,
+          externalId,
+          notes: row.notes,
+          importedById: actor?.id || null
+        },
+        update: {
+          salesCents: row.salesCents,
+          notes: row.notes,
+          importedById: actor?.id || null
+        }
+      });
+      imported += 1;
+    }
+
+    return { ...summary, applied: true, imported };
+  },
+
+  /** The tiny template a venue downloads. */
+  salesTemplate() {
+    return salesTemplateCsv();
+  },
+
+  /** Existing entries for a date range, so the grid can prefill. */
+  async listActualSalesRange(input: { venue?: string | null; from: string; to: string }, actor?: AuthUser) {
+    const venue = salesVenueScope(actor, input.venue ?? null);
+    const from = parseDate(input.from, 'From date');
+    const to = parseDate(input.to, 'To date');
+    const entries = await prisma.salesActualEntry.findMany({
+      where: {
+        serviceDate: { gte: from, lte: to },
+        ...(venue ? { venue } : {})
+      },
+      orderBy: [{ serviceDate: 'asc' }, { venue: 'asc' }]
+    });
+    return {
+      entries: entries.map((entry) => ({
+        id: entry.id,
+        venue: entry.venue,
+        serviceDate: entry.serviceDate.toISOString().slice(0, 10),
+        salesCents: entry.salesCents,
+        source: entry.source,
+        notes: entry.notes
+      })),
+      note: 'Stored figures are GST exclusive.'
+    };
   },
 
   async deleteActualSalesEntry(id: string, actor?: AuthUser) {
