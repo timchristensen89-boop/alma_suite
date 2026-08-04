@@ -51,6 +51,38 @@ function leastSquares(values: number[]): { intercept: number; slope: number } {
   return { intercept: yMean - slope * xMean, slope };
 }
 
+
+/**
+ * A short memo over the two Xero fetches this report makes.
+ *
+ * Parallelising the three calls took the report from 12-14 seconds to about
+ * 11, which was honest but not the win it looked like: timed separately the
+ * P&L trend is 1.4s, the forecast 0.3s, and the supplier bills **7.1s**. The
+ * sum was never the problem — one external call is.
+ *
+ * Neither figure moves quickly. The P&L trend is seven closed months and the
+ * supplier spend is a trailing twelve weeks of bills; a few minutes of
+ * staleness cannot change either in a way that matters, and the alternative is
+ * every venue filter change costing another seven seconds of somebody's day.
+ *
+ * Deliberately in-process and tiny: it empties on restart, which is the right
+ * behaviour for a cache whose only job is to make the second look at a report
+ * quick. Nothing here is written back, so a stale read cannot corrupt anything.
+ */
+const XERO_MEMO_MS = 10 * 60 * 1000;
+const xeroMemo = new Map<string, { at: number; value: Promise<unknown> }>();
+
+function memoXero<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const hit = xeroMemo.get(key);
+  if (hit && Date.now() - hit.at < XERO_MEMO_MS) return hit.value as Promise<T>;
+  const value = run();
+  xeroMemo.set(key, { at: Date.now(), value });
+  // A failure must not be remembered, or one Xero hiccup poisons the report
+  // for ten minutes.
+  value.catch(() => xeroMemo.delete(key));
+  return value;
+}
+
 export const supplierSpendService = {
   async projectedSpend(query: unknown, actor: AuthUser): Promise<SupplierSpendPayload> {
     const parsed = querySchema.parse(query ?? {});
@@ -67,12 +99,14 @@ export const supplierSpendService = {
     // failure below does not leave the others as unhandled rejections; the
     // original promises still reject when awaited, so error handling is
     // unchanged.
-    const trendPromise = integrationService.xeroProfitAndLossTrend(7);
+    const trendPromise = memoXero('pl-trend:7', () => integrationService.xeroProfitAndLossTrend(7));
     const outlookPromise = forecastService.outlook(
       { weeks: parsed.weeks, ...(venue ? { venue } : {}) },
       actor
     );
-    const spendPromise = integrationService.xeroSupplierSpend(SUPPLIER_WINDOW_DAYS);
+    const spendPromise = memoXero(`supplier-spend:${SUPPLIER_WINDOW_DAYS}`, () =>
+      integrationService.xeroSupplierSpend(SUPPLIER_WINDOW_DAYS)
+    );
     trendPromise.catch(() => {});
     outlookPromise.catch(() => {});
     spendPromise.catch(() => {});
