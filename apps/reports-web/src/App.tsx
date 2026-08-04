@@ -109,7 +109,17 @@ type MenuCogsPayload = {
   missingComponents?: Array<{ itemName: string; venue: string; menu: string; units: number; type: 'star' | 'bb' }>;
   missingComponentCount?: number;
   missingComponentUnits?: number;
-  totals: { revenueCents: number; cogsCents: number; grossMarginCents: number; foodCostPct: number | null };
+  totals: {
+    revenueCents: number;
+    cogsCents: number;
+    grossMarginCents: number;
+    foodCostPct: number | null;
+    /** Every item sold in the period, so the share below can be read. */
+    allItemsRevenueCents?: number;
+    /** What share of the period's takings these set menus are, 0-100. */
+    shareOfSalesPct?: number | null;
+    scope?: 'set-menus';
+  };
 };
 
 type ReportsData = {
@@ -3946,6 +3956,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   <div className="report-chart-grid" style={{ marginTop: 16 }}>
                     <div>
                       <h5 className="report-chart-title">Revenue split — all set menus</h5>
+                      {/*
+                        Say what this covers. The figure below is the food cost
+                        of four set menus, and it sits on the same screen as
+                        menu profitability's food cost for everything sold — on
+                        FY25/26 those read 39.5% and 25.8%, which looks like a
+                        contradiction until you know the two are measuring
+                        different things.
+                      */}
+                      {mc.totals.shareOfSalesPct != null ? (
+                        <p className="subtle" style={{ margin: '0 0 8px', fontSize: 12 }}>
+                          Set menus only — {mc.totals.shareOfSalesPct}% of takings for this period.
+                          Menu engineering covers the other {Math.round((100 - mc.totals.shareOfSalesPct) * 10) / 10}%.
+                        </p>
+                      ) : null}
                       <Donut
                         size={130}
                         segments={[

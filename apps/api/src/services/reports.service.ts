@@ -1846,6 +1846,30 @@ export const reportsService = {
     const totalRevenue = groups.reduce((s, g) => s + g.revenueCents, 0);
     const totalCogs = groups.reduce((s, g) => s + g.cogsCents, 0);
 
+    /**
+     * How much of the period's revenue these four menus are.
+     *
+     * This report covers the set menus only — the tasting menu, the grazing
+     * menu and the two bottomless lunches — because those are the ones whose
+     * cost has to be worked out from components rather than read off a line.
+     * That is the right scope for it, but nothing in the payload said so, and
+     * the number it produces sits on the same screen as menu profitability's.
+     * Measured over FY25/26 the two read 39.5% and 25.8%, which looks like one
+     * of them is broken; in fact one is the food cost of four set menus and the
+     * other is the food cost of everything sold.
+     *
+     * Reporting the share turns a contradiction into a comparison.
+     */
+    const periodRevenueAllItems = await prisma.salesItemActualEntry.aggregate({
+      _sum: { netSalesCents: true },
+      where: {
+        serviceDate: { gte: start, lt: end },
+        source: { startsWith: 'square-item:' },
+        ...(venueScope ? { venue: venueScope } : {})
+      }
+    });
+    const allItemsRevenueCents = periodRevenueAllItems._sum.netSalesCents ?? 0;
+
     return {
       generatedAt: new Date().toISOString(),
       startDate: start.toISOString(),
@@ -1859,7 +1883,13 @@ export const reportsService = {
         revenueCents: totalRevenue,
         cogsCents: totalCogs,
         grossMarginCents: totalRevenue - totalCogs,
-        foodCostPct: totalRevenue > 0 ? Math.round((totalCogs / totalRevenue) * 1000) / 10 : null
+        foodCostPct: totalRevenue > 0 ? Math.round((totalCogs / totalRevenue) * 1000) / 10 : null,
+        /** Every item sold in the period, so the share below can be read. */
+        allItemsRevenueCents,
+        /** What share of the period's takings these set menus are, 0-100. */
+        shareOfSalesPct:
+          allItemsRevenueCents > 0 ? Math.round((totalRevenue / allItemsRevenueCents) * 1000) / 10 : null,
+        scope: 'set-menus' as const
       }
     };
   },
