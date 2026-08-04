@@ -3580,3 +3580,75 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   .alma-giftcards-amount-custom__range { display: none; }
   .alma-giftcards-amount-custom input { min-width: 0; }
 }
+
+/* ── Boxes must sit just off the section background, not vanish into it ──── */
+/* The configure section is --gc-surface and these boxes were ALSO surface —
+   only a hairline apart. Lift them to --gc-paper (the palette's lighter tone,
+   already used by the custom-amount row) so they read as cards. */
+.alma-giftcards-amount,
+.alma-giftcards-design,
+.alma-giftcards-toggle {
+  background: var(--gc-paper);
+}
+.alma-giftcards-quickmsg__btn {
+  background: var(--gc-paper);
+}
+
+/* ── The hero deck must never bleed off the right edge ───────────────────── */
+.alma-giftcards-hero {
+  overflow-x: clip;
+}
+.alma-giftcards-hero__cardwrap {
+  max-width: 100%;
+}
+@media (max-width: 640px) {
+  /* The stacked shadow-cards are offset rightward; on a phone that pushed the
+     deck past the screen. Tuck the offsets in and keep the whole stack inside
+     the padding. */
+  .alma-giftcards-cardstack {
+    max-width: calc(100% - 24px);
+  }
+  .alma-giftcards-cardstack__bg--back {
+    top: 26px;
+    left: 10px;
+    transform: rotate(-3deg);
+  }
+  .alma-giftcards-cardstack__bg--mid {
+    top: 12px;
+    left: 5px;
+    transform: rotate(-1deg);
+  }
+}
+
+/* The card art is an intrinsically 900px-wide DOM scaled by a ResizeObserver.
+   Grid items default to min-width:auto, so on phones the hero/configure tracks
+   ballooned to 900px (the whole right-edge bleed). min-width:0 lets the tracks
+   fit the viewport and the observer scales the card down to match. */
+.alma-giftcards-hero__grid > *,
+.alma-giftcards-grid > *,
+.alma-giftcards-row > *,
+.alma-giftcards-deliver > * {
+  min-width: 0;
+}
+/* On phones, no descendant of the single-column layout may demand more width
+   than the viewport — this is what stops the whole-page right-edge bleed. */
+@media (max-width: 900px) {
+  .alma-giftcards-form,
+  .alma-giftcards-form *,
+  .alma-giftcards-preview,
+  .alma-giftcards-preview * {
+    min-width: 0;
+  }
+  .alma-giftcards-container,
+  .alma-giftcards-grid,
+  .alma-giftcards-form,
+  .alma-giftcards-preview {
+    max-width: 100%;
+  }
+}
+.alma-giftcards-preview {
+  max-width: min(480px, 100%);
+}
+.alma-giftcards-cardstack {
+  max-width: min(460px, 100%);
+}
