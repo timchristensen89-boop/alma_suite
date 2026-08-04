@@ -3516,6 +3516,14 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
 
 /* ── "Create your own" card designer ─────────────────────────────────────── */
 .alma-custom-designer { display: grid; gap: 14px; }
+/* Desktop: card (smaller) on the left, every control in a right-hand rail. */
+@media (min-width: 821px) {
+  .alma-custom-designer { grid-template-columns: minmax(0, 1fr) 330px; gap: 24px; align-items: start; }
+  .alma-custom-designer__canvas-wrap { position: sticky; top: 0; max-width: 560px; }
+  .alma-custom-designer__row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .alma-custom-designer__label { min-width: 0; }
+  .alma-custom-designer__sliders { grid-template-columns: 1fr; }
+}
 .alma-custom-designer__canvas-wrap { position: relative; width: 100%; aspect-ratio: 1200 / 756; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 32px rgba(20, 36, 26, 0.18); }
 .alma-custom-designer__canvas { width: 100%; height: 100%; display: block; }
 .alma-custom-designer__controls { display: grid; gap: 10px; }
@@ -3564,4 +3572,11 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
 }
 @media (max-width: 640px) {
   .alma-designer-modal__panel { margin: 0; max-height: 100vh; height: 100vh; border-radius: 0; width: 100%; padding: 18px 16px 26px; }
+}
+
+/* Phone: the "25 — 2,000" range hint collides with the input's placeholder
+   (which already states the range) — drop the hint, give the input the room. */
+@media (max-width: 640px) {
+  .alma-giftcards-amount-custom__range { display: none; }
+  .alma-giftcards-amount-custom input { min-width: 0; }
 }
