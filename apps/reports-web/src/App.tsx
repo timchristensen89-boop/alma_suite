@@ -537,6 +537,42 @@ function periodFromPreset(key: PeriodPresetKey, now: Date = new Date()): { start
   }
 }
 
+// Step a preset period backwards/forwards by its own granularity — the
+// chevrons either side of the period pill. offset 0 is the preset itself;
+// -1 is one span earlier, and the label names the actual span so the pill
+// never claims "This week" while showing some other range.
+function shiftPeriod(
+  base: { start: Date; end: Date; label: string },
+  key: PeriodPresetKey,
+  offset: number
+): { start: Date; end: Date; label: string } {
+  if (offset === 0) return base;
+  switch (key) {
+    case 'this-month':
+    case 'last-month': {
+      const start = new Date(base.start.getFullYear(), base.start.getMonth() + offset, 1);
+      const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+      return { start, end, label: start.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' }) };
+    }
+    case 'ytd-fy':
+    case 'last-fy': {
+      const start = new Date(base.start);
+      start.setFullYear(start.getFullYear() + offset);
+      const end = new Date(base.end);
+      end.setFullYear(end.getFullYear() + offset);
+      return { start, end, label: `FY ${start.getFullYear()}–${end.getFullYear()}` };
+    }
+    default: {
+      const start = addDays(base.start, offset * 7);
+      return {
+        start,
+        end: addDays(start, 7),
+        label: `Week of ${start.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}`
+      };
+    }
+  }
+}
+
 
 function formatCurrency(cents: number) {
   return new Intl.NumberFormat(undefined, {
@@ -1159,7 +1195,10 @@ function SidebarNav({
 
 function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const [activeSection, setActiveSection] = useState<ReportSectionId>(() => reportSectionFromHash(window.location.hash));
-  const [selectedWeekStart, setSelectedWeekStart] = useState(() => isoDate(startOfWeek(new Date())));
+  // localIsoDate, not isoDate: slicing UTC from a Sydney local-midnight Monday
+  // lands on Sunday's date, and startOfWeek then walks that back ANOTHER week —
+  // the compounding drift that had the week pill weeks behind reality.
+  const [selectedWeekStart, setSelectedWeekStart] = useState(() => localIsoDate(startOfWeek(new Date())));
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   // Recipe popup opened from a clickable menu-profitability row.
@@ -1194,7 +1233,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // week of revenue beside ninety days of stock, under a heading saying "Last
   // financial year". Three controls, three different windows, one page.
   const [periodPreset, setPeriodPreset] = useState<PeriodPresetKey>('this-week');
-  const period = useMemo(() => periodFromPreset(periodPreset), [periodPreset]);
+  // How many preset-spans the chevrons have stepped away from the preset
+  // (0 = the preset itself, -1 = one week/month/FY earlier, …).
+  const [periodOffset, setPeriodOffset] = useState(0);
+  const period = useMemo(
+    () => shiftPeriod(periodFromPreset(periodPreset), periodPreset, periodOffset),
+    [periodPreset, periodOffset]
+  );
   const periodLabel = period.label;
   // Send DATE-ONLY keys, not timestamps. period.start is local (Sydney)
   // midnight, whose toISOString() is 14:00Z the PREVIOUS day — but serviceDate
@@ -1254,7 +1299,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // The heading now names the period being shown rather than a bucket that
   // may not have matched it.
   const overviewWindowLabel = periodLabel;
-  const weekWindowLabel = `${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}`;
+  const weekWindowLabel = `${localIsoDate(weekStart)} to ${localIsoDate(addDays(weekEnd, -1))}`;
+  // The range the period pill displays — the PERIOD's own dates, not the
+  // roster-week's (they are different clocks; the pill lied when it glued the
+  // preset label to the week range).
+  const periodWindowLabel = `${localIsoDate(period.start)} to ${localIsoDate(addDays(period.end, -1))}`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2096,11 +2145,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const stockCategoryCountLabel = stockCostUsesVenueRows ? 'Venue rows' : 'Items';
   const stockLowStockLabel = stockCostUsesVenueRows ? 'Low stock venue rows' : 'Low stock';
 
+  // Bottom-of-report week controls: move ONLY the week-shaped panels (roster,
+  // timesheets). The period pill no longer borrows this range, so stepping the
+  // roster week must not clobber the chosen period.
   function moveWeek(days: number) {
-    setSelectedWeekStart(isoDate(addDays(weekStart, days)));
-    // Manual week navigation no longer matches the chosen preset; reset the
-    // label so the period button doesn't show a stale value like "Last month".
-    setPeriodPreset('this-week');
+    setSelectedWeekStart(localIsoDate(addDays(weekStart, days)));
+  }
+
+  // Period pill chevrons: step the PERIOD itself by one preset-span, and bring
+  // the week-shaped panels along to the week the period starts in.
+  function movePeriod(direction: -1 | 1) {
+    const nextOffset = periodOffset + direction;
+    const next = shiftPeriod(periodFromPreset(periodPreset), periodPreset, nextOffset);
+    setPeriodOffset(nextOffset);
+    setSelectedWeekStart(localIsoDate(startOfWeek(next.start)));
   }
 
   // Apply a top-of-report period preset. Everything measured over a span now
@@ -2108,7 +2166,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // week-shaped panels (roster, timesheets) to the week the period starts in.
   function applyPeriodPreset(key: PeriodPresetKey) {
     setPeriodPreset(key);
-    setSelectedWeekStart(isoDate(startOfWeek(periodFromPreset(key).start)));
+    setPeriodOffset(0);
+    setSelectedWeekStart(localIsoDate(startOfWeek(periodFromPreset(key).start)));
   }
 
   function selectReportSection(section: ReportSectionId) {
@@ -2153,7 +2212,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           type="button"
           className="alma-roster-weeknav-btn"
           aria-label="Previous period"
-          onClick={() => moveWeek(-7)}
+          onClick={() => movePeriod(-1)}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
             <polyline points="15 6 9 12 15 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -2168,7 +2227,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             onClick={() => setMenuOpen((open) => !open)}
           >
             <strong>{periodLabel}</strong>
-            <span>{weekWindowLabel}</span>
+            <span>{periodWindowLabel}</span>
             <svg width="12" height="12" viewBox="0 0 20 20" aria-hidden="true">
               <path d="M5 7.5 10 12.5 15 7.5" />
             </svg>
@@ -2196,7 +2255,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           type="button"
           className="alma-roster-weeknav-btn"
           aria-label="Next period"
-          onClick={() => moveWeek(7)}
+          onClick={() => movePeriod(1)}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
             <polyline points="9 6 15 12 9 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
