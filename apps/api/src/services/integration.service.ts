@@ -2436,6 +2436,146 @@ async function validXeroToken(connection: IntegrationConnection) {
   };
 }
 
+// ── Lightspeed daily sales via Xero ──────────────────────────────────────────
+// The Lightspeed (Kounta) API is a paid add-on, but its INCLUDED Xero
+// integration posts a daily sales invoice (ACCREC) per site. Read those out of
+// Xero on the existing scheduled import and land them as SalesActualEntry —
+// same table, same day-bucket semantics as the Square/Lightspeed-API writers.
+// salesCents is ex-GST by contract, so we read the invoice SubTotal, never
+// Total. Contact match is env-tunable (LIGHTSPEED_XERO_CONTACT_MATCH) because
+// the posting contact name depends on how the integration was set up.
+type XeroAccRecInvoice = {
+  InvoiceID: string;
+  Type?: string;
+  Status?: string;
+  Date?: string;
+  DateString?: string;
+  SubTotal?: number;
+  Total?: number;
+  Reference?: string;
+  InvoiceNumber?: string;
+  Contact?: { Name?: string };
+};
+
+async function importLightspeedDailySalesFromXero(input: {
+  connection: IntegrationConnection;
+  tenantId: string;
+  tenantName: string | null;
+  venueNames: string[];
+  lookbackDays: number;
+}): Promise<{
+  invoicesMatched: number;
+  daysUpserted: number;
+  salesCentsTotal: number;
+  warnings: string[];
+  unmatchedContacts: string[];
+}> {
+  const warnings: string[] = [];
+  const matcher = new RegExp(process.env.LIGHTSPEED_XERO_CONTACT_MATCH || 'lightspeed|kounta', 'i');
+  const startIso = isoDateOnly(new Date(Date.now() - input.lookbackDays * 24 * 60 * 60 * 1000)) ?? '1970-01-01';
+
+  // Pull recent ACCREC (sales) invoices — the supplier-bill flow only ever
+  // reads ACCPAY, so this is a new, cheap read on the same token.
+  const invoices: XeroAccRecInvoice[] = [];
+  const seenContacts = new Set<string>();
+  let connection = input.connection;
+  for (let page = 1; page <= 5; page += 1) {
+    const response = await xeroGetJson<{ Invoices?: XeroAccRecInvoice[] }>(
+      `/api.xro/2.0/Invoices?where=${encodeURIComponent('Type=="ACCREC"')}&order=${encodeURIComponent('Date DESC')}&page=${page}`,
+      { connection, tenantId: input.tenantId }
+    );
+    connection = response.connection;
+    const batch = response.data.Invoices ?? [];
+    if (batch.length === 0) break;
+    let pastWindow = false;
+    for (const invoice of batch) {
+      const dateIso = (() => {
+        const parsed = parseXeroDate(invoice.DateString ?? invoice.Date ?? null);
+        return parsed ? isoDateOnly(parsed) : null;
+      })();
+      if (!dateIso) continue;
+      if (dateIso < startIso) {
+        pastWindow = true;
+        continue;
+      }
+      const contact = invoice.Contact?.Name ?? '';
+      if (contact) seenContacts.add(contact);
+      if (!matcher.test(contact) && !matcher.test(invoice.Reference ?? '') && !matcher.test(invoice.InvoiceNumber ?? '')) continue;
+      if (invoice.Status && !['AUTHORISED', 'PAID'].includes(invoice.Status)) continue;
+      invoices.push(invoice);
+    }
+    if (pastWindow) break;
+  }
+
+  if (invoices.length === 0) {
+    return {
+      invoicesMatched: 0,
+      daysUpserted: 0,
+      salesCentsTotal: 0,
+      warnings,
+      // Surface what IS there so the operator can see the real posting
+      // contact name and set LIGHTSPEED_XERO_CONTACT_MATCH if it differs.
+      unmatchedContacts: Array.from(seenContacts).slice(0, 8)
+    };
+  }
+
+  const tenantVenue = resolveVenueFromTenantName(input.tenantName, input.venueNames);
+  const grouped = new Map<string, { venue: string; serviceDateKey: string; salesCents: number; docCount: number }>();
+  for (const invoice of invoices) {
+    const parsedDate = parseXeroDate(invoice.DateString ?? invoice.Date ?? null);
+    const serviceDateKey = parsedDate ? isoDateOnly(parsedDate) : null;
+    if (!serviceDateKey) continue;
+    // Venue: the tenant's mapped venue; else look for a configured venue name
+    // inside the invoice reference/number (per-site postings in a shared org).
+    const haystack = `${invoice.Reference ?? ''} ${invoice.InvoiceNumber ?? ''} ${invoice.Contact?.Name ?? ''}`.toLowerCase();
+    const venue = tenantVenue ?? input.venueNames.find((name) => haystack.includes(name.toLowerCase())) ?? null;
+    if (!venue) {
+      warnings.push(`Sales doc ${invoice.InvoiceNumber ?? invoice.InvoiceID} matched Lightspeed but no venue — skipped.`);
+      continue;
+    }
+    const amountCents = moneyToCents(invoice.SubTotal ?? 0);
+    const key = `${venue}|${serviceDateKey}`;
+    const existing = grouped.get(key) ?? { venue, serviceDateKey, salesCents: 0, docCount: 0 };
+    existing.salesCents += amountCents;
+    existing.docCount += 1;
+    grouped.set(key, existing);
+  }
+
+  let salesCentsTotal = 0;
+  const rows = Array.from(grouped.values());
+  for (const row of rows) {
+    const source = 'lightspeed-xero';
+    const externalId = `${source}:${input.tenantId}:${row.serviceDateKey}`;
+    salesCentsTotal += row.salesCents;
+    await prisma.salesActualEntry.upsert({
+      where: {
+        venue_serviceDate_source_externalId: {
+          venue: row.venue,
+          serviceDate: startOfUtcDate(row.serviceDateKey),
+          source,
+          externalId
+        }
+      },
+      create: {
+        venue: row.venue,
+        serviceDate: startOfUtcDate(row.serviceDateKey),
+        salesCents: row.salesCents,
+        source,
+        externalId,
+        notes: `Lightspeed daily sales via Xero (ex GST) · ${row.docCount} doc${row.docCount === 1 ? '' : 's'}.`,
+        importedById: integrationSchedulerActor.id
+      },
+      update: {
+        salesCents: row.salesCents,
+        notes: `Lightspeed daily sales via Xero (ex GST) · ${row.docCount} doc${row.docCount === 1 ? '' : 's'}.`,
+        importedById: integrationSchedulerActor.id
+      }
+    });
+  }
+
+  return { invoicesMatched: invoices.length, daysUpserted: rows.length, salesCentsTotal, warnings, unmatchedContacts: [] };
+}
+
 async function xeroGetJson<T>(
   path: string,
   input: {
@@ -6386,6 +6526,9 @@ export const integrationService = {
     const contactsLimit = clampLimit(input.contactsLimit, DEFAULT_SCHEDULED_XERO_CONTACTS_LIMIT, 500);
     const includeContacts = input.includeContacts !== false;
     const includeBills = input.includeBills !== false;
+    // Lightspeed's included Xero integration posts daily sales invoices;
+    // reading them here replaces the paid Lightspeed API sales sync.
+    const includeDailySales = input.includeDailySales !== false;
 
     // Multi-tenant: a Xero OAuth grant can cover multiple orgs (e.g.
     // both "Alma Avalon" and "St Alma" on a single connection). Iterate
@@ -6414,6 +6557,7 @@ export const integrationService = {
       bills: XeroSupplierBillsImportResult | null;
       billCandidates: number;
       billIdsImported: number;
+      dailySales: Awaited<ReturnType<typeof importLightspeedDailySalesFromXero>> | null;
       warnings: string[];
       error: string | null;
     }> = [];
@@ -6424,6 +6568,7 @@ export const integrationService = {
       let billsResult: XeroSupplierBillsImportResult | null = null;
       let billCandidates = 0;
       let billIds: string[] = [];
+      let dailySalesResult: Awaited<ReturnType<typeof importLightspeedDailySalesFromXero>> | null = null;
       let tenantError: string | null = null;
 
       try {
@@ -6490,6 +6635,27 @@ export const integrationService = {
             };
           }
         }
+        if (includeDailySales) {
+          // Lightspeed-posted daily sales invoices → SalesActualEntry. A
+          // failure here shouldn't sink the bills import, so trap locally.
+          try {
+            dailySalesResult = await importLightspeedDailySalesFromXero({
+              connection,
+              tenantId: tenant.id,
+              tenantName: tenant.name,
+              venueNames,
+              lookbackDays
+            });
+            tenantWarnings.push(...dailySalesResult.warnings);
+            if (dailySalesResult.invoicesMatched === 0 && dailySalesResult.unmatchedContacts.length > 0) {
+              tenantWarnings.push(
+                `No Lightspeed daily sales found in Xero for ${tenant.name ?? tenant.id}. ACCREC contacts seen: ${dailySalesResult.unmatchedContacts.join(', ')} — set LIGHTSPEED_XERO_CONTACT_MATCH if the posting contact differs.`
+              );
+            }
+          } catch (error) {
+            tenantWarnings.push(`Lightspeed daily sales read failed for ${tenant.name ?? tenant.id}: ${safeErrorMessage(error)}`);
+          }
+        }
       } catch (error) {
         tenantError = safeErrorMessage(error);
       }
@@ -6501,6 +6667,7 @@ export const integrationService = {
         bills: billsResult,
         billCandidates,
         billIdsImported: billIds.length,
+        dailySales: dailySalesResult,
         warnings: tenantWarnings,
         error: tenantError
       });
@@ -6553,6 +6720,12 @@ export const integrationService = {
       billsLimit,
       includeContacts,
       includeBills,
+      includeDailySales,
+      dailySales: {
+        invoicesMatched: perTenant.reduce((sum, entry) => sum + (entry.dailySales?.invoicesMatched ?? 0), 0),
+        daysUpserted: perTenant.reduce((sum, entry) => sum + (entry.dailySales?.daysUpserted ?? 0), 0),
+        salesCentsTotal: perTenant.reduce((sum, entry) => sum + (entry.dailySales?.salesCentsTotal ?? 0), 0)
+      },
       tenants: perTenant,
       tenantCount: perTenant.length,
       warnings: allWarnings

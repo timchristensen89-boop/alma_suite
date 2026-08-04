@@ -21,10 +21,12 @@ import base64
 import email
 import email.policy
 import imaplib
+import io
 import json
 import os
 import sys
 import urllib.request
+import zipfile
 
 HOST = os.environ.get("SR_IMAP_HOST", "mail.almagroup.com.au")
 USER = os.environ.get("SR_IMAP_USER", "")
@@ -45,6 +47,26 @@ def message_to_payload(msg: email.message.EmailMessage) -> dict:
         filename = part.get_filename()
         if filename:
             payload = part.get_payload(decode=True) or b""
+            # Report emails (Lightspeed Insights, Looker) often zip their CSVs.
+            # Expand ZIPs so the webhook only ever sees plain files; keep the
+            # zip itself out of the payload.
+            if filename.lower().endswith(".zip") or part.get_content_type() == "application/zip":
+                try:
+                    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                        for name in archive.namelist():
+                            if name.endswith("/"):
+                                continue
+                            inner = archive.read(name)
+                            attachments.append(
+                                {
+                                    "filename": name.rsplit("/", 1)[-1],
+                                    "content_type": "text/csv" if name.lower().endswith(".csv") else "application/octet-stream",
+                                    "content": base64.b64encode(inner).decode("ascii"),
+                                }
+                            )
+                except zipfile.BadZipFile:
+                    log(f"unreadable zip attachment {filename!r} — skipped")
+                continue
             attachments.append(
                 {
                     "filename": filename,
