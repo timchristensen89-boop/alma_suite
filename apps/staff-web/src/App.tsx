@@ -15207,6 +15207,20 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  // "Pay from" funding accounts (Settings → Tip payments). Empty = only the
+  // base business account exists, so no selector is shown.
+  const [abaAccounts, setAbaAccounts] = useState<Array<{ key: string; label: string; maskedAccount: string }>>([]);
+  const [abaAccountKey, setAbaAccountKey] = useState('');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setAbaAccounts(await api<Array<{ key: string; label: string; maskedAccount: string }>>('/api/staff/tips/aba-accounts'));
+      } catch {
+        /* manager may lack settings access — selector just stays hidden */
+      }
+    })();
+  }, []);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const breakageCentsPerDay = useMemo(() => Math.round((Number(breakagePerDay) || 0) * 100), [breakagePerDay]);
   const venueOptions = useMemo(
@@ -15514,12 +15528,22 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       setMessage('Approve and pay this tip run before exporting an ABA file.');
       return;
     }
+    if (abaAccounts.length > 0 && !abaAccountKey) {
+      setMessage('Choose which bank account to pay from before exporting.');
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
       const result = await api<{ aba: string; filename: string; count: number; totalCents: number }>('/api/staff/tips/export/aba', {
         method: 'POST',
-        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay })
+        body: JSON.stringify({
+          start: weekStart.toISOString(),
+          end: weekEnd.toISOString(),
+          venue,
+          breakageCentsPerDay,
+          ...(abaAccountKey ? { accountKey: abaAccountKey } : {})
+        })
       });
       downloadTextFile(result.filename || `alma-tips-${venue}-${toDateInput(weekStart)}.aba`, result.aba, 'text/plain');
       setMessage(`ABA exported for ${result.count} staff · ${formatCents(result.totalCents)}.`);
@@ -16182,6 +16206,23 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
               </Button>
             ) : (
               <div className="toolbar">
+                {abaAccounts.length > 0 ? (
+                  <label className="subtle" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    Pay from
+                    <select
+                      value={abaAccountKey}
+                      onChange={(event) => setAbaAccountKey(event.currentTarget.value)}
+                      style={{ minWidth: 200 }}
+                    >
+                      <option value="">Choose bank account…</option>
+                      {abaAccounts.map((account) => (
+                        <option key={account.key} value={account.key}>
+                          {account.label} ({account.maskedAccount})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <Button type="button" onClick={() => void exportTipsAba()} disabled={saving || !lockedRows.length}>
                   {saving && messageTarget === 'aba' ? 'Exporting…' : 'Export ABA'}
                 </Button>

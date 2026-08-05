@@ -1026,6 +1026,14 @@ staffRouter.post('/tips/export/csv', requireManager, async (req, res, next) => {
   }
 });
 
+staffRouter.get('/tips/aba-accounts', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await staffService.tipsAbaAccountOptions());
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.post('/tips/export/aba', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.exportTipsAba(req.body));

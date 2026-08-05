@@ -1584,7 +1584,7 @@ function abaRecord(parts: string[]) {
   return record;
 }
 
-async function tipsAbaConfig(venue?: string | null) {
+async function tipsAbaConfig(venue?: string | null, accountKey?: string | null) {
   // Prefer the in-app Settings value (AppSettings.tipsAbaSettings), falling back
   // to env vars so existing deployments keep working.
   const row = await prisma.appSettings.findUnique({
@@ -1602,9 +1602,21 @@ async function tipsAbaConfig(venue?: string | null) {
     venue && flat.venues && typeof flat.venues === 'object' && !Array.isArray(flat.venues)
       ? ((flat.venues as Record<string, unknown>)[venue] as Record<string, string> | undefined)
       : undefined;
+  // Named funding account ("pay from" choice at export): its non-empty fields
+  // win over both the venue override and the flat defaults.
+  const accountsList = Array.isArray(flat.accounts) ? (flat.accounts as Array<Record<string, string>>) : [];
+  let accountRecord: Record<string, string> | undefined;
+  if (accountKey) {
+    const found = accountsList.find((account) => String(account.key ?? '') === accountKey);
+    if (!found) throw new HttpError(400, 'The selected funding account no longer exists — refresh and pick again.');
+    accountRecord = Object.fromEntries(
+      Object.entries(found).filter(([field, value]) => field !== 'key' && field !== 'label' && String(value ?? '').trim())
+    ) as Record<string, string>;
+  }
   const stored: Record<string, string> = {
     ...(flat as Record<string, string>),
-    ...(venueRecord && typeof venueRecord === 'object' ? venueRecord : {})
+    ...(venueRecord && typeof venueRecord === 'object' ? venueRecord : {}),
+    ...(accountRecord ?? {})
   };
   const pick = (key: string, ...envValues: (string | undefined)[]) => {
     const fromStore = stored[key]?.trim();
@@ -1757,8 +1769,8 @@ function tipRunFilenamePart(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'venue';
 }
 
-async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) {
-  const config = await tipsAbaConfig(run.venue);
+async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>, accountKey?: string | null) {
+  const config = await tipsAbaConfig(run.venue, accountKey);
   const payableLines = run.lines.filter((line) => !line.excluded && line.amountCents > 0);
   if (!payableLines.length) throw new HttpError(400, 'Approved tip run has no payable lines for ABA export.');
 
@@ -6246,7 +6258,36 @@ export const staffService = {
 
   async exportTipsAba(input: unknown) {
     const run = await getApprovedTipRun(input);
-    return buildTipsAba(run);
+    const accountKey =
+      input && typeof input === 'object' && typeof (input as { accountKey?: unknown }).accountKey === 'string'
+        ? ((input as { accountKey: string }).accountKey.trim() || null)
+        : null;
+    return buildTipsAba(run, accountKey);
+  },
+
+  // "Pay from" options for the tips ABA export: the named funding accounts in
+  // Settings, with masked numbers. Empty when only the base account exists.
+  async tipsAbaAccountOptions() {
+    const row = await prisma.appSettings.findUnique({
+      where: { id: 'singleton' },
+      select: { tipsAbaSettings: true }
+    });
+    const flat =
+      row?.tipsAbaSettings && typeof row.tipsAbaSettings === 'object' && !Array.isArray(row.tipsAbaSettings)
+        ? (row.tipsAbaSettings as Record<string, unknown>)
+        : {};
+    const accounts = Array.isArray(flat.accounts) ? (flat.accounts as Array<Record<string, string>>) : [];
+    const mask = (value: string) => {
+      const digits = String(value ?? '').replace(/\s+/g, '');
+      return digits.length <= 3 ? '•••' : `•••• ${digits.slice(-3)}`;
+    };
+    return accounts
+      .filter((account) => String(account.label ?? '').trim())
+      .map((account) => ({
+        key: String(account.key ?? ''),
+        label: String(account.label ?? ''),
+        maskedAccount: `${String(account.traceBsb ?? '')} ${mask(String(account.traceAccount ?? ''))}`.trim()
+      }));
   },
 
   async markTipsPaid(input: unknown, paidById?: string) {

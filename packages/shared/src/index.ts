@@ -2035,7 +2035,22 @@ export const appSettingsUpdateSchema = z.object({
       description: z.string().optional().or(z.literal('')),
       traceBsb: z.string().optional().or(z.literal('')),
       traceAccount: z.string().optional().or(z.literal('')),
-      selfBalancing: z.boolean().optional()
+      selfBalancing: z.boolean().optional(),
+      accounts: z
+        .array(
+          z.object({
+            key: z.string().optional().or(z.literal('')),
+            label: z.string().min(1, 'Account label is required'),
+            traceBsb: z.string().optional().or(z.literal('')),
+            traceAccount: z.string().optional().or(z.literal('')),
+            financialInstitution: z.string().optional().or(z.literal('')),
+            userId: z.string().optional().or(z.literal('')),
+            userName: z.string().optional().or(z.literal('')),
+            remitterName: z.string().optional().or(z.literal('')),
+            description: z.string().optional().or(z.literal(''))
+          })
+        )
+        .optional()
     })
     .optional()
 });
@@ -2052,8 +2067,30 @@ export type TipsAbaSettings = {
   // Include a self-balancing debit record (some banks, e.g. Macquarie,
   // only accept balanced files).
   selfBalancing: boolean;
+  // Named funding accounts the tips can be paid from. The export UI offers a
+  // "pay from" choice; the chosen account's fields override the base ones.
+  accounts: TipsAbaAccount[];
   // True when every required field is present in storage.
   configured: boolean;
+};
+
+export type TipsAbaAccount = {
+  key: string;
+  label: string;
+  traceBsb: string;
+  // Masked on read, like the base traceAccount.
+  traceAccount: string;
+  financialInstitution?: string;
+  userId?: string;
+  userName?: string;
+  remitterName?: string;
+  description?: string;
+};
+
+export type TipsAbaAccountOption = {
+  key: string;
+  label: string;
+  maskedAccount: string;
 };
 
 export type AuthUser = {
