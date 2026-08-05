@@ -7,6 +7,7 @@ import {
   recipeCreateInputSchema,
   recipeUpdateInputSchema,
   recipePortionsCreateInputSchema,
+  setMenuAddComponentInputSchema,
   type PortionChild,
   type PortionParentType,
   type PortionTreePayload,
@@ -23,6 +24,7 @@ import {
   type RecipeWithLines,
   type RecipesPayload,
   type RecipesSummary,
+  type SetMenuComponentOption,
   type StockCostOfGoodsPayload
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
@@ -200,6 +202,7 @@ function toLinePayload(row: RecipeLineRow): RecipeLine {
     unit: row.unit,
     cost: row.cost,
     wastePercent: row.wastePercent,
+    perGuests: row.perGuests,
     itemId: row.itemId,
     item: row.item ?? null,
     subRecipeId: row.subRecipeId,
@@ -242,6 +245,9 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
   const warnings: string[] = [];
   const wasteMultiplier = 1 + Math.max(0, row.wastePercent ?? 0) / 100;
   const quantity = row.quantity ?? null;
+  // Set-menu sharing: a component "shared between N guests" contributes 1/N of
+  // its cost per person. Lines without perGuests behave exactly as before.
+  const shareDivisor = row.perGuests && row.perGuests > 0 ? row.perGuests : 1;
 
   if (row.itemId) {
     if (!row.item) {
@@ -284,7 +290,7 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
     const unitCostCents = row.item.avgCostCents;
     const lineCostCents =
       unitCostCents !== null && costQuantity !== null
-        ? roundCents(unitCostCents * costQuantity * wasteMultiplier)
+        ? roundCents((unitCostCents * costQuantity * wasteMultiplier) / shareDivisor)
         : null;
     const via = (conversion?.via ?? 'none') as RecipeCostLineTrace['conversionMethod'];
     const trace: RecipeCostLineTrace = {
@@ -326,6 +332,40 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
         warnings: ['Linked prep recipe could not be found']
       };
     }
+    // Dish components (set menus): the sub-recipe is a menu dish, not a prep
+    // batch — its estimatedCost IS the per-serve cost. quantity = serves per
+    // person, ÷ shared-between. No unit conversion applies.
+    if (!row.subRecipe.isPrepRecipe) {
+      const serveCostCents = dollarsToCents(row.subRecipe.estimatedCost);
+      if (serveCostCents === null || serveCostCents <= 0) {
+        warnings.push(`“${row.subRecipe.title}” has no cost yet — cost that recipe and this line updates automatically`);
+      }
+      const serves = quantity ?? 1;
+      const lineCostCents =
+        serveCostCents !== null && serveCostCents > 0
+          ? roundCents((serveCostCents * serves * wasteMultiplier) / shareDivisor)
+          : null;
+      const shareLabel = shareDivisor > 1 ? ` ÷ shared between ${tidyQty(shareDivisor)}` : '';
+      return {
+        lineId: row.id,
+        ingredientName: row.ingredientName,
+        quantity,
+        unit: row.unit ?? 'serve',
+        wastePercent: row.wastePercent,
+        source: lineCostCents === null ? 'MISSING' : 'DISH_RECIPE',
+        unitCostCents: serveCostCents === null ? null : roundCents(serveCostCents),
+        lineCostCents,
+        warnings,
+        trace: {
+          costUnitLabel: 'serve',
+          costSource: `Dish cost ${serveCostCents !== null ? `$${(serveCostCents / 100).toFixed(2)}` : '—'}/serve${shareLabel}`,
+          convertedQuantity: serves,
+          conversionMethod: 'dish-serve',
+          conversionLabel: shareDivisor > 1 ? `${tidyQty(serves)} serve ÷ ${tidyQty(shareDivisor)} guests` : null,
+          wasteMultiplier
+        }
+      };
+    }
     const batchCostCents = dollarsToCents(row.subRecipe.estimatedCost);
     const yieldQuantity = row.subRecipe.yieldQuantity;
     if (batchCostCents === null || batchCostCents <= 0) warnings.push('Prep recipe batch cost is missing');
@@ -354,7 +394,7 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
         : null;
     const lineCostCents =
       unitCostCents !== null && subCostQuantity !== null
-        ? roundCents(unitCostCents * subCostQuantity * wasteMultiplier)
+        ? roundCents((unitCostCents * subCostQuantity * wasteMultiplier) / shareDivisor)
         : null;
     const yieldUnit = row.subRecipe.yieldUnit;
     const batchDollars = centsToDollars(batchCostCents);
@@ -387,7 +427,9 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
     };
   }
 
-  const manualCostCents = dollarsToCents(row.cost);
+  const rawManualCostCents = dollarsToCents(row.cost);
+  const manualCostCents =
+    rawManualCostCents === null ? null : roundCents(rawManualCostCents / shareDivisor);
   if (manualCostCents === null) warnings.push('No linked stock item, prep recipe, or manual line cost');
   return {
     lineId: row.id,
@@ -434,7 +476,8 @@ function calculateRecipeCost(row: RecipeWithLinesRow): RecipeCostPayload {
       : row.yieldQuantity && row.yieldQuantity > 0
         ? row.yieldQuantity
         : null;
-  if (!row.yieldQuantity || row.yieldQuantity <= 0) warnings.push('Recipe yield quantity is missing');
+  const isSetMenu = row.kind === 'SET_MENU';
+  if ((!row.yieldQuantity || row.yieldQuantity <= 0) && !isSetMenu) warnings.push('Recipe yield quantity is missing');
   if (lines.length === 0 && (!manualBatchCostCents || manualBatchCostCents <= 0)) {
     warnings.push('Add ingredient lines or a manual batch cost before using this recipe for COGS');
   }
@@ -1098,6 +1141,7 @@ export const recipesService = {
         unit: str(line.unit) || null,
         wastePercent: num(line.wastePercent) ?? 0,
         cost: num(line.cost),
+        perGuests: num(line.perGuests),
         itemId,
         subRecipeId,
         item: itemId ? itemMap.get(itemId) ?? null : null,
@@ -1107,6 +1151,7 @@ export const recipesService = {
 
     const pseudoRow = {
       id: 'preview',
+      kind: str(body.kind) || null,
       yieldQuantity: num(body.yieldQuantity),
       yieldUnit: str(body.yieldUnit) || null,
       portionSize: num(body.portionSize),
@@ -1119,6 +1164,87 @@ export const recipesService = {
     } as unknown as RecipeWithLinesRow;
 
     return calculateRecipeCost(pseudoRow);
+  },
+
+  // Square catalog items named as set-menu components ("*" suffix or "BB "
+  // prefix), with their mapped recipe + its current cost. Powers the set-menu
+  // builder's quick-add list.
+  async setMenuComponents(): Promise<SetMenuComponentOption[]> {
+    const mappings = await prisma.squareMenuRecipeMapping.findMany({
+      where: {
+        OR: [{ squareItemName: { endsWith: '*' } }, { squareItemName: { startsWith: 'BB ' } }]
+      },
+      select: {
+        id: true,
+        squareItemName: true,
+        venue: true,
+        almaRecipeId: true,
+        almaRecipe: { select: { id: true, title: true, estimatedCost: true, status: true } }
+      },
+      orderBy: { squareItemName: 'asc' }
+    });
+    // One entry per Square item name (variations repeat the same item).
+    const seen = new Map<string, SetMenuComponentOption>();
+    for (const mapping of mappings) {
+      const key = `${mapping.venue ?? ''}:${mapping.squareItemName}`;
+      const existing = seen.get(key);
+      // Prefer a mapped row over an unmapped duplicate of the same item.
+      if (existing?.mapped) continue;
+      seen.set(key, {
+        mappingId: mapping.id,
+        squareItemName: mapping.squareItemName,
+        venue: mapping.venue,
+        recipeId: mapping.almaRecipe?.id ?? null,
+        recipeTitle: mapping.almaRecipe?.title ?? null,
+        recipeEstimatedCost: mapping.almaRecipe?.estimatedCost ?? null,
+        mapped: Boolean(mapping.almaRecipe)
+      });
+    }
+    return [...seen.values()];
+  },
+
+  // Append a component recipe as a line on the chosen set menus (or every
+  // active set menu when menuIds is omitted). Skips menus that already carry
+  // the component so repeat clicks stay idempotent.
+  async addComponentToSetMenus(input: unknown) {
+    const data = setMenuAddComponentInputSchema.parse(input);
+    const component = await prisma.recipe.findUnique({
+      where: { id: data.subRecipeId },
+      select: { id: true, title: true }
+    });
+    if (!component) throw new HttpError(404, 'Component recipe not found');
+    const menus = await prisma.recipe.findMany({
+      where: {
+        kind: 'SET_MENU',
+        status: 'ACTIVE',
+        ...(data.menuIds?.length ? { id: { in: data.menuIds } } : {})
+      },
+      select: { id: true, title: true, lines: { select: { subRecipeId: true, position: true } } }
+    });
+    if (menus.length === 0) throw new HttpError(404, 'No set menus found — create one first');
+    let added = 0;
+    const skipped: string[] = [];
+    for (const menu of menus) {
+      if (menu.id === component.id) continue;
+      if (menu.lines.some((line) => line.subRecipeId === component.id)) {
+        skipped.push(menu.title);
+        continue;
+      }
+      const nextPosition = menu.lines.reduce((max, line) => Math.max(max, line.position), 0) + 1;
+      await prisma.recipeLine.create({
+        data: {
+          recipeId: menu.id,
+          position: nextPosition,
+          ingredientName: component.title,
+          quantity: data.quantity,
+          unit: 'serve',
+          perGuests: data.perGuests ?? null,
+          subRecipeId: component.id
+        }
+      });
+      added += 1;
+    }
+    return { added, skipped, menus: menus.map((menu) => ({ id: menu.id, title: menu.title })) };
   },
 
   // The parent → child "serves" tree: child recipes that draw a portion from this
@@ -1303,6 +1429,7 @@ export const recipesService = {
                 unit: normaliseOptionalText(line.unit) ?? null,
                 cost: line.cost ?? null,
                 wastePercent: applyDefaultWastage({ wastePercent: line.wastePercent }).wastePercent,
+                perGuests: line.perGuests ?? null,
                 itemId: normaliseOptionalText(line.itemId) ?? null,
                 subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
               }))
@@ -1421,6 +1548,7 @@ export const recipesService = {
               unit: normaliseOptionalText(line.unit) ?? null,
               cost: line.cost ?? null,
               wastePercent: line.wastePercent ?? null,
+              perGuests: line.perGuests ?? null,
               itemId: normaliseOptionalText(line.itemId) ?? null,
               subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
             }))

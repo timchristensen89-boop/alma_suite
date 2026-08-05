@@ -3058,6 +3058,8 @@ model RecipeLine {
   unit           String?
   cost           Float?
   wastePercent   Float?
+  // Set-menu lines: this component is shared between N guests (cost ÷ N per person).
+  perGuests      Float?
   itemId         String?
   subRecipeId    String?
   createdAt      DateTime   @default(now())

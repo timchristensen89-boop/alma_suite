@@ -2034,7 +2034,8 @@ export const appSettingsUpdateSchema = z.object({
       remitterName: z.string().optional().or(z.literal('')),
       description: z.string().optional().or(z.literal('')),
       traceBsb: z.string().optional().or(z.literal('')),
-      traceAccount: z.string().optional().or(z.literal(''))
+      traceAccount: z.string().optional().or(z.literal('')),
+      selfBalancing: z.boolean().optional()
     })
     .optional()
 });
@@ -2048,6 +2049,9 @@ export type TipsAbaSettings = {
   traceBsb: string;
   // Returned masked (e.g. "•••• 123"); never the full account number.
   traceAccount: string;
+  // Include a self-balancing debit record (some banks, e.g. Macquarie,
+  // only accept balanced files).
+  selfBalancing: boolean;
   // True when every required field is present in storage.
   configured: boolean;
 };
@@ -6216,6 +6220,7 @@ export type RecipeLine = {
   unit: string | null;
   cost: number | null;
   wastePercent: number | null;
+  perGuests: number | null;
   itemId: string | null;
   item: { id: string; name: string; unit: string; countUnit: string | null; avgCostCents: number | null } | null;
   subRecipeId: string | null;
@@ -6283,7 +6288,7 @@ export type RecipeCostLine = {
   quantity: number | null;
   unit: string | null;
   wastePercent: number | null;
-  source: 'STOCK_ITEM' | 'PREP_RECIPE' | 'MANUAL' | 'MISSING';
+  source: 'STOCK_ITEM' | 'PREP_RECIPE' | 'DISH_RECIPE' | 'MANUAL' | 'MISSING';
   unitCostCents: number | null;
   lineCostCents: number | null;
   warnings: string[];
@@ -6353,10 +6358,34 @@ export type RecipeCostLineTrace = {
   // Line quantity expressed in the item's cost unit, and how that conversion
   // was resolved (human label, e.g. "2 case → 24 bottle (pack ×12)").
   convertedQuantity: number | null;
-  conversionMethod: 'same-unit' | 'pack' | 'measure' | 'measure-pack' | 'prep-yield' | 'none' | 'unknown';
+  conversionMethod: 'same-unit' | 'pack' | 'measure' | 'measure-pack' | 'prep-yield' | 'dish-serve' | 'none' | 'unknown';
   conversionLabel: string | null;
   wasteMultiplier: number;
 };
+
+// ─── Set menus ───────────────────────────────────────────────────
+// Square catalog items whose name marks them as set-menu components ("*"
+// suffix / "BB " prefix). Surfaced in the set-menu builder so their mapped
+// recipe cost can be added to one or all menus.
+export type SetMenuComponentOption = {
+  mappingId: string;
+  squareItemName: string;
+  venue: string | null;
+  recipeId: string | null;
+  recipeTitle: string | null;
+  recipeEstimatedCost: number | null;
+  mapped: boolean;
+};
+
+export const setMenuAddComponentInputSchema = z.object({
+  /** Recipe to add as a component line (the * item's mapped recipe). */
+  subRecipeId: z.string().min(1),
+  quantity: z.coerce.number().positive().default(1),
+  perGuests: z.coerce.number().positive().optional(),
+  /** Target set-menu recipe ids; omit to add to ALL active set menus. */
+  menuIds: z.array(z.string().min(1)).optional()
+});
+export type SetMenuAddComponentInput = z.infer<typeof setMenuAddComponentInputSchema>;
 
 export type RecipeIngredientOption = {
   id: string;
@@ -6392,6 +6421,8 @@ export const recipeLineInputSchema = z.object({
   unit: z.string().optional().or(z.literal('')),
   cost: z.coerce.number().optional(),
   wastePercent: z.coerce.number().min(0).max(100).optional(),
+  // Set menus: component shared between N guests (its cost ÷ N per person).
+  perGuests: z.coerce.number().positive().optional(),
   itemId: z.string().optional().or(z.literal('')),
   subRecipeId: z.string().optional().or(z.literal(''))
 }).refine((line) => !(line.itemId && line.subRecipeId), {
