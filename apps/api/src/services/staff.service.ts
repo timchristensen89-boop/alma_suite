@@ -1627,7 +1627,10 @@ async function tipsAbaConfig(venue?: string | null) {
     remitterName:
       pick('remitterName', process.env.TIPS_ABA_REMITTER_NAME, process.env.ABA_REMITTER_NAME) || userName,
     traceBsb: pick('traceBsb', process.env.TIPS_ABA_TRACE_BSB, process.env.ABA_TRACE_BSB),
-    traceAccount: pick('traceAccount', process.env.TIPS_ABA_TRACE_ACCOUNT, process.env.ABA_TRACE_ACCOUNT)
+    traceAccount: pick('traceAccount', process.env.TIPS_ABA_TRACE_ACCOUNT, process.env.ABA_TRACE_ACCOUNT),
+    // Balanced file: add a debit record for the batch total against the trace
+    // account (required by e.g. Macquarie before they will process the file).
+    selfBalancing: stored.selfBalancing === '1' || process.env.TIPS_ABA_SELF_BALANCING === '1'
   };
   const missing = [
     ['Financial institution', config.financialInstitution],
@@ -1788,7 +1791,7 @@ async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) 
     processingDate,
     ' '.repeat(40)
   ]);
-  const details = payableLines.map((line) => abaRecord([
+  const detailRecords = payableLines.map((line) => abaRecord([
     '1',
     abaBsb(line.staffProfile.bankBsb, `${line.staffProfile.firstName} ${line.staffProfile.lastName} BSB`),
     abaAccount(line.staffProfile.bankAccountNumber, `${line.staffProfile.firstName} ${line.staffProfile.lastName} account number`),
@@ -1802,15 +1805,38 @@ async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) 
     abaText(config.remitterName, 16),
     '00000000'
   ]));
+  // Self-balancing: one debit (tx code 13) against the trace account for the
+  // batch total, so credits and debits net to zero — required by banks that
+  // only process balanced files (e.g. Macquarie).
+  const details = config.selfBalancing
+    ? [
+        ...detailRecords,
+        abaRecord([
+          '1',
+          config.traceBsb,
+          config.traceAccount,
+          ' ',
+          '13',
+          abaNumeric(totalCents, 10),
+          abaText(config.userName, 32),
+          abaText(lodgementReference, 18),
+          config.traceBsb,
+          config.traceAccount,
+          abaText(config.remitterName, 16),
+          '00000000'
+        ])
+      ]
+    : detailRecords;
   const footer = abaRecord([
     '7',
     '999-999',
     ' '.repeat(12),
+    // Net total: zero when the file is balanced (credits == debits).
+    abaNumeric(config.selfBalancing ? 0 : totalCents, 10),
     abaNumeric(totalCents, 10),
-    abaNumeric(totalCents, 10),
-    abaNumeric(0, 10),
+    abaNumeric(config.selfBalancing ? totalCents : 0, 10),
     ' '.repeat(24),
-    abaNumeric(payableLines.length, 6),
+    abaNumeric(details.length, 6),
     ' '.repeat(40)
   ]);
 

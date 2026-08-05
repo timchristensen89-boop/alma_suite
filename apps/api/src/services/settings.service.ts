@@ -41,6 +41,7 @@ function toAbaPayload(raw: unknown): TipsAbaSettings {
     description,
     traceBsb,
     traceAccount: maskAbaAccount(traceAccount),
+    selfBalancing: String(o.selfBalancing ?? '') === '1',
     configured: Boolean(financialInstitution && userName && userId && remitterName && traceBsb && traceAccount)
   };
 }
@@ -72,7 +73,9 @@ function mergeVenues(
 // masked (contains •) so re-saving the form doesn't wipe the stored number.
 function mergeAbaSettings(
   existingRaw: unknown,
-  incoming: Partial<Record<keyof TipsAbaSettings, string>>
+  incoming: Partial<Record<Exclude<keyof TipsAbaSettings, 'selfBalancing' | 'configured'>, string>> & {
+    selfBalancing?: boolean | string;
+  }
 ): Record<string, string> {
   const out: Record<string, string> = { ...abaRecord(existingRaw) };
   const set = (key: string, val: string | undefined, guardMasked = false) => {
@@ -87,6 +90,10 @@ function mergeAbaSettings(
   set('description', incoming.description);
   set('traceBsb', incoming.traceBsb);
   set('traceAccount', incoming.traceAccount, true);
+  // Checkbox: stored as '1'/'' strings like every other ABA field. Accepts the
+  // boolean it round-trips as from the payload type.
+  const selfBalancing = (incoming as Record<string, unknown>).selfBalancing;
+  if (selfBalancing !== undefined) out.selfBalancing = selfBalancing === true || selfBalancing === '1' ? '1' : '';
   return out;
 }
 
