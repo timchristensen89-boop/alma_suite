@@ -12697,3 +12697,62 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
     grid-column: 1 / -1;
   }
 }
+
+/* ==========================================================================
+   Full-colour app rail — the sidebar wears the app's accent (deepened for
+   text contrast), so each app is recognisable at a glance: green Stock,
+   blue Staff, amber Reports, charcoal Admin. All colour is derived from
+   --color-accent, so per-app stylesheets need nothing.
+   ========================================================================== */
+.app-shell-sidebar {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-accent) 86%, #1C1D17),
+    color-mix(in srgb, var(--color-accent) 58%, #131410)
+  );
+  border-right: none;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.82);
+}
+.app-shell-sidebar .app-shell-brand {
+  border-bottom-color: rgba(255, 255, 255, 0.14);
+}
+.app-shell-sidebar .app-shell-brand-name {
+  color: #FFFFFF;
+}
+.app-shell-sidebar .app-shell-brand-text,
+.app-shell-sidebar .app-shell-brand-text * {
+  color: rgba(255, 255, 255, 0.9);
+}
+.app-shell-sidebar .sidebar-nav-section {
+  color: rgba(255, 255, 255, 0.42);
+}
+.app-shell-sidebar .sidebar-nav a,
+.app-shell-sidebar .sidebar-nav li > span[aria-disabled] {
+  color: rgba(255, 255, 255, 0.72);
+}
+.app-shell-sidebar .sidebar-nav a:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+}
+.app-shell-sidebar .sidebar-nav a.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #FFFFFF;
+}
+.app-shell-sidebar .sidebar-nav a.active::before {
+  /* The accent stripe is invisible on its own colour — flip it to paper. */
+  background: #FFFFFF;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.35);
+}
+.app-shell-sidebar .sidebar-nav .sidebar-nav-count {
+  background: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.85);
+}
+.app-shell-sidebar .app-shell-sidebar-footer {
+  border-top-color: rgba(255, 255, 255, 0.14);
+}
+.app-shell-sidebar .app-shell-sidebar-footer,
+.app-shell-sidebar .app-shell-sidebar-footer a,
+.app-shell-sidebar .app-shell-sidebar-footer button {
+  color: rgba(255, 255, 255, 0.75);
+}
