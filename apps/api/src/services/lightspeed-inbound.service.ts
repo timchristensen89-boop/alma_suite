@@ -300,13 +300,20 @@ export const lightspeedInboundService = {
     // import uses. Full mapping lives in the menu-mapping UI later.
     const recipes = await prisma.recipe.findMany({ select: { id: true, title: true, venue: true } });
     const normalise = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    // Word order differs between POS and recipe names ("Grilled Barramundi
+    // Taco" vs "Barramundi Taco Grilled"), so a sorted-token key is the
+    // last-resort match after the exact one.
+    const tokenSort = (value: string) => normalise(value).split(' ').sort().join(' ');
     const recipeByVenueAndName = new Map<string, string>();
     const recipeByName = new Map<string, string>();
+    const recipeByTokens = new Map<string, string>();
     for (const recipe of recipes) {
       const key = normalise(recipe.title);
       if (!key) continue;
       if (recipe.venue) recipeByVenueAndName.set(`${recipe.venue}|${key}`, recipe.id);
       if (!recipeByName.has(key)) recipeByName.set(key, recipe.id);
+      const tokenKey = tokenSort(recipe.title);
+      if (!recipeByTokens.has(tokenKey)) recipeByTokens.set(tokenKey, recipe.id);
     }
 
     const warnings: string[] = [];
@@ -330,7 +337,7 @@ export const lightspeedInboundService = {
       for (const row of csvObjects(csv)) {
         const itemName = pick(row, ['product', 'product_name', 'products_product_name', 'item', 'item_name', 'name', 'description']);
         if (!itemName) continue;
-        const quantity = Number((pick(row, ['quantity', 'quantity_sold', 'qty', 'units', 'units_sold', 'sold', 'count', 'number_sold']) ?? '').replace(/[,\s]/g, ''));
+        const quantity = Number((pick(row, ['quantity', 'quantity_sold', 'product_quantity', 'qty', 'units', 'units_sold', 'sold', 'count', 'number_sold']) ?? '').replace(/[,\s]/g, ''));
         if (!Number.isFinite(quantity) || quantity === 0) continue;
         rowsParsed += 1;
 
@@ -343,14 +350,18 @@ export const lightspeedInboundService = {
         const dateRaw = pick(row, ['date', 'business_date', 'trading_date', 'service_date', 'day']);
         const serviceDateKey = (dateRaw ? parseDateToken(dateRaw) : null) ?? fallbackDateKey;
 
-        const grossCents = moneyCents(pick(row, ['gross_sales', 'total_sales', 'sales_inc_gst', 'total_revenue', 'total_inc_tax', 'gross', 'total', 'amount']));
+        const grossCents = moneyCents(pick(row, ['gross_sales', 'total_sales', 'sales_inc_gst', 'total_revenue', 'total_inc_tax', 'gross', 'total', 'amount', 'sales']));
         let netCents = moneyCents(pick(row, ['net_sales', 'sales_ex_gst', 'exclusive_of_tax', 'total_ex_tax', 'net', 'net_amount', 'ex_gst']));
         // Lightspeed AU reports are GST-inclusive unless the column says net.
         if (netCents === null && grossCents !== null) netCents = Math.round(grossCents / 1.1);
 
         const categoryName = pick(row, ['category', 'category_name', 'product_category', 'group']);
         const nameKey = normalise(itemName);
-        const recipeId = recipeByVenueAndName.get(`${venue}|${nameKey}`) ?? recipeByName.get(nameKey) ?? null;
+        const recipeId =
+          recipeByVenueAndName.get(`${venue}|${nameKey}`) ??
+          recipeByName.get(nameKey) ??
+          recipeByTokens.get(tokenSort(itemName)) ??
+          null;
 
         const key = `${venue}|${serviceDateKey}|${nameKey}`;
         const existing = grouped.get(key) ?? {
@@ -469,30 +480,30 @@ export const lightspeedInboundService = {
     let dayTotalsSkipped = 0;
     for (const total of dayTotals.values()) {
       const serviceDate = new Date(`${total.serviceDateKey}T00:00:00Z`);
-      const xeroRow = await prisma.salesActualEntry.findFirst({
-        where: { venue: total.venue, serviceDate, source: 'lightspeed-xero' },
+      // Create-only: an existing total (Xero feed, summary email, or a manual
+      // reconciliation entry) is reconciled money — an item-sum estimate must
+      // never overwrite it, only fill days that have nothing.
+      const existingTotal = await prisma.salesActualEntry.findFirst({
+        where: {
+          venue: total.venue,
+          serviceDate,
+          source: { in: ['lightspeed-xero', 'lightspeed-email'] }
+        },
         select: { id: true }
       });
-      if (xeroRow) {
+      if (existingTotal) {
         dayTotalsSkipped += 1;
         continue;
       }
       const source = 'lightspeed-email';
       const externalId = `${source}:${total.venue}:${total.serviceDateKey}`;
-      await prisma.salesActualEntry.upsert({
-        where: {
-          venue_serviceDate_source_externalId: { venue: total.venue, serviceDate, source, externalId }
-        },
-        create: {
+      await prisma.salesActualEntry.create({
+        data: {
           venue: total.venue,
           serviceDate,
           salesCents: total.netCents,
           source,
           externalId,
-          notes: `Lightspeed daily total from emailed item CSV (ex GST, sum of ${total.itemRows} item rows).`
-        },
-        update: {
-          salesCents: total.netCents,
           notes: `Lightspeed daily total from emailed item CSV (ex GST, sum of ${total.itemRows} item rows).`
         }
       });
