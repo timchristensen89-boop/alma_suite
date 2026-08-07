@@ -337,7 +337,7 @@ export const lightspeedInboundService = {
       for (const row of csvObjects(csv)) {
         const itemName = pick(row, ['product', 'product_name', 'products_product_name', 'item', 'item_name', 'name', 'description']);
         if (!itemName) continue;
-        const quantity = Number((pick(row, ['quantity', 'quantity_sold', 'product_quantity', 'qty', 'units', 'units_sold', 'sold', 'count', 'number_sold']) ?? '').replace(/[,\s]/g, ''));
+        const quantity = Number((pick(row, ['quantity', 'quantity_sold', 'product_quantity', 'products_sold', 'qty', 'units', 'units_sold', 'sold', 'count', 'number_sold']) ?? '').replace(/[,\s]/g, ''));
         if (!Number.isFinite(quantity) || quantity === 0) continue;
         rowsParsed += 1;
 
@@ -355,7 +355,7 @@ export const lightspeedInboundService = {
         // Lightspeed AU reports are GST-inclusive unless the column says net.
         if (netCents === null && grossCents !== null) netCents = Math.round(grossCents / 1.1);
 
-        const categoryName = pick(row, ['category', 'category_name', 'product_category', 'group']);
+        const categoryName = pick(row, ['category', 'category_name', 'product_category', 'pos_category', 'reporting_group_name', 'group']);
         const nameKey = normalise(itemName);
         const recipeId =
           recipeByVenueAndName.get(`${venue}|${nameKey}`) ??
