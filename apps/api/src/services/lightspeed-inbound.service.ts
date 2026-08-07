@@ -121,6 +121,55 @@ function parseDateToken(raw: string): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
 }
 
+function todaySydneyKey(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date());
+}
+
+// ── Looker day-summary export ────────────────────────────────────────────────
+// Lightspeed Insights "Sales Detail/Summary" dashboards export a per-day
+// summary (Sale Closed Date, Total Ex Tax, Total Inc Tax, guest counts) rather
+// than an item mix. Looker's CSV quirk: the date and the money often land on
+// SEPARATE rows (date-only row, then a values row with a blank date), so the
+// last seen date carries forward.
+type DaySummaryRow = { dateKey: string; exTaxCents: number | null; incTaxCents: number | null };
+
+function isDaySummaryCsv(csv: string): boolean {
+  const headers = parseCsv(csv)[0]?.map(normaliseHeader) ?? [];
+  const hasDate = headers.some((header) => /sale_closed_date|business_date/.test(header));
+  const hasMoney = headers.some((header) => /total_ex_tax|total_inc_tax|net_sales/.test(header));
+  return hasDate && hasMoney;
+}
+
+function parseDaySummaries(csv: string): DaySummaryRow[] {
+  const out = new Map<string, DaySummaryRow>();
+  let carriedDate: string | null = null;
+  for (const row of csvObjects(csv)) {
+    const dateRaw = pick(row, [
+      'sales_data_sale_closed_date',
+      'sale_closed_date',
+      'business_date',
+      'date',
+      'day'
+    ]);
+    const dateKey = dateRaw ? parseDateToken(dateRaw) : null;
+    if (dateKey) carriedDate = dateKey;
+    const exTaxCents = moneyCents(
+      pick(row, ['sales_data_total_ex_tax', 'total_ex_tax', 'total_ex_gst', 'net_sales'])
+    );
+    const incTaxCents = moneyCents(
+      pick(row, ['sales_data_total_inc_tax', 'total_inc_tax', 'total_inc_gst', 'gross_sales'])
+    );
+    if (exTaxCents === null && incTaxCents === null) continue;
+    const target = dateKey ?? carriedDate;
+    if (!target) continue;
+    const existing = out.get(target) ?? { dateKey: target, exTaxCents: null, incTaxCents: null };
+    if (exTaxCents !== null) existing.exTaxCents = (existing.exTaxCents ?? 0) + exTaxCents;
+    if (incTaxCents !== null) existing.incTaxCents = (existing.incTaxCents ?? 0) + incTaxCents;
+    out.set(target, existing);
+  }
+  return Array.from(out.values());
+}
+
 // Yesterday's date key in Sydney — a scheduled daily report covers the prior
 // trading day, so rows without their own date column land there.
 function yesterdaySydneyKey(): string {
@@ -248,7 +297,8 @@ export const lightspeedInboundService = {
     }
 
     const warnings: string[] = [];
-    const fallbackVenue = mapVenue(subject);
+    const fallbackVenue =
+      mapVenue(subject) ?? process.env.LIGHTSPEED_EMAIL_DEFAULT_VENUE ?? 'Alma Avalon';
     const fallbackDateKey = parseDateToken(subject) ?? yesterdaySydneyKey();
     type ItemRow = {
       venue: string;
@@ -307,6 +357,56 @@ export const lightspeedInboundService = {
       }
     }
 
+    // ── Day-summary CSVs → SalesActualEntry directly ───────────────────────
+    // Real ex-GST figures straight from the report (no ÷1.1 estimate). Guards:
+    // never write TODAY (the 6am schedule sees an incomplete, often $0 day),
+    // never write a $0 row, and never touch a day the Xero feed already owns.
+    let summaryDaysUpserted = 0;
+    const todayKey = todaySydneyKey();
+    for (const csv of csvTexts) {
+      if (!isDaySummaryCsv(csv)) continue;
+      for (const day of parseDaySummaries(csv)) {
+        rowsParsed += 1;
+        const netCents = day.exTaxCents ?? (day.incTaxCents !== null ? Math.round(day.incTaxCents / 1.1) : null);
+        if (netCents === null) continue;
+        if (day.dateKey >= todayKey) {
+          warnings.push(`Summary row for ${day.dateKey} skipped — the day isn't over yet. Set the report's date filter to "Yesterday".`);
+          continue;
+        }
+        if (netCents <= 0) {
+          warnings.push(`Summary row for ${day.dateKey} skipped — $0 total (report likely ran before trading).`);
+          continue;
+        }
+        const venue = fallbackVenue;
+        const serviceDate = new Date(`${day.dateKey}T00:00:00Z`);
+        const xeroRow = await prisma.salesActualEntry.findFirst({
+          where: { venue, serviceDate, source: 'lightspeed-xero' },
+          select: { id: true }
+        });
+        if (xeroRow) continue;
+        const summarySource = 'lightspeed-email';
+        const externalId = `${summarySource}:${venue}:${day.dateKey}`;
+        await prisma.salesActualEntry.upsert({
+          where: {
+            venue_serviceDate_source_externalId: { venue, serviceDate, source: summarySource, externalId }
+          },
+          create: {
+            venue,
+            serviceDate,
+            salesCents: netCents,
+            source: summarySource,
+            externalId,
+            notes: 'Lightspeed daily total from emailed Insights summary (ex GST).'
+          },
+          update: {
+            salesCents: netCents,
+            notes: 'Lightspeed daily total from emailed Insights summary (ex GST).'
+          }
+        });
+        summaryDaysUpserted += 1;
+      }
+    }
+
     const source = 'lightspeed-item:email';
     const rows = Array.from(grouped.values());
     const UPSERT_BATCH_SIZE = 50;
@@ -352,7 +452,7 @@ export const lightspeedInboundService = {
       existing.itemRows += 1;
       dayTotals.set(key, existing);
     }
-    let dayTotalsUpserted = 0;
+    let dayTotalsUpserted = summaryDaysUpserted;
     let dayTotalsSkipped = 0;
     for (const total of dayTotals.values()) {
       const serviceDate = new Date(`${total.serviceDateKey}T00:00:00Z`);
