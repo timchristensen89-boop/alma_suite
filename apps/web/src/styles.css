@@ -9192,11 +9192,11 @@ html[data-theme='dark'] .alma-roster-publish:hover:not(:disabled) {
 }
 
 .alma-home-bubble--reserve {
-  background: linear-gradient(135deg, #DDE6D7 0%, #BCD0B0 100%);
-  color: #2F4129;
-  --bubble-fg: #2F4129;
-  --bubble-btn: #1F2A1E;
-  --bubble-btn-text: #E6E8DD;
+  background: linear-gradient(135deg, #E4E3E0 0%, #C6C5C1 100%);
+  color: #1E1F22;
+  --bubble-fg: #1E1F22;
+  --bubble-btn: #17181A;
+  --bubble-btn-text: #EDECE8;
 }
 
 .alma-home-bubble--stock {
@@ -9240,11 +9240,11 @@ html[data-theme='dark'] .alma-roster-publish:hover:not(:disabled) {
 }
 
 .alma-home-bubble--giftcards {
-  background: linear-gradient(135deg, #EAC8AA 0%, #D9AC85 100%);
-  color: #5A3818;
-  --bubble-fg: #5A3818;
-  --bubble-btn: #8C5828;
-  --bubble-btn-text: #FBF1DC;
+  background: linear-gradient(135deg, #F3D3DC 0%, #E3AABC 100%);
+  color: #6E2740;
+  --bubble-fg: #6E2740;
+  --bubble-btn: #9B4560;
+  --bubble-btn-text: #FBEDF2;
 }
 
 .alma-home-bubble--admin {
@@ -12713,6 +12713,9 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
   border-right: none;
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.82);
+  /* Lighten the ALMA Suite logo lockup (ProductLogo reads these). */
+  --brand-title-color: #FFFFFF;
+  --brand-module-color: rgba(255, 255, 255, 0.78);
 }
 .app-shell-sidebar .app-shell-brand {
   border-bottom-color: rgba(255, 255, 255, 0.14);

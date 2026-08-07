@@ -317,8 +317,11 @@ export function ProductLogo({
 }: ProductLogoProps) {
   const app = getSuiteApp(appId);
   const logoSize = PRODUCT_LOGO_SIZE[size];
-  const titleColor = 'var(--color-text, #111827)';
-  const moduleColor = app.id === 'stock' ? '#145f51' : app.fromColor;
+  // Both colours are CSS-variable pass-throughs so chrome that carries its
+  // own background (the full-colour sidebar rail) can lighten the lockup.
+  const titleColor = 'var(--brand-title-color, var(--color-text, #111827))';
+  const moduleBase = app.id === 'stock' ? '#145f51' : app.fromColor;
+  const moduleColor = `var(--brand-module-color, ${moduleBase})`;
 
   return (
     <a

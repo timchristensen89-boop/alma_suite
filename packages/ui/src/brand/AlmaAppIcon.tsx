@@ -264,8 +264,8 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
   {
     id: 'reserve',
     label: 'RESERVE',
-    from: '#253326',
-    to: '#161F17',
+    from: '#1E1F22',
+    to: '#0F1012',
     iconKey: 'book',
     icon: <BookIcon />
   },
@@ -280,8 +280,8 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
   {
     id: 'giftcards',
     label: 'GIFTCARDS',
-    from: '#F5DCCE',
-    to: '#E5C6B0',
+    from: '#C4657F',
+    to: '#9B4560',
     iconKey: 'document',
     icon: <DocumentIcon />
   },
