@@ -12,8 +12,8 @@
      the shared tokens for reports-web only. */
   /* Warm canvas so white stat tiles and cream cards both read against the page. */
   --color-bg: #F8F5EF;
-  --color-surface: #F1ECE2;
-  --color-surface-muted: #E9E2D3;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #F3EEE5;
 }
 
 .reports-section {

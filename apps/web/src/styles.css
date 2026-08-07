@@ -16,9 +16,9 @@
      they pop on any of them. Keep the steps ≥ ~8 RGB apart or cards melt into
      the page (the "can't tell the cards apart" bug, fixed 2026-08-07). */
   --color-bg: #F7F4ED;
-  --color-surface: #EFEAE0;
-  --color-surface-muted: #F4F0E8;
-  --color-surface-hover: #E8E2D5;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #F6F2EA;
+  --color-surface-hover: #F1ECE2;
   /* Pure-white "raised" surfaces (inputs, dropdowns, pills) that sit above
      the cream cards. Hardcoded #FFFFFF backgrounds map onto this token so they
      re-theme in dark mode while staying identical (#FFFFFF) in light. */
@@ -33,8 +33,8 @@
   /* Pure-black display text (card values, panel titles). Paired so it stays
      #000 in light and flips to light text in dark. */
   --color-ink-black: #000;
-  --color-border: #e2e8f0;
-  --color-border-strong: #cbd5e1;
+  --color-border: rgba(31, 53, 36, 0.10);
+  --color-border-strong: rgba(31, 53, 36, 0.18);
   --color-text: #0f172a;
   --color-text-muted: #475569;
   --color-text-subtle: #94a3b8;
@@ -78,10 +78,10 @@
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
   /* elevation */
-  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06);
-  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.08);
+  --shadow-xs: 0 1px 2px rgba(31, 53, 36, 0.04), 0 4px 14px rgba(31, 53, 36, 0.04);
+  --shadow-sm: 0 1px 3px rgba(31, 53, 36, 0.05), 0 6px 18px rgba(31, 53, 36, 0.05);
+  --shadow-md: 0 4px 12px rgba(31, 53, 36, 0.06), 0 10px 28px rgba(31, 53, 36, 0.05);
+  --shadow-lg: 0 12px 32px rgba(31, 53, 36, 0.10);
 
   /* layout */
   --radius-sm: 6px;
