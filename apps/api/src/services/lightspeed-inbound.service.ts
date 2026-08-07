@@ -215,6 +215,7 @@ export type LightspeedInboundResult = {
   duplicate?: boolean;
   ignored?: string;
   attachmentsParsed?: number;
+  digestFragmentsSkipped?: number;
   rowsParsed?: number;
   itemRowsUpserted?: number;
   dayTotalsUpserted?: number;
@@ -265,21 +266,33 @@ export const lightspeedInboundService = {
     }
 
     // Every CSV attachment is a candidate (the poller unzips ZIPs for us).
+    // Looker "overview" dashboards also attach top-10/movers/discount digest
+    // fragments — partial data that would badly skew item sales if ingested,
+    // so those are skipped by filename.
+    const DIGEST_FRAGMENT = /top_|highest_|drop-?off|discount|untitled|total_products_sold|total_revenue_last_week|summary_of_/i;
     const attachments = (data.attachments as InboundAttachment[] | undefined) ?? [];
     const csvTexts: string[] = [];
+    let digestFragmentsSkipped = 0;
     for (const attachment of attachments) {
       const name = (attachment.filename ?? '').toLowerCase();
       const type = (attachment.content_type ?? attachment.contentType ?? '').toLowerCase();
       if (!name.endsWith('.csv') && !type.includes('csv')) continue;
+      if (DIGEST_FRAGMENT.test(name)) {
+        digestFragmentsSkipped += 1;
+        continue;
+      }
       const text = decodeAttachmentContent(attachment.content);
       if (text) csvTexts.push(text);
     }
     if (csvTexts.length === 0) {
+      const reason = digestFragmentsSkipped > 0
+        ? `Only top-10/digest fragments (${digestFragmentsSkipped}) — schedule a full product-mix report instead.`
+        : 'No CSV attachment found.';
       await prisma.integrationWebhookEvent.updateMany({
         where: { provider: 'LIGHTSPEED', accountKey: 'inbound-email', providerEventId: messageId },
-        data: { status: 'IGNORED', processedAt: new Date(), errorSummary: 'No CSV attachment found.' }
+        data: { status: 'IGNORED', processedAt: new Date(), errorSummary: reason }
       });
-      return { received: true, ignored: 'No CSV attachment found in the email.' };
+      return { received: true, ignored: reason, digestFragmentsSkipped };
     }
 
     // Recipes for import-time attribution: exact title match (venue-scoped
@@ -315,9 +328,9 @@ export const lightspeedInboundService = {
 
     for (const csv of csvTexts) {
       for (const row of csvObjects(csv)) {
-        const itemName = pick(row, ['product', 'product_name', 'item', 'item_name', 'name', 'description']);
+        const itemName = pick(row, ['product', 'product_name', 'products_product_name', 'item', 'item_name', 'name', 'description']);
         if (!itemName) continue;
-        const quantity = Number((pick(row, ['quantity', 'qty', 'units', 'units_sold', 'sold', 'count', 'number_sold']) ?? '').replace(/[,\s]/g, ''));
+        const quantity = Number((pick(row, ['quantity', 'quantity_sold', 'qty', 'units', 'units_sold', 'sold', 'count', 'number_sold']) ?? '').replace(/[,\s]/g, ''));
         if (!Number.isFinite(quantity) || quantity === 0) continue;
         rowsParsed += 1;
 
@@ -330,8 +343,8 @@ export const lightspeedInboundService = {
         const dateRaw = pick(row, ['date', 'business_date', 'trading_date', 'service_date', 'day']);
         const serviceDateKey = (dateRaw ? parseDateToken(dateRaw) : null) ?? fallbackDateKey;
 
-        const grossCents = moneyCents(pick(row, ['gross_sales', 'total_sales', 'sales_inc_gst', 'gross', 'total', 'amount']));
-        let netCents = moneyCents(pick(row, ['net_sales', 'sales_ex_gst', 'net', 'net_amount', 'ex_gst']));
+        const grossCents = moneyCents(pick(row, ['gross_sales', 'total_sales', 'sales_inc_gst', 'total_revenue', 'total_inc_tax', 'gross', 'total', 'amount']));
+        let netCents = moneyCents(pick(row, ['net_sales', 'sales_ex_gst', 'exclusive_of_tax', 'total_ex_tax', 'net', 'net_amount', 'ex_gst']));
         // Lightspeed AU reports are GST-inclusive unless the column says net.
         if (netCents === null && grossCents !== null) netCents = Math.round(grossCents / 1.1);
 
@@ -493,6 +506,7 @@ export const lightspeedInboundService = {
         payload: {
           subject,
           attachmentsParsed: csvTexts.length,
+          digestFragmentsSkipped,
           rowsParsed,
           itemRowsUpserted: rows.length,
           dayTotalsUpserted,
@@ -505,6 +519,7 @@ export const lightspeedInboundService = {
     return {
       received: true,
       attachmentsParsed: csvTexts.length,
+      digestFragmentsSkipped,
       rowsParsed,
       itemRowsUpserted: rows.length,
       dayTotalsUpserted,
