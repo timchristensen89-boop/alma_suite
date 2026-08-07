@@ -3403,3 +3403,23 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* Jump from a menu-engineering row to the full recipe editor. Hidden until
+   the row is hovered so the table stays quiet. */
+.dish-margin-recipe-link {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-accent);
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  width: fit-content;
+}
+.dish-margin-row:hover .dish-margin-recipe-link,
+.dish-margin-recipe-link:focus-visible {
+  opacity: 1;
+}
+@media (max-width: 860px) {
+  .dish-margin-recipe-link { opacity: 1; }
+}
