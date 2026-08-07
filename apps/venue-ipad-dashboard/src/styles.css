@@ -4,9 +4,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Cormorant+Garamond:wght@500;600;700&display=swap');
 
 :root {
-  --color-bg: #FFFFFF;
-  --color-surface: #F8F6F1;
-  --color-surface-muted: #FDFBF6;
+  --color-bg: #F7F4ED;
+  --color-surface: #EFEAE0;
+  --color-surface-muted: #F4F0E8;
   --color-text: #18221d;
   --color-muted: #607067;
   --color-border: #dce3dd;

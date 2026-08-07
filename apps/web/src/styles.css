@@ -11,10 +11,14 @@
 :root {
   /* palette: paper-cream raised cards over a pure-white page so the
      boxes sit clearly above the surface. */
-  --color-bg: #FFFFFF;
-  --color-surface: #F8F6F1;
-  --color-surface-muted: #FDFBF6;
-  --color-surface-hover: #F2EFE6;
+  /* Layer ramp — each surface a visible step from the one beneath it:
+     page canvas (bg) < muted < surface(cards) ... elevated tiles stay white so
+     they pop on any of them. Keep the steps ≥ ~8 RGB apart or cards melt into
+     the page (the "can't tell the cards apart" bug, fixed 2026-08-07). */
+  --color-bg: #F7F4ED;
+  --color-surface: #EFEAE0;
+  --color-surface-muted: #F4F0E8;
+  --color-surface-hover: #E8E2D5;
   /* Pure-white "raised" surfaces (inputs, dropdowns, pills) that sit above
      the cream cards. Hardcoded #FFFFFF backgrounds map onto this token so they
      re-theme in dark mode while staying identical (#FFFFFF) in light. */

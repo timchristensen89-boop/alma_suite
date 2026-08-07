@@ -10,7 +10,8 @@
      cards/panels read as soft cream tiles that lift off the background; nested
      insets use a slightly deeper warm so they recede inside a card. Overrides
      the shared tokens for reports-web only. */
-  --color-bg: #FFFFFF;
+  /* Warm canvas so white stat tiles and cream cards both read against the page. */
+  --color-bg: #F8F5EF;
   --color-surface: #F1ECE2;
   --color-surface-muted: #E9E2D3;
 }
