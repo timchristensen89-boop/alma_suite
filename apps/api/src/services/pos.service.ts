@@ -35,6 +35,15 @@ function requireReason(kind: string, reason: string) {
 
 const GST_DIVISOR = 11;
 
+// Recipes carry loose kind strings ("Bar Dish", "Dish", "FOOD", "BEVERAGE").
+// Everything drink-ish routes to the bar; the rest is kitchen food.
+function kindBucket(kind: string | null, category: string | null): 'FOOD' | 'BEVERAGE' {
+  const value = `${kind ?? ''} ${category ?? ''}`.toLowerCase();
+  return /bar|bev|cocktail|drink|wine|beer|spirit|liquor|coffee|tea|juice|margarita|mezcal|tequila|vodka|gin|whiskey/.test(value)
+    ? 'BEVERAGE'
+    : 'FOOD';
+}
+
 function sydneyNow(): { dateKey: string; weekday: number; minute: number } {
   const parts = new Intl.DateTimeFormat('en-AU', {
     timeZone: 'Australia/Sydney',
@@ -220,7 +229,11 @@ export const posService = {
     const byCategory = new Map<string, { name: string; kind: string; items: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null }> }>();
     for (const recipe of recipes) {
       const name = recipe.kind === 'SET_MENU' ? 'Set Menus' : recipe.category?.trim() || 'Other';
-      const group = byCategory.get(name) ?? { name, kind: recipe.kind ?? 'FOOD', items: [] };
+      const group = byCategory.get(name) ?? {
+        name,
+        kind: recipe.kind === 'SET_MENU' ? 'SET_MENU' : kindBucket(recipe.kind, recipe.category),
+        items: []
+      };
       group.items.push({
         recipeId: recipe.id,
         title: recipe.title,
@@ -570,7 +583,8 @@ export const posService = {
         const categories = profile.categoriesCsv.split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
         const lines = order.lines.filter((line) => {
           const meta = line.recipeId ? recipeMeta.get(line.recipeId) : null;
-          const kind = meta?.kind === 'BEVERAGE' ? 'BEVERAGE' : 'FOOD';
+          // No recipe link: route by the line's course (Drinks → bar).
+          const kind = meta ? kindBucket(meta.kind, meta.category) : line.course === 'Drinks' ? 'BEVERAGE' : 'FOOD';
           if (categories.length > 0) return categories.includes((meta?.category ?? '').toLowerCase());
           return kind === profile.matchKind;
         });
@@ -834,7 +848,29 @@ export const posService = {
     const userKey = str(body.userKey).toLowerCase();
     if (!userKey) throw new HttpError(400, 'userKey is required.');
     const buttons = Array.isArray(body.buttons) ? (body.buttons as unknown[]).map(String).slice(0, 12) : [];
-    const pins = Array.isArray(body.pins) ? (body.pins as unknown[]).map(String).slice(0, 24) : [];
+    // Pins are rich objects ({t:'i',id} items / {t:'f',name,items} folders) —
+    // pass through with a shallow shape check; legacy string pins upgrade.
+    const pins = (Array.isArray(body.pins) ? (body.pins as unknown[]) : [])
+      .map((pin) => {
+        if (typeof pin === 'string') return { t: 'i', id: pin };
+        if (pin && typeof pin === 'object') {
+          const row = pin as Record<string, unknown>;
+          if (row.t === 'i' && typeof row.id === 'string') {
+            return { t: 'i', id: row.id, ...(typeof row.c === 'string' ? { c: row.c } : {}) };
+          }
+          if (row.t === 'f' && typeof row.name === 'string' && Array.isArray(row.items)) {
+            return {
+              t: 'f',
+              name: row.name.slice(0, 40),
+              items: (row.items as unknown[]).map(String).slice(0, 24),
+              ...(typeof row.c === 'string' ? { c: row.c } : {})
+            };
+          }
+        }
+        return null;
+      })
+      .filter((pin): pin is NonNullable<typeof pin> => pin !== null)
+      .slice(0, 24);
     return prisma.posHomescreen.upsert({
       where: { userKey },
       create: { userKey, buttons, pins, updatedBy: str(body.updatedBy) || null },
