@@ -234,6 +234,8 @@ export function App() {
   const [managerGate, setManagerGate] = useState<null | { message: string; pin: string; retry: (pin: string) => void }>(null);
   const [pinSearch, setPinSearch] = useState('');
   const [deviceLanding, setDeviceLanding] = useState(() => localStorage.getItem('alma.pos.deviceLanding') ?? '');
+  // Phone layout: the bill lives in a bottom sheet behind a summary bar.
+  const [cartOpen, setCartOpen] = useState(false);
   const [dockets, setDockets] = useState<Docket[] | null>(null);
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
@@ -1315,7 +1317,15 @@ export function App() {
             )}
           </div>
 
-          <aside className="pos-cart">
+          <aside className={`pos-cart ${cartOpen ? 'is-open' : ''}`}>
+            <button type="button" className="pos-cart-summary" onClick={() => setCartOpen(!cartOpen)}>
+              <span>
+                {order && order.lines.length > 0
+                  ? `${order.lines.reduce((sum, line) => sum + line.quantity, 0)} item${order.lines.reduce((sum, line) => sum + line.quantity, 0) === 1 ? '' : 's'} · ${money(balance)}`
+                  : 'No items yet'}
+              </span>
+              <b>{cartOpen ? 'Hide bill ▾' : 'View bill ▴'}</b>
+            </button>
             <div className="pos-cart-lines">
               <div className="pos-course-pick">
                 {courses.map((course) => (

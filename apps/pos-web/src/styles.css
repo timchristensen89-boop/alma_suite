@@ -459,3 +459,29 @@ input, select { font: inherit; }
 .qr-tips button { flex: 1; border: 2px solid rgba(31, 53, 36, 0.3); background: none; border-radius: 12px; padding: 12px 6px; font-weight: 700; font-size: 13px; cursor: pointer; color: #1f3524; }
 .qr-tips button.is-on { border-color: #1f3524; background: rgba(31, 53, 36, 0.06); }
 .qr-card-mount { min-height: 220px; }
+
+
+/* ── Handheld register (phones) ── */
+.pos-cart-summary { display: none; }
+@media (max-width: 700px) {
+  .pos-body { display: block; }
+  .pos-menu { padding-bottom: 120px; }
+  .pos-tabs { overflow-x: auto; flex-wrap: nowrap; white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .pos-tabs::-webkit-scrollbar { display: none; }
+  .pos-tabs button { flex: none; }
+  .pos-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+  .pos-item { min-height: 74px; }
+  .pos-header { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+  .pos-search { order: 10; flex: 1 1 100%; min-width: 0; }
+
+  /* Bill = bottom sheet behind a summary bar */
+  .pos-cart { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; max-height: 56px; overflow: hidden; border-radius: 16px 16px 0 0; border-top: 1px solid var(--pos-line, #2c323a); box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.45); transition: max-height 220ms ease; display: flex; flex-direction: column; background: var(--pos-panel, #1a1e23); }
+  .pos-cart.is-open { max-height: 82vh; overflow: hidden; }
+  .pos-cart-summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; background: none; border: 0; color: #e8ebee; font-size: 14px; font-weight: 700; padding: 16px 16px; cursor: pointer; flex: none; }
+  .pos-cart-summary b { color: var(--pos-accent, #58996f); font-size: 12.5px; }
+  .pos-cart.is-open .pos-cart-lines { overflow-y: auto; }
+  .pos-cart-foot { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+
+  .pos-modal-panel { max-width: 96vw; }
+  .pos-grid-home { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+}
