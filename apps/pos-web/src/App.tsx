@@ -1291,18 +1291,6 @@ export function App() {
     <div className="pos-shell">
       {design === 'rail' ? (
         <aside className="pos-rail">
-          <div className="pos-rail-brand">
-            <img src="/brand/alma-wordmark-cream.png" alt="alma" />
-            <span>POS</span>
-          </div>
-          <div className="pos-rail-venue">
-            <i />
-            <select value={venue} onChange={(event) => setVenue(event.currentTarget.value)}>
-              {VENUES.map((name) => (
-                <option key={name}>{name}</option>
-              ))}
-            </select>
-          </div>
           <div className="pos-rail-eyebrow">Tonight</div>
           <button type="button" className={view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'} onClick={() => setView('register')}>
             Sale
