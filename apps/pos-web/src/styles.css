@@ -490,7 +490,7 @@ input, select { font: inherit; }
 /* board edit mode */
 .pos-item-pin.is-editing { touch-action: none; position: relative; animation: pin-jiggle 260ms ease-in-out infinite alternate; cursor: grab; }
 .pos-item-pin.is-editing:nth-child(2n) { animation-delay: 120ms; }
-@keyframes pin-jiggle { from { transform: rotate(-0.7deg); } to { transform: rotate(0.7deg); } }
+@keyframes pin-jiggle { from { transform: translateY(-1px); } to { transform: translateY(1px); } }
 .pos-pin-x { position: absolute; top: -7px; right: -7px; width: 22px; height: 22px; border-radius: 50%; background: var(--pos-danger, #c4655a); color: #fff; font-style: normal; font-size: 12px; font-weight: 800; display: grid; place-items: center; cursor: pointer; z-index: 2; }
 .pos-item-edit.is-done { border-color: var(--pos-accent, #58996f); color: var(--pos-accent, #58996f); opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .pos-item-pin.is-editing { animation: none; } }

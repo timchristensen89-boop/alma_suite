@@ -1020,7 +1020,7 @@ export const posService = {
     const count = await prisma.posCourse.count();
     if (count === 0) {
       await prisma.posCourse.createMany({
-        data: ['Course 1', 'Course 2', 'Course 3', 'Course 4', 'Course 5', 'Course 6', 'Course 7'].map((name, index) => ({ name, sortOrder: index }))
+        data: ['NOW', 'Course 1', 'Course 2', 'Course 3', 'Course 4', 'Course 5', 'Course 6'].map((name, index) => ({ name, sortOrder: index }))
       });
     }
     return prisma.posCourse.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } });

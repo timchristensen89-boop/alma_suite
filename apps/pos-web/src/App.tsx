@@ -177,7 +177,7 @@ function offlineSurcharge(subtotalCents: number, rules: Array<{ kind: string; pe
   );
   return rule ? { cents: Math.round((subtotalCents * rule.percent) / 100), label: `Weekend surcharge ${rule.percent}%` } : { cents: 0, label: null };
 }
-const FALLBACK_COURSES = ['Course 1', 'Course 2', 'Course 3', 'Course 4', 'Course 5', 'Course 6', 'Course 7'];
+const FALLBACK_COURSES = ['NOW', 'Course 1', 'Course 2', 'Course 3', 'Course 4', 'Course 5', 'Course 6'];
 // AU cash denominations, cents.
 const DENOMS = [10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5];
 
@@ -190,7 +190,7 @@ function paidCents(order: Order) {
 }
 
 function defaultCourse(_kind: string) {
-  return 'Course 1';
+  return 'NOW';
 }
 
 function ageMinutes(iso: string) {
@@ -616,6 +616,19 @@ export function App() {
   }
 
   useEffect(() => {
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.classList?.contains('pos-modal')) return;
+      const close =
+        target.querySelector<HTMLButtonElement>('.pos-modal-close') ??
+        [...target.querySelectorAll('button')].find((candidate) => /^(done|close|cancel|back to order)$/i.test(candidate.textContent?.trim() ?? ''));
+      close?.click();
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  useEffect(() => {
     if (!info) return;
     const timer = setTimeout(() => setInfo(null), 7000);
     return () => clearTimeout(timer);
@@ -645,11 +658,34 @@ export function App() {
   function courseIsOpen(name: string, count: number) {
     return courseOpen[name] ?? count > 0;
   }
+  async function fireCourse(name: string) {
+    if (!order || order.id.startsWith('local-') || busy) return;
+    setBusy(true);
+    try {
+      const result = await api<{ dockets: Docket[]; sent: number }>(`/api/pos/orders/${order.id}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ courses: [name] })
+      });
+      if (result.dockets.length > 0) setDockets(result.dockets);
+      const stamp = new Date().toISOString();
+      setOrder((current) =>
+        current
+          ? { ...current, lines: current.lines.map((line) => ((line.course ?? 'NOW') === name && !(line as { sentAt?: string | null }).sentAt ? { ...line, sentAt: stamp } : line)) }
+          : current
+      );
+      setInfo(`${name} fired to the kitchen.`);
+    } catch (err) {
+      setError(messageForError(err, 'Could not fire the course.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const billCourses = useMemo(() => {
     const groups = new Map<string, Array<{ line: Order['lines'][number]; index: number }>>();
     for (const name of courses) groups.set(name, []);
     (order?.lines ?? []).forEach((line, index) => {
-      const key = line.course ?? courses[0] ?? 'Course 1';
+      const key = line.course ?? courses[0] ?? 'NOW';
       groups.set(key, [...(groups.get(key) ?? []), { line, index }]);
     });
     return [...groups.entries()];
@@ -720,13 +756,26 @@ export function App() {
     event.preventDefault();
     dragTabToken.current = token;
     let dropOn: string | null = null;
+    let dropBoard = false;
     let movedTab = false;
     const stamp = Date.now();
     const onMove = (nativeEvent: PointerEvent) => {
       if (dragTabToken.current === null) return;
-      const target = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY)?.closest('[data-tab-token]');
+      const hit = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY);
+      const target = hit?.closest('[data-tab-token]');
       document.querySelectorAll('.pos-tabs button.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
-      if (!target) return;
+      document.querySelectorAll('.pos-grid-home.is-board-drop').forEach((el) => el.classList.remove('is-board-drop'));
+      if (!target) {
+        const board = hit?.closest('.pos-grid-home');
+        if (board) {
+          dropBoard = true;
+          board.classList.add('is-board-drop');
+        } else {
+          dropBoard = false;
+        }
+        return;
+      }
+      dropBoard = false;
       const over = target.getAttribute('data-tab-token')!;
       if (over === dragTabToken.current) return;
       // Centre third of the target = "drop into a group"; edges = reorder.
@@ -751,8 +800,24 @@ export function App() {
       document.removeEventListener('pointerup', onUp);
       document.removeEventListener('pointercancel', onUp);
       document.querySelectorAll('.pos-tabs button.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+      document.querySelectorAll('.pos-grid-home.is-board-drop').forEach((el) => el.classList.remove('is-board-drop'));
       const from = dragTabToken.current;
       dragTabToken.current = null;
+      if (from && dropBoard) {
+        // Whole category (or group) dropped on the board → folder with its items.
+        const catNames = from.startsWith('g:')
+          ? (homeRef.current.categories?.groups.find((group) => group.name === from.slice(2))?.cats ?? [])
+          : [from];
+        const items = catNames.flatMap((name) => menu.find((category) => category.name === name)?.items.map((item) => item.recipeId) ?? []);
+        if (items.length > 0) {
+          const folderName = from.startsWith('g:') ? from.slice(2) : from;
+          const board = { ...homeRef.current, pins: [...homeRef.current.pins, { t: 'f' as const, name: folderName, items: items.slice(0, 40) }] };
+          setHome(board);
+          saveBoard(board);
+          setInfo(`${folderName} added to Home as a folder (${Math.min(items.length, 40)} items).`);
+        }
+        return;
+      }
       if (from && dropOn) {
         // Group the two tabs (or add to an existing group).
         saveTabs((config) => {
@@ -958,7 +1023,14 @@ export function App() {
     }
     // Modifier'd lines never merge — each configuration is its own line.
     const existing = modifiers.length === 0 && !notes
-      ? order.lines.find((candidate) => candidate.recipeId === item.recipeId && !candidate.modifiers && !candidate.notes && (candidate.course ?? null) === (line.course ?? null))
+      ? order.lines.find(
+          (candidate) =>
+            candidate.recipeId === item.recipeId &&
+            !candidate.modifiers &&
+            !candidate.notes &&
+            !(candidate as { sentAt?: string | null }).sentAt &&
+            (candidate.course ?? null) === (line.course ?? null)
+        )
       : undefined;
     const next = existing
       ? order.lines.map((candidate) => (candidate === existing ? { ...candidate, quantity: candidate.quantity + 1 } : candidate))
@@ -1930,6 +2002,26 @@ export function App() {
                     </span>
                     <small>
                       {entries.length > 0 ? `${entries.reduce((sum, entry) => sum + entry.line.quantity, 0)} item${entries.length === 1 && entries[0]!.line.quantity === 1 ? '' : 's'}` : ''}
+                      {(() => {
+                        const unsent = entries.filter((entry) => !(entry.line as { sentAt?: string | null }).sentAt).length;
+                        const sent = entries.length - unsent;
+                        if (unsent > 0) {
+                          return (
+                            <i
+                              className="pos-fire"
+                              title={`Fire ${groupCourse} — ${unsent} line${unsent === 1 ? '' : 's'} waiting`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void fireCourse(groupCourse);
+                              }}
+                            >
+                              🔥
+                            </i>
+                          );
+                        }
+                        if (sent > 0) return <i className="pos-fired" title="Called away">✓</i>;
+                        return null;
+                      })()}
                       {' '}
                       {courseIsOpen(groupCourse, entries.length) ? '▾' : '▸'}
                     </small>

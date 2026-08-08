@@ -16,8 +16,8 @@
   --pos-border: rgba(31, 53, 36, 0.12);
   --pos-border-soft: rgba(31, 53, 36, 0.08);
   --pos-text: #1f3524;
-  --pos-text2: rgba(31, 53, 36, 0.62);
-  --pos-text3: rgba(31, 53, 36, 0.42);
+  --pos-text2: rgba(31, 53, 36, 0.7);
+  --pos-text3: rgba(31, 53, 36, 0.52);
   --pos-accent-bg: #1f3524;
   --pos-accent-fg: #f8f6f1;
   --pos-chip: #efe8dc;
@@ -43,8 +43,8 @@ body.pos-dark {
   --pos-border: rgba(248, 246, 241, 0.14);
   --pos-border-soft: rgba(248, 246, 241, 0.08);
   --pos-text: #f8f6f1;
-  --pos-text2: rgba(248, 246, 241, 0.65);
-  --pos-text3: rgba(248, 246, 241, 0.4);
+  --pos-text2: rgba(248, 246, 241, 0.74);
+  --pos-text3: rgba(248, 246, 241, 0.52);
   --pos-accent-bg: #efe8dc;
   --pos-accent-fg: #1f3524;
   --pos-chip: rgba(248, 246, 241, 0.08);
@@ -63,7 +63,13 @@ body.pos-dark {
 }
 
 /* ── Shell & header ── */
-body { background: var(--pos-bg); transition: background 260ms var(--ease-out); }
+body {
+  background: var(--pos-bg);
+  transition: background 260ms var(--ease-out);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
 .pos-shell { background: var(--pos-bg); color: var(--pos-text); font-family: var(--font-sans); }
 .pos-header { background: var(--pos-bg); border-bottom: 1px solid var(--pos-border-soft); color: var(--pos-text); padding: 12px 20px; gap: 10px; }
 .pos-header > strong { font-family: var(--font-display); font-weight: 500; font-size: 27px; letter-spacing: 0; text-transform: lowercase; color: var(--pos-text); }
@@ -87,11 +93,11 @@ body { background: var(--pos-bg); transition: background 260ms var(--ease-out); 
 .pos-tabs button.is-home { font-weight: 800; }
 
 /* ── Item tiles (heritage hues) ── */
-.pos-item { background: var(--pos-card); border: 1px solid var(--pos-border); border-radius: 16px; color: var(--pos-text); display: flex; flex-direction: column; justify-content: space-between; gap: 10px; min-height: 96px; padding: 14px 16px; text-align: left; cursor: pointer; transition: all 260ms var(--ease-out); font-family: inherit; }
+.pos-item { background: var(--pos-card); border: 1px solid var(--pos-border); border-radius: 16px; color: var(--pos-text); display: flex; flex-direction: column; justify-content: space-between; gap: 10px; min-height: 96px; padding: 14px 16px; text-align: left; cursor: pointer; transition: transform 260ms var(--ease-out), background 180ms var(--ease-out), border-color 180ms var(--ease-out); font-family: inherit; }
 .pos-item:hover { transform: translateY(-3px); }
 .pos-item:active { transform: translateY(0); opacity: 0.7; }
 .pos-item span { font-size: 14.5px; font-weight: 700; line-height: 1.25; }
-.pos-item small { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; opacity: 0.72; }
+.pos-item small { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; opacity: 0.82; }
 .pos-item.is-86d { opacity: 0.45; text-decoration: line-through; }
 .pos-hue-terra { background: var(--tile-terra-bg); color: var(--tile-terra-fg); border-color: var(--tile-terra-bd); }
 .pos-hue-amber { background: var(--tile-amber-bg); color: var(--tile-amber-fg); border-color: var(--tile-amber-bd); }
@@ -242,3 +248,11 @@ body.pos-dark .pos-modal { background: rgba(0, 0, 0, 0.55); }
 .office-days { display: inline-flex; gap: 3px; }
 .office-days button { border: 1px solid var(--pos-border); background: transparent; color: var(--pos-text3); border-radius: 9999px; padding: 4px 8px; font-size: 10px; font-weight: 700; cursor: pointer; font-family: inherit; }
 .office-days button.is-on { background: var(--pos-accent-bg); color: var(--pos-accent-fg); border-color: transparent; }
+
+
+/* course fire indicators */
+.pos-fire { font-style: normal; font-size: 13px; margin-left: 8px; cursor: pointer; filter: saturate(1.1); }
+.pos-fire:hover { transform: scale(1.2); display: inline-block; }
+.pos-fired { font-style: normal; font-size: 11px; font-weight: 900; margin-left: 8px; color: var(--pos-accent); }
+
+.pos-grid-home.is-board-drop { outline: 2px dashed var(--pos-accent); outline-offset: -4px; border-radius: 16px; }

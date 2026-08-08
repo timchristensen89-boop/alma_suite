@@ -152,7 +152,7 @@ export const qrOrderService = {
             unitPriceCents: recipe.salePriceCents ?? 0,
             quantity: line.quantity,
             totalCents: (recipe.salePriceCents ?? 0) * line.quantity,
-            course: 'Course 1',
+            course: 'NOW',
             notes: line.notes ? `${line.notes}${guestName ? ` — ${guestName}` : ''}` : guestName ? `— ${guestName}` : null
           },
           select: { id: true }
