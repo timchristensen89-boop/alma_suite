@@ -350,3 +350,7 @@ input, select { font: inherit; }
 .pos-till-toggle { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--pos-muted); }
 .pos-email-row { display: flex; gap: 8px; }
 .pos-email-row .pos-tender { flex: 1; font-size: 15px; }
+
+/* offline */
+.pos-offline { background: var(--pos-danger); color: #fff; padding: 8px 14px; font-weight: 700; font-size: 13px; }
+.pos-offline.is-syncing { background: #d9a05a; color: #241d10; }

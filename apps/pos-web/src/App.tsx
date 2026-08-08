@@ -116,6 +116,45 @@ type DaySummary = {
 };
 
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
+
+// ── Offline layer ───────────────────────────────────────────────────────────
+// The shell + menu are cached; QUICK SALES keep working through an outage —
+// they queue locally and sync when the API returns. Table operations need
+// the server and wait behind the banner.
+type QueuedSale = {
+  localId: string;
+  venue: string;
+  openedByName?: string;
+  lines: OrderLine[];
+  payment: { method: string; tipCents: number; tenderedCents?: number };
+  totalCents: number;
+  createdAt: string;
+};
+
+function loadQueue(): QueuedSale[] {
+  try {
+    return JSON.parse(localStorage.getItem('alma.pos.queue') ?? '[]') as QueuedSale[];
+  } catch {
+    return [];
+  }
+}
+
+function saveQueue(queue: QueuedSale[]) {
+  localStorage.setItem('alma.pos.queue', JSON.stringify(queue));
+}
+
+function isNetworkError(err: unknown) {
+  return err instanceof TypeError || (err instanceof Error && /network|fetch|load failed/i.test(err.message));
+}
+
+// Weekend surcharge computed locally from cached rules during an outage.
+function offlineSurcharge(subtotalCents: number, rules: Array<{ kind: string; percent: number; weekdays: string }>): { cents: number; label: string | null } {
+  const weekday = new Date().getDay();
+  const rule = rules.find(
+    (candidate) => candidate.kind === 'SURCHARGE' && candidate.weekdays.split(',').filter(Boolean).map(Number).includes(weekday)
+  );
+  return rule ? { cents: Math.round((subtotalCents * rule.percent) / 100), label: `Weekend surcharge ${rule.percent}%` } : { cents: 0, label: null };
+}
 const FALLBACK_COURSES = ['Entrée', 'Mains', 'Sides', 'Dessert', 'Drinks'];
 // AU cash denominations, cents.
 const DENOMS = [10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5];
@@ -213,6 +252,15 @@ export function App() {
   }>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState(false);
+  const [queue, setQueue] = useState<QueuedSale[]>(() => loadQueue());
+  const [cachedRules, setCachedRules] = useState<Array<{ kind: string; percent: number; weekdays: string }>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('alma.pos.rulesCache') ?? '[]');
+    } catch {
+      return [];
+    }
+  });
 
   const refreshAuth = useCallback(async () => {
     try {
@@ -282,12 +330,30 @@ export function App() {
         setMenu(res.categories);
         setEightySix(new Set(res.eightySix ?? []));
         setModifierGroups(res.modifierGroups ?? []);
+        setOffline(false);
+        localStorage.setItem('alma.pos.menuCache', JSON.stringify(res));
+        void api<Array<{ kind: string; percent: number; weekdays: string }>>('/api/pos/rules')
+          .then((rules) => {
+            setCachedRules(rules);
+            localStorage.setItem('alma.pos.rulesCache', JSON.stringify(rules));
+          })
+          .catch(() => undefined);
         setActiveCategory((current) => current || home.landingCategory || res.categories[0]?.name || '');
         const kinds = new Map<string, string>();
         for (const category of res.categories) for (const item of category.items) kinds.set(item.recipeId, category.kind);
         setKindByRecipe(kinds);
       } catch (err) {
-        setError(messageForError(err, 'Could not load the menu.'));
+        // Offline: run on the cached menu so quick sales keep flowing.
+        const cached = localStorage.getItem('alma.pos.menuCache');
+        if (cached && isNetworkError(err)) {
+          const res = JSON.parse(cached) as { categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] };
+          setMenu(res.categories);
+          setEightySix(new Set(res.eightySix ?? []));
+          setModifierGroups(res.modifierGroups ?? []);
+          setOffline(true);
+        } else {
+          setError(messageForError(err, 'Could not load the menu.'));
+        }
       }
       void refreshOpenOrders();
     })();
@@ -372,6 +438,69 @@ export function App() {
     }
   }
 
+  // Flush queued offline sales whenever we're (back) online. The localId is
+  // sent as an idempotency key so a replay (double flush, retry after a
+  // timed-out-but-committed request) can never duplicate the sale.
+  const flushingRef = useRef(false);
+  const flushQueue = useCallback(async () => {
+    if (flushingRef.current) return;
+    flushingRef.current = true;
+    try {
+      await flushQueueInner();
+    } finally {
+      flushingRef.current = false;
+    }
+  }, []);
+
+  async function flushQueueInner() {
+    const pending = loadQueue();
+    if (pending.length === 0) return;
+    for (const sale of pending) {
+      try {
+        const created = await api<Order>('/api/pos/orders', {
+          method: 'POST',
+          body: JSON.stringify({ venue: sale.venue, openedByName: sale.openedByName, idempotencyKey: sale.localId })
+        });
+        if (created.status !== 'PAID') {
+          await api(`/api/pos/orders/${created.id}/lines`, { method: 'PUT', body: JSON.stringify({ lines: sale.lines }) });
+          await api(`/api/pos/orders/${created.id}/pay`, {
+            method: 'POST',
+            body: JSON.stringify(sale.payment)
+          });
+        }
+        const remaining = loadQueue().filter((candidate) => candidate.localId !== sale.localId);
+        saveQueue(remaining);
+        setQueue(remaining);
+        setOffline(false);
+      } catch (err) {
+        if (isNetworkError(err)) return; // still offline — try again later
+        // Server rejected it — drop it out of the queue with a visible error.
+        const remaining = loadQueue().filter((candidate) => candidate.localId !== sale.localId);
+        saveQueue(remaining);
+        setQueue(remaining);
+        setError(`A queued sale (${money(sale.totalCents)}) was rejected: ${messageForError(err, 'unknown error')}`);
+      }
+    }
+  }
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (loadQueue().length > 0) void flushQueue();
+    }, 10000);
+    const onOnline = () => {
+      setOffline(false);
+      void flushQueue();
+    };
+    const onOffline = () => setOffline(true);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, [flushQueue]);
+
   const visibleItems = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (term) return menu.flatMap((category) => category.items).filter((item) => item.title.toLowerCase().includes(term)).slice(0, 60);
@@ -380,6 +509,20 @@ export function App() {
 
   async function pushLines(next: OrderLine[]) {
     if (!order) return;
+    if (order.id.startsWith('local-')) {
+      const subtotal = next.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);
+      const surcharge = offlineSurcharge(subtotal, cachedRules);
+      setOrder({
+        ...order,
+        lines: next,
+        subtotalCents: subtotal,
+        surchargeCents: surcharge.cents,
+        surchargeLabel: surcharge.label,
+        totalCents: subtotal + surcharge.cents,
+        gstCents: Math.round((subtotal + surcharge.cents) / 11)
+      });
+      return;
+    }
     setOrder({ ...order, lines: next });
     try {
       const updated = await api<Order>(`/api/pos/orders/${order.id}/lines`, {
@@ -454,8 +597,35 @@ export function App() {
           body: JSON.stringify({ lines: [line] })
         });
         setOrder(updated);
+        setOffline(false);
       } catch (err) {
-        setError(messageForError(err, 'Could not start the sale.'));
+        if (isNetworkError(err)) {
+          // Offline quick sale: build a LOCAL order the charge flow understands.
+          setOffline(true);
+          const subtotal = line.unitPriceCents * line.quantity;
+          const surcharge = offlineSurcharge(subtotal, cachedRules);
+          setOrder({
+            id: `local-${Date.now()}`,
+            orderNumber: 0,
+            venue,
+            status: 'OPEN',
+            tableLabel: null,
+            covers: null,
+            subtotalCents: subtotal,
+            discountCents: 0,
+            discountLabel: null,
+            surchargeCents: surcharge.cents,
+            surchargeLabel: surcharge.label,
+            totalCents: subtotal + surcharge.cents,
+            gstCents: Math.round((subtotal + surcharge.cents) / 11),
+            tipCents: 0,
+            createdAt: new Date().toISOString(),
+            lines: [line],
+            payments: []
+          });
+        } else {
+          setError(messageForError(err, 'Could not start the sale.'));
+        }
       } finally {
         setBusy(false);
       }
@@ -561,6 +731,33 @@ export function App() {
 
   async function takePayment(method: 'CASH' | 'CARD_EXTERNAL') {
     if (!order || !charge || busy) return;
+    if (order.id.startsWith('local-')) {
+      // Offline settle: queue the whole sale for sync; receipt shows now.
+      const tenderedCents = method === 'CASH' ? Math.round(Number(tendered || '0') * 100) || order.totalCents + charge.tipCents : undefined;
+      const sale: QueuedSale = {
+        localId: order.id,
+        venue,
+        openedByName: operatorName || undefined,
+        lines: order.lines,
+        payment: { method, tipCents: charge.tipCents, tenderedCents },
+        totalCents: order.totalCents,
+        createdAt: new Date().toISOString()
+      };
+      const nextQueue = [...loadQueue(), sale];
+      saveQueue(nextQueue);
+      setQueue(nextQueue);
+      setReceipt({
+        ...order,
+        status: 'PAID',
+        tipCents: charge.tipCents,
+        changeCents: tenderedCents ? tenderedCents - order.totalCents - charge.tipCents : null,
+        payments: [{ method, amountCents: order.totalCents, tipCents: charge.tipCents }]
+      });
+      setOrder(null);
+      setCharge(null);
+      setTendered('');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -764,6 +961,13 @@ export function App() {
       {error ? (
         <div className="pos-error" onClick={() => setError(null)}>
           {error} — tap to dismiss
+        </div>
+      ) : null}
+      {offline || queue.length > 0 ? (
+        <div className={offline ? 'pos-offline' : 'pos-offline is-syncing'}>
+          {offline ? 'OFFLINE — quick sales keep working and queue on this device' : 'Back online'}
+          {queue.length > 0 ? ` · ${queue.length} sale${queue.length === 1 ? '' : 's'} queued` : ''}
+          {!offline && queue.length > 0 ? ' · syncing…' : ''}
         </div>
       ) : null}
 

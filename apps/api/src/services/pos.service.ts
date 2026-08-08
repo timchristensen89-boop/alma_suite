@@ -397,6 +397,11 @@ export const posService = {
     const venue = str(body.venue);
     if (!venue) throw new HttpError(400, 'venue is required.');
     const tableLabel = str(body.tableLabel) || null;
+    const idempotencyKey = str(body.idempotencyKey) || null;
+    if (idempotencyKey) {
+      const existing = await prisma.posOrder.findUnique({ where: { idempotencyKey }, include: ORDER_INCLUDE });
+      if (existing) return existing;
+    }
 
     // Guest matching: tonight's reservation on this table links the order to
     // the guest's CRM profile (spend + favourites update at settle).
@@ -422,17 +427,28 @@ export const posService = {
       }
     }
 
-    return prisma.posOrder.create({
-      data: {
-        venue,
-        openedByName: str(body.openedByName) || null,
-        tableLabel,
-        guestId,
-        reservationId,
-        covers: body.covers === undefined || body.covers === null || body.covers === '' ? null : asInt(body.covers, 'covers', { min: 1, max: 200 })
-      },
-      include: ORDER_INCLUDE
-    });
+    try {
+      return await prisma.posOrder.create({
+        data: {
+          venue,
+          idempotencyKey,
+          openedByName: str(body.openedByName) || null,
+          tableLabel,
+          guestId,
+          reservationId,
+          covers: body.covers === undefined || body.covers === null || body.covers === '' ? null : asInt(body.covers, 'covers', { min: 1, max: 200 })
+        },
+        include: ORDER_INCLUDE
+      });
+    } catch (err) {
+      // Unique race on idempotencyKey: another replay of the same queued sale
+      // won the create — return that order instead of erroring.
+      if (idempotencyKey && (err as { code?: string }).code === 'P2002') {
+        const existing = await prisma.posOrder.findUnique({ where: { idempotencyKey }, include: ORDER_INCLUDE });
+        if (existing) return existing;
+      }
+      throw err;
+    }
   },
 
   // Adjust table details mid-service (covers changes constantly on the floor).

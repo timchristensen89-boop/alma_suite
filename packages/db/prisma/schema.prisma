@@ -4706,6 +4706,10 @@ model PosOrder {
   id            String    @id @default(cuid())
   orderNumber   Int       @unique @default(autoincrement())
   venue         String
+  // Client-generated key for offline-queued sales: replaying a sync request
+  // (double flush, retry after a timed-out-but-committed create) can never
+  // duplicate the order.
+  idempotencyKey String?  @unique
   // UTC midnight of the Sydney trading day the order was PAID on (null while open).
   serviceDate   DateTime?
   status        String    @default("OPEN") // OPEN | PAID | VOID
