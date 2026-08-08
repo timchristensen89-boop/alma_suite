@@ -129,6 +129,14 @@ posRouter.get('/tables', async (req, res, next) => {
   }
 });
 
+posRouter.get('/live', async (_req, res, next) => {
+  try {
+    res.json(await posService.liveBoard());
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.get('/gift-card', async (req, res, next) => {
   try {
     res.json(await posService.giftCardBalance(String(req.query.code ?? '')));

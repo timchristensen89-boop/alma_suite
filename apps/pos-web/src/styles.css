@@ -379,3 +379,31 @@ input, select { font: inherit; }
 .pos-swatch.is-on { border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35); }
 
 .pos-info { background: #2e5941; color: #d9efe1; padding: 8px 14px; font-weight: 700; font-size: 13px; cursor: pointer; }
+
+
+/* ── ALMA Live (owner's phone view) ── */
+.live-shell { min-height: 100vh; background: var(--pos-bg, #121417); color: #e8ebee; padding-bottom: 40px; }
+.live-header { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #262b31; position: sticky; top: 0; background: var(--pos-bg, #121417); z-index: 5; }
+.live-header strong { font-size: 16px; letter-spacing: 0.06em; }
+.live-date { color: #8b939e; font-size: 12px; }
+.live-grand { font-size: 17px; font-weight: 800; color: #7fc79a; }
+.live-grand small { color: #8b939e; font-weight: 600; }
+.live-error { background: #7a2e2e; color: #fff; padding: 8px 14px; font-size: 13px; }
+.live-empty { color: #8b939e; text-align: center; padding: 40px 16px; }
+.live-venue { margin: 14px 12px 0; background: var(--pos-panel, #1a1e23); border: 1px solid #262b31; border-radius: 14px; padding: 14px; }
+.live-venue-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.live-venue-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.live-total { font-size: 22px; font-weight: 800; color: #7fc79a; }
+.live-stats { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; font-size: 12px; color: #8b939e; }
+.live-stats b { color: #e8ebee; }
+.live-open { color: #d9a05a; }
+.live-open b { color: #d9a05a; }
+.live-hours { display: flex; align-items: flex-end; gap: 4px; height: 64px; margin-top: 14px; }
+.live-hour { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; height: 100%; justify-content: flex-end; }
+.live-hour-bar { width: 100%; max-width: 26px; background: linear-gradient(180deg, #58996f, #2e5941); border-radius: 4px 4px 0 0; }
+.live-hour small { font-size: 9px; color: #8b939e; }
+.live-items { margin-top: 12px; border-top: 1px dashed #262b31; padding-top: 8px; }
+.live-item { display: flex; justify-content: space-between; font-size: 12.5px; padding: 3px 0; color: #c6cbd1; }
+.live-item b { color: #e8ebee; }
+.live-servers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.live-server { font-size: 11px; font-weight: 700; background: #22272d; border: 1px solid #2c323a; border-radius: 999px; padding: 4px 10px; color: #c6cbd1; }

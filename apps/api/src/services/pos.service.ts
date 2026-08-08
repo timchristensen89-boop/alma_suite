@@ -877,6 +877,91 @@ export const posService = {
     });
   },
 
+  // Owner's live board: today-so-far for every venue in one call — the
+  // register app renders it at /#live for a phone. Training excluded.
+  async liveBoard() {
+    const serviceDate = sydneyTodayUtcMidnight();
+    const [paidOrders, openOrders] = await Promise.all([
+      prisma.posOrder.findMany({
+        where: { serviceDate, status: 'PAID', training: false },
+        include: { payments: true, lines: true }
+      }),
+      prisma.posOrder.findMany({
+        where: { status: 'OPEN', training: false },
+        include: { payments: true }
+      })
+    ]);
+    const sydneyHour = (date: Date) =>
+      Number(new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', hour: 'numeric', hour12: false }).format(date));
+    const venues = new Map<string, {
+      venue: string;
+      totalCents: number;
+      tipCents: number;
+      covers: number;
+      orderCount: number;
+      openCount: number;
+      openOwingCents: number;
+      items: Map<string, { name: string; quantity: number; totalCents: number }>;
+      servers: Map<string, { name: string; totalCents: number; orders: number }>;
+      hourly: Map<number, number>;
+    }>();
+    const bucket = (venue: string) => {
+      let entry = venues.get(venue);
+      if (!entry) {
+        entry = { venue, totalCents: 0, tipCents: 0, covers: 0, orderCount: 0, openCount: 0, openOwingCents: 0, items: new Map(), servers: new Map(), hourly: new Map() };
+        venues.set(venue, entry);
+      }
+      return entry;
+    };
+    for (const order of paidOrders) {
+      const entry = bucket(order.venue);
+      entry.totalCents += order.totalCents;
+      entry.tipCents += order.tipCents;
+      entry.covers += order.covers ?? 0;
+      entry.orderCount += 1;
+      if (order.paidAt) {
+        const hour = sydneyHour(order.paidAt);
+        entry.hourly.set(hour, (entry.hourly.get(hour) ?? 0) + order.totalCents);
+      }
+      const server = order.openedByName ?? 'Unknown';
+      const serverEntry = entry.servers.get(server) ?? { name: server, totalCents: 0, orders: 0 };
+      serverEntry.totalCents += order.totalCents;
+      serverEntry.orders += 1;
+      entry.servers.set(server, serverEntry);
+      for (const line of order.lines) {
+        const item = entry.items.get(line.name) ?? { name: line.name, quantity: 0, totalCents: 0 };
+        item.quantity += line.quantity;
+        item.totalCents += line.totalCents;
+        entry.items.set(line.name, item);
+      }
+    }
+    for (const order of openOrders) {
+      const entry = bucket(order.venue);
+      entry.openCount += 1;
+      const paid = order.payments.reduce((sum, payment) => sum + payment.amountCents, 0);
+      entry.openOwingCents += Math.max(0, order.totalCents - paid);
+    }
+    return {
+      serviceDate: serviceDate.toISOString().slice(0, 10),
+      generatedAt: new Date().toISOString(),
+      venues: [...venues.values()]
+        .sort((a, b) => b.totalCents - a.totalCents)
+        .map((entry) => ({
+          venue: entry.venue,
+          totalCents: entry.totalCents,
+          tipCents: entry.tipCents,
+          covers: entry.covers,
+          orderCount: entry.orderCount,
+          avgPerCoverCents: entry.covers > 0 ? Math.round(entry.totalCents / entry.covers) : null,
+          openCount: entry.openCount,
+          openOwingCents: entry.openOwingCents,
+          topItems: [...entry.items.values()].sort((a, b) => b.totalCents - a.totalCents).slice(0, 5),
+          servers: [...entry.servers.values()].sort((a, b) => b.totalCents - a.totalCents),
+          hourly: [...entry.hourly.entries()].sort((a, b) => a[0] - b[0]).map(([hour, cents]) => ({ hour, cents }))
+        }))
+    };
+  },
+
   // Gift card balance check for the charge sheet. Mirrors redeem()'s gate
   // (status ACTIVE + not expired) rather than lookup()'s paid-online check —
   // counter-activated and comp cards have no Stripe payment but redeem fine.
