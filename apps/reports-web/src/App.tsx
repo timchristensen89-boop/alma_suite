@@ -70,6 +70,7 @@ import { Donut, HBars, TrendLine, CHART_COLORS } from './components/Charts';
 // most visits never open them.
 const StaffCostingReportPage = lazy(() => import('./pages/StaffCostingReportPage').then((m) => ({ default: m.StaffCostingReportPage })));
 const ForecastPage = lazy(() => import('./pages/ForecastPage').then((m) => ({ default: m.ForecastPage })));
+const RegisterAuditPage = lazy(() => import('./pages/RegisterAuditPage').then((m) => ({ default: m.RegisterAuditPage })));
 const SupplierSpendPage = lazy(() => import('./pages/SupplierSpendPage').then((m) => ({ default: m.SupplierSpendPage })));
 const ForecastModulePage = lazy(() => import('./pages/ForecastModulePage').then((m) => ({ default: m.ForecastModulePage })));
 const SalesEntryPage = lazy(() => import('./pages/SalesEntryPage').then((m) => ({ default: m.SalesEntryPage })));
@@ -218,6 +219,7 @@ type ReportSectionId =
   | 'marketing'
   | 'content'
   | 'gift-cards'
+  | 'register-audit'
   | 'exports';
 
 type ReportNavItem = {
@@ -364,6 +366,14 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Gift Cards',
     title: 'Gift Card Reports',
     description: 'Pending gift card orders, value, fulfilment, and payment readiness.',
+    icon: <DocumentIcon />,
+    group: 'more'
+  },
+  {
+    id: 'register-audit',
+    label: 'Register Audit',
+    title: 'Register Audit',
+    description: 'Every discount, comp, void, refund and wastage entry from the registers — who, what, and why.',
     icon: <DocumentIcon />,
     group: 'more'
   },
@@ -4649,6 +4659,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         return renderContentSection();
       case 'gift-cards':
         return renderGiftCardsSection();
+      case 'register-audit':
+        return <RegisterAuditPage />;
       case 'exports':
         return renderExportsSection();
       case 'overview':

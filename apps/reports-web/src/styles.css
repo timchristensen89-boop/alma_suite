@@ -2798,3 +2798,17 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
     min-width: 0;
   }
 }
+
+
+/* Register audit */
+.audit-venues { display: flex; gap: 8px; margin: 14px 0; }
+.audit-venues button { border: 1px solid rgba(31, 53, 36, 0.25); background: #fff; border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; color: var(--color-text); }
+.audit-venues button.is-on { border-color: var(--color-accent); color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, #fff); }
+.audit-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.audit-tile { background: var(--color-surface, #fff); border: 1px solid rgba(31, 53, 36, 0.1); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow-sm); }
+.audit-tile small { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-subtle); }
+.audit-tile strong { font-size: 19px; }
+.audit-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.audit-table th { text-align: left; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-subtle); padding: 6px 8px; border-bottom: 1px solid rgba(31, 53, 36, 0.12); }
+.audit-table td { padding: 7px 8px; border-bottom: 1px solid rgba(31, 53, 36, 0.06); }
+.report-panel h3 { margin: 0 0 8px; font-size: 14px; }

@@ -138,6 +138,20 @@ posRouter.get('/qr-tables', async (req, res, next) => {
   }
 });
 
+posRouter.get('/audit', async (req, res, next) => {
+  try {
+    res.json(
+      await posService.auditReport(
+        req.query.venue ? String(req.query.venue) : null,
+        req.query.from ? String(req.query.from) : null,
+        req.query.to ? String(req.query.to) : null
+      )
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.get('/live', async (_req, res, next) => {
   try {
     res.json(await posService.liveBoard());

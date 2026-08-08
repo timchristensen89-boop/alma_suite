@@ -1322,6 +1322,72 @@ export const posService = {
     });
   },
 
+  // Register audit for Reports: every discount/comp/price-change/wastage,
+  // void and refund in a date window, with who and why. Sydney-day bounds.
+  async auditReport(venue: string | null, fromKey: string | null, toKey: string | null) {
+    const dayRe = /^\d{4}-\d{2}-\d{2}$/;
+    if (!fromKey || !toKey || !dayRe.test(fromKey) || !dayRe.test(toKey)) {
+      throw new HttpError(400, 'from and to (YYYY-MM-DD) are required.');
+    }
+    const from = new Date(`${fromKey}T00:00:00+10:00`);
+    const to = new Date(`${toKey}T00:00:00+10:00`);
+    const venueWhere = venue ? { venue } : {};
+    const [adjustments, voids, refunds] = await Promise.all([
+      prisma.posAdjustment.findMany({
+        where: { ...venueWhere, createdAt: { gte: from, lt: to } },
+        orderBy: { createdAt: 'desc' },
+        take: 500
+      }),
+      prisma.posOrder.findMany({
+        where: { ...venueWhere, status: 'VOID', voidedAt: { gte: from, lt: to } },
+        orderBy: { voidedAt: 'desc' },
+        take: 200,
+        select: {
+          orderNumber: true,
+          venue: true,
+          tableLabel: true,
+          totalCents: true,
+          voidReason: true,
+          voidedAt: true,
+          openedByName: true,
+          lines: { select: { name: true, quantity: true }, take: 4 }
+        }
+      }),
+      prisma.posPayment.findMany({
+        where: { amountCents: { lt: 0 }, createdAt: { gte: from, lt: to }, order: venueWhere },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+        select: {
+          amountCents: true,
+          method: true,
+          createdAt: true,
+          order: { select: { orderNumber: true, venue: true, tableLabel: true } }
+        }
+      })
+    ]);
+    const totals = { discountCents: 0, compCents: 0, wastageCount: 0, priceChangeCount: 0 };
+    for (const adjustment of adjustments) {
+      if (adjustment.kind === 'DISCOUNT') totals.discountCents += adjustment.amountCents ?? 0;
+      else if (adjustment.kind === 'COMP') totals.compCents += adjustment.amountCents ?? 0;
+      else if (adjustment.kind === 'WASTAGE') totals.wastageCount += 1;
+      else if (adjustment.kind === 'PRICE_CHANGE') totals.priceChangeCount += 1;
+    }
+    return {
+      from: fromKey,
+      to: toKey,
+      venue,
+      totals: {
+        ...totals,
+        voidCount: voids.length,
+        voidCents: voids.reduce((sum, order) => sum + order.totalCents, 0),
+        refundCents: refunds.reduce((sum, payment) => sum - payment.amountCents, 0)
+      },
+      adjustments,
+      voids,
+      refunds
+    };
+  },
+
   // ── Per-operator homescreen ────────────────────────────────────────────
   async getHomescreen(userKey: string | null) {
     const defaults = { buttons: ['open-till', 'discount', 'comp', 'wastage', 'price'], pins: [] as unknown[], landingCategory: null as string | null };
