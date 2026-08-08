@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireStockManager } from '../lib/stock-permissions.js';
 import { itemsService } from '../services/items.service.js';
+import { unitAliasesService } from '../services/unit-aliases.service.js';
 
 export const itemsRouter = Router();
 
@@ -133,6 +134,43 @@ itemsRouter.patch('/categories/:id', async (req, res, next) => {
   try {
     requireStockManager(req.user);
     res.json(await itemsService.updateCategory(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Unit aliases (Stock → Setup → Units): spellings of the same unit, consulted
+// by every unit conversion. Reading is open to any stock user (the stocktake
+// screen loads them for live value estimates); writing is manager-gated in
+// the service.
+itemsRouter.get('/unit-aliases', async (_req, res, next) => {
+  try {
+    res.json(await unitAliasesService.list());
+  } catch (error) {
+    next(error);
+  }
+});
+
+itemsRouter.post('/unit-aliases', async (req, res, next) => {
+  try {
+    res.status(201).json(await unitAliasesService.create(req.user, req.body ?? {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+itemsRouter.patch('/unit-aliases/:id', async (req, res, next) => {
+  try {
+    res.json(await unitAliasesService.update(req.user, String(req.params.id), req.body ?? {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+itemsRouter.delete('/unit-aliases/:id', async (req, res, next) => {
+  try {
+    await unitAliasesService.remove(req.user, String(req.params.id));
+    res.status(204).end();
   } catch (error) {
     next(error);
   }

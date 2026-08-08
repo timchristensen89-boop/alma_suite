@@ -849,6 +849,11 @@ tbody tr.row-interactive {
     auto;
 }
 
+/* Unit-alias rows: alias, canonical, then save/delete. */
+.settings-category-row-units {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto auto;
+}
+
 .settings-category-count {
   display: inline-flex;
   align-items: center;

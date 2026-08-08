@@ -27,6 +27,19 @@ type StockCategoryDraft = {
   description: string;
 };
 
+type UnitAlias = {
+  id: string;
+  alias: string;
+  canonical: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type UnitAliasDraft = {
+  alias: string;
+  canonical: string;
+};
+
 type RecipeCategoryDraft = {
   name: string;
   kind: RecipeCategoryKind;
@@ -54,9 +67,15 @@ function recipeDraftFromCategory(category: RecipeCategory): RecipeCategoryDraft 
   };
 }
 
-export function SettingsPage({ section }: { section?: 'stock' | 'recipe' } = {}) {
+export function SettingsPage({ section }: { section?: 'stock' | 'recipe' | 'units' } = {}) {
   useDocumentTitle(
-    section === 'stock' ? 'Stock categories' : section === 'recipe' ? 'Recipe categories' : 'Setup'
+    section === 'stock'
+      ? 'Stock categories'
+      : section === 'recipe'
+        ? 'Recipe categories'
+        : section === 'units'
+          ? 'Units'
+          : 'Setup'
   );
   const { user } = useAuth();
   const canManage = canManageStock(user);
@@ -77,6 +96,10 @@ export function SettingsPage({ section }: { section?: 'stock' | 'recipe' } = {})
     description: ''
   });
 
+  const [unitAliases, setUnitAliases] = useState<UnitAlias[]>([]);
+  const [unitAliasDrafts, setUnitAliasDrafts] = useState<Record<string, UnitAliasDraft>>({});
+  const [newUnitAlias, setNewUnitAlias] = useState<UnitAliasDraft>({ alias: '', canonical: '' });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -87,9 +110,10 @@ export function SettingsPage({ section }: { section?: 'stock' | 'recipe' } = {})
   async function loadSettings() {
     setLoading(true);
     try {
-      const [itemsPayload, recipeCategoryPayload] = await Promise.all([
+      const [itemsPayload, recipeCategoryPayload, unitAliasPayload] = await Promise.all([
         api<StockItemsPayload>('/api/items/picker'),
-        api<RecipeCategory[]>('/api/recipes/categories')
+        api<RecipeCategory[]>('/api/recipes/categories'),
+        api<UnitAlias[]>('/api/items/unit-aliases')
       ]);
 
       const counts: Record<string, number> = {};
@@ -116,6 +140,13 @@ export function SettingsPage({ section }: { section?: 'stock' | 'recipe' } = {})
             category.id,
             recipeDraftFromCategory(category)
           ])
+        )
+      );
+
+      setUnitAliases(unitAliasPayload);
+      setUnitAliasDrafts(
+        Object.fromEntries(
+          unitAliasPayload.map((row) => [row.id, { alias: row.alias, canonical: row.canonical }])
         )
       );
       setError(null);
@@ -315,6 +346,121 @@ export function SettingsPage({ section }: { section?: 'stock' | 'recipe' } = {})
     }
   }
 
+  function sortUnitAliases(rows: UnitAlias[]): UnitAlias[] {
+    return [...rows].sort(
+      (a, b) => a.canonical.localeCompare(b.canonical) || a.alias.localeCompare(b.alias)
+    );
+  }
+
+  function updateUnitAliasDraft(id: string, patch: Partial<UnitAliasDraft>) {
+    setUnitAliasDrafts((current) => ({
+      ...current,
+      [id]: { ...(current[id] ?? { alias: '', canonical: '' }), ...patch }
+    }));
+  }
+
+  async function createUnitAlias() {
+    if (!canManage) {
+      setFeedbackTarget('unit:new');
+      setFeedbackMessage('Manager access is required to add unit aliases.');
+      setFeedbackTone('error');
+      return;
+    }
+    setSavingKey('unit:new');
+    setFeedbackTarget('unit:new');
+    setFeedbackMessage(null);
+    try {
+      const created = await api<UnitAlias>('/api/items/unit-aliases', {
+        method: 'POST',
+        body: JSON.stringify({
+          alias: newUnitAlias.alias.trim(),
+          canonical: newUnitAlias.canonical.trim()
+        })
+      });
+      setUnitAliases((current) => sortUnitAliases([...current, created]));
+      setUnitAliasDrafts((current) => ({
+        ...current,
+        [created.id]: { alias: created.alias, canonical: created.canonical }
+      }));
+      setNewUnitAlias({ alias: '', canonical: '' });
+      setError(null);
+      setFeedbackMessage('Unit alias added.');
+      setFeedbackTone('success');
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Could not add the unit alias';
+      setError(message);
+      setFeedbackMessage(message);
+      setFeedbackTone('error');
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function saveUnitAlias(row: UnitAlias) {
+    if (!canManage) {
+      setFeedbackTarget(`unit:${row.id}`);
+      setFeedbackMessage('Manager access is required to save unit aliases.');
+      setFeedbackTone('error');
+      return;
+    }
+    const draft = unitAliasDrafts[row.id] ?? { alias: row.alias, canonical: row.canonical };
+    setSavingKey(`unit:${row.id}`);
+    setFeedbackTarget(`unit:${row.id}`);
+    setFeedbackMessage(null);
+    try {
+      const saved = await api<UnitAlias>(`/api/items/unit-aliases/${row.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          alias: draft.alias.trim(),
+          canonical: draft.canonical.trim()
+        })
+      });
+      setUnitAliases((current) =>
+        sortUnitAliases(current.map((candidate) => (candidate.id === saved.id ? saved : candidate)))
+      );
+      setUnitAliasDrafts((current) => ({
+        ...current,
+        [saved.id]: { alias: saved.alias, canonical: saved.canonical }
+      }));
+      setError(null);
+      setFeedbackMessage('Unit alias saved.');
+      setFeedbackTone('success');
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Could not save the unit alias';
+      setError(message);
+      setFeedbackMessage(message);
+      setFeedbackTone('error');
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function deleteUnitAlias(row: UnitAlias) {
+    if (!canManage) {
+      setFeedbackTarget(`unit:${row.id}`);
+      setFeedbackMessage('Manager access is required to delete unit aliases.');
+      setFeedbackTone('error');
+      return;
+    }
+    setSavingKey(`unit:${row.id}`);
+    setFeedbackTarget(`unit:${row.id}`);
+    setFeedbackMessage(null);
+    try {
+      await api(`/api/items/unit-aliases/${row.id}`, { method: 'DELETE' });
+      setUnitAliases((current) => current.filter((candidate) => candidate.id !== row.id));
+      setError(null);
+      setFeedbackMessage(null);
+      setFeedbackTarget(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Could not delete the unit alias';
+      setError(message);
+      setFeedbackMessage(message);
+      setFeedbackTone('error');
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
   return (
     <div className="page-stack">
       {section === undefined ? (
@@ -331,6 +477,9 @@ export function SettingsPage({ section }: { section?: 'stock' | 'recipe' } = {})
             </Link>
             <Link className="btn btn-ghost btn-sm" to="/recipes/categories">
               Recipe categories →
+            </Link>
+            <Link className="btn btn-ghost btn-sm" to="/items/units">
+              Units &amp; aliases →
             </Link>
           </div>
         </Card>
@@ -601,6 +750,130 @@ export function SettingsPage({ section }: { section?: 'stock' | 'recipe' } = {})
                   </Button>
                   <ActionFeedback
                     message={feedbackTarget === `recipe:${category.id}` ? feedbackMessage : null}
+                    tone={feedbackTone}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </CollapsibleCard>
+      ) : null}
+
+      {section === 'units' ? (
+      <CollapsibleCard
+        title="Unit aliases"
+        description={
+          'Different spellings of the same unit — "KILO" means kg, "Unit" means each, "Btl" means bottle. ' +
+          'Stocktakes (including Loaded imports), invoices and recipes all read units through this list, so a ' +
+          'count in "KILO" values correctly against an item counted in kg. Pack sizes with a number, like ' +
+          '"700ml" or "750 mL" against an item counted in bottles, are recognised automatically — the quantity ' +
+          'counts the containers, so no alias is needed.'
+        }
+        badge={loading ? 'Loading' : `${unitAliases.length} aliases`}
+      >
+        {loading ? (
+          <Spinner label="Loading unit aliases" />
+        ) : unitAliases.length === 0 ? (
+          <EmptyState
+            icon={<IconItems size={24} />}
+            title="No unit aliases yet"
+            description="Add the first alias here — e.g. KILO means kg — and every stocktake and invoice will read it that way."
+          />
+        ) : null}
+
+        {!loading ? (
+          <div className="settings-category-stack">
+            <div className="settings-category-row settings-category-row-units settings-category-row-create">
+              <Input
+                id="new-unit-alias"
+                label="When a count says"
+                value={newUnitAlias.alias}
+                onChange={(event) => {
+                  const el = event.currentTarget;
+                  setNewUnitAlias((current) => ({ ...current, alias: el.value }));
+                }}
+                placeholder="e.g. KILO"
+              />
+              <Input
+                id="new-unit-alias-canonical"
+                label="It means"
+                value={newUnitAlias.canonical}
+                onChange={(event) => {
+                  const el = event.currentTarget;
+                  setNewUnitAlias((current) => ({ ...current, canonical: el.value }));
+                }}
+                placeholder="e.g. kg"
+              />
+              <span className="settings-category-count">New</span>
+              <Button
+                type="button"
+                onClick={() => void createUnitAlias()}
+                disabled={
+                  savingKey === 'unit:new' ||
+                  newUnitAlias.alias.trim().length < 1 ||
+                  newUnitAlias.canonical.trim().length < 1 ||
+                  !canManage
+                }
+                title={canManage ? undefined : 'Manager access required'}
+              >
+                {savingKey === 'unit:new' ? 'Adding...' : canManage ? 'Add' : 'Manager required'}
+              </Button>
+              <ActionFeedback
+                message={feedbackTarget === 'unit:new' ? feedbackMessage : null}
+                tone={feedbackTone}
+              />
+            </div>
+
+            {unitAliases.map((row) => {
+              const draft = unitAliasDrafts[row.id] ?? { alias: row.alias, canonical: row.canonical };
+              return (
+                <div key={row.id} className="settings-category-row settings-category-row-units">
+                  <Input
+                    id={`unit-alias-${row.id}`}
+                    label="When a count says"
+                    value={draft.alias}
+                    onChange={(event) =>
+                      updateUnitAliasDraft(row.id, { alias: event.currentTarget.value })
+                    }
+                  />
+                  <Input
+                    id={`unit-alias-canonical-${row.id}`}
+                    label="It means"
+                    value={draft.canonical}
+                    onChange={(event) =>
+                      updateUnitAliasDraft(row.id, { canonical: event.currentTarget.value })
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => void saveUnitAlias(row)}
+                    disabled={
+                      savingKey === `unit:${row.id}` ||
+                      draft.alias.trim().length < 1 ||
+                      draft.canonical.trim().length < 1 ||
+                      !canManage
+                    }
+                    title={canManage ? undefined : 'Manager access required'}
+                  >
+                    {savingKey === `unit:${row.id}`
+                      ? 'Saving...'
+                      : canManage
+                        ? 'Save'
+                        : 'Manager required'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => void deleteUnitAlias(row)}
+                    disabled={savingKey === `unit:${row.id}` || !canManage}
+                    title={canManage ? undefined : 'Manager access required'}
+                  >
+                    Delete
+                  </Button>
+                  <ActionFeedback
+                    message={feedbackTarget === `unit:${row.id}` ? feedbackMessage : null}
                     tone={feedbackTone}
                   />
                 </div>

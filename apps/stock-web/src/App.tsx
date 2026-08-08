@@ -59,7 +59,8 @@ const ITEMS_TABS: HubTab[] = [
   { to: '/items', label: 'Catalogue', end: true },
   { to: '/reorder', label: 'Below par' },
   { to: '/items/health', label: 'Costing health' },
-  { to: '/items/categories', label: 'Categories' }
+  { to: '/items/categories', label: 'Categories' },
+  { to: '/items/units', label: 'Units' }
 ];
 const STOCK_COUNT_TABS: HubTab[] = [
   { to: '/stocktake', label: 'Count' },
@@ -313,6 +314,7 @@ function StockAppShell() {
         <Route path="/items/health" element={<HubLayout tabs={ITEMS_TABS}><ConfigHealthPage /></HubLayout>} />
         <Route path="/reorder" element={<HubLayout tabs={ITEMS_TABS}><ReorderNoticesPage /></HubLayout>} />
         <Route path="/items/categories" element={<HubLayout tabs={ITEMS_TABS}><SettingsPage section="stock" /></HubLayout>} />
+        <Route path="/items/units" element={<HubLayout tabs={ITEMS_TABS}><SettingsPage section="units" /></HubLayout>} />
 
         {/* Stock count hub */}
         <Route path="/stocktake" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakePage /></HubLayout>} />

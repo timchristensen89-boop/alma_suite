@@ -15,6 +15,7 @@ import { operationsRouter } from './routes/operations.js';
 import { purchaseOrdersRouter } from './routes/purchase-orders.js';
 import { stocktakeTemplatesRouter } from './routes/stocktake-templates.js';
 import { recipesRouter } from './routes/recipes.js';
+import { scheduleUnitAliasRefresh } from './services/unit-aliases.service.js';
 import { stocktakeRouter } from './routes/stocktake.js';
 import { suppliersRouter } from './routes/suppliers.js';
 import { transfersRouter } from './routes/transfers.js';
@@ -68,6 +69,10 @@ app.use('/stock-api/api/uploads', uploadsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
+
+// Load the editable unit-alias table into the shared unit registry so every
+// conversion (stocktake valuation, recipe costing) reads units through it.
+scheduleUnitAliasRefresh();
 
 app.listen(env.port, env.host, () => {
   console.log(`Stock API listening on http://${env.host}:${env.port}`);
