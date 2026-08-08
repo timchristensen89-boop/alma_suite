@@ -29,6 +29,7 @@ type FormState =
   | { mode: 'edit'; recipe: RecipeWithLines };
 
 type RecipeLineDraft = {
+  perGuests: string;
   ingredientName: string;
   quantity: string;
   unit: string;
@@ -1119,7 +1120,7 @@ function emptyRecipeDraft(): RecipeDraft {
     status: 'ACTIVE',
     estimatedCost: '0',
     notes: '',
-    lines: [{ ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', itemId: '', subRecipeId: '' }],
+    lines: [{ ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', perGuests: '', itemId: '', subRecipeId: '' }],
     venuePrices: []
   };
 }
@@ -1158,6 +1159,7 @@ function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
       unit: line.unit ?? '',
       cost: line.cost === null ? '' : String(line.cost),
       wastePercent: line.wastePercent === null ? '' : String(line.wastePercent),
+      perGuests: line.perGuests === null ? '' : String(line.perGuests),
       itemId: line.itemId ?? '',
       subRecipeId: line.subRecipeId ?? ''
     }))
@@ -1276,6 +1278,7 @@ function RecipeForm({
         unit: line.unit.trim(),
         cost: line.cost === '' ? undefined : Number(line.cost),
         wastePercent: line.wastePercent === '' ? undefined : Number(line.wastePercent),
+        perGuests: line.perGuests === '' ? undefined : Number(line.perGuests),
         itemId: line.itemId,
         subRecipeId: line.subRecipeId
       }));
@@ -1467,7 +1470,7 @@ function RecipeForm({
           type="button"
           variant="secondary"
           size="sm"
-          onClick={() => update('lines', [...draft.lines, { ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', itemId: '', subRecipeId: '' }])}
+          onClick={() => update('lines', [...draft.lines, { ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', perGuests: '', itemId: '', subRecipeId: '' }])}
         >
           Add line
         </Button>
