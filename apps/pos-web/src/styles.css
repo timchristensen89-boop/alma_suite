@@ -407,3 +407,42 @@ input, select { font: inherit; }
 .live-item b { color: #e8ebee; }
 .live-servers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .live-server { font-size: 11px; font-weight: 700; background: #22272d; border: 1px solid #2c323a; border-radius: 999px; padding: 4px 10px; color: #c6cbd1; }
+
+
+/* ── Guest QR ordering ── */
+.qr-shell { min-height: 100vh; background: #faf8f3; color: #1f3524; padding-bottom: 180px; font-family: 'Manrope', system-ui, sans-serif; }
+.qr-header { display: flex; align-items: baseline; gap: 10px; padding: 16px; border-bottom: 2px solid #1f3524; position: sticky; top: 0; background: #faf8f3; z-index: 5; }
+.qr-header strong { font-size: 20px; letter-spacing: 0.14em; }
+.qr-header span { color: #5c6f60; font-size: 13px; font-weight: 600; }
+.qr-error { background: #a0463a; color: #fff; padding: 10px 16px; font-size: 13px; font-weight: 600; }
+.qr-muted { color: #5c6f60; }
+.qr-cat { border-bottom: 1px solid rgba(31, 53, 36, 0.12); }
+.qr-cat-head { display: flex; justify-content: space-between; width: 100%; background: none; border: 0; padding: 14px 16px; font-size: 15px; font-weight: 800; color: #1f3524; cursor: pointer; }
+.qr-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; }
+.qr-item-name { display: flex; flex-direction: column; font-size: 14px; font-weight: 600; }
+.qr-item-name small { color: #5c6f60; font-weight: 700; margin-top: 2px; }
+.qr-add { background: #1f3524; color: #faf8f3; border: 0; border-radius: 999px; padding: 8px 18px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.qr-stepper { display: inline-flex; align-items: center; gap: 12px; }
+.qr-stepper button { width: 34px; height: 34px; border-radius: 50%; border: 2px solid #1f3524; background: none; font-size: 17px; font-weight: 800; color: #1f3524; cursor: pointer; }
+.qr-stepper b { min-width: 18px; text-align: center; font-size: 15px; }
+.qr-cart { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 2px solid #1f3524; padding: 12px 16px calc(14px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 8px; }
+.qr-cart input { border: 1px solid rgba(31, 53, 36, 0.25); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.qr-submit { background: #1f3524; color: #faf8f3; border: 0; border-radius: 12px; padding: 14px; font-size: 15px; font-weight: 800; cursor: pointer; }
+.qr-submit:disabled { opacity: 0.6; }
+.qr-done { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 24px; gap: 10px; }
+.qr-done h1 { font-size: 24px; margin: 0; }
+
+/* ── Staff QR sheet ── */
+.qrs-shell { min-height: 100vh; background: #faf8f3; color: #1f3524; }
+.qrs-header { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid rgba(31, 53, 36, 0.15); }
+.qrs-header select, .qrs-header button { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(31, 53, 36, 0.3); background: #fff; cursor: pointer; }
+.qrs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; padding: 16px; }
+.qrs-card { background: #fff; border: 1.5px dashed rgba(31, 53, 36, 0.4); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.qrs-card strong { font-size: 11px; letter-spacing: 0.12em; color: #5c6f60; }
+.qrs-card img { width: 170px; height: 170px; }
+.qrs-card h3 { margin: 0; font-size: 18px; }
+.qrs-card small { color: #5c6f60; font-weight: 700; letter-spacing: 0.06em; }
+@media print {
+  .qrs-header { display: none; }
+  .qrs-shell { background: #fff; }
+}

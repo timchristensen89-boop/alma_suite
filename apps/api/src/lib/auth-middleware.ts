@@ -40,6 +40,9 @@ const PUBLIC_PATHS = new Set<string>([
 ]);
 
 const PUBLIC_PREFIXES = [
+  // Guest QR table ordering — anonymous by design; the signed table token in
+  // the query/body is the auth, and the service throttles per IP.
+  '/api/qr/',
   '/api/gift-cards/session/',
   '/api/gift-cards/print/',
   '/api/gift-cards/qr/',

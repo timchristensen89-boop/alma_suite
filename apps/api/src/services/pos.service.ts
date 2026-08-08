@@ -1018,14 +1018,22 @@ export const posService = {
   // grouped per profile (course-ordered) and stamps the lines as sent. The
   // register prints each docket (browser/AirPrint now; ePOS network printers
   // when profiles carry an IP).
+  // QR orders append while a waiter may still be building held lines — expose
+  // the recompute so appended lines flow into totals without a full setLines.
+  async recomputeOrderTotals(id: string) {
+    await recomputeOrder(id);
+  },
+
   async sendOrder(id: string, input?: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const fireCourses = Array.isArray(body.courses) ? (body.courses as unknown[]).map(String) : null;
+    const onlyLineIds = Array.isArray(body.lineIds) ? new Set((body.lineIds as unknown[]).map(String)) : null;
     const order = await prisma.posOrder.findUnique({
       where: { id },
       include: { lines: { where: { sentAt: null }, orderBy: { createdAt: 'asc' } } }
     });
     if (!order) throw new HttpError(404, 'Order not found.');
+    if (onlyLineIds) order.lines = order.lines.filter((line) => onlyLineIds.has(line.id));
     if (fireCourses) order.lines = order.lines.filter((line) => fireCourses.includes(line.course ?? 'Mains'));
     if (order.lines.length === 0) return { dockets: [], sent: 0 };
     const [profiles, courses, recipeRows] = await Promise.all([

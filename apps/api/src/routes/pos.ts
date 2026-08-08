@@ -129,6 +129,15 @@ posRouter.get('/tables', async (req, res, next) => {
   }
 });
 
+posRouter.get('/qr-tables', async (req, res, next) => {
+  try {
+    const { qrOrderService } = await import('../services/qr-order.service.js');
+    res.json(await qrOrderService.tableTokens(req.query.venue ? String(req.query.venue) : null));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.get('/live', async (_req, res, next) => {
   try {
     res.json(await posService.liveBoard());
