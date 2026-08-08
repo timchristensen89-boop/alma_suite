@@ -236,10 +236,58 @@ export function App() {
   const [deviceLanding, setDeviceLanding] = useState(() => localStorage.getItem('alma.pos.deviceLanding') ?? '');
   // Phone layout: the bill lives in a bottom sheet behind a summary bar.
   const [cartOpen, setCartOpen] = useState(false);
+  // Home board inline editing: drag to reorder, tap to recolour, ✕ removes.
+  const [boardEdit, setBoardEdit] = useState(false);
+  const dragPinIndex = useRef<number | null>(null);
+  const dragMoved = useRef(false);
+
+  // Drag runs on document-level NATIVE listeners registered at drag start —
+  // React's synthetic move events are unreliable under pointer capture.
+  function boardPinPointerDown(event: React.PointerEvent, index: number) {
+    if (!boardEdit) return;
+    event.preventDefault();
+    dragPinIndex.current = index;
+    dragMoved.current = false;
+    const onMove = (nativeEvent: PointerEvent) => {
+      if (dragPinIndex.current === null) return;
+      const target = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY)?.closest('[data-pin-index]');
+      if (!target) return;
+      const over = Number(target.getAttribute('data-pin-index'));
+      if (Number.isNaN(over) || over === dragPinIndex.current) return;
+      dragMoved.current = true;
+      setHome((current) => {
+        const pins = [...current.pins];
+        const [moved] = pins.splice(dragPinIndex.current!, 1);
+        pins.splice(over, 0, moved!);
+        return { ...current, pins };
+      });
+      dragPinIndex.current = over;
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      if (dragPinIndex.current !== null && dragMoved.current) saveBoard(homeRef.current);
+      dragPinIndex.current = null;
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  }
+
+  function saveBoard(next?: typeof home) {
+    const board = next ?? homeRef.current;
+    void api('/api/pos/homescreen', {
+      method: 'PUT',
+      body: JSON.stringify({ userKey, buttons: board.buttons, pins: board.pins, landingCategory: board.landingCategory ?? '', updatedBy: operatorName })
+    }).catch((err) => setError(messageForError(err, 'Could not save the board.')));
+  }
   const [dockets, setDockets] = useState<Docket[] | null>(null);
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
   const [home, setHome] = useState<{ buttons: string[]; pins: Pin[]; landingCategory?: string | null }>({ buttons: [], pins: [] });
+  const homeRef = useRef(home);
+  homeRef.current = home;
   const [eightySix, setEightySix] = useState<Set<string>>(new Set());
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
   const [mode86, setMode86] = useState(false);
@@ -1264,15 +1312,38 @@ export function App() {
                   );
                 })}
                 {home.pins.map((pin, index) => {
+                  const editProps = boardEdit
+                    ? { onPointerDown: (event: React.PointerEvent) => boardPinPointerDown(event, index) }
+                    : {};
+                  const cycleColour = () => {
+                    if (dragMoved.current) {
+                      dragMoved.current = false;
+                      return;
+                    }
+                    const at = BRIGHT_PALETTE.indexOf(pin.c ?? '');
+                    const next = BRIGHT_PALETTE[(at + 1) % BRIGHT_PALETTE.length];
+                    const board = { ...home, pins: home.pins.map((candidate, i) => (i === index ? { ...candidate, c: next || undefined } : candidate)) };
+                    setHome(board);
+                    saveBoard(board);
+                  };
+                  const removePin = (event: React.MouseEvent) => {
+                    event.stopPropagation();
+                    const board = { ...home, pins: home.pins.filter((_, i) => i !== index) };
+                    setHome(board);
+                    saveBoard(board);
+                  };
                   if (pin.t === 'f') {
                     return (
                       <button
                         key={`f-${index}`}
                         type="button"
-                        className="pos-item pos-item-pin"
+                        data-pin-index={index}
+                        className={`pos-item pos-item-pin ${boardEdit ? 'is-editing' : ''}`}
                         style={pin.c ? { borderColor: pin.c, background: `${pin.c}26` } : undefined}
-                        onClick={() => setOpenFolder(pin)}
+                        {...editProps}
+                        onClick={() => (boardEdit ? cycleColour() : setActiveCategory(`__folder__${index}`))}
                       >
+                        {boardEdit ? <i className="pos-pin-x" onClick={removePin}>✕</i> : null}
                         <span>📁 {pin.name}</span>
                         <small>{pin.items.length} items</small>
                       </button>
@@ -1284,20 +1355,71 @@ export function App() {
                     <button
                       key={pin.id}
                       type="button"
-                      className={`pos-item pos-item-pin ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                      data-pin-index={index}
+                      className={`pos-item pos-item-pin ${boardEdit ? 'is-editing' : ''} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
                       style={pin.c ? { borderColor: pin.c, background: `${pin.c}26` } : undefined}
-                      disabled={busy}
-                      onClick={() => addItem(item)}
+                      disabled={busy && !boardEdit}
+                      {...editProps}
+                      onClick={() => (boardEdit ? cycleColour() : addItem(item))}
                     >
+                      {boardEdit ? <i className="pos-pin-x" onClick={removePin}>✕</i> : null}
                       <span>{item.title}</span>
                       <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
                     </button>
                   );
                 })}
-                <button type="button" className="pos-item pos-item-edit" onClick={() => setCustomise(true)}>
-                  <span>✎ Edit this page</span>
-                  <small>pins · colours · folders</small>
+                {boardEdit ? (
+                  <>
+                    <button type="button" className="pos-item pos-item-edit" onClick={() => setCustomise(true)}>
+                      <span>＋ Add pins &amp; folders</span>
+                      <small>search the menu</small>
+                    </button>
+                    <button
+                      type="button"
+                      className="pos-item pos-item-edit is-done"
+                      onClick={() => {
+                        setBoardEdit(false);
+                        saveBoard();
+                      }}
+                    >
+                      <span>✓ Done</span>
+                      <small>save layout</small>
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className="pos-item pos-item-edit" onClick={() => setBoardEdit(true)}>
+                    <span>✎ Edit this page</span>
+                    <small>drag · colour · remove</small>
+                  </button>
+                )}
+              </div>
+            ) : !search && activeCategory.startsWith('__folder__') ? (
+              <div className="pos-grid pos-grid-home">
+                <button type="button" className="pos-item pos-item-edit" onClick={() => setActiveCategory(HOME_TAB)}>
+                  <span>← Back</span>
+                  <small>home</small>
                 </button>
+                {(() => {
+                  const pin = home.pins[Number(activeCategory.slice('__folder__'.length))];
+                  if (!pin || pin.t !== 'f') return null;
+                  return pin.items.map((recipeId) => {
+                    const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === recipeId);
+                    if (!item) return null;
+                    return (
+                      <button
+                        key={recipeId}
+                        type="button"
+                        className={`pos-item pos-item-pin ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                        style={pin.c ? { borderColor: pin.c, background: `${pin.c}26` } : undefined}
+                        disabled={busy}
+                        onClick={() => addItem(item)}
+                      >
+                        <span>{item.title}</span>
+                        <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
+                      </button>
+                    );
+                  });
+                })()}
               </div>
             ) : (
               <div className="pos-grid">
@@ -1544,7 +1666,17 @@ export function App() {
                 <input
                   className="pos-tender"
                   inputMode="decimal"
-                  placeholder="Or custom amount"
+                  placeholder="Or split by % (e.g. 30)"
+                  onChange={(event) => {
+                    const pct = Number(event.currentTarget.value || '0');
+                    const cents = pct > 0 && pct <= 100 ? Math.ceil((balance * pct) / 100) : 0;
+                    setCharge({ ...charge, amountCents: cents > 0 ? Math.min(cents, balance) : null });
+                  }}
+                />
+                <input
+                  className="pos-tender"
+                  inputMode="decimal"
+                  placeholder="Or custom $ amount"
                   value={charge.amountCents === null ? '' : String(charge.amountCents / 100)}
                   onChange={(event) => {
                     const cents = Math.round(Number(event.currentTarget.value || '0') * 100);
@@ -2452,6 +2584,13 @@ export function App() {
                 </button>
               ))}
             </div>
+            <input
+              className="pos-tender"
+              inputMode="decimal"
+              placeholder="Or custom %"
+              value={discounting.mode === 'percent' && !['5', '10', '20'].includes(discounting.value) ? discounting.value : ''}
+              onChange={(event) => setDiscounting({ ...discounting, mode: 'percent', value: event.currentTarget.value })}
+            />
             <input
               className="pos-tender"
               inputMode="decimal"
