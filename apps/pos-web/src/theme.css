@@ -307,3 +307,59 @@ body.pos-v2 .pos-cart-foot { border: 1px solid var(--pos-border-soft); border-to
 /* fish empty state */
 .pos-cart-empty { text-align: center; padding: 26px 12px 8px; }
 .pos-fish-empty { width: 110px; opacity: 0.3; display: block; margin: 0 auto 10px; }
+
+
+/* ── Button contrast: a button never matches its background exactly ── */
+:root { --pos-btn: rgba(31, 53, 36, 0.045); --pos-btn-strong: rgba(31, 53, 36, 0.09); }
+body.pos-dark { --pos-btn: rgba(248, 246, 241, 0.05); --pos-btn-strong: rgba(248, 246, 241, 0.1); }
+.pos-ghost, .pos-tabs button, .pos-item-mgmt, .pos-choice-row button, .pos-reason-list button,
+.pos-course-pick button, .pos-theme-btn, .pos-staff-chip, .office-tabs button, .office-add,
+.pos-home-actions .pos-home-quick, .qr-tips button, .office-days button {
+  background: var(--pos-btn);
+}
+.pos-ghost:hover, .pos-tabs button:hover, .pos-choice-row button:hover, .pos-reason-list button:hover,
+.pos-theme-btn:hover, .office-tabs button:hover, .pos-home-actions .pos-home-quick:hover {
+  background: var(--pos-btn-strong);
+}
+.pos-tabs button.is-active, .pos-choice-row button.is-on, .pos-reason-list button.is-on,
+.office-tabs button.is-active, .office-days button.is-on { background: var(--pos-accent-bg); }
+.pos-ghost-active { background: var(--pos-accent-bg); }
+.pos-rail-item { background: rgba(255, 255, 255, 0.04); }
+.pos-rail-item:hover { background: rgba(255, 255, 255, 0.08); }
+.pos-rail-item.is-on { background: rgba(255, 255, 255, 0.12); }
+
+/* ── v2 rail on phones: rail folds away, tab pills return ── */
+@media (max-width: 700px) {
+  .pos-rail { display: none; }
+  body.pos-v2 .pos-tabs { display: flex; }
+  body.pos-v2 .pos-cart { padding: 0; }
+  body.pos-v2 .pos-cart-lines { border-radius: 16px 16px 0 0; }
+}
+
+
+/* ── ALMA Live in the paper design ── */
+.live-shell { background: var(--pos-bg); color: var(--pos-text); font-family: var(--font-sans); }
+.live-header { background: var(--pos-bg); border-bottom: 1px solid var(--pos-border-soft); }
+.live-header strong { font-family: var(--font-display); font-weight: 500; font-size: 22px; letter-spacing: 0; text-transform: lowercase; color: var(--pos-text); }
+.live-date { color: var(--pos-text3); }
+.live-grand { color: var(--pos-text); font-weight: 900; }
+.live-grand small { color: var(--pos-text3); }
+.live-error { background: #9a3a2e; color: #fff; border-radius: 9999px; margin: 10px 12px 0; }
+.live-empty { color: var(--pos-text3); }
+.live-venue { background: var(--pos-card); border: 1px solid var(--pos-border-soft); border-radius: 20px; box-shadow: 0 1px 2px rgba(31, 53, 36, 0.04), 0 4px 14px rgba(31, 53, 36, 0.05); }
+.live-venue-head h2 { font-family: var(--font-display); font-weight: 500; font-size: 21px; color: var(--pos-text); }
+.live-total { color: var(--pos-text); }
+.live-stats { color: var(--pos-text3); }
+.live-stats b { color: var(--pos-text); }
+.live-open { color: #b5772f; }
+.live-open b { color: #b5772f; }
+.live-hour-bar { background: linear-gradient(180deg, #4f6b47, #3f5738); }
+body.pos-dark .live-hour-bar { background: linear-gradient(180deg, #bcd3a8, #4f6b47); }
+.live-hour small { color: var(--pos-text3); }
+.live-items { border-top: 1px dashed var(--pos-border-soft); }
+.live-item { color: var(--pos-text2); }
+.live-item b { color: var(--pos-text); }
+.live-server { background: var(--pos-btn); border: 1px solid var(--pos-border-soft); color: var(--pos-text2); }
+
+.office-editor { border: 1.5px solid var(--pos-accent); margin-top: 12px; }
+.office-save { background: var(--pos-accent-bg); color: var(--pos-accent-fg); border: 0; border-radius: 9999px; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; padding: 10px 20px; cursor: pointer; font-family: inherit; }

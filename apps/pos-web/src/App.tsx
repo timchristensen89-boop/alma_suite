@@ -309,10 +309,13 @@ export function App() {
       if (Number.isNaN(over) || over === dragPinIndex.current) return;
       dragMoved.current = true;
       setHome((current) => {
-        if (dragPinIndex.current === null || dragPinIndex.current >= current.pins.length) return current;
+        const from = dragPinIndex.current;
+        if (from === null || from >= current.pins.length || over >= current.pins.length) return current;
+        // SWAP places — the dragged tile and the one under it trade spots.
         const pins = [...current.pins];
-        const [moved] = pins.splice(dragPinIndex.current, 1);
-        pins.splice(Math.min(over, pins.length), 0, moved!);
+        const held = pins[from]!;
+        pins[from] = pins[over]!;
+        pins[over] = held;
         return { ...current, pins };
       });
       dragPinIndex.current = over;
@@ -1444,6 +1447,38 @@ export function App() {
             >
               Send
             </button>
+            <button
+              type="button"
+              className="pos-ghost"
+              disabled={order.lines.length === 0}
+              title="Print the full order docket — nothing is fired; call courses away when ready"
+              onClick={() => {
+                const sorted = [...order.lines].sort(
+                  (a, b) => courses.indexOf(a.course ?? 'NOW') - courses.indexOf(b.course ?? 'NOW')
+                );
+                setDockets([
+                  {
+                    profile: 'Full order',
+                    printerIp: null,
+                    tableLabel: order.tableLabel,
+                    orderNumber: order.orderNumber,
+                    covers: order.covers,
+                    openedByName: operatorName,
+                    lines: sorted.map((line) => ({
+                      id: line.id ?? line.recipeId ?? line.name,
+                      name: line.name,
+                      quantity: line.quantity,
+                      course: line.course ?? 'NOW',
+                      seat: line.seat ?? null,
+                      modifiers: (line.modifiers as Array<{ name: string; priceCents: number }> | null) ?? [],
+                      notes: line.notes ?? null
+                    }))
+                  } as Docket
+                ]);
+              }}
+            >
+              Print
+            </button>
             <button type="button" className="pos-ghost" disabled={order.lines.length === 0} onClick={() => setBill(order)}>
               Bill
             </button>
@@ -1914,6 +1949,14 @@ export function App() {
                     <button type="button" className="pos-item pos-item-edit" onClick={() => setCustomise(true)}>
                       <span>＋ Add pins</span>
                       <small>search the menu</small>
+                    </button>
+                    <button
+                      type="button"
+                      className="pos-item pos-item-edit"
+                      onClick={() => setDesign(design === 'rail' ? 'classic' : 'rail')}
+                    >
+                      <span>⇄ Switch design</span>
+                      <small>{design === 'rail' ? 'to classic tiles' : 'to sidebar list'}</small>
                     </button>
                     <button
                       type="button"

@@ -29,6 +29,10 @@ export function Live() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    document.body.classList.toggle('pos-dark', localStorage.getItem('alma.pos.theme') === 'dark');
+  }, []);
+
+  useEffect(() => {
     let alive = true;
     const refresh = () =>
       api<Board>('/api/pos/live')

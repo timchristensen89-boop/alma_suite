@@ -20,6 +20,14 @@ export function Office() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [groups, setGroups] = useState<ModGroup[]>([]);
   const [identities, setIdentities] = useState<Identity[]>([]);
+  const [editGroup, setEditGroup] = useState<null | {
+    id?: string;
+    name: string;
+    required: boolean;
+    maxSelect: number;
+    categoriesCsv: string;
+    options: Array<{ name: string; price: string }>;
+  }>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
@@ -156,6 +164,23 @@ export function Office() {
                   </span>
                   <button
                     type="button"
+                    className="office-add"
+                    style={{ marginLeft: 'auto' }}
+                    onClick={() =>
+                      setEditGroup({
+                        id: group.id,
+                        name: group.name,
+                        required: group.required,
+                        maxSelect: group.maxSelect,
+                        categoriesCsv: group.categories.join(', '),
+                        options: group.options.map((option) => ({ name: option.name, price: option.priceCents ? (option.priceCents / 100).toFixed(2) : '' }))
+                      })
+                    }
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
                     className="office-delete"
                     onClick={() => {
                       void api(`/api/pos/modifier-groups/${group.id}`, { method: 'DELETE' })
@@ -174,9 +199,105 @@ export function Office() {
                 </div>
               </div>
             ))}
-            <p className="office-hint" style={{ marginTop: 10 }}>
-              Add or reshape groups from the register's ⚙ sheet, or ask Claude to build them — full editing lands here next.
-            </p>
+            <button
+              type="button"
+              className="office-add"
+              onClick={() => setEditGroup({ name: 'New group', required: false, maxSelect: 3, categoriesCsv: '', options: [{ name: '', price: '' }] })}
+            >
+              ＋ New modifier group
+            </button>
+
+            {editGroup ? (
+              <div className="office-card office-card-col office-editor">
+                <div className="office-row">
+                  <input
+                    className="office-input office-input-name"
+                    value={editGroup.name}
+                    placeholder="Group name (e.g. Taco mods)"
+                    onChange={(event) => setEditGroup({ ...editGroup, name: event.currentTarget.value })}
+                  />
+                  <label className="office-toggle">
+                    <input type="checkbox" checked={editGroup.required} onChange={(event) => setEditGroup({ ...editGroup, required: event.currentTarget.checked })} />
+                    Required
+                  </label>
+                  <label className="office-toggle">
+                    up to
+                    <input
+                      className="office-input"
+                      style={{ width: 48 }}
+                      inputMode="numeric"
+                      value={String(editGroup.maxSelect)}
+                      onChange={(event) => setEditGroup({ ...editGroup, maxSelect: Math.max(1, Number(event.currentTarget.value) || 1) })}
+                    />
+                    choices
+                  </label>
+                </div>
+                <input
+                  className="office-input office-input-wide"
+                  value={editGroup.categoriesCsv}
+                  placeholder="Categories it applies to (csv, e.g. Tacos, Burritos)"
+                  onChange={(event) => setEditGroup({ ...editGroup, categoriesCsv: event.currentTarget.value })}
+                />
+                {editGroup.options.map((option, index) => (
+                  <div key={index} className="office-row">
+                    <input
+                      className="office-input office-input-wide"
+                      value={option.name}
+                      placeholder="Option (e.g. Extra cheese)"
+                      onChange={(event) =>
+                        setEditGroup({ ...editGroup, options: editGroup.options.map((candidate, i) => (i === index ? { ...candidate, name: event.currentTarget.value } : candidate)) })
+                      }
+                    />
+                    <input
+                      className="office-input"
+                      style={{ width: 90 }}
+                      inputMode="decimal"
+                      value={option.price}
+                      placeholder="+$"
+                      onChange={(event) =>
+                        setEditGroup({ ...editGroup, options: editGroup.options.map((candidate, i) => (i === index ? { ...candidate, price: event.currentTarget.value } : candidate)) })
+                      }
+                    />
+                    <button type="button" className="office-delete" onClick={() => setEditGroup({ ...editGroup, options: editGroup.options.filter((_, i) => i !== index) })}>
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <div className="office-row">
+                  <button type="button" className="office-add" onClick={() => setEditGroup({ ...editGroup, options: [...editGroup.options, { name: '', price: '' }] })}>
+                    ＋ Option
+                  </button>
+                  <button
+                    type="button"
+                    className="office-save"
+                    onClick={() => {
+                      void api('/api/pos/modifier-groups', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          id: editGroup.id,
+                          name: editGroup.name,
+                          required: editGroup.required,
+                          maxSelect: editGroup.maxSelect,
+                          categoriesCsv: editGroup.categoriesCsv,
+                          options: editGroup.options.filter((option) => option.name.trim()).map((option) => ({ name: option.name.trim(), priceCents: Math.round(Number(option.price || '0') * 100) }))
+                        })
+                      })
+                        .then(() => {
+                          setInfo('Modifier group saved.');
+                          setEditGroup(null);
+                          void refresh();
+                        })
+                        .catch((err) => setError(messageForError(err, 'Could not save the group.')));
+                    }}
+                  >
+                    Save group
+                  </button>
+                  <button type="button" className="office-add" onClick={() => setEditGroup(null)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
         ) : null}
 

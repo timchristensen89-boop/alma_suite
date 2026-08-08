@@ -312,6 +312,7 @@ const ORDER_INCLUDE = {
 };
 
 type LineInput = {
+  id?: string | null;
   recipeId?: string | null;
   name: string;
   unitPriceCents: number;
@@ -329,6 +330,7 @@ function parseLines(raw: unknown): LineInput[] {
     const name = str(row.name);
     if (!name) throw new HttpError(400, `Line ${index + 1}: name is required.`);
     return {
+      id: str(row.id) || null,
       recipeId: str(row.recipeId) || null,
       name: name.slice(0, 120),
       unitPriceCents: asInt(row.unitPriceCents, `Line ${index + 1} price`, { min: 0, max: 1_000_000 }),
@@ -772,6 +774,15 @@ export const posService = {
     if (!order) throw new HttpError(404, 'Order not found.');
     if (order.status !== 'OPEN') throw new HttpError(400, `Order is ${order.status} — start a new sale.`);
 
+    // A call-away is NEVER reverted by an edit: lines that already exist
+    // (matched by id) keep their fired stamp; only genuinely new lines are
+    // unsent. Without this, every save wiped sentAt and refires re-sent the
+    // whole course to the kitchen.
+    const existingLines = await prisma.posOrderLine.findMany({
+      where: { orderId: id },
+      select: { id: true, sentAt: true }
+    });
+    const sentById = new Map(existingLines.map((line) => [line.id, line.sentAt]));
     await prisma.$transaction([
       prisma.posOrderLine.deleteMany({ where: { orderId: id } }),
       prisma.posOrderLine.createMany({
@@ -785,7 +796,8 @@ export const posService = {
           course: line.course,
           seat: line.seat,
           modifiers: (line.modifiers ?? undefined) as object[] | undefined,
-          notes: line.notes
+          notes: line.notes,
+          sentAt: line.id ? sentById.get(line.id) ?? null : null
         }))
       })
     ]);
