@@ -169,6 +169,18 @@ export function App() {
   const [tendered, setTendered] = useState('');
   const [receipt, setReceipt] = useState<Order | null>(null);
   const [day, setDay] = useState<DaySummary | null>(null);
+  const [tillFlag, setTillFlag] = useState<boolean | null>(null);
+  const [shift, setShift] = useState<null | {
+    staffName: string;
+    orderCount: number;
+    itemCount: number;
+    totalCents: number;
+    tipCents: number;
+    methods: Record<string, { count: number; amountCents: number; tipCents: number }>;
+    adjustments: Array<{ kind: string; reason: string; itemName: string | null; amountCents: number }>;
+  }>(null);
+  const [receiptEmail, setReceiptEmail] = useState('');
+  const [receiptEmailStatus, setReceiptEmailStatus] = useState<string | null>(null);
   const [courses, setCourses] = useState<string[]>(FALLBACK_COURSES);
   const [dockets, setDockets] = useState<Docket[] | null>(null);
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
@@ -582,6 +594,9 @@ export function App() {
   async function openDay() {
     try {
       setDay(await api<DaySummary>(`/api/pos/day-summary?venue=${encodeURIComponent(venue)}`));
+      void api<{ postToReports: boolean }>(`/api/pos/venue-settings?venue=${encodeURIComponent(venue)}`)
+        .then((setting) => setTillFlag(setting.postToReports))
+        .catch(() => undefined);
     } catch (err) {
       setError(messageForError(err, 'Could not load the day summary.'));
     }
@@ -1275,11 +1290,37 @@ export function App() {
                 <span>{money(receipt.totalCents + receipt.tipCents)}</span>
               </div>
             </div>
+            <div className="pos-email-row">
+              <input
+                className="pos-tender"
+                type="email"
+                placeholder="Email receipt to…"
+                value={receiptEmail}
+                onChange={(event) => setReceiptEmail(event.currentTarget.value)}
+              />
+              <button
+                type="button"
+                className="pos-ghost"
+                disabled={!receiptEmail.includes('@') || receiptEmailStatus === 'sending'}
+                onClick={() => {
+                  setReceiptEmailStatus('sending');
+                  void api<{ sent: boolean; status: string }>(`/api/pos/orders/${receipt.id}/email-receipt`, {
+                    method: 'POST',
+                    body: JSON.stringify({ to: receiptEmail })
+                  })
+                    .then((result) => setReceiptEmailStatus(result.sent ? 'Sent ✓' : `Not sent (${result.status})`))
+                    .catch((err) => setReceiptEmailStatus(messageForError(err, 'Failed')));
+                }}
+              >
+                {receiptEmailStatus === 'sending' ? 'Sending…' : 'Email'}
+              </button>
+            </div>
+            {receiptEmailStatus && receiptEmailStatus !== 'sending' ? <p className="pos-muted">{receiptEmailStatus}</p> : null}
             <div className="pos-choice-row">
               <button type="button" className="pos-ghost" onClick={() => window.print()}>
                 Print receipt
               </button>
-              <button type="button" className="pos-charge" onClick={() => setReceipt(null)}>
+              <button type="button" className="pos-charge" onClick={() => { setReceipt(null); setReceiptEmail(''); setReceiptEmailStatus(null); }}>
                 Done
               </button>
             </div>
@@ -2330,6 +2371,53 @@ export function App() {
         </div>
       ) : null}
 
+      {shift ? (
+        <div className="pos-modal" role="dialog" onClick={() => setShift(null)}>
+          <div className="pos-modal-panel pos-receipt" id="pos-shift" onClick={(event) => event.stopPropagation()}>
+            <h2>{shift.staffName} — shift</h2>
+            <div className="pos-day-grid">
+              <div>
+                <small>Sales</small>
+                <strong>{money(shift.totalCents)}</strong>
+              </div>
+              <div>
+                <small>Orders / items</small>
+                <strong>
+                  {shift.orderCount} / {shift.itemCount}
+                </strong>
+              </div>
+              <div>
+                <small>Tips</small>
+                <strong>{money(shift.tipCents)}</strong>
+              </div>
+            </div>
+            {Object.entries(shift.methods).map(([method, bucket]) => (
+              <p key={method} className="pos-muted">
+                {method === 'CASH' ? 'Cash' : method === 'REFUND' ? 'Refunds' : 'Card'} · {bucket.count} payments ·{' '}
+                {money(bucket.amountCents + bucket.tipCents)}
+              </p>
+            ))}
+            {shift.adjustments.length ? <p className="pos-muted">Adjustments:</p> : null}
+            {shift.adjustments.slice(0, 8).map((adjustment, index) => (
+              <div key={index} className="pos-day-item">
+                <span>
+                  {adjustment.kind} · {adjustment.itemName} · {adjustment.reason}
+                </span>
+                <span>{money(adjustment.amountCents)}</span>
+              </div>
+            ))}
+            <div className="pos-choice-row">
+              <button type="button" className="pos-ghost" onClick={() => window.print()}>
+                Print
+              </button>
+              <button type="button" className="pos-charge" onClick={() => setShift(null)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {day ? (
         <div className="pos-modal" role="dialog" onClick={() => setDay(null)}>
           <div className="pos-modal-panel" onClick={(event) => event.stopPropagation()}>
@@ -2367,6 +2455,39 @@ export function App() {
                 <span>{money(item.totalCents)}</span>
               </div>
             ))}
+            {tillFlag !== null ? (
+              <label className="pos-till-toggle">
+                <input
+                  type="checkbox"
+                  checked={tillFlag}
+                  onChange={(event) => {
+                    const next = event.currentTarget.checked;
+                    setTillFlag(next);
+                    void api('/api/pos/venue-settings', {
+                      method: 'PUT',
+                      body: JSON.stringify({ venue, postToReports: next })
+                    }).catch((err) => setError(messageForError(err, 'Could not save.')));
+                  }}
+                />
+                This POS is the till — post day sales, covers &amp; card tips to Reports
+              </label>
+            ) : null}
+            {operatorName ? (
+              <button
+                type="button"
+                className="pos-ghost"
+                onClick={() => {
+                  void api<NonNullable<typeof shift>>(`/api/pos/shift-report?venue=${encodeURIComponent(venue)}&staffName=${encodeURIComponent(operatorName)}`)
+                    .then((report) => {
+                      setShift(report);
+                      setDay(null);
+                    })
+                    .catch((err) => setError(messageForError(err, 'Could not load your shift.')));
+                }}
+              >
+                My shift report
+              </button>
+            ) : null}
             <button type="button" className="pos-ghost pos-modal-close" onClick={() => setDay(null)}>
               Close
             </button>

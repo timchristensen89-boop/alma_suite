@@ -4914,6 +4914,14 @@ model PosTicket {
   @@index([venue, station, bumpedAt])
 }
 
+// Per-venue register behaviour: when the POS is the venue's till, settled
+// sales/covers/tips post into the suite's actuals tables.
+model PosVenueSetting {
+  id            String  @id @default(cuid())
+  venue         String  @unique
+  postToReports Boolean @default(false)
+}
+
 model PosRule {
   id        String   @id @default(cuid())
   kind      String // SURCHARGE | DISCOUNT

@@ -225,6 +225,43 @@ posRouter.delete('/modifier-groups/:id', async (req, res, next) => {
   }
 });
 
+posRouter.get('/venue-settings', async (req, res, next) => {
+  try {
+    res.json(await posService.getVenueSetting(typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.put('/venue-settings', async (req, res, next) => {
+  try {
+    res.json(await posService.setVenueSetting(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.get('/shift-report', async (req, res, next) => {
+  try {
+    res.json(
+      await posService.shiftReport(
+        typeof req.query.venue === 'string' ? req.query.venue : null,
+        typeof req.query.staffName === 'string' ? req.query.staffName : null
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/orders/:id/email-receipt', async (req, res, next) => {
+  try {
+    res.json(await posService.emailReceipt(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 posRouter.get('/kds', async (req, res, next) => {
   try {
     res.json(

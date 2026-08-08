@@ -345,3 +345,8 @@ input, select { font: inherit; }
 .kds-recent { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--pos-line); }
 .kds-recent-label { color: var(--pos-muted); font-weight: 700; }
 .kds-recent button { background: var(--pos-raise); border: 1px solid var(--pos-line); color: var(--pos-text); border-radius: 10px; padding: 8px 14px; font-weight: 700; }
+
+/* fusion */
+.pos-till-toggle { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--pos-muted); }
+.pos-email-row { display: flex; gap: 8px; }
+.pos-email-row .pos-tender { flex: 1; font-size: 15px; }

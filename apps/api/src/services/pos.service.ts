@@ -3,6 +3,7 @@ import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
 import { nswHolidayName } from '../lib/nsw-holidays.js';
+import { mailService } from './mail.service.js';
 
 const stripe = env.stripe?.secretKey ? new Stripe(env.stripe.secretKey) : null;
 
@@ -122,6 +123,61 @@ async function recomputeOrder(id: string) {
       gstCents: Math.round(totalCents / GST_DIVISOR)
     }
   });
+}
+
+// When a venue's POS is its till, its settled orders roll up into the same
+// actuals the rest of the suite reads: SalesActualEntry (ex-GST + covers,
+// source alma-pos) and StaffTipCardEntry (card tips). Idempotent per day.
+async function postPosActuals(venue: string) {
+  const setting = await prisma.posVenueSetting.findUnique({ where: { venue } });
+  if (!setting?.postToReports) return;
+  const serviceDate = sydneyTodayUtcMidnight();
+  const orders = await prisma.posOrder.findMany({
+    where: { venue, serviceDate, status: 'PAID' },
+    include: { payments: true }
+  });
+  const totalIncCents = orders.reduce((sum, order) => sum + order.totalCents, 0);
+  const refunds = orders
+    .flatMap((order) => order.payments)
+    .filter((payment) => payment.amountCents < 0)
+    .reduce((sum, payment) => sum - payment.amountCents, 0);
+  const netIncCents = Math.max(0, totalIncCents - refunds);
+  const exGstCents = Math.round((netIncCents * 10) / 11);
+  const covers = orders.reduce((sum, order) => sum + (order.covers ?? 0), 0);
+  const cardTips = orders
+    .flatMap((order) => order.payments)
+    .filter((payment) => payment.method !== 'CASH' && payment.tipCents > 0)
+    .reduce((sum, payment) => sum + payment.tipCents, 0);
+  const source = 'alma-pos';
+  const externalId = `${source}:${venue}:${serviceDate.toISOString().slice(0, 10)}`;
+  await prisma.salesActualEntry.upsert({
+    where: { venue_serviceDate_source_externalId: { venue, serviceDate, source, externalId } },
+    create: {
+      venue,
+      serviceDate,
+      salesCents: exGstCents,
+      coversCount: covers || null,
+      source,
+      externalId,
+      notes: 'ALMA POS day total (ex GST).'
+    },
+    update: { salesCents: exGstCents, coversCount: covers || null }
+  });
+  if (cardTips > 0) {
+    const importKey = `alma-pos:${venue}:${serviceDate.toISOString().slice(0, 10)}`;
+    await prisma.staffTipCardEntry.upsert({
+      where: { importKey },
+      create: {
+        venue,
+        serviceDate,
+        amountCents: cardTips,
+        source: 'alma-pos',
+        importKey,
+        notes: 'Card tips taken on ALMA POS.'
+      },
+      update: { amountCents: cardTips }
+    });
+  }
 }
 
 // Cash expected in a drawer: float + cash payments (incl. cash tips) taken
@@ -480,7 +536,119 @@ export const posService = {
         amountCents
       }
     });
+    await postPosActuals(order.venue).catch(() => undefined);
     return this.getOrder(id);
+  },
+
+  // ── Venue till settings / shift report / email receipt ─────────────────
+  async getVenueSetting(venue: string | null) {
+    if (!venue) throw new HttpError(400, 'venue is required.');
+    const row = await prisma.posVenueSetting.findUnique({ where: { venue } });
+    return { venue, postToReports: row?.postToReports ?? false };
+  },
+
+  async setVenueSetting(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const venue = str(body.venue);
+    if (!venue) throw new HttpError(400, 'venue is required.');
+    const postToReports = body.postToReports === true;
+    await prisma.posVenueSetting.upsert({
+      where: { venue },
+      create: { venue, postToReports },
+      update: { postToReports }
+    });
+    if (postToReports) await postPosActuals(venue).catch(() => undefined);
+    return { venue, postToReports };
+  },
+
+  // Per-server shift report: what this staff member rang up today.
+  async shiftReport(venue: string | null, staffName: string | null) {
+    if (!venue || !staffName) throw new HttpError(400, 'venue and staffName required.');
+    const serviceDate = sydneyTodayUtcMidnight();
+    const [orders, adjustments] = await Promise.all([
+      prisma.posOrder.findMany({
+        where: { venue, serviceDate, status: 'PAID', openedByName: staffName },
+        include: { payments: true, lines: true }
+      }),
+      prisma.posAdjustment.findMany({
+        where: { venue, staffName, createdAt: { gte: serviceDate } },
+        orderBy: { createdAt: 'desc' }
+      })
+    ]);
+    const byMethod = new Map<string, { count: number; amountCents: number; tipCents: number }>();
+    let totalCents = 0;
+    let tipCents = 0;
+    let itemCount = 0;
+    for (const order of orders) {
+      totalCents += order.totalCents;
+      tipCents += order.tipCents;
+      itemCount += order.lines.reduce((sum, line) => sum + line.quantity, 0);
+      for (const payment of order.payments) {
+        const bucket = byMethod.get(payment.method) ?? { count: 0, amountCents: 0, tipCents: 0 };
+        bucket.count += 1;
+        bucket.amountCents += payment.amountCents;
+        bucket.tipCents += payment.tipCents;
+        byMethod.set(payment.method, bucket);
+      }
+    }
+    return {
+      staffName,
+      venue,
+      serviceDate: serviceDate.toISOString().slice(0, 10),
+      orderCount: orders.length,
+      itemCount,
+      totalCents,
+      tipCents,
+      methods: Object.fromEntries(byMethod),
+      adjustments: adjustments.map((adjustment) => ({
+        kind: adjustment.kind,
+        reason: adjustment.reason,
+        itemName: adjustment.itemName,
+        amountCents: adjustment.amountCents
+      }))
+    };
+  },
+
+  // Email a settled bill's receipt to the guest.
+  async emailReceipt(id: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const to = str(body.to).toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) throw new HttpError(400, 'Enter a valid email.');
+    const order = await prisma.posOrder.findUnique({ where: { id }, include: { lines: true, payments: true } });
+    if (!order) throw new HttpError(404, 'Bill not found.');
+    const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+    const rows = order.lines
+      .map(
+        (line) =>
+          `<tr><td>${line.quantity}× ${line.name}${
+            ((line.modifiers as Array<{ name: string }> | null) ?? []).length
+              ? `<br><small style="color:#777">${((line.modifiers as Array<{ name: string }>) ?? []).map((modifier) => modifier.name).join(', ')}</small>`
+              : ''
+          }</td><td align="right">${money(line.totalCents)}</td></tr>`
+      )
+      .join('');
+    const extras = [
+      order.discountCents > 0 ? `<tr><td>${order.discountLabel ?? 'Discount'}</td><td align="right">−${money(order.discountCents)}</td></tr>` : '',
+      order.manualDiscountCents > 0 ? `<tr><td>${order.manualDiscountLabel ?? 'Discount'}</td><td align="right">−${money(order.manualDiscountCents)}</td></tr>` : '',
+      order.surchargeCents > 0 ? `<tr><td>${order.surchargeLabel ?? 'Surcharge'}</td><td align="right">+${money(order.surchargeCents)}</td></tr>` : ''
+    ].join('');
+    const html = `
+      <div style="font-family:Georgia,serif;max-width:420px;margin:0 auto;color:#1F2A1E">
+        <h2 style="letter-spacing:0.2em;text-align:center">ALMA</h2>
+        <p style="text-align:center;color:#666">${order.venue}<br>${order.tableLabel ? `Table ${order.tableLabel}` : `Order #${order.orderNumber}`} · ${new Date().toLocaleDateString('en-AU')}</p>
+        <table width="100%" style="border-collapse:collapse;font-size:14px">${rows}${extras}
+          <tr><td style="border-top:1px solid #ccc;padding-top:8px"><b>Total (incl. ${money(order.gstCents)} GST${order.tipCents ? ` + ${money(order.tipCents)} tip` : ''})</b></td>
+          <td align="right" style="border-top:1px solid #ccc;padding-top:8px"><b>${money(order.totalCents + order.tipCents)}</b></td></tr>
+        </table>
+        <p style="text-align:center;color:#666;margin-top:24px">Thank you — see you again soon.<br>almagroup.com.au</p>
+      </div>`;
+    const result = await mailService.sendDocument({
+      to,
+      subject: `Your receipt — ALMA ${order.venue}`,
+      text: `ALMA receipt — total ${money(order.totalCents + order.tipCents)}`,
+      html
+    });
+    return { sent: result.status === 'sent', status: result.status };
   },
 
   // Move a floor table (drag-edit in POS writes the shared Reserve layout).
@@ -598,6 +766,9 @@ export const posService = {
     });
     if (settled && updated.guestId) {
       await updateGuestFromOrder(updated.guestId).catch(() => undefined);
+    }
+    if (settled) {
+      await postPosActuals(updated.venue).catch(() => undefined);
     }
     return { ...updated, changeCents, balanceCents: settled ? 0 : balanceCents - amountCents };
   },
