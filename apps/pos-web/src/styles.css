@@ -446,3 +446,16 @@ input, select { font: inherit; }
   .qrs-header { display: none; }
   .qrs-shell { background: #fff; }
 }
+
+.qr-billbtn { background: none; border: 2px solid #1f3524; border-radius: 999px; padding: 6px 16px; font-weight: 800; font-size: 13px; color: #1f3524; cursor: pointer; }
+.qr-paylink { background: none; border: 0; color: #5c6f60; font-weight: 700; font-size: 13px; text-decoration: underline; cursor: pointer; padding: 8px; }
+.qr-pay { position: fixed; inset: 0; background: rgba(31, 53, 36, 0.45); display: flex; align-items: flex-end; justify-content: center; z-index: 30; }
+.qr-pay-panel { background: #fff; border-radius: 18px 18px 0 0; padding: 20px 18px calc(20px + env(safe-area-inset-bottom)); width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.qr-pay-panel h2 { margin: 0; font-size: 19px; }
+.qr-bill-lines { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.qr-bill-lines > div { display: flex; justify-content: space-between; gap: 10px; }
+.qr-bill-total { border-top: 2px solid #1f3524; margin-top: 6px; padding-top: 8px; font-size: 15px; }
+.qr-tips { display: flex; gap: 8px; }
+.qr-tips button { flex: 1; border: 2px solid rgba(31, 53, 36, 0.3); background: none; border-radius: 12px; padding: 12px 6px; font-weight: 700; font-size: 13px; cursor: pointer; color: #1f3524; }
+.qr-tips button.is-on { border-color: #1f3524; background: rgba(31, 53, 36, 0.06); }
+.qr-card-mount { min-height: 220px; }

@@ -24,6 +24,62 @@ export function GuestOrder({ token }: { token: string }) {
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ orderNumber: number; itemCount: number } | null>(null);
+  const [pay, setPay] = useState<null | {
+    stage: 'tip' | 'paid';
+    balanceCents: number;
+    tipCents: number;
+    orderNumber: number;
+    lines: Array<{ name: string; quantity: number; totalCents: number }>;
+  }>(null);
+
+  async function openPaySheet(tipCents: number, checkout = false) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/api/qr/pay-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ t: token, tipCents, checkout })
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.message ?? 'Could not load the bill.');
+      if (checkout && payload.checkoutUrl) {
+        window.location.href = payload.checkoutUrl;
+        return;
+      }
+      setPay({
+        stage: 'tip',
+        balanceCents: payload.balanceCents,
+        tipCents: payload.tipCents,
+        orderNumber: payload.orderNumber,
+        lines: payload.lines
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load the bill.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Returning from Stripe Checkout: ?csid=<session id> confirms + records.
+  useEffect(() => {
+    const csid = new URLSearchParams(window.location.search).get('csid');
+    if (!csid) return;
+    window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    setBusy(true);
+    fetch(`${API}/api/qr/pay-confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ t: token, sessionId: csid })
+    })
+      .then(async (res) => {
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload?.message ?? 'Payment took, but recording it failed — see staff.');
+        setPay({ stage: 'paid', balanceCents: payload.paidCents ?? 0, tipCents: 0, orderNumber: 0, lines: [] });
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Could not confirm the payment.'))
+      .finally(() => setBusy(false));
+  }, [token]);
 
   useEffect(() => {
     fetch(`${API}/api/qr/context?t=${encodeURIComponent(token)}`)
@@ -92,6 +148,9 @@ export function GuestOrder({ token }: { token: string }) {
         <button type="button" className="qr-submit" onClick={() => setDone(null)}>
           Order more
         </button>
+        <button type="button" className="qr-paylink" disabled={busy} onClick={() => void openPaySheet(0)}>
+          View bill &amp; pay by card
+        </button>
       </div>
     );
   }
@@ -103,7 +162,72 @@ export function GuestOrder({ token }: { token: string }) {
         <span>
           {menu ? `${menu.venue} · Table ${menu.tableLabel}` : 'Loading…'}
         </span>
+        <span style={{ flex: 1 }} />
+        {menu ? (
+          <button type="button" className="qr-billbtn" disabled={busy} onClick={() => void openPaySheet(0)}>
+            Bill
+          </button>
+        ) : null}
       </header>
+
+      {pay ? (
+        <div className="qr-pay" role="dialog">
+          <div className="qr-pay-panel">
+            {pay.stage === 'paid' ? (
+              <>
+                <h2>Paid — thank you! 💚</h2>
+                <p className="qr-muted">
+                  {pay.balanceCents > 0 ? `${money(pay.balanceCents)} settled` : 'Payment settled'} on table {menu?.tableLabel}. A receipt is available at the counter.
+                </p>
+                <button type="button" className="qr-submit" onClick={() => setPay(null)}>
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <h2>Your bill · #{pay.orderNumber}</h2>
+                <div className="qr-bill-lines">
+                  {pay.lines.map((line, index) => (
+                    <div key={index}>
+                      <span>
+                        {line.quantity}× {line.name}
+                      </span>
+                      <b>{money(line.totalCents)}</b>
+                    </div>
+                  ))}
+                  <div className="qr-bill-total">
+                    <span>To pay{pay.tipCents > 0 ? ` (incl. ${money(pay.tipCents)} tip)` : ''}</span>
+                    <b>{money(pay.balanceCents + pay.tipCents)}</b>
+                  </div>
+                </div>
+                <p className="qr-muted">Add a tip for the team?</p>
+                <div className="qr-tips">
+                  {[0, 5, 10].map((pct) => {
+                    const cents = Math.round((pay.balanceCents * pct) / 100);
+                    return (
+                      <button
+                        key={pct}
+                        type="button"
+                        className={pay.tipCents === cents ? 'is-on' : ''}
+                        disabled={busy}
+                        onClick={() => setPay({ ...pay, tipCents: cents })}
+                      >
+                        {pct === 0 ? 'No tip' : `+${pct}% (${money(cents)})`}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button type="button" className="qr-submit" disabled={busy} onClick={() => void openPaySheet(pay.tipCents, true)}>
+                  {busy ? 'Opening secure payment…' : `Pay ${money(pay.balanceCents + pay.tipCents)} by card`}
+                </button>
+              </>
+            )}
+            <button type="button" className="qr-paylink" onClick={() => setPay(null)}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
       {error ? <div className="qr-error">{error}</div> : null}
 
       {(menu?.categories ?? []).map((category) => (

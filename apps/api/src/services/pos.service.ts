@@ -773,8 +773,8 @@ export const posService = {
   async payOrder(id: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const method = str(body.method).toUpperCase();
-    if (!['CASH', 'CARD_EXTERNAL', 'STRIPE_TERMINAL', 'GIFT_CARD'].includes(method)) {
-      throw new HttpError(400, 'method must be CASH, CARD_EXTERNAL, STRIPE_TERMINAL or GIFT_CARD.');
+    if (!['CASH', 'CARD_EXTERNAL', 'STRIPE_TERMINAL', 'GIFT_CARD', 'ONLINE'].includes(method)) {
+      throw new HttpError(400, 'method must be CASH, CARD_EXTERNAL, STRIPE_TERMINAL, GIFT_CARD or ONLINE.');
     }
     const tipCents = body.tipCents === undefined ? 0 : asInt(body.tipCents, 'tip', { min: 0, max: 500_000 });
 

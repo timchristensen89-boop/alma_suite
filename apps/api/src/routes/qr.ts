@@ -12,6 +12,22 @@ qrRouter.get('/context', async (req, res, next) => {
   }
 });
 
+qrRouter.post('/pay-intent', async (req, res, next) => {
+  try {
+    res.json(await qrOrderService.payIntent(req.body, req.ip));
+  } catch (err) {
+    next(err);
+  }
+});
+
+qrRouter.post('/pay-confirm', async (req, res, next) => {
+  try {
+    res.json(await qrOrderService.payConfirm(req.body, req.ip));
+  } catch (err) {
+    next(err);
+  }
+});
+
 qrRouter.post('/order', async (req, res, next) => {
   try {
     res.json(await qrOrderService.submit(req.body, req.ip));

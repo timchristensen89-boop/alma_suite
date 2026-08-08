@@ -312,6 +312,9 @@ importers:
       '@alma/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@stripe/stripe-js':
+        specifier: ^9.7.0
+        version: 9.7.0
       '@stripe/terminal-js':
         specifier: ^0.26.0
         version: 0.26.0

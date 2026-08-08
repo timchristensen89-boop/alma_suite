@@ -1,8 +1,11 @@
 import { createHmac } from 'node:crypto';
+import Stripe from 'stripe';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
 import { posService } from './pos.service.js';
+
+const stripe = env.stripe.secretKey ? new Stripe(env.stripe.secretKey) : null;
 
 // ── QR table ordering, natively on ALMA POS ────────────────────────────────
 // A guest scans the QR at their table and orders from their phone: the order
@@ -166,6 +169,101 @@ export const qrOrderService = {
       select: { orderNumber: true, totalCents: true }
     });
     return { ok: true, orderNumber: final.orderNumber, tableLabel, itemCount: wanted.reduce((sum, line) => sum + line.quantity, 0) };
+  },
+
+  // The guest's bill so far. When checkout=true a Stripe Checkout session is
+  // created (hosted page — secret key only, wallets included) and its URL
+  // returned; the guest comes back with ?csid= for pay-confirm.
+  async payIntent(input: unknown, ip?: string) {
+    throttle(ip);
+    const body = (input ?? {}) as Record<string, unknown>;
+    const { venue, tableLabel } = parseToken(String(body.t ?? ''));
+    const tipCents = Math.min(50_000, Math.max(0, Math.round(Number(body.tipCents ?? 0)) || 0));
+    const order = await prisma.posOrder.findFirst({
+      where: { venue, status: 'OPEN', training: false, tableLabel: { equals: tableLabel, mode: 'insensitive' } },
+      orderBy: { createdAt: 'asc' },
+      include: { payments: true, lines: true }
+    });
+    if (!order || order.lines.length === 0) throw new HttpError(404, 'There is no open bill on this table yet.');
+    const paid = order.payments.reduce((sum, payment) => sum + payment.amountCents, 0);
+    const balanceCents = order.totalCents - paid;
+    if (balanceCents <= 0) throw new HttpError(400, 'This bill is already settled.');
+
+    let checkoutUrl: string | null = null;
+    if (body.checkout === true) {
+      if (!stripe) throw new HttpError(503, 'Online payment is not available right now.');
+      const token = String(body.t);
+      const session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: 'aud',
+              unit_amount: balanceCents + tipCents,
+              product_data: { name: `ALMA ${venue} · table ${tableLabel} · bill #${order.orderNumber}${tipCents > 0 ? ' (incl. tip)' : ''}` }
+            }
+          }
+        ],
+        success_url: `https://alma-pos.web.app/?csid={CHECKOUT_SESSION_ID}#o/${token}`,
+        cancel_url: `https://alma-pos.web.app/#o/${token}`,
+        payment_intent_data: {
+          description: `ALMA ${venue} · table ${tableLabel} · bill #${order.orderNumber}`,
+          metadata: { posOrderId: order.id, tipCents: String(tipCents), venue, tableLabel }
+        },
+        metadata: { posOrderId: order.id, tipCents: String(tipCents), venue, tableLabel }
+      });
+      checkoutUrl = session.url;
+    }
+    return {
+      checkoutUrl,
+      balanceCents,
+      tipCents,
+      orderNumber: order.orderNumber,
+      lines: order.lines.map((line) => ({ name: line.name, quantity: line.quantity, totalCents: line.totalCents }))
+    };
+  },
+
+  // After the guest returns from Checkout: verify the session with Stripe and
+  // record the payment on the bill. Idempotent on the payment-intent id.
+  async payConfirm(input: unknown, ip?: string) {
+    throttle(ip);
+    if (!stripe) throw new HttpError(503, 'Online payment is not available right now.');
+    const body = (input ?? {}) as Record<string, unknown>;
+    const { venue, tableLabel } = parseToken(String(body.t ?? ''));
+    const sessionId = String(body.sessionId ?? '');
+    if (!sessionId.startsWith('cs_')) throw new HttpError(400, 'sessionId is required.');
+    let intent;
+    try {
+      const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['payment_intent'] });
+      if (session.payment_status !== 'paid') throw new HttpError(400, 'That payment has not completed.');
+      intent = session.payment_intent as Stripe.PaymentIntent | null;
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      throw new HttpError(400, 'That payment could not be found.');
+    }
+    if (!intent || typeof intent === 'string') throw new HttpError(400, 'That payment could not be found.');
+    if (intent.status !== 'succeeded') throw new HttpError(400, `Payment is ${intent.status}.`);
+    const orderId = String(intent.metadata?.posOrderId ?? '');
+    const tipCents = Math.max(0, Number(intent.metadata?.tipCents ?? 0) || 0);
+    if (!orderId || intent.metadata?.venue !== venue || intent.metadata?.tableLabel !== tableLabel) {
+      throw new HttpError(400, 'That payment does not belong to this table.');
+    }
+    const existing = await prisma.posPayment.findFirst({ where: { orderId, reference: intent.id }, select: { id: true } });
+    if (existing) return { ok: true, alreadyRecorded: true };
+    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, include: { payments: true } });
+    if (!order) throw new HttpError(404, 'Bill not found.');
+    if (order.status !== 'OPEN') return { ok: true, alreadyRecorded: true };
+    const paid = order.payments.reduce((sum, payment) => sum + payment.amountCents, 0);
+    const balanceCents = order.totalCents - paid;
+    const received = intent.amount_received;
+    // If the bill shrank between intent and charge (a waiter took a payment),
+    // everything beyond the outstanding balance is recorded as tip so the
+    // money is never lost or double-applied.
+    const amountCents = Math.max(1, Math.min(balanceCents, received - tipCents));
+    const finalTip = received - amountCents;
+    await posService.payOrder(orderId, { method: 'ONLINE', amountCents, tipCents: finalTip, reference: intent.id });
+    return { ok: true, paidCents: received };
   },
 
   // Staff-side: the printable token list for a venue's tables.
