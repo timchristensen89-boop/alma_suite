@@ -119,6 +119,12 @@ type DaySummary = {
 
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
 const HOME_TAB = '\u2605 Home';
+// Fire progress of an order: 'waiting' = lines not yet called away,
+// 'away' = everything fired, 'empty' = no lines.
+function fireState(lines: Array<{ sentAt?: string | null }>): 'waiting' | 'away' | 'empty' {
+  if (lines.length === 0) return 'empty';
+  return lines.some((line) => !line.sentAt) ? 'waiting' : 'away';
+}
 // Australian cash rounding — physical cash rounds to the nearest 5c.
 const roundCash5 = (cents: number) => Math.round(cents / 5) * 5;
 const BRIGHT_PALETTE = ['', 'terra', 'amber', 'moss', 'slate', 'shell', 'cocoa'];
@@ -251,6 +257,11 @@ export function App() {
   const [deviceLanding, setDeviceLanding] = useState(() => localStorage.getItem('alma.pos.deviceLanding') ?? '');
   // Phone layout: the bill lives in a bottom sheet behind a summary bar.
   const [cartOpen, setCartOpen] = useState(false);
+  const [billCollapsed, setBillCollapsed] = useState(() => localStorage.getItem('alma.pos.billCollapsed') === '1');
+
+  useEffect(() => {
+    localStorage.setItem('alma.pos.billCollapsed', billCollapsed ? '1' : '0');
+  }, [billCollapsed]);
   const [darkTheme, setDarkTheme] = useState(() => localStorage.getItem('alma.pos.theme') === 'dark');
   // Two full designs: 'classic' tiles (v1) and the 'rail' sidebar-list (v2).
   const [design, setDesign] = useState<'classic' | 'rail'>(() => (localStorage.getItem('alma.pos.design') === 'rail' ? 'rail' : 'classic'));
@@ -1616,7 +1627,12 @@ export function App() {
           {homeView === 'floor' && floorTables.length > 0 ? null : null}
           <div className="pos-home-grid" style={homeView === 'floor' && floorTables.length > 0 ? { display: 'none' } : undefined}>
             {openOrders.map((open) => (
-              <button key={open.id} type="button" className="pos-table-card" onClick={() => { setOrder(open); setView('register'); }}>
+              <button
+                key={open.id}
+                type="button"
+                className={`pos-table-card is-${fireState(open.lines as Array<{ sentAt?: string | null }>)}`}
+                onClick={() => { setOrder(open); setView('register'); }}
+              >
                 <strong>{open.tableLabel ? `Table ${open.tableLabel}` : `#${open.orderNumber}`}</strong>
                 <span className="pos-muted">
                   {open.covers ? `${open.covers} covers · ` : ''}
@@ -2089,7 +2105,21 @@ export function App() {
             )}
           </div>
 
-          <aside className={`pos-cart ${cartOpen ? 'is-open' : ''}`}>
+          <aside className={`pos-cart ${cartOpen ? 'is-open' : ''} ${billCollapsed ? 'is-collapsed' : ''}`}>
+            {billCollapsed ? (
+              <button type="button" className="pos-cart-strip" onClick={() => setBillCollapsed(false)} title="Expand the bill">
+                <span className="pos-strip-chevron">«</span>
+                <i className={`pos-strip-dot is-${fireState((order?.lines ?? []) as Array<{ sentAt?: string | null }>)}`} />
+                <b className="pos-strip-total">{money(balance)}</b>
+                <small className="pos-strip-count">
+                  {(order?.lines ?? []).reduce((sum, line) => sum + line.quantity, 0) || 0} it.
+                </small>
+              </button>
+            ) : (
+              <button type="button" className="pos-cart-fold" onClick={() => setBillCollapsed(true)} title="Collapse the bill">
+                »
+              </button>
+            )}
             <button type="button" className="pos-cart-summary" onClick={() => setCartOpen(!cartOpen)}>
               <span>
                 {order && order.lines.length > 0
@@ -3998,7 +4028,7 @@ function FloorView({
               key={table.id}
               type="button"
               disabled={busy}
-              className={`pos-floor-table ${open ? 'is-occupied' : ''} ${!open && nextByTable.has(table.label.toLowerCase()) ? 'is-reserved' : ''} ${table.shape === 'round' ? 'is-round' : ''}`}
+              className={`pos-floor-table ${open ? `is-occupied is-${fireState(open.lines as Array<{ sentAt?: string | null }>)}` : ''} ${!open && nextByTable.has(table.label.toLowerCase()) ? 'is-reserved' : ''} ${table.shape === 'round' ? 'is-round' : ''}`}
               style={{
                 left: `${table.posX}%`,
                 top: `${table.posY}%`,

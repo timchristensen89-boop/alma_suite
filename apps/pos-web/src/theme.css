@@ -363,3 +363,27 @@ body.pos-dark .live-hour-bar { background: linear-gradient(180deg, #bcd3a8, #4f6
 
 .office-editor { border: 1.5px solid var(--pos-accent); margin-top: 12px; }
 .office-save { background: var(--pos-accent-bg); color: var(--pos-accent-fg); border: 0; border-radius: 9999px; font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; padding: 10px 20px; cursor: pointer; font-family: inherit; }
+
+
+/* ── Collapsible bill ── */
+.pos-cart { position: relative; }
+.pos-cart-fold { position: absolute; top: 10px; right: 10px; z-index: 3; width: 28px; height: 28px; border-radius: 9999px; border: 1px solid var(--pos-border); background: var(--pos-card); color: var(--pos-text2); font-size: 13px; cursor: pointer; }
+.pos-cart.is-collapsed { flex: 0 0 64px; width: 64px; min-width: 64px; }
+.pos-cart.is-collapsed .pos-cart-lines, .pos-cart.is-collapsed .pos-cart-foot, .pos-cart.is-collapsed .pos-cart-summary { display: none; }
+.pos-cart-strip { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; height: 100%; background: none; border: 0; padding: 14px 4px; cursor: pointer; font-family: inherit; color: var(--pos-text); }
+.pos-strip-chevron { font-size: 15px; color: var(--pos-text3); }
+.pos-strip-dot { width: 11px; height: 11px; border-radius: 9999px; background: var(--pos-border); }
+.pos-strip-dot.is-waiting { background: #b5772f; box-shadow: 0 0 0 3px rgba(181, 119, 47, 0.2); }
+.pos-strip-dot.is-away { background: #4f6b47; box-shadow: 0 0 0 3px rgba(79, 107, 71, 0.2); }
+.pos-strip-total { writing-mode: vertical-rl; font-size: 16px; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+.pos-strip-count { writing-mode: vertical-rl; font-size: 10px; font-weight: 700; color: var(--pos-text3); }
+body.pos-v2 .pos-cart.is-collapsed { padding: 14px 6px 14px 0; }
+body.pos-v2 .pos-cart.is-collapsed .pos-cart-strip { background: var(--pos-card); border: 1px solid var(--pos-border-soft); border-radius: 16px; box-shadow: 0 1px 2px rgba(31, 53, 36, 0.04), 0 4px 14px rgba(31, 53, 36, 0.05); }
+@media (max-width: 700px) { .pos-cart-fold, .pos-cart-strip { display: none; } .pos-cart.is-collapsed { flex: none; width: auto; min-width: 0; } .pos-cart.is-collapsed .pos-cart-summary { display: flex; } .pos-cart.is-collapsed .pos-cart-lines, .pos-cart.is-collapsed .pos-cart-foot { display: block; } }
+
+/* ── Table fire-progress colours ── */
+.pos-table-card.is-waiting { background: var(--tile-amber-bg); border-color: var(--tile-amber-bd); color: var(--tile-amber-fg); }
+.pos-table-card.is-away { background: var(--tile-moss-bg); border-color: var(--tile-moss-bd); color: var(--tile-moss-fg); }
+.pos-table-card.is-waiting .pos-muted, .pos-table-card.is-away .pos-muted { color: inherit; opacity: 0.65; }
+.pos-floor-table.is-occupied.is-waiting { background: var(--tile-amber-bg); color: var(--tile-amber-fg); border-color: var(--tile-amber-bd); }
+.pos-floor-table.is-occupied.is-away { background: var(--tile-moss-bg); color: var(--tile-moss-fg); border-color: var(--tile-moss-bd); }
