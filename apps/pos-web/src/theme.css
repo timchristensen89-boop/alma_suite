@@ -407,3 +407,13 @@ body.pos-v2 .pos-body:has(.pos-cart.is-collapsed) { grid-template-columns: 1fr 7
 /* header venue select — pill styled, readable in both themes */
 .pos-header select { background: var(--pos-btn); border: 1px solid var(--pos-border); border-radius: 9999px; color: var(--pos-text); font-family: inherit; font-size: 13px; font-weight: 600; padding: 8px 14px; outline: none; cursor: pointer; }
 .pos-header select option { color: #1f3524; background: #fff; }
+
+
+/* docket course sub-headings — ruled line either side, print-safe */
+.pos-docket-courseblock { margin-top: 10px; }
+.pos-docket-courserule { display: flex; align-items: center; gap: 10px; margin: 6px 0 6px; }
+.pos-docket-courserule::before, .pos-docket-courserule::after { content: ''; flex: 1; border-top: 1.5px solid currentColor; opacity: 0.5; }
+.pos-docket-courserule span { font-size: 12px; font-weight: 900; letter-spacing: 0.18em; text-transform: uppercase; white-space: nowrap; }
+@media print {
+  .pos-docket-courserule::before, .pos-docket-courserule::after { border-top: 1.5px solid #000; opacity: 1; }
+}

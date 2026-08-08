@@ -404,6 +404,10 @@ export function App() {
     }).catch((err) => setError(messageForError(err, 'Could not save the board.')));
   }
   const [dockets, setDockets] = useState<Docket[] | null>(null);
+  // Call-aways print WITHOUT a confirm tap: the docket sheet fires straight
+  // into the print flow and closes itself after. (For fully silent printing,
+  // run the register browser in kiosk-printing mode.)
+  const [autoPrint, setAutoPrint] = useState(false);
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
   const [home, setHome] = useState<{ buttons: string[]; pins: Pin[]; landingCategory?: string | null; categories?: TabsConfig | null }>({ buttons: [], pins: [] });
@@ -674,6 +678,20 @@ export function App() {
   }
 
   useEffect(() => {
+    if (!dockets || !autoPrint) return;
+    const timer = setTimeout(() => window.print(), 300);
+    const after = () => {
+      setDockets(null);
+      setAutoPrint(false);
+    };
+    window.addEventListener('afterprint', after);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('afterprint', after);
+    };
+  }, [dockets, autoPrint]);
+
+  useEffect(() => {
     const onDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
       if (!target.classList?.contains('pos-modal')) return;
@@ -724,7 +742,10 @@ export function App() {
         method: 'POST',
         body: JSON.stringify({ courses: [name] })
       });
-      if (result.dockets.length > 0) setDockets(result.dockets);
+      if (result.dockets.length > 0) {
+        setAutoPrint(true);
+        setDockets(result.dockets);
+      }
       const stamp = new Date().toISOString();
       setOrder((current) =>
         current
@@ -3131,7 +3152,10 @@ export function App() {
                 })
                   .then(async (result) => {
                     setFireSheet(null);
-                    if (result.dockets.length > 0) setDockets(result.dockets);
+                    if (result.dockets.length > 0) {
+                  setAutoPrint(true);
+                  setDockets(result.dockets);
+                }
                     setOrder(await api<Order>(`/api/pos/orders/${order.id}`));
                   })
                   .catch((err) => setError(messageForError(err, 'Could not fire the courses.')));
@@ -3574,21 +3598,42 @@ export function App() {
                     {docket.openedByName ? ` · ${docket.openedByName}` : ''}
                   </p>
                 </div>
-                {docket.lines.map((line) => (
-                  <div key={line.id} className="pos-docket-line">
-                    <strong>
-                      {line.quantity}× {line.name}
-                      {(line as { seat?: number | null }).seat ? ` · S${(line as { seat?: number | null }).seat}` : ''}
-                    </strong>
-                    <small>
-                      {line.course ?? ''}
-                      {((line as { modifiers?: Array<{ name: string }> }).modifiers ?? []).length
-                        ? ` — ${((line as { modifiers?: Array<{ name: string }> }).modifiers ?? []).map((modifier) => modifier.name).join(', ')}`
-                        : ''}
-                      {line.notes ? ` — ${line.notes}` : ''}
-                    </small>
-                  </div>
-                ))}
+                {(() => {
+                  // Courses print as proper ruled sub-headings with their
+                  // items listed beneath, in service order.
+                  const grouped = new Map<string, typeof docket.lines>();
+                  for (const line of docket.lines) {
+                    const key = line.course ?? 'NOW';
+                    grouped.set(key, [...(grouped.get(key) ?? []), line]);
+                  }
+                  const rank = (name: string) => {
+                    const at = courses.indexOf(name);
+                    return at === -1 ? 99 : at;
+                  };
+                  return [...grouped.entries()]
+                    .sort((a, b) => rank(a[0]) - rank(b[0]))
+                    .map(([courseName, courseLines]) => (
+                      <div key={courseName} className="pos-docket-courseblock">
+                        <div className="pos-docket-courserule">
+                          <span>{courseName}</span>
+                        </div>
+                        {courseLines.map((line) => (
+                          <div key={line.id} className="pos-docket-line">
+                            <strong>
+                              {line.quantity}× {line.name}
+                              {(line as { seat?: number | null }).seat ? ` · S${(line as { seat?: number | null }).seat}` : ''}
+                            </strong>
+                            {((line as { modifiers?: Array<{ name: string }> }).modifiers ?? []).length || line.notes ? (
+                              <small>
+                                {((line as { modifiers?: Array<{ name: string }> }).modifiers ?? []).map((modifier) => modifier.name).join(', ')}
+                                {line.notes ? `${((line as { modifiers?: Array<{ name: string }> }).modifiers ?? []).length ? ' — ' : ''}${line.notes}` : ''}
+                              </small>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ));
+                })()}
               </div>
             ))}
             <div className="pos-choice-row">
