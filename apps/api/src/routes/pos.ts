@@ -84,6 +84,78 @@ posRouter.get('/rules', async (_req, res, next) => {
   }
 });
 
+posRouter.get('/courses', async (_req, res, next) => {
+  try {
+    res.json(await posService.listCourses());
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.get('/printer-profiles', async (_req, res, next) => {
+  try {
+    res.json(await posService.listPrinterProfiles());
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/orders/:id/send', async (req, res, next) => {
+  try {
+    res.json(await posService.sendOrder(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.get('/drawer', async (req, res, next) => {
+  try {
+    res.json(await posService.drawerStatus(typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/drawer/open', async (req, res, next) => {
+  try {
+    res.status(201).json(await posService.openDrawer(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/drawer/close', async (req, res, next) => {
+  try {
+    res.json(await posService.closeDrawer(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.get('/close-day', async (req, res, next) => {
+  try {
+    res.json(await posService.closeDayStatus(typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/close-day', async (req, res, next) => {
+  try {
+    res.json(await posService.closeDay(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.get('/floor-reservations', async (req, res, next) => {
+  try {
+    res.json(await posService.floorReservations(typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
 posRouter.get('/day-summary', async (req, res, next) => {
   try {
     res.json(

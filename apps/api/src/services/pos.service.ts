@@ -93,6 +93,20 @@ async function recomputeOrder(id: string) {
   });
 }
 
+// Cash expected in a drawer: float + cash payments (incl. cash tips) taken
+// while it was open. Change was returned to guests, so payments count net.
+async function drawerExpectedCents(drawer: { venue: string; openingFloatCents: number; openedAt: Date }) {
+  const cash = await prisma.posPayment.aggregate({
+    where: {
+      method: 'CASH',
+      createdAt: { gte: drawer.openedAt },
+      order: { venue: drawer.venue }
+    },
+    _sum: { amountCents: true, tipCents: true }
+  });
+  return drawer.openingFloatCents + (cash._sum.amountCents ?? 0) + (cash._sum.tipCents ?? 0);
+}
+
 function asInt(value: unknown, label: string, opts: { min?: number; max?: number } = {}): number {
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n) || !Number.isInteger(n)) throw new HttpError(400, `${label} must be a whole number.`);
@@ -295,6 +309,243 @@ export const posService = {
 
   async listRules() {
     return activeRules();
+  },
+
+  // ── Courses (register cycle order + docket grouping) ───────────────────
+  async listCourses() {
+    const count = await prisma.posCourse.count();
+    if (count === 0) {
+      await prisma.posCourse.createMany({
+        data: ['Entrée', 'Mains', 'Sides', 'Dessert', 'Drinks'].map((name, index) => ({ name, sortOrder: index }))
+      });
+    }
+    return prisma.posCourse.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } });
+  },
+
+  // ── Printer profiles (docket routing) ──────────────────────────────────
+  async listPrinterProfiles() {
+    const count = await prisma.posPrinterProfile.count();
+    if (count === 0) {
+      await prisma.posPrinterProfile.createMany({
+        data: [
+          { name: 'Kitchen', matchKind: 'FOOD', sortOrder: 0 },
+          { name: 'Bar', matchKind: 'BEVERAGE', sortOrder: 1 }
+        ]
+      });
+    }
+    return prisma.posPrinterProfile.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } });
+  },
+
+  // Send the order's unsent lines to their printer profiles: returns dockets
+  // grouped per profile (course-ordered) and stamps the lines as sent. The
+  // register prints each docket (browser/AirPrint now; ePOS network printers
+  // when profiles carry an IP).
+  async sendOrder(id: string) {
+    const order = await prisma.posOrder.findUnique({
+      where: { id },
+      include: { lines: { where: { sentAt: null }, orderBy: { createdAt: 'asc' } } }
+    });
+    if (!order) throw new HttpError(404, 'Order not found.');
+    if (order.lines.length === 0) return { dockets: [], sent: 0 };
+    const [profiles, courses, recipeRows] = await Promise.all([
+      this.listPrinterProfiles(),
+      this.listCourses(),
+      prisma.recipe.findMany({
+        where: { id: { in: order.lines.map((line) => line.recipeId).filter((v): v is string => Boolean(v)) } },
+        select: { id: true, kind: true, category: true }
+      })
+    ]);
+    const recipeMeta = new Map(recipeRows.map((recipe) => [recipe.id, recipe]));
+    const courseRank = new Map(courses.map((course, index) => [course.name, index]));
+
+    const dockets = profiles
+      .map((profile) => {
+        const categories = profile.categoriesCsv.split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
+        const lines = order.lines.filter((line) => {
+          const meta = line.recipeId ? recipeMeta.get(line.recipeId) : null;
+          const kind = meta?.kind === 'BEVERAGE' ? 'BEVERAGE' : 'FOOD';
+          if (categories.length > 0) return categories.includes((meta?.category ?? '').toLowerCase());
+          return kind === profile.matchKind;
+        });
+        if (lines.length === 0) return null;
+        const sorted = lines
+          .slice()
+          .sort((a, b) => (courseRank.get(a.course ?? '') ?? 99) - (courseRank.get(b.course ?? '') ?? 99));
+        return {
+          profile: profile.name,
+          printerIp: profile.printerIp,
+          tableLabel: order.tableLabel,
+          orderNumber: order.orderNumber,
+          covers: order.covers,
+          openedByName: order.openedByName,
+          lines: sorted.map((line) => ({
+            id: line.id,
+            name: line.name,
+            quantity: line.quantity,
+            course: line.course,
+            notes: line.notes
+          }))
+        };
+      })
+      .filter((docket): docket is NonNullable<typeof docket> => docket !== null);
+
+    await prisma.posOrderLine.updateMany({
+      where: { id: { in: order.lines.map((line) => line.id) } },
+      data: { sentAt: new Date() }
+    });
+    return { dockets, sent: order.lines.length };
+  },
+
+  // ── Cash drawer ────────────────────────────────────────────────────────
+  async drawerStatus(venue: string | null) {
+    if (!venue) throw new HttpError(400, 'venue is required.');
+    const drawer = await prisma.posDrawer.findFirst({ where: { venue, status: 'OPEN' }, orderBy: { openedAt: 'desc' } });
+    const expectedCents = drawer ? await drawerExpectedCents(drawer) : null;
+    return { drawer, expectedCents };
+  },
+
+  async openDrawer(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const venue = str(body.venue);
+    if (!venue) throw new HttpError(400, 'venue is required.');
+    const existing = await prisma.posDrawer.findFirst({ where: { venue, status: 'OPEN' } });
+    if (existing) throw new HttpError(400, 'A drawer is already open for this venue — close it first.');
+    return prisma.posDrawer.create({
+      data: {
+        venue,
+        openingFloatCents: asInt(body.openingFloatCents ?? 0, 'opening float', { min: 0 }),
+        openedByName: str(body.openedByName) || null
+      }
+    });
+  },
+
+  // Close with a denomination count: expected = float + cash takings while
+  // the drawer was open; variance = counted − expected.
+  async closeDrawer(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const venue = str(body.venue);
+    const drawer = await prisma.posDrawer.findFirst({ where: { venue, status: 'OPEN' } });
+    if (!drawer) throw new HttpError(404, 'No open drawer for this venue.');
+    const denominations = (body.denominations ?? {}) as Record<string, unknown>;
+    let countedCents = 0;
+    const clean: Record<string, number> = {};
+    for (const [denomination, qty] of Object.entries(denominations)) {
+      const denomCents = Number(denomination);
+      const quantity = Number(qty);
+      if (!Number.isInteger(denomCents) || denomCents <= 0 || !Number.isInteger(quantity) || quantity < 0) continue;
+      if (quantity > 0) clean[String(denomCents)] = quantity;
+      countedCents += denomCents * quantity;
+    }
+    const expectedCents = await drawerExpectedCents(drawer);
+    return prisma.posDrawer.update({
+      where: { id: drawer.id },
+      data: {
+        status: 'CLOSED',
+        countedCents,
+        expectedCents,
+        varianceCents: countedCents - expectedCents,
+        denominations: clean,
+        closedByName: str(body.closedByName) || null,
+        notes: str(body.notes) || null,
+        closedAt: new Date()
+      }
+    });
+  },
+
+  // ── Close of day ───────────────────────────────────────────────────────
+  // Checklist gates first (open bills, open drawer), then the audit report.
+  async closeDayStatus(venue: string | null) {
+    if (!venue) throw new HttpError(400, 'venue is required.');
+    const [openBills, drawer, alreadyClosed] = await Promise.all([
+      prisma.posOrder.count({ where: { venue, status: 'OPEN' } }),
+      prisma.posDrawer.findFirst({ where: { venue, status: 'OPEN' } }),
+      prisma.posDayClose.findUnique({
+        where: { venue_serviceDate: { venue, serviceDate: sydneyTodayUtcMidnight() } }
+      })
+    ]);
+    return {
+      openBills,
+      drawerOpen: Boolean(drawer),
+      alreadyClosed: Boolean(alreadyClosed),
+      ready: openBills === 0 && !drawer && !alreadyClosed
+    };
+  },
+
+  async closeDay(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const venue = str(body.venue);
+    if (!venue) throw new HttpError(400, 'venue is required.');
+    const gate = await this.closeDayStatus(venue);
+    if (gate.alreadyClosed) throw new HttpError(400, 'Close of day has already been run for today.');
+    if (gate.openBills > 0) throw new HttpError(400, `${gate.openBills} bill(s) are still open — close or void them first.`);
+    if (gate.drawerOpen) throw new HttpError(400, 'The cash drawer is still open — count and close it first.');
+
+    const serviceDate = sydneyTodayUtcMidnight();
+    const [summary, drawers] = await Promise.all([
+      this.daySummary(venue, null),
+      prisma.posDrawer.findMany({
+        where: { venue, status: 'CLOSED', closedAt: { gte: new Date(serviceDate.getTime() - 12 * 3600_000) } },
+        orderBy: { closedAt: 'asc' }
+      })
+    ]);
+    const report = {
+      ...summary,
+      drawers: drawers.map((drawer) => ({
+        openedAt: drawer.openedAt,
+        closedAt: drawer.closedAt,
+        openingFloatCents: drawer.openingFloatCents,
+        expectedCents: drawer.expectedCents,
+        countedCents: drawer.countedCents,
+        varianceCents: drawer.varianceCents,
+        closedByName: drawer.closedByName
+      }))
+    };
+    await prisma.posDayClose.create({
+      data: {
+        venue,
+        serviceDate,
+        report: report as object,
+        closedByName: str(body.closedByName) || null
+      }
+    });
+    return report;
+  },
+
+  // Tonight's bookings for the floor overlay — matched to tables by label.
+  async floorReservations(venue: string | null) {
+    if (!venue) return [];
+    const serviceDate = sydneyTodayUtcMidnight();
+    const reservations = await prisma.reserveReservation.findMany({
+      where: {
+        venue,
+        serviceDate,
+        status: { notIn: ['CANCELLED', 'NO_SHOW'] }
+      },
+      select: {
+        id: true,
+        guestName: true,
+        covers: true,
+        startsAt: true,
+        status: true,
+        area: true,
+        tableLabels: true,
+        table: { select: { label: true } },
+        guest: { select: { firstName: true, lastName: true } }
+      },
+      orderBy: { startsAt: 'asc' }
+    });
+    return reservations.map((reservation) => ({
+      id: reservation.id,
+      name:
+        reservation.guestName ??
+        `${reservation.guest?.firstName ?? ''} ${reservation.guest?.lastName ?? ''}`.trim() ??
+        'Guest',
+      covers: reservation.covers,
+      startsAt: reservation.startsAt,
+      status: reservation.status,
+      area: reservation.area,
+      tableLabel: reservation.table?.label ?? reservation.tableLabels?.split(/[,;/]/)[0]?.trim() ?? null
+    }));
   },
 
   // The venue's floor plan — the SAME tables the Reserve app's floor-plan

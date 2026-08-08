@@ -53,6 +53,34 @@ type FloorTable = {
   seats: number | null;
   maxCovers: number;
 };
+type FloorReservation = {
+  id: string;
+  name: string;
+  covers: number;
+  startsAt: string;
+  status: string;
+  area: string | null;
+  tableLabel: string | null;
+};
+type Docket = {
+  profile: string;
+  printerIp: string | null;
+  tableLabel: string | null;
+  orderNumber: number;
+  covers: number | null;
+  openedByName: string | null;
+  lines: Array<{ id: string; name: string; quantity: number; course: string | null; notes: string | null }>;
+};
+type DrawerInfo = {
+  drawer: null | {
+    id: string;
+    openingFloatCents: number;
+    openedAt: string;
+    openedByName: string | null;
+  };
+  expectedCents: number | null;
+};
+type CloseGate = { openBills: number; drawerOpen: boolean; alreadyClosed: boolean; ready: boolean };
 type DaySummary = {
   serviceDate: string;
   orderCount: number;
@@ -64,7 +92,9 @@ type DaySummary = {
 };
 
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
-const COURSES = ['Mains', 'Entrée', 'Sides', 'Dessert', 'Drinks'];
+const FALLBACK_COURSES = ['Entrée', 'Mains', 'Sides', 'Dessert', 'Drinks'];
+// AU cash denominations, cents.
+const DENOMS = [10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5];
 
 function money(cents: number) {
   return (cents / 100).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
@@ -109,6 +139,17 @@ export function App() {
   const [tendered, setTendered] = useState('');
   const [receipt, setReceipt] = useState<Order | null>(null);
   const [day, setDay] = useState<DaySummary | null>(null);
+  const [courses, setCourses] = useState<string[]>(FALLBACK_COURSES);
+  const [dockets, setDockets] = useState<Docket[] | null>(null);
+  const [reservations, setReservations] = useState<FloorReservation[]>([]);
+  const [closing, setClosing] = useState<null | {
+    gate: CloseGate | null;
+    drawer: DrawerInfo | null;
+    stage: 'checklist' | 'count' | 'report';
+    float: string;
+    counts: Record<number, string>;
+    report: (DaySummary & { drawers: Array<{ openingFloatCents: number; expectedCents: number | null; countedCents: number | null; varianceCents: number | null }> }) | null;
+  }>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -149,6 +190,11 @@ export function App() {
     } catch {
       /* floor plan is optional */
     }
+    try {
+      setReservations(await api<FloorReservation[]>(`/api/pos/floor-reservations?venue=${encodeURIComponent(venue)}`));
+    } catch {
+      /* overlay is optional */
+    }
   }, [venue]);
 
   useEffect(() => {
@@ -167,6 +213,9 @@ export function App() {
     if (!me || me === 'loading') return;
     void (async () => {
       try {
+        void api<Array<{ name: string }>>('/api/pos/courses')
+          .then((rows) => setCourses(rows.map((row) => row.name)))
+          .catch(() => undefined);
         const res = await api<{ categories: MenuCategory[] }>('/api/pos/menu');
         setMenu(res.categories);
         setActiveCategory((current) => current || res.categories[0]?.name || '');
@@ -235,8 +284,8 @@ export function App() {
     if (!order) return;
     const next = order.lines.map((line, i) => {
       if (i !== index) return line;
-      const at = COURSES.indexOf(line.course ?? 'Mains');
-      return { ...line, course: COURSES[(at + 1) % COURSES.length] };
+      const at = courses.indexOf(line.course ?? 'Mains');
+      return { ...line, course: courses[(at + 1) % courses.length] };
     });
     void pushLines(next);
   }
@@ -347,6 +396,21 @@ export function App() {
         ) : null}
         {order ? (
           <>
+            <button
+              type="button"
+              className="pos-ghost"
+              disabled={busy || order.lines.every((line) => (line as { sentAt?: string | null }).sentAt)}
+              onClick={() => {
+                void api<{ dockets: Docket[]; sent: number }>(`/api/pos/orders/${order.id}/send`, { method: 'POST' })
+                  .then(async (result) => {
+                    if (result.dockets.length > 0) setDockets(result.dockets);
+                    setOrder(await api<Order>(`/api/pos/orders/${order.id}`));
+                  })
+                  .catch((err) => setError(messageForError(err, 'Could not send the order.')));
+              }}
+            >
+              Send
+            </button>
             <button type="button" className="pos-ghost" disabled={order.lines.length === 0} onClick={() => setBill(order)}>
               Bill
             </button>
@@ -355,9 +419,26 @@ export function App() {
             </button>
           </>
         ) : (
-          <button type="button" className="pos-ghost" onClick={() => void openDay()}>
-            Day
-          </button>
+          <>
+            <button type="button" className="pos-ghost" onClick={() => void openDay()}>
+              Day
+            </button>
+            <button
+              type="button"
+              className="pos-ghost"
+              onClick={() => {
+                void (async () => {
+                  const [gate, drawer] = await Promise.all([
+                    api<CloseGate>(`/api/pos/close-day?venue=${encodeURIComponent(venue)}`),
+                    api<DrawerInfo>(`/api/pos/drawer?venue=${encodeURIComponent(venue)}`)
+                  ]);
+                  setClosing({ gate, drawer, stage: 'checklist', float: '', counts: {}, report: null });
+                })().catch((err) => setError(messageForError(err, 'Could not load close of day.')));
+              }}
+            >
+              Close
+            </button>
+          </>
         )}
       </header>
 
@@ -392,6 +473,7 @@ export function App() {
               area={floorArea}
               setArea={setFloorArea}
               openOrders={openOrders}
+              reservations={reservations}
               busy={busy}
               onPick={(table) => {
                 const existing = openOrders.find(
@@ -761,6 +843,261 @@ export function App() {
         </div>
       ) : null}
 
+      {dockets ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel pos-receipt" id="pos-docket">
+            {dockets.map((docket, index) => (
+              <div key={index} className="pos-docket">
+                <div className="pos-docket-head">
+                  <h2>{docket.profile}</h2>
+                  <p className="pos-muted">
+                    {docket.tableLabel ? `Table ${docket.tableLabel}` : `Order #${docket.orderNumber}`}
+                    {docket.covers ? ` · ${docket.covers} covers` : ''}
+                    {docket.openedByName ? ` · ${docket.openedByName}` : ''}
+                  </p>
+                </div>
+                {docket.lines.map((line) => (
+                  <div key={line.id} className="pos-docket-line">
+                    <strong>
+                      {line.quantity}× {line.name}
+                    </strong>
+                    <small>
+                      {line.course ?? ''}
+                      {line.notes ? ` — ${line.notes}` : ''}
+                    </small>
+                  </div>
+                ))}
+              </div>
+            ))}
+            <div className="pos-choice-row">
+              <button type="button" className="pos-ghost" onClick={() => window.print()}>
+                Print dockets
+              </button>
+              <button type="button" className="pos-charge" onClick={() => setDockets(null)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {closing ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel pos-receipt" id="pos-close">
+            {closing.stage === 'checklist' ? (
+              <>
+                <h2>Close of day — {venue}</h2>
+                <div className="pos-checklist">
+                  <div className={closing.gate && closing.gate.openBills === 0 ? 'is-ok' : 'is-block'}>
+                    {closing.gate?.openBills === 0 ? '✓' : '✕'} All bills closed
+                    {closing.gate && closing.gate.openBills > 0 ? ` — ${closing.gate.openBills} still open` : ''}
+                  </div>
+                  <div className={closing.drawer?.drawer ? 'is-block' : 'is-ok'}>
+                    {closing.drawer?.drawer ? '✕ Cash drawer open — count it below' : '✓ Cash drawer closed'}
+                  </div>
+                  {closing.gate?.alreadyClosed ? <div className="is-block">✕ Already closed today</div> : null}
+                </div>
+
+                {!closing.drawer?.drawer ? (
+                  <div className="pos-drawer-open">
+                    <p className="pos-muted">No drawer open. Start one with an opening float:</p>
+                    <input
+                      className="pos-tender"
+                      inputMode="decimal"
+                      placeholder="Opening float (e.g. 300)"
+                      value={closing.float}
+                      onChange={(event) => setClosing({ ...closing, float: event.currentTarget.value })}
+                    />
+                    <button
+                      type="button"
+                      className="pos-ghost"
+                      disabled={busy || !closing.float}
+                      onClick={() => {
+                        void api<DrawerInfo['drawer']>('/api/pos/drawer/open', {
+                          method: 'POST',
+                          body: JSON.stringify({
+                            venue,
+                            openingFloatCents: Math.round(Number(closing.float) * 100),
+                            openedByName: operatorName
+                          })
+                        })
+                          .then(async () => {
+                            const drawer = await api<DrawerInfo>(`/api/pos/drawer?venue=${encodeURIComponent(venue)}`);
+                            setClosing({ ...closing, drawer, float: '' });
+                          })
+                          .catch((err) => setError(messageForError(err, 'Could not open the drawer.')));
+                      }}
+                    >
+                      Open drawer
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" className="pos-ghost" onClick={() => setClosing({ ...closing, stage: 'count' })}>
+                    Count &amp; close drawer → (expecting {money(closing.drawer.expectedCents ?? 0)})
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="pos-charge"
+                  disabled={busy || !closing.gate?.ready}
+                  onClick={() => {
+                    void api<NonNullable<typeof closing.report>>('/api/pos/close-day', {
+                      method: 'POST',
+                      body: JSON.stringify({ venue, closedByName: operatorName })
+                    })
+                      .then((report) => setClosing({ ...closing, stage: 'report', report }))
+                      .catch((err) => setError(messageForError(err, 'Close of day failed.')));
+                  }}
+                >
+                  Run close of day
+                </button>
+              </>
+            ) : null}
+
+            {closing.stage === 'count' && closing.drawer?.drawer ? (
+              <>
+                <h2>Count the till</h2>
+                <p className="pos-muted">
+                  Float {money(closing.drawer.drawer.openingFloatCents)} · expecting {money(closing.drawer.expectedCents ?? 0)}
+                </p>
+                <div className="pos-denoms">
+                  {DENOMS.map((denomination) => (
+                    <label key={denomination}>
+                      <span>{denomination >= 500 ? `$${denomination / 100}` : `${denomination}c`}</span>
+                      <input
+                        inputMode="numeric"
+                        placeholder="0"
+                        value={closing.counts[denomination] ?? ''}
+                        onChange={(event) =>
+                          setClosing({
+                            ...closing,
+                            counts: { ...closing.counts, [denomination]: event.currentTarget.value }
+                          })
+                        }
+                      />
+                      <small>
+                        {money(denomination * (Number(closing.counts[denomination] ?? '0') || 0))}
+                      </small>
+                    </label>
+                  ))}
+                </div>
+                {(() => {
+                  const counted = DENOMS.reduce(
+                    (sum, denomination) => sum + denomination * (Number(closing.counts[denomination] ?? '0') || 0),
+                    0
+                  );
+                  const expected = closing.drawer?.expectedCents ?? 0;
+                  const variance = counted - expected;
+                  return (
+                    <div className="pos-count-summary">
+                      <div>
+                        <span>Counted</span>
+                        <strong>{money(counted)}</strong>
+                      </div>
+                      <div>
+                        <span>Expected</span>
+                        <strong>{money(expected)}</strong>
+                      </div>
+                      <div className={variance === 0 ? '' : variance > 0 ? 'is-over' : 'is-short'}>
+                        <span>{variance === 0 ? 'Balanced' : variance > 0 ? 'Over' : 'Short'}</span>
+                        <strong>{money(Math.abs(variance))}</strong>
+                      </div>
+                    </div>
+                  );
+                })()}
+                <button
+                  type="button"
+                  className="pos-charge"
+                  disabled={busy}
+                  onClick={() => {
+                    const denominations = Object.fromEntries(
+                      DENOMS.map((denomination) => [denomination, Number(closing.counts[denomination] ?? '0') || 0])
+                    );
+                    void api('/api/pos/drawer/close', {
+                      method: 'POST',
+                      body: JSON.stringify({ venue, denominations, closedByName: operatorName })
+                    })
+                      .then(async () => {
+                        const [gate, drawer] = await Promise.all([
+                          api<CloseGate>(`/api/pos/close-day?venue=${encodeURIComponent(venue)}`),
+                          api<DrawerInfo>(`/api/pos/drawer?venue=${encodeURIComponent(venue)}`)
+                        ]);
+                        setClosing({ ...closing, gate, drawer, stage: 'checklist', counts: {} });
+                      })
+                      .catch((err) => setError(messageForError(err, 'Could not close the drawer.')));
+                  }}
+                >
+                  Close drawer
+                </button>
+                <button type="button" className="pos-ghost" onClick={() => setClosing({ ...closing, stage: 'checklist' })}>
+                  Back
+                </button>
+              </>
+            ) : null}
+
+            {closing.stage === 'report' && closing.report ? (
+              <>
+                <h2>Close of day — {closing.report.serviceDate}</h2>
+                <div className="pos-day-grid">
+                  <div>
+                    <small>Sales</small>
+                    <strong>{money(closing.report.totalCents)}</strong>
+                  </div>
+                  <div>
+                    <small>Orders</small>
+                    <strong>{closing.report.orderCount}</strong>
+                  </div>
+                  <div>
+                    <small>Tips</small>
+                    <strong>{money(closing.report.tipCents)}</strong>
+                  </div>
+                  <div>
+                    <small>GST</small>
+                    <strong>{money(closing.report.gstCents)}</strong>
+                  </div>
+                </div>
+                {Object.entries(closing.report.methods).map(([method, bucket]) => (
+                  <p key={method} className="pos-muted">
+                    {method === 'CASH' ? 'Cash' : 'Card'} · {bucket.count} payments · {money(bucket.amountCents + bucket.tipCents)}
+                  </p>
+                ))}
+                {closing.report.drawers.map((drawer, index) => (
+                  <p key={index} className="pos-muted">
+                    Drawer {index + 1}: float {money(drawer.openingFloatCents)} → counted {money(drawer.countedCents ?? 0)} (
+                    {(drawer.varianceCents ?? 0) === 0
+                      ? 'balanced'
+                      : `${(drawer.varianceCents ?? 0) > 0 ? 'over' : 'short'} ${money(Math.abs(drawer.varianceCents ?? 0))}`}
+                    )
+                  </p>
+                ))}
+                {closing.report.topItems.slice(0, 10).map((item) => (
+                  <div key={item.name} className="pos-day-item">
+                    <span>
+                      {item.quantity}× {item.name}
+                    </span>
+                    <span>{money(item.totalCents)}</span>
+                  </div>
+                ))}
+                <div className="pos-choice-row">
+                  <button type="button" className="pos-ghost" onClick={() => window.print()}>
+                    Print report
+                  </button>
+                  <button type="button" className="pos-charge" onClick={() => setClosing(null)}>
+                    Done
+                  </button>
+                </div>
+              </>
+            ) : null}
+            {closing.stage !== 'report' ? (
+              <button type="button" className="pos-ghost pos-modal-close" onClick={() => setClosing(null)}>
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {day ? (
         <div className="pos-modal" role="dialog" onClick={() => setDay(null)}>
           <div className="pos-modal-panel" onClick={(event) => event.stopPropagation()}>
@@ -815,6 +1152,7 @@ function FloorView({
   area,
   setArea,
   openOrders,
+  reservations,
   busy,
   onPick
 }: {
@@ -822,9 +1160,21 @@ function FloorView({
   area: string;
   setArea: (value: string) => void;
   openOrders: Order[];
+  reservations: FloorReservation[];
   busy: boolean;
   onPick: (table: FloorTable) => void;
 }) {
+  const now = Date.now();
+  // Next upcoming (or currently seated) booking per table label.
+  const nextByTable = new Map<string, FloorReservation>();
+  for (const reservation of reservations) {
+    if (!reservation.tableLabel) continue;
+    if (new Date(reservation.startsAt).getTime() < now - 2.5 * 3600_000) continue;
+    const key = reservation.tableLabel.toLowerCase();
+    if (!nextByTable.has(key)) nextByTable.set(key, reservation);
+  }
+  const timeOf = (iso: string) =>
+    new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', timeZone: 'Australia/Sydney' });
   const areas = Array.from(new Set(tables.map((table) => table.area)));
   const shown = tables.filter((table) => table.area === (area || areas[0]));
   const placed = shown.filter((table) => table.posX != null && table.posY != null);
@@ -851,7 +1201,7 @@ function FloorView({
               key={table.id}
               type="button"
               disabled={busy}
-              className={`pos-floor-table ${open ? 'is-occupied' : ''} ${table.shape === 'round' ? 'is-round' : ''}`}
+              className={`pos-floor-table ${open ? 'is-occupied' : ''} ${!open && nextByTable.has(table.label.toLowerCase()) ? 'is-reserved' : ''} ${table.shape === 'round' ? 'is-round' : ''}`}
               style={{
                 left: `${table.posX}%`,
                 top: `${table.posY}%`,
@@ -862,7 +1212,16 @@ function FloorView({
               onClick={() => onPick(table)}
             >
               <strong>{table.label}</strong>
-              <small>{open ? money(open.totalCents - paidCents(open)) : `${table.seats ?? table.maxCovers}`}</small>
+              <small>
+                {open
+                  ? money(open.totalCents - paidCents(open))
+                  : (() => {
+                      const upcoming = nextByTable.get(table.label.toLowerCase());
+                      return upcoming
+                        ? `${timeOf(upcoming.startsAt)} ${upcoming.name.split(' ')[0]} ×${upcoming.covers}`
+                        : `${table.seats ?? table.maxCovers}`;
+                    })()}
+              </small>
             </button>
           );
         })}

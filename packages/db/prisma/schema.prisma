@@ -1571,6 +1571,9 @@ model ReserveReservation {
   // re-imports update the same row instead of duplicating it.
   externalRef              String?                  @unique
   tableId                  String?
+  // Raw table label(s) from the booking feed (e.g. "31" or "31,32") — matched
+  // against ReserveTable labels for the floor overlay.
+  tableLabels              String?
   area                     String?
   guestId                  String
   availabilityRuleId       String?
@@ -4739,6 +4742,8 @@ model PosOrderLine {
   totalCents     Int
   course         String?
   notes          String?
+  // Set when the line has been sent to its printer profile (docket printed).
+  sentAt         DateTime?
   createdAt      DateTime @default(now())
   order          PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   recipe         Recipe?  @relation(fields: [recipeId], references: [id], onDelete: SetNull)
@@ -4764,6 +4769,58 @@ model PosPayment {
 
 // Automatic pricing rules: weekend/public-holiday surcharges and timed
 // discounts (happy hour). Applied server-side on every order recompute.
+// Cash drawer sessions: float in, denomination count out, variance recorded.
+model PosDrawer {
+  id                String    @id @default(cuid())
+  venue             String
+  status            String    @default("OPEN") // OPEN | CLOSED
+  openingFloatCents Int       @default(0)
+  countedCents      Int?
+  expectedCents     Int?
+  varianceCents     Int?
+  // {"10000": 3, "5000": 5, ...} — cents denomination → quantity counted.
+  denominations     Json?
+  openedByName      String?
+  closedByName      String?
+  notes             String?
+  openedAt          DateTime  @default(now())
+  closedAt          DateTime?
+
+  @@index([venue, status])
+}
+
+// One close-of-day per venue per trading day — the audit record.
+model PosDayClose {
+  id           String   @id @default(cuid())
+  venue        String
+  serviceDate  DateTime
+  report       Json
+  closedByName String?
+  createdAt    DateTime @default(now())
+
+  @@unique([venue, serviceDate])
+}
+
+// Ordered course list shown on the register (tap-to-cycle + docket grouping).
+model PosCourse {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+}
+
+// Docket routing: which kinds/categories print where (kitchen vs bar).
+model PosPrinterProfile {
+  id            String  @id @default(cuid())
+  name          String
+  // FOOD or BEVERAGE — the default router; categoriesCsv narrows/overrides.
+  matchKind     String
+  categoriesCsv String  @default("")
+  printerIp     String?
+  active        Boolean @default(true)
+  sortOrder     Int     @default(0)
+}
+
 model PosRule {
   id        String   @id @default(cuid())
   kind      String // SURCHARGE | DISCOUNT
