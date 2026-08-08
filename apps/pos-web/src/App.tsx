@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { loadStripeTerminal, type Terminal, type Reader } from '@stripe/terminal-js';
-import { api, messageForError } from './api';
+import { api, consumeSuiteHandoffToken, messageForError } from './api';
 
 // ── ALMA POS v2 ─────────────────────────────────────────────────────────────
 // Home screen (open tables/tabs + quick sale + day glance) → order screen
@@ -39,7 +39,7 @@ type GuestProfile = OrderGuest & {
   visitNotes: string | null;
   favourites: Array<{ name: string; quantity: number; totalCents: number }>;
 };
-type PinExtras = { c?: string; label?: string; s?: 'w' | 'b' };
+type PinExtras = { c?: string; label?: string; s?: 'w' | 'b'; d?: 'sh' | 'hs' | 'big' };
 type Pin = ({ t: 'i'; id: string } & PinExtras) | ({ t: 'f'; name: string; items: string[] } & PinExtras);
 type TabsConfig = { order: string[]; hidden: string[]; groups: Array<{ name: string; cats: string[]; c?: string }> };
 type ModifierOption = { id: string; name: string; priceCents: number };
@@ -186,6 +186,21 @@ function offlineSurcharge(subtotalCents: number, rules: Array<{ kind: string; pe
 const FALLBACK_COURSES = ['NOW', 'Course 1', 'Course 2', 'Course 3', 'Course 4', 'Course 5', 'Course 6'];
 // AU cash denominations, cents.
 const DENOMS = [10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5];
+
+// How a pinned tile shows its name: default heading+sub, 'sh' abbreviated
+// (initials or first four letters), 'hs' larger heading with the sub line,
+// 'big' one large title only. Kitchen-facing names never change.
+function pinDisplay(pin: Pin, baseName: string): { main: string; cls: string } {
+  const name = (pin.label ?? baseName).trim() || baseName;
+  if (pin.d === 'sh') {
+    const words = name.split(/\s+/).filter(Boolean);
+    const short = words.length >= 2 ? words.map((word) => word[0]).join('').toUpperCase() : name.slice(0, 4).toUpperCase();
+    return { main: short, cls: 'pos-label-short' };
+  }
+  if (pin.d === 'big') return { main: name, cls: 'pos-label-big' };
+  if (pin.d === 'hs') return { main: name, cls: 'pos-label-hs' };
+  return { main: name, cls: '' };
+}
 
 function money(cents: number) {
   return (cents / 100).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
@@ -436,12 +451,15 @@ export function App() {
   const [groupSheet, setGroupSheet] = useState<null | { name: string }>(null);
   const homeRef = useRef(home);
   homeRef.current = home;
+  const orderIdRef = useRef<string | null>(null);
   const [eightySix, setEightySix] = useState<Set<string>>(new Set());
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
   const [mode86, setMode86] = useState(false);
   const [modSheet, setModSheet] = useState<null | { item: MenuItem; category: string; groups: ModifierGroup[]; chosen: Record<string, string[]>; notes: string }>(null);
   const [variantSheet, setVariantSheet] = useState<MenuItem | null>(null);
   const [voidConfirm, setVoidConfirm] = useState(false);
+  const [lockScreen, setLockScreen] = useState(false);
+  const [lockPin, setLockPin] = useState('');
   const [fireSheet, setFireSheet] = useState<null | Array<{ course: string; count: number; picked: boolean }>>(null);
   const [guestView, setGuestView] = useState<GuestProfile | null>(null);
   const [coversEdit, setCoversEdit] = useState<string>('');
@@ -523,8 +541,58 @@ export function App() {
     localStorage.setItem('alma.pos.view', homeView);
   }, [homeView]);
 
+  // 30s idle → lock the register. Bills live on the server so nothing is
+  // lost: device sessions drop to the staff PIN screen, personal sessions
+  // get a code-to-unlock overlay; the open bill is restored after.
   useEffect(() => {
-    void refreshAuth();
+    if (!me || me === 'loading') return;
+    if (me.kind === 'device' && !me.staffName) return;
+    const kind = me.kind;
+    const lock = () => {
+      localStorage.setItem('alma.pos.resumeOrder', orderIdRef.current ?? '');
+      if (kind === 'device') {
+        void api('/api/device/pin-logout', { method: 'POST' })
+          .then(() => refreshAuth())
+          .catch(() => undefined);
+      } else {
+        setLockScreen(true);
+      }
+    };
+    let timer = window.setTimeout(lock, 30000);
+    const reset = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(lock, 30000);
+    };
+    const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'];
+    events.forEach((name) => document.addEventListener(name, reset, { passive: true }));
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((name) => document.removeEventListener(name, reset));
+    };
+  }, [me, refreshAuth]);
+
+  // After an auto-lock sign-in, pick the bill back up where it was left.
+  useEffect(() => {
+    if (!me || me === 'loading') return;
+    if (me.kind === 'device' && !me.staffName) return;
+    const resume = localStorage.getItem('alma.pos.resumeOrder');
+    if (!resume) return;
+    localStorage.removeItem('alma.pos.resumeOrder');
+    void api<Order>(`/api/pos/orders/${resume}`)
+      .then((row) => {
+        if (row.status === 'OPEN') {
+          setOrder(row);
+          setView('register');
+        }
+      })
+      .catch(() => undefined);
+  }, [me]);
+
+  useEffect(() => {
+    void (async () => {
+      await consumeSuiteHandoffToken();
+      await refreshAuth();
+    })();
   }, [refreshAuth]);
 
   useEffect(() => {
@@ -1463,6 +1531,20 @@ export function App() {
     }
   }
 
+  async function unlockWithPin(pin: string) {
+    setBusy(true);
+    try {
+      await api('/api/pos/unlock', { method: 'POST', body: JSON.stringify({ pin }) });
+      setLockScreen(false);
+      setLockPin('');
+    } catch (err) {
+      setLockPin('');
+      setError(messageForError(err, 'That code did not match.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function openDay() {
     try {
       setDay(await api<DaySummary>(`/api/pos/day-summary?venue=${encodeURIComponent(venue)}`));
@@ -1961,15 +2043,25 @@ export function App() {
                   if (rows.length === 0) return null;
                   const qtyOf = (recipeId: string) =>
                     (order?.lines ?? []).filter((line) => line.recipeId === recipeId).reduce((sum, line) => sum + line.quantity, 0);
+                  const collapsible = activeCategory === '__all__' && !search;
                   return (
-                    <section key={category.name} className="pos-list-section">
-                      <div className="pos-list-head">
+                    <details
+                      key={category.name}
+                      className="pos-list-section"
+                      {...(collapsible ? {} : { open: true })}
+                    >
+                      <summary
+                        className="pos-list-head"
+                        onClick={(event) => {
+                          if (!collapsible) event.preventDefault();
+                        }}
+                      >
                         <i className={`pos-list-dot ${hueClass(hueForCategory(category.name))}`} />
                         <h3>{category.name}</h3>
                         <small>
                           {rows.length} item{rows.length === 1 ? '' : 's'}
                         </small>
-                      </div>
+                      </summary>
                       <div className="pos-list-card">
                         {rows.map((item) => {
                           const quantity = qtyOf(item.recipeId);
@@ -1990,7 +2082,7 @@ export function App() {
                           );
                         })}
                       </div>
-                    </section>
+                    </details>
                   );
                 })}
               </div>
@@ -2177,7 +2269,7 @@ export function App() {
                         {badges}
                         {renameInput ?? (
                           <>
-                            <span>📁 {pin.label ?? pin.name}</span>
+                            <span className={pinDisplay(pin, pin.name).cls}>📁 {pinDisplay(pin, pin.name).main}</span>
                             <small>{pin.items.length} items</small>
                           </>
                         )}
@@ -2200,7 +2292,7 @@ export function App() {
                       {badges}
                       {renameInput ?? (
                         <>
-                          <span>{pin.label ?? item.title}</span>
+                          <span className={pinDisplay(pin, item.title).cls}>{pinDisplay(pin, item.title).main}</span>
                           <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
                         </>
                       )}
@@ -3726,6 +3818,30 @@ export function App() {
         </div>
       ) : null}
 
+      {lockScreen ? (
+        <div className="pos-modal pos-lock" role="dialog">
+          <div className="pos-modal-panel">
+            <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" />
+            <h2>Register locked</h2>
+            <p className="pos-muted">Idle for 30 seconds — the bill is saved. Enter your staff code to keep going.</p>
+            <input
+              className="pos-tender"
+              type="password"
+              inputMode="numeric"
+              autoFocus
+              placeholder="Staff code"
+              value={lockPin}
+              onChange={(event) => setLockPin(event.currentTarget.value.replace(/\D/g, '').slice(0, 8))}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && lockPin.length >= 4) void unlockWithPin(lockPin);
+              }}
+            />
+            <button type="button" className="pos-charge" disabled={busy || lockPin.length < 4} onClick={() => void unlockWithPin(lockPin)}>
+              Unlock
+            </button>
+          </div>
+        </div>
+      ) : null}
       {voidConfirm && order ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
@@ -3946,6 +4062,31 @@ export function App() {
                               }
                             >
                               {colour ? '' : '∅'}
+                            </button>
+                          ))}
+                        </span>
+                        <span className="pos-dstyle">
+                          {(
+                            [
+                              ['', 'Aa'],
+                              ['sh', 'AB'],
+                              ['hs', 'A a'],
+                              ['big', 'A']
+                            ] as const
+                          ).map(([mode, tag]) => (
+                            <button
+                              key={mode || 'std'}
+                              type="button"
+                              className={(pin.d ?? '') === mode ? 'is-on' : ''}
+                              title={mode === 'sh' ? 'Short abbreviation' : mode === 'hs' ? 'Heading + subheading' : mode === 'big' ? 'Big title' : 'Standard'}
+                              onClick={() =>
+                                setHome({
+                                  ...home,
+                                  pins: home.pins.map((candidate, i) => (i === index ? { ...candidate, d: (mode || undefined) as Pin['d'] } : candidate))
+                                })
+                              }
+                            >
+                              {tag}
                             </button>
                           ))}
                         </span>
@@ -4779,16 +4920,25 @@ function SignIn({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
 
   return (
     <div className="pos-center">
-      <form className="pos-signin" onSubmit={submit}>
+      <div className="pos-signin">
+        <img src="/brand/alma-a-mark.png" alt="" className="pos-mark pos-signin-mark" />
         <h1>ALMA POS</h1>
-        <p className="pos-muted">Sign in with the venue device account (or any staff login).</p>
-        <input type="email" placeholder="Email" value={email} onChange={(event) => setEmail(event.currentTarget.value)} required />
-        <input type="password" placeholder="Password" value={password} onChange={(event) => setPassword(event.currentTarget.value)} required />
-        {error ? <p className="pos-error-inline">{error}</p> : null}
-        <button type="submit" disabled={busy}>
-          {busy ? 'Signing in…' : 'Open register'}
+        <p className="pos-muted">Sign in at Alma Home, then tap the POS button.</p>
+        <button type="button" className="pos-charge" onClick={() => { window.location.href = 'https://alma-home.web.app'; }}>
+          Sign in at Alma Home
         </button>
-      </form>
+        <details className="pos-signin-fallback">
+          <summary>Use a device account instead</summary>
+          <form onSubmit={submit}>
+            <input type="email" placeholder="Email" value={email} onChange={(event) => setEmail(event.currentTarget.value)} required />
+            <input type="password" placeholder="Password" value={password} onChange={(event) => setPassword(event.currentTarget.value)} required />
+            {error ? <p className="pos-error-inline">{error}</p> : null}
+            <button type="submit" disabled={busy}>
+              {busy ? 'Signing in…' : 'Open register'}
+            </button>
+          </form>
+        </details>
+      </div>
     </div>
   );
 }

@@ -543,3 +543,34 @@ body:not(.pos-v2) .pos-cart .pos-line-grip { color: rgba(243, 239, 230, 0.8); }
 .pos-board-dots i.is-on { background: var(--pos-text2); }
 .pos-board-dots button { background: transparent; border: 1px solid var(--pos-border); border-radius: 9999px; width: 26px; height: 26px; color: var(--pos-text2); cursor: pointer; font-size: 14px; line-height: 1; }
 .pos-board-dots button:disabled { opacity: 0.3; }
+
+/* Sign-in via Alma Home */
+.pos-signin-mark { width: 54px; height: 54px; margin: 0 auto 6px; display: block; }
+.pos-signin .pos-charge { width: 100%; margin: 12px 0 4px; }
+.pos-signin-fallback { margin-top: 14px; }
+.pos-signin-fallback summary { cursor: pointer; font-size: 12px; color: var(--pos-text3); list-style: none; text-align: center; }
+.pos-signin-fallback summary::-webkit-details-marker { display: none; }
+.pos-signin-fallback form { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+
+/* Idle lock overlay */
+.pos-lock { backdrop-filter: blur(7px); }
+.pos-lock .pos-mark { width: 46px; height: 46px; display: block; margin: 0 auto 4px; }
+.pos-lock .pos-modal-panel { text-align: center; }
+.pos-lock input { text-align: center; letter-spacing: 0.4em; font-size: 18px; }
+
+/* Pin label styles + bigger folder text */
+.pos-item-pin[data-pin-folder] span { font-size: 17.5px; }
+.pos-item span.pos-label-short { font-size: 23px; letter-spacing: 0.04em; }
+.pos-item span.pos-label-hs { font-size: 17.5px; }
+.pos-item span.pos-label-big { font-size: 20px; line-height: 1.15; }
+.pos-item span.pos-label-big + small { display: none; }
+.pos-dstyle { display: inline-flex; gap: 3px; margin-left: 6px; }
+.pos-dstyle button { background: transparent; border: 1px solid var(--pos-border); border-radius: 7px; color: var(--pos-text2); font-family: inherit; font-size: 10px; font-weight: 700; padding: 3px 7px; cursor: pointer; }
+.pos-dstyle button.is-on { background: var(--pos-accent-bg); color: var(--pos-accent-fg); border-color: transparent; }
+
+/* Full menu: categories fold shut by default */
+summary.pos-list-head { cursor: pointer; list-style: none; }
+summary.pos-list-head::-webkit-details-marker { display: none; }
+summary.pos-list-head::after { content: '▸'; margin-left: auto; opacity: 0.5; font-size: 12px; }
+details[open] > summary.pos-list-head::after { content: '▾'; }
+details.pos-list-section > summary.pos-list-head h3 ~ small { margin-left: 8px; }

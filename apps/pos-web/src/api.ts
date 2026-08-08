@@ -68,6 +68,25 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+// Arriving FROM Alma Home: redeem the one-time token in the URL for a
+// session cookie, then scrub it from the address bar.
+export async function consumeSuiteHandoffToken(): Promise<boolean> {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('suite_token');
+  if (!token) return false;
+  let ok = true;
+  try {
+    await api('/api/auth/handoff/consume', { method: 'POST', body: JSON.stringify({ token }) });
+  } catch {
+    ok = false;
+  }
+  params.delete('suite_token');
+  params.delete('suite_from');
+  const nextSearch = params.toString();
+  window.history.replaceState(null, '', `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`);
+  return ok;
+}
+
 // ── Cross-app session handoff ────────────────────────────────────────────
 // Mint a one-time token from the current (device) session and append it to a
 // target suite-app URL so the user lands signed in instead of at a login wall.

@@ -168,6 +168,14 @@ posRouter.get('/live', async (_req, res, next) => {
   }
 });
 
+posRouter.post('/unlock', async (req, res, next) => {
+  try {
+    res.json(await posService.unlockPin(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.get('/variants', async (_req, res, next) => {
   try {
     res.json(await posService.listVariants());

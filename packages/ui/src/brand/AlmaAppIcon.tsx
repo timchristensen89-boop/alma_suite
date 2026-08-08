@@ -254,6 +254,14 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
     icon: <ChartIcon />
   },
   {
+    id: 'pos',
+    label: 'POS',
+    from: '#1F3524',
+    to: '#0F1B12',
+    iconKey: 'document',
+    icon: <DocumentIcon />
+  },
+  {
     id: 'staff',
     label: 'STAFF',
     from: '#4D5E7A',

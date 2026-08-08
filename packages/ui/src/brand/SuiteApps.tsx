@@ -36,6 +36,7 @@ export type SuiteAppId =
   | 'giftcards'
   | 'learning'
   | 'reports'
+  | 'pos'
   | 'policies'
   | 'incidents'
   | 'audits'
@@ -87,6 +88,7 @@ const LIFECYCLE_BY_APP: Partial<Record<SuiteAppId, SuiteAppLifecycle>> = {
   stock: 'pilot',
   staff: 'pilot',
   reports: 'pilot',
+  pos: 'pilot',
   giftcards: 'pilot',
   reserve: 'pilot',      // promoted from preview — booking confirmation emails working
   marketing: 'pilot',    // promoted from preview — live campaign send shipped with safety net
@@ -123,6 +125,7 @@ const SUITE_APP_SEEDS: SuiteAppSeed[] = ALMA_APPS.map((app): SuiteAppSeed => ({
     app.id === 'marketing' ||
     app.id === 'giftcards' ||
     app.id === 'reports' ||
+    app.id === 'pos' ||
     app.id === 'training' ||
     app.id === 'settings'
       ? 'active'
@@ -145,6 +148,7 @@ const SUITE_APP_HOSTS: Partial<Record<SuiteAppId, string>> = {
   staff: 'https://alma-staff.web.app',
   reserve: 'https://alma-reserve.web.app',
   reports: 'https://alma-reports.web.app',
+  pos: 'https://alma-pos.web.app',
   marketing: 'https://alma-marketing.web.app',
   giftcards: 'https://alma-giftcards.web.app/redeem',
   settings: 'https://alma-suite-admin.web.app'
@@ -226,6 +230,8 @@ function descriptionFor(id: string) {
       return 'Inventory, suppliers, counts, orders, and wastage.';
     case 'reports':
       return 'Dashboards, exports, and operating insights.';
+    case 'pos':
+      return 'The register — tables, courses, payments, and dockets.';
     case 'staff':
       return 'Team records, onboarding, roles, roster access, and app access.';
     case 'reserve':

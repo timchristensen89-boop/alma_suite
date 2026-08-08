@@ -437,6 +437,24 @@ export const posService = {
     };
   },
 
+  // Lock-screen code: any ACTIVE staff member's PIN unlocks the register.
+  async unlockPin(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const pin = str(body.pin);
+    if (!/^\d{4,8}$/.test(pin)) throw new HttpError(403, 'Enter your staff code.');
+    const staff = await prisma.staffProfile.findMany({
+      where: { accountType: 'HUMAN', employmentStatus: 'ACTIVE', mergedIntoStaffProfileId: null, pinHash: { not: null } },
+      select: { firstName: true, lastName: true, pinHash: true, pinLockedUntil: true }
+    });
+    for (const profile of staff) {
+      if (profile.pinLockedUntil && profile.pinLockedUntil.getTime() > Date.now()) continue;
+      if (await authService.comparePin(pin, profile.pinHash!)) {
+        return { name: `${profile.firstName} ${profile.lastName}`.trim() };
+      }
+    }
+    throw new HttpError(403, 'That code does not match any staff member.');
+  },
+
   // ── Variants: one tile, several pours off the same stock ──────────────
   async listVariants() {
     const links = await prisma.posVariantLink.findMany({ orderBy: [{ parentRecipeId: 'asc' }, { sortOrder: 'asc' }] });
@@ -1710,7 +1728,8 @@ export const posService = {
           const pinExtras = {
             ...(typeof row.c === 'string' ? { c: row.c } : {}),
             ...(typeof row.label === 'string' && row.label.trim() ? { label: row.label.trim().slice(0, 40) } : {}),
-            ...(row.s === 'w' || row.s === 'b' ? { s: row.s } : {})
+            ...(row.s === 'w' || row.s === 'b' ? { s: row.s } : {}),
+            ...(row.d === 'sh' || row.d === 'hs' || row.d === 'big' ? { d: row.d } : {})
           };
           if (row.t === 'i' && typeof row.id === 'string') {
             return { t: 'i', id: row.id, ...pinExtras };
