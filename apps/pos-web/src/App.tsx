@@ -420,6 +420,7 @@ export function App() {
   const [mode86, setMode86] = useState(false);
   const [modSheet, setModSheet] = useState<null | { item: MenuItem; category: string; groups: ModifierGroup[]; chosen: Record<string, string[]>; notes: string }>(null);
   const [variantSheet, setVariantSheet] = useState<MenuItem | null>(null);
+  const [voidConfirm, setVoidConfirm] = useState(false);
   const [fireSheet, setFireSheet] = useState<null | Array<{ course: string; count: number; picked: boolean }>>(null);
   const [guestView, setGuestView] = useState<GuestProfile | null>(null);
   const [coversEdit, setCoversEdit] = useState<string>('');
@@ -2409,23 +2410,7 @@ export function App() {
                   type="button"
                   className="pos-ghost"
                   disabled={busy || !order || order.lines.length === 0 || paidCents(order) > 0}
-                  onClick={() => {
-                    if (!order) return;
-                    const attempt = (pin?: string) => {
-                      void api(`/api/pos/orders/${order.id}/void`, { method: 'POST', body: JSON.stringify({ reason: 'register', managerPin: pin }) })
-                        .then(() => {
-                          setManagerGate(null);
-                          setOrder(null);
-                          void refreshOpenOrders();
-                        })
-                        .catch((err) => {
-                          const message = messageForError(err, 'Could not void.');
-                          if (/manager/i.test(message)) setManagerGate({ message, pin: '', retry: attempt });
-                          else setError(message);
-                        });
-                    };
-                    attempt();
-                  }}
+                  onClick={() => setVoidConfirm(true)}
                 >
                   Void
                 </button>
@@ -3566,6 +3551,49 @@ export function App() {
         </div>
       ) : null}
 
+      {voidConfirm && order ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Void this bill?</h2>
+            <p className="pos-muted">
+              {order.lines.reduce((sum, line) => sum + line.quantity, 0)} item
+              {order.lines.reduce((sum, line) => sum + line.quantity, 0) === 1 ? '' : 's'} · {money(order.totalCents)}
+              {order.tableLabel ? ` · Table ${order.tableLabel}` : ''} — the whole bill is cancelled and the kitchen is
+              not told automatically.
+            </p>
+            <button
+              type="button"
+              className="pos-charge pos-void-confirm"
+              disabled={busy}
+              onClick={() => {
+                setVoidConfirm(false);
+                if (!order) return;
+                const orderId = order.id;
+                const attempt = (pin?: string) => {
+                  void api(`/api/pos/orders/${orderId}/void`, { method: 'POST', body: JSON.stringify({ reason: 'register', managerPin: pin }) })
+                    .then(() => {
+                      setManagerGate(null);
+                      setOrder(null);
+                      void refreshOpenOrders();
+                      setInfo('Bill voided.');
+                    })
+                    .catch((err) => {
+                      const message = messageForError(err, 'Could not void.');
+                      if (/manager/i.test(message)) setManagerGate({ message, pin: '', retry: attempt });
+                      else setError(message);
+                    });
+                };
+                attempt();
+              }}
+            >
+              Void the bill
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setVoidConfirm(false)}>
+              Keep the bill
+            </button>
+          </div>
+        </div>
+      ) : null}
       {variantSheet ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
@@ -3673,145 +3701,177 @@ export function App() {
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
             <h2>Customise {operatorName ? `${operatorName}'s` : 'this'} homescreen</h2>
-            <p className="pos-muted">Management buttons:</p>
-            <div className="pos-reason-list">
-              {['open-till', 'discount', 'comp', 'wastage', 'price'].map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={home.buttons.includes(key) ? 'is-on' : ''}
-                  onClick={() =>
-                    setHome({
-                      ...home,
-                      buttons: home.buttons.includes(key)
-                        ? home.buttons.filter((candidate) => candidate !== key)
-                        : [...home.buttons, key]
-                    })
-                  }
-                >
-                  {key}
-                </button>
-              ))}
-            </div>
-            <p className="pos-muted">Open the register on:</p>
-            <div className="pos-reason-list">
-              {[HOME_TAB, ...menu.slice(0, 11).map((category) => category.name)].map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  className={home.landingCategory === name ? 'is-on' : ''}
-                  onClick={() => setHome({ ...home, landingCategory: home.landingCategory === name ? null : name })}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-            <p className="pos-muted">Pins &amp; folders (tap to cycle colour, ✕ to remove):</p>
-            <div className="pos-reason-list">
-              {home.pins.map((pin, index) => {
-                const label = pin.t === 'f' ? `📁 ${pin.name}` : menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id)?.title ?? '?';
-                return (
-                  <span key={index} className="pos-pin-edit">
-                    <button type="button" style={pin.c && !HUE_NAMES.includes(pin.c) ? { borderColor: pin.c, color: pin.c } : pin.c ? { borderColor: HUE_DOTS[pin.c], color: HUE_DOTS[pin.c] } : undefined}>
-                      {label}
-                    </button>
-                    <span className="pos-swatches">
-                      {BRIGHT_PALETTE.map((colour) => (
-                        <button
-                          key={colour || 'none'}
-                          type="button"
-                          className={`pos-swatch ${(pin.c ?? '') === colour ? 'is-on' : ''}`}
-                          style={colour ? { background: HUE_DOTS[colour] ?? colour } : undefined}
-                          title={colour || 'No colour'}
-                          onClick={() =>
-                            setHome({
-                              ...home,
-                              pins: home.pins.map((candidate, i) => (i === index ? { ...candidate, c: colour || undefined } : candidate))
-                            })
-                          }
-                        >
-                          {colour ? '' : '∅'}
-                        </button>
-                      ))}
-                    </span>
-                    <button type="button" onClick={() => setHome({ ...home, pins: home.pins.filter((_, i) => i !== index) })}>
-                      ✕
-                    </button>
-                  </span>
-                );
-              })}
-              <button type="button" onClick={() => setFolderDraft({ name: '', c: '#4f8f6b', items: [], search: '' })}>
-                + New folder
-              </button>
-            </div>
-            <p className="pos-muted">Add item pins:</p>
-            <input
-              className="pos-tender"
-              placeholder="Search items to pin…"
-              value={pinSearch}
-              onChange={(event) => setPinSearch(event.currentTarget.value)}
-            />
-            <div className="pos-reason-list">
-              {menu
-                .flatMap((category) => category.items)
-                .filter((item) => !pinSearch || item.title.toLowerCase().includes(pinSearch.toLowerCase()))
-                .filter((item) => !home.pins.some((pin) => pin.t === 'i' && pin.id === item.recipeId))
-                .slice(0, 14)
-                .map((item) => (
-                  <button
-                    key={item.recipeId}
-                    type="button"
-                    onClick={() => setHome({ ...home, pins: [...home.pins, { t: 'i', id: item.recipeId }] })}
-                  >
-                    + {item.title}
-                  </button>
+            <details className="pos-acc">
+              <summary>
+                Management buttons <small>{home.buttons.length ? home.buttons.join(', ') : 'none'}</small>
+              </summary>
+              <div className="pos-acc-body">
+                {['open-till', 'discount', 'comp', 'wastage', 'price'].map((key) => (
+                  <label key={key} className="pos-check-row">
+                    <input
+                      type="checkbox"
+                      checked={home.buttons.includes(key)}
+                      onChange={() =>
+                        setHome({
+                          ...home,
+                          buttons: home.buttons.includes(key)
+                            ? home.buttons.filter((candidate) => candidate !== key)
+                            : [...home.buttons, key]
+                        })
+                      }
+                    />
+                    {key}
+                  </label>
                 ))}
-            </div>
-            <p className="pos-muted">This device opens on:</p>
-            <div className="pos-reason-list">
-              {[HOME_TAB, ...menu.slice(0, 11).map((category) => category.name)].map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  className={deviceLanding === name ? 'is-on' : ''}
-                  onClick={() => {
-                    const next = deviceLanding === name ? '' : name;
-                    setDeviceLanding(next);
-                    if (next) localStorage.setItem('alma.pos.deviceLanding', next);
-                    else localStorage.removeItem('alma.pos.deviceLanding');
-                  }}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-            <p className="pos-muted">Design:</p>
-            <div className="pos-reason-list">
-              {(
-                [
-                  ['classic', 'Classic tiles'],
-                  ['rail', 'Sidebar list']
-                ] as const
-              ).map(([key, label]) => (
-                <button key={key} type="button" className={design === key ? 'is-on' : ''} onClick={() => setDesign(key)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="pos-muted">Training:</p>
-            <div className="pos-reason-list">
-              <button
-                type="button"
-                className={training ? 'is-on' : ''}
-                onClick={() => {
-                  const next = !training;
-                  setTraining(next);
-                  localStorage.setItem('alma.pos.training', next ? '1' : '0');
-                }}
-              >
-                {training ? 'Training mode ON — tap to end' : 'Start training mode'}
-              </button>
-            </div>
+              </div>
+            </details>
+            <details className="pos-acc">
+              <summary>
+                Open the register on <small>{home.landingCategory ?? HOME_TAB}</small>
+              </summary>
+              <div className="pos-acc-body">
+                {[HOME_TAB, ...menu.slice(0, 11).map((category) => category.name)].map((name) => (
+                  <label key={name} className="pos-check-row">
+                    <input
+                      type="checkbox"
+                      checked={home.landingCategory === name || (!home.landingCategory && name === HOME_TAB)}
+                      onChange={() => setHome({ ...home, landingCategory: home.landingCategory === name ? null : name })}
+                    />
+                    {name}
+                  </label>
+                ))}
+              </div>
+            </details>
+            <details className="pos-acc">
+              <summary>
+                Pins &amp; folders <small>{home.pins.length} pinned</small>
+              </summary>
+              <div className="pos-acc-body">
+                <div className="pos-reason-list">
+                  {home.pins.map((pin, index) => {
+                    const label = pin.t === 'f' ? `📁 ${pin.name}` : menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id)?.title ?? '?';
+                    return (
+                      <span key={index} className="pos-pin-edit">
+                        <button type="button" style={pin.c && !HUE_NAMES.includes(pin.c) ? { borderColor: pin.c, color: pin.c } : pin.c ? { borderColor: HUE_DOTS[pin.c], color: HUE_DOTS[pin.c] } : undefined}>
+                          {label}
+                        </button>
+                        <span className="pos-swatches">
+                          {BRIGHT_PALETTE.map((colour) => (
+                            <button
+                              key={colour || 'none'}
+                              type="button"
+                              className={`pos-swatch ${(pin.c ?? '') === colour ? 'is-on' : ''}`}
+                              style={colour ? { background: HUE_DOTS[colour] ?? colour } : undefined}
+                              title={colour || 'No colour'}
+                              onClick={() =>
+                                setHome({
+                                  ...home,
+                                  pins: home.pins.map((candidate, i) => (i === index ? { ...candidate, c: colour || undefined } : candidate))
+                                })
+                              }
+                            >
+                              {colour ? '' : '∅'}
+                            </button>
+                          ))}
+                        </span>
+                        <button type="button" onClick={() => setHome({ ...home, pins: home.pins.filter((_, i) => i !== index) })}>
+                          ✕
+                        </button>
+                      </span>
+                    );
+                  })}
+                  <button type="button" onClick={() => setFolderDraft({ name: '', c: '#4f8f6b', items: [], search: '' })}>
+                    + New folder
+                  </button>
+                </div>
+              </div>
+            </details>
+            <details className="pos-acc">
+              <summary>Add item pins</summary>
+              <div className="pos-acc-body">
+                <input
+                  className="pos-tender"
+                  placeholder="Search items to pin…"
+                  value={pinSearch}
+                  onChange={(event) => setPinSearch(event.currentTarget.value)}
+                />
+                <div className="pos-reason-list">
+                  {menu
+                    .flatMap((category) => category.items)
+                    .filter((item) => !pinSearch || item.title.toLowerCase().includes(pinSearch.toLowerCase()))
+                    .filter((item) => !home.pins.some((pin) => pin.t === 'i' && pin.id === item.recipeId))
+                    .slice(0, 14)
+                    .map((item) => (
+                      <button
+                        key={item.recipeId}
+                        type="button"
+                        onClick={() => setHome({ ...home, pins: [...home.pins, { t: 'i', id: item.recipeId }] })}
+                      >
+                        + {item.title}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </details>
+            <details className="pos-acc">
+              <summary>
+                This device opens on <small>{deviceLanding || 'user default'}</small>
+              </summary>
+              <div className="pos-acc-body">
+                {[HOME_TAB, ...menu.slice(0, 11).map((category) => category.name)].map((name) => (
+                  <label key={name} className="pos-check-row">
+                    <input
+                      type="checkbox"
+                      checked={deviceLanding === name}
+                      onChange={() => {
+                        const next = deviceLanding === name ? '' : name;
+                        setDeviceLanding(next);
+                        if (next) localStorage.setItem('alma.pos.deviceLanding', next);
+                        else localStorage.removeItem('alma.pos.deviceLanding');
+                      }}
+                    />
+                    {name}
+                  </label>
+                ))}
+              </div>
+            </details>
+            <details className="pos-acc">
+              <summary>
+                Design <small>{design === 'rail' ? 'Sidebar list' : 'Classic tiles'}</small>
+              </summary>
+              <div className="pos-acc-body">
+                {(
+                  [
+                    ['classic', 'Classic tiles'],
+                    ['rail', 'Sidebar list']
+                  ] as const
+                ).map(([key, label]) => (
+                  <label key={key} className="pos-check-row">
+                    <input type="checkbox" checked={design === key} onChange={() => setDesign(key)} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </details>
+            <details className="pos-acc">
+              <summary>
+                Training <small>{training ? 'ON' : 'off'}</small>
+              </summary>
+              <div className="pos-acc-body">
+                <label className="pos-check-row">
+                  <input
+                    type="checkbox"
+                    checked={training}
+                    onChange={() => {
+                      const next = !training;
+                      setTraining(next);
+                      localStorage.setItem('alma.pos.training', next ? '1' : '0');
+                    }}
+                  />
+                  Training mode — practice sales that never post
+                </label>
+              </div>
+            </details>
             <button
               type="button"
               className="pos-charge"

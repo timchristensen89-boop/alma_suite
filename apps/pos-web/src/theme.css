@@ -466,3 +466,37 @@ body.pos-dark .pos-danger-ghost { color: #e88a77 !important; border-color: rgba(
 .office-input-num { width: 90px; }
 .office-variant-actions { display: flex; gap: 10px; margin-top: 14px; align-items: center; }
 .office-variant-editor { border: 1px solid var(--pos-border, #ddd); border-radius: 14px; padding: 14px; margin-top: 10px; }
+
+/* Void confirm: unmistakably destructive */
+.pos-void-confirm { background: #b3402e !important; border-color: #b3402e !important; color: #fff !important; }
+
+/* Customise sheet: collapsible sections keep the edit screen clean */
+.pos-acc { border: 1px solid var(--pos-border); border-radius: 12px; margin: 8px 0; overflow: hidden; background: var(--pos-panel, transparent); }
+.pos-acc summary { cursor: pointer; padding: 11px 14px; font-weight: 700; font-size: 13.5px; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pos-acc summary::-webkit-details-marker { display: none; }
+.pos-acc summary::after { content: '▾'; opacity: 0.5; transition: transform 160ms var(--ease-out, ease); }
+.pos-acc[open] summary::after { transform: rotate(180deg); }
+.pos-acc summary small { font-weight: 500; color: var(--pos-text-soft, #777); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
+.pos-acc-body { padding: 4px 14px 12px; border-top: 1px solid var(--pos-border); }
+.pos-check-row { display: flex; align-items: center; gap: 10px; padding: 7px 2px; font-size: 13.5px; cursor: pointer; }
+.pos-check-row input { width: 17px; height: 17px; accent-color: #1f3524; flex: none; }
+body.pos-dark .pos-check-row input { accent-color: #7fb894; }
+
+/* ── Classic layout: the bill sits on forest green, the menu keeps paper ── */
+body:not(.pos-v2) .pos-cart { background: #1f3524; color: #f3efe6; border-color: rgba(255, 255, 255, 0.08); }
+body:not(.pos-v2) .pos-cart .pos-muted,
+body:not(.pos-v2) .pos-cart .pos-cart-empty { color: rgba(243, 239, 230, 0.55); }
+body:not(.pos-v2) .pos-cart .pos-course-head { color: #f3efe6; background: rgba(255, 255, 255, 0.06); }
+body:not(.pos-v2) .pos-cart .pos-course-head.is-target { background: rgba(255, 255, 255, 0.16); }
+body:not(.pos-v2) .pos-cart .pos-line { border-color: rgba(255, 255, 255, 0.08); }
+body:not(.pos-v2) .pos-cart .pos-line-name,
+body:not(.pos-v2) .pos-cart .pos-line-total,
+body:not(.pos-v2) .pos-cart .pos-cart-summary,
+body:not(.pos-v2) .pos-cart .pos-cart-fold,
+body:not(.pos-v2) .pos-cart .pos-totals { color: #f3efe6; }
+body:not(.pos-v2) .pos-cart .pos-totals { border-color: rgba(255, 255, 255, 0.16); }
+body:not(.pos-v2) .pos-cart .pos-line-mods { color: rgba(243, 239, 230, 0.6); }
+body:not(.pos-v2) .pos-cart .pos-ghost { color: #f3efe6; border-color: rgba(255, 255, 255, 0.32); background: transparent; }
+body:not(.pos-v2) .pos-cart .pos-line-chips button { color: rgba(243, 239, 230, 0.8); border-color: rgba(255, 255, 255, 0.25); background: transparent; }
+body:not(.pos-v2) .pos-cart-strip { background: #1f3524; color: #f3efe6; border-color: rgba(255, 255, 255, 0.08); }
+body.pos-dark:not(.pos-v2) .pos-cart, body.pos-dark:not(.pos-v2) .pos-cart-strip { background: #10160f; }
