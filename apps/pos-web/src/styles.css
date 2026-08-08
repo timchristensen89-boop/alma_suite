@@ -138,8 +138,9 @@ input, select { font: inherit; }
 
 @media print {
   body * { visibility: hidden; }
-  #pos-receipt, #pos-receipt * { visibility: visible; }
-  #pos-receipt { position: absolute; inset: 0; background: #fff; color: #000; border: 0; }
+  #pos-receipt, #pos-receipt *, #pos-bill, #pos-bill * { visibility: visible; }
+  #pos-receipt, #pos-bill { position: absolute; inset: 0; background: #fff; color: #000; border: 0; }
+  #pos-bill .pos-muted { color: #333; }
   .pos-choice-row, .pos-modal-close { display: none !important; }
 }
 
@@ -169,3 +170,28 @@ input, select { font: inherit; }
 }
 .pos-sumline { display: flex; justify-content: space-between; font-size: 13px; color: var(--pos-muted); padding: 2px 0; }
 .pos-sumline-good { color: var(--pos-accent); }
+
+/* v3: staff PIN + bill drop */
+.pos-staff-chip {
+  border: 1px solid var(--pos-line); background: var(--pos-raise); color: var(--pos-text);
+  border-radius: 9999px; padding: 8px 14px; font-size: 13px; font-weight: 700;
+}
+.pos-pin { display: flex; flex-direction: column; gap: 16px; width: min(420px, 92vw); text-align: center; }
+.pos-pin h1 { margin: 0; font-size: 24px; }
+.pos-pin-staff { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.pos-pin-staff button {
+  min-height: 76px; border-radius: 14px; border: 1px solid var(--pos-line);
+  background: var(--pos-panel); display: flex; flex-direction: column; gap: 4px;
+  align-items: center; justify-content: center;
+}
+.pos-pin-staff small { color: var(--pos-muted); }
+.pos-pin-dots { font-size: 26px; letter-spacing: 10px; }
+.pos-pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pos-pin-pad button {
+  min-height: 64px; font-size: 22px; font-weight: 700;
+  border-radius: 14px; border: 1px solid var(--pos-line); background: var(--pos-panel);
+}
+.pos-linklike { background: none; border: 0; color: var(--pos-accent); padding: 0; font-size: inherit; }
+.pos-bill-head { text-align: center; }
+.pos-bill-head h2 { letter-spacing: 0.2em; }
+.pos-bill-foot { text-align: center; }

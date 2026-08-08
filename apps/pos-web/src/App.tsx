@@ -71,8 +71,16 @@ function ageMinutes(iso: string) {
   return Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
 }
 
+type StaffOption = { id: string; name: string; roleTitle: string; hasPin: boolean };
+type AuthShape =
+  | 'loading'
+  | null
+  | { kind: 'staff'; name: string }
+  | { kind: 'device'; staffName: string | null; staffList: StaffOption[] };
+
 export function App() {
-  const [me, setMe] = useState<{ id: string } | null | 'loading'>('loading');
+  const [me, setMe] = useState<AuthShape>('loading');
+  const [bill, setBill] = useState<Order | null>(null);
   const [venue, setVenue] = useState<string>(() => localStorage.getItem('alma.pos.venue') ?? VENUES[0]!);
   const [menu, setMenu] = useState<MenuCategory[]>([]);
   const [kindByRecipe, setKindByRecipe] = useState<Map<string, string>>(new Map());
@@ -90,8 +98,23 @@ export function App() {
 
   const refreshAuth = useCallback(async () => {
     try {
-      const res = await api<{ user: { id: string } | null }>('/api/auth/me');
-      setMe(res.user);
+      const res = await api<{ user: { id: string; firstName?: string; lastName?: string; accountType?: string; deviceAccount?: boolean } | null }>('/api/auth/me');
+      const user = res.user;
+      if (!user) {
+        setMe(null);
+        return;
+      }
+      if (user.accountType === 'VENUE_DEVICE' || user.deviceAccount) {
+        // Same PIN flow as Alma Home: the device stays signed in, the human
+        // on the register identifies with their PIN.
+        const list = await api<{ staff: StaffOption[]; activeUser: { firstName?: string; lastName?: string } | null }>('/api/device/staff');
+        const staffName = list.activeUser
+          ? `${list.activeUser.firstName ?? ''} ${list.activeUser.lastName ?? ''}`.trim() || null
+          : null;
+        setMe({ kind: 'device', staffName, staffList: list.staff });
+      } else {
+        setMe({ kind: 'staff', name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Staff' });
+      }
     } catch {
       setMe(null);
     }
@@ -197,7 +220,7 @@ export function App() {
     try {
       const created = await api<Order>('/api/pos/orders', {
         method: 'POST',
-        body: JSON.stringify({ venue, ...input })
+        body: JSON.stringify({ venue, openedByName: operatorName || undefined, ...input })
       });
       setOrder(created);
       setNewTable(null);
@@ -250,7 +273,11 @@ export function App() {
 
   if (me === 'loading') return <div className="pos-center">Loading…</div>;
   if (!me) return <SignIn onSignedIn={refreshAuth} />;
+  if (me.kind === 'device' && !me.staffName) {
+    return <PinScreen staffList={me.staffList} onSignedIn={refreshAuth} />;
+  }
 
+  const operatorName = me.kind === 'staff' ? me.name : me.staffName ?? '';
   const balance = order ? order.totalCents - paidCents(order) : 0;
 
   return (
@@ -275,10 +302,31 @@ export function App() {
           <input className="pos-search" placeholder="Search menu…" value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
         ) : null}
         <span style={{ flex: 1 }} />
-        {order ? (
-          <button type="button" className="pos-ghost" onClick={() => { setOrder(null); void refreshOpenOrders(); }}>
-            Tables
+        {operatorName ? (
+          <button
+            type="button"
+            className="pos-staff-chip"
+            title="Switch staff"
+            onClick={() => {
+              if (me.kind !== 'device') return;
+              void api('/api/device/pin-logout', { method: 'POST' })
+                .catch(() => undefined)
+                .then(() => refreshAuth());
+            }}
+          >
+            {operatorName}
+            {me.kind === 'device' ? ' · switch' : ''}
           </button>
+        ) : null}
+        {order ? (
+          <>
+            <button type="button" className="pos-ghost" disabled={order.lines.length === 0} onClick={() => setBill(order)}>
+              Bill
+            </button>
+            <button type="button" className="pos-ghost" onClick={() => { setOrder(null); void refreshOpenOrders(); }}>
+              Tables
+            </button>
+          </>
         ) : (
           <button type="button" className="pos-ghost" onClick={() => void openDay()}>
             Day
@@ -544,6 +592,65 @@ export function App() {
         </div>
       ) : null}
 
+      {bill ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel pos-receipt" id="pos-bill">
+            <div className="pos-bill-head">
+              <h2>ALMA</h2>
+              <p className="pos-muted">
+                {bill.venue}
+                <br />
+                {bill.tableLabel ? `Table ${bill.tableLabel}` : `Order #${bill.orderNumber}`}
+                {bill.covers ? ` · ${bill.covers} guests` : ''}
+                <br />
+                {new Date().toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}
+              </p>
+            </div>
+            <div className="pos-receipt-lines">
+              {bill.lines.map((line, index) => (
+                <div key={index}>
+                  <span>
+                    {line.quantity}× {line.name}
+                  </span>
+                  <span>{money(line.unitPriceCents * line.quantity)}</span>
+                </div>
+              ))}
+              {bill.discountCents > 0 ? (
+                <div>
+                  <span>{bill.discountLabel ?? 'Discount'}</span>
+                  <span>−{money(bill.discountCents)}</span>
+                </div>
+              ) : null}
+              {bill.surchargeCents > 0 ? (
+                <div>
+                  <span>{bill.surchargeLabel ?? 'Surcharge'}</span>
+                  <span>+{money(bill.surchargeCents)}</span>
+                </div>
+              ) : null}
+              {paidCents(bill) > 0 ? (
+                <div>
+                  <span>Paid so far</span>
+                  <span>−{money(paidCents(bill))}</span>
+                </div>
+              ) : null}
+              <div className="pos-receipt-total">
+                <span>Total due (incl. {money(bill.gstCents)} GST)</span>
+                <span>{money(bill.totalCents - paidCents(bill))}</span>
+              </div>
+            </div>
+            <p className="pos-muted pos-bill-foot">Thank you — pay at the counter or with your server.</p>
+            <div className="pos-choice-row">
+              <button type="button" className="pos-ghost" onClick={() => setBill(null)}>
+                Close
+              </button>
+              <button type="button" className="pos-charge" onClick={() => window.print()}>
+                Print bill
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {receipt ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel pos-receipt" id="pos-receipt">
@@ -686,6 +793,86 @@ function CashPad({
         Take cash
       </button>
     </>
+  );
+}
+
+function PinScreen({ staffList, onSignedIn }: { staffList: StaffOption[]; onSignedIn: () => Promise<void> }) {
+  const [selected, setSelected] = useState<StaffOption | null>(null);
+  const [pin, setPin] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submitPin(nextPin: string) {
+    if (!selected || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api('/api/device/pin-login', {
+        method: 'POST',
+        body: JSON.stringify({ staffProfileId: selected.id, pin: nextPin })
+      });
+      await onSignedIn();
+    } catch (err) {
+      setError(messageForError(err, 'Wrong PIN.'));
+      setPin('');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function press(digit: string) {
+    if (busy) return;
+    const next = (pin + digit).slice(0, 6);
+    setPin(next);
+    if (next.length >= 4) void submitPin(next);
+  }
+
+  return (
+    <div className="pos-center">
+      <div className="pos-pin">
+        <h1>Who's on the register?</h1>
+        {!selected ? (
+          <div className="pos-pin-staff">
+            {staffList.filter((member) => member.hasPin).map((member) => (
+              <button key={member.id} type="button" onClick={() => setSelected(member)}>
+                <strong>{member.name}</strong>
+                <small>{member.roleTitle}</small>
+              </button>
+            ))}
+            {staffList.filter((member) => member.hasPin).length === 0 ? (
+              <p className="pos-muted">No staff have PINs yet — set them in the Staff app.</p>
+            ) : null}
+          </div>
+        ) : (
+          <>
+            <p className="pos-muted">
+              {selected.name} — enter your PIN{' '}
+              <button type="button" className="pos-linklike" onClick={() => { setSelected(null); setPin(''); setError(null); }}>
+                (change)
+              </button>
+            </p>
+            <div className="pos-pin-dots">{'●'.repeat(pin.length).padEnd(4, '○')}</div>
+            {error ? <p className="pos-error-inline">{error}</p> : null}
+            <div className="pos-pin-pad">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'].map((key, index) =>
+                key === '' ? (
+                  <span key={index} />
+                ) : (
+                  <button
+                    key={index}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => (key === '⌫' ? setPin(pin.slice(0, -1)) : press(key))}
+                  >
+                    {key}
+                  </button>
+                )
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
