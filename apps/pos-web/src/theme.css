@@ -444,3 +444,10 @@ body.pos-v2 .pos-body:has(.pos-cart.is-collapsed) { grid-template-columns: 1fr 7
 .pos-rail-rename { background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 10px; color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 500; padding: 8px 10px; width: 100%; }
 .pos-tab-newfolder { border: 1px dashed var(--pos-border) !important; background: transparent !important; color: var(--pos-text-soft) !important; }
 @media (prefers-reduced-motion: reduce) { .pos-rail-item.is-tab-edit { animation: none; } }
+
+/* Folder sheet: rename, release single categories, remove the folder */
+.pos-group-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.pos-group-chips button { background: var(--pos-btn, rgba(0, 0, 0, 0.05)); border: 1px solid var(--pos-border); border-radius: 9999px; color: var(--pos-text); font-family: inherit; font-size: 12.5px; font-weight: 600; padding: 7px 12px; cursor: pointer; }
+.pos-group-chips button:hover { border-color: var(--pos-text-soft); }
+.pos-danger-ghost { color: #b3402e !important; border-color: rgba(179, 64, 46, 0.4) !important; }
+body.pos-dark .pos-danger-ghost { color: #e88a77 !important; border-color: rgba(232, 138, 119, 0.4) !important; }

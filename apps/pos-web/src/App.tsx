@@ -412,6 +412,7 @@ export function App() {
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
   const [home, setHome] = useState<{ buttons: string[]; pins: Pin[]; landingCategory?: string | null; categories?: TabsConfig | null }>({ buttons: [], pins: [] });
   const [renaming, setRenaming] = useState<null | { kind: 'pin' | 'group'; key: number | string; value: string }>(null);
+  const [groupSheet, setGroupSheet] = useState<null | { name: string }>(null);
   const homeRef = useRef(home);
   homeRef.current = home;
   const [eightySix, setEightySix] = useState<Set<string>>(new Set());
@@ -957,16 +958,7 @@ export function App() {
     setRenaming(null);
     if (value === oldName) return;
     if (!value) {
-      saveTabs((config) => {
-        const cats = config.groups.find((group) => group.name === oldName)?.cats ?? [];
-        const base = config.order.length ? config.order : visibleTabsRef.current;
-        return {
-          ...config,
-          order: base.flatMap((token) => (token === `g:${oldName}` ? cats : [token])),
-          groups: config.groups.filter((group) => group.name !== oldName)
-        };
-      });
-      setActiveCategory((current) => (current === `__group__${oldName}` ? HOME_TAB : current));
+      dissolveGroup(oldName);
       return;
     }
     saveTabs((config) => ({
@@ -975,6 +967,40 @@ export function App() {
       groups: config.groups.map((group) => (group.name === oldName ? { ...group, name: value } : group))
     }));
     setActiveCategory((current) => (current === `__group__${oldName}` ? `__group__${value}` : current));
+  }
+
+  // Remove the folder, keep its categories — they return to the bar in place.
+  function dissolveGroup(name: string) {
+    saveTabs((config) => {
+      const cats = config.groups.find((group) => group.name === name)?.cats ?? [];
+      const base = config.order.length ? config.order : visibleTabsRef.current;
+      return {
+        ...config,
+        order: base.flatMap((token) => (token === `g:${name}` ? cats : [token])),
+        groups: config.groups.filter((group) => group.name !== name)
+      };
+    });
+    setActiveCategory((current) => (current === `__group__${name}` ? HOME_TAB : current));
+  }
+
+  // Pull ONE category out of a folder, back onto the bar beside it.
+  function releaseFromGroup(name: string, cat: string) {
+    saveTabs((config) => {
+      const base = (config.order.length ? config.order : visibleTabsRef.current).filter((token) => token !== cat);
+      const at = base.indexOf(`g:${name}`);
+      return {
+        ...config,
+        order: at === -1 ? [...base, cat] : [...base.slice(0, at + 1), cat, ...base.slice(at + 1)],
+        groups: config.groups.map((group) => (group.name === name ? { ...group, cats: group.cats.filter((c) => c !== cat) } : group))
+      };
+    });
+  }
+
+  function renameGroupFromSheet(oldName: string, raw: string) {
+    const value = raw.trim().slice(0, 30);
+    if (!value || value === oldName) return;
+    commitGroupRename(oldName, value);
+    setGroupSheet({ name: value });
   }
 
   function newTabFolder() {
@@ -1412,7 +1438,7 @@ export function App() {
                   onPointerDown={(event) => tabPointerDown(event, token)}
                   onClick={() => {
                     if (boardEdit) {
-                      if (isGroup) setRenaming({ kind: 'group', key: groupName!, value: groupName! });
+                      if (isGroup) setGroupSheet({ name: groupName! });
                       return;
                     }
                     setView('register');
@@ -1784,7 +1810,7 @@ export function App() {
                       onPointerDown={(event) => tabPointerDown(event, token)}
                       onClick={() => {
                         if (boardEdit) {
-                          if (isGroup) setRenaming({ kind: 'group', key: groupName!, value: groupName! });
+                          if (isGroup) setGroupSheet({ name: groupName! });
                           return;
                         }
                         setActiveCategory(isGroup ? `__group__${groupName}` : token);
@@ -3535,6 +3561,53 @@ export function App() {
         </div>
       ) : null}
 
+      {groupSheet ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>📁 {groupSheet.name}</h2>
+            <input
+              key={groupSheet.name}
+              className="pos-tender"
+              defaultValue={groupSheet.name}
+              maxLength={30}
+              onBlur={(event) => renameGroupFromSheet(groupSheet.name, event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') renameGroupFromSheet(groupSheet.name, event.currentTarget.value);
+              }}
+            />
+            {(() => {
+              const cats = tabsConfig.groups.find((group) => group.name === groupSheet.name)?.cats ?? [];
+              return cats.length > 0 ? (
+                <>
+                  <p className="pos-muted">Tap a category to move it back onto the bar:</p>
+                  <div className="pos-group-chips">
+                    {cats.map((cat) => (
+                      <button key={cat} type="button" onClick={() => releaseFromGroup(groupSheet.name, cat)}>
+                        {cat} ⤴
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="pos-muted">This folder is empty — drag categories onto it, or remove it below.</p>
+              );
+            })()}
+            <button
+              type="button"
+              className="pos-ghost pos-danger-ghost"
+              onClick={() => {
+                dissolveGroup(groupSheet.name);
+                setGroupSheet(null);
+              }}
+            >
+              Remove folder (categories go back on the bar)
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setGroupSheet(null)}>
+              Done
+            </button>
+          </div>
+        </div>
+      ) : null}
       {managerGate ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
