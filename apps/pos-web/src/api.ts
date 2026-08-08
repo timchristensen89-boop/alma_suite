@@ -32,11 +32,25 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${API_BASE}${normalisePath(path)}`, {
-    credentials: 'include',
-    ...init,
-    headers
-  });
+  // A register must never hang on a wedged connection (e.g. an API restart
+  // leaving a dead HTTP/2 stream): 15s hard timeout, surfaced as a network
+  // error so the offline machinery takes over where it applies.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${normalisePath(path)}`, {
+      credentials: 'include',
+      ...init,
+      headers,
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (controller.signal.aborted) throw new TypeError('Network timeout — the register could not reach the server.');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     let message = response.statusText || 'Request failed';

@@ -192,3 +192,53 @@ body.pos-dark .pos-modal { background: rgba(0, 0, 0, 0.55); }
 @media print {
   .pos-error, .pos-info, .pos-offline, .pos-training { display: none; }
 }
+
+
+/* brand mark + identity */
+.pos-mark { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; cursor: pointer; }
+.pos-abn { font-size: 10.5px; color: var(--pos-text3); margin: 2px 0 0; letter-spacing: 0.06em; }
+.pos-receipt-brand { font-family: var(--font-display); font-size: 17px; color: var(--pos-text2); margin: 0 0 2px; }
+.pos-identity-fields { display: flex; gap: 8px; margin-top: 10px; }
+.pos-identity-fields .pos-tender { flex: 1; font-size: 12.5px; }
+
+
+/* slim admin tiles */
+.pos-item-slim { min-height: 46px; padding: 10px 14px; flex-direction: row; align-items: center; justify-content: flex-start; border-radius: 9999px; }
+.pos-item-slim span { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.pos-item-slim.is-addable { border-style: dashed; opacity: 0.65; }
+.pos-item-slim .pos-pin-x { top: -6px; right: -6px; }
+
+/* course sections inside the bill */
+.pos-course-pick { display: none; }
+.pos-course-group { border-bottom: 1px solid var(--pos-border-soft); margin-bottom: 0; }
+.pos-course-head { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: 0; padding: 11px 6px; font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pos-text2); cursor: pointer; font-family: inherit; }
+.pos-course-head:hover { color: var(--pos-text); }
+.pos-course-head.is-target { color: var(--pos-text); }
+.pos-course-head small { font-size: 10.5px; font-weight: 700; color: var(--pos-text3); letter-spacing: 0.04em; text-transform: none; }
+.pos-course-dot { display: inline-block; width: 7px; height: 7px; border-radius: 9999px; background: var(--pos-accent); margin-left: 8px; }
+.pos-pin-star { left: auto; right: 20px; top: -7px; }
+
+
+/* back office */
+.office-shell { min-height: 100vh; background: var(--pos-bg); color: var(--pos-text); font-family: var(--font-sans); }
+.office-header { display: flex; align-items: center; gap: 10px; padding: 14px 24px; border-bottom: 1px solid var(--pos-border-soft); }
+.office-header strong { font-family: var(--font-display); font-weight: 500; font-size: 26px; }
+.office-back { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; text-decoration: none; color: var(--pos-text2); border: 1px solid var(--pos-border); border-radius: 9999px; padding: 8px 16px; }
+.office-tabs { display: flex; gap: 7px; padding: 14px 24px 0; flex-wrap: wrap; }
+.office-tabs button { background: transparent; border: 1px solid var(--pos-border); border-radius: 9999px; color: var(--pos-text2); font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; padding: 8px 16px; cursor: pointer; font-family: inherit; }
+.office-tabs button.is-active { background: var(--pos-accent-bg); color: var(--pos-accent-fg); border-color: transparent; }
+.office-main { padding: 18px 24px 60px; max-width: 1080px; }
+.office-lead { font-size: 13px; color: var(--pos-text2); margin: 0 0 14px; max-width: 70ch; }
+.office-card { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--pos-card); border: 1px solid var(--pos-border-soft); border-radius: 16px; padding: 12px 16px; margin-bottom: 10px; }
+.office-card-col { flex-direction: column; align-items: stretch; gap: 8px; }
+.office-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.office-input { background: var(--pos-bg); border: 1px solid var(--pos-border); border-radius: 10px; color: var(--pos-text); font-family: inherit; font-size: 13px; padding: 8px 10px; }
+.office-input-name { font-weight: 700; width: 150px; }
+.office-input-wide { flex: 1; min-width: 200px; }
+.office-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--pos-text2); }
+.office-hint { font-size: 12px; color: var(--pos-text3); }
+.office-delete { margin-left: auto; width: 28px; height: 28px; border-radius: 9999px; border: 1px solid var(--pos-border); background: transparent; color: var(--pos-danger); cursor: pointer; }
+.office-add { background: transparent; border: 1px dashed var(--pos-border); border-radius: 9999px; color: var(--pos-text2); font-size: 12px; font-weight: 700; padding: 10px 18px; cursor: pointer; font-family: inherit; }
+.office-days { display: inline-flex; gap: 3px; }
+.office-days button { border: 1px solid var(--pos-border); background: transparent; color: var(--pos-text3); border-radius: 9999px; padding: 4px 8px; font-size: 10px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.office-days button.is-on { background: var(--pos-accent-bg); color: var(--pos-accent-fg); border-color: transparent; }

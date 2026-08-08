@@ -5,6 +5,7 @@ import { Kds } from './Kds';
 import { Live } from './Live';
 import { GuestOrder } from './GuestOrder';
 import { QrSheet } from './QrSheet';
+import { Office } from './Office';
 import './styles.css';
 import './theme.css';
 
@@ -19,10 +20,11 @@ const isKds = hash.includes('kds');
 const isLive = hash.includes('live');
 const guestToken = hash.startsWith('#o/') ? hash.slice(3) : null;
 const isQrSheet = hash === '#qr';
+const isOffice = hash === '#office';
 window.addEventListener('hashchange', () => window.location.reload());
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {guestToken ? <GuestOrder token={guestToken} /> : isQrSheet ? <QrSheet /> : isKds ? <Kds /> : isLive ? <Live /> : <App />}
+    {guestToken ? <GuestOrder token={guestToken} /> : isOffice ? <Office /> : isQrSheet ? <QrSheet /> : isKds ? <Kds /> : isLive ? <Live /> : <App />}
   </React.StrictMode>
 );

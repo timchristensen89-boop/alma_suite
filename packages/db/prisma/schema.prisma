@@ -4929,6 +4929,9 @@ model PosTicket {
 model PosVenueSetting {
   id            String  @id @default(cuid())
   venue         String  @unique
+  // Each venue is its own company — receipts and payments carry its identity.
+  businessName  String?
+  abn           String?
   postToReports Boolean @default(false)
 }
 

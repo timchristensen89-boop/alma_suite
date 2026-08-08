@@ -140,6 +140,20 @@ function roundCash5(cents: number): number {
 // manager. Suite logins (full accounts) bypass the gate.
 const MANAGER_ROLE = /manager|owner|director|licensee/i;
 
+// St Alma and Alma Avalon are separate companies with separate Stripe
+// accounts: STRIPE_SECRET_KEY__ST_ALMA / __ALMA_AVALON override the default
+// key per venue so each company's takings land in its own account.
+const stripeByVenue = new Map<string, Stripe | null>();
+export function stripeForVenue(venue: string | null | undefined): Stripe | null {
+  const slug = (venue ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  if (!slug) return stripe;
+  if (!stripeByVenue.has(slug)) {
+    const key = process.env[`STRIPE_SECRET_KEY__${slug}`];
+    stripeByVenue.set(slug, key ? new Stripe(key) : null);
+  }
+  return stripeByVenue.get(slug) ?? stripe;
+}
+
 async function verifyManagerPin(pin: string): Promise<string> {
   if (!/^\d{4,8}$/.test(pin)) throw new HttpError(403, 'Manager PIN required.');
   const managers = await prisma.staffProfile.findMany({
@@ -608,21 +622,29 @@ export const posService = {
   async getVenueSetting(venue: string | null) {
     if (!venue) throw new HttpError(400, 'venue is required.');
     const row = await prisma.posVenueSetting.findUnique({ where: { venue } });
-    return { venue, postToReports: row?.postToReports ?? false };
+    return {
+      venue,
+      postToReports: row?.postToReports ?? false,
+      businessName: row?.businessName ?? venue,
+      abn: row?.abn ?? null
+    };
   },
 
   async setVenueSetting(input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const venue = str(body.venue);
     if (!venue) throw new HttpError(400, 'venue is required.');
-    const postToReports = body.postToReports === true;
+    const patch: Record<string, unknown> = {};
+    if (body.postToReports !== undefined) patch.postToReports = body.postToReports === true;
+    if (body.businessName !== undefined) patch.businessName = str(body.businessName).slice(0, 80) || null;
+    if (body.abn !== undefined) patch.abn = str(body.abn).slice(0, 20) || null;
     await prisma.posVenueSetting.upsert({
       where: { venue },
-      create: { venue, postToReports },
-      update: { postToReports }
+      create: { venue, postToReports: false, ...patch },
+      update: patch
     });
-    if (postToReports) await postPosActuals(venue).catch(() => undefined);
-    return { venue, postToReports };
+    if (patch.postToReports === true) await postPosActuals(venue).catch(() => undefined);
+    return this.getVenueSetting(venue);
   },
 
   // Per-server shift report: what this staff member rang up today.
@@ -680,6 +702,9 @@ export const posService = {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) throw new HttpError(400, 'Enter a valid email.');
     const order = await prisma.posOrder.findUnique({ where: { id }, include: { lines: true, payments: true } });
     if (!order) throw new HttpError(404, 'Bill not found.');
+    const identity = await prisma.posVenueSetting.findUnique({ where: { venue: order.venue } });
+    const businessName = identity?.businessName ?? order.venue;
+    const abnLine = identity?.abn ? `<p style="text-align:center;font-size:11px;color:#777;margin:2px 0 0">ABN ${identity.abn}</p>` : '';
     const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
     const rows = order.lines
       .map(
@@ -698,7 +723,8 @@ export const posService = {
     ].join('');
     const html = `
       <div style="font-family:Georgia,serif;max-width:420px;margin:0 auto;color:#1F2A1E">
-        <h2 style="letter-spacing:0.2em;text-align:center">ALMA</h2>
+        <h2 style="letter-spacing:0.2em;text-align:center">${businessName}</h2>
+        ${abnLine}
         <p style="text-align:center;color:#666">${order.venue}<br>${order.tableLabel ? `Table ${order.tableLabel}` : `Order #${order.orderNumber}`} · ${new Date().toLocaleDateString('en-AU')}</p>
         <table width="100%" style="border-collapse:collapse;font-size:14px">${rows}${extras}
           <tr><td style="border-top:1px solid #ccc;padding-top:8px"><b>Total (incl. ${money(order.gstCents)} GST${order.tipCents ? ` + ${money(order.tipCents)} tip` : ''})</b></td>
@@ -994,7 +1020,7 @@ export const posService = {
     const count = await prisma.posCourse.count();
     if (count === 0) {
       await prisma.posCourse.createMany({
-        data: ['Entrée', 'Mains', 'Sides', 'Dessert', 'Drinks'].map((name, index) => ({ name, sortOrder: index }))
+        data: ['Course 1', 'Course 2', 'Course 3', 'Course 4', 'Course 5', 'Course 6', 'Course 7'].map((name, index) => ({ name, sortOrder: index }))
       });
     }
     return prisma.posCourse.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } });
@@ -1012,6 +1038,56 @@ export const posService = {
       });
     }
     return prisma.posPrinterProfile.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } });
+  },
+
+  // Back office: printer profile + rule management.
+  async savePrinterProfile(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const data = {
+      name: str(body.name).slice(0, 40),
+      matchKind: str(body.matchKind).toUpperCase() === 'BEVERAGE' ? 'BEVERAGE' : 'FOOD',
+      categoriesCsv: str(body.categoriesCsv).slice(0, 400),
+      printerIp: str(body.printerIp).slice(0, 60) || null,
+      active: body.active !== false,
+      sortOrder: Number.isInteger(Number(body.sortOrder)) ? Number(body.sortOrder) : 0
+    };
+    if (!data.name) throw new HttpError(400, 'Profile name is required.');
+    const id = str(body.id);
+    if (id) return prisma.posPrinterProfile.update({ where: { id }, data });
+    return prisma.posPrinterProfile.create({ data });
+  },
+
+  async deletePrinterProfile(id: string) {
+    await prisma.posPrinterProfile.delete({ where: { id } });
+    return { ok: true };
+  },
+
+  async saveRule(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const percent = Number(body.percent);
+    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) throw new HttpError(400, 'percent must be 1-100.');
+    const data = {
+      kind: str(body.kind).toUpperCase() === 'DISCOUNT' ? 'DISCOUNT' : 'SURCHARGE',
+      label: str(body.label).slice(0, 60) || 'Rule',
+      percent,
+      weekdays: str(body.weekdays)
+        .split(',')
+        .map((value) => value.trim())
+        .filter((value) => /^[0-6]$/.test(value))
+        .join(','),
+      holidays: body.holidays === true,
+      startMinute: body.startMinute === undefined || body.startMinute === null || body.startMinute === '' ? null : asInt(body.startMinute, 'startMinute', { min: 0, max: 1439 }),
+      endMinute: body.endMinute === undefined || body.endMinute === null || body.endMinute === '' ? null : asInt(body.endMinute, 'endMinute', { min: 0, max: 1439 }),
+      active: body.active !== false
+    };
+    const id = str(body.id);
+    if (id) return prisma.posRule.update({ where: { id }, data });
+    return prisma.posRule.create({ data });
+  },
+
+  async deleteRule(id: string) {
+    await prisma.posRule.delete({ where: { id } });
+    return { ok: true };
   },
 
   // Send the order's unsent lines to their printer profiles: returns dockets
@@ -1464,9 +1540,10 @@ export const posService = {
   },
 
   // ── Stripe Terminal ────────────────────────────────────────────────────
-  async terminalConnectionToken() {
-    if (!stripe) throw new HttpError(503, 'Stripe is not configured on the server.');
-    const token = await stripe.terminal.connectionTokens.create();
+  async terminalConnectionToken(venue?: string | null) {
+    const client = stripeForVenue(venue) ?? stripe;
+    if (!client) throw new HttpError(503, 'Stripe is not configured on the server.');
+    const token = await client.terminal.connectionTokens.create();
     return { secret: token.secret };
   },
 

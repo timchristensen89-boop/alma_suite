@@ -1,0 +1,307 @@
+import { useCallback, useEffect, useState } from 'react';
+import { api, messageForError } from './api';
+
+// ── POS back office — alma-pos.web.app/#office ─────────────────────────────
+// Register settings live here, out of the way of service: printer/docket
+// routing, modifier groups, surcharge & discount rules, and each venue's
+// business identity. Uses the same session as the register.
+
+const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+type Profile = { id: string; name: string; matchKind: string; categoriesCsv: string; printerIp: string | null; active: boolean; sortOrder: number };
+type Rule = { id: string; kind: string; label: string; percent: number; weekdays: string; holidays: boolean; startMinute: number | null; endMinute: number | null; active: boolean };
+type ModGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: Array<{ id: string; name: string; priceCents: number }> };
+type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null };
+
+export function Office() {
+  const [tab, setTab] = useState<'printers' | 'modifiers' | 'rules' | 'identity'>('printers');
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [rules, setRules] = useState<Rule[]>([]);
+  const [groups, setGroups] = useState<ModGroup[]>([]);
+  const [identities, setIdentities] = useState<Identity[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [profileRows, ruleRows, menu] = await Promise.all([
+        api<Profile[]>('/api/pos/printer-profiles'),
+        api<Rule[]>('/api/pos/rules'),
+        api<{ modifierGroups?: ModGroup[] }>('/api/pos/menu')
+      ]);
+      setProfiles(profileRows);
+      setRules(ruleRows);
+      setGroups(menu.modifierGroups ?? []);
+      setIdentities(await Promise.all(VENUES.map((venue) => api<Identity>(`/api/pos/venue-settings?venue=${encodeURIComponent(venue)}`))));
+      setError(null);
+    } catch (err) {
+      setError(messageForError(err, 'Could not load settings.'));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!info) return;
+    const timer = setTimeout(() => setInfo(null), 4000);
+    return () => clearTimeout(timer);
+  }, [info]);
+
+  async function saveProfile(profile: Partial<Profile>) {
+    try {
+      await api('/api/pos/printer-profiles', { method: 'POST', body: JSON.stringify(profile) });
+      setInfo('Printer profile saved.');
+      void refresh();
+    } catch (err) {
+      setError(messageForError(err, 'Could not save the profile.'));
+    }
+  }
+
+  async function saveRule(rule: Partial<Rule>) {
+    try {
+      await api('/api/pos/rules', { method: 'POST', body: JSON.stringify(rule) });
+      setInfo('Rule saved.');
+      void refresh();
+    } catch (err) {
+      setError(messageForError(err, 'Could not save the rule.'));
+    }
+  }
+
+  const minuteLabel = (minute: number | null) =>
+    minute === null ? '—' : `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+
+  return (
+    <div className="office-shell">
+      <header className="office-header">
+        <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" />
+        <strong>Back office</strong>
+        <span className="pos-wordmark-chip">POS settings</span>
+        <span style={{ flex: 1 }} />
+        <a href="/" className="office-back">← Register</a>
+      </header>
+      <nav className="office-tabs">
+        {(
+          [
+            ['printers', 'Printers & dockets'],
+            ['modifiers', 'Modifiers'],
+            ['rules', 'Surcharges & discounts'],
+            ['identity', 'Venues & receipts']
+          ] as const
+        ).map(([key, label]) => (
+          <button key={key} type="button" className={tab === key ? 'is-active' : ''} onClick={() => setTab(key)}>
+            {label}
+          </button>
+        ))}
+      </nav>
+      {error ? <div className="pos-error" onClick={() => setError(null)}>{error}</div> : null}
+      {info ? <div className="pos-info" onClick={() => setInfo(null)}>{info}</div> : null}
+
+      <main className="office-main">
+        {tab === 'printers' ? (
+          <section>
+            <p className="office-lead">
+              Each profile is a docket station: items route by kind (food / beverage) or by exact categories. Give a profile an
+              IP when a physical Epson printer arrives — until then its station shows on the KDS.
+            </p>
+            {profiles.map((profile) => (
+              <div key={profile.id} className="office-card">
+                <input defaultValue={profile.name} onBlur={(event) => event.currentTarget.value !== profile.name && void saveProfile({ ...profile, name: event.currentTarget.value })} className="office-input office-input-name" />
+                <select defaultValue={profile.matchKind} onChange={(event) => void saveProfile({ ...profile, matchKind: event.currentTarget.value })} className="office-input">
+                  <option value="FOOD">Food</option>
+                  <option value="BEVERAGE">Beverage</option>
+                </select>
+                <input defaultValue={profile.categoriesCsv} placeholder="Categories (csv, overrides kind)" onBlur={(event) => event.currentTarget.value !== profile.categoriesCsv && void saveProfile({ ...profile, categoriesCsv: event.currentTarget.value })} className="office-input office-input-wide" />
+                <input defaultValue={profile.printerIp ?? ''} placeholder="Printer IP (blank = KDS only)" onBlur={(event) => event.currentTarget.value !== (profile.printerIp ?? '') && void saveProfile({ ...profile, printerIp: event.currentTarget.value })} className="office-input" />
+                <label className="office-toggle">
+                  <input type="checkbox" defaultChecked={profile.active} onChange={(event) => void saveProfile({ ...profile, active: event.currentTarget.checked })} />
+                  Active
+                </label>
+                <button
+                  type="button"
+                  className="office-delete"
+                  onClick={() => {
+                    void api(`/api/pos/printer-profiles/${profile.id}`, { method: 'DELETE' })
+                      .then(() => {
+                        setInfo('Profile removed.');
+                        void refresh();
+                      })
+                      .catch((err) => setError(messageForError(err, 'Could not remove it.')));
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button type="button" className="office-add" onClick={() => void saveProfile({ name: 'New station', matchKind: 'FOOD', categoriesCsv: '', sortOrder: profiles.length })}>
+              ＋ Add a station
+            </button>
+          </section>
+        ) : null}
+
+        {tab === 'modifiers' ? (
+          <section>
+            <p className="office-lead">
+              Modifier groups attach to menu categories — tapping an item in those categories opens its choices. Prices are
+              deltas on top of the item.
+            </p>
+            {groups.map((group) => (
+              <div key={group.id} className="office-card office-card-col">
+                <div className="office-row">
+                  <strong>{group.name}</strong>
+                  <span className="office-hint">
+                    {group.required ? 'required' : 'optional'} · up to {group.maxSelect} · categories: {group.categories.join(', ') || '—'}
+                  </span>
+                  <button
+                    type="button"
+                    className="office-delete"
+                    onClick={() => {
+                      void api(`/api/pos/modifier-groups/${group.id}`, { method: 'DELETE' })
+                        .then(() => {
+                          setInfo('Group removed.');
+                          void refresh();
+                        })
+                        .catch((err) => setError(messageForError(err, 'Could not remove it.')));
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="office-hint">
+                  {group.options.map((option) => `${option.name}${option.priceCents ? ` +$${(option.priceCents / 100).toFixed(2)}` : ''}`).join(' · ')}
+                </div>
+              </div>
+            ))}
+            <p className="office-hint" style={{ marginTop: 10 }}>
+              Add or reshape groups from the register's ⚙ sheet, or ask Claude to build them — full editing lands here next.
+            </p>
+          </section>
+        ) : null}
+
+        {tab === 'rules' ? (
+          <section>
+            <p className="office-lead">
+              Automatic percentage rules the register applies to every bill: weekend or public-holiday surcharges, standing
+              discounts. Holiday rules replace weekday rules — never stack.
+            </p>
+            {rules.map((rule) => (
+              <div key={rule.id} className="office-card">
+                <input defaultValue={rule.label} onBlur={(event) => event.currentTarget.value !== rule.label && void saveRule({ ...rule, label: event.currentTarget.value })} className="office-input office-input-name" />
+                <select defaultValue={rule.kind} onChange={(event) => void saveRule({ ...rule, kind: event.currentTarget.value })} className="office-input">
+                  <option value="SURCHARGE">Surcharge</option>
+                  <option value="DISCOUNT">Discount</option>
+                </select>
+                <input defaultValue={String(rule.percent)} inputMode="decimal" style={{ width: 64 }} onBlur={(event) => Number(event.currentTarget.value) !== rule.percent && void saveRule({ ...rule, percent: Number(event.currentTarget.value) })} className="office-input" />
+                <span className="office-hint">%</span>
+                <span className="office-days">
+                  {WEEKDAYS.map((day, index) => {
+                    const on = rule.weekdays.split(',').includes(String(index));
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        className={on ? 'is-on' : ''}
+                        onClick={() => {
+                          const set = new Set(rule.weekdays.split(',').filter(Boolean));
+                          if (on) set.delete(String(index));
+                          else set.add(String(index));
+                          void saveRule({ ...rule, weekdays: [...set].join(',') });
+                        }}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
+                </span>
+                <label className="office-toggle">
+                  <input type="checkbox" defaultChecked={rule.holidays} onChange={(event) => void saveRule({ ...rule, holidays: event.currentTarget.checked })} />
+                  Public holidays
+                </label>
+                <span className="office-hint">{minuteLabel(rule.startMinute)}–{minuteLabel(rule.endMinute)}</span>
+                <label className="office-toggle">
+                  <input type="checkbox" defaultChecked={rule.active} onChange={(event) => void saveRule({ ...rule, active: event.currentTarget.checked })} />
+                  Active
+                </label>
+                <button
+                  type="button"
+                  className="office-delete"
+                  onClick={() => {
+                    void api(`/api/pos/rules/${rule.id}`, { method: 'DELETE' })
+                      .then(() => {
+                        setInfo('Rule removed.');
+                        void refresh();
+                      })
+                      .catch((err) => setError(messageForError(err, 'Could not remove it.')));
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button type="button" className="office-add" onClick={() => void saveRule({ label: 'New rule', kind: 'SURCHARGE', percent: 10, weekdays: '', holidays: false })}>
+              ＋ Add a rule
+            </button>
+          </section>
+        ) : null}
+
+        {tab === 'identity' ? (
+          <section>
+            <p className="office-lead">
+              St Alma and Alma Avalon are separate companies — each venue's receipts carry its own name and ABN, and payments
+              can settle to its own Stripe account.
+            </p>
+            {identities.map((identity) => (
+              <div key={identity.venue} className="office-card office-card-col">
+                <strong>{identity.venue}</strong>
+                <div className="office-row">
+                  <input
+                    defaultValue={identity.businessName}
+                    placeholder="Business name on receipts"
+                    className="office-input office-input-wide"
+                    onBlur={(event) => {
+                      const businessName = event.currentTarget.value.trim();
+                      if (!businessName || businessName === identity.businessName) return;
+                      void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, businessName }) })
+                        .then(() => setInfo('Saved.'))
+                        .catch((err) => setError(messageForError(err, 'Could not save.')));
+                    }}
+                  />
+                  <input
+                    defaultValue={identity.abn ?? ''}
+                    placeholder="ABN"
+                    className="office-input"
+                    onBlur={(event) => {
+                      const abn = event.currentTarget.value.trim();
+                      if (abn === (identity.abn ?? '')) return;
+                      void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, abn }) })
+                        .then(() => setInfo('Saved.'))
+                        .catch((err) => setError(messageForError(err, 'Could not save.')));
+                    }}
+                  />
+                  <label className="office-toggle">
+                    <input
+                      type="checkbox"
+                      defaultChecked={identity.postToReports}
+                      onChange={(event) => {
+                        void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, postToReports: event.currentTarget.checked }) })
+                          .then(() => setInfo('Saved.'))
+                          .catch((err) => setError(messageForError(err, 'Could not save.')));
+                      }}
+                    />
+                    This POS is the till (posts to Reports)
+                  </label>
+                </div>
+              </div>
+            ))}
+            <p className="office-hint">
+              Separate Stripe accounts: add STRIPE_SECRET_KEY__ST_ALMA / STRIPE_SECRET_KEY__ALMA_AVALON on the server and each
+              venue's card payments settle to its own company.
+            </p>
+          </section>
+        ) : null}
+      </main>
+    </div>
+  );
+}

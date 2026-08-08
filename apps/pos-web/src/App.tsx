@@ -177,7 +177,7 @@ function offlineSurcharge(subtotalCents: number, rules: Array<{ kind: string; pe
   );
   return rule ? { cents: Math.round((subtotalCents * rule.percent) / 100), label: `Weekend surcharge ${rule.percent}%` } : { cents: 0, label: null };
 }
-const FALLBACK_COURSES = ['Entrée', 'Mains', 'Sides', 'Dessert', 'Drinks'];
+const FALLBACK_COURSES = ['Course 1', 'Course 2', 'Course 3', 'Course 4', 'Course 5', 'Course 6', 'Course 7'];
 // AU cash denominations, cents.
 const DENOMS = [10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5];
 
@@ -189,10 +189,8 @@ function paidCents(order: Order) {
   return order.payments.reduce((sum, payment) => sum + payment.amountCents, 0);
 }
 
-function defaultCourse(kind: string) {
-  if (kind === 'BEVERAGE') return 'Drinks';
-  if (kind === 'SET_MENU') return 'Mains';
-  return 'Mains';
+function defaultCourse(_kind: string) {
+  return 'Course 1';
 }
 
 function ageMinutes(iso: string) {
@@ -254,6 +252,16 @@ export function App() {
   // Phone layout: the bill lives in a bottom sheet behind a summary bar.
   const [cartOpen, setCartOpen] = useState(false);
   const [darkTheme, setDarkTheme] = useState(() => localStorage.getItem('alma.pos.theme') === 'dark');
+  // St Alma and Alma Avalon are separate companies — receipts and the header
+  // carry the selected venue's own identity.
+  const [venueIdentity, setVenueIdentity] = useState<{ businessName: string; abn: string | null }>({ businessName: 'ALMA', abn: null });
+
+  useEffect(() => {
+    if (me === 'loading' || !me) return;
+    void api<{ businessName: string; abn: string | null }>(`/api/pos/venue-settings?venue=${encodeURIComponent(venue)}`)
+      .then((setting) => setVenueIdentity({ businessName: setting.businessName || venue, abn: setting.abn ?? null }))
+      .catch(() => setVenueIdentity({ businessName: venue, abn: null }));
+  }, [venue, me]);
 
   useEffect(() => {
     document.body.classList.toggle('pos-dark', darkTheme);
@@ -509,7 +517,7 @@ export function App() {
         if (!StripeTerminal) throw new Error('Stripe Terminal failed to load.');
         terminalRef.current = StripeTerminal.create({
           onFetchConnectionToken: async () => {
-            const res = await api<{ secret: string }>('/api/pos/terminal/connection-token', { method: 'POST' });
+            const res = await api<{ secret: string }>('/api/pos/terminal/connection-token', { method: 'POST', body: JSON.stringify({ venue }) });
             return res.secret;
           },
           onUnexpectedReaderDisconnect: () => setReader(null)
@@ -630,6 +638,22 @@ export function App() {
       window.removeEventListener('offline', onOffline);
     };
   }, [flushQueue]);
+
+  // The bill carries EVERY course as a standing section (collapsed until
+  // used); legacy course names on old open orders append after.
+  const [courseOpen, setCourseOpen] = useState<Record<string, boolean>>({});
+  function courseIsOpen(name: string, count: number) {
+    return courseOpen[name] ?? count > 0;
+  }
+  const billCourses = useMemo(() => {
+    const groups = new Map<string, Array<{ line: Order['lines'][number]; index: number }>>();
+    for (const name of courses) groups.set(name, []);
+    (order?.lines ?? []).forEach((line, index) => {
+      const key = line.course ?? courses[0] ?? 'Course 1';
+      groups.set(key, [...(groups.get(key) ?? []), { line, index }]);
+    });
+    return [...groups.entries()];
+  }, [order, courses]);
 
   // Bill lines grouped under their course, in service order.
   const courseGroups = useMemo(() => {
@@ -1147,8 +1171,9 @@ export function App() {
   return (
     <div className="pos-shell">
       <header className="pos-header">
+        <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" onClick={() => { setOrder(null); void refreshOpenOrders(); }} />
         <strong onClick={() => { setOrder(null); void refreshOpenOrders(); }} style={{ cursor: 'pointer' }}>
-          alma
+          {venueIdentity.businessName.toLowerCase()}
         </strong>
         <span className="pos-wordmark-chip">POS</span>
         {view === 'register' ? (
@@ -1283,6 +1308,11 @@ export function App() {
             <button type="button" className="pos-ghost" onClick={() => void openDay()}>
               Day
             </button>
+            {me.kind === 'staff' ? (
+              <a className="pos-ghost" href="#office" style={{ textDecoration: 'none' }}>
+                Office
+              </a>
+            ) : null}
             <button
               type="button"
               className="pos-ghost"
@@ -1553,8 +1583,14 @@ export function App() {
                     <button
                       key={key}
                       type="button"
-                      className="pos-item pos-item-mgmt"
+                      className="pos-item pos-item-mgmt pos-item-slim"
                       onClick={() => {
+                        if (boardEdit) {
+                          const board = { ...home, buttons: (home.buttons.length ? home.buttons : ['open-till', 'discount', 'comp', 'wastage', 'price']).filter((candidate) => candidate !== key) };
+                          setHome(board);
+                          saveBoard(board);
+                          return;
+                        }
                         if (key === 'open-till') {
                           void (async () => {
                             const [gate, drawer] = await Promise.all([
@@ -1573,11 +1609,32 @@ export function App() {
                         }
                       }}
                     >
+                      {boardEdit ? <i className="pos-pin-x">✕</i> : null}
                       <span>{labels[key] ?? key}</span>
-                      <small>manage</small>
                     </button>
                   );
                 })}
+                {boardEdit
+                  ? ['open-till', 'discount', 'comp', 'wastage', 'price']
+                      .filter((key) => !(home.buttons.length ? home.buttons : ['open-till', 'discount', 'comp', 'wastage', 'price']).includes(key))
+                      .map((key) => {
+                        const labels: Record<string, string> = { 'open-till': 'Open till', discount: 'Discount', comp: 'Comp', wastage: 'Wastage', price: 'Change price' };
+                        return (
+                          <button
+                            key={`add-${key}`}
+                            type="button"
+                            className="pos-item pos-item-mgmt pos-item-slim is-addable"
+                            onClick={() => {
+                              const board = { ...home, buttons: [...(home.buttons.length ? home.buttons : []), key] };
+                              setHome(board);
+                              saveBoard(board);
+                            }}
+                          >
+                            <span>＋ {labels[key]}</span>
+                          </button>
+                        );
+                      })
+                  : null}
                 {home.pins.map((pin, index) => {
                   const editProps = boardEdit
                     ? { onPointerDown: (event: React.PointerEvent) => boardPinPointerDown(event, index) }
@@ -1643,7 +1700,13 @@ export function App() {
                         className={`pos-item pos-item-pin ${hueClass(pin.c)} ${sizeClass} ${boardEdit ? 'is-editing' : ''}`}
                         style={hueStyle(pin.c)}
                         {...editProps}
-                        onClick={() => (boardEdit ? cycleColour() : setActiveCategory(`__folder__${index}`))}
+                        onClick={() => {
+                          if (dragMoved.current) {
+                            dragMoved.current = false;
+                            return;
+                          }
+                          setActiveCategory(`__folder__${index}`);
+                        }}
                       >
                         {badges}
                         {renameInput ?? (
@@ -1739,28 +1802,44 @@ export function App() {
                         onClick={() => (boardEdit ? undefined : addItem(item))}
                       >
                         {boardEdit ? (
-                          <i
-                            className="pos-pin-x"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              // Out of the folder, back onto the board.
-                              const board = {
-                                ...home,
-                                pins: [
-                                  ...home.pins.map((candidate, i) =>
+                          <>
+                            <i
+                              className="pos-pin-rename pos-pin-star"
+                              title="Pin to Home — stays in this folder"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (home.pins.some((candidate) => candidate.t === 'i' && candidate.id === recipeId)) {
+                                  setInfo('Already pinned to Home.');
+                                  return;
+                                }
+                                const board = { ...home, pins: [...home.pins, { t: 'i' as const, id: recipeId }] };
+                                setHome(board);
+                                saveBoard(board);
+                                setInfo(`${item.title} pinned to Home — still in the folder.`);
+                              }}
+                            >
+                              ★
+                            </i>
+                            <i
+                              className="pos-pin-x"
+                              title="Remove from this folder"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                const board = {
+                                  ...home,
+                                  pins: home.pins.map((candidate, i) =>
                                     i === folderIndex && candidate.t === 'f'
                                       ? { ...candidate, items: candidate.items.filter((candidateId) => candidateId !== recipeId) }
                                       : candidate
-                                  ),
-                                  { t: 'i' as const, id: recipeId }
-                                ]
-                              };
-                              setHome(board);
-                              saveBoard(board);
-                            }}
-                          >
-                            ✕
-                          </i>
+                                  )
+                                };
+                                setHome(board);
+                                saveBoard(board);
+                              }}
+                            >
+                              ✕
+                            </i>
+                          </>
                         ) : null}
                         <span>{item.title}</span>
                         <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
@@ -1826,27 +1905,36 @@ export function App() {
               <b>{cartOpen ? 'Hide bill ▾' : 'View bill ▴'}</b>
             </button>
             <div className="pos-cart-lines">
-              <div className="pos-course-pick">
-                {courses.map((course) => (
-                  <button
-                    key={course}
-                    type="button"
-                    className={targetCourse === course ? 'is-on' : ''}
-                    onClick={() => setTargetCourse(targetCourse === course ? null : course)}
-                  >
-                    {course}
-                  </button>
-                ))}
-              </div>
-              {(order?.lines ?? []).length === 0 ? (
-                <p className="pos-muted">
-                  Tap items to start a sale{targetCourse ? ` — new items land in ${targetCourse}` : ''}.
-                </p>
+              {(order?.lines ?? []).length === 0 && !targetCourse ? (
+                <p className="pos-muted">Tap a course, then tap items — they land in that course.</p>
               ) : null}
-              {courseGroups.map(([groupCourse, entries]) => (
-                <div key={groupCourse} className="pos-course-group">
-                  <div className="pos-course-head">{groupCourse}</div>
-                  {entries.map(({ line, index }) => (
+              {billCourses.map(([groupCourse, entries]) => (
+                <div key={groupCourse} className={`pos-course-group ${courseIsOpen(groupCourse, entries.length) ? 'is-open' : ''}`}>
+                  <button
+                    type="button"
+                    className={`pos-course-head ${targetCourse === groupCourse ? 'is-target' : ''}`}
+                    onClick={() => {
+                      const open = courseIsOpen(groupCourse, entries.length);
+                      if (targetCourse === groupCourse && open) {
+                        setTargetCourse(null);
+                        setCourseOpen((current) => ({ ...current, [groupCourse]: false }));
+                      } else {
+                        setTargetCourse(groupCourse);
+                        setCourseOpen((current) => ({ ...current, [groupCourse]: true }));
+                      }
+                    }}
+                  >
+                    <span>
+                      {groupCourse}
+                      {targetCourse === groupCourse ? <i className="pos-course-dot" /> : null}
+                    </span>
+                    <small>
+                      {entries.length > 0 ? `${entries.reduce((sum, entry) => sum + entry.line.quantity, 0)} item${entries.length === 1 && entries[0]!.line.quantity === 1 ? '' : 's'}` : ''}
+                      {' '}
+                      {courseIsOpen(groupCourse, entries.length) ? '▾' : '▸'}
+                    </small>
+                  </button>
+                  {courseIsOpen(groupCourse, entries.length) ? entries.map(({ line, index }) => (
                 <div key={`${line.recipeId}-${index}`} className="pos-line">
                   <span className="pos-line-main">
                     <span
@@ -1882,7 +1970,7 @@ export function App() {
                   </span>
                   <span className="pos-line-total">{money(line.unitPriceCents * line.quantity)}</span>
                 </div>
-              ))}
+              )) : null}
                 </div>
               ))}
             </div>
@@ -2175,7 +2263,8 @@ export function App() {
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel pos-receipt" id="pos-bill">
             <div className="pos-bill-head">
-              <h2>ALMA</h2>
+              <h2>{venueIdentity.businessName}</h2>
+              {venueIdentity.abn ? <p className="pos-abn">ABN {venueIdentity.abn}</p> : null}
               <p className="pos-muted">
                 {bill.venue}
                 <br />
@@ -2233,6 +2322,10 @@ export function App() {
       {receipt ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel pos-receipt" id="pos-receipt">
+            <p className="pos-receipt-brand">
+              {venueIdentity.businessName}
+              {venueIdentity.abn ? ` · ABN ${venueIdentity.abn}` : ''}
+            </p>
             <h2>
               Paid — {receipt.tableLabel ? `Table ${receipt.tableLabel}` : `order #${receipt.orderNumber}`}
             </h2>
@@ -3559,6 +3652,34 @@ export function App() {
                 This POS is the till — post day sales, covers &amp; card tips to Reports
               </label>
             ) : null}
+            <div className="pos-identity-fields">
+              <input
+                className="pos-tender"
+                placeholder="Business name on receipts"
+                defaultValue={venueIdentity.businessName}
+                onBlur={(event) => {
+                  const businessName = event.currentTarget.value.trim();
+                  if (!businessName || businessName === venueIdentity.businessName) return;
+                  setVenueIdentity((current) => ({ ...current, businessName }));
+                  void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue, businessName }) }).catch((err) =>
+                    setError(messageForError(err, 'Could not save.'))
+                  );
+                }}
+              />
+              <input
+                className="pos-tender"
+                placeholder="ABN (shown on receipts)"
+                defaultValue={venueIdentity.abn ?? ''}
+                onBlur={(event) => {
+                  const abn = event.currentTarget.value.trim();
+                  if (abn === (venueIdentity.abn ?? '')) return;
+                  setVenueIdentity((current) => ({ ...current, abn: abn || null }));
+                  void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue, abn }) }).catch((err) =>
+                    setError(messageForError(err, 'Could not save.'))
+                  );
+                }}
+              />
+            </div>
             {operatorName ? (
               <button
                 type="button"

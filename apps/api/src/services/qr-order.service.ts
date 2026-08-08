@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
-import { posService } from './pos.service.js';
+import { posService, stripeForVenue } from './pos.service.js';
 
 const stripe = env.stripe.secretKey ? new Stripe(env.stripe.secretKey) : null;
 
@@ -140,8 +140,7 @@ export const qrOrderService = {
       }
     }
 
-    const drinkish = (kind: string | null, category: string | null) =>
-      /bar|drink|beverage|cocktail|wine|beer|spirit/i.test(`${kind ?? ''} ${category ?? ''}`);
+
     const created = await prisma.$transaction(
       wanted.map((line) => {
         const recipe = recipeById.get(line.recipeId)!;
@@ -153,7 +152,7 @@ export const qrOrderService = {
             unitPriceCents: recipe.salePriceCents ?? 0,
             quantity: line.quantity,
             totalCents: (recipe.salePriceCents ?? 0) * line.quantity,
-            course: drinkish(recipe.kind, recipe.category) ? 'Drinks' : 'Mains',
+            course: 'Course 1',
             notes: line.notes ? `${line.notes}${guestName ? ` — ${guestName}` : ''}` : guestName ? `— ${guestName}` : null
           },
           select: { id: true }
@@ -178,6 +177,8 @@ export const qrOrderService = {
     throttle(ip);
     const body = (input ?? {}) as Record<string, unknown>;
     const { venue, tableLabel } = parseToken(String(body.t ?? ''));
+    const venueStripe = stripeForVenue(venue) ?? stripe;
+    if (body.checkout === true && !venueStripe) throw new HttpError(503, 'Online payment is not available right now.');
     const tipCents = Math.min(50_000, Math.max(0, Math.round(Number(body.tipCents ?? 0)) || 0));
     const order = await prisma.posOrder.findFirst({
       where: { venue, status: 'OPEN', training: false, tableLabel: { equals: tableLabel, mode: 'insensitive' } },
@@ -191,9 +192,8 @@ export const qrOrderService = {
 
     let checkoutUrl: string | null = null;
     if (body.checkout === true) {
-      if (!stripe) throw new HttpError(503, 'Online payment is not available right now.');
       const token = String(body.t);
-      const session = await stripe.checkout.sessions.create({
+      const session = await venueStripe!.checkout.sessions.create({
         mode: 'payment',
         line_items: [
           {
@@ -228,14 +228,15 @@ export const qrOrderService = {
   // record the payment on the bill. Idempotent on the payment-intent id.
   async payConfirm(input: unknown, ip?: string) {
     throttle(ip);
-    if (!stripe) throw new HttpError(503, 'Online payment is not available right now.');
     const body = (input ?? {}) as Record<string, unknown>;
     const { venue, tableLabel } = parseToken(String(body.t ?? ''));
+    const venueStripe = stripeForVenue(venue) ?? stripe;
+    if (!venueStripe) throw new HttpError(503, 'Online payment is not available right now.');
     const sessionId = String(body.sessionId ?? '');
     if (!sessionId.startsWith('cs_')) throw new HttpError(400, 'sessionId is required.');
     let intent;
     try {
-      const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['payment_intent'] });
+      const session = await venueStripe.checkout.sessions.retrieve(sessionId, { expand: ['payment_intent'] });
       if (session.payment_status !== 'paid') throw new HttpError(400, 'That payment has not completed.');
       intent = session.payment_intent as Stripe.PaymentIntent | null;
     } catch (err) {

@@ -192,6 +192,38 @@ posRouter.get('/courses', async (_req, res, next) => {
   }
 });
 
+posRouter.post('/printer-profiles', async (req, res, next) => {
+  try {
+    res.json(await posService.savePrinterProfile(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.delete('/printer-profiles/:id', async (req, res, next) => {
+  try {
+    res.json(await posService.deletePrinterProfile(String(req.params.id)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/rules', async (req, res, next) => {
+  try {
+    res.json(await posService.saveRule(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.delete('/rules/:id', async (req, res, next) => {
+  try {
+    res.json(await posService.deleteRule(String(req.params.id)));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.get('/printer-profiles', async (_req, res, next) => {
   try {
     res.json(await posService.listPrinterProfiles());
@@ -390,9 +422,9 @@ posRouter.put('/homescreen', async (req, res, next) => {
   }
 });
 
-posRouter.post('/terminal/connection-token', async (_req, res, next) => {
+posRouter.post('/terminal/connection-token', async (req, res, next) => {
   try {
-    res.json(await posService.terminalConnectionToken());
+    res.json(await posService.terminalConnectionToken((req.body as { venue?: string })?.venue ?? null));
   } catch (error) {
     next(error);
   }
