@@ -40,6 +40,19 @@ type Order = {
   changeCents?: number | null;
   balanceCents?: number;
 };
+type FloorTable = {
+  id: string;
+  label: string;
+  area: string;
+  posX: number | null;
+  posY: number | null;
+  width: number | null;
+  height: number | null;
+  rotation: number;
+  shape: string;
+  seats: number | null;
+  maxCovers: number;
+};
 type DaySummary = {
   serviceDate: string;
   orderCount: number;
@@ -85,6 +98,9 @@ export function App() {
   const [menu, setMenu] = useState<MenuCategory[]>([]);
   const [kindByRecipe, setKindByRecipe] = useState<Map<string, string>>(new Map());
   const [openOrders, setOpenOrders] = useState<Order[]>([]);
+  const [floorTables, setFloorTables] = useState<FloorTable[]>([]);
+  const [floorArea, setFloorArea] = useState('');
+  const [homeView, setHomeView] = useState<'floor' | 'list'>(() => (localStorage.getItem('alma.pos.view') as 'floor' | 'list') ?? 'floor');
   const [order, setOrder] = useState<Order | null>(null);
   const [activeCategory, setActiveCategory] = useState('');
   const [search, setSearch] = useState('');
@@ -126,7 +142,18 @@ export function App() {
     } catch {
       /* home refresh is best-effort */
     }
+    try {
+      const tables = await api<FloorTable[]>(`/api/pos/tables?venue=${encodeURIComponent(venue)}`);
+      setFloorTables(tables);
+      setFloorArea((current) => current || tables[0]?.area || '');
+    } catch {
+      /* floor plan is optional */
+    }
   }, [venue]);
+
+  useEffect(() => {
+    localStorage.setItem('alma.pos.view', homeView);
+  }, [homeView]);
 
   useEffect(() => {
     void refreshAuth();
@@ -349,8 +376,34 @@ export function App() {
             <button type="button" className="pos-home-new pos-home-quick" disabled={busy} onClick={() => void openOrder({})}>
               Quick sale
             </button>
+            {floorTables.length > 0 ? (
+              <button
+                type="button"
+                className="pos-home-new pos-home-quick pos-view-toggle"
+                onClick={() => setHomeView(homeView === 'floor' ? 'list' : 'floor')}
+              >
+                {homeView === 'floor' ? 'List view' : 'Floor view'}
+              </button>
+            ) : null}
           </div>
-          <div className="pos-home-grid">
+          {homeView === 'floor' && floorTables.length > 0 ? (
+            <FloorView
+              tables={floorTables}
+              area={floorArea}
+              setArea={setFloorArea}
+              openOrders={openOrders}
+              busy={busy}
+              onPick={(table) => {
+                const existing = openOrders.find(
+                  (open) => (open.tableLabel ?? '').toLowerCase() === table.label.toLowerCase()
+                );
+                if (existing) setOrder(existing);
+                else void openOrder({ tableLabel: table.label, covers: table.seats ?? undefined });
+              }}
+            />
+          ) : null}
+          {homeView === 'floor' && floorTables.length > 0 ? null : null}
+          <div className="pos-home-grid" style={homeView === 'floor' && floorTables.length > 0 ? { display: 'none' } : undefined}>
             {openOrders.map((open) => (
               <button key={open.id} type="button" className="pos-table-card" onClick={() => setOrder(open)}>
                 <strong>{open.tableLabel ? `Table ${open.tableLabel}` : `#${open.orderNumber}`}</strong>
@@ -749,6 +802,87 @@ export function App() {
               Close
             </button>
           </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// The venue floor plan — same tables + geometry the Reserve app's floor-plan
+// editor manages. Occupied = an open POS order whose table label matches.
+function FloorView({
+  tables,
+  area,
+  setArea,
+  openOrders,
+  busy,
+  onPick
+}: {
+  tables: FloorTable[];
+  area: string;
+  setArea: (value: string) => void;
+  openOrders: Order[];
+  busy: boolean;
+  onPick: (table: FloorTable) => void;
+}) {
+  const areas = Array.from(new Set(tables.map((table) => table.area)));
+  const shown = tables.filter((table) => table.area === (area || areas[0]));
+  const placed = shown.filter((table) => table.posX != null && table.posY != null);
+  const unplaced = shown.filter((table) => table.posX == null || table.posY == null);
+  const orderFor = (table: FloorTable) =>
+    openOrders.find((open) => (open.tableLabel ?? '').toLowerCase() === table.label.toLowerCase());
+
+  return (
+    <div className="pos-floor">
+      {areas.length > 1 ? (
+        <nav className="pos-tabs">
+          {areas.map((name) => (
+            <button key={name} type="button" className={name === (area || areas[0]) ? 'is-active' : ''} onClick={() => setArea(name)}>
+              {name}
+            </button>
+          ))}
+        </nav>
+      ) : null}
+      <div className="pos-floor-canvas">
+        {placed.map((table) => {
+          const open = orderFor(table);
+          return (
+            <button
+              key={table.id}
+              type="button"
+              disabled={busy}
+              className={`pos-floor-table ${open ? 'is-occupied' : ''} ${table.shape === 'round' ? 'is-round' : ''}`}
+              style={{
+                left: `${table.posX}%`,
+                top: `${table.posY}%`,
+                width: `${table.width ?? 10}%`,
+                height: `${table.height ?? 10}%`,
+                transform: `rotate(${table.rotation}deg)`
+              }}
+              onClick={() => onPick(table)}
+            >
+              <strong>{table.label}</strong>
+              <small>{open ? money(open.totalCents - paidCents(open)) : `${table.seats ?? table.maxCovers}`}</small>
+            </button>
+          );
+        })}
+        {placed.length === 0 ? (
+          <p className="pos-muted pos-floor-empty">
+            No tables placed for this area yet — arrange them in Reserve → Settings → Floor plan and they appear here.
+          </p>
+        ) : null}
+      </div>
+      {unplaced.length > 0 ? (
+        <div className="pos-floor-unplaced">
+          {unplaced.map((table) => {
+            const open = orderFor(table);
+            return (
+              <button key={table.id} type="button" disabled={busy} className={`pos-ghost ${open ? 'pos-chip-occupied' : ''}`} onClick={() => onPick(table)}>
+                {table.label}
+                {open ? ` · ${money(open.totalCents - paidCents(open))}` : ''}
+              </button>
+            );
+          })}
         </div>
       ) : null}
     </div>

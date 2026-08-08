@@ -68,6 +68,14 @@ posRouter.post('/orders/:id/void', async (req, res, next) => {
   }
 });
 
+posRouter.get('/tables', async (req, res, next) => {
+  try {
+    res.json(await posService.floorTables(typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
 posRouter.get('/rules', async (_req, res, next) => {
   try {
     res.json(await posService.listRules());

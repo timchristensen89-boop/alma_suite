@@ -297,6 +297,32 @@ export const posService = {
     return activeRules();
   },
 
+  // The venue's floor plan — the SAME tables the Reserve app's floor-plan
+  // editor manages (ReserveTable geometry), so POS and Reserve share one
+  // layout. Register auth (device or staff), unlike the manager-gated
+  // reserve endpoints.
+  async floorTables(venue: string | null) {
+    if (!venue) return [];
+    return prisma.reserveTable.findMany({
+      where: { venue, isActive: true },
+      select: {
+        id: true,
+        label: true,
+        area: true,
+        posX: true,
+        posY: true,
+        width: true,
+        height: true,
+        rotation: true,
+        shape: true,
+        seats: true,
+        maxCovers: true,
+        sortOrder: true
+      },
+      orderBy: [{ area: 'asc' }, { sortOrder: 'asc' }, { label: 'asc' }]
+    });
+  },
+
   // X-read: today's picture for the drawer count and the manager.
   async daySummary(venue: string | null, dateKey: string | null) {
     const serviceDate = dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)

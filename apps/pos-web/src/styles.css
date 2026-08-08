@@ -195,3 +195,25 @@ input, select { font: inherit; }
 .pos-bill-head { text-align: center; }
 .pos-bill-head h2 { letter-spacing: 0.2em; }
 .pos-bill-foot { text-align: center; }
+
+/* v4: floor plan (shared with Reserve's floor editor) */
+.pos-floor { display: flex; flex-direction: column; gap: 10px; }
+.pos-floor-canvas {
+  position: relative; width: 100%; aspect-ratio: 3 / 2;
+  background: var(--pos-panel); border: 1px solid var(--pos-line); border-radius: 16px;
+  overflow: hidden;
+}
+.pos-floor-table {
+  position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: var(--pos-raise); border: 1.5px solid var(--pos-line); border-radius: 10px;
+  min-width: 44px; min-height: 40px; padding: 2px;
+}
+.pos-floor-table.is-round { border-radius: 9999px; }
+.pos-floor-table.is-occupied { background: var(--pos-accent-deep); border-color: var(--pos-accent); }
+.pos-floor-table strong { font-size: 13px; line-height: 1; }
+.pos-floor-table small { font-size: 10.5px; color: var(--pos-muted); }
+.pos-floor-table.is-occupied small { color: #fff; font-weight: 700; }
+.pos-floor-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; }
+.pos-floor-unplaced { display: flex; flex-wrap: wrap; gap: 8px; }
+.pos-chip-occupied { border-color: var(--pos-accent); color: var(--pos-accent); font-weight: 700; }
+.pos-view-toggle { flex: 0 0 auto; min-width: 120px; }
