@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { loadStripeTerminal, type Terminal, type Reader } from '@stripe/terminal-js';
 import { api, messageForError } from './api';
 
 // ── ALMA POS v2 ─────────────────────────────────────────────────────────────
@@ -142,6 +143,15 @@ export function App() {
   const [courses, setCourses] = useState<string[]>(FALLBACK_COURSES);
   const [dockets, setDockets] = useState<Docket[] | null>(null);
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
+  const [reasons, setReasons] = useState<Record<string, string[]>>({});
+  const [home, setHome] = useState<{ buttons: string[]; pins: string[] }>({ buttons: [], pins: [] });
+  const [customise, setCustomise] = useState(false);
+  const [wastage, setWastage] = useState<null | { search: string; recipeId: string; itemName: string; quantity: string; reason: string }>(null);
+  const [lineAction, setLineAction] = useState<null | { lineId: string; name: string; kind: 'COMP' | 'PRICE_CHANGE'; reason: string; price: string }>(null);
+  const [discounting, setDiscounting] = useState<null | { mode: 'percent' | 'amount'; value: string; reason: string }>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const [reader, setReader] = useState<Reader | null>(null);
+  const [readerBusy, setReaderBusy] = useState<string | null>(null);
   const [closing, setClosing] = useState<null | {
     gate: CloseGate | null;
     drawer: DrawerInfo | null;
@@ -216,6 +226,7 @@ export function App() {
         void api<Array<{ name: string }>>('/api/pos/courses')
           .then((rows) => setCourses(rows.map((row) => row.name)))
           .catch(() => undefined);
+        void api<Record<string, string[]>>('/api/pos/adjust-reasons').then(setReasons).catch(() => undefined);
         const res = await api<{ categories: MenuCategory[] }>('/api/pos/menu');
         setMenu(res.categories);
         setActiveCategory((current) => current || res.categories[0]?.name || '');
@@ -228,6 +239,76 @@ export function App() {
       void refreshOpenOrders();
     })();
   }, [me, refreshOpenOrders]);
+
+  useEffect(() => {
+    if (me === 'loading' || !me) return;
+    const name = me.kind === 'staff' ? me.name : me.staffName ?? '';
+    if (!name) return;
+    void api<{ buttons: string[]; pins: string[] }>(`/api/pos/homescreen?userKey=${encodeURIComponent(name.toLowerCase())}`)
+      .then(setHome)
+      .catch(() => undefined);
+  }, [me]);
+
+  async function connectReader(simulated: boolean) {
+    setReaderBusy('Connecting…');
+    try {
+      if (!terminalRef.current) {
+        const StripeTerminal = await loadStripeTerminal();
+        if (!StripeTerminal) throw new Error('Stripe Terminal failed to load.');
+        terminalRef.current = StripeTerminal.create({
+          onFetchConnectionToken: async () => {
+            const res = await api<{ secret: string }>('/api/pos/terminal/connection-token', { method: 'POST' });
+            return res.secret;
+          },
+          onUnexpectedReaderDisconnect: () => setReader(null)
+        });
+      }
+      const discovered = await terminalRef.current.discoverReaders({ simulated });
+      if ('error' in discovered) throw new Error(discovered.error.message);
+      const first = discovered.discoveredReaders[0];
+      if (!first) throw new Error(simulated ? 'No simulated reader.' : 'No readers found on this network.');
+      const connected = await terminalRef.current.connectReader(first);
+      if ('error' in connected) throw new Error(connected.error.message);
+      setReader(connected.reader);
+    } catch (err) {
+      setError(messageForError(err, 'Could not connect a reader.'));
+    } finally {
+      setReaderBusy(null);
+    }
+  }
+
+  async function payWithTerminal(amountCents: number, tipCents: number) {
+    if (!order || !terminalRef.current || !reader) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const intent = await api<{ id: string; clientSecret: string }>('/api/pos/terminal/payment-intent', {
+        method: 'POST',
+        body: JSON.stringify({ amountCents: amountCents + tipCents, description: `POS ${order.tableLabel ?? order.orderNumber}` })
+      });
+      const collected = await terminalRef.current.collectPaymentMethod(intent.clientSecret);
+      if ('error' in collected) throw new Error(collected.error.message);
+      const processed = await terminalRef.current.processPayment(collected.paymentIntent);
+      if ('error' in processed) throw new Error(processed.error.message);
+      const result = await api<Order>(`/api/pos/orders/${order.id}/pay`, {
+        method: 'POST',
+        body: JSON.stringify({ method: 'STRIPE_TERMINAL', tipCents, amountCents, reference: intent.id })
+      });
+      if (result.status === 'PAID') {
+        setReceipt(result);
+        setOrder(null);
+        setCharge(null);
+        void refreshOpenOrders();
+      } else {
+        setOrder(result);
+        setCharge({ stage: 'split', tipCents: 0, amountCents: null });
+      }
+    } catch (err) {
+      setError(messageForError(err, 'Reader payment failed.'));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const visibleItems = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -354,6 +435,7 @@ export function App() {
   }
 
   const operatorName = me.kind === 'staff' ? me.name : me.staffName ?? '';
+  const userKey = operatorName.toLowerCase();
   const balance = order ? order.totalCents - paidCents(order) : 0;
 
   return (
@@ -467,6 +549,62 @@ export function App() {
               </button>
             ) : null}
           </div>
+          <div className="pos-mgmt-row">
+            {(home.buttons.length ? home.buttons : ['open-till', 'discount', 'comp', 'wastage', 'price']).map((key) => {
+              const labels: Record<string, string> = {
+                'open-till': 'Open till',
+                discount: 'Discount',
+                comp: 'Comp',
+                wastage: 'Wastage',
+                price: 'Change price'
+              };
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className="pos-mgmt-btn"
+                  onClick={() => {
+                    if (key === 'open-till') {
+                      void (async () => {
+                        const [gate, drawer] = await Promise.all([
+                          api<CloseGate>(`/api/pos/close-day?venue=${encodeURIComponent(venue)}`),
+                          api<DrawerInfo>(`/api/pos/drawer?venue=${encodeURIComponent(venue)}`)
+                        ]);
+                        setClosing({ gate, drawer, stage: 'checklist', float: '', counts: {}, report: null });
+                      })().catch(() => undefined);
+                    } else if (key === 'wastage') {
+                      setWastage({ search: '', recipeId: '', itemName: '', quantity: '1', reason: '' });
+                    } else {
+                      setError('Open a table first, then use ' + labels[key] + ' from the order screen.');
+                    }
+                  }}
+                >
+                  {labels[key] ?? key}
+                </button>
+              );
+            })}
+            {home.pins.map((pin) => {
+              const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin);
+              if (!item) return null;
+              return (
+                <button
+                  key={pin}
+                  type="button"
+                  className="pos-mgmt-btn pos-mgmt-pin"
+                  disabled={busy}
+                  onClick={() => {
+                    void openOrder({}).then(() => undefined);
+                  }}
+                  title="Pinned item — starts a quick sale"
+                >
+                  ★ {item.title}
+                </button>
+              );
+            })}
+            <button type="button" className="pos-mgmt-btn pos-mgmt-edit" onClick={() => setCustomise(true)}>
+              ⚙
+            </button>
+          </div>
           {homeView === 'floor' && floorTables.length > 0 ? (
             <FloorView
               tables={floorTables}
@@ -536,7 +674,16 @@ export function App() {
               {order.lines.map((line, index) => (
                 <div key={`${line.recipeId}-${index}`} className="pos-line">
                   <span className="pos-line-main">
-                    <span className="pos-line-name">{line.name}</span>
+                    <span
+                      className="pos-line-name"
+                      onClick={() =>
+                        line.id
+                          ? setLineAction({ lineId: line.id, name: line.name, kind: 'COMP', reason: '', price: '' })
+                          : undefined
+                      }
+                    >
+                      {line.name}
+                    </span>
                     <button type="button" className="pos-course" onClick={() => cycleCourse(index)}>
                       {line.course ?? 'Mains'}
                     </button>
@@ -561,6 +708,12 @@ export function App() {
                   <span>−{money(order.discountCents)}</span>
                 </div>
               ) : null}
+              {(order as Order & { manualDiscountCents?: number }).manualDiscountCents ? (
+                <div className="pos-sumline pos-sumline-good">
+                  <span>{(order as Order & { manualDiscountLabel?: string }).manualDiscountLabel ?? 'Discount'}</span>
+                  <span>−{money((order as Order & { manualDiscountCents?: number }).manualDiscountCents ?? 0)}</span>
+                </div>
+              ) : null}
               {order.surchargeCents > 0 ? (
                 <div className="pos-sumline">
                   <span>{order.surchargeLabel ?? 'Surcharge'}</span>
@@ -578,6 +731,14 @@ export function App() {
                 <strong>{money(balance)}</strong>
               </div>
               <div className="pos-cart-actions">
+                <button
+                  type="button"
+                  className="pos-ghost"
+                  disabled={busy || order.lines.length === 0}
+                  onClick={() => setDiscounting({ mode: 'percent', value: '10', reason: '' })}
+                >
+                  Disc.
+                </button>
                 <button
                   type="button"
                   className="pos-ghost"
@@ -703,8 +864,21 @@ export function App() {
                 <h2>{money((charge.amountCents ?? balance) + charge.tipCents)}</h2>
                 <div className="pos-choice-row">
                   <button type="button" disabled={busy} onClick={() => void takePayment('CARD_EXTERNAL')}>
-                    Card (terminal)
+                    Card (EFTPOS)
                   </button>
+                  {reader ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void payWithTerminal(charge.amountCents ?? balance, charge.tipCents)}
+                    >
+                      Card ({reader.label ?? 'reader'})
+                    </button>
+                  ) : (
+                    <button type="button" disabled={busy || readerBusy !== null} onClick={() => void connectReader(true)}>
+                      {readerBusy ?? 'Pair reader (test)'}
+                    </button>
+                  )}
                   <button type="button" disabled={busy} onClick={() => setCharge({ ...charge, stage: 'cash' })}>
                     Cash
                   </button>
@@ -839,6 +1013,289 @@ export function App() {
                 Done
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {wastage ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Record wastage</h2>
+            <input
+              className="pos-tender"
+              placeholder="Search item…"
+              value={wastage.search}
+              onChange={(event) => setWastage({ ...wastage, search: event.currentTarget.value, recipeId: '', itemName: '' })}
+            />
+            {wastage.search && !wastage.recipeId ? (
+              <div className="pos-reason-list">
+                {menu
+                  .flatMap((category) => category.items)
+                  .filter((item) => item.title.toLowerCase().includes(wastage.search.toLowerCase()))
+                  .slice(0, 6)
+                  .map((item) => (
+                    <button
+                      key={item.recipeId}
+                      type="button"
+                      onClick={() => setWastage({ ...wastage, recipeId: item.recipeId, itemName: item.title, search: item.title })}
+                    >
+                      {item.title}
+                    </button>
+                  ))}
+              </div>
+            ) : null}
+            <input
+              className="pos-tender"
+              inputMode="numeric"
+              placeholder="Quantity"
+              value={wastage.quantity}
+              onChange={(event) => setWastage({ ...wastage, quantity: event.currentTarget.value })}
+            />
+            <div className="pos-reason-list">
+              {(reasons.WASTAGE ?? []).map((reason) => (
+                <button
+                  key={reason}
+                  type="button"
+                  className={wastage.reason === reason ? 'is-on' : ''}
+                  onClick={() => setWastage({ ...wastage, reason })}
+                >
+                  {reason}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={busy || !wastage.itemName || !wastage.reason}
+              onClick={() => {
+                void api('/api/pos/wastage', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    venue,
+                    recipeId: wastage.recipeId || undefined,
+                    itemName: wastage.itemName,
+                    quantity: Number(wastage.quantity) || 1,
+                    reason: wastage.reason,
+                    staffName: operatorName || 'Unknown'
+                  })
+                })
+                  .then(() => setWastage(null))
+                  .catch((err) => setError(messageForError(err, 'Could not record wastage.')));
+              }}
+            >
+              Record wastage
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setWastage(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {lineAction && order ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>{lineAction.name}</h2>
+            <div className="pos-choice-row">
+              <button
+                type="button"
+                className={lineAction.kind === 'COMP' ? 'is-on' : ''}
+                onClick={() => setLineAction({ ...lineAction, kind: 'COMP', reason: '' })}
+              >
+                Comp (free)
+              </button>
+              <button
+                type="button"
+                className={lineAction.kind === 'PRICE_CHANGE' ? 'is-on' : ''}
+                onClick={() => setLineAction({ ...lineAction, kind: 'PRICE_CHANGE', reason: '' })}
+              >
+                Change price
+              </button>
+            </div>
+            {lineAction.kind === 'PRICE_CHANGE' ? (
+              <input
+                className="pos-tender"
+                inputMode="decimal"
+                placeholder="New price each"
+                value={lineAction.price}
+                onChange={(event) => setLineAction({ ...lineAction, price: event.currentTarget.value })}
+              />
+            ) : null}
+            <p className="pos-muted">Reason (required):</p>
+            <div className="pos-reason-list">
+              {(reasons[lineAction.kind] ?? []).map((reason) => (
+                <button
+                  key={reason}
+                  type="button"
+                  className={lineAction.reason === reason ? 'is-on' : ''}
+                  onClick={() => setLineAction({ ...lineAction, reason })}
+                >
+                  {reason}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={busy || !lineAction.reason || (lineAction.kind === 'PRICE_CHANGE' && !lineAction.price)}
+              onClick={() => {
+                void api<Order>(`/api/pos/orders/${order.id}/lines/${lineAction.lineId}/adjust`, {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    kind: lineAction.kind,
+                    reason: lineAction.reason,
+                    staffName: operatorName || 'Unknown',
+                    unitPriceCents:
+                      lineAction.kind === 'PRICE_CHANGE' ? Math.round(Number(lineAction.price) * 100) : undefined
+                  })
+                })
+                  .then((updated) => {
+                    setOrder(updated);
+                    setLineAction(null);
+                  })
+                  .catch((err) => setError(messageForError(err, 'Could not adjust the line.')));
+              }}
+            >
+              {lineAction.kind === 'COMP' ? 'Comp it' : 'Set price'}
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setLineAction(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {discounting && order ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Discount the order</h2>
+            <div className="pos-choice-row">
+              {['5', '10', '20'].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  className={discounting.mode === 'percent' && discounting.value === pct ? 'is-on' : ''}
+                  onClick={() => setDiscounting({ ...discounting, mode: 'percent', value: pct })}
+                >
+                  {pct}%
+                </button>
+              ))}
+            </div>
+            <input
+              className="pos-tender"
+              inputMode="decimal"
+              placeholder="Or fixed $ amount"
+              value={discounting.mode === 'amount' ? discounting.value : ''}
+              onChange={(event) => setDiscounting({ ...discounting, mode: 'amount', value: event.currentTarget.value })}
+            />
+            <p className="pos-muted">Reason (required):</p>
+            <div className="pos-reason-list">
+              {(reasons.DISCOUNT ?? []).map((reason) => (
+                <button
+                  key={reason}
+                  type="button"
+                  className={discounting.reason === reason ? 'is-on' : ''}
+                  onClick={() => setDiscounting({ ...discounting, reason })}
+                >
+                  {reason}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={busy || !discounting.reason || !discounting.value}
+              onClick={() => {
+                void api<Order>(`/api/pos/orders/${order.id}/discount`, {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    percent: discounting.mode === 'percent' ? Number(discounting.value) : undefined,
+                    amountCents: discounting.mode === 'amount' ? Math.round(Number(discounting.value) * 100) : undefined,
+                    reason: discounting.reason,
+                    staffName: operatorName || 'Unknown'
+                  })
+                })
+                  .then((updated) => {
+                    setOrder(updated);
+                    setDiscounting(null);
+                  })
+                  .catch((err) => setError(messageForError(err, 'Could not apply the discount.')));
+              }}
+            >
+              Apply discount
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setDiscounting(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {customise ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Customise {operatorName ? `${operatorName}'s` : 'this'} homescreen</h2>
+            <p className="pos-muted">Management buttons:</p>
+            <div className="pos-reason-list">
+              {['open-till', 'discount', 'comp', 'wastage', 'price'].map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={home.buttons.includes(key) ? 'is-on' : ''}
+                  onClick={() =>
+                    setHome({
+                      ...home,
+                      buttons: home.buttons.includes(key)
+                        ? home.buttons.filter((candidate) => candidate !== key)
+                        : [...home.buttons, key]
+                    })
+                  }
+                >
+                  {key}
+                </button>
+              ))}
+            </div>
+            <p className="pos-muted">Pinned items ({home.pins.length}) — tap a menu item on the order screen search to copy its name, or toggle the current top sellers:</p>
+            <div className="pos-reason-list">
+              {menu
+                .flatMap((category) => category.items)
+                .slice(0, 12)
+                .map((item) => (
+                  <button
+                    key={item.recipeId}
+                    type="button"
+                    className={home.pins.includes(item.recipeId) ? 'is-on' : ''}
+                    onClick={() =>
+                      setHome({
+                        ...home,
+                        pins: home.pins.includes(item.recipeId)
+                          ? home.pins.filter((candidate) => candidate !== item.recipeId)
+                          : [...home.pins, item.recipeId]
+                      })
+                    }
+                  >
+                    {item.title}
+                  </button>
+                ))}
+            </div>
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={busy || !userKey}
+              onClick={() => {
+                void api('/api/pos/homescreen', {
+                  method: 'PUT',
+                  body: JSON.stringify({ userKey, buttons: home.buttons, pins: home.pins, updatedBy: operatorName })
+                })
+                  .then(() => setCustomise(false))
+                  .catch((err) => setError(messageForError(err, 'Could not save.')));
+              }}
+            >
+              Save homescreen
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setCustomise(false)}>
+              Close
+            </button>
           </div>
         </div>
       ) : null}

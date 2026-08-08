@@ -4711,6 +4711,9 @@ model PosOrder {
   subtotalCents Int       @default(0) // inc GST, before discount/surcharge
   discountCents Int       @default(0)
   discountLabel String?
+  // Manual (staff-applied, reason-audited) discount on top of rule discounts.
+  manualDiscountCents Int @default(0)
+  manualDiscountLabel String?
   surchargeCents Int      @default(0)
   surchargeLabel String?
   totalCents    Int       @default(0) // inc GST, after discount + surcharge
@@ -4819,6 +4822,34 @@ model PosPrinterProfile {
   printerIp     String?
   active        Boolean @default(true)
   sortOrder     Int     @default(0)
+}
+
+// Audited register actions: every discount, comp, price change and wastage
+// records WHO did it, the ITEM, and a mandatory reason from the fixed list.
+model PosAdjustment {
+  id          String   @id @default(cuid())
+  venue       String
+  orderId     String?
+  kind        String // DISCOUNT | COMP | PRICE_CHANGE | WASTAGE
+  reason      String
+  staffName   String
+  itemName    String?
+  amountCents Int      @default(0)
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  @@index([venue, createdAt])
+  @@index([kind])
+}
+
+// Per-operator POS homescreen: which management buttons show + pinned items.
+model PosHomescreen {
+  id        String   @id @default(cuid())
+  userKey   String   @unique
+  buttons   Json
+  pins      Json
+  updatedBy String?
+  updatedAt DateTime @updatedAt
 }
 
 model PosRule {

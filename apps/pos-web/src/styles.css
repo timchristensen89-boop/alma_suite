@@ -244,3 +244,21 @@ input, select { font: inherit; }
 .pos-count-summary strong { font-size: 18px; }
 .pos-count-summary .is-over strong, .pos-count-summary > div.is-over strong { color: #d9a05a; }
 .pos-count-summary > div.is-short strong { color: var(--pos-danger); }
+
+/* v6: management row, reason pickers */
+.pos-mgmt-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.pos-mgmt-btn {
+  min-height: 52px; padding: 0 18px; border-radius: 12px; font-weight: 700;
+  background: var(--pos-panel); border: 1px solid var(--pos-line); color: var(--pos-text);
+}
+.pos-mgmt-pin { border-color: rgba(217, 160, 90, 0.5); color: #d9a05a; }
+.pos-mgmt-edit { min-width: 52px; color: var(--pos-muted); }
+.pos-reason-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.pos-reason-list button {
+  min-height: 44px; padding: 0 14px; border-radius: 9999px;
+  background: var(--pos-raise); border: 1px solid var(--pos-line); color: var(--pos-text); font-weight: 600;
+}
+.pos-reason-list button.is-on, .pos-choice-row > button.is-on {
+  background: var(--pos-accent); border-color: var(--pos-accent); color: #fff;
+}
+.pos-line-name { cursor: pointer; }

@@ -1,6 +1,25 @@
+import Stripe from 'stripe';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
+import { env } from '../env.js';
 import { nswHolidayName } from '../lib/nsw-holidays.js';
+
+const stripe = env.stripe?.secretKey ? new Stripe(env.stripe.secretKey) : null;
+
+// Fixed, auditable reason lists — the register offers ONLY these.
+export const ADJUST_REASONS: Record<string, string[]> = {
+  DISCOUNT: ['Service recovery', 'Regular guest', 'Staff meal', 'Marketing promo', 'Manager goodwill'],
+  COMP: ['Service recovery', 'Kitchen error', 'Long wait', 'Spillage / return', 'Manager comp'],
+  PRICE_CHANGE: ['Menu price wrong', 'Happy hour manual', 'Damaged item', 'Manager override'],
+  WASTAGE: ['Spillage', 'Kitchen error', 'Expired', 'Customer return', 'Training']
+};
+
+function requireReason(kind: string, reason: string) {
+  const allowed = ADJUST_REASONS[kind] ?? [];
+  if (!allowed.includes(reason)) {
+    throw new HttpError(400, `Pick a reason: ${allowed.join(', ')}.`);
+  }
+}
 
 // ── Alma POS — counter-mode register MVP ─────────────────────────────────────
 // The register sells the menu that already lives in the suite: active recipes
@@ -78,7 +97,9 @@ async function recomputeOrder(id: string) {
   const surchargeCents = surcharge ? Math.round((subtotalCents * surcharge.percent) / 100) : 0;
   const autoDiscount = discounts[0] ?? null;
   const discountCents = autoDiscount ? Math.round((subtotalCents * autoDiscount.percent) / 100) : 0;
-  const totalCents = Math.max(0, subtotalCents - discountCents + surchargeCents);
+  const existing = await prisma.posOrder.findUnique({ where: { id }, select: { manualDiscountCents: true } });
+  const manualDiscountCents = Math.min(existing?.manualDiscountCents ?? 0, subtotalCents);
+  const totalCents = Math.max(0, subtotalCents - discountCents - manualDiscountCents + surchargeCents);
   return prisma.posOrder.update({
     where: { id },
     data: {
@@ -87,6 +108,7 @@ async function recomputeOrder(id: string) {
       surchargeLabel: surcharge?.label ?? null,
       discountCents,
       discountLabel: autoDiscount?.label ?? null,
+      manualDiscountCents,
       totalCents,
       gstCents: Math.round(totalCents / GST_DIVISOR)
     }
@@ -236,8 +258,8 @@ export const posService = {
   async payOrder(id: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const method = str(body.method).toUpperCase();
-    if (!['CASH', 'CARD_EXTERNAL'].includes(method)) {
-      throw new HttpError(400, 'method must be CASH or CARD_EXTERNAL (Stripe Terminal comes with the reader).');
+    if (!['CASH', 'CARD_EXTERNAL', 'STRIPE_TERMINAL'].includes(method)) {
+      throw new HttpError(400, 'method must be CASH, CARD_EXTERNAL or STRIPE_TERMINAL.');
     }
     const tipCents = body.tipCents === undefined ? 0 : asInt(body.tipCents, 'tip', { min: 0, max: 500_000 });
 
@@ -509,6 +531,151 @@ export const posService = {
       }
     });
     return report;
+  },
+
+  // ── Audited adjustments ────────────────────────────────────────────────
+  adjustReasons() {
+    return ADJUST_REASONS;
+  },
+
+  // Order-level manual discount (percent or fixed) with a mandatory reason.
+  async discountOrder(id: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const reason = str(body.reason);
+    requireReason('DISCOUNT', reason);
+    const staffName = str(body.staffName) || 'Unknown';
+    const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true, venue: true, subtotalCents: true, tableLabel: true, orderNumber: true } });
+    if (!order) throw new HttpError(404, 'Order not found.');
+    if (order.status !== 'OPEN') throw new HttpError(400, 'Only open orders can be discounted.');
+    const percent = body.percent === undefined ? null : Number(body.percent);
+    const amountCents =
+      percent !== null && Number.isFinite(percent) && percent > 0 && percent <= 100
+        ? Math.round((order.subtotalCents * percent) / 100)
+        : asInt(body.amountCents ?? 0, 'discount amount', { min: 1 });
+    await prisma.posOrder.update({
+      where: { id },
+      data: { manualDiscountCents: amountCents, manualDiscountLabel: reason }
+    });
+    await recomputeOrder(id);
+    await prisma.posAdjustment.create({
+      data: {
+        venue: order.venue,
+        orderId: id,
+        kind: 'DISCOUNT',
+        reason,
+        staffName,
+        itemName: order.tableLabel ? `Table ${order.tableLabel}` : `Order #${order.orderNumber}`,
+        amountCents
+      }
+    });
+    return this.getOrder(id);
+  },
+
+  // Comp a line to $0, or change its price — both reason-audited.
+  async adjustLine(orderId: string, lineId: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const kind = str(body.kind).toUpperCase();
+    if (!['COMP', 'PRICE_CHANGE'].includes(kind)) throw new HttpError(400, 'kind must be COMP or PRICE_CHANGE.');
+    const reason = str(body.reason);
+    requireReason(kind, reason);
+    const staffName = str(body.staffName) || 'Unknown';
+    const line = await prisma.posOrderLine.findUnique({ where: { id: lineId }, include: { order: { select: { status: true, venue: true } } } });
+    if (!line || line.orderId !== orderId) throw new HttpError(404, 'Line not found.');
+    if (line.order.status !== 'OPEN') throw new HttpError(400, 'Only open orders can be adjusted.');
+    const newUnit = kind === 'COMP' ? 0 : asInt(body.unitPriceCents, 'new price', { min: 0, max: 1_000_000 });
+    const delta = (line.unitPriceCents - newUnit) * line.quantity;
+    await prisma.posOrderLine.update({
+      where: { id: lineId },
+      data: { unitPriceCents: newUnit, totalCents: newUnit * line.quantity }
+    });
+    await recomputeOrder(orderId);
+    await prisma.posAdjustment.create({
+      data: {
+        venue: line.order.venue,
+        orderId,
+        kind,
+        reason,
+        staffName,
+        itemName: `${line.quantity}× ${line.name}`,
+        amountCents: delta
+      }
+    });
+    return this.getOrder(orderId);
+  },
+
+  // Wastage from the homescreen: item + qty + reason, valued at recipe cost.
+  async recordWastage(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const venue = str(body.venue);
+    if (!venue) throw new HttpError(400, 'venue is required.');
+    const reason = str(body.reason);
+    requireReason('WASTAGE', reason);
+    const staffName = str(body.staffName) || 'Unknown';
+    const quantity = asInt(body.quantity ?? 1, 'quantity', { min: 1, max: 999 });
+    const recipeId = str(body.recipeId) || null;
+    let itemName = str(body.itemName);
+    let amountCents = 0;
+    if (recipeId) {
+      const recipe = await prisma.recipe.findUnique({ where: { id: recipeId }, select: { title: true, estimatedCost: true } });
+      if (recipe) {
+        itemName = itemName || recipe.title;
+        amountCents = Math.round((recipe.estimatedCost ?? 0) * 100) * quantity;
+      }
+    }
+    if (!itemName) throw new HttpError(400, 'Pick the wasted item.');
+    return prisma.posAdjustment.create({
+      data: { venue, kind: 'WASTAGE', reason, staffName, itemName: `${quantity}× ${itemName}`, amountCents }
+    });
+  },
+
+  async listAdjustments(venue: string | null) {
+    return prisma.posAdjustment.findMany({
+      where: { ...(venue ? { venue } : {}), createdAt: { gte: new Date(Date.now() - 24 * 3600_000) } },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+  },
+
+  // ── Per-operator homescreen ────────────────────────────────────────────
+  async getHomescreen(userKey: string | null) {
+    const defaults = { buttons: ['open-till', 'discount', 'comp', 'wastage', 'price'], pins: [] as string[] };
+    if (!userKey) return defaults;
+    const row = await prisma.posHomescreen.findUnique({ where: { userKey: userKey.toLowerCase() } });
+    return row ? { buttons: row.buttons as string[], pins: row.pins as string[] } : defaults;
+  },
+
+  async saveHomescreen(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const userKey = str(body.userKey).toLowerCase();
+    if (!userKey) throw new HttpError(400, 'userKey is required.');
+    const buttons = Array.isArray(body.buttons) ? (body.buttons as unknown[]).map(String).slice(0, 12) : [];
+    const pins = Array.isArray(body.pins) ? (body.pins as unknown[]).map(String).slice(0, 24) : [];
+    return prisma.posHomescreen.upsert({
+      where: { userKey },
+      create: { userKey, buttons, pins, updatedBy: str(body.updatedBy) || null },
+      update: { buttons, pins, updatedBy: str(body.updatedBy) || null }
+    });
+  },
+
+  // ── Stripe Terminal ────────────────────────────────────────────────────
+  async terminalConnectionToken() {
+    if (!stripe) throw new HttpError(503, 'Stripe is not configured on the server.');
+    const token = await stripe.terminal.connectionTokens.create();
+    return { secret: token.secret };
+  },
+
+  async terminalPaymentIntent(input: unknown) {
+    if (!stripe) throw new HttpError(503, 'Stripe is not configured on the server.');
+    const body = (input ?? {}) as Record<string, unknown>;
+    const amountCents = asInt(body.amountCents, 'amount', { min: 50 });
+    const intent = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency: 'aud',
+      payment_method_types: ['card_present'],
+      capture_method: 'automatic',
+      description: str(body.description) || 'ALMA POS'
+    });
+    return { id: intent.id, clientSecret: intent.client_secret };
   },
 
   // Tonight's bookings for the floor overlay — matched to tables by label.

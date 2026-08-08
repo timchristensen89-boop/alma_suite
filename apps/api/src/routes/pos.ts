@@ -148,6 +148,74 @@ posRouter.post('/close-day', async (req, res, next) => {
   }
 });
 
+posRouter.get('/adjust-reasons', (_req, res) => {
+  res.json(posService.adjustReasons());
+});
+
+posRouter.post('/orders/:id/discount', async (req, res, next) => {
+  try {
+    res.json(await posService.discountOrder(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/orders/:id/lines/:lineId/adjust', async (req, res, next) => {
+  try {
+    res.json(await posService.adjustLine(String(req.params.id), String(req.params.lineId), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/wastage', async (req, res, next) => {
+  try {
+    res.status(201).json(await posService.recordWastage(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.get('/adjustments', async (req, res, next) => {
+  try {
+    res.json(await posService.listAdjustments(typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.get('/homescreen', async (req, res, next) => {
+  try {
+    res.json(await posService.getHomescreen(typeof req.query.userKey === 'string' ? req.query.userKey : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.put('/homescreen', async (req, res, next) => {
+  try {
+    res.json(await posService.saveHomescreen(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/terminal/connection-token', async (_req, res, next) => {
+  try {
+    res.json(await posService.terminalConnectionToken());
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/terminal/payment-intent', async (req, res, next) => {
+  try {
+    res.json(await posService.terminalPaymentIntent(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 posRouter.get('/floor-reservations', async (req, res, next) => {
   try {
     res.json(await posService.floorReservations(typeof req.query.venue === 'string' ? req.query.venue : null));
