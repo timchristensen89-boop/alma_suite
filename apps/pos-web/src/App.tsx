@@ -39,7 +39,9 @@ type GuestProfile = OrderGuest & {
   visitNotes: string | null;
   favourites: Array<{ name: string; quantity: number; totalCents: number }>;
 };
-type Pin = { t: 'i'; id: string; c?: string } | { t: 'f'; name: string; c?: string; items: string[] };
+type PinExtras = { c?: string; label?: string; s?: 'w' | 'b' };
+type Pin = ({ t: 'i'; id: string } & PinExtras) | ({ t: 'f'; name: string; items: string[] } & PinExtras);
+type TabsConfig = { order: string[]; hidden: string[]; groups: Array<{ name: string; cats: string[]; c?: string }> };
 type ModifierOption = { id: string; name: string; priceCents: number };
 type ModifierGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: ModifierOption[] };
 type Order = {
@@ -248,17 +250,33 @@ export function App() {
     event.preventDefault();
     dragPinIndex.current = index;
     dragMoved.current = false;
+    // Fast drags outrun React renders, so hover decisions read the DOM's own
+    // data attributes (always in sync with what's on screen) and the drop is
+    // resolved by STABLE keys, never indices.
+    const draggedPinAtStart = homeRef.current.pins[index];
+    const dragKey = draggedPinAtStart?.t === 'i' ? draggedPinAtStart.id : null;
+    const dropFolder = { name: null as string | null };
     const onMove = (nativeEvent: PointerEvent) => {
       if (dragPinIndex.current === null) return;
       const target = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY)?.closest('[data-pin-index]');
       if (!target) return;
+      // Hovering a folder with an item: computer-style — drop puts it INSIDE.
+      if (dragKey && target.getAttribute('data-pin-folder')) {
+        dropFolder.name = target.getAttribute('data-pin-folder');
+        document.querySelectorAll('.pos-item-pin.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+        target.classList.add('is-drop-target');
+        return;
+      }
+      dropFolder.name = null;
+      document.querySelectorAll('.pos-item-pin.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
       const over = Number(target.getAttribute('data-pin-index'));
       if (Number.isNaN(over) || over === dragPinIndex.current) return;
       dragMoved.current = true;
       setHome((current) => {
+        if (dragPinIndex.current === null || dragPinIndex.current >= current.pins.length) return current;
         const pins = [...current.pins];
-        const [moved] = pins.splice(dragPinIndex.current!, 1);
-        pins.splice(over, 0, moved!);
+        const [moved] = pins.splice(dragPinIndex.current, 1);
+        pins.splice(Math.min(over, pins.length), 0, moved!);
         return { ...current, pins };
       });
       dragPinIndex.current = over;
@@ -267,6 +285,22 @@ export function App() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
       document.removeEventListener('pointercancel', onUp);
+      document.querySelectorAll('.pos-item-pin.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+      if (dragKey && dropFolder.name !== null) {
+        const folderName = dropFolder.name;
+        dragMoved.current = true;
+        setHome((current) => {
+          if (!current.pins.some((pin) => pin.t === 'f' && pin.name === folderName)) return current;
+          const pins = current.pins
+            .filter((pin) => !(pin.t === 'i' && pin.id === dragKey))
+            .map((pin) => (pin.t === 'f' && pin.name === folderName ? { ...pin, items: [...pin.items, dragKey] } : pin));
+          const next = { ...current, pins };
+          setTimeout(() => saveBoard(next), 0);
+          return next;
+        });
+        dragPinIndex.current = null;
+        return;
+      }
       if (dragPinIndex.current !== null && dragMoved.current) saveBoard(homeRef.current);
       dragPinIndex.current = null;
     };
@@ -279,13 +313,14 @@ export function App() {
     const board = next ?? homeRef.current;
     void api('/api/pos/homescreen', {
       method: 'PUT',
-      body: JSON.stringify({ userKey, buttons: board.buttons, pins: board.pins, landingCategory: board.landingCategory ?? '', updatedBy: operatorName })
+      body: JSON.stringify({ userKey, buttons: board.buttons, pins: board.pins, categories: board.categories ?? undefined, landingCategory: board.landingCategory ?? '', updatedBy: operatorName })
     }).catch((err) => setError(messageForError(err, 'Could not save the board.')));
   }
   const [dockets, setDockets] = useState<Docket[] | null>(null);
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
-  const [home, setHome] = useState<{ buttons: string[]; pins: Pin[]; landingCategory?: string | null }>({ buttons: [], pins: [] });
+  const [home, setHome] = useState<{ buttons: string[]; pins: Pin[]; landingCategory?: string | null; categories?: TabsConfig | null }>({ buttons: [], pins: [] });
+  const [renaming, setRenaming] = useState<null | { kind: 'pin' | 'group'; key: number | string; value: string }>(null);
   const homeRef = useRef(home);
   homeRef.current = home;
   const [eightySix, setEightySix] = useState<Set<string>>(new Set());
@@ -432,6 +467,7 @@ export function App() {
         setHome({
           landingCategory: landing,
           buttons: config.buttons,
+          categories: ((config as { categories?: TabsConfig | null }).categories as TabsConfig | null) ?? null,
           // Legacy pins were plain recipeId strings — normalise to the rich shape.
           pins: (config.pins ?? []).map((pin) =>
             typeof pin === 'string' ? ({ t: 'i', id: pin } as Pin) : (pin as Pin)
@@ -587,6 +623,163 @@ export function App() {
     };
     return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
   }, [order, courses]);
+
+  // The category tab bar, honouring the user's saved order/hidden/groups.
+  const tabsConfig: TabsConfig = home.categories ?? { order: [], hidden: [], groups: [] };
+  const visibleTabs = useMemo(() => {
+    const catNames = menu.map((category) => category.name);
+    const grouped = new Set(tabsConfig.groups.flatMap((group) => group.cats));
+    const hidden = new Set(tabsConfig.hidden);
+    const tokens: string[] = [];
+    const seen = new Set<string>();
+    for (const token of tabsConfig.order) {
+      if (token.startsWith('g:')) {
+        if (tabsConfig.groups.some((group) => group.name === token.slice(2)) && !seen.has(token)) {
+          tokens.push(token);
+          seen.add(token);
+        }
+      } else if (catNames.includes(token) && !grouped.has(token) && !hidden.has(token) && !seen.has(token)) {
+        tokens.push(token);
+        seen.add(token);
+      }
+    }
+    for (const group of tabsConfig.groups) {
+      const token = `g:${group.name}`;
+      if (!seen.has(token)) {
+        tokens.push(token);
+        seen.add(token);
+      }
+    }
+    for (const name of catNames) {
+      if (!grouped.has(name) && !hidden.has(name) && !seen.has(name)) {
+        tokens.push(name);
+        seen.add(name);
+      }
+    }
+    return tokens;
+  }, [menu, tabsConfig]);
+
+  function saveTabs(mutate: (config: TabsConfig) => TabsConfig) {
+    setHome((current) => {
+      const config = mutate(current.categories ?? { order: [], hidden: [], groups: [] });
+      const next = { ...current, categories: config };
+      setTimeout(() => saveBoard(next), 0);
+      return next;
+    });
+  }
+
+  // Tab drag (edit mode): reorder, or drop a tab ONTO another to group them.
+  const dragTabToken = useRef<string | null>(null);
+  function tabPointerDown(event: React.PointerEvent, token: string) {
+    if (!boardEdit) return;
+    event.preventDefault();
+    dragTabToken.current = token;
+    let dropOn: string | null = null;
+    let movedTab = false;
+    const stamp = Date.now();
+    const onMove = (nativeEvent: PointerEvent) => {
+      if (dragTabToken.current === null) return;
+      const target = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY)?.closest('[data-tab-token]');
+      document.querySelectorAll('.pos-tabs button.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+      if (!target) return;
+      const over = target.getAttribute('data-tab-token')!;
+      if (over === dragTabToken.current) return;
+      // Centre third of the target = "drop into a group"; edges = reorder.
+      const rect = target.getBoundingClientRect();
+      const ratio = (nativeEvent.clientX - rect.x) / rect.width;
+      if (ratio > 0.3 && ratio < 0.7 && !dragTabToken.current.startsWith('g:')) {
+        dropOn = over;
+        target.classList.add('is-drop-target');
+        return;
+      }
+      dropOn = null;
+      movedTab = true;
+      const from = dragTabToken.current;
+      saveTabsQuiet((config) => {
+        const order = visibleTabsRef.current.filter((candidate) => candidate !== from);
+        order.splice(order.indexOf(over) + (ratio >= 0.5 ? 1 : 0), 0, from);
+        return { ...config, order };
+      });
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      document.querySelectorAll('.pos-tabs button.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+      const from = dragTabToken.current;
+      dragTabToken.current = null;
+      if (from && dropOn) {
+        // Group the two tabs (or add to an existing group).
+        saveTabs((config) => {
+          if (dropOn!.startsWith('g:')) {
+            const groupName = dropOn!.slice(2);
+            return {
+              ...config,
+              order: visibleTabsRef.current.filter((candidate) => candidate !== from),
+              groups: config.groups.map((group) => (group.name === groupName ? { ...group, cats: [...group.cats, from] } : group))
+            };
+          }
+          let name = 'New group';
+          let n = 2;
+          while (config.groups.some((group) => group.name === name)) name = `New group ${n++}`;
+          const order = visibleTabsRef.current.map((candidate) => (candidate === dropOn ? `g:${name}` : candidate)).filter((candidate) => candidate !== from);
+          return { ...config, order, groups: [...config.groups, { name, cats: [dropOn!, from] }] };
+        });
+
+      } else if (movedTab) {
+        saveBoard(homeRef.current);
+      } else if (Date.now() - stamp < 400 && from) {
+        // Plain tap in edit mode: hide/show a category tab.
+        if (!from.startsWith('g:')) {
+          saveTabs((config) => ({
+            ...config,
+            hidden: config.hidden.includes(from) ? config.hidden.filter((candidate) => candidate !== from) : [...config.hidden, from],
+            order: visibleTabsRef.current
+          }));
+        }
+      }
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  }
+
+  function commitPinRename(index: number, rawValue: string) {
+    const value = rawValue.trim().slice(0, 40);
+    setRenaming(null);
+    setHome((current) => {
+      const pins = current.pins.map((pin, i) => {
+        if (i !== index) return pin;
+        // Folders rename directly; items keep their real (kitchen) name and
+        // get a display label — clearing the field restores the original.
+        if (pin.t === 'f') return { ...pin, name: value || pin.name, label: undefined };
+        return { ...pin, label: value || undefined };
+      });
+      const next = { ...current, pins };
+      setTimeout(() => saveBoard(next), 0);
+      return next;
+    });
+  }
+
+  function commitGroupRename(oldName: string, rawValue: string) {
+    const value = rawValue.trim().slice(0, 30);
+    setRenaming(null);
+    if (!value || value === oldName) return;
+    saveTabs((config) => ({
+      ...config,
+      order: (config.order.length ? config.order : visibleTabsRef.current).map((token) => (token === `g:${oldName}` ? `g:${value}` : token)),
+      groups: config.groups.map((group) => (group.name === oldName ? { ...group, name: value } : group))
+    }));
+    setActiveCategory((current) => (current === `__group__${oldName}` ? `__group__${value}` : current));
+  }
+
+  // Reorders during a drag must not thrash the server — quiet save, flush on up.
+  function saveTabsQuiet(mutate: (config: TabsConfig) => TabsConfig) {
+    setHome((current) => ({ ...current, categories: mutate(current.categories ?? { order: [], hidden: [], groups: [] }) }));
+  }
+
+  const visibleTabsRef = useRef(visibleTabs);
+  visibleTabsRef.current = visibleTabs;
 
   const visibleItems = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -1260,16 +1453,60 @@ export function App() {
                 >
                   {HOME_TAB}
                 </button>
-                {menu.map((category) => (
-                  <button
-                    key={category.name}
-                    type="button"
-                    className={category.name === activeCategory ? 'is-active' : ''}
-                    onClick={() => setActiveCategory(category.name)}
-                  >
-                    {category.name}
-                  </button>
-                ))}
+                {visibleTabs.map((token) => {
+                  const isGroup = token.startsWith('g:');
+                  const groupName = isGroup ? token.slice(2) : null;
+                  const active = isGroup ? activeCategory === `__group__${groupName}` : activeCategory === token;
+                  if (renaming?.kind === 'group' && renaming.key === groupName) {
+                    return (
+                      <input
+                        key={token}
+                        className="pos-tab-rename"
+                        autoFocus
+                        defaultValue={groupName ?? ''}
+                        onBlur={(event) => commitGroupRename(groupName!, event.currentTarget.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') commitGroupRename(groupName!, event.currentTarget.value);
+                          if (event.key === 'Escape') setRenaming(null);
+                        }}
+                      />
+                    );
+                  }
+                  return (
+                    <button
+                      key={token}
+                      type="button"
+                      data-tab-token={token}
+                      className={`${active ? 'is-active' : ''} ${isGroup ? 'is-group' : ''} ${boardEdit ? 'is-tab-edit' : ''}`}
+                      onPointerDown={(event) => tabPointerDown(event, token)}
+                      onClick={() => {
+                        if (boardEdit) {
+                          if (isGroup) setRenaming({ kind: 'group', key: groupName!, value: groupName! });
+                          return;
+                        }
+                        setActiveCategory(isGroup ? `__group__${groupName}` : token);
+                      }}
+                    >
+                      {isGroup ? `📁 ${groupName}` : token}
+                    </button>
+                  );
+                })}
+                {boardEdit
+                  ? tabsConfig.hidden
+                      .filter((name) => menu.some((category) => category.name === name))
+                      .map((name) => (
+                        <button
+                          key={`hidden-${name}`}
+                          type="button"
+                          className="is-tab-hidden"
+                          onClick={() =>
+                            saveTabs((config) => ({ ...config, hidden: config.hidden.filter((candidate) => candidate !== name) }))
+                          }
+                        >
+                          {name} 🚫
+                        </button>
+                      ))
+                  : null}
               </nav>
             ) : null}
             {!search && activeCategory === HOME_TAB ? (
@@ -1332,20 +1569,59 @@ export function App() {
                     setHome(board);
                     saveBoard(board);
                   };
+                  const sizeClass = pin.s === 'w' ? 'pos-size-w' : pin.s === 'b' ? 'pos-size-b' : '';
+                  const cycleSize = (event: React.MouseEvent) => {
+                    event.stopPropagation();
+                    const next: 'w' | 'b' | undefined = pin.s === 'w' ? 'b' : pin.s === 'b' ? undefined : 'w';
+                    const board = { ...home, pins: home.pins.map((candidate, i) => (i === index ? { ...candidate, s: next } : candidate)) };
+                    setHome(board);
+                    saveBoard(board);
+                  };
+                  const startRename = (event: React.MouseEvent) => {
+                    event.stopPropagation();
+                    setRenaming({ kind: 'pin', key: index, value: pin.label ?? (pin.t === 'f' ? pin.name : '') });
+                  };
+                  const badges = boardEdit ? (
+                    <>
+                      <i className="pos-pin-x" onClick={removePin}>✕</i>
+                      <i className="pos-pin-size" onClick={cycleSize}>⤢</i>
+                      <i className="pos-pin-rename" onClick={startRename}>✎</i>
+                    </>
+                  ) : null;
+                  const renameInput =
+                    renaming?.kind === 'pin' && renaming.key === index ? (
+                      <input
+                        className="pos-pin-rename-input"
+                        autoFocus
+                        defaultValue={renaming.value}
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onBlur={(event) => commitPinRename(index, event.currentTarget.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') commitPinRename(index, event.currentTarget.value);
+                          if (event.key === 'Escape') setRenaming(null);
+                        }}
+                      />
+                    ) : null;
                   if (pin.t === 'f') {
                     return (
                       <button
                         key={`f-${index}`}
                         type="button"
                         data-pin-index={index}
-                        className={`pos-item pos-item-pin ${boardEdit ? 'is-editing' : ''}`}
+                        data-pin-folder={pin.name}
+                        className={`pos-item pos-item-pin ${sizeClass} ${boardEdit ? 'is-editing' : ''}`}
                         style={pin.c ? { borderColor: pin.c, background: `${pin.c}26` } : undefined}
                         {...editProps}
                         onClick={() => (boardEdit ? cycleColour() : setActiveCategory(`__folder__${index}`))}
                       >
-                        {boardEdit ? <i className="pos-pin-x" onClick={removePin}>✕</i> : null}
-                        <span>📁 {pin.name}</span>
-                        <small>{pin.items.length} items</small>
+                        {badges}
+                        {renameInput ?? (
+                          <>
+                            <span>📁 {pin.label ?? pin.name}</span>
+                            <small>{pin.items.length} items</small>
+                          </>
+                        )}
                       </button>
                     );
                   }
@@ -1356,22 +1632,39 @@ export function App() {
                       key={pin.id}
                       type="button"
                       data-pin-index={index}
-                      className={`pos-item pos-item-pin ${boardEdit ? 'is-editing' : ''} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                      className={`pos-item pos-item-pin ${sizeClass} ${boardEdit ? 'is-editing' : ''} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
                       style={pin.c ? { borderColor: pin.c, background: `${pin.c}26` } : undefined}
                       disabled={busy && !boardEdit}
                       {...editProps}
                       onClick={() => (boardEdit ? cycleColour() : addItem(item))}
                     >
-                      {boardEdit ? <i className="pos-pin-x" onClick={removePin}>✕</i> : null}
-                      <span>{item.title}</span>
-                      <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
+                      {badges}
+                      {renameInput ?? (
+                        <>
+                          <span>{pin.label ?? item.title}</span>
+                          <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
+                        </>
+                      )}
                     </button>
                   );
                 })}
                 {boardEdit ? (
                   <>
+                    <button
+                      type="button"
+                      className="pos-item pos-item-edit"
+                      onClick={() => {
+                        const board = { ...home, pins: [...home.pins, { t: 'f' as const, name: 'New folder', items: [] }] };
+                        setHome(board);
+                        saveBoard(board);
+                        setRenaming({ kind: 'pin', key: board.pins.length - 1, value: 'New folder' });
+                      }}
+                    >
+                      <span>📁 New folder</span>
+                      <small>then drag items in</small>
+                    </button>
                     <button type="button" className="pos-item pos-item-edit" onClick={() => setCustomise(true)}>
-                      <span>＋ Add pins &amp; folders</span>
+                      <span>＋ Add pins</span>
                       <small>search the menu</small>
                     </button>
                     <button
@@ -1400,7 +1693,8 @@ export function App() {
                   <small>home</small>
                 </button>
                 {(() => {
-                  const pin = home.pins[Number(activeCategory.slice('__folder__'.length))];
+                  const folderIndex = Number(activeCategory.slice('__folder__'.length));
+                  const pin = home.pins[folderIndex];
                   if (!pin || pin.t !== 'f') return null;
                   return pin.items.map((recipeId) => {
                     const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === recipeId);
@@ -1411,12 +1705,65 @@ export function App() {
                         type="button"
                         className={`pos-item pos-item-pin ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
                         style={pin.c ? { borderColor: pin.c, background: `${pin.c}26` } : undefined}
-                        disabled={busy}
-                        onClick={() => addItem(item)}
+                        disabled={busy && !boardEdit}
+                        onClick={() => (boardEdit ? undefined : addItem(item))}
                       >
+                        {boardEdit ? (
+                          <i
+                            className="pos-pin-x"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              // Out of the folder, back onto the board.
+                              const board = {
+                                ...home,
+                                pins: [
+                                  ...home.pins.map((candidate, i) =>
+                                    i === folderIndex && candidate.t === 'f'
+                                      ? { ...candidate, items: candidate.items.filter((candidateId) => candidateId !== recipeId) }
+                                      : candidate
+                                  ),
+                                  { t: 'i' as const, id: recipeId }
+                                ]
+                              };
+                              setHome(board);
+                              saveBoard(board);
+                            }}
+                          >
+                            ✕
+                          </i>
+                        ) : null}
                         <span>{item.title}</span>
                         <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
                       </button>
+                    );
+                  });
+                })()}
+              </div>
+            ) : !search && activeCategory.startsWith('__group__') ? (
+              <div className="pos-grid-groups">
+                {(() => {
+                  const group = tabsConfig.groups.find((candidate) => candidate.name === activeCategory.slice('__group__'.length));
+                  if (!group) return null;
+                  return group.cats.map((catName) => {
+                    const category = menu.find((candidate) => candidate.name === catName);
+                    if (!category) return null;
+                    return (
+                      <section key={catName}>
+                        <h3 className="pos-group-head">{catName}</h3>
+                        <div className="pos-grid">
+                          {category.items.map((item) => (
+                            <button
+                              key={item.recipeId}
+                              type="button"
+                              className={`pos-item ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                              onClick={() => addItem(item)}
+                            >
+                              <span>{item.title}</span>
+                              <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
                     );
                   });
                 })()}

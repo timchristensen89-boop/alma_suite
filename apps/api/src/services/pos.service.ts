@@ -1390,11 +1390,11 @@ export const posService = {
 
   // ── Per-operator homescreen ────────────────────────────────────────────
   async getHomescreen(userKey: string | null) {
-    const defaults = { buttons: ['open-till', 'discount', 'comp', 'wastage', 'price'], pins: [] as unknown[], landingCategory: null as string | null };
+    const defaults = { buttons: ['open-till', 'discount', 'comp', 'wastage', 'price'], pins: [] as unknown[], landingCategory: null as string | null, categories: null as object | null };
     if (!userKey) return defaults;
     const row = await prisma.posHomescreen.findUnique({ where: { userKey: userKey.toLowerCase() } });
     return row
-      ? { buttons: row.buttons as string[], pins: row.pins as unknown[], landingCategory: row.landingCategory }
+      ? { buttons: row.buttons as string[], pins: row.pins as unknown[], landingCategory: row.landingCategory, categories: (row.categories as object | null) ?? null }
       : defaults;
   },
 
@@ -1410,15 +1410,22 @@ export const posService = {
         if (typeof pin === 'string') return { t: 'i', id: pin };
         if (pin && typeof pin === 'object') {
           const row = pin as Record<string, unknown>;
+          // label = display-only rename (dockets/KDS keep the recipe title);
+          // s = tile size ('w' wide, 'b' big; absent = standard).
+          const pinExtras = {
+            ...(typeof row.c === 'string' ? { c: row.c } : {}),
+            ...(typeof row.label === 'string' && row.label.trim() ? { label: row.label.trim().slice(0, 40) } : {}),
+            ...(row.s === 'w' || row.s === 'b' ? { s: row.s } : {})
+          };
           if (row.t === 'i' && typeof row.id === 'string') {
-            return { t: 'i', id: row.id, ...(typeof row.c === 'string' ? { c: row.c } : {}) };
+            return { t: 'i', id: row.id, ...pinExtras };
           }
           if (row.t === 'f' && typeof row.name === 'string' && Array.isArray(row.items)) {
             return {
               t: 'f',
               name: row.name.slice(0, 40),
-              items: (row.items as unknown[]).map(String).slice(0, 24),
-              ...(typeof row.c === 'string' ? { c: row.c } : {})
+              items: (row.items as unknown[]).map(String).slice(0, 40),
+              ...pinExtras
             };
           }
         }
@@ -1427,10 +1434,32 @@ export const posService = {
       .filter((pin): pin is NonNullable<typeof pin> => pin !== null)
       .slice(0, 24);
     const landingCategory = str(body.landingCategory) || null;
+    // Category tab customisation: order + hidden + grouped tabs.
+    let categories: object | null = null;
+    if (body.categories && typeof body.categories === 'object') {
+      const raw = body.categories as Record<string, unknown>;
+      categories = {
+        order: (Array.isArray(raw.order) ? raw.order : []).map(String).slice(0, 60),
+        hidden: (Array.isArray(raw.hidden) ? raw.hidden : []).map(String).slice(0, 60),
+        groups: (Array.isArray(raw.groups) ? raw.groups : [])
+          .map((group) => {
+            if (!group || typeof group !== 'object') return null;
+            const row = group as Record<string, unknown>;
+            if (typeof row.name !== 'string' || !Array.isArray(row.cats)) return null;
+            return {
+              name: row.name.trim().slice(0, 30),
+              cats: (row.cats as unknown[]).map(String).slice(0, 20),
+              ...(typeof row.c === 'string' ? { c: row.c } : {})
+            };
+          })
+          .filter((group): group is NonNullable<typeof group> => group !== null)
+          .slice(0, 12)
+      };
+    }
     return prisma.posHomescreen.upsert({
       where: { userKey },
-      create: { userKey, buttons, pins, landingCategory, updatedBy: str(body.updatedBy) || null },
-      update: { buttons, pins, landingCategory, updatedBy: str(body.updatedBy) || null }
+      create: { userKey, buttons, pins, categories: categories ?? undefined, landingCategory, updatedBy: str(body.updatedBy) || null },
+      update: { buttons, pins, categories: categories ?? undefined, landingCategory, updatedBy: str(body.updatedBy) || null }
     });
   },
 

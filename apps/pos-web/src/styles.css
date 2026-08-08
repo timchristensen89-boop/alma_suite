@@ -494,3 +494,22 @@ input, select { font: inherit; }
 .pos-pin-x { position: absolute; top: -7px; right: -7px; width: 22px; height: 22px; border-radius: 50%; background: var(--pos-danger, #c4655a); color: #fff; font-style: normal; font-size: 12px; font-weight: 800; display: grid; place-items: center; cursor: pointer; z-index: 2; }
 .pos-item-edit.is-done { border-color: var(--pos-accent, #58996f); color: var(--pos-accent, #58996f); opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .pos-item-pin.is-editing { animation: none; } }
+
+
+/* board v2: sizes, badges, groups */
+.pos-grid-home { grid-auto-flow: dense; }
+.pos-size-w { grid-column: span 2; }
+.pos-size-b { grid-column: span 2; grid-row: span 2; }
+.pos-size-b span { font-size: 16px; }
+.pos-pin-size { position: absolute; bottom: -7px; right: -7px; width: 22px; height: 22px; border-radius: 50%; background: #4c5560; color: #fff; font-style: normal; font-size: 11px; font-weight: 800; display: grid; place-items: center; cursor: pointer; z-index: 2; }
+.pos-pin-rename { position: absolute; top: -7px; left: -7px; width: 22px; height: 22px; border-radius: 50%; background: #4c5560; color: #fff; font-style: normal; font-size: 11px; display: grid; place-items: center; cursor: pointer; z-index: 2; }
+.pos-pin-rename-input { width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--pos-accent, #58996f); color: inherit; font: inherit; text-align: center; outline: none; }
+.pos-item-pin.is-drop-target { outline: 2px dashed var(--pos-accent, #58996f); outline-offset: 3px; transform: scale(1.04); }
+.pos-tabs button.is-group { font-weight: 800; }
+.pos-tabs button.is-tab-edit { animation: pin-jiggle 260ms ease-in-out infinite alternate; touch-action: none; }
+.pos-tabs button.is-tab-hidden { opacity: 0.4; text-decoration: line-through; }
+.pos-tabs button.is-drop-target { outline: 2px dashed var(--pos-accent, #58996f); outline-offset: 2px; }
+.pos-tab-rename { background: transparent; border: 0; border-bottom: 1px solid var(--pos-accent, #58996f); color: #e8ebee; font: inherit; width: 120px; outline: none; padding: 6px 4px; }
+.pos-grid-groups { display: flex; flex-direction: column; gap: 14px; }
+.pos-group-head { margin: 0 0 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pos-muted, #8b939e); }
+@media (prefers-reduced-motion: reduce) { .pos-tabs button.is-tab-edit { animation: none; } }
