@@ -22,7 +22,44 @@ posRouter.get('/menu', async (_req, res, next) => {
 
 posRouter.get('/orders', async (req, res, next) => {
   try {
-    res.json(await posService.listOpenOrders(typeof req.query.venue === 'string' ? req.query.venue : null));
+    res.json(
+      await posService.listOpenOrders(
+        typeof req.query.venue === 'string' ? req.query.venue : null,
+        typeof req.query.status === 'string' ? req.query.status : null
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/orders/:id/merge', async (req, res, next) => {
+  try {
+    res.json(await posService.mergeOrders(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/orders/:id/reopen', async (req, res, next) => {
+  try {
+    res.json(await posService.reopenOrder(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/orders/:id/refund', async (req, res, next) => {
+  try {
+    res.json(await posService.refundOrder(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.patch('/tables/:id/position', async (req, res, next) => {
+  try {
+    res.json(await posService.moveTable(String(req.params.id), req.body));
   } catch (error) {
     next(error);
   }

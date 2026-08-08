@@ -271,3 +271,33 @@ input, select { font: inherit; }
 .pos-guest-chip { border-color: rgba(79, 143, 107, 0.6); color: #7fc09a; }
 .pos-pin-edit { display: inline-flex; gap: 2px; }
 .pos-pin-edit button:last-child { min-width: 34px; padding: 0 8px; }
+
+/* v8: bills history, premium polish */
+.pos-bill-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--pos-line); }
+.pos-bill-row > span:first-child { flex: 1; display: flex; flex-direction: column; }
+.pos-bill-actions { display: flex; gap: 6px; }
+.pos-ghost-active { border-color: var(--pos-accent); color: var(--pos-accent); }
+
+/* Premium dark pass: warmer charcoal, soft depth, calmer chrome. */
+:root {
+  --pos-bg: #121417;
+  --pos-panel: #1a1e23;
+  --pos-raise: #232830;
+  --pos-line: rgba(255, 255, 255, 0.07);
+  --pos-accent: #58996f;
+}
+.pos-header {
+  background: rgba(26, 30, 35, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.pos-item, .pos-table-card, .pos-mgmt-btn, .pos-modal-panel {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+.pos-item { transition: transform 90ms ease, background 120ms ease; }
+.pos-item:active { transform: scale(0.98); }
+.pos-charge { box-shadow: 0 6px 20px rgba(88, 153, 111, 0.28); transition: transform 90ms ease; }
+.pos-charge:active:not(:disabled) { transform: scale(0.985); }
+.pos-floor-table { transition: left 80ms linear, top 80ms linear, background 120ms ease; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+.pos-cart { box-shadow: -8px 0 24px rgba(0, 0, 0, 0.2); }
+.pos-modal { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }

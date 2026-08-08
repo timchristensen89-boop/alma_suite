@@ -295,12 +295,108 @@ export const posService = {
     return this.getOrder(id);
   },
 
-  async listOpenOrders(venue: string | null) {
+  async listOpenOrders(venue: string | null, status?: string | null) {
+    const wanted = (status ?? 'OPEN').toUpperCase();
     return prisma.posOrder.findMany({
-      where: { status: 'OPEN', ...(venue ? { venue } : {}) },
+      where: {
+        ...(wanted === 'ALL' ? { status: { in: ['PAID', 'VOID', 'OPEN'] } } : { status: wanted }),
+        ...(venue ? { venue } : {}),
+        ...(wanted !== 'OPEN'
+          ? { OR: [{ serviceDate: sydneyTodayUtcMidnight() }, { createdAt: { gte: new Date(Date.now() - 18 * 3600_000) } }] }
+          : {})
+      },
       include: ORDER_INCLUDE,
       orderBy: { createdAt: 'desc' },
-      take: 50
+      take: 60
+    });
+  },
+
+  // Merge another open bill into this one: lines and payments move across,
+  // totals recompute, and the source order voids with an audit note.
+  async mergeOrders(targetId: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const sourceId = str(body.sourceOrderId);
+    if (!sourceId || sourceId === targetId) throw new HttpError(400, 'Pick a different bill to merge in.');
+    const [target, source] = await Promise.all([
+      prisma.posOrder.findUnique({ where: { id: targetId }, select: { status: true, venue: true, tableLabel: true, orderNumber: true, covers: true } }),
+      prisma.posOrder.findUnique({ where: { id: sourceId }, select: { status: true, venue: true, tableLabel: true, orderNumber: true, covers: true } })
+    ]);
+    if (!target || !source) throw new HttpError(404, 'Bill not found.');
+    if (target.status !== 'OPEN' || source.status !== 'OPEN') throw new HttpError(400, 'Both bills must be open to merge.');
+    await prisma.$transaction([
+      prisma.posOrderLine.updateMany({ where: { orderId: sourceId }, data: { orderId: targetId } }),
+      prisma.posPayment.updateMany({ where: { orderId: sourceId }, data: { orderId: targetId } }),
+      prisma.posOrder.update({
+        where: { id: targetId },
+        data: { covers: (target.covers ?? 0) + (source.covers ?? 0) || null }
+      }),
+      prisma.posOrder.update({
+        where: { id: sourceId },
+        data: {
+          status: 'VOID',
+          voidedAt: new Date(),
+          voidReason: `Merged into ${target.tableLabel ? `table ${target.tableLabel}` : `#${target.orderNumber}`}`
+        }
+      })
+    ]);
+    await recomputeOrder(targetId);
+    return this.getOrder(targetId);
+  },
+
+  // Bring a paid bill back to the floor (adds more items, settles again).
+  async reopenOrder(id: string) {
+    const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true } });
+    if (!order) throw new HttpError(404, 'Bill not found.');
+    if (order.status !== 'PAID') throw new HttpError(400, 'Only paid bills can be reopened.');
+    await prisma.posOrder.update({ where: { id }, data: { status: 'OPEN', paidAt: null, serviceDate: null } });
+    return this.getOrder(id);
+  },
+
+  // Refund a settled bill, fully or partially — a negative REFUND payment
+  // plus a mandatory-reason audit record. Cash refunds count against the
+  // open drawer's expected cash automatically (negative CASH sum).
+  async refundOrder(id: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const reason = str(body.reason);
+    requireReason('COMP', reason);
+    const staffName = str(body.staffName) || 'Unknown';
+    const method = str(body.method).toUpperCase() === 'CASH' ? 'CASH' : 'REFUND';
+    const order = await prisma.posOrder.findUnique({ where: { id }, include: { payments: true } });
+    if (!order) throw new HttpError(404, 'Bill not found.');
+    if (order.status !== 'PAID') throw new HttpError(400, 'Only paid bills can be refunded.');
+    const paid = order.payments.reduce((sum, payment) => sum + payment.amountCents + payment.tipCents, 0);
+    const amountCents = body.amountCents === undefined ? paid : asInt(body.amountCents, 'refund amount', { min: 1 });
+    if (amountCents > paid) throw new HttpError(400, `Only ${(paid / 100).toFixed(2)} was paid on this bill.`);
+    await prisma.posPayment.create({
+      data: { orderId: id, method, amountCents: -amountCents, tipCents: 0, reference: 'refund' }
+    });
+    await prisma.posAdjustment.create({
+      data: {
+        venue: order.venue,
+        orderId: id,
+        kind: 'COMP',
+        reason,
+        staffName,
+        itemName: `REFUND ${order.tableLabel ? `table ${order.tableLabel}` : `#${order.orderNumber}`}`,
+        amountCents
+      }
+    });
+    return this.getOrder(id);
+  },
+
+  // Move a floor table (drag-edit in POS writes the shared Reserve layout).
+  async moveTable(id: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const posX = Number(body.posX);
+    const posY = Number(body.posY);
+    if (!Number.isFinite(posX) || !Number.isFinite(posY)) throw new HttpError(400, 'posX/posY required.');
+    return prisma.reserveTable.update({
+      where: { id },
+      data: {
+        posX: Math.min(96, Math.max(0, posX)),
+        posY: Math.min(96, Math.max(0, posY))
+      },
+      select: { id: true, posX: true, posY: true }
     });
   },
 

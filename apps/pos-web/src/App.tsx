@@ -150,6 +150,12 @@ export function App() {
   const [floorArea, setFloorArea] = useState('');
   const [homeView, setHomeView] = useState<'floor' | 'list'>(() => (localStorage.getItem('alma.pos.view') as 'floor' | 'list') ?? 'floor');
   const [order, setOrder] = useState<Order | null>(null);
+  // Register-first: the app opens on menu + bill; Tables is a secondary view.
+  const [view, setView] = useState<'register' | 'tables'>('register');
+  const [bills, setBills] = useState<Order[] | null>(null);
+  const [refunding, setRefunding] = useState<null | { order: Order; amount: string; reason: string; method: 'REFUND' | 'CASH' }>(null);
+  const [merging, setMerging] = useState<Order[] | null>(null);
+  const [editLayout, setEditLayout] = useState(false);
   const [activeCategory, setActiveCategory] = useState('');
   const [search, setSearch] = useState('');
   const [newTable, setNewTable] = useState<null | { label: string; covers: string }>(null);
@@ -366,7 +372,10 @@ export function App() {
   }
 
   function addItem(item: MenuItem) {
-    if (!order) return;
+    if (!order) {
+      void quickSaleWithItem(item);
+      return;
+    }
     const existing = order.lines.find((line) => line.recipeId === item.recipeId);
     const next = existing
       ? order.lines.map((line) => (line.recipeId === item.recipeId ? { ...line, quantity: line.quantity + 1 } : line))
@@ -433,6 +442,7 @@ export function App() {
       });
       setOrder(created);
       setNewTable(null);
+      setView('register');
     } catch (err) {
       setError(messageForError(err, 'Could not open the order.'));
     } finally {
@@ -496,9 +506,11 @@ export function App() {
         <strong onClick={() => { setOrder(null); void refreshOpenOrders(); }} style={{ cursor: 'pointer' }}>
           ALMA POS
         </strong>
-        {order ? (
+        {view === 'register' ? (
           <span className="pos-crumb">
-            {order.tableLabel ? `Table ${order.tableLabel}` : `Sale #${order.orderNumber}`}
+            {!order ? 'New sale' : order.tableLabel ? `Table ${order.tableLabel}` : `Sale #${order.orderNumber}`}
+            {!order ? null : (
+              <>
             <button
               type="button"
               className="pos-covers-chip"
@@ -522,6 +534,8 @@ export function App() {
                 ☺ {order.guest.firstName} {order.guest.lastName}
               </button>
             ) : null}
+              </>
+            )}
           </span>
         ) : (
           <select value={venue} onChange={(event) => setVenue(event.currentTarget.value)}>
@@ -530,7 +544,7 @@ export function App() {
             ))}
           </select>
         )}
-        {order ? (
+        {view === 'register' ? (
           <input className="pos-search" placeholder="Search menu…" value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
         ) : null}
         <span style={{ flex: 1 }} />
@@ -550,7 +564,7 @@ export function App() {
             {me.kind === 'device' ? ' · switch' : ''}
           </button>
         ) : null}
-        {order ? (
+        {view === 'register' && order ? (
           <>
             <button
               type="button"
@@ -570,12 +584,47 @@ export function App() {
             <button type="button" className="pos-ghost" disabled={order.lines.length === 0} onClick={() => setBill(order)}>
               Bill
             </button>
-            <button type="button" className="pos-ghost" onClick={() => { setOrder(null); void refreshOpenOrders(); }}>
+            {order.tableLabel ? (
+              <button
+                type="button"
+                className="pos-ghost"
+                onClick={() => setMerging(openOrders.filter((open) => open.id !== order.id))}
+              >
+                Merge
+              </button>
+            ) : null}
+            <button type="button" className="pos-ghost" onClick={() => { setOrder(null); }}>
+              Exit
+            </button>
+            <button type="button" className="pos-ghost" onClick={() => { setView('tables'); void refreshOpenOrders(); }}>
               Tables
+            </button>
+          </>
+        ) : view === 'register' ? (
+          <>
+            <button type="button" className="pos-ghost" onClick={() => { setView('tables'); void refreshOpenOrders(); }}>
+              Tables
+            </button>
+            <button
+              type="button"
+              className="pos-ghost"
+              onClick={() => {
+                void api<Order[]>(`/api/pos/orders?venue=${encodeURIComponent(venue)}&status=ALL`)
+                  .then((rows) => setBills(rows.filter((row) => row.status !== 'OPEN')))
+                  .catch((err) => setError(messageForError(err, 'Could not load bills.')));
+              }}
+            >
+              Bills
             </button>
           </>
         ) : (
           <>
+            <button type="button" className="pos-ghost" onClick={() => setView('register')}>
+              Register
+            </button>
+            <button type="button" className={`pos-ghost ${editLayout ? 'pos-ghost-active' : ''}`} onClick={() => setEditLayout(!editLayout)}>
+              {editLayout ? 'Done editing' : 'Edit layout'}
+            </button>
             <button type="button" className="pos-ghost" onClick={() => void openDay()}>
               Day
             </button>
@@ -604,7 +653,7 @@ export function App() {
         </div>
       ) : null}
 
-      {!order ? (
+      {view === 'tables' ? (
         <div className="pos-home">
           <div className="pos-home-actions">
             <button type="button" className="pos-home-new" onClick={() => setNewTable({ label: '', covers: '' })}>
@@ -699,10 +748,20 @@ export function App() {
               openOrders={openOrders}
               reservations={reservations}
               busy={busy}
+              editing={editLayout}
+              onMove={(tableId, posX, posY) => {
+                setFloorTables((current) => current.map((table) => (table.id === tableId ? { ...table, posX, posY } : table)));
+                void api(`/api/pos/tables/${tableId}/position`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ posX, posY })
+                }).catch(() => undefined);
+              }}
               onPick={(table) => {
+                if (editLayout) return;
                 const existing = openOrders.find(
                   (open) => (open.tableLabel ?? '').toLowerCase() === table.label.toLowerCase()
                 );
+                setView('register');
                 if (existing) setOrder(existing);
                 else void openOrder({ tableLabel: table.label, covers: table.seats ?? undefined });
               }}
@@ -711,7 +770,7 @@ export function App() {
           {homeView === 'floor' && floorTables.length > 0 ? null : null}
           <div className="pos-home-grid" style={homeView === 'floor' && floorTables.length > 0 ? { display: 'none' } : undefined}>
             {openOrders.map((open) => (
-              <button key={open.id} type="button" className="pos-table-card" onClick={() => setOrder(open)}>
+              <button key={open.id} type="button" className="pos-table-card" onClick={() => { setOrder(open); setView('register'); }}>
                 <strong>{open.tableLabel ? `Table ${open.tableLabel}` : `#${open.orderNumber}`}</strong>
                 <span className="pos-muted">
                   {open.covers ? `${open.covers} covers · ` : ''}
@@ -756,8 +815,8 @@ export function App() {
 
           <aside className="pos-cart">
             <div className="pos-cart-lines">
-              {order.lines.length === 0 ? <p className="pos-muted">Tap items to add them.</p> : null}
-              {order.lines.map((line, index) => (
+              {(order?.lines ?? []).length === 0 ? <p className="pos-muted">Tap items to start a sale.</p> : null}
+              {(order?.lines ?? []).map((line, index) => (
                 <div key={`${line.recipeId}-${index}`} className="pos-line">
                   <span className="pos-line-main">
                     <span
@@ -786,41 +845,41 @@ export function App() {
             <div className="pos-cart-foot">
               <div className="pos-sumline">
                 <span>Subtotal</span>
-                <span>{money(order.subtotalCents)}</span>
+                <span>{money(order?.subtotalCents ?? 0)}</span>
               </div>
-              {order.discountCents > 0 ? (
+              {order && order.discountCents > 0 ? (
                 <div className="pos-sumline pos-sumline-good">
                   <span>{order.discountLabel ?? 'Discount'}</span>
                   <span>−{money(order.discountCents)}</span>
                 </div>
               ) : null}
-              {(order as Order & { manualDiscountCents?: number }).manualDiscountCents ? (
+              {order && (order as Order & { manualDiscountCents?: number }).manualDiscountCents ? (
                 <div className="pos-sumline pos-sumline-good">
                   <span>{(order as Order & { manualDiscountLabel?: string }).manualDiscountLabel ?? 'Discount'}</span>
                   <span>−{money((order as Order & { manualDiscountCents?: number }).manualDiscountCents ?? 0)}</span>
                 </div>
               ) : null}
-              {order.surchargeCents > 0 ? (
+              {order && order.surchargeCents > 0 ? (
                 <div className="pos-sumline">
                   <span>{order.surchargeLabel ?? 'Surcharge'}</span>
                   <span>+{money(order.surchargeCents)}</span>
                 </div>
               ) : null}
-              {paidCents(order) > 0 ? (
+              {order && paidCents(order) > 0 ? (
                 <div className="pos-sumline pos-sumline-good">
                   <span>Paid so far</span>
                   <span>−{money(paidCents(order))}</span>
                 </div>
               ) : null}
               <div className="pos-totals">
-                <span>{paidCents(order) > 0 ? 'Balance' : 'Total'} (incl. GST {money(order.gstCents)})</span>
+                <span>{order && paidCents(order) > 0 ? 'Balance' : 'Total'} (incl. GST {money(order?.gstCents ?? 0)})</span>
                 <strong>{money(balance)}</strong>
               </div>
               <div className="pos-cart-actions">
                 <button
                   type="button"
                   className="pos-ghost"
-                  disabled={busy || order.lines.length === 0}
+                  disabled={busy || !order || order.lines.length === 0}
                   onClick={() => setDiscounting({ mode: 'percent', value: '10', reason: '' })}
                 >
                   Disc.
@@ -828,8 +887,9 @@ export function App() {
                 <button
                   type="button"
                   className="pos-ghost"
-                  disabled={busy || order.lines.length === 0 || paidCents(order) > 0}
+                  disabled={busy || !order || order.lines.length === 0 || paidCents(order) > 0}
                   onClick={() => {
+                    if (!order) return;
                     void api(`/api/pos/orders/${order.id}/void`, { method: 'POST', body: JSON.stringify({ reason: 'register' }) })
                       .then(() => {
                         setOrder(null);
@@ -843,7 +903,7 @@ export function App() {
                 <button
                   type="button"
                   className="pos-charge"
-                  disabled={order.lines.length === 0 || busy || balance <= 0}
+                  disabled={!order || order.lines.length === 0 || busy || balance <= 0}
                   onClick={() => setCharge({ stage: 'tip', tipCents: 0, amountCents: null })}
                 >
                   Charge {money(balance)}
@@ -1099,6 +1159,175 @@ export function App() {
                 Done
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {bills ? (
+        <div className="pos-modal" role="dialog" onClick={() => setBills(null)}>
+          <div className="pos-modal-panel" onClick={(event) => event.stopPropagation()}>
+            <h2>Today's bills</h2>
+            {bills.length === 0 ? <p className="pos-muted">No settled bills yet today.</p> : null}
+            {bills.map((row) => {
+              const refunded = row.payments.filter((payment) => payment.amountCents < 0).reduce((sum, payment) => sum - payment.amountCents, 0);
+              return (
+                <div key={row.id} className="pos-bill-row">
+                  <span>
+                    <strong>{row.tableLabel ? `Table ${row.tableLabel}` : `#${row.orderNumber}`}</strong>
+                    <small className="pos-muted">
+                      {' '}
+                      {row.status}
+                      {refunded > 0 ? ` · refunded ${money(refunded)}` : ''}
+                    </small>
+                  </span>
+                  <span>{money(row.totalCents + row.tipCents)}</span>
+                  <span className="pos-bill-actions">
+                    {row.status === 'PAID' ? (
+                      <>
+                        <button
+                          type="button"
+                          className="pos-ghost"
+                          onClick={() => {
+                            void api<Order>(`/api/pos/orders/${row.id}/reopen`, { method: 'POST' })
+                              .then((reopened) => {
+                                setOrder(reopened);
+                                setBills(null);
+                                setView('register');
+                              })
+                              .catch((err) => setError(messageForError(err, 'Could not reopen.')));
+                          }}
+                        >
+                          Reopen
+                        </button>
+                        <button
+                          type="button"
+                          className="pos-ghost"
+                          onClick={() => setRefunding({ order: row, amount: String((row.totalCents + row.tipCents - refunded) / 100), reason: '', method: 'REFUND' })}
+                        >
+                          Refund
+                        </button>
+                      </>
+                    ) : null}
+                    <button type="button" className="pos-ghost" onClick={() => setReceipt(row)}>
+                      View
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setBills(null)}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {refunding ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Refund {refunding.order.tableLabel ? `table ${refunding.order.tableLabel}` : `#${refunding.order.orderNumber}`}</h2>
+            <input
+              className="pos-tender"
+              inputMode="decimal"
+              placeholder="Refund amount"
+              value={refunding.amount}
+              onChange={(event) => setRefunding({ ...refunding, amount: event.currentTarget.value })}
+            />
+            <div className="pos-choice-row">
+              <button
+                type="button"
+                className={refunding.method === 'REFUND' ? 'is-on' : ''}
+                onClick={() => setRefunding({ ...refunding, method: 'REFUND' })}
+              >
+                Back to card
+              </button>
+              <button
+                type="button"
+                className={refunding.method === 'CASH' ? 'is-on' : ''}
+                onClick={() => setRefunding({ ...refunding, method: 'CASH' })}
+              >
+                Cash from till
+              </button>
+            </div>
+            <p className="pos-muted">Reason (required):</p>
+            <div className="pos-reason-list">
+              {(reasons.COMP ?? []).map((reason) => (
+                <button
+                  key={reason}
+                  type="button"
+                  className={refunding.reason === reason ? 'is-on' : ''}
+                  onClick={() => setRefunding({ ...refunding, reason })}
+                >
+                  {reason}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={busy || !refunding.reason || !refunding.amount}
+              onClick={() => {
+                void api(`/api/pos/orders/${refunding.order.id}/refund`, {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    amountCents: Math.round(Number(refunding.amount) * 100),
+                    reason: refunding.reason,
+                    method: refunding.method,
+                    staffName: operatorName || 'Unknown'
+                  })
+                })
+                  .then(() => {
+                    setRefunding(null);
+                    setBills(null);
+                  })
+                  .catch((err) => setError(messageForError(err, 'Refund failed.')));
+              }}
+            >
+              Refund {refunding.amount ? money(Math.round(Number(refunding.amount) * 100)) : ''}
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setRefunding(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {merging && order ? (
+        <div className="pos-modal" role="dialog" onClick={() => setMerging(null)}>
+          <div className="pos-modal-panel" onClick={(event) => event.stopPropagation()}>
+            <h2>Merge into {order.tableLabel ? `table ${order.tableLabel}` : `#${order.orderNumber}`}</h2>
+            {merging.length === 0 ? <p className="pos-muted">No other open bills.</p> : null}
+            {merging.map((candidate) => (
+              <div key={candidate.id} className="pos-bill-row">
+                <span>
+                  <strong>{candidate.tableLabel ? `Table ${candidate.tableLabel}` : `#${candidate.orderNumber}`}</strong>
+                  <small className="pos-muted"> {candidate.lines.length} items</small>
+                </span>
+                <span>{money(candidate.totalCents)}</span>
+                <button
+                  type="button"
+                  className="pos-ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    void api<Order>(`/api/pos/orders/${order.id}/merge`, {
+                      method: 'POST',
+                      body: JSON.stringify({ sourceOrderId: candidate.id })
+                    })
+                      .then((merged) => {
+                        setOrder(merged);
+                        setMerging(null);
+                        void refreshOpenOrders();
+                      })
+                      .catch((err) => setError(messageForError(err, 'Merge failed.')));
+                  }}
+                >
+                  Merge in
+                </button>
+              </div>
+            ))}
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setMerging(null)}>
+              Cancel
+            </button>
           </div>
         </div>
       ) : null}
@@ -1904,6 +2133,8 @@ function FloorView({
   openOrders,
   reservations,
   busy,
+  editing,
+  onMove,
   onPick
 }: {
   tables: FloorTable[];
@@ -1912,8 +2143,11 @@ function FloorView({
   openOrders: Order[];
   reservations: FloorReservation[];
   busy: boolean;
+  editing?: boolean;
+  onMove?: (tableId: string, posX: number, posY: number) => void;
   onPick: (table: FloorTable) => void;
 }) {
+  const dragRef = { current: null as null | { id: string; startX: number; startY: number; posX: number; posY: number; el: HTMLElement } };
   const now = Date.now();
   // Next upcoming (or currently seated) booking per table label.
   const nextByTable = new Map<string, FloorReservation>();
@@ -1960,6 +2194,23 @@ function FloorView({
                 transform: `rotate(${table.rotation}deg)`
               }}
               onClick={() => onPick(table)}
+              onPointerDown={(event) => {
+                if (!editing || !onMove) return;
+                const canvas = (event.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+                const start = { x: event.clientX, y: event.clientY };
+                const startPos = { x: table.posX ?? 0, y: table.posY ?? 0 };
+                const move = (ev: PointerEvent) => {
+                  const dx = ((ev.clientX - start.x) / canvas.width) * 100;
+                  const dy = ((ev.clientY - start.y) / canvas.height) * 100;
+                  onMove(table.id, Math.min(96, Math.max(0, startPos.x + dx)), Math.min(96, Math.max(0, startPos.y + dy)));
+                };
+                const up = () => {
+                  window.removeEventListener('pointermove', move);
+                  window.removeEventListener('pointerup', up);
+                };
+                window.addEventListener('pointermove', move);
+                window.addEventListener('pointerup', up);
+              }}
             >
               <strong>{table.label}</strong>
               <small>
