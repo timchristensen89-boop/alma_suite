@@ -531,3 +531,15 @@ body:not(.pos-v2) .pos-cart .pos-line-grip { color: rgba(243, 239, 230, 0.8); }
 .pos-cart .pos-stepper button { width: 23px; height: 23px; font-size: 13px; }
 .pos-cart .pos-totals { font-size: 13px; }
 .pos-cart .pos-totals strong { font-size: 19px; }
+
+/* Home pages: the board never scrolls — pins flow onto pages left/right */
+.pos-menu:has(.pos-home-wrap) { overflow: hidden; }
+.pos-home-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.pos-grid-mgmt { flex: none; padding-bottom: 4px; }
+.pos-board-pager { flex: 1 1 auto; min-height: 0; overflow: hidden; touch-action: none; }
+.pos-board-page { height: 100%; overflow: hidden; padding-top: 6px; align-content: start; }
+.pos-board-dots { flex: none; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 6px 0 10px; }
+.pos-board-dots i { width: 8px; height: 8px; border-radius: 9999px; background: var(--pos-border); cursor: pointer; transition: background 160ms var(--ease-out); }
+.pos-board-dots i.is-on { background: var(--pos-text2); }
+.pos-board-dots button { background: transparent; border: 1px solid var(--pos-border); border-radius: 9999px; width: 26px; height: 26px; color: var(--pos-text2); cursor: pointer; font-size: 14px; line-height: 1; }
+.pos-board-dots button:disabled { opacity: 0.3; }

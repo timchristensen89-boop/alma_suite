@@ -289,6 +289,13 @@ export function App() {
   const [boardEdit, setBoardEdit] = useState(false);
   const dragPinIndex = useRef<number | null>(null);
   const dragMoved = useRef(false);
+  // Home pages: the board never scrolls — pins flow onto pages left/right.
+  const [boardPage, setBoardPage] = useState(0);
+  const [boardSlots, setBoardSlots] = useState(24);
+  const boardPagerRef = useRef<HTMLDivElement | null>(null);
+  const pinPageCountRef = useRef(1);
+  const pageFlipStamp = useRef(0);
+  const boardSwiped = useRef(false);
 
   // Drag runs on document-level NATIVE listeners registered at drag start —
   // React's synthetic move events are unreliable under pointer capture.
@@ -305,6 +312,20 @@ export function App() {
     const dropFolder = { name: null as string | null };
     const onMove = (nativeEvent: PointerEvent) => {
       if (dragPinIndex.current === null) return;
+      const pager = boardPagerRef.current;
+      if (pager) {
+        const rect = pager.getBoundingClientRect();
+        const now = Date.now();
+        if (now - pageFlipStamp.current > 600) {
+          if (nativeEvent.clientX > rect.right - 40) {
+            setBoardPage((current) => Math.min(current + 1, pinPageCountRef.current - 1));
+            pageFlipStamp.current = now;
+          } else if (nativeEvent.clientX < rect.left + 40) {
+            setBoardPage((current) => Math.max(current - 1, 0));
+            pageFlipStamp.current = now;
+          }
+        }
+      }
       const target = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY)?.closest('[data-pin-index]');
       if (!target) return;
       // Hovering a folder with an item: computer-style — drop puts it INSIDE.
@@ -1025,6 +1046,53 @@ export function App() {
 
   const visibleTabsRef = useRef(visibleTabs);
   visibleTabsRef.current = visibleTabs;
+
+  // Measure how many standard tiles fit without scrolling; big/wide tiles
+  // count as 4/2 slots. Under-estimating is safe (a roomier page), scrolling
+  // away is not.
+  useEffect(() => {
+    const el = boardPagerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const width = el.clientWidth - 32;
+      const height = el.clientHeight - 22;
+      const cols = Math.max(2, Math.floor((width + 10) / (145 + 10)));
+      const rows = Math.max(1, Math.floor((height + 10) / (98 + 10)));
+      setBoardSlots(cols * rows);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [activeCategory, design, view, search]);
+
+  const pinPages = useMemo(() => {
+    const weight = (pin: Pin) => (pin.s === 'b' ? 4 : pin.s === 'w' ? 2 : 1);
+    // Trailing action tiles (Edit this page / the edit-mode set) render on
+    // every page — hold seats for them so nothing clips.
+    const capacity = Math.max(2, boardSlots - (boardEdit ? 4 : 1));
+    const pages: Array<Array<{ pin: Pin; index: number }>> = [];
+    let current: Array<{ pin: Pin; index: number }> = [];
+    let used = 0;
+    home.pins.forEach((pin, index) => {
+      const w = weight(pin);
+      if (used + w > capacity && current.length > 0) {
+        pages.push(current);
+        current = [];
+        used = 0;
+      }
+      current.push({ pin, index });
+      used += w;
+    });
+    if (current.length > 0 || pages.length === 0) pages.push(current);
+    return pages;
+  }, [home.pins, boardSlots, boardEdit]);
+  pinPageCountRef.current = pinPages.length;
+  const boardPageSafe = Math.min(boardPage, pinPages.length - 1);
+
+  useEffect(() => {
+    if (boardPage > pinPages.length - 1) setBoardPage(Math.max(0, pinPages.length - 1));
+  }, [pinPages.length, boardPage]);
 
   const visibleItems = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -1927,7 +1995,8 @@ export function App() {
                 })}
               </div>
             ) : !search && activeCategory === HOME_TAB ? (
-              <div className="pos-grid pos-grid-home">
+              <div className="pos-home-wrap">
+              <div className="pos-grid pos-grid-home pos-grid-mgmt">
                 {(home.buttons.length ? home.buttons : ['open-till', 'discount', 'comp', 'wastage', 'price']).map((key) => {
                   const labels: Record<string, string> = {
                     'open-till': 'Open till',
@@ -1992,7 +2061,47 @@ export function App() {
                         );
                       })
                   : null}
-                {home.pins.map((pin, index) => {
+              </div>
+              <div
+                className="pos-board-pager"
+                ref={boardPagerRef}
+                onPointerDown={(event) => {
+                  if (boardEdit) return;
+                  const startX = event.clientX;
+                  const startY = event.clientY;
+                  const onSwipeMove = (nativeEvent: PointerEvent) => {
+                    const dx = nativeEvent.clientX - startX;
+                    const dy = nativeEvent.clientY - startY;
+                    if (Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+                      cleanup();
+                      boardSwiped.current = true;
+                      setBoardPage((current) =>
+                        dx < 0 ? Math.min(current + 1, pinPageCountRef.current - 1) : Math.max(current - 1, 0)
+                      );
+                      setTimeout(() => {
+                        boardSwiped.current = false;
+                      }, 350);
+                    }
+                  };
+                  const cleanup = () => {
+                    document.removeEventListener('pointermove', onSwipeMove);
+                    document.removeEventListener('pointerup', cleanup);
+                    document.removeEventListener('pointercancel', cleanup);
+                  };
+                  document.addEventListener('pointermove', onSwipeMove);
+                  document.addEventListener('pointerup', cleanup);
+                  document.addEventListener('pointercancel', cleanup);
+                }}
+                onClickCapture={(event) => {
+                  if (boardSwiped.current) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    boardSwiped.current = false;
+                  }
+                }}
+              >
+              <div className="pos-grid pos-grid-home pos-board-page">
+                {(pinPages[boardPageSafe] ?? []).map(({ pin, index }) => {
                   const editProps = boardEdit
                     ? { onPointerDown: (event: React.PointerEvent) => boardPinPointerDown(event, index) }
                     : {};
@@ -2143,6 +2252,29 @@ export function App() {
                     <small>drag · colour · remove</small>
                   </button>
                 )}
+              </div>
+              </div>
+              {pinPages.length > 1 ? (
+                <div className="pos-board-dots">
+                  <button type="button" onClick={() => setBoardPage((current) => Math.max(0, current - 1))} disabled={boardPageSafe === 0}>
+                    ‹
+                  </button>
+                  {pinPages.map((_, pageIndex) => (
+                    <i
+                      key={pageIndex}
+                      className={pageIndex === boardPageSafe ? 'is-on' : ''}
+                      onClick={() => setBoardPage(pageIndex)}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setBoardPage((current) => Math.min(pinPages.length - 1, current + 1))}
+                    disabled={boardPageSafe >= pinPages.length - 1}
+                  >
+                    ›
+                  </button>
+                </div>
+              ) : null}
               </div>
             ) : !search && activeCategory.startsWith('__folder__') ? (
               <div className="pos-grid pos-grid-home">
