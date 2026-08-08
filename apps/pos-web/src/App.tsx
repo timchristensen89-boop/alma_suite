@@ -842,7 +842,7 @@ export function App() {
       if (dragTabToken.current === null) return;
       const hit = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY);
       const target = hit?.closest('[data-tab-token]');
-      document.querySelectorAll('.pos-tabs button.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+      document.querySelectorAll('[data-tab-token].is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
       document.querySelectorAll('.pos-grid-home.is-board-drop').forEach((el) => el.classList.remove('is-board-drop'));
       if (!target) {
         const board = hit?.closest('.pos-grid-home');
@@ -859,7 +859,9 @@ export function App() {
       if (over === dragTabToken.current) return;
       // Centre third of the target = "drop into a group"; edges = reorder.
       const rect = target.getBoundingClientRect();
-      const ratio = (nativeEvent.clientX - rect.x) / rect.width;
+      const ratio = target.closest('.pos-rail-cats')
+        ? (nativeEvent.clientY - rect.y) / rect.height
+        : (nativeEvent.clientX - rect.x) / rect.width;
       if (ratio > 0.3 && ratio < 0.7 && !dragTabToken.current.startsWith('g:')) {
         dropOn = over;
         target.classList.add('is-drop-target');
@@ -878,7 +880,7 @@ export function App() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
       document.removeEventListener('pointercancel', onUp);
-      document.querySelectorAll('.pos-tabs button.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+      document.querySelectorAll('[data-tab-token].is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
       document.querySelectorAll('.pos-grid-home.is-board-drop').forEach((el) => el.classList.remove('is-board-drop'));
       const from = dragTabToken.current;
       dragTabToken.current = null;
@@ -953,13 +955,39 @@ export function App() {
   function commitGroupRename(oldName: string, rawValue: string) {
     const value = rawValue.trim().slice(0, 30);
     setRenaming(null);
-    if (!value || value === oldName) return;
+    if (value === oldName) return;
+    if (!value) {
+      saveTabs((config) => {
+        const cats = config.groups.find((group) => group.name === oldName)?.cats ?? [];
+        const base = config.order.length ? config.order : visibleTabsRef.current;
+        return {
+          ...config,
+          order: base.flatMap((token) => (token === `g:${oldName}` ? cats : [token])),
+          groups: config.groups.filter((group) => group.name !== oldName)
+        };
+      });
+      setActiveCategory((current) => (current === `__group__${oldName}` ? HOME_TAB : current));
+      return;
+    }
     saveTabs((config) => ({
       ...config,
       order: (config.order.length ? config.order : visibleTabsRef.current).map((token) => (token === `g:${oldName}` ? `g:${value}` : token)),
       groups: config.groups.map((group) => (group.name === oldName ? { ...group, name: value } : group))
     }));
     setActiveCategory((current) => (current === `__group__${oldName}` ? `__group__${value}` : current));
+  }
+
+  function newTabFolder() {
+    saveTabs((config) => {
+      let name = 'New folder';
+      let n = 2;
+      while (config.groups.some((group) => group.name === name)) name = `New folder ${n++}`;
+      return {
+        ...config,
+        order: [...visibleTabsRef.current, `g:${name}`],
+        groups: [...config.groups, { name, cats: [] }]
+      };
+    });
   }
 
   // Reorders during a drag must not thrash the server — quiet save, flush on up.
@@ -1342,7 +1370,12 @@ export function App() {
           >
             Bills
           </button>
-          <div className="pos-rail-eyebrow">Menu</div>
+          <div className="pos-rail-eyebrow">
+            Menu
+            <button type="button" className="pos-rail-editbtn" onClick={() => setBoardEdit(!boardEdit)}>
+              {boardEdit ? 'Done' : '✎ Edit'}
+            </button>
+          </div>
           <div className="pos-rail-cats">
             <button type="button" className={activeCategory === HOME_TAB && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'} onClick={() => { setView('register'); setActiveCategory(HOME_TAB); }}>
               ★ Home
@@ -1352,14 +1385,36 @@ export function App() {
             </button>
             {visibleTabs.map((token) => {
               const isGroup = token.startsWith('g:');
-              const label = isGroup ? `📁 ${token.slice(2)}` : token;
-              const target = isGroup ? `__group__${token.slice(2)}` : token;
+              const groupName = isGroup ? token.slice(2) : null;
+              if (renaming?.kind === 'group' && renaming.key === groupName) {
+                return (
+                  <input
+                    key={token}
+                    className="pos-rail-rename"
+                    autoFocus
+                    defaultValue={groupName ?? ''}
+                    onBlur={(event) => commitGroupRename(groupName!, event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') commitGroupRename(groupName!, event.currentTarget.value);
+                      if (event.key === 'Escape') setRenaming(null);
+                    }}
+                  />
+                );
+              }
+              const label = isGroup ? `📁 ${groupName}` : token;
+              const target = isGroup ? `__group__${groupName}` : token;
               return (
                 <button
                   key={token}
                   type="button"
-                  className={activeCategory === target && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'}
+                  data-tab-token={token}
+                  className={`${activeCategory === target && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'}${boardEdit ? ' is-tab-edit' : ''}`}
+                  onPointerDown={(event) => tabPointerDown(event, token)}
                   onClick={() => {
+                    if (boardEdit) {
+                      if (isGroup) setRenaming({ kind: 'group', key: groupName!, value: groupName! });
+                      return;
+                    }
                     setView('register');
                     setActiveCategory(target);
                   }}
@@ -1368,6 +1423,27 @@ export function App() {
                 </button>
               );
             })}
+            {boardEdit
+              ? tabsConfig.hidden
+                  .filter((name) => menu.some((category) => category.name === name))
+                  .map((name) => (
+                    <button
+                      key={`rail-hidden-${name}`}
+                      type="button"
+                      className="pos-rail-item pos-rail-hidden"
+                      onClick={() =>
+                        saveTabs((config) => ({ ...config, hidden: config.hidden.filter((candidate) => candidate !== name) }))
+                      }
+                    >
+                      {name} 🚫
+                    </button>
+                  ))
+              : null}
+            {boardEdit ? (
+              <button type="button" className="pos-rail-item pos-rail-newfolder" onClick={newTabFolder}>
+                ＋ New folder
+              </button>
+            ) : null}
           </div>
           <div className="pos-rail-foot">
             <strong>{operatorName}</strong>
@@ -1734,6 +1810,11 @@ export function App() {
                         </button>
                       ))
                   : null}
+                {boardEdit ? (
+                  <button type="button" className="pos-tab-newfolder" onClick={newTabFolder}>
+                    ＋ Folder
+                  </button>
+                ) : null}
               </nav>
             ) : null}
             {design === 'rail' && (activeCategory === '__all__' || (menu.some((category) => category.name === activeCategory) && !search)) ? (
