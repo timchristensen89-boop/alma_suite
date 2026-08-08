@@ -116,6 +116,8 @@ type DaySummary = {
 };
 
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
+const HOME_TAB = '\u2605 Home';
+const BRIGHT_PALETTE = ['', '#ff5a5f', '#ff9f1c', '#ffd166', '#06d6a0', '#4cc9f0', '#b388eb', '#f72585'];
 
 // ── Offline layer ───────────────────────────────────────────────────────────
 // The shell + menu are cached; QUICK SALES keep working through an outage —
@@ -124,6 +126,7 @@ const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
 type QueuedSale = {
   localId: string;
   venue: string;
+  training?: boolean;
   openedByName?: string;
   lines: OrderLine[];
   payment: { method: string; tipCents: number; tenderedCents?: number };
@@ -221,6 +224,12 @@ export function App() {
   const [receiptEmail, setReceiptEmail] = useState('');
   const [receiptEmailStatus, setReceiptEmailStatus] = useState<string | null>(null);
   const [courses, setCourses] = useState<string[]>(FALLBACK_COURSES);
+  // Course the next tapped item lands in (null = automatic food/drinks pick).
+  const [targetCourse, setTargetCourse] = useState<string | null>(null);
+  const [training, setTraining] = useState(() => localStorage.getItem('alma.pos.training') === '1');
+  const [managerGate, setManagerGate] = useState<null | { message: string; pin: string; retry: (pin: string) => void }>(null);
+  const [pinSearch, setPinSearch] = useState('');
+  const [deviceLanding, setDeviceLanding] = useState(() => localStorage.getItem('alma.pos.deviceLanding') ?? '');
   const [dockets, setDockets] = useState<Docket[] | null>(null);
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
@@ -338,7 +347,7 @@ export function App() {
             localStorage.setItem('alma.pos.rulesCache', JSON.stringify(rules));
           })
           .catch(() => undefined);
-        setActiveCategory((current) => current || home.landingCategory || res.categories[0]?.name || '');
+        setActiveCategory((current) => current || localStorage.getItem('alma.pos.deviceLanding') || home.landingCategory || HOME_TAB);
         const kinds = new Map<string, string>();
         for (const category of res.categories) for (const item of category.items) kinds.set(item.recipeId, category.kind);
         setKindByRecipe(kinds);
@@ -364,16 +373,20 @@ export function App() {
     const name = me.kind === 'staff' ? me.name : me.staffName ?? '';
     if (!name) return;
     void api<{ buttons: string[]; pins: unknown[] }>(`/api/pos/homescreen?userKey=${encodeURIComponent(name.toLowerCase())}`)
-      .then((config) =>
+      .then((config) => {
+        const landing = (config as { landingCategory?: string | null }).landingCategory ?? null;
         setHome({
-          landingCategory: (config as { landingCategory?: string | null }).landingCategory ?? null,
+          landingCategory: landing,
           buttons: config.buttons,
           // Legacy pins were plain recipeId strings — normalise to the rich shape.
           pins: (config.pins ?? []).map((pin) =>
             typeof pin === 'string' ? ({ t: 'i', id: pin } as Pin) : (pin as Pin)
           )
-        })
-      )
+        });
+        setActiveCategory((current) =>
+          current && current !== HOME_TAB ? current : localStorage.getItem('alma.pos.deviceLanding') || landing || HOME_TAB
+        );
+      })
       .catch(() => undefined);
   }, [me]);
 
@@ -459,7 +472,7 @@ export function App() {
       try {
         const created = await api<Order>('/api/pos/orders', {
           method: 'POST',
-          body: JSON.stringify({ venue: sale.venue, openedByName: sale.openedByName, idempotencyKey: sale.localId })
+          body: JSON.stringify({ venue: sale.venue, openedByName: sale.openedByName, training: sale.training || undefined, idempotencyKey: sale.localId })
         });
         if (created.status !== 'PAID') {
           await api(`/api/pos/orders/${created.id}/lines`, { method: 'PUT', body: JSON.stringify({ lines: sale.lines }) });
@@ -500,6 +513,20 @@ export function App() {
       window.removeEventListener('offline', onOffline);
     };
   }, [flushQueue]);
+
+  // Bill lines grouped under their course, in service order.
+  const courseGroups = useMemo(() => {
+    const groups = new Map<string, Array<{ line: Order['lines'][number]; index: number }>>();
+    (order?.lines ?? []).forEach((line, index) => {
+      const key = line.course ?? 'Mains';
+      groups.set(key, [...(groups.get(key) ?? []), { line, index }]);
+    });
+    const rank = (name: string) => {
+      const at = courses.indexOf(name);
+      return at === -1 ? 99 : at;
+    };
+    return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
+  }, [order, courses]);
 
   const visibleItems = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -581,7 +608,7 @@ export function App() {
       name: item.title,
       unitPriceCents: item.priceCents + delta,
       quantity: 1,
-      course: defaultCourse(kindByRecipe.get(item.recipeId) ?? 'FOOD'),
+      course: targetCourse ?? defaultCourse(kindByRecipe.get(item.recipeId) ?? 'FOOD'),
       modifiers: modifiers.length ? modifiers : null,
       notes: notes || null
     };
@@ -590,7 +617,7 @@ export function App() {
       try {
         const created = await api<Order>('/api/pos/orders', {
           method: 'POST',
-          body: JSON.stringify({ venue, openedByName: operatorName || undefined })
+          body: JSON.stringify({ venue, openedByName: operatorName || undefined, training: training || undefined })
         });
         const updated = await api<Order>(`/api/pos/orders/${created.id}/lines`, {
           method: 'PUT',
@@ -632,7 +659,9 @@ export function App() {
       return;
     }
     // Modifier'd lines never merge — each configuration is its own line.
-    const existing = modifiers.length === 0 && !notes ? order.lines.find((candidate) => candidate.recipeId === item.recipeId && !candidate.modifiers && !candidate.notes) : undefined;
+    const existing = modifiers.length === 0 && !notes
+      ? order.lines.find((candidate) => candidate.recipeId === item.recipeId && !candidate.modifiers && !candidate.notes && (candidate.course ?? null) === (line.course ?? null))
+      : undefined;
     const next = existing
       ? order.lines.map((candidate) => (candidate === existing ? { ...candidate, quantity: candidate.quantity + 1 } : candidate))
       : [...order.lines, line];
@@ -694,12 +723,12 @@ export function App() {
     try {
       const created = await api<Order>('/api/pos/orders', {
         method: 'POST',
-        body: JSON.stringify({ venue, openedByName: operatorName || undefined })
+        body: JSON.stringify({ venue, openedByName: operatorName || undefined, training: training || undefined })
       });
       const updated = await api<Order>(`/api/pos/orders/${created.id}/lines`, {
         method: 'PUT',
         body: JSON.stringify({
-          lines: [{ recipeId: item.recipeId, name: item.title, unitPriceCents: item.priceCents, quantity: 1, course: defaultCourse(kindByRecipe.get(item.recipeId) ?? 'FOOD') }]
+          lines: [{ recipeId: item.recipeId, name: item.title, unitPriceCents: item.priceCents, quantity: 1, course: targetCourse ?? defaultCourse(kindByRecipe.get(item.recipeId) ?? 'FOOD') }]
         })
       });
       setOrder(updated);
@@ -717,7 +746,7 @@ export function App() {
     try {
       const created = await api<Order>('/api/pos/orders', {
         method: 'POST',
-        body: JSON.stringify({ venue, openedByName: operatorName || undefined, ...input })
+        body: JSON.stringify({ venue, openedByName: operatorName || undefined, training: training || undefined, ...input })
       });
       setOrder(created);
       setNewTable(null);
@@ -737,6 +766,7 @@ export function App() {
       const sale: QueuedSale = {
         localId: order.id,
         venue,
+        training: training || undefined,
         openedByName: operatorName || undefined,
         lines: order.lines,
         payment: { method, tipCents: charge.tipCents, tenderedCents },
@@ -963,6 +993,17 @@ export function App() {
           {error} — tap to dismiss
         </div>
       ) : null}
+      {training ? (
+        <div
+          className="pos-training"
+          onClick={() => {
+            setTraining(false);
+            localStorage.setItem('alma.pos.training', '0');
+          }}
+        >
+          TRAINING MODE — sales don't count, nothing reaches the kitchen. Tap to end.
+        </div>
+      ) : null}
       {offline || queue.length > 0 ? (
         <div className={offline ? 'pos-offline' : 'pos-offline is-syncing'}>
           {offline ? 'OFFLINE — quick sales keep working and queue on this device' : 'Back online'}
@@ -1116,6 +1157,13 @@ export function App() {
                 >
                   86
                 </button>
+                <button
+                  type="button"
+                  className={activeCategory === HOME_TAB ? 'is-active is-home' : 'is-home'}
+                  onClick={() => setActiveCategory(HOME_TAB)}
+                >
+                  {HOME_TAB}
+                </button>
                 {menu.map((category) => (
                   <button
                     key={category.name}
@@ -1128,26 +1176,122 @@ export function App() {
                 ))}
               </nav>
             ) : null}
-            <div className="pos-grid">
-              {visibleItems.map((item) => (
-                <button
-                  key={item.recipeId}
-                  type="button"
-                  className={`pos-item ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
-                  onClick={() => addItem(item)}
-                >
-                  <span>{item.title}</span>
-                  <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
+            {!search && activeCategory === HOME_TAB ? (
+              <div className="pos-grid pos-grid-home">
+                {(home.buttons.length ? home.buttons : ['open-till', 'discount', 'comp', 'wastage', 'price']).map((key) => {
+                  const labels: Record<string, string> = {
+                    'open-till': 'Open till',
+                    discount: 'Discount',
+                    comp: 'Comp',
+                    wastage: 'Wastage',
+                    price: 'Change price'
+                  };
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className="pos-item pos-item-mgmt"
+                      onClick={() => {
+                        if (key === 'open-till') {
+                          void (async () => {
+                            const [gate, drawer] = await Promise.all([
+                              api<CloseGate>(`/api/pos/close-day?venue=${encodeURIComponent(venue)}`),
+                              api<DrawerInfo>(`/api/pos/drawer?venue=${encodeURIComponent(venue)}`)
+                            ]);
+                            setClosing({ gate, drawer, stage: 'checklist', float: '', counts: {}, report: null });
+                          })().catch(() => undefined);
+                        } else if (key === 'wastage') {
+                          setWastage({ search: '', recipeId: '', itemName: '', quantity: '1', reason: '' });
+                        } else if (key === 'discount') {
+                          if (order && order.lines.length > 0) setDiscounting({ mode: 'percent', value: '10', reason: '' });
+                          else setError('Start a sale first, then apply the discount.');
+                        } else {
+                          setError(`Tap the item's name on the bill to ${key === 'comp' ? 'comp it' : 'change its price'}.`);
+                        }
+                      }}
+                    >
+                      <span>{labels[key] ?? key}</span>
+                      <small>manage</small>
+                    </button>
+                  );
+                })}
+                {home.pins.map((pin, index) => {
+                  if (pin.t === 'f') {
+                    return (
+                      <button
+                        key={`f-${index}`}
+                        type="button"
+                        className="pos-item pos-item-pin"
+                        style={pin.c ? { borderColor: pin.c, background: `${pin.c}26` } : undefined}
+                        onClick={() => setOpenFolder(pin)}
+                      >
+                        <span>📁 {pin.name}</span>
+                        <small>{pin.items.length} items</small>
+                      </button>
+                    );
+                  }
+                  const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id);
+                  if (!item) return null;
+                  return (
+                    <button
+                      key={pin.id}
+                      type="button"
+                      className={`pos-item pos-item-pin ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                      style={pin.c ? { borderColor: pin.c, background: `${pin.c}26` } : undefined}
+                      disabled={busy}
+                      onClick={() => addItem(item)}
+                    >
+                      <span>{item.title}</span>
+                      <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
+                    </button>
+                  );
+                })}
+                <button type="button" className="pos-item pos-item-edit" onClick={() => setCustomise(true)}>
+                  <span>✎ Edit this page</span>
+                  <small>pins · colours · folders</small>
                 </button>
-              ))}
-              {visibleItems.length === 0 ? <p className="pos-muted">No items{search ? ' match' : ''}.</p> : null}
-            </div>
+              </div>
+            ) : (
+              <div className="pos-grid">
+                {visibleItems.map((item) => (
+                  <button
+                    key={item.recipeId}
+                    type="button"
+                    className={`pos-item ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                    onClick={() => addItem(item)}
+                  >
+                    <span>{item.title}</span>
+                    <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
+                  </button>
+                ))}
+                {visibleItems.length === 0 ? <p className="pos-muted">No items{search ? ' match' : ''}.</p> : null}
+              </div>
+            )}
           </div>
 
           <aside className="pos-cart">
             <div className="pos-cart-lines">
-              {(order?.lines ?? []).length === 0 ? <p className="pos-muted">Tap items to start a sale.</p> : null}
-              {(order?.lines ?? []).map((line, index) => (
+              <div className="pos-course-pick">
+                {courses.map((course) => (
+                  <button
+                    key={course}
+                    type="button"
+                    className={targetCourse === course ? 'is-on' : ''}
+                    onClick={() => setTargetCourse(targetCourse === course ? null : course)}
+                  >
+                    {course}
+                  </button>
+                ))}
+              </div>
+              {(order?.lines ?? []).length === 0 ? (
+                <p className="pos-muted">
+                  Tap items to start a sale{targetCourse ? ` — new items land in ${targetCourse}` : ''}.
+                </p>
+              ) : null}
+              {courseGroups.map(([groupCourse, entries]) => (
+                <div key={groupCourse} className="pos-course-group">
+                  <div className="pos-course-head">{groupCourse}</div>
+                  {entries.map(({ line, index }) => (
                 <div key={`${line.recipeId}-${index}`} className="pos-line">
                   <span className="pos-line-main">
                     <span
@@ -1182,6 +1326,8 @@ export function App() {
                     <button type="button" onClick={() => bumpQty(index, 1)}>+</button>
                   </span>
                   <span className="pos-line-total">{money(line.unitPriceCents * line.quantity)}</span>
+                </div>
+              ))}
                 </div>
               ))}
             </div>
@@ -1233,12 +1379,20 @@ export function App() {
                   disabled={busy || !order || order.lines.length === 0 || paidCents(order) > 0}
                   onClick={() => {
                     if (!order) return;
-                    void api(`/api/pos/orders/${order.id}/void`, { method: 'POST', body: JSON.stringify({ reason: 'register' }) })
-                      .then(() => {
-                        setOrder(null);
-                        void refreshOpenOrders();
-                      })
-                      .catch((err) => setError(messageForError(err, 'Could not void.')));
+                    const attempt = (pin?: string) => {
+                      void api(`/api/pos/orders/${order.id}/void`, { method: 'POST', body: JSON.stringify({ reason: 'register', managerPin: pin }) })
+                        .then(() => {
+                          setManagerGate(null);
+                          setOrder(null);
+                          void refreshOpenOrders();
+                        })
+                        .catch((err) => {
+                          const message = messageForError(err, 'Could not void.');
+                          if (/manager/i.test(message)) setManagerGate({ message, pin: '', retry: attempt });
+                          else setError(message);
+                        });
+                    };
+                    attempt();
                   }}
                 >
                   Void
@@ -1636,20 +1790,30 @@ export function App() {
               className="pos-charge"
               disabled={busy || !refunding.reason || !refunding.amount}
               onClick={() => {
-                void api(`/api/pos/orders/${refunding.order.id}/refund`, {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    amountCents: Math.round(Number(refunding.amount) * 100),
-                    reason: refunding.reason,
-                    method: refunding.method,
-                    staffName: operatorName || 'Unknown'
+                const snapshot = refunding;
+                const attempt = (pin?: string) => {
+                  void api(`/api/pos/orders/${snapshot.order.id}/refund`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      amountCents: Math.round(Number(snapshot.amount) * 100),
+                      reason: snapshot.reason,
+                      method: snapshot.method,
+                      staffName: operatorName || 'Unknown',
+                      managerPin: pin
+                    })
                   })
-                })
-                  .then(() => {
-                    setRefunding(null);
-                    setBills(null);
-                  })
-                  .catch((err) => setError(messageForError(err, 'Refund failed.')));
+                    .then(() => {
+                      setManagerGate(null);
+                      setRefunding(null);
+                      setBills(null);
+                    })
+                    .catch((err) => {
+                      const message = messageForError(err, 'Refund failed.');
+                      if (/manager/i.test(message)) setManagerGate({ message, pin: '', retry: attempt });
+                      else setError(message);
+                    });
+                };
+                attempt();
               }}
             >
               Refund {refunding.amount ? money(Math.round(Number(refunding.amount) * 100)) : ''}
@@ -1795,7 +1959,15 @@ export function App() {
                 const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === recipeId);
                 if (!item) return null;
                 return (
-                  <button key={recipeId} type="button" disabled={busy} onClick={() => void quickSaleWithItem(item)}>
+                  <button
+                    key={recipeId}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setView('register');
+                      addItem(item);
+                    }}
+                  >
                     {item.title} · {money(item.priceCents)}
                   </button>
                 );
@@ -2212,6 +2384,35 @@ export function App() {
         </div>
       ) : null}
 
+      {managerGate ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Manager approval</h2>
+            <p className="pos-muted">{managerGate.message}</p>
+            <input
+              className="pos-tender"
+              type="password"
+              inputMode="numeric"
+              autoFocus
+              placeholder="Manager PIN"
+              value={managerGate.pin}
+              onChange={(event) => setManagerGate({ ...managerGate, pin: event.currentTarget.value })}
+            />
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={busy || managerGate.pin.length < 4}
+              onClick={() => managerGate.retry(managerGate.pin)}
+            >
+              Approve
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setManagerGate(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {customise ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
@@ -2238,37 +2439,45 @@ export function App() {
             </div>
             <p className="pos-muted">Open the register on:</p>
             <div className="pos-reason-list">
-              {menu.slice(0, 12).map((category) => (
+              {[HOME_TAB, ...menu.slice(0, 11).map((category) => category.name)].map((name) => (
                 <button
-                  key={category.name}
+                  key={name}
                   type="button"
-                  className={home.landingCategory === category.name ? 'is-on' : ''}
-                  onClick={() => setHome({ ...home, landingCategory: home.landingCategory === category.name ? null : category.name })}
+                  className={home.landingCategory === name ? 'is-on' : ''}
+                  onClick={() => setHome({ ...home, landingCategory: home.landingCategory === name ? null : name })}
                 >
-                  {category.name}
+                  {name}
                 </button>
               ))}
             </div>
             <p className="pos-muted">Pins &amp; folders (tap to cycle colour, ✕ to remove):</p>
             <div className="pos-reason-list">
               {home.pins.map((pin, index) => {
-                const palette = ['', '#4f8f6b', '#7f9ac4', '#d9a05a', '#c4655a', '#a98ac4'];
                 const label = pin.t === 'f' ? `📁 ${pin.name}` : menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id)?.title ?? '?';
                 return (
                   <span key={index} className="pos-pin-edit">
-                    <button
-                      type="button"
-                      style={pin.c ? { borderColor: pin.c, color: pin.c } : undefined}
-                      onClick={() => {
-                        const next = palette[(palette.indexOf(pin.c ?? '') + 1) % palette.length];
-                        setHome({
-                          ...home,
-                          pins: home.pins.map((candidate, i) => (i === index ? { ...candidate, c: next || undefined } : candidate))
-                        });
-                      }}
-                    >
+                    <button type="button" style={pin.c ? { borderColor: pin.c, color: pin.c } : undefined}>
                       {label}
                     </button>
+                    <span className="pos-swatches">
+                      {BRIGHT_PALETTE.map((colour) => (
+                        <button
+                          key={colour || 'none'}
+                          type="button"
+                          className={`pos-swatch ${(pin.c ?? '') === colour ? 'is-on' : ''}`}
+                          style={colour ? { background: colour } : undefined}
+                          title={colour || 'No colour'}
+                          onClick={() =>
+                            setHome({
+                              ...home,
+                              pins: home.pins.map((candidate, i) => (i === index ? { ...candidate, c: colour || undefined } : candidate))
+                            })
+                          }
+                        >
+                          {colour ? '' : '∅'}
+                        </button>
+                      ))}
+                    </span>
                     <button type="button" onClick={() => setHome({ ...home, pins: home.pins.filter((_, i) => i !== index) })}>
                       ✕
                     </button>
@@ -2280,10 +2489,18 @@ export function App() {
               </button>
             </div>
             <p className="pos-muted">Add item pins:</p>
+            <input
+              className="pos-tender"
+              placeholder="Search items to pin…"
+              value={pinSearch}
+              onChange={(event) => setPinSearch(event.currentTarget.value)}
+            />
             <div className="pos-reason-list">
               {menu
                 .flatMap((category) => category.items)
-                .slice(0, 10)
+                .filter((item) => !pinSearch || item.title.toLowerCase().includes(pinSearch.toLowerCase()))
+                .filter((item) => !home.pins.some((pin) => pin.t === 'i' && pin.id === item.recipeId))
+                .slice(0, 14)
                 .map((item) => (
                   <button
                     key={item.recipeId}
@@ -2293,6 +2510,38 @@ export function App() {
                     + {item.title}
                   </button>
                 ))}
+            </div>
+            <p className="pos-muted">This device opens on:</p>
+            <div className="pos-reason-list">
+              {[HOME_TAB, ...menu.slice(0, 11).map((category) => category.name)].map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className={deviceLanding === name ? 'is-on' : ''}
+                  onClick={() => {
+                    const next = deviceLanding === name ? '' : name;
+                    setDeviceLanding(next);
+                    if (next) localStorage.setItem('alma.pos.deviceLanding', next);
+                    else localStorage.removeItem('alma.pos.deviceLanding');
+                  }}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+            <p className="pos-muted">Training:</p>
+            <div className="pos-reason-list">
+              <button
+                type="button"
+                className={training ? 'is-on' : ''}
+                onClick={() => {
+                  const next = !training;
+                  setTraining(next);
+                  localStorage.setItem('alma.pos.training', next ? '1' : '0');
+                }}
+              >
+                {training ? 'Training mode ON — tap to end' : 'Start training mode'}
+              </button>
             </div>
             <button
               type="button"

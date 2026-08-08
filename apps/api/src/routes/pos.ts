@@ -51,7 +51,7 @@ posRouter.post('/orders/:id/reopen', async (req, res, next) => {
 
 posRouter.post('/orders/:id/refund', async (req, res, next) => {
   try {
-    res.json(await posService.refundOrder(String(req.params.id), req.body));
+    res.json(await posService.refundOrder(String(req.params.id), req.body, !req.user && Boolean(req.deviceUser)));
   } catch (error) {
     next(error);
   }
@@ -115,7 +115,7 @@ posRouter.post('/orders/:id/pay', async (req, res, next) => {
 
 posRouter.post('/orders/:id/void', async (req, res, next) => {
   try {
-    res.json(await posService.voidOrder(String(req.params.id), req.body));
+    res.json(await posService.voidOrder(String(req.params.id), req.body, !req.user && Boolean(req.deviceUser)));
   } catch (error) {
     next(error);
   }
@@ -126,6 +126,14 @@ posRouter.get('/tables', async (req, res, next) => {
     res.json(await posService.floorTables(typeof req.query.venue === 'string' ? req.query.venue : null));
   } catch (error) {
     next(error);
+  }
+});
+
+posRouter.post('/manager-approve', async (req, res, next) => {
+  try {
+    res.json(await posService.managerApprove(req.body));
+  } catch (err) {
+    next(err);
   }
 });
 

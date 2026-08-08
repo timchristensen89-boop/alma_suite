@@ -4,6 +4,7 @@ import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
 import { nswHolidayName } from '../lib/nsw-holidays.js';
 import { mailService } from './mail.service.js';
+import { authService } from './auth.service.js';
 
 const stripe = env.stripe?.secretKey ? new Stripe(env.stripe.secretKey) : null;
 
@@ -128,12 +129,36 @@ async function recomputeOrder(id: string) {
 // When a venue's POS is its till, its settled orders roll up into the same
 // actuals the rest of the suite reads: SalesActualEntry (ex-GST + covers,
 // source alma-pos) and StaffTipCardEntry (card tips). Idempotent per day.
+// Manager approval for register voids/refunds from floor-staff (device PIN)
+// sessions: the PIN must belong to an active profile whose role reads as a
+// manager. Suite logins (full accounts) bypass the gate.
+const MANAGER_ROLE = /manager|owner|director|licensee/i;
+
+async function verifyManagerPin(pin: string): Promise<string> {
+  if (!/^\d{4,8}$/.test(pin)) throw new HttpError(403, 'Manager PIN required.');
+  const managers = await prisma.staffProfile.findMany({
+    where: {
+      accountType: 'HUMAN',
+      employmentStatus: 'ACTIVE',
+      mergedIntoStaffProfileId: null,
+      pinHash: { not: null }
+    },
+    select: { firstName: true, lastName: true, roleTitle: true, pinHash: true, pinLockedUntil: true }
+  });
+  for (const profile of managers) {
+    if (!MANAGER_ROLE.test(profile.roleTitle)) continue;
+    if (profile.pinLockedUntil && profile.pinLockedUntil.getTime() > Date.now()) continue;
+    if (await authService.comparePin(pin, profile.pinHash!)) return `${profile.firstName} ${profile.lastName}`.trim();
+  }
+  throw new HttpError(403, 'That PIN does not belong to a manager.');
+}
+
 async function postPosActuals(venue: string) {
   const setting = await prisma.posVenueSetting.findUnique({ where: { venue } });
   if (!setting?.postToReports) return;
   const serviceDate = sydneyTodayUtcMidnight();
   const orders = await prisma.posOrder.findMany({
-    where: { venue, serviceDate, status: 'PAID' },
+    where: { venue, serviceDate, status: 'PAID', training: false },
     include: { payments: true }
   });
   const totalIncCents = orders.reduce((sum, order) => sum + order.totalCents, 0);
@@ -187,7 +212,7 @@ async function drawerExpectedCents(drawer: { venue: string; openingFloatCents: n
     where: {
       method: 'CASH',
       createdAt: { gte: drawer.openedAt },
-      order: { venue: drawer.venue }
+      order: { venue: drawer.venue, training: false }
     },
     _sum: { amountCents: true, tipCents: true }
   });
@@ -200,10 +225,10 @@ async function drawerExpectedCents(drawer: { venue: string; openingFloatCents: n
 async function updateGuestFromOrder(guestId: string) {
   const [guest, posTotals, favourites] = await Promise.all([
     prisma.reserveGuest.findUnique({ where: { id: guestId }, select: { lastVisitAt: true, preferences: true } }),
-    prisma.posOrder.aggregate({ where: { guestId, status: 'PAID' }, _sum: { totalCents: true, tipCents: true } }),
+    prisma.posOrder.aggregate({ where: { guestId, status: 'PAID', training: false }, _sum: { totalCents: true, tipCents: true } }),
     prisma.posOrderLine.groupBy({
       by: ['name'],
-      where: { order: { guestId, status: 'PAID' } },
+      where: { order: { guestId, status: 'PAID', training: false } },
       _sum: { quantity: true },
       orderBy: { _sum: { quantity: 'desc' } },
       take: 3
@@ -432,6 +457,7 @@ export const posService = {
         data: {
           venue,
           idempotencyKey,
+          training: body.training === true,
           openedByName: str(body.openedByName) || null,
           tableLabel,
           guestId,
@@ -526,11 +552,15 @@ export const posService = {
   // Refund a settled bill, fully or partially — a negative REFUND payment
   // plus a mandatory-reason audit record. Cash refunds count against the
   // open drawer's expected cash automatically (negative CASH sum).
-  async refundOrder(id: string, input: unknown) {
+  async refundOrder(id: string, input: unknown, requireManager = false) {
     const body = (input ?? {}) as Record<string, unknown>;
     const reason = str(body.reason);
     requireReason('COMP', reason);
-    const staffName = str(body.staffName) || 'Unknown';
+    let staffName = str(body.staffName) || 'Unknown';
+    if (requireManager) {
+      const approvedBy = await verifyManagerPin(str(body.managerPin));
+      staffName = `${staffName} (approved by ${approvedBy})`;
+    }
     const method = str(body.method).toUpperCase() === 'CASH' ? 'CASH' : 'REFUND';
     const order = await prisma.posOrder.findUnique({ where: { id }, include: { payments: true } });
     if (!order) throw new HttpError(404, 'Bill not found.');
@@ -583,7 +613,7 @@ export const posService = {
     const serviceDate = sydneyTodayUtcMidnight();
     const [orders, adjustments] = await Promise.all([
       prisma.posOrder.findMany({
-        where: { venue, serviceDate, status: 'PAID', openedByName: staffName },
+        where: { venue, serviceDate, status: 'PAID', openedByName: staffName, training: false },
         include: { payments: true, lines: true }
       }),
       prisma.posAdjustment.findMany({
@@ -789,17 +819,31 @@ export const posService = {
     return { ...updated, changeCents, balanceCents: settled ? 0 : balanceCents - amountCents };
   },
 
-  async voidOrder(id: string, input: unknown) {
+  async voidOrder(id: string, input: unknown, requireManager = false) {
     const body = (input ?? {}) as Record<string, unknown>;
-    const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true } });
+    const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true, training: true, lines: { select: { id: true }, take: 1 } } });
     if (!order) throw new HttpError(404, 'Order not found.');
     if (order.status === 'VOID') return this.getOrder(id);
     if (order.status === 'PAID') throw new HttpError(400, 'Paid orders cannot be voided from the register (refunds come with Stripe Terminal).');
+    let approvedBy: string | null = null;
+    // Empty and training orders void freely; a real order with items needs a
+    // manager when the session is a floor-staff PIN login.
+    if (requireManager && !order.training && order.lines.length > 0) {
+      approvedBy = await verifyManagerPin(str(body.managerPin));
+    }
+    const reason = str(body.reason) || null;
     return prisma.posOrder.update({
       where: { id },
-      data: { status: 'VOID', voidedAt: new Date(), voidReason: str(body.reason) || null },
+      data: { status: 'VOID', voidedAt: new Date(), voidReason: approvedBy ? `${reason ?? 'Void'} — approved by ${approvedBy}` : reason },
       include: ORDER_INCLUDE
     });
+  },
+
+  // Standalone check so the register can pre-clear an approval sheet.
+  async managerApprove(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const name = await verifyManagerPin(str(body.pin));
+    return { ok: true, name };
   },
 
   async listRules() {
@@ -894,8 +938,9 @@ export const posService = {
       where: { id: { in: order.lines.map((line) => line.id) } },
       data: { sentAt: new Date() }
     });
-    // Persist each docket as a KDS ticket.
-    if (dockets.length > 0) {
+    // Persist each docket as a KDS ticket. Training orders never reach the
+    // kitchen screens or printers — the register shows the docket preview only.
+    if (dockets.length > 0 && !order.training) {
       await prisma.posTicket.createMany({
         data: dockets.map((docket) => ({
           venue: order.venue,
@@ -1336,7 +1381,7 @@ export const posService = {
     const serviceDate = dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
       ? new Date(`${dateKey}T00:00:00Z`)
       : sydneyTodayUtcMidnight();
-    const where = { status: 'PAID', serviceDate, ...(venue ? { venue } : {}) };
+    const where = { status: 'PAID', serviceDate, training: false, ...(venue ? { venue } : {}) };
     const orders = await prisma.posOrder.findMany({ where, include: { payments: true, lines: true } });
 
     const byMethod = new Map<string, { count: number; amountCents: number; tipCents: number }>();

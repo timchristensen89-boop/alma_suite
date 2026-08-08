@@ -4710,6 +4710,9 @@ model PosOrder {
   // (double flush, retry after a timed-out-but-committed create) can never
   // duplicate the order.
   idempotencyKey String?  @unique
+  // Training-mode orders exercise the full register flow but are excluded
+  // from actuals, drawers, day close, shift reports and guest CRM.
+  training      Boolean   @default(false)
   // UTC midnight of the Sydney trading day the order was PAID on (null while open).
   serviceDate   DateTime?
   status        String    @default("OPEN") // OPEN | PAID | VOID

@@ -1,0 +1,1 @@
+ALTER TABLE "PosOrder" ADD COLUMN "training" BOOLEAN NOT NULL DEFAULT false;
