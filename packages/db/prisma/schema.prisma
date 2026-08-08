@@ -1365,6 +1365,9 @@ model SalesActualEntry {
   venue        String
   serviceDate  DateTime
   salesCents   Int
+  // Actual total guests served that day (walk-ins included) where the POS
+  // reports it — the covers-forecast ground truth.
+  coversCount  Int?
   source       String   @default("manual")
   externalId   String?
   notes        String?

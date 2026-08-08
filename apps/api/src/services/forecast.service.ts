@@ -148,11 +148,22 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
 
   const superRate = await configuredSuperRateFraction();
 
-  const [salesRows, liveCoverRows, noShowRows, shiftRows, salariedStaff] = await Promise.all([
+  const [salesRows, actualCoverRows, liveCoverRows, noShowRows, shiftRows, salariedStaff] = await Promise.all([
     prisma.salesActualEntry.groupBy({
       by: ['venue', 'serviceDate'],
       where: { venue: { in: venueNames }, serviceDate: { gte: historyStart, lte: today } },
       _sum: { salesCents: true }
+    }),
+    // Actual guests served (walk-ins included) where the POS day summary
+    // reports them — ground truth for the covers axis when present.
+    prisma.salesActualEntry.groupBy({
+      by: ['venue', 'serviceDate'],
+      where: {
+        venue: { in: venueNames },
+        serviceDate: { gte: historyStart, lte: today },
+        coversCount: { not: null }
+      },
+      _sum: { coversCount: true }
     }),
     prisma.reserveReservation.groupBy({
       by: ['venue', 'serviceDate'],
@@ -213,6 +224,13 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     const key = keyOf(row.serviceDate);
     map.set(key, (map.get(key) ?? 0) + (row._sum.covers ?? 0));
     coversByVenue.set(row.venue, map);
+  }
+  const actualCoversByVenue = new Map<string, Map<string, number>>();
+  for (const row of actualCoverRows) {
+    const map = actualCoversByVenue.get(row.venue) ?? new Map<string, number>();
+    const key = keyOf(row.serviceDate);
+    map.set(key, (map.get(key) ?? 0) + (row._sum.coversCount ?? 0));
+    actualCoversByVenue.set(row.venue, map);
   }
   const noShowCoversByVenue = new Map<string, number>();
   for (const row of noShowRows) noShowCoversByVenue.set(row.venue, row._sum.covers ?? 0);
@@ -370,6 +388,10 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     try {
     const sales = salesByVenue.get(venue) ?? new Map<string, number>();
     const covers = coversByVenue.get(venue) ?? new Map<string, number>();
+    const servedCovers = actualCoversByVenue.get(venue) ?? new Map<string, number>();
+    // A day's best covers reading: actual guests served when the POS reported
+    // them, else the reservation covers.
+    const coversTruth = (key: string) => servedCovers.get(key) ?? covers.get(key) ?? 0;
 
     // Stale-feed guard: if the sales feed has stalled, anchor all history
     // sampling to the last real trading day instead of today, so a run of
@@ -404,11 +426,12 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     });
     const { closedWeekdays, trendFactor } = model;
 
-    // Historical final covers per weekday (last 8 weeks of reservations).
+    // Historical final covers per weekday (last 8 weeks — actual guests served
+    // where known, reservations otherwise).
     const weekdayCovers = new Map<number, number[]>();
     for (let back = 1; back <= 56; back += 1) {
       const d = addDaysUtc(today, -back);
-      const c = covers.get(keyOf(d)) ?? 0;
+      const c = coversTruth(keyOf(d));
       const list = weekdayCovers.get(d.getUTCDay()) ?? [];
       list.push(c);
       weekdayCovers.set(d.getUTCDay(), list);
@@ -425,7 +448,7 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     let spendSampleCovers = 0;
     for (let back = 1; back <= 56; back += 1) {
       const key = keyOf(addDaysUtc(sampleAnchor, -back));
-      const dayCovers = covers.get(key) ?? 0;
+      const dayCovers = coversTruth(key);
       const daySales = sales.get(key) ?? 0;
       if (dayCovers >= MIN_COVERS_FOR_SPEND_SAMPLE && daySales > 0) {
         spendSampleSales += daySales;
@@ -463,7 +486,11 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
       const keptBooked = Math.round(bookedCovers * (1 - noShowRate));
       const weekdayCoverHistory = weekdayCovers.get(weekday) ?? [];
       const historicalCovers = Math.round(trimmedMean(weekdayCoverHistory));
-      const expectedCovers = closed ? 0 : isPast ? bookedCovers : Math.max(keptBooked, historicalCovers);
+      const expectedCovers = closed
+        ? 0
+        : isPast
+          ? (servedCovers.get(key) ?? bookedCovers)
+          : Math.max(keptBooked, historicalCovers);
 
       // Sales: booked covers act as a floor, never a drag (sparse booking data
       // must not pull forecasts down) — same rule the Sales report introduced.

@@ -131,7 +131,7 @@ function todaySydneyKey(): string {
 // than an item mix. Looker's CSV quirk: the date and the money often land on
 // SEPARATE rows (date-only row, then a values row with a blank date), so the
 // last seen date carries forward.
-type DaySummaryRow = { dateKey: string; exTaxCents: number | null; incTaxCents: number | null };
+type DaySummaryRow = { dateKey: string; exTaxCents: number | null; incTaxCents: number | null; guests: number | null };
 
 function isDaySummaryCsv(csv: string): boolean {
   const headers = parseCsv(csv)[0]?.map(normaliseHeader) ?? [];
@@ -159,12 +159,17 @@ function parseDaySummaries(csv: string): DaySummaryRow[] {
     const incTaxCents = moneyCents(
       pick(row, ['sales_data_total_inc_tax', 'total_inc_tax', 'total_inc_gst', 'gross_sales'])
     );
-    if (exTaxCents === null && incTaxCents === null) continue;
+    const guestsRaw = pick(row, ['guests_total_guest_count', 'total_guest_count', 'guest_count', 'guests']);
+    const guests = guestsRaw !== null && Number.isFinite(Number(guestsRaw.replace(/[,\s]/g, '')))
+      ? Number(guestsRaw.replace(/[,\s]/g, ''))
+      : null;
+    if (exTaxCents === null && incTaxCents === null && guests === null) continue;
     const target = dateKey ?? carriedDate;
     if (!target) continue;
-    const existing = out.get(target) ?? { dateKey: target, exTaxCents: null, incTaxCents: null };
+    const existing = out.get(target) ?? { dateKey: target, exTaxCents: null, incTaxCents: null, guests: null };
     if (exTaxCents !== null) existing.exTaxCents = (existing.exTaxCents ?? 0) + exTaxCents;
     if (incTaxCents !== null) existing.incTaxCents = (existing.incTaxCents ?? 0) + incTaxCents;
+    if (guests !== null && guests > 0) existing.guests = (existing.guests ?? 0) + guests;
     out.set(target, existing);
   }
   return Array.from(out.values());
@@ -418,12 +423,14 @@ export const lightspeedInboundService = {
             venue,
             serviceDate,
             salesCents: netCents,
+            coversCount: day.guests,
             source: summarySource,
             externalId,
             notes: 'Lightspeed daily total from emailed Insights summary (ex GST).'
           },
           update: {
             salesCents: netCents,
+            ...(day.guests !== null ? { coversCount: day.guests } : {}),
             notes: 'Lightspeed daily total from emailed Insights summary (ex GST).'
           }
         });
