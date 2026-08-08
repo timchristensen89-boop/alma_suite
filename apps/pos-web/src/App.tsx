@@ -1581,12 +1581,6 @@ export function App() {
       {view === 'tables' ? (
         <div className="pos-home">
           <div className="pos-home-actions">
-            <button type="button" className="pos-home-new" onClick={() => setNewTable({ label: '', covers: '' })}>
-              + New table
-            </button>
-            <button type="button" className="pos-home-new pos-home-quick" disabled={busy} onClick={() => void openOrder({})}>
-              Quick sale
-            </button>
             {floorTables.length > 0 ? (
               <button
                 type="button"
@@ -2096,6 +2090,23 @@ export function App() {
                     className={`pos-item ${hueClass(hueForCategory(categoryOf(item)))} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
                     onClick={() => addItem(item)}
                   >
+                    {boardEdit ? (
+                      <i
+                        className="pos-pin-x"
+                        title="Hide from the POS (restore in the Office)"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void api('/api/pos/menu-hides', { method: 'POST', body: JSON.stringify({ kind: 'ITEM', key: item.recipeId, hiddenBy: item.title }) })
+                            .then(() => {
+                              setInfo(`${item.title} hidden from the POS — restore it in the Office.`);
+                              setMenu((current) => current.map((category) => ({ ...category, items: category.items.filter((candidate) => candidate.recipeId !== item.recipeId) })));
+                            })
+                            .catch((err) => setError(messageForError(err, 'Could not hide it.')));
+                        }}
+                      >
+                        ⊘
+                      </i>
+                    ) : null}
                     <span>{item.title}</span>
                     <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
                   </button>

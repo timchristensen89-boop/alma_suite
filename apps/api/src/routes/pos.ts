@@ -160,6 +160,30 @@ posRouter.get('/live', async (_req, res, next) => {
   }
 });
 
+posRouter.get('/menu-hides', async (_req, res, next) => {
+  try {
+    res.json(await posService.listMenuHides());
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/menu-hides', async (req, res, next) => {
+  try {
+    res.json(await posService.hideMenu(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.delete('/menu-hides/:id', async (req, res, next) => {
+  try {
+    res.json(await posService.unhideMenu(String(req.params.id)));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.get('/gift-card', async (req, res, next) => {
   try {
     res.json(await posService.giftCardBalance(String(req.query.code ?? '')));

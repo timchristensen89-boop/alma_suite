@@ -13,9 +13,14 @@ type Profile = { id: string; name: string; matchKind: string; categoriesCsv: str
 type Rule = { id: string; kind: string; label: string; percent: number; weekdays: string; holidays: boolean; startMinute: number | null; endMinute: number | null; active: boolean };
 type ModGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: Array<{ id: string; name: string; priceCents: number }> };
 type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null };
+type MenuHide = { id: string; kind: string; key: string; createdAt: string };
+type MenuShape = { categories: Array<{ name: string; items: Array<{ recipeId: string; title: string; priceCents: number }> }> };
 
 export function Office() {
-  const [tab, setTab] = useState<'printers' | 'modifiers' | 'rules' | 'identity'>('printers');
+  const [tab, setTab] = useState<'printers' | 'menu' | 'modifiers' | 'rules' | 'identity'>('printers');
+  const [hides, setHides] = useState<MenuHide[]>([]);
+  const [fullMenu, setFullMenu] = useState<MenuShape | null>(null);
+  const [hideSearch, setHideSearch] = useState('');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
   const [groups, setGroups] = useState<ModGroup[]>([]);
@@ -41,6 +46,8 @@ export function Office() {
       setProfiles(profileRows);
       setRules(ruleRows);
       setGroups(menu.modifierGroups ?? []);
+      setFullMenu(menu as unknown as MenuShape);
+      setHides(await api<MenuHide[]>('/api/pos/menu-hides'));
       setIdentities(await Promise.all(VENUES.map((venue) => api<Identity>(`/api/pos/venue-settings?venue=${encodeURIComponent(venue)}`))));
       setError(null);
     } catch (err) {
@@ -94,6 +101,7 @@ export function Office() {
         {(
           [
             ['printers', 'Printers & dockets'],
+            ['menu', 'Menu visibility'],
             ['modifiers', 'Modifiers'],
             ['rules', 'Surcharges & discounts'],
             ['identity', 'Venues & receipts']
@@ -146,6 +154,108 @@ export function Office() {
             <button type="button" className="office-add" onClick={() => void saveProfile({ name: 'New station', matchKind: 'FOOD', categoriesCsv: '', sortOrder: profiles.length })}>
               ＋ Add a station
             </button>
+          </section>
+        ) : null}
+
+        {tab === 'menu' ? (
+          <section>
+            <p className="office-lead">
+              Hide whole categories or single items from every register and the QR menus. Hiding is curation ("we don't sell
+              this here") — 86 stays the sold-out-today toggle on the register.
+            </p>
+            <p className="office-hint">Categories — tap to hide or restore:</p>
+            <div className="office-chiprow">
+              {(fullMenu?.categories ?? []).map((category) => (
+                <button
+                  key={category.name}
+                  type="button"
+                  className="office-chip"
+                  onClick={() => {
+                    void api('/api/pos/menu-hides', { method: 'POST', body: JSON.stringify({ kind: 'CATEGORY', key: category.name }) })
+                      .then(() => {
+                        setInfo(`${category.name} hidden from the POS.`);
+                        void refresh();
+                      })
+                      .catch((err) => setError(messageForError(err, 'Could not hide it.')));
+                  }}
+                >
+                  {category.name}
+                </button>
+              ))}
+              {hides
+                .filter((hide) => hide.kind === 'CATEGORY')
+                .map((hide) => (
+                  <button
+                    key={hide.id}
+                    type="button"
+                    className="office-chip is-hidden"
+                    onClick={() => {
+                      void api(`/api/pos/menu-hides/${hide.id}`, { method: 'DELETE' })
+                        .then(() => {
+                          setInfo(`${hide.key} restored.`);
+                          void refresh();
+                        })
+                        .catch((err) => setError(messageForError(err, 'Could not restore it.')));
+                    }}
+                  >
+                    {hide.key} 🚫
+                  </button>
+                ))}
+            </div>
+            <p className="office-hint" style={{ marginTop: 14 }}>Items — search, then tap to hide:</p>
+            <input className="office-input office-input-wide" placeholder="Search items…" value={hideSearch} onChange={(event) => setHideSearch(event.currentTarget.value)} />
+            {hideSearch.trim() ? (
+              <div className="office-chiprow">
+                {(fullMenu?.categories ?? [])
+                  .flatMap((category) => category.items)
+                  .filter((item) => item.title.toLowerCase().includes(hideSearch.toLowerCase()))
+                  .slice(0, 20)
+                  .map((item) => (
+                    <button
+                      key={item.recipeId}
+                      type="button"
+                      className="office-chip"
+                      onClick={() => {
+                        void api('/api/pos/menu-hides', { method: 'POST', body: JSON.stringify({ kind: 'ITEM', key: item.recipeId, hiddenBy: item.title }) })
+                          .then(() => {
+                            setInfo(`${item.title} hidden from the POS.`);
+                            setHideSearch('');
+                            void refresh();
+                          })
+                          .catch((err) => setError(messageForError(err, 'Could not hide it.')));
+                      }}
+                    >
+                      {item.title}
+                    </button>
+                  ))}
+              </div>
+            ) : null}
+            {hides.filter((hide) => hide.kind === 'ITEM').length > 0 ? (
+              <>
+                <p className="office-hint" style={{ marginTop: 14 }}>Hidden items — tap to restore:</p>
+                <div className="office-chiprow">
+                  {hides
+                    .filter((hide) => hide.kind === 'ITEM')
+                    .map((hide) => (
+                      <button
+                        key={hide.id}
+                        type="button"
+                        className="office-chip is-hidden"
+                        onClick={() => {
+                          void api(`/api/pos/menu-hides/${hide.id}`, { method: 'DELETE' })
+                            .then(() => {
+                              setInfo('Item restored.');
+                              void refresh();
+                            })
+                            .catch((err) => setError(messageForError(err, 'Could not restore it.')));
+                        }}
+                      >
+                        {(hide as MenuHide & { hiddenBy?: string | null }).hiddenBy ?? `${hide.key.slice(0, 10)}…`} 🚫
+                      </button>
+                    ))}
+                </div>
+              </>
+            ) : null}
           </section>
         ) : null}
 

@@ -352,6 +352,9 @@ export const posService = {
   // The sellable menu, grouped for the register grid: active non-prep recipes
   // with a price, plus set menus. Categories keep the recipe's own category.
   async registerMenu() {
+    const hides = await prisma.posMenuHide.findMany({ select: { kind: true, key: true } });
+    const hiddenItems = new Set(hides.filter((hide) => hide.kind === 'ITEM').map((hide) => hide.key));
+    const hiddenCats = new Set(hides.filter((hide) => hide.kind === 'CATEGORY').map((hide) => hide.key.toLowerCase()));
     const recipes = await prisma.recipe.findMany({
       where: { status: 'ACTIVE', isPrepRecipe: false, salePriceCents: { gt: 0 } },
       select: { id: true, title: true, kind: true, category: true, venue: true, salePriceCents: true },
@@ -359,7 +362,9 @@ export const posService = {
     });
     const byCategory = new Map<string, { name: string; kind: string; items: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null }> }>();
     for (const recipe of recipes) {
+      if (hiddenItems.has(recipe.id)) continue;
       const name = recipe.kind === 'SET_MENU' ? 'Set Menus' : recipe.category?.trim() || 'Other';
+      if (hiddenCats.has(name.toLowerCase())) continue;
       const group = byCategory.get(name) ?? {
         name,
         kind: recipe.kind === 'SET_MENU' ? 'SET_MENU' : kindBucket(recipe.kind, recipe.category),
@@ -998,6 +1003,28 @@ export const posService = {
           hourly: [...entry.hourly.entries()].sort((a, b) => a[0] - b[0]).map(([hour, cents]) => ({ hour, cents }))
         }))
     };
+  },
+
+  // Menu curation: hide/restore categories and items globally.
+  async listMenuHides() {
+    return prisma.posMenuHide.findMany({ orderBy: { createdAt: 'desc' } });
+  },
+
+  async hideMenu(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const kind = str(body.kind).toUpperCase() === 'CATEGORY' ? 'CATEGORY' : 'ITEM';
+    const key = str(body.key);
+    if (!key) throw new HttpError(400, 'key is required.');
+    return prisma.posMenuHide.upsert({
+      where: { kind_key: { kind, key } },
+      create: { kind, key, hiddenBy: str(body.hiddenBy) || null },
+      update: {}
+    });
+  },
+
+  async unhideMenu(id: string) {
+    await prisma.posMenuHide.delete({ where: { id } });
+    return { ok: true };
   },
 
   // Gift card balance check for the charge sheet. Mirrors redeem()'s gate

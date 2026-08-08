@@ -4899,6 +4899,19 @@ model PosModifier {
 }
 
 // The 86 list: sold-out items, greyed on every register instantly.
+// Menu curation: entries hidden from every register + the QR menu (86 is
+// "sold out today"; a hide is "we don't sell this here"). kind ITEM keys by
+// recipeId, kind CATEGORY keys by category name.
+model PosMenuHide {
+  id        String   @id @default(cuid())
+  kind      String
+  key       String
+  hiddenBy  String?
+  createdAt DateTime @default(now())
+
+  @@unique([kind, key])
+}
+
 model Pos86 {
   id        String   @id @default(cuid())
   recipeId  String   @unique
