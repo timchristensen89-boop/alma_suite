@@ -121,7 +121,22 @@ const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
 const HOME_TAB = '\u2605 Home';
 // Australian cash rounding — physical cash rounds to the nearest 5c.
 const roundCash5 = (cents: number) => Math.round(cents / 5) * 5;
-const BRIGHT_PALETTE = ['', '#ff5a5f', '#ff9f1c', '#ffd166', '#06d6a0', '#4cc9f0', '#b388eb', '#f72585'];
+const BRIGHT_PALETTE = ['', 'terra', 'amber', 'moss', 'slate', 'shell', 'cocoa'];
+const HUE_NAMES = ['terra', 'amber', 'moss', 'slate', 'shell', 'cocoa'];
+// Swatch dot colours for the customise sheet (light-theme tile inks).
+const HUE_DOTS: Record<string, string> = { terra: '#9a3a2e', amber: '#b5772f', moss: '#4f6b47', slate: '#4d5e7a', shell: '#a8613f', cocoa: '#684a4a' };
+function hueClass(c?: string) {
+  return c && HUE_NAMES.includes(c) ? `pos-hue-${c}` : '';
+}
+function hueStyle(c?: string): React.CSSProperties | undefined {
+  return c && !HUE_NAMES.includes(c) ? { borderColor: c, background: `${c}26` } : undefined;
+}
+// Menu tiles take a calm hue from their category so every grid reads warm.
+function hueForCategory(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return HUE_NAMES[h % HUE_NAMES.length];
+}
 
 // ── Offline layer ───────────────────────────────────────────────────────────
 // The shell + menu are cached; QUICK SALES keep working through an outage —
@@ -238,6 +253,12 @@ export function App() {
   const [deviceLanding, setDeviceLanding] = useState(() => localStorage.getItem('alma.pos.deviceLanding') ?? '');
   // Phone layout: the bill lives in a bottom sheet behind a summary bar.
   const [cartOpen, setCartOpen] = useState(false);
+  const [darkTheme, setDarkTheme] = useState(() => localStorage.getItem('alma.pos.theme') === 'dark');
+
+  useEffect(() => {
+    document.body.classList.toggle('pos-dark', darkTheme);
+    localStorage.setItem('alma.pos.theme', darkTheme ? 'dark' : 'light');
+  }, [darkTheme]);
   // Home board inline editing: drag to reorder, tap to recolour, ✕ removes.
   const [boardEdit, setBoardEdit] = useState(false);
   const dragPinIndex = useRef<number | null>(null);
@@ -1127,8 +1148,9 @@ export function App() {
     <div className="pos-shell">
       <header className="pos-header">
         <strong onClick={() => { setOrder(null); void refreshOpenOrders(); }} style={{ cursor: 'pointer' }}>
-          ALMA POS
+          alma
         </strong>
+        <span className="pos-wordmark-chip">POS</span>
         {view === 'register' ? (
           <span className="pos-crumb">
             {!order ? 'New sale' : order.tableLabel ? `Table ${order.tableLabel}` : `Sale #${order.orderNumber}`}
@@ -1171,6 +1193,14 @@ export function App() {
           <input className="pos-search" placeholder="Search menu…" value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
         ) : null}
         <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          className="pos-theme-btn"
+          title="Switch light / dark"
+          onClick={() => setDarkTheme(!darkTheme)}
+        >
+          {darkTheme ? '☀' : '☾'}
+        </button>
         {operatorName ? (
           <button
             type="button"
@@ -1610,8 +1640,8 @@ export function App() {
                         type="button"
                         data-pin-index={index}
                         data-pin-folder={pin.name}
-                        className={`pos-item pos-item-pin ${sizeClass} ${boardEdit ? 'is-editing' : ''}`}
-                        style={pin.c ? { borderColor: pin.c, background: `${pin.c}26` } : undefined}
+                        className={`pos-item pos-item-pin ${hueClass(pin.c)} ${sizeClass} ${boardEdit ? 'is-editing' : ''}`}
+                        style={hueStyle(pin.c)}
                         {...editProps}
                         onClick={() => (boardEdit ? cycleColour() : setActiveCategory(`__folder__${index}`))}
                       >
@@ -1632,8 +1662,8 @@ export function App() {
                       key={pin.id}
                       type="button"
                       data-pin-index={index}
-                      className={`pos-item pos-item-pin ${sizeClass} ${boardEdit ? 'is-editing' : ''} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
-                      style={pin.c ? { borderColor: pin.c, background: `${pin.c}26` } : undefined}
+                      className={`pos-item pos-item-pin ${hueClass(pin.c)} ${sizeClass} ${boardEdit ? 'is-editing' : ''} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                      style={hueStyle(pin.c)}
                       disabled={busy && !boardEdit}
                       {...editProps}
                       onClick={() => (boardEdit ? cycleColour() : addItem(item))}
@@ -1704,7 +1734,7 @@ export function App() {
                         key={recipeId}
                         type="button"
                         className={`pos-item pos-item-pin ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
-                        style={pin.c ? { borderColor: pin.c, background: `${pin.c}26` } : undefined}
+                        style={hueStyle(pin.c)}
                         disabled={busy && !boardEdit}
                         onClick={() => (boardEdit ? undefined : addItem(item))}
                       >
@@ -1755,7 +1785,7 @@ export function App() {
                             <button
                               key={item.recipeId}
                               type="button"
-                              className={`pos-item ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                              className={`pos-item ${hueClass(hueForCategory(catName))} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
                               onClick={() => addItem(item)}
                             >
                               <span>{item.title}</span>
@@ -1774,7 +1804,7 @@ export function App() {
                   <button
                     key={item.recipeId}
                     type="button"
-                    className={`pos-item ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                    className={`pos-item ${hueClass(hueForCategory(categoryOf(item)))} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
                     onClick={() => addItem(item)}
                   >
                     <span>{item.title}</span>
@@ -2550,7 +2580,7 @@ export function App() {
       {openFolder && openFolder.t === 'f' ? (
         <div className="pos-modal" role="dialog" onClick={() => setOpenFolder(null)}>
           <div className="pos-modal-panel" onClick={(event) => event.stopPropagation()}>
-            <h2 style={openFolder.c ? { color: openFolder.c } : undefined}>📁 {openFolder.name}</h2>
+            <h2 style={openFolder.c ? { color: HUE_DOTS[openFolder.c] ?? openFolder.c } : undefined}>📁 {openFolder.name}</h2>
             <div className="pos-reason-list">
               {openFolder.items.map((recipeId) => {
                 const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === recipeId);
@@ -3060,7 +3090,7 @@ export function App() {
                 const label = pin.t === 'f' ? `📁 ${pin.name}` : menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id)?.title ?? '?';
                 return (
                   <span key={index} className="pos-pin-edit">
-                    <button type="button" style={pin.c ? { borderColor: pin.c, color: pin.c } : undefined}>
+                    <button type="button" style={pin.c && !HUE_NAMES.includes(pin.c) ? { borderColor: pin.c, color: pin.c } : pin.c ? { borderColor: HUE_DOTS[pin.c], color: HUE_DOTS[pin.c] } : undefined}>
                       {label}
                     </button>
                     <span className="pos-swatches">
@@ -3069,7 +3099,7 @@ export function App() {
                           key={colour || 'none'}
                           type="button"
                           className={`pos-swatch ${(pin.c ?? '') === colour ? 'is-on' : ''}`}
-                          style={colour ? { background: colour } : undefined}
+                          style={colour ? { background: HUE_DOTS[colour] ?? colour } : undefined}
                           title={colour || 'No colour'}
                           onClick={() =>
                             setHome({

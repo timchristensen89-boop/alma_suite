@@ -6,6 +6,7 @@ import { Live } from './Live';
 import { GuestOrder } from './GuestOrder';
 import { QrSheet } from './QrSheet';
 import './styles.css';
+import './theme.css';
 
 // #kds turns any tablet into the kitchen display, #live is the owner's
 // phone view; everything else is the register.
