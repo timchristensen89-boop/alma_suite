@@ -2722,13 +2722,23 @@ export function App() {
                         <button
                           type="button"
                           className="pos-ghost"
-                          onClick={() => setRefunding({ order: row, amount: String((row.totalCents + row.tipCents - refunded) / 100), reason: '', method: 'REFUND' })}
+                          onClick={() => {
+                            setBills(null);
+                            setRefunding({ order: row, amount: String((row.totalCents + row.tipCents - refunded) / 100), reason: '', method: 'REFUND' });
+                          }}
                         >
                           Refund
                         </button>
                       </>
                     ) : null}
-                    <button type="button" className="pos-ghost" onClick={() => setReceipt(row)}>
+                    <button
+                      type="button"
+                      className="pos-ghost"
+                      onClick={() => {
+                        setBills(null);
+                        setReceipt(row);
+                      }}
+                    >
                       View
                     </button>
                   </span>
