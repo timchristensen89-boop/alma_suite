@@ -1598,6 +1598,68 @@ function StaffProfilesPage({
   const [reonboardMessage, setReonboardMessage] = useState<string | null>(null);
   const [reonboardError, setReonboardError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StaffProfileStatusFilter>('current');
+  // Merge-duplicate flow: the profile being merged AWAY, the profile that
+  // keeps everything, and the round-trip state. The source can be a normal
+  // register profile OR a hidden (archived) duplicate that no longer shows in
+  // the register but still owns timesheets and tip lines.
+  const [mergeSource, setMergeSource] = useState<{ id: string; firstName: string; lastName: string } | null>(null);
+  const [mergeTargetId, setMergeTargetId] = useState('');
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [hiddenDuplicates, setHiddenDuplicates] = useState<Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    roleTitle: string | null;
+    venue: string | null;
+    hasBankDetails: boolean;
+    counts: { timesheets: number; tipPaymentRunLines: number; rosterShifts: number; clockSessions: number };
+  }>>([]);
+
+  const loadHiddenDuplicates = useCallback(async () => {
+    try {
+      setHiddenDuplicates(await api<typeof hiddenDuplicates>('/api/staff/archived-duplicates'));
+    } catch {
+      // Non-manager or older API — the section just stays hidden.
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadHiddenDuplicates();
+  }, [loadHiddenDuplicates]);
+
+  async function runMerge() {
+    if (!mergeSource || !mergeTargetId) return;
+    setMergeBusy(true);
+    setMergeError(null);
+    try {
+      const result = await api<{
+        canonicalStaffProfile: StaffProfile;
+        moved: Record<string, number>;
+      }>('/api/staff/merge', {
+        method: 'POST',
+        body: JSON.stringify({
+          canonicalStaffProfileId: mergeTargetId,
+          duplicateStaffProfileIds: [mergeSource.id],
+          confirmation: 'MERGE STAFF'
+        })
+      });
+      const movedSummary = Object.entries(result.moved ?? {})
+        .filter(([, count]) => count > 0)
+        .map(([key, count]) => `${count} ${key.replace(/([A-Z])/g, ' $1').toLowerCase()}`)
+        .join(', ');
+      setReonboardMessage(
+        `Merged ${mergeSource.firstName} ${mergeSource.lastName} into ${result.canonicalStaffProfile.firstName} ${result.canonicalStaffProfile.lastName}.${movedSummary ? ` Moved: ${movedSummary}.` : ''}`
+      );
+      setMergeSource(null);
+      setMergeTargetId('');
+      await Promise.all([reload(), loadHiddenDuplicates()]);
+    } catch (err) {
+      setMergeError(err instanceof Error ? err.message : 'Merge failed.');
+    } finally {
+      setMergeBusy(false);
+    }
+  }
 
   const statusCounts = useMemo(() => {
     const active = staff.filter((member) => normaliseEmploymentStatus(member) === 'ACTIVE').length;
@@ -1743,6 +1805,19 @@ function StaffProfilesPage({
           >
             Payroll
           </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              setMergeTargetId('');
+              setMergeError(null);
+              setMergeSource(member);
+            }}
+          >
+            Merge
+          </Button>
         </span>
       </div>
     );
@@ -1829,6 +1904,50 @@ function StaffProfilesPage({
         </div>
       </Card>
 
+      {hiddenDuplicates.length ? (
+        <Card
+          title="Hidden duplicate profiles"
+          subtitle="Archived identities that still own timesheets, tips or shifts. They keep surfacing in pay runs (and block ABA exports when they have no bank details) until they're merged into the real profile."
+          padding="none"
+        >
+          <div className="staff-list" style={{ padding: 12 }}>
+            {hiddenDuplicates.map((duplicate) => (
+              <div key={duplicate.id} className="staff-list-button">
+                <span className="staff-list-main" style={{ cursor: 'default' }}>
+                  <span>
+                    <strong>{duplicate.firstName} {duplicate.lastName}</strong>
+                    <span className="subtle" style={{ display: 'block' }}>
+                      {[duplicate.roleTitle, duplicate.venue || 'No venue'].filter(Boolean).join(' · ')}
+                      {' · '}
+                      {duplicate.counts.timesheets} timesheet{duplicate.counts.timesheets === 1 ? '' : 's'}
+                      {' · '}
+                      {duplicate.counts.tipPaymentRunLines} tip line{duplicate.counts.tipPaymentRunLines === 1 ? '' : 's'}
+                      {' · '}
+                      {duplicate.counts.rosterShifts} shift{duplicate.counts.rosterShifts === 1 ? '' : 's'}
+                    </span>
+                  </span>
+                </span>
+                <span className="staff-row-actions">
+                  {!duplicate.hasBankDetails ? <Badge tone="warning">No bank details</Badge> : null}
+                  <Badge tone="muted">Archived</Badge>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      setMergeTargetId('');
+                      setMergeError(null);
+                      setMergeSource(duplicate);
+                    }}
+                  >
+                    Merge into…
+                  </Button>
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
       <StaffModal
         open={form.mode !== 'closed'}
         title={form.mode === 'edit' ? `Edit ${form.member.firstName} ${form.member.lastName}` : 'New staff profile'}
@@ -1843,6 +1962,69 @@ function StaffProfilesPage({
             onSaved={(member) => void handleSaved(member)}
             onCancel={() => setForm({ mode: 'closed' })}
           />
+        ) : null}
+      </StaffModal>
+
+      <StaffModal
+        open={mergeSource !== null}
+        title={mergeSource ? `Merge ${mergeSource.firstName} ${mergeSource.lastName} into another profile` : 'Merge profiles'}
+        subtitle="For duplicate identities — everything moves to the profile you keep."
+        onClose={() => {
+          if (!mergeBusy) {
+            setMergeSource(null);
+            setMergeTargetId('');
+            setMergeError(null);
+          }
+        }}
+        width="standard"
+      >
+        {mergeSource ? (
+          <div className="page-stack" style={{ gap: 12 }}>
+            <p className="subtle">
+              Every timesheet, tip payment, roster shift, clock record, leave request, HR and compliance record on{' '}
+              <strong>{mergeSource.firstName} {mergeSource.lastName}</strong> moves to the profile you keep. Missing details
+              on the kept profile (bank account, TFN, super, contact info) are filled in from the duplicate, then the
+              duplicate is archived. Future roster imports that use the old name resolve to the kept profile automatically.
+              This cannot be undone.
+            </p>
+            <label className="field">
+              <span>Profile to keep</span>
+              <select
+                aria-label="Profile to keep"
+                value={mergeTargetId}
+                onChange={(event) => setMergeTargetId(event.currentTarget.value)}
+              >
+                <option value="">Choose the profile to keep…</option>
+                {staff
+                  .filter((member) => member.id !== mergeSource.id)
+                  .slice()
+                  .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
+                  .map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.firstName} {member.lastName}{member.venue ? ` · ${member.venue}` : ''}{member.roleTitle ? ` · ${member.roleTitle}` : ''}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {mergeError ? <p className="error-text">{mergeError}</p> : null}
+            <div className="toolbar-right">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={mergeBusy}
+                onClick={() => {
+                  setMergeSource(null);
+                  setMergeTargetId('');
+                  setMergeError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="button" disabled={mergeBusy || !mergeTargetId} onClick={() => void runMerge()}>
+                {mergeBusy ? 'Merging…' : 'Merge profiles'}
+              </Button>
+            </div>
+          </div>
         ) : null}
       </StaffModal>
     </div>
@@ -15267,18 +15449,46 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     }))
     .filter((adjustment) => adjustment.adjustmentCents !== 0 || adjustment.excluded || adjustment.notes.trim().length > 0), [adjustments]);
 
-  const reviewedRows = useMemo(() => (summary?.entitlements ?? []).map((row) => {
-    const adjustment = adjustments[row.staffProfileId];
-    const excluded = adjustment?.excluded ?? false;
-    const adjustmentCents = excluded ? -row.amountCents : Math.round((Number(adjustment?.adjustment) || 0) * 100);
-    return {
-      ...row,
-      adjustmentCents,
-      finalAmountCents: Math.max(0, row.amountCents + adjustmentCents),
-      excluded,
-      reviewNotes: adjustment?.notes ?? ''
-    };
-  }), [adjustments, summary?.entitlements]);
+  // Excluding someone hands their share back to the pool: their hours leave
+  // the divisor and everyone left is re-cut over the same pool, so the final
+  // payout still balances (variance $0) instead of stranding the excluded
+  // share. Mirrors the server-side calculation in applyTipAdjustments exactly
+  // (same pro-rata + last-row-remainder rounding).
+  const reviewedRows = useMemo(() => {
+    const rows = summary?.entitlements ?? [];
+    const excludedIds = new Set(
+      rows.filter((row) => adjustments[row.staffProfileId]?.excluded).map((row) => row.staffProfileId)
+    );
+    const poolCents = rows.reduce((sum, row) => sum + row.amountCents, 0);
+    const activeRows = rows.filter((row) => !excludedIds.has(row.staffProfileId));
+    const activeHours = activeRows.reduce((sum, row) => sum + row.approvedHours, 0);
+    const redistributedBase = new Map<string, number>();
+    let allocated = 0;
+    activeRows.forEach((row, index) => {
+      const isLast = index === activeRows.length - 1;
+      const cents = activeHours > 0
+        ? isLast
+          ? poolCents - allocated
+          : Math.round((row.approvedHours / activeHours) * poolCents)
+        : 0;
+      allocated += cents;
+      redistributedBase.set(row.staffProfileId, cents);
+    });
+    return rows.map((row) => {
+      const adjustment = adjustments[row.staffProfileId];
+      const excluded = excludedIds.has(row.staffProfileId);
+      const baseCents = excluded ? row.amountCents : redistributedBase.get(row.staffProfileId) ?? row.amountCents;
+      const adjustmentCents = excluded ? -baseCents : Math.round((Number(adjustment?.adjustment) || 0) * 100);
+      return {
+        ...row,
+        amountCents: baseCents,
+        adjustmentCents,
+        finalAmountCents: Math.max(0, baseCents + adjustmentCents),
+        excluded,
+        reviewNotes: adjustment?.notes ?? ''
+      };
+    });
+  }, [adjustments, summary?.entitlements]);
 
   const totalPayoutCents = reviewedRows.reduce((sum, row) => sum + row.finalAmountCents, 0);
   const payoutVarianceCents = totalPayoutCents - (summary?.allocatablePoolCents ?? 0);
@@ -16126,7 +16336,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
                     <td>
                       <div className="tips-review-actions">
                         <Badge tone={row.excluded ? 'muted' : 'warning'}>{row.excluded ? 'Excluded' : row.paymentMethod}</Badge>
-                        <label className="inline-checkbox">
+                        <label className="inline-checkbox" title="Removes their hours from the split — the pool redistributes across everyone else and the payout still balances.">
                           <input
                             type="checkbox"
                             checked={row.excluded}
@@ -17489,6 +17699,10 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
       }
     | null
   >(null);
+  // Reassign-shifts control: which staff group has the picker open, and who
+  // the shifts are being moved to.
+  const [reassignGroupKey, setReassignGroupKey] = useState<string | null>(null);
+  const [reassignTargetId, setReassignTargetId] = useState('');
   const [reviewOpen, setReviewOpen] = useState(() => {
     if (typeof window === 'undefined') return true;
     return window.localStorage.getItem('alma.timesheets.reviewOpen') !== 'closed';
@@ -17795,6 +18009,48 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     }
   }
 
+  /**
+   * Move shifts to a different staff profile — approved ones included.
+   *
+   * This exists for the phantom identities imports create ("Andres Felipe
+   * valdes" holding a week of real shifts while "Andres Felipe Gallo" holds
+   * the bank details): pick the right person, move the shifts, and the pay
+   * run and tips allocation follow without any reject/re-approve dance. The
+   * server stamps an audit note on each moved row.
+   */
+  async function reassignEntries(entryIds: string[], targetId: string) {
+    if (!targetId || entryIds.length === 0) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('reassign');
+    try {
+      const results = await Promise.allSettled(
+        entryIds.map((id) => api(`/api/staff/timesheets/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ staffProfileId: targetId })
+        }))
+      );
+      const failed = results.filter((result) => result.status === 'rejected');
+      const movedCount = entryIds.length - failed.length;
+      const targetName = staff.find((member) => member.id === targetId);
+      const targetLabel = targetName ? `${targetName.firstName} ${targetName.lastName}` : 'the selected profile';
+      if (failed.length === 0) {
+        setMessage(`Moved ${movedCount} shift${movedCount === 1 ? '' : 's'} to ${targetLabel}.`);
+      } else {
+        const firstError = failed[0];
+        const reason = firstError && firstError.status === 'rejected' && firstError.reason instanceof Error
+          ? ` First error: ${firstError.reason.message}`
+          : '';
+        setMessage(`Moved ${movedCount} of ${entryIds.length} shifts to ${targetLabel} — ${failed.length} failed.${reason}`);
+      }
+      setReassignGroupKey(null);
+      setReassignTargetId('');
+      await loadTimesheets();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function reject(id: string) {
     const reason = window.prompt('Reason for rejection?') ?? '';
     setSaving(true);
@@ -18061,7 +18317,53 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               Approve all
             </Button>
           ) : null}
+          {isManagerView ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={saving}
+              onClick={() => {
+                setReassignTargetId('');
+                setReassignGroupKey((current) => (current === group.id ? null : group.id));
+              }}
+            >
+              Reassign
+            </Button>
+          ) : null}
         </header>
+        {isManagerView && reassignGroupKey === group.id ? (
+          <div className="timesheet-reassign-bar" style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', flexWrap: 'wrap' }}>
+            <span className="subtle">
+              Move {group.entries.length === 1 ? 'this shift' : `all ${group.entries.length} shifts`} from <strong>{group.name}</strong> to
+            </span>
+            <select
+              aria-label={`Reassign shifts for ${group.name}`}
+              value={reassignTargetId}
+              onChange={(event) => setReassignTargetId(event.currentTarget.value)}
+            >
+              <option value="">Choose staff…</option>
+              {staff
+                .filter((member) => member.id !== group.member?.id)
+                .slice()
+                .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
+                .map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.firstName} {member.lastName}{member.venue ? ` · ${member.venue}` : ''}
+                  </option>
+                ))}
+            </select>
+            <Button
+              type="button"
+              size="sm"
+              disabled={saving || !reassignTargetId}
+              onClick={() => void reassignEntries(group.entries.map((entry) => entry.id), reassignTargetId)}
+            >
+              Move shifts
+            </Button>
+            <span className="subtle">Works on approved shifts too — each moved row keeps an audit note. Exported rows keep their paid hours; only the person changes.</span>
+          </div>
+        ) : null}
         <div className="timesheet-group-rows">
           {group.entries.map((entry) => {
             const member = group.member;

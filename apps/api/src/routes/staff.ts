@@ -174,6 +174,16 @@ staffRouter.post('/merge', requireManager, async (req, res, next) => {
   }
 });
 
+// Archived-but-unmerged profiles that still own timesheets/tip lines — the
+// duplicate identities the People page surfaces so they can be merged away.
+staffRouter.get('/archived-duplicates', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.listArchivedDuplicates(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/devices', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');

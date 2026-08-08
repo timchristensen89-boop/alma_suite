@@ -367,12 +367,39 @@ function matchStaffCandidate<T extends StaffNameCandidate>(
   return [...pool].sort((a, b) => (b.payRateCents ?? 0) - (a.payRateCents ?? 0))[0] ?? null;
 }
 
-// Load the non-merged human staff once per sync so name matching is an
-// in-memory pass rather than a query per row.
+// Load the human staff once per sync so name matching is an in-memory pass
+// rather than a query per row. Merged duplicates are included as ALIASES: a
+// Deputy name that matches an archived duplicate (e.g. "Andres Felipe valdes")
+// resolves to the surviving profile it was merged into, instead of minting the
+// duplicate all over again on the next sync.
 async function loadStaffCandidates() {
-  return prisma.staffProfile.findMany({
-    where: { accountType: 'HUMAN', mergedIntoStaffProfileId: null }
+  const rows = await prisma.staffProfile.findMany({
+    where: { accountType: 'HUMAN' }
   });
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const resolveSurvivor = (row: (typeof rows)[number]) => {
+    let current = row;
+    for (let hop = 0; hop < 5 && current.mergedIntoStaffProfileId; hop += 1) {
+      const next = byId.get(current.mergedIntoStaffProfileId);
+      if (!next) return null;
+      current = next;
+    }
+    return current.mergedIntoStaffProfileId ? null : current;
+  };
+  const candidates: typeof rows = [];
+  for (const row of rows) {
+    if (!row.mergedIntoStaffProfileId) {
+      candidates.push(row);
+      continue;
+    }
+    const survivor = resolveSurvivor(row);
+    if (survivor) {
+      // The survivor's record under the duplicate's name — matching sees the
+      // alias, everything downstream gets the surviving profile.
+      candidates.push({ ...survivor, firstName: row.firstName, lastName: row.lastName });
+    }
+  }
+  return candidates;
 }
 
 const ROSTER_MARKER = 'Deputy sync: roster';
@@ -894,7 +921,11 @@ export async function syncDocuments(connection: IntegrationConnection) {
 
       let profile = email ? await prisma.staffProfile.findUnique({ where: { email } }) : null;
       if (!profile && firstName && lastName) {
-        profile = await prisma.staffProfile.findFirst({ where: { firstName, lastName } });
+        profile = await prisma.staffProfile.findFirst({ where: { firstName, lastName, mergedIntoStaffProfileId: null } });
+      }
+      // An email or name hit on a merged duplicate re-points at the survivor.
+      if (profile?.mergedIntoStaffProfileId) {
+        profile = await prisma.staffProfile.findUnique({ where: { id: profile.mergedIntoStaffProfileId } }) ?? profile;
       }
 
       const candidates = await prisma.staffProfile.findMany({
