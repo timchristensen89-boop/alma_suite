@@ -360,7 +360,16 @@ export const posService = {
       select: { id: true, title: true, kind: true, category: true, venue: true, salePriceCents: true },
       orderBy: [{ category: 'asc' }, { title: 'asc' }]
     });
-    const byCategory = new Map<string, { name: string; kind: string; items: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null }> }>();
+    type RegisterItem = {
+      recipeId: string;
+      title: string;
+      priceCents: number;
+      venue: string | null;
+      variantOf?: string;
+      variants?: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null; label: string }>;
+    };
+    const byCategory = new Map<string, { name: string; kind: string; items: RegisterItem[] }>();
+    const itemRefs = new Map<string, RegisterItem>();
     for (const recipe of recipes) {
       if (hiddenItems.has(recipe.id)) continue;
       const name = recipe.kind === 'SET_MENU' ? 'Set Menus' : recipe.category?.trim() || 'Other';
@@ -370,12 +379,14 @@ export const posService = {
         kind: recipe.kind === 'SET_MENU' ? 'SET_MENU' : kindBucket(recipe.kind, recipe.category),
         items: []
       };
-      group.items.push({
+      const item: RegisterItem = {
         recipeId: recipe.id,
         title: recipe.title,
         priceCents: recipe.salePriceCents ?? 0,
         venue: recipe.venue
-      });
+      };
+      group.items.push(item);
+      itemRefs.set(recipe.id, item);
       byCategory.set(name, group);
     }
     const categories = Array.from(byCategory.values()).sort((a, b) => {
@@ -383,14 +394,34 @@ export const posService = {
       if (b.name === 'Set Menus') return 1;
       return a.name.localeCompare(b.name);
     });
-    const [eightySix, modifierGroups] = await Promise.all([
+    const [eightySix, modifierGroups, variantLinks] = await Promise.all([
       prisma.pos86.findMany({ select: { recipeId: true } }),
       prisma.posModifierGroup.findMany({
         where: { active: true },
         include: { options: { where: { active: true }, orderBy: { sortOrder: 'asc' } } },
         orderBy: { sortOrder: 'asc' }
-      })
+      }),
+      prisma.posVariantLink.findMany({ orderBy: [{ parentRecipeId: 'asc' }, { sortOrder: 'asc' }] })
     ]);
+    // Variants: children fold under their parent's tile on the register (the
+    // QR menu keeps the flat rows). A self-row labels the parent option.
+    const variantsByParent = new Map<string, NonNullable<RegisterItem['variants']>>();
+    for (const link of variantLinks) {
+      const child = itemRefs.get(link.childRecipeId);
+      if (!child) continue;
+      const list = variantsByParent.get(link.parentRecipeId) ?? [];
+      list.push({ recipeId: child.recipeId, title: child.title, priceCents: child.priceCents, venue: child.venue, label: link.label });
+      variantsByParent.set(link.parentRecipeId, list);
+      if (link.childRecipeId !== link.parentRecipeId) child.variantOf = link.parentRecipeId;
+    }
+    for (const [parentId, options] of variantsByParent) {
+      const parent = itemRefs.get(parentId);
+      if (!parent) continue;
+      if (!options.some((option) => option.recipeId === parentId)) {
+        options.unshift({ recipeId: parent.recipeId, title: parent.title, priceCents: parent.priceCents, venue: parent.venue, label: 'Standard' });
+      }
+      parent.variants = options;
+    }
     return {
       categories,
       itemCount: recipes.length,
@@ -404,6 +435,117 @@ export const posService = {
         options: group.options.map((option) => ({ id: option.id, name: option.name, priceCents: option.priceCents }))
       }))
     };
+  },
+
+  // ── Variants: one tile, several pours off the same stock ──────────────
+  async listVariants() {
+    const links = await prisma.posVariantLink.findMany({ orderBy: [{ parentRecipeId: 'asc' }, { sortOrder: 'asc' }] });
+    const ids = [...new Set(links.flatMap((link) => [link.parentRecipeId, link.childRecipeId]))];
+    const recipes = ids.length
+      ? await prisma.recipe.findMany({ where: { id: { in: ids } }, select: { id: true, title: true, salePriceCents: true } })
+      : [];
+    const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
+    const groups = new Map<
+      string,
+      { parentRecipeId: string; parentTitle: string; options: Array<{ recipeId: string; label: string; title: string; priceCents: number; self: boolean }> }
+    >();
+    for (const link of links) {
+      const group = groups.get(link.parentRecipeId) ?? {
+        parentRecipeId: link.parentRecipeId,
+        parentTitle: recipeById.get(link.parentRecipeId)?.title ?? '(missing item)',
+        options: []
+      };
+      const recipe = recipeById.get(link.childRecipeId);
+      group.options.push({
+        recipeId: link.childRecipeId,
+        label: link.label,
+        title: recipe?.title ?? '(missing item)',
+        priceCents: recipe?.salePriceCents ?? 0,
+        self: link.childRecipeId === link.parentRecipeId
+      });
+      groups.set(link.parentRecipeId, group);
+    }
+    return Array.from(groups.values());
+  },
+
+  async saveVariants(parentRecipeId: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const raw = Array.isArray(body.options) ? body.options : [];
+    const parent = await prisma.recipe.findUnique({ where: { id: parentRecipeId }, select: { id: true } });
+    if (!parent) throw new HttpError(404, 'Parent item not found.');
+    const rows = raw.map((entry, index) => {
+      const option = (entry ?? {}) as Record<string, unknown>;
+      const recipeId = str(option.recipeId);
+      const label = str(option.label).slice(0, 40);
+      if (!recipeId || !label) throw new HttpError(400, 'Each option needs an item and a label.');
+      return { parentRecipeId, childRecipeId: recipeId, label, sortOrder: index };
+    });
+    const childIds = rows.map((row) => row.childRecipeId);
+    if (new Set(childIds).size !== childIds.length) throw new HttpError(400, 'Each item can only appear once in the group.');
+    const clash = await prisma.posVariantLink.findFirst({
+      where: {
+        OR: [
+          { childRecipeId: { in: childIds }, NOT: { parentRecipeId } },
+          { parentRecipeId: { in: childIds.filter((id) => id !== parentRecipeId) } }
+        ]
+      }
+    });
+    if (clash) throw new HttpError(409, 'One of those items already belongs to another variant group.');
+    await prisma.$transaction([
+      prisma.posVariantLink.deleteMany({ where: { parentRecipeId } }),
+      ...(rows.length ? [prisma.posVariantLink.createMany({ data: rows })] : [])
+    ]);
+    return { ok: true };
+  },
+
+  async deleteVariantGroup(parentRecipeId: string) {
+    await prisma.posVariantLink.deleteMany({ where: { parentRecipeId } });
+    return { ok: true };
+  },
+
+  // Turnkey pour: "150ml glass of X at $15" becomes a real Recipe holding a
+  // fractional sub-recipe line to the parent, so a glass sold decrements the
+  // same stock as the bottle (150/750 of it) and costs cascade on updates.
+  async createPourVariant(parentRecipeId: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const label = str(body.label).slice(0, 40) || 'Glass';
+    const ml = Number(body.ml);
+    const parentMl = Number(body.parentMl) || 750;
+    const priceCents = Math.round(Number(body.priceCents));
+    if (!Number.isFinite(ml) || ml <= 0 || ml > parentMl) throw new HttpError(400, 'Pour size must be between 1ml and the bottle size.');
+    if (!Number.isFinite(priceCents) || priceCents <= 0) throw new HttpError(400, 'A price is required.');
+    const parent = await prisma.recipe.findUnique({
+      where: { id: parentRecipeId },
+      select: { id: true, title: true, kind: true, category: true, venue: true, estimatedCost: true }
+    });
+    if (!parent) throw new HttpError(404, 'Parent item not found.');
+    const factor = ml / parentMl;
+    const cost = (parent.estimatedCost ?? 0) * factor;
+    const recipe = await prisma.recipe.create({
+      data: {
+        title: `${parent.title} — ${label}`,
+        kind: parent.kind,
+        category: parent.category,
+        venue: parent.venue,
+        salePriceCents: priceCents,
+        status: 'ACTIVE',
+        isPrepRecipe: false,
+        estimatedCost: cost,
+        portionSize: ml,
+        portionUnit: 'ml',
+        notes: `Pour variant: ${ml}ml of the ${parentMl}ml ${parent.title}.`,
+        lines: { create: [{ ingredientName: parent.title, quantity: factor, unit: 'serve', subRecipeId: parent.id, cost, position: 0 }] }
+      }
+    });
+    const existing = await prisma.posVariantLink.findMany({ where: { parentRecipeId }, orderBy: { sortOrder: 'asc' } });
+    const needSelfRow = !existing.some((link) => link.childRecipeId === parentRecipeId);
+    await prisma.$transaction([
+      ...(needSelfRow
+        ? [prisma.posVariantLink.create({ data: { parentRecipeId, childRecipeId: parentRecipeId, label: str(body.parentLabel).slice(0, 40) || 'Bottle', sortOrder: 0 } })]
+        : []),
+      prisma.posVariantLink.create({ data: { parentRecipeId, childRecipeId: recipe.id, label, sortOrder: existing.length + 1 } })
+    ]);
+    return { recipeId: recipe.id, title: recipe.title, priceCents };
   },
 
   // 86 list: toggle an item sold-out; every register sees it on next menu load.

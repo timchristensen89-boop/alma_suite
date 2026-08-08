@@ -9,7 +9,7 @@ import { api, messageForError } from './api';
 // automatic weekend/public-holiday surcharge and any timed discounts — are
 // computed server-side on every cart change.
 
-type MenuItem = { recipeId: string; title: string; priceCents: number; venue: string | null };
+type MenuItem = { recipeId: string; title: string; priceCents: number; venue: string | null; variantOf?: string | null; variants?: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null; label: string }> | null };
 type MenuCategory = { name: string; kind: string; items: MenuItem[] };
 type OrderLine = {
   id?: string;
@@ -419,6 +419,7 @@ export function App() {
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
   const [mode86, setMode86] = useState(false);
   const [modSheet, setModSheet] = useState<null | { item: MenuItem; category: string; groups: ModifierGroup[]; chosen: Record<string, string[]>; notes: string }>(null);
+  const [variantSheet, setVariantSheet] = useState<MenuItem | null>(null);
   const [fireSheet, setFireSheet] = useState<null | Array<{ course: string; count: number; picked: boolean }>>(null);
   const [guestView, setGuestView] = useState<GuestProfile | null>(null);
   const [coversEdit, setCoversEdit] = useState<string>('');
@@ -1027,7 +1028,7 @@ export function App() {
   const visibleItems = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (term) return menu.flatMap((category) => category.items).filter((item) => item.title.toLowerCase().includes(term)).slice(0, 60);
-    return menu.find((category) => category.name === activeCategory)?.items ?? [];
+    return (menu.find((category) => category.name === activeCategory)?.items ?? []).filter((item) => !item.variantOf);
   }, [menu, activeCategory, search]);
 
   async function pushLines(next: OrderLine[]) {
@@ -1082,6 +1083,10 @@ export function App() {
           });
         })
         .catch((err) => setError(messageForError(err, 'Could not update the 86 list.')));
+      return;
+    }
+    if (item.variants && item.variants.length > 0) {
+      setVariantSheet(item);
       return;
     }
     if (eightySix.has(item.recipeId)) {
@@ -1846,7 +1851,7 @@ export function App() {
             {design === 'rail' && (activeCategory === '__all__' || (menu.some((category) => category.name === activeCategory) && !search)) ? (
               <div className="pos-list">
                 {(activeCategory === '__all__' ? menu : menu.filter((category) => category.name === activeCategory)).map((category) => {
-                  const rows = category.items.filter((item) => !search || item.title.toLowerCase().includes(search.toLowerCase()));
+                  const rows = category.items.filter((item) => (search ? item.title.toLowerCase().includes(search.toLowerCase()) : !item.variantOf));
                   if (rows.length === 0) return null;
                   const qtyOf = (recipeId: string) =>
                     (order?.lines ?? []).filter((line) => line.recipeId === recipeId).reduce((sum, line) => sum + line.quantity, 0);
@@ -2213,7 +2218,7 @@ export function App() {
                   <button
                     key={item.recipeId}
                     type="button"
-                    className={`pos-item ${hueClass(hueForCategory(categoryOf(item)))} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                    className={`pos-item ${hueClass(hueForCategory(categoryOf(item)))} ${eightySix.has(item.recipeId) ? 'is-86d' : ''} ${item.variants?.length ? 'has-variants' : ''}`}
                     onClick={() => addItem(item)}
                   >
                     {boardEdit ? (
@@ -3561,6 +3566,33 @@ export function App() {
         </div>
       ) : null}
 
+      {variantSheet ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>{variantSheet.title}</h2>
+            <p className="pos-muted">Which pour?</p>
+            <div className="pos-variant-list">
+              {(variantSheet.variants ?? []).map((option) => (
+                <button
+                  key={option.recipeId}
+                  type="button"
+                  className={eightySix.has(option.recipeId) ? 'is-86d' : ''}
+                  onClick={() => {
+                    setVariantSheet(null);
+                    addItem({ recipeId: option.recipeId, title: option.title, priceCents: option.priceCents, venue: option.venue });
+                  }}
+                >
+                  <span>{option.label}</span>
+                  <b>{money(option.priceCents)}</b>
+                </button>
+              ))}
+            </div>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setVariantSheet(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
       {groupSheet ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">

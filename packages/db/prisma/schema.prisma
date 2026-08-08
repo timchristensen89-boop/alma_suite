@@ -2970,6 +2970,22 @@ model Recipe {
   @@index([status])
 }
 
+// @domain: pos | home: suite
+// One product, several pours: each variant is a real Recipe (a glass is a
+// fractional sub-recipe of the bottle), grouped under one parent tile on the
+// register. A self-row (childRecipeId == parentRecipeId) labels the parent.
+model PosVariantLink {
+  id             String   @id @default(cuid())
+  parentRecipeId String
+  childRecipeId  String   @unique
+  label          String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([parentRecipeId])
+}
+
 // @domain: stock | home: suite
 model RecipeVenuePrice {
   id             String   @id @default(cuid())

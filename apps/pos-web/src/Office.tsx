@@ -15,9 +15,11 @@ type ModGroup = { id: string; name: string; required: boolean; maxSelect: number
 type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null };
 type MenuHide = { id: string; kind: string; key: string; createdAt: string };
 type MenuShape = { categories: Array<{ name: string; items: Array<{ recipeId: string; title: string; priceCents: number }> }> };
+type VariantOption = { recipeId: string; label: string; title: string; priceCents: number; self: boolean };
+type VariantGroup = { parentRecipeId: string; parentTitle: string; options: VariantOption[] };
 
 export function Office() {
-  const [tab, setTab] = useState<'printers' | 'menu' | 'modifiers' | 'rules' | 'identity'>('printers');
+  const [tab, setTab] = useState<'printers' | 'menu' | 'modifiers' | 'variants' | 'rules' | 'identity'>('printers');
   const [hides, setHides] = useState<MenuHide[]>([]);
   const [fullMenu, setFullMenu] = useState<MenuShape | null>(null);
   const [hideSearch, setHideSearch] = useState('');
@@ -35,6 +37,11 @@ export function Office() {
   }>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [variantGroups, setVariantGroups] = useState<VariantGroup[]>([]);
+  const [variantEdit, setVariantEdit] = useState<VariantGroup | null>(null);
+  const [variantSearch, setVariantSearch] = useState('');
+  const [optionSearch, setOptionSearch] = useState('');
+  const [pour, setPour] = useState({ label: 'Glass 150ml', ml: '150', parentMl: '750', price: '' });
 
   const refresh = useCallback(async () => {
     try {
@@ -48,6 +55,7 @@ export function Office() {
       setGroups(menu.modifierGroups ?? []);
       setFullMenu(menu as unknown as MenuShape);
       setHides(await api<MenuHide[]>('/api/pos/menu-hides'));
+      setVariantGroups(await api<VariantGroup[]>('/api/pos/variants'));
       setIdentities(await Promise.all(VENUES.map((venue) => api<Identity>(`/api/pos/venue-settings?venue=${encodeURIComponent(venue)}`))));
       setError(null);
     } catch (err) {
@@ -103,6 +111,7 @@ export function Office() {
             ['printers', 'Printers & dockets'],
             ['menu', 'Menu visibility'],
             ['modifiers', 'Modifiers'],
+            ['variants', 'Variants'],
             ['rules', 'Surcharges & discounts'],
             ['identity', 'Venues & receipts']
           ] as const
@@ -408,6 +417,226 @@ export function Office() {
                 </div>
               </div>
             ) : null}
+          </section>
+        ) : null}
+
+        {tab === 'variants' ? (
+          <section>
+            <p className="office-lead">
+              One tile on the register, several pours: a 150ml glass is a fraction of the same bottle, so selling either
+              draws down the same stock and the costs stay true. Pick a product, label its pours, done.
+            </p>
+
+            {variantGroups.map((group) => (
+              <div key={group.parentRecipeId} className="office-card">
+                <strong className="office-variant-title">{group.parentTitle}</strong>
+                <span className="office-variant-opts">
+                  {group.options.map((option) => `${option.label} $${(option.priceCents / 100).toFixed(2)}`).join(' · ')}
+                </span>
+                <button
+                  type="button"
+                  className="office-add"
+                  onClick={() => {
+                    setVariantEdit(JSON.parse(JSON.stringify(group)) as VariantGroup);
+                    setOptionSearch('');
+                  }}
+                >
+                  Edit
+                </button>
+              </div>
+            ))}
+
+            {!variantEdit ? (
+              <>
+                <h3 className="office-subhead">Start a variant group</h3>
+                <input
+                  className="office-input office-input-wide"
+                  placeholder="Search the menu for the parent item (e.g. the bottle)…"
+                  value={variantSearch}
+                  onChange={(event) => setVariantSearch(event.currentTarget.value)}
+                />
+                {variantSearch.trim().length >= 2
+                  ? (fullMenu?.categories ?? [])
+                      .flatMap((category) => category.items)
+                      .filter((item) => item.title.toLowerCase().includes(variantSearch.trim().toLowerCase()))
+                      .slice(0, 8)
+                      .map((item) => (
+                        <button
+                          key={item.recipeId}
+                          type="button"
+                          className="office-row-btn"
+                          onClick={() => {
+                            const existing = variantGroups.find((group) => group.parentRecipeId === item.recipeId);
+                            setVariantEdit(
+                              existing
+                                ? (JSON.parse(JSON.stringify(existing)) as VariantGroup)
+                                : {
+                                    parentRecipeId: item.recipeId,
+                                    parentTitle: item.title,
+                                    options: [{ recipeId: item.recipeId, label: 'Bottle', title: item.title, priceCents: item.priceCents, self: true }]
+                                  }
+                            );
+                            setVariantSearch('');
+                            setOptionSearch('');
+                          }}
+                        >
+                          {item.title} <small>${(item.priceCents / 100).toFixed(2)}</small>
+                        </button>
+                      ))
+                  : null}
+              </>
+            ) : (
+              <div className="office-variant-editor">
+                <h3 className="office-subhead">📦 {variantEdit.parentTitle}</h3>
+                {variantEdit.options.map((option, index) => (
+                  <div key={option.recipeId} className="office-card">
+                    <input
+                      className="office-input"
+                      placeholder="Label (e.g. Glass 150ml)"
+                      value={option.label}
+                      onChange={(event) => {
+                        const label = event.currentTarget.value;
+                        setVariantEdit((current) =>
+                          current ? { ...current, options: current.options.map((o, i) => (i === index ? { ...o, label } : o)) } : current
+                        );
+                      }}
+                    />
+                    <span className="office-variant-opts">
+                      {option.title} · ${(option.priceCents / 100).toFixed(2)}
+                      {option.self ? ' · the tile itself' : ''}
+                    </span>
+                    <button
+                      type="button"
+                      className="office-delete"
+                      onClick={() =>
+                        setVariantEdit((current) => (current ? { ...current, options: current.options.filter((_, i) => i !== index) } : current))
+                      }
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+
+                <p className="office-lead">Add an existing menu item as a pour:</p>
+                <input
+                  className="office-input office-input-wide"
+                  placeholder="Search items…"
+                  value={optionSearch}
+                  onChange={(event) => setOptionSearch(event.currentTarget.value)}
+                />
+                {optionSearch.trim().length >= 2
+                  ? (fullMenu?.categories ?? [])
+                      .flatMap((category) => category.items)
+                      .filter(
+                        (item) =>
+                          item.title.toLowerCase().includes(optionSearch.trim().toLowerCase()) &&
+                          !variantEdit.options.some((option) => option.recipeId === item.recipeId)
+                      )
+                      .slice(0, 6)
+                      .map((item) => (
+                        <button
+                          key={item.recipeId}
+                          type="button"
+                          className="office-row-btn"
+                          onClick={() => {
+                            setVariantEdit((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    options: [...current.options, { recipeId: item.recipeId, label: '', title: item.title, priceCents: item.priceCents, self: false }]
+                                  }
+                                : current
+                            );
+                            setOptionSearch('');
+                          }}
+                        >
+                          {item.title} <small>${(item.priceCents / 100).toFixed(2)}</small>
+                        </button>
+                      ))
+                  : null}
+
+                <p className="office-lead">…or create a new pour from the same bottle:</p>
+                <div className="office-card">
+                  <input className="office-input" placeholder="Label" value={pour.label} onChange={(event) => setPour({ ...pour, label: event.currentTarget.value })} />
+                  <input className="office-input office-input-num" placeholder="Pour ml" inputMode="numeric" value={pour.ml} onChange={(event) => setPour({ ...pour, ml: event.currentTarget.value })} />
+                  <input className="office-input office-input-num" placeholder="Bottle ml" inputMode="numeric" value={pour.parentMl} onChange={(event) => setPour({ ...pour, parentMl: event.currentTarget.value })} />
+                  <input className="office-input office-input-num" placeholder="Price $" inputMode="decimal" value={pour.price} onChange={(event) => setPour({ ...pour, price: event.currentTarget.value })} />
+                  <button
+                    type="button"
+                    className="office-add"
+                    onClick={() => {
+                      const priceCents = Math.round(Number(pour.price) * 100);
+                      void (async () => {
+                        try {
+                          await api(`/api/pos/variants/${variantEdit.parentRecipeId}`, {
+                            method: 'PUT',
+                            body: JSON.stringify({ options: variantEdit.options.filter((option) => option.label.trim()).map((option) => ({ recipeId: option.recipeId, label: option.label.trim() })) })
+                          });
+                          await api(`/api/pos/variants/${variantEdit.parentRecipeId}/pour`, {
+                            method: 'POST',
+                            body: JSON.stringify({ label: pour.label.trim() || 'Glass', ml: Number(pour.ml), parentMl: Number(pour.parentMl), priceCents })
+                          });
+                          const fresh = await api<VariantGroup[]>('/api/pos/variants');
+                          setVariantGroups(fresh);
+                          const mine = fresh.find((group) => group.parentRecipeId === variantEdit.parentRecipeId);
+                          if (mine) setVariantEdit(JSON.parse(JSON.stringify(mine)) as VariantGroup);
+                          setPour({ label: 'Glass 150ml', ml: '150', parentMl: pour.parentMl, price: '' });
+                          setInfo('Pour created — it draws down the same bottle.');
+                        } catch (err) {
+                          setError(messageForError(err, 'Could not create the pour.'));
+                        }
+                      })();
+                    }}
+                  >
+                    Create pour
+                  </button>
+                </div>
+
+                <div className="office-variant-actions">
+                  <button
+                    type="button"
+                    className="office-add"
+                    onClick={() => {
+                      const options = variantEdit.options.filter((option) => option.label.trim());
+                      if (options.length !== variantEdit.options.length) {
+                        setError('Give every option a label first.');
+                        return;
+                      }
+                      void api(`/api/pos/variants/${variantEdit.parentRecipeId}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ options: options.map((option) => ({ recipeId: option.recipeId, label: option.label.trim() })) })
+                      })
+                        .then(() => {
+                          setInfo('Variant group saved.');
+                          setVariantEdit(null);
+                          void refresh();
+                        })
+                        .catch((err) => setError(messageForError(err, 'Could not save the group.')));
+                    }}
+                  >
+                    Save group
+                  </button>
+                  <button
+                    type="button"
+                    className="office-delete"
+                    onClick={() => {
+                      void api(`/api/pos/variants/${variantEdit.parentRecipeId}`, { method: 'DELETE' })
+                        .then(() => {
+                          setInfo('Variant group removed (the items stay on the menu).');
+                          setVariantEdit(null);
+                          void refresh();
+                        })
+                        .catch((err) => setError(messageForError(err, 'Could not remove it.')));
+                    }}
+                  >
+                    Delete group
+                  </button>
+                  <button type="button" className="office-back" onClick={() => setVariantEdit(null)}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
         ) : null}
 

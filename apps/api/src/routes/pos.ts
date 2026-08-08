@@ -168,6 +168,38 @@ posRouter.get('/live', async (_req, res, next) => {
   }
 });
 
+posRouter.get('/variants', async (_req, res, next) => {
+  try {
+    res.json(await posService.listVariants());
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.put('/variants/:parentId', async (req, res, next) => {
+  try {
+    res.json(await posService.saveVariants(req.params.parentId, req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.delete('/variants/:parentId', async (req, res, next) => {
+  try {
+    res.json(await posService.deleteVariantGroup(req.params.parentId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/variants/:parentId/pour', async (req, res, next) => {
+  try {
+    res.json(await posService.createPourVariant(req.params.parentId, req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.get('/menu-hides', async (_req, res, next) => {
   try {
     res.json(await posService.listMenuHides());
