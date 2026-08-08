@@ -113,6 +113,14 @@ posRouter.post('/orders/:id/pay', async (req, res, next) => {
   }
 });
 
+posRouter.post('/orders/:id/payments/:paymentId/undo', async (req, res, next) => {
+  try {
+    res.json(await posService.undoPayment(String(req.params.id), String(req.params.paymentId), req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.post('/orders/:id/void', async (req, res, next) => {
   try {
     res.json(await posService.voidOrder(String(req.params.id), req.body, !req.user && Boolean(req.deviceUser)));

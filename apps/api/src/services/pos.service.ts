@@ -591,15 +591,14 @@ export const posService = {
   // Refund a settled bill, fully or partially — a negative REFUND payment
   // plus a mandatory-reason audit record. Cash refunds count against the
   // open drawer's expected cash automatically (negative CASH sum).
-  async refundOrder(id: string, input: unknown, requireManager = false) {
+  async refundOrder(id: string, input: unknown, _requireManager = false) {
     const body = (input ?? {}) as Record<string, unknown>;
     const reason = str(body.reason);
     requireReason('COMP', reason);
-    let staffName = str(body.staffName) || 'Unknown';
-    if (requireManager) {
-      const approvedBy = await verifyManagerPin(str(body.managerPin));
-      staffName = `${staffName} (approved by ${approvedBy})`;
-    }
+    // Refunds are management-only for EVERY session type: a manager PIN is
+    // entered for this one action and the approver lands on the audit trail.
+    const approvedBy = await verifyManagerPin(str(body.managerPin));
+    const staffName = `${str(body.staffName) || 'Unknown'} (approved by ${approvedBy})`;
     const method = str(body.method).toUpperCase() === 'CASH' ? 'CASH' : 'REFUND';
     const order = await prisma.posOrder.findUnique({ where: { id }, include: { payments: true } });
     if (!order) throw new HttpError(404, 'Bill not found.');
@@ -1003,6 +1002,45 @@ export const posService = {
           hourly: [...entry.hourly.entries()].sort((a, b) => a[0] - b[0]).map(([hour, cents]) => ({ hour, cents }))
         }))
     };
+  },
+
+  // Undo a recorded payment — management-only (manager PIN per action).
+  // Removes the payment record, reopens the bill if it was settled, audits
+  // the approver. Gift-card payments must be reversed through the gift card
+  // system so the card balance stays true.
+  async undoPayment(orderId: string, paymentId: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const approvedBy = await verifyManagerPin(str(body.managerPin));
+    const payment = await prisma.posPayment.findUnique({ where: { id: paymentId } });
+    if (!payment || payment.orderId !== orderId) throw new HttpError(404, 'Payment not found on this bill.');
+    if (payment.method === 'GIFT_CARD') {
+      throw new HttpError(409, 'Gift card payments are reversed through the Gift Cards admin so the card balance stays right.');
+    }
+    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, select: { venue: true, status: true, orderNumber: true, tableLabel: true, tipCents: true } });
+    if (!order) throw new HttpError(404, 'Bill not found.');
+    await prisma.posPayment.delete({ where: { id: paymentId } });
+    await prisma.posOrder.update({
+      where: { id: orderId },
+      data: {
+        status: 'OPEN',
+        paidAt: null,
+        serviceDate: null,
+        tipCents: Math.max(0, order.tipCents - payment.tipCents)
+      }
+    });
+    await prisma.posAdjustment.create({
+      data: {
+        venue: order.venue,
+        orderId,
+        kind: 'PAYMENT_UNDO',
+        reason: 'Manager approved',
+        staffName: approvedBy,
+        itemName: `${payment.method} ${(payment.amountCents / 100).toFixed(2)} on ${order.tableLabel ? `table ${order.tableLabel}` : `#${order.orderNumber}`}`,
+        amountCents: payment.amountCents
+      }
+    });
+    await postPosActuals(order.venue).catch(() => undefined);
+    return this.getOrder(orderId);
   },
 
   // Menu curation: hide/restore categories and items globally.

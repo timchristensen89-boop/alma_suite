@@ -2645,6 +2645,59 @@ export function App() {
                 <span>{money(receipt.totalCents + receipt.tipCents)}</span>
               </div>
             </div>
+            {(receipt as Order & { status?: string }).status === 'PAID' && receipt.payments.length > 0 ? (
+              <div className="pos-manage-row">
+                <p className="pos-muted">Management — manager PIN required for each action:</p>
+                {receipt.payments.map((payment, index) => (
+                  <div key={(payment as { id?: string }).id ?? index} className="pos-manage-payment">
+                    <span>
+                      {payment.method}
+                      {payment.amountCents < 0 ? ' (refund)' : ''} · {money(payment.amountCents + payment.tipCents)}
+                    </span>
+                    {(payment as { id?: string }).id ? (
+                      <button
+                        type="button"
+                        className="pos-ghost"
+                        onClick={() =>
+                          setManagerGate({
+                            message: `Undo the ${payment.method} payment of ${money(payment.amountCents + payment.tipCents)} — the bill reopens as unpaid.`,
+                            pin: '',
+                            retry: (pin) => {
+                              void api<Order>(`/api/pos/orders/${receipt.id}/payments/${(payment as { id?: string }).id}/undo`, {
+                                method: 'POST',
+                                body: JSON.stringify({ managerPin: pin })
+                              })
+                                .then((reopened) => {
+                                  setManagerGate(null);
+                                  setReceipt(null);
+                                  setOrder(reopened);
+                                  setView('register');
+                                  setInfo('Payment undone — the bill is open again.');
+                                  void refreshOpenOrders();
+                                })
+                                .catch((err) => setError(messageForError(err, 'Could not undo the payment.')));
+                            }
+                          })
+                        }
+                      >
+                        Undo
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="pos-ghost"
+                  onClick={() => {
+                    const refunded = receipt.payments.filter((payment) => payment.amountCents < 0).reduce((sum, payment) => sum - payment.amountCents, 0);
+                    setReceipt(null);
+                    setRefunding({ order: receipt, amount: String((receipt.totalCents + receipt.tipCents - refunded) / 100), reason: '', method: 'REFUND' });
+                  }}
+                >
+                  Refund…
+                </button>
+              </div>
+            ) : null}
             <div className="pos-email-row">
               <input
                 className="pos-tender"
