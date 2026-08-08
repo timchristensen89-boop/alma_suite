@@ -500,3 +500,34 @@ body:not(.pos-v2) .pos-cart .pos-ghost { color: #f3efe6; border-color: rgba(255,
 body:not(.pos-v2) .pos-cart .pos-line-chips button { color: rgba(243, 239, 230, 0.8); border-color: rgba(255, 255, 255, 0.25); background: transparent; }
 body:not(.pos-v2) .pos-cart-strip { background: #1f3524; color: #f3efe6; border-color: rgba(255, 255, 255, 0.08); }
 body.pos-dark:not(.pos-v2) .pos-cart, body.pos-dark:not(.pos-v2) .pos-cart-strip { background: #10160f; }
+
+/* Bill course drag: grip lifts a line into another course; fired = locked */
+.pos-line-grip { flex: none; align-self: center; font-style: normal; font-size: 13px; opacity: 0.45; cursor: grab; touch-action: none; padding: 4px 2px; user-select: none; }
+.pos-line-grip:not(.is-locked):hover { opacity: 0.9; }
+.pos-line-grip.is-locked { cursor: default; font-size: 11px; opacity: 0.55; }
+.pos-line.is-dragging { opacity: 0.45; }
+.pos-course-group.is-drop-target, .pos-course-head.is-drop-target { outline: 2px dashed currentColor; outline-offset: -2px; border-radius: 10px; }
+
+/* Classic green cart: the green runs through the subtotal footer too */
+body:not(.pos-v2) .pos-cart .pos-cart-foot { background: transparent; border-top-color: rgba(255, 255, 255, 0.16); }
+body:not(.pos-v2) .pos-cart .pos-sumline { color: rgba(243, 239, 230, 0.78); }
+body:not(.pos-v2) .pos-cart .pos-sumline-good { color: #eeb96b; }
+body:not(.pos-v2) .pos-cart .pos-course-head { color: rgba(243, 239, 230, 0.92); border-bottom-color: rgba(255, 255, 255, 0.12); }
+body:not(.pos-v2) .pos-cart .pos-course { background: rgba(255, 255, 255, 0.14); color: #f3efe6; }
+body:not(.pos-v2) .pos-cart .pos-held { color: #eeb96b; }
+body:not(.pos-v2) .pos-cart .pos-stepper { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.18); }
+body:not(.pos-v2) .pos-cart .pos-stepper button { color: rgba(243, 239, 230, 0.85); }
+body:not(.pos-v2) .pos-cart .pos-stepper button:hover { background: rgba(255, 255, 255, 0.12); }
+body:not(.pos-v2) .pos-cart .pos-stepper b { color: #f3efe6; }
+body:not(.pos-v2) .pos-cart .pos-charge { background: #f3efe6 !important; color: #1f3524 !important; border-color: #f3efe6 !important; }
+body:not(.pos-v2) .pos-cart .pos-line-grip { color: rgba(243, 239, 230, 0.8); }
+
+/* Bill text a touch smaller (both designs) */
+.pos-cart .pos-line-name { font-size: 12.5px; }
+.pos-cart .pos-line-total { font-size: 12.5px; }
+.pos-cart .pos-course-head { font-size: 10.5px; padding-top: 9px; padding-bottom: 9px; }
+.pos-cart .pos-line-mods { font-size: 10.5px; }
+.pos-cart .pos-sumline { font-size: 12px; }
+.pos-cart .pos-stepper button { width: 23px; height: 23px; font-size: 13px; }
+.pos-cart .pos-totals { font-size: 13px; }
+.pos-cart .pos-totals strong { font-size: 19px; }

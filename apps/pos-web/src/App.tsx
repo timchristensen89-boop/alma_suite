@@ -1032,6 +1032,41 @@ export function App() {
     return (menu.find((category) => category.name === activeCategory)?.items ?? []).filter((item) => !item.variantOf);
   }, [menu, activeCategory, search]);
 
+  // Drag a bill line into another course. Fired lines are locked — a
+  // call-away is a promise to the kitchen and is never silently rearranged.
+  function lineCoursePointerDown(event: React.PointerEvent, lineId: string) {
+    if (!order) return;
+    event.preventDefault();
+    const source = (event.currentTarget as HTMLElement).closest('.pos-line') as HTMLElement | null;
+    const lines = order.lines;
+    let dropCourse: string | null = null;
+    source?.classList.add('is-dragging');
+    const onMove = (nativeEvent: PointerEvent) => {
+      nativeEvent.preventDefault();
+      const hit = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY);
+      const target = hit?.closest('[data-course-drop]');
+      document.querySelectorAll('[data-course-drop].is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+      dropCourse = target?.getAttribute('data-course-drop') ?? null;
+      if (target) target.classList.add('is-drop-target');
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      source?.classList.remove('is-dragging');
+      document.querySelectorAll('[data-course-drop].is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
+      const line = lines.find((candidate) => candidate.id === lineId);
+      if (dropCourse && line && line.course !== dropCourse) {
+        const landed = dropCourse;
+        setCourseOpen((current) => ({ ...current, [landed]: true }));
+        void pushLines(lines.map((candidate) => (candidate.id === lineId ? { ...candidate, course: landed } : candidate)));
+      }
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  }
+
   async function pushLines(next: OrderLine[]) {
     if (!order) return;
     if (order.id.startsWith('local-')) {
@@ -1114,6 +1149,8 @@ export function App() {
       modifiers: modifiers.length ? modifiers : null,
       notes: notes || null
     };
+    // The course the item lands in opens so you see it arrive.
+    setCourseOpen((current) => ({ ...current, [line.course ?? 'NOW']: true }));
     if (!order) {
       setBusy(true);
       try {
@@ -2279,9 +2316,10 @@ export function App() {
                 </div>
               ) : null}
               {billCourses.map(([groupCourse, entries]) => (
-                <div key={groupCourse} className={`pos-course-group ${courseIsOpen(groupCourse, entries.length) ? 'is-open' : ''}`}>
+                <div key={groupCourse} data-course-drop={groupCourse} className={`pos-course-group ${courseIsOpen(groupCourse, entries.length) ? 'is-open' : ''}`}>
                   <button
                     type="button"
+                    data-course-drop={groupCourse}
                     className={`pos-course-head ${targetCourse === groupCourse ? 'is-target' : ''}`}
                     onClick={() => {
                       const open = courseIsOpen(groupCourse, entries.length);
@@ -2325,7 +2363,12 @@ export function App() {
                     </small>
                   </button>
                   {courseIsOpen(groupCourse, entries.length) ? entries.map(({ line, index }) => (
-                <div key={`${line.recipeId}-${index}`} className="pos-line">
+                <div key={`${line.recipeId}-${index}`} className={`pos-line ${(line as { sentAt?: string | null }).sentAt ? 'is-locked' : ''}`}>
+                  {(line as { sentAt?: string | null }).sentAt ? (
+                    <i className="pos-line-grip is-locked" title="Called away — locked to its course">🔒</i>
+                  ) : line.id ? (
+                    <i className="pos-line-grip" title="Drag into another course" onPointerDown={(event) => lineCoursePointerDown(event, line.id!)}>⠿</i>
+                  ) : null}
                   <span className="pos-line-main">
                     <span
                       className="pos-line-name"
