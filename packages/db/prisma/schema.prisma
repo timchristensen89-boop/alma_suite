@@ -4896,6 +4896,24 @@ model Pos86 {
   createdAt DateTime @default(now())
 }
 
+// A fired docket, persisted for the kitchen display: one ticket per station
+// per fire. Bumped tickets drop off the rail (recallable).
+model PosTicket {
+  id           String    @id @default(cuid())
+  venue        String
+  station      String
+  orderId      String
+  orderNumber  Int
+  tableLabel   String?
+  covers       Int?
+  openedByName String?
+  lines        Json
+  firedAt      DateTime  @default(now())
+  bumpedAt     DateTime?
+
+  @@index([venue, station, bumpedAt])
+}
+
 model PosRule {
   id        String   @id @default(cuid())
   kind      String // SURCHARGE | DISCOUNT

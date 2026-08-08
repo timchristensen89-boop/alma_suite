@@ -707,6 +707,21 @@ export const posService = {
       where: { id: { in: order.lines.map((line) => line.id) } },
       data: { sentAt: new Date() }
     });
+    // Persist each docket as a KDS ticket.
+    if (dockets.length > 0) {
+      await prisma.posTicket.createMany({
+        data: dockets.map((docket) => ({
+          venue: order.venue,
+          station: docket.profile,
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          tableLabel: order.tableLabel,
+          covers: order.covers,
+          openedByName: order.openedByName,
+          lines: docket.lines as object[]
+        }))
+      });
+    }
     return { dockets, sent: order.lines.length };
   },
 
@@ -1029,6 +1044,41 @@ export const posService = {
         totalCents: row._sum.totalCents ?? 0
       }))
     };
+  },
+
+  // ── Kitchen display ────────────────────────────────────────────────────
+  async kdsBoard(venue: string | null, station: string | null) {
+    if (!venue) throw new HttpError(400, 'venue is required.');
+    const where = { venue, ...(station ? { station } : {}) };
+    const [active, recent] = await Promise.all([
+      prisma.posTicket.findMany({ where: { ...where, bumpedAt: null }, orderBy: { firedAt: 'asc' }, take: 60 }),
+      prisma.posTicket.findMany({
+        where: { ...where, bumpedAt: { not: null } },
+        orderBy: { bumpedAt: 'desc' },
+        take: 6
+      })
+    ]);
+    // All-day counts: what the station still owes across active tickets.
+    const allDay = new Map<string, number>();
+    for (const ticket of active) {
+      for (const line of ticket.lines as Array<{ name: string; quantity: number }>) {
+        allDay.set(line.name, (allDay.get(line.name) ?? 0) + line.quantity);
+      }
+    }
+    return {
+      tickets: active,
+      recent,
+      allDay: Array.from(allDay.entries())
+        .map(([name, quantity]) => ({ name, quantity }))
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 12)
+    };
+  },
+
+  async kdsBump(id: string, recall = false) {
+    const ticket = await prisma.posTicket.findUnique({ where: { id }, select: { id: true } });
+    if (!ticket) throw new HttpError(404, 'Ticket not found.');
+    return prisma.posTicket.update({ where: { id }, data: { bumpedAt: recall ? null : new Date() } });
   },
 
   // Tonight's bookings for the floor overlay — matched to tables by label.

@@ -225,6 +225,35 @@ posRouter.delete('/modifier-groups/:id', async (req, res, next) => {
   }
 });
 
+posRouter.get('/kds', async (req, res, next) => {
+  try {
+    res.json(
+      await posService.kdsBoard(
+        typeof req.query.venue === 'string' ? req.query.venue : null,
+        typeof req.query.station === 'string' ? req.query.station : null
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/kds/:id/bump', async (req, res, next) => {
+  try {
+    res.json(await posService.kdsBump(String(req.params.id), false));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/kds/:id/recall', async (req, res, next) => {
+  try {
+    res.json(await posService.kdsBump(String(req.params.id), true));
+  } catch (error) {
+    next(error);
+  }
+});
+
 posRouter.get('/adjust-reasons', (_req, res) => {
   res.json(posService.adjustReasons());
 });
