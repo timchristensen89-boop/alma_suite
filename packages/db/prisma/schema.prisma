@@ -3285,6 +3285,27 @@ model StockItemAlias {
   @@map("stock_item_aliases")
 }
 
+/// A spelling of a UNIT (not a product): "KILO" means kg, "Unit" means each,
+/// "Btl" means bottle. Consulted by the shared unit conversion in
+/// @alma/shared stock-units.ts so Loaded counts, invoices and recipe lines
+/// all read units the same way. Seeded with the defaults from
+/// DEFAULT_UNIT_ALIASES and editable in Stock → Setup → Units; once rows
+/// exist they replace the built-in list entirely, so deleting a seeded row
+/// really turns it off.
+// @domain: stock | home: stock
+model StockUnitAlias {
+  id          String   @id @default(cuid())
+  /// The label as people write it, normalised (lowercase, trimmed).
+  alias       String   @unique
+  /// The canonical unit token it means ("kg", "each", "bottle").
+  canonical   String
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("stock_unit_aliases")
+}
+
 model SupplierInvoiceLine {
   id                String          @id @default(cuid())
   supplierInvoiceId String
@@ -4684,11 +4705,16 @@ model PosOrder {
   // UTC midnight of the Sydney trading day the order was PAID on (null while open).
   serviceDate   DateTime?
   status        String    @default("OPEN") // OPEN | PAID | VOID
-  subtotalCents Int       @default(0) // inc GST, before discount
+  subtotalCents Int       @default(0) // inc GST, before discount/surcharge
   discountCents Int       @default(0)
-  totalCents    Int       @default(0) // inc GST, after discount
+  discountLabel String?
+  surchargeCents Int      @default(0)
+  surchargeLabel String?
+  totalCents    Int       @default(0) // inc GST, after discount + surcharge
   gstCents      Int       @default(0) // 1/11 of total (GST-inclusive pricing)
   tipCents      Int       @default(0)
+  tableLabel    String?
+  covers        Int?
   notes         String?
   openedByName  String?
   paidAt        DateTime?
@@ -4711,6 +4737,7 @@ model PosOrderLine {
   unitPriceCents Int
   quantity       Int
   totalCents     Int
+  course         String?
   notes          String?
   createdAt      DateTime @default(now())
   order          PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -4733,4 +4760,20 @@ model PosPayment {
   order         PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
+}
+
+// Automatic pricing rules: weekend/public-holiday surcharges and timed
+// discounts (happy hour). Applied server-side on every order recompute.
+model PosRule {
+  id        String   @id @default(cuid())
+  kind      String // SURCHARGE | DISCOUNT
+  label     String
+  percent   Float
+  weekdays  String // csv of JS weekday numbers 0-6, '' = none
+  holidays  Boolean  @default(false)
+  startMinute Int?
+  endMinute   Int?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

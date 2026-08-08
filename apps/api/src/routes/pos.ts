@@ -68,6 +68,14 @@ posRouter.post('/orders/:id/void', async (req, res, next) => {
   }
 });
 
+posRouter.get('/rules', async (_req, res, next) => {
+  try {
+    res.json(await posService.listRules());
+  } catch (error) {
+    next(error);
+  }
+});
+
 posRouter.get('/day-summary', async (req, res, next) => {
   try {
     res.json(

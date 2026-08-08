@@ -1,5 +1,6 @@
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
+import { nswHolidayName } from '../lib/nsw-holidays.js';
 
 // ── Alma POS — counter-mode register MVP ─────────────────────────────────────
 // The register sells the menu that already lives in the suite: active recipes
@@ -15,9 +16,81 @@ import { HttpError } from '../lib/http.js';
 
 const GST_DIVISOR = 11;
 
+function sydneyNow(): { dateKey: string; weekday: number; minute: number } {
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Sydney',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short'
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  const dateKey = `${get('year')}-${get('month')}-${get('day')}`;
+  const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return {
+    dateKey,
+    weekday: weekdayNames.indexOf(get('weekday').slice(0, 3)),
+    minute: Number(get('hour')) * 60 + Number(get('minute'))
+  };
+}
+
 function sydneyTodayUtcMidnight(): Date {
-  const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date());
-  return new Date(`${key}T00:00:00Z`);
+  return new Date(`${sydneyNow().dateKey}T00:00:00Z`);
+}
+
+// Seeded once: Alma's standing pricing rules (from the menu smallprint).
+const DEFAULT_RULES = [
+  { kind: 'SURCHARGE', label: 'Weekend surcharge 10%', percent: 10, weekdays: '0,6', holidays: false },
+  { kind: 'SURCHARGE', label: 'Public holiday surcharge 15%', percent: 15, weekdays: '', holidays: true }
+];
+
+async function activeRules() {
+  const count = await prisma.posRule.count();
+  if (count === 0) {
+    await prisma.posRule.createMany({ data: DEFAULT_RULES });
+  }
+  return prisma.posRule.findMany({ where: { active: true } });
+}
+
+// Which rules bite right now (Sydney)? Holiday surcharges REPLACE weekend
+// ones when both match (a public-holiday Saturday charges 15%, not 25%).
+async function applicableRules() {
+  const now = sydneyNow();
+  const holiday = nswHolidayName(now.dateKey) !== null;
+  const rules = (await activeRules()).filter((rule) => {
+    const weekdayHit = rule.weekdays.split(',').filter(Boolean).map(Number).includes(now.weekday);
+    const holidayHit = rule.holidays && holiday;
+    if (!weekdayHit && !holidayHit) return false;
+    if (rule.startMinute != null && now.minute < rule.startMinute) return false;
+    if (rule.endMinute != null && now.minute >= rule.endMinute) return false;
+    return true;
+  });
+  const surcharges = rules.filter((rule) => rule.kind === 'SURCHARGE');
+  const holidaySurcharge = surcharges.find((rule) => rule.holidays && holiday);
+  return {
+    surcharge: holidaySurcharge ?? surcharges[0] ?? null,
+    discounts: rules.filter((rule) => rule.kind === 'DISCOUNT')
+  };
+}
+
+// Recompute an order's money from its lines + the rules in force right now.
+async function recomputeOrder(id: string) {
+  const lines = await prisma.posOrderLine.findMany({ where: { orderId: id } });
+  const subtotalCents = lines.reduce((sum, line) => sum + line.totalCents, 0);
+  const { surcharge, discounts } = await applicableRules();
+  const surchargeCents = surcharge ? Math.round((subtotalCents * surcharge.percent) / 100) : 0;
+  const autoDiscount = discounts[0] ?? null;
+  const discountCents = autoDiscount ? Math.round((subtotalCents * autoDiscount.percent) / 100) : 0;
+  const totalCents = Math.max(0, subtotalCents - discountCents + surchargeCents);
+  return prisma.posOrder.update({
+    where: { id },
+    data: {
+      subtotalCents,
+      surchargeCents,
+      surchargeLabel: surcharge?.label ?? null,
+      discountCents,
+      discountLabel: autoDiscount?.label ?? null,
+      totalCents,
+      gstCents: Math.round(totalCents / GST_DIVISOR)
+    }
+  });
 }
 
 function asInt(value: unknown, label: string, opts: { min?: number; max?: number } = {}): number {
@@ -37,7 +110,7 @@ const ORDER_INCLUDE = {
   payments: { orderBy: { createdAt: 'asc' as const } }
 };
 
-type LineInput = { recipeId?: string | null; name: string; unitPriceCents: number; quantity: number; notes?: string | null };
+type LineInput = { recipeId?: string | null; name: string; unitPriceCents: number; quantity: number; course?: string | null; notes?: string | null };
 
 function parseLines(raw: unknown): LineInput[] {
   if (!Array.isArray(raw)) throw new HttpError(400, 'lines must be an array.');
@@ -50,6 +123,7 @@ function parseLines(raw: unknown): LineInput[] {
       name: name.slice(0, 120),
       unitPriceCents: asInt(row.unitPriceCents, `Line ${index + 1} price`, { min: 0, max: 1_000_000 }),
       quantity: asInt(row.quantity, `Line ${index + 1} quantity`, { min: 1, max: 999 }),
+      course: str(row.course) ? str(row.course).slice(0, 30) : null,
       notes: str(row.notes) ? str(row.notes).slice(0, 200) : null
     };
   });
@@ -89,7 +163,12 @@ export const posService = {
     const venue = str(body.venue);
     if (!venue) throw new HttpError(400, 'venue is required.');
     return prisma.posOrder.create({
-      data: { venue, openedByName: str(body.openedByName) || null },
+      data: {
+        venue,
+        openedByName: str(body.openedByName) || null,
+        tableLabel: str(body.tableLabel) || null,
+        covers: body.covers === undefined || body.covers === null || body.covers === '' ? null : asInt(body.covers, 'covers', { min: 1, max: 200 })
+      },
       include: ORDER_INCLUDE
     });
   },
@@ -109,20 +188,14 @@ export const posService = {
     return order;
   },
 
-  // Replace the order's lines and recompute totals (register sends the whole
-  // cart on every change — simplest correct model for a single-operator MVP).
+  // Replace the order's lines, then recompute totals with the pricing rules
+  // (weekend/holiday surcharge, timed discounts) in force right now.
   async setLines(id: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const lines = parseLines(body.lines);
-    const discountCents = body.discountCents === undefined ? 0 : asInt(body.discountCents, 'discount', { min: 0 });
     const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true } });
     if (!order) throw new HttpError(404, 'Order not found.');
     if (order.status !== 'OPEN') throw new HttpError(400, `Order is ${order.status} — start a new sale.`);
-
-    const subtotalCents = lines.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);
-    if (discountCents > subtotalCents) throw new HttpError(400, 'Discount exceeds the subtotal.');
-    const totalCents = subtotalCents - discountCents;
-    const gstCents = Math.round(totalCents / GST_DIVISOR);
 
     await prisma.$transaction([
       prisma.posOrderLine.deleteMany({ where: { orderId: id } }),
@@ -134,14 +207,18 @@ export const posService = {
           unitPriceCents: line.unitPriceCents,
           quantity: line.quantity,
           totalCents: line.unitPriceCents * line.quantity,
+          course: line.course,
           notes: line.notes
         }))
-      }),
-      prisma.posOrder.update({ where: { id }, data: { subtotalCents, discountCents, totalCents, gstCents } })
+      })
     ]);
+    await recomputeOrder(id);
     return this.getOrder(id);
   },
 
+  // Take a payment — full or PARTIAL (split bills). The order closes when the
+  // payments (excluding tips) cover the total. Rules are re-applied first so a
+  // table opened Friday that pays after midnight Saturday gets the surcharge.
   async payOrder(id: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const method = str(body.method).toUpperCase();
@@ -150,39 +227,57 @@ export const posService = {
     }
     const tipCents = body.tipCents === undefined ? 0 : asInt(body.tipCents, 'tip', { min: 0, max: 500_000 });
 
-    const order = await prisma.posOrder.findUnique({ where: { id }, include: { lines: true } });
+    let order = await prisma.posOrder.findUnique({ where: { id }, include: { lines: true, payments: true } });
     if (!order) throw new HttpError(404, 'Order not found.');
     if (order.status !== 'OPEN') throw new HttpError(400, `Order is already ${order.status}.`);
     if (order.lines.length === 0) throw new HttpError(400, 'Add at least one item before charging.');
+    if (order.payments.length === 0) {
+      await recomputeOrder(id);
+      order = (await prisma.posOrder.findUnique({ where: { id }, include: { lines: true, payments: true } }))!;
+    }
 
-    const dueCents = order.totalCents + tipCents;
+    const paidSoFarCents = order.payments.reduce((sum, payment) => sum + payment.amountCents, 0);
+    const balanceCents = order.totalCents - paidSoFarCents;
+    const amountCents =
+      body.amountCents === undefined || body.amountCents === null
+        ? balanceCents
+        : asInt(body.amountCents, 'amount', { min: 1 });
+    if (amountCents > balanceCents) throw new HttpError(400, `Only ${(balanceCents / 100).toFixed(2)} is owing on this order.`);
+
+    const dueCents = amountCents + tipCents;
     let tenderedCents: number | null = null;
     let changeCents: number | null = null;
     if (method === 'CASH') {
       tenderedCents = asInt(body.tenderedCents ?? dueCents, 'tendered amount', { min: 0 });
-      if (tenderedCents < dueCents) throw new HttpError(400, 'Tendered amount is less than the total.');
+      if (tenderedCents < dueCents) throw new HttpError(400, 'Tendered amount is less than this payment.');
       changeCents = tenderedCents - dueCents;
     }
 
-    const [, paid] = await prisma.$transaction([
-      prisma.posPayment.create({
-        data: {
-          orderId: id,
-          method,
-          amountCents: order.totalCents,
-          tipCents,
-          tenderedCents,
-          changeCents,
-          reference: str(body.reference) || null
-        }
-      }),
-      prisma.posOrder.update({
-        where: { id },
-        data: { status: 'PAID', tipCents, paidAt: new Date(), serviceDate: sydneyTodayUtcMidnight() },
-        include: ORDER_INCLUDE
-      })
-    ]);
-    return { ...paid, changeCents };
+    const settled = amountCents >= balanceCents;
+    await prisma.posPayment.create({
+      data: {
+        orderId: id,
+        method,
+        amountCents,
+        tipCents,
+        tenderedCents,
+        changeCents,
+        reference: str(body.reference) || null
+      }
+    });
+    const updated = await prisma.posOrder.update({
+      where: { id },
+      data: settled
+        ? {
+            status: 'PAID',
+            tipCents: order.tipCents + tipCents,
+            paidAt: new Date(),
+            serviceDate: sydneyTodayUtcMidnight()
+          }
+        : { tipCents: order.tipCents + tipCents },
+      include: ORDER_INCLUDE
+    });
+    return { ...updated, changeCents, balanceCents: settled ? 0 : balanceCents - amountCents };
   },
 
   async voidOrder(id: string, input: unknown) {
@@ -196,6 +291,10 @@ export const posService = {
       data: { status: 'VOID', voidedAt: new Date(), voidReason: str(body.reason) || null },
       include: ORDER_INCLUDE
     });
+  },
+
+  async listRules() {
+    return activeRules();
   },
 
   // X-read: today's picture for the drawer count and the manager.

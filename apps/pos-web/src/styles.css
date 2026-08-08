@@ -142,3 +142,30 @@ input, select { font: inherit; }
   #pos-receipt { position: absolute; inset: 0; background: #fff; color: #000; border: 0; }
   .pos-choice-row, .pos-modal-close { display: none !important; }
 }
+
+/* v2: home screen, courses, split summary rows */
+.pos-home { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.pos-home-actions { display: flex; gap: 10px; }
+.pos-home-new {
+  flex: 1; min-height: 72px; border-radius: 16px; border: 0;
+  background: var(--pos-accent); color: #fff; font-size: 18px; font-weight: 800;
+}
+.pos-home-quick { background: var(--pos-raise); border: 1px solid var(--pos-line); color: var(--pos-text); }
+.pos-home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.pos-table-card {
+  min-height: 108px; padding: 14px; text-align: left;
+  display: flex; flex-direction: column; gap: 6px; justify-content: space-between;
+  background: var(--pos-panel); border: 1px solid var(--pos-line); border-radius: 16px;
+}
+.pos-table-card strong { font-size: 17px; }
+.pos-table-total { font-size: 18px; font-weight: 800; }
+.pos-table-total small { color: var(--pos-danger); font-weight: 600; display: block; font-size: 12px; }
+.pos-crumb { font-weight: 700; color: var(--pos-muted); }
+.pos-line-main { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pos-course {
+  align-self: flex-start; border: 1px solid var(--pos-line); background: transparent;
+  color: var(--pos-muted); border-radius: 9999px; font-size: 10.5px; padding: 2px 9px;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.pos-sumline { display: flex; justify-content: space-between; font-size: 13px; color: var(--pos-muted); padding: 2px 0; }
+.pos-sumline-good { color: var(--pos-accent); }
