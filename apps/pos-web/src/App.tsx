@@ -18,6 +18,10 @@ type OrderLine = {
   unitPriceCents: number;
   quantity: number;
   course?: string | null;
+  seat?: number | null;
+  modifiers?: Array<{ name: string; priceCents: number }> | null;
+  notes?: string | null;
+  sentAt?: string | null;
 };
 type Payment = { method: string; amountCents: number; tipCents: number; createdAt?: string };
 type OrderGuest = {
@@ -36,6 +40,8 @@ type GuestProfile = OrderGuest & {
   favourites: Array<{ name: string; quantity: number; totalCents: number }>;
 };
 type Pin = { t: 'i'; id: string; c?: string } | { t: 'f'; name: string; c?: string; items: string[] };
+type ModifierOption = { id: string; name: string; priceCents: number };
+type ModifierGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: ModifierOption[] };
 type Order = {
   id: string;
   orderNumber: number;
@@ -167,7 +173,12 @@ export function App() {
   const [dockets, setDockets] = useState<Docket[] | null>(null);
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
-  const [home, setHome] = useState<{ buttons: string[]; pins: Pin[] }>({ buttons: [], pins: [] });
+  const [home, setHome] = useState<{ buttons: string[]; pins: Pin[]; landingCategory?: string | null }>({ buttons: [], pins: [] });
+  const [eightySix, setEightySix] = useState<Set<string>>(new Set());
+  const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
+  const [mode86, setMode86] = useState(false);
+  const [modSheet, setModSheet] = useState<null | { item: MenuItem; category: string; groups: ModifierGroup[]; chosen: Record<string, string[]>; notes: string }>(null);
+  const [fireSheet, setFireSheet] = useState<null | Array<{ course: string; count: number; picked: boolean }>>(null);
   const [guestView, setGuestView] = useState<GuestProfile | null>(null);
   const [coversEdit, setCoversEdit] = useState<string>('');
   const [coversOpen, setCoversOpen] = useState(false);
@@ -255,9 +266,11 @@ export function App() {
           .then((rows) => setCourses(rows.map((row) => row.name)))
           .catch(() => undefined);
         void api<Record<string, string[]>>('/api/pos/adjust-reasons').then(setReasons).catch(() => undefined);
-        const res = await api<{ categories: MenuCategory[] }>('/api/pos/menu');
+        const res = await api<{ categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] }>('/api/pos/menu');
         setMenu(res.categories);
-        setActiveCategory((current) => current || res.categories[0]?.name || '');
+        setEightySix(new Set(res.eightySix ?? []));
+        setModifierGroups(res.modifierGroups ?? []);
+        setActiveCategory((current) => current || home.landingCategory || res.categories[0]?.name || '');
         const kinds = new Map<string, string>();
         for (const category of res.categories) for (const item of category.items) kinds.set(item.recipeId, category.kind);
         setKindByRecipe(kinds);
@@ -275,6 +288,7 @@ export function App() {
     void api<{ buttons: string[]; pins: unknown[] }>(`/api/pos/homescreen?userKey=${encodeURIComponent(name.toLowerCase())}`)
       .then((config) =>
         setHome({
+          landingCategory: (config as { landingCategory?: string | null }).landingCategory ?? null,
           buttons: config.buttons,
           // Legacy pins were plain recipeId strings — normalise to the rich shape.
           pins: (config.pins ?? []).map((pin) =>
@@ -371,7 +385,79 @@ export function App() {
     }
   }
 
+  function categoryOf(item: MenuItem): string {
+    return menu.find((category) => category.items.some((candidate) => candidate.recipeId === item.recipeId))?.name ?? '';
+  }
+
   function addItem(item: MenuItem) {
+    if (mode86) {
+      void api<{ recipeId: string; eightySixed: boolean }>('/api/pos/eighty-six', {
+        method: 'POST',
+        body: JSON.stringify({ recipeId: item.recipeId, staffName: operatorName })
+      })
+        .then((result) => {
+          setEightySix((current) => {
+            const next = new Set(current);
+            if (result.eightySixed) next.add(result.recipeId);
+            else next.delete(result.recipeId);
+            return next;
+          });
+        })
+        .catch((err) => setError(messageForError(err, 'Could not update the 86 list.')));
+      return;
+    }
+    if (eightySix.has(item.recipeId)) {
+      setError(`${item.title} is 86'd (sold out).`);
+      return;
+    }
+    const category = categoryOf(item).toLowerCase();
+    const groups = modifierGroups.filter((group) => group.categories.includes(category));
+    if (groups.length > 0) {
+      setModSheet({ item, category, groups, chosen: {}, notes: '' });
+      return;
+    }
+    void addItemDirect(item, [], '');
+  }
+
+  async function addItemDirect(item: MenuItem, modifiers: Array<{ name: string; priceCents: number }>, notes: string) {
+    const delta = modifiers.reduce((sum, modifier) => sum + modifier.priceCents, 0);
+    const line: OrderLine = {
+      recipeId: item.recipeId,
+      name: item.title,
+      unitPriceCents: item.priceCents + delta,
+      quantity: 1,
+      course: defaultCourse(kindByRecipe.get(item.recipeId) ?? 'FOOD'),
+      modifiers: modifiers.length ? modifiers : null,
+      notes: notes || null
+    };
+    if (!order) {
+      setBusy(true);
+      try {
+        const created = await api<Order>('/api/pos/orders', {
+          method: 'POST',
+          body: JSON.stringify({ venue, openedByName: operatorName || undefined })
+        });
+        const updated = await api<Order>(`/api/pos/orders/${created.id}/lines`, {
+          method: 'PUT',
+          body: JSON.stringify({ lines: [line] })
+        });
+        setOrder(updated);
+      } catch (err) {
+        setError(messageForError(err, 'Could not start the sale.'));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    // Modifier'd lines never merge — each configuration is its own line.
+    const existing = modifiers.length === 0 && !notes ? order.lines.find((candidate) => candidate.recipeId === item.recipeId && !candidate.modifiers && !candidate.notes) : undefined;
+    const next = existing
+      ? order.lines.map((candidate) => (candidate === existing ? { ...candidate, quantity: candidate.quantity + 1 } : candidate))
+      : [...order.lines, line];
+    void pushLines(next);
+  }
+
+  function legacyAddItem(item: MenuItem) {
     if (!order) {
       void quickSaleWithItem(item);
       return;
@@ -397,6 +483,17 @@ export function App() {
     const next = order.lines
       .map((line, i) => (i === index ? { ...line, quantity: line.quantity + delta } : line))
       .filter((line) => line.quantity > 0);
+    void pushLines(next);
+  }
+
+  function cycleSeat(index: number) {
+    if (!order) return;
+    const maxSeat = Math.max(order.covers ?? 0, 8);
+    const next = order.lines.map((line, i) => {
+      if (i !== index) return line;
+      const current = line.seat ?? 0;
+      return { ...line, seat: current >= maxSeat ? null : current + 1 };
+    });
     void pushLines(next);
   }
 
@@ -571,12 +668,14 @@ export function App() {
               className="pos-ghost"
               disabled={busy || order.lines.every((line) => (line as { sentAt?: string | null }).sentAt)}
               onClick={() => {
-                void api<{ dockets: Docket[]; sent: number }>(`/api/pos/orders/${order.id}/send`, { method: 'POST' })
-                  .then(async (result) => {
-                    if (result.dockets.length > 0) setDockets(result.dockets);
-                    setOrder(await api<Order>(`/api/pos/orders/${order.id}`));
-                  })
-                  .catch((err) => setError(messageForError(err, 'Could not send the order.')));
+                const held = new Map<string, number>();
+                for (const line of order.lines) {
+                  if ((line as { sentAt?: string | null }).sentAt) continue;
+                  const course = line.course ?? 'Mains';
+                  held.set(course, (held.get(course) ?? 0) + line.quantity);
+                }
+                const courseList = courses.filter((course) => held.has(course)).concat([...held.keys()].filter((course) => !courses.includes(course)));
+                setFireSheet(courseList.map((course, index) => ({ course, count: held.get(course) ?? 0, picked: index === 0 })));
               }}
             >
               Send
@@ -790,6 +889,14 @@ export function App() {
           <div className="pos-menu">
             {!search ? (
               <nav className="pos-tabs">
+                <button
+                  type="button"
+                  className={mode86 ? 'is-86' : ''}
+                  title="86 mode: tap items to mark sold out"
+                  onClick={() => setMode86(!mode86)}
+                >
+                  86
+                </button>
                 {menu.map((category) => (
                   <button
                     key={category.name}
@@ -804,9 +911,14 @@ export function App() {
             ) : null}
             <div className="pos-grid">
               {visibleItems.map((item) => (
-                <button key={item.recipeId} type="button" className="pos-item" onClick={() => addItem(item)}>
+                <button
+                  key={item.recipeId}
+                  type="button"
+                  className={`pos-item ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                  onClick={() => addItem(item)}
+                >
                   <span>{item.title}</span>
-                  <small>{money(item.priceCents)}</small>
+                  <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
                 </button>
               ))}
               {visibleItems.length === 0 ? <p className="pos-muted">No items{search ? ' match' : ''}.</p> : null}
@@ -829,9 +941,21 @@ export function App() {
                     >
                       {line.name}
                     </span>
-                    <button type="button" className="pos-course" onClick={() => cycleCourse(index)}>
-                      {line.course ?? 'Mains'}
-                    </button>
+                    <span className="pos-line-chips">
+                      <button type="button" className="pos-course" onClick={() => cycleCourse(index)}>
+                        {line.course ?? 'Mains'}
+                      </button>
+                      <button type="button" className="pos-course" onClick={() => cycleSeat(index)}>
+                        {line.seat ? `S${line.seat}` : 'S–'}
+                      </button>
+                      {!line.sentAt ? <span className="pos-held">held</span> : null}
+                    </span>
+                    {line.modifiers?.length || line.notes ? (
+                      <small className="pos-line-mods">
+                        {(line.modifiers ?? []).map((modifier) => modifier.name).join(', ')}
+                        {line.notes ? `${line.modifiers?.length ? ' · ' : ''}${line.notes}` : ''}
+                      </small>
+                    ) : null}
                   </span>
                   <span className="pos-stepper">
                     <button type="button" onClick={() => bumpQty(index, -1)}>−</button>
@@ -1517,6 +1641,118 @@ export function App() {
         </div>
       ) : null}
 
+      {modSheet ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>{modSheet.item.title}</h2>
+            {modSheet.groups.map((group) => (
+              <div key={group.id}>
+                <p className="pos-muted">
+                  {group.name}
+                  {group.required ? ' (required)' : ''} — up to {group.maxSelect}
+                </p>
+                <div className="pos-reason-list">
+                  {group.options.map((option) => {
+                    const chosen = modSheet.chosen[group.id] ?? [];
+                    const on = chosen.includes(option.id);
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={on ? 'is-on' : ''}
+                        onClick={() => {
+                          const next = on
+                            ? chosen.filter((candidate) => candidate !== option.id)
+                            : chosen.length >= group.maxSelect
+                              ? chosen
+                              : [...chosen, option.id];
+                          setModSheet({ ...modSheet, chosen: { ...modSheet.chosen, [group.id]: next } });
+                        }}
+                      >
+                        {option.name}
+                        {option.priceCents ? ` +${money(option.priceCents)}` : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            <input
+              className="pos-tender"
+              placeholder="Notes for the kitchen (optional)"
+              value={modSheet.notes}
+              onChange={(event) => setModSheet({ ...modSheet, notes: event.currentTarget.value })}
+            />
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={busy || modSheet.groups.some((group) => group.required && (modSheet.chosen[group.id] ?? []).length === 0)}
+              onClick={() => {
+                const modifiers = modSheet.groups.flatMap((group) =>
+                  (modSheet.chosen[group.id] ?? []).map((optionId) => {
+                    const option = group.options.find((candidate) => candidate.id === optionId)!;
+                    return { name: option.name, priceCents: option.priceCents };
+                  })
+                );
+                void addItemDirect(modSheet.item, modifiers, modSheet.notes.trim());
+                setModSheet(null);
+              }}
+            >
+              Add {modSheet.item.title}
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setModSheet(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {fireSheet && order ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Fire courses</h2>
+            <p className="pos-muted">Held items only print when their course is fired.</p>
+            <div className="pos-reason-list">
+              {fireSheet.map((entry, index) => (
+                <button
+                  key={entry.course}
+                  type="button"
+                  className={entry.picked ? 'is-on' : ''}
+                  onClick={() =>
+                    setFireSheet(fireSheet.map((candidate, i) => (i === index ? { ...candidate, picked: !candidate.picked } : candidate)))
+                  }
+                >
+                  {entry.course} ({entry.count})
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={busy || !fireSheet.some((entry) => entry.picked)}
+              onClick={() => {
+                const picked = fireSheet.filter((entry) => entry.picked).map((entry) => entry.course);
+                void api<{ dockets: Docket[]; sent: number }>(`/api/pos/orders/${order.id}/send`, {
+                  method: 'POST',
+                  body: JSON.stringify({ courses: picked })
+                })
+                  .then(async (result) => {
+                    setFireSheet(null);
+                    if (result.dockets.length > 0) setDockets(result.dockets);
+                    setOrder(await api<Order>(`/api/pos/orders/${order.id}`));
+                  })
+                  .catch((err) => setError(messageForError(err, 'Could not fire the courses.')));
+              }}
+            >
+              Fire {fireSheet.filter((entry) => entry.picked).map((entry) => entry.course).join(' + ') || '…'}
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setFireSheet(null)}>
+              Hold everything
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {wastage ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
@@ -1755,6 +1991,19 @@ export function App() {
                 </button>
               ))}
             </div>
+            <p className="pos-muted">Open the register on:</p>
+            <div className="pos-reason-list">
+              {menu.slice(0, 12).map((category) => (
+                <button
+                  key={category.name}
+                  type="button"
+                  className={home.landingCategory === category.name ? 'is-on' : ''}
+                  onClick={() => setHome({ ...home, landingCategory: home.landingCategory === category.name ? null : category.name })}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
             <p className="pos-muted">Pins &amp; folders (tap to cycle colour, ✕ to remove):</p>
             <div className="pos-reason-list">
               {home.pins.map((pin, index) => {
@@ -1807,7 +2056,7 @@ export function App() {
               onClick={() => {
                 void api('/api/pos/homescreen', {
                   method: 'PUT',
-                  body: JSON.stringify({ userKey, buttons: home.buttons, pins: home.pins, updatedBy: operatorName })
+                  body: JSON.stringify({ userKey, buttons: home.buttons, pins: home.pins, landingCategory: home.landingCategory ?? '', updatedBy: operatorName })
                 })
                   .then(() => setCustomise(false))
                   .catch((err) => setError(messageForError(err, 'Could not save.')));
@@ -1839,9 +2088,13 @@ export function App() {
                   <div key={line.id} className="pos-docket-line">
                     <strong>
                       {line.quantity}× {line.name}
+                      {(line as { seat?: number | null }).seat ? ` · S${(line as { seat?: number | null }).seat}` : ''}
                     </strong>
                     <small>
                       {line.course ?? ''}
+                      {((line as { modifiers?: Array<{ name: string }> }).modifiers ?? []).length
+                        ? ` — ${((line as { modifiers?: Array<{ name: string }> }).modifiers ?? []).map((modifier) => modifier.name).join(', ')}`
+                        : ''}
                       {line.notes ? ` — ${line.notes}` : ''}
                     </small>
                   </div>

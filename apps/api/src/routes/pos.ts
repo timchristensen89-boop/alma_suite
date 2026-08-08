@@ -155,7 +155,7 @@ posRouter.get('/printer-profiles', async (_req, res, next) => {
 
 posRouter.post('/orders/:id/send', async (req, res, next) => {
   try {
-    res.json(await posService.sendOrder(String(req.params.id)));
+    res.json(await posService.sendOrder(String(req.params.id), req.body));
   } catch (error) {
     next(error);
   }
@@ -196,6 +196,30 @@ posRouter.get('/close-day', async (req, res, next) => {
 posRouter.post('/close-day', async (req, res, next) => {
   try {
     res.json(await posService.closeDay(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/eighty-six', async (req, res, next) => {
+  try {
+    res.json(await posService.toggle86(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/modifier-groups', async (req, res, next) => {
+  try {
+    res.json(await posService.saveModifierGroup(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.delete('/modifier-groups/:id', async (req, res, next) => {
+  try {
+    res.json(await posService.deleteModifierGroup(String(req.params.id)));
   } catch (error) {
     next(error);
   }

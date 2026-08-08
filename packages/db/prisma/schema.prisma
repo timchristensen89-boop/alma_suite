@@ -4750,8 +4750,12 @@ model PosOrderLine {
   quantity       Int
   totalCents     Int
   course         String?
+  seat           Int?
+  // Chosen modifiers: [{name, priceCents}] — unitPriceCents already includes
+  // their deltas; dockets print them under the item.
+  modifiers      Json?
   notes          String?
-  // Set when the line has been sent to its printer profile (docket printed).
+  // Set when the line's course has been FIRED to its printer profile.
   sentAt         DateTime?
   createdAt      DateTime @default(now())
   order          PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -4850,12 +4854,46 @@ model PosAdjustment {
 
 // Per-operator POS homescreen: which management buttons show + pinned items.
 model PosHomescreen {
-  id        String   @id @default(cuid())
-  userKey   String   @unique
-  buttons   Json
-  pins      Json
+  id              String   @id @default(cuid())
+  userKey         String   @unique
+  buttons         Json
+  pins            Json
+  landingCategory String?
   updatedBy String?
   updatedAt DateTime @updatedAt
+}
+
+// Modifier groups attach to menu CATEGORIES (low-config): "Taco mods" applies
+// to every item in Tacos. Options can carry a price delta.
+model PosModifierGroup {
+  id            String        @id @default(cuid())
+  name          String
+  categoriesCsv String        @default("")
+  required      Boolean       @default(false)
+  maxSelect     Int           @default(3)
+  sortOrder     Int           @default(0)
+  active        Boolean       @default(true)
+  options       PosModifier[]
+}
+
+model PosModifier {
+  id         String            @id @default(cuid())
+  groupId    String
+  name       String
+  priceCents Int               @default(0)
+  sortOrder  Int               @default(0)
+  active     Boolean           @default(true)
+  group      PosModifierGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+// The 86 list: sold-out items, greyed on every register instantly.
+model Pos86 {
+  id        String   @id @default(cuid())
+  recipeId  String   @unique
+  staffName String?
+  createdAt DateTime @default(now())
 }
 
 model PosRule {

@@ -198,7 +198,16 @@ const ORDER_INCLUDE = {
   guest: { select: { id: true, firstName: true, lastName: true, totalVisits: true, totalSpendCents: true, tags: true, allergyNotes: true, dietaryNotes: true } }
 };
 
-type LineInput = { recipeId?: string | null; name: string; unitPriceCents: number; quantity: number; course?: string | null; notes?: string | null };
+type LineInput = {
+  recipeId?: string | null;
+  name: string;
+  unitPriceCents: number;
+  quantity: number;
+  course?: string | null;
+  seat?: number | null;
+  modifiers?: Array<{ name: string; priceCents: number }> | null;
+  notes?: string | null;
+};
 
 function parseLines(raw: unknown): LineInput[] {
   if (!Array.isArray(raw)) throw new HttpError(400, 'lines must be an array.');
@@ -212,6 +221,13 @@ function parseLines(raw: unknown): LineInput[] {
       unitPriceCents: asInt(row.unitPriceCents, `Line ${index + 1} price`, { min: 0, max: 1_000_000 }),
       quantity: asInt(row.quantity, `Line ${index + 1} quantity`, { min: 1, max: 999 }),
       course: str(row.course) ? str(row.course).slice(0, 30) : null,
+      seat: row.seat === undefined || row.seat === null || row.seat === '' ? null : asInt(row.seat, `Line ${index + 1} seat`, { min: 1, max: 200 }),
+      modifiers: Array.isArray(row.modifiers)
+        ? (row.modifiers as Array<Record<string, unknown>>)
+            .map((modifier) => ({ name: str(modifier.name).slice(0, 60), priceCents: Number.isFinite(Number(modifier.priceCents)) ? Math.round(Number(modifier.priceCents)) : 0 }))
+            .filter((modifier) => modifier.name)
+            .slice(0, 12)
+        : null,
       notes: str(row.notes) ? str(row.notes).slice(0, 200) : null
     };
   });
@@ -247,7 +263,77 @@ export const posService = {
       if (b.name === 'Set Menus') return 1;
       return a.name.localeCompare(b.name);
     });
-    return { categories, itemCount: recipes.length };
+    const [eightySix, modifierGroups] = await Promise.all([
+      prisma.pos86.findMany({ select: { recipeId: true } }),
+      prisma.posModifierGroup.findMany({
+        where: { active: true },
+        include: { options: { where: { active: true }, orderBy: { sortOrder: 'asc' } } },
+        orderBy: { sortOrder: 'asc' }
+      })
+    ]);
+    return {
+      categories,
+      itemCount: recipes.length,
+      eightySix: eightySix.map((row) => row.recipeId),
+      modifierGroups: modifierGroups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        required: group.required,
+        maxSelect: group.maxSelect,
+        categories: group.categoriesCsv.split(',').map((value) => value.trim().toLowerCase()).filter(Boolean),
+        options: group.options.map((option) => ({ id: option.id, name: option.name, priceCents: option.priceCents }))
+      }))
+    };
+  },
+
+  // 86 list: toggle an item sold-out; every register sees it on next menu load.
+  async toggle86(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const recipeId = str(body.recipeId);
+    if (!recipeId) throw new HttpError(400, 'recipeId required.');
+    const existing = await prisma.pos86.findUnique({ where: { recipeId } });
+    if (existing) {
+      await prisma.pos86.delete({ where: { recipeId } });
+      return { recipeId, eightySixed: false };
+    }
+    await prisma.pos86.create({ data: { recipeId, staffName: str(body.staffName) || null } });
+    return { recipeId, eightySixed: true };
+  },
+
+  // Modifier group CRUD (register settings — keep it simple: whole-group save).
+  async saveModifierGroup(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const name = str(body.name);
+    if (!name) throw new HttpError(400, 'Group name required.');
+    const options = (Array.isArray(body.options) ? (body.options as Array<Record<string, unknown>>) : [])
+      .map((option, index) => ({
+        name: str(option.name),
+        priceCents: Number.isFinite(Number(option.priceCents)) ? Math.round(Number(option.priceCents)) : 0,
+        sortOrder: index
+      }))
+      .filter((option) => option.name);
+    if (options.length === 0) throw new HttpError(400, 'Add at least one option.');
+    const data = {
+      name,
+      categoriesCsv: str(body.categoriesCsv),
+      required: body.required === true,
+      maxSelect: Number.isFinite(Number(body.maxSelect)) ? Math.max(1, Math.round(Number(body.maxSelect))) : 3
+    };
+    const id = str(body.id);
+    if (id) {
+      await prisma.posModifier.deleteMany({ where: { groupId: id } });
+      return prisma.posModifierGroup.update({
+        where: { id },
+        data: { ...data, options: { create: options } },
+        include: { options: true }
+      });
+    }
+    return prisma.posModifierGroup.create({ data: { ...data, options: { create: options } }, include: { options: true } });
+  },
+
+  async deleteModifierGroup(id: string) {
+    await prisma.posModifierGroup.delete({ where: { id } }).catch(() => undefined);
+    return { deleted: true };
   },
 
   async createOrder(input: unknown) {
@@ -439,6 +525,8 @@ export const posService = {
           quantity: line.quantity,
           totalCents: line.unitPriceCents * line.quantity,
           course: line.course,
+          seat: line.seat,
+          modifiers: (line.modifiers ?? undefined) as object[] | undefined,
           notes: line.notes
         }))
       })
@@ -560,12 +648,15 @@ export const posService = {
   // grouped per profile (course-ordered) and stamps the lines as sent. The
   // register prints each docket (browser/AirPrint now; ePOS network printers
   // when profiles carry an IP).
-  async sendOrder(id: string) {
+  async sendOrder(id: string, input?: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const fireCourses = Array.isArray(body.courses) ? (body.courses as unknown[]).map(String) : null;
     const order = await prisma.posOrder.findUnique({
       where: { id },
       include: { lines: { where: { sentAt: null }, orderBy: { createdAt: 'asc' } } }
     });
     if (!order) throw new HttpError(404, 'Order not found.');
+    if (fireCourses) order.lines = order.lines.filter((line) => fireCourses.includes(line.course ?? 'Mains'));
     if (order.lines.length === 0) return { dockets: [], sent: 0 };
     const [profiles, courses, recipeRows] = await Promise.all([
       this.listPrinterProfiles(),
@@ -604,6 +695,8 @@ export const posService = {
             name: line.name,
             quantity: line.quantity,
             course: line.course,
+            seat: line.seat,
+            modifiers: (line.modifiers as Array<{ name: string; priceCents: number }> | null) ?? [],
             notes: line.notes
           }))
         };
@@ -837,10 +930,12 @@ export const posService = {
 
   // ── Per-operator homescreen ────────────────────────────────────────────
   async getHomescreen(userKey: string | null) {
-    const defaults = { buttons: ['open-till', 'discount', 'comp', 'wastage', 'price'], pins: [] as string[] };
+    const defaults = { buttons: ['open-till', 'discount', 'comp', 'wastage', 'price'], pins: [] as unknown[], landingCategory: null as string | null };
     if (!userKey) return defaults;
     const row = await prisma.posHomescreen.findUnique({ where: { userKey: userKey.toLowerCase() } });
-    return row ? { buttons: row.buttons as string[], pins: row.pins as string[] } : defaults;
+    return row
+      ? { buttons: row.buttons as string[], pins: row.pins as unknown[], landingCategory: row.landingCategory }
+      : defaults;
   },
 
   async saveHomescreen(input: unknown) {
@@ -871,10 +966,11 @@ export const posService = {
       })
       .filter((pin): pin is NonNullable<typeof pin> => pin !== null)
       .slice(0, 24);
+    const landingCategory = str(body.landingCategory) || null;
     return prisma.posHomescreen.upsert({
       where: { userKey },
-      create: { userKey, buttons, pins, updatedBy: str(body.updatedBy) || null },
-      update: { buttons, pins, updatedBy: str(body.updatedBy) || null }
+      create: { userKey, buttons, pins, landingCategory, updatedBy: str(body.updatedBy) || null },
+      update: { buttons, pins, landingCategory, updatedBy: str(body.updatedBy) || null }
     });
   },
 

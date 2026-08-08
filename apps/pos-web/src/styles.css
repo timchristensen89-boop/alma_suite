@@ -301,3 +301,11 @@ input, select { font: inherit; }
 .pos-floor-table { transition: left 80ms linear, top 80ms linear, background 120ms ease; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
 .pos-cart { box-shadow: -8px 0 24px rgba(0, 0, 0, 0.2); }
 .pos-modal { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+
+/* Phase 1: 86, modifiers, seats, held */
+.pos-tabs button.is-86 { background: var(--pos-danger); border-color: var(--pos-danger); color: #fff; font-weight: 800; }
+.pos-item.is-86d { opacity: 0.45; }
+.pos-item.is-86d small { color: var(--pos-danger); font-weight: 700; }
+.pos-line-chips { display: inline-flex; gap: 4px; align-items: center; }
+.pos-held { font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: #d9a05a; }
+.pos-line-mods { display: block; color: var(--pos-muted); font-size: 11.5px; margin-top: 2px; }
