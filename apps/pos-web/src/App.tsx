@@ -117,6 +117,8 @@ type DaySummary = {
 
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
 const HOME_TAB = '\u2605 Home';
+// Australian cash rounding — physical cash rounds to the nearest 5c.
+const roundCash5 = (cents: number) => Math.round(cents / 5) * 5;
 const BRIGHT_PALETTE = ['', '#ff5a5f', '#ff9f1c', '#ffd166', '#06d6a0', '#4cc9f0', '#b388eb', '#f72585'];
 
 // ── Offline layer ───────────────────────────────────────────────────────────
@@ -207,7 +209,9 @@ export function App() {
   const [activeCategory, setActiveCategory] = useState('');
   const [search, setSearch] = useState('');
   const [newTable, setNewTable] = useState<null | { label: string; covers: string }>(null);
-  const [charge, setCharge] = useState<null | { stage: 'tip' | 'method' | 'cash' | 'split'; tipCents: number; amountCents: number | null }>(null);
+  const [charge, setCharge] = useState<null | { stage: 'tip' | 'method' | 'cash' | 'split' | 'gift'; tipCents: number; amountCents: number | null }>(null);
+  const [gift, setGift] = useState<{ code: string; balanceCents: number | null; checking: boolean }>({ code: '', balanceCents: null, checking: false });
+  const [info, setInfo] = useState<string | null>(null);
   const [tendered, setTendered] = useState('');
   const [receipt, setReceipt] = useState<Order | null>(null);
   const [day, setDay] = useState<DaySummary | null>(null);
@@ -497,6 +501,12 @@ export function App() {
   }
 
   useEffect(() => {
+    if (!info) return;
+    const timer = setTimeout(() => setInfo(null), 7000);
+    return () => clearTimeout(timer);
+  }, [info]);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       if (loadQueue().length > 0) void flushQueue();
     }, 10000);
@@ -762,7 +772,7 @@ export function App() {
     if (!order || !charge || busy) return;
     if (order.id.startsWith('local-')) {
       // Offline settle: queue the whole sale for sync; receipt shows now.
-      const tenderedCents = method === 'CASH' ? Math.round(Number(tendered || '0') * 100) || order.totalCents + charge.tipCents : undefined;
+      const tenderedCents = method === 'CASH' ? Math.round(Number(tendered || '0') * 100) || roundCash5(order.totalCents + charge.tipCents) : undefined;
       const sale: QueuedSale = {
         localId: order.id,
         venue,
@@ -813,6 +823,37 @@ export function App() {
       }
     } catch (err) {
       setError(messageForError(err, 'Payment could not be recorded.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function takeGiftPayment(appliesCents: number, coversAll: boolean) {
+    if (!order || !charge || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const amountCents = coversAll ? (charge.amountCents ?? undefined) : Math.max(1, appliesCents);
+      const tipCents = coversAll ? charge.tipCents : 0;
+      const result = await api<Order & { status: string; giftCardRemainingCents?: number | null }>(`/api/pos/orders/${order.id}/pay`, {
+        method: 'POST',
+        body: JSON.stringify({ method: 'GIFT_CARD', giftCardCode: gift.code.trim(), amountCents, tipCents })
+      });
+      if (result.giftCardRemainingCents !== null && result.giftCardRemainingCents !== undefined) {
+        setInfo(`Gift card ${gift.code.trim()} — ${money(result.giftCardRemainingCents)} remaining.`);
+      }
+      if (result.status === 'PAID') {
+        setReceipt(result);
+        setOrder(null);
+        setCharge(null);
+        void refreshOpenOrders();
+      } else {
+        setOrder(result);
+        setCharge({ stage: 'split', tipCents: coversAll ? 0 : charge.tipCents, amountCents: null });
+      }
+      setGift({ code: '', balanceCents: null, checking: false });
+    } catch (err) {
+      setError(messageForError(err, 'Gift card payment failed.'));
     } finally {
       setBusy(false);
     }
@@ -991,6 +1032,11 @@ export function App() {
       {error ? (
         <div className="pos-error" onClick={() => setError(null)}>
           {error} — tap to dismiss
+        </div>
+      ) : null}
+      {info ? (
+        <div className="pos-info" onClick={() => setInfo(null)}>
+          {info}
         </div>
       ) : null}
       {training ? (
@@ -1525,7 +1571,69 @@ export function App() {
                   <button type="button" disabled={busy} onClick={() => setCharge({ ...charge, stage: 'cash' })}>
                     Cash
                   </button>
+                  {!order.id.startsWith('local-') ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setGift({ code: '', balanceCents: null, checking: false });
+                        setCharge({ ...charge, stage: 'gift' });
+                      }}
+                    >
+                      Gift card
+                    </button>
+                  ) : null}
                 </div>
+              </>
+            ) : null}
+            {charge.stage === 'gift' && order ? (
+              <>
+                <h2>Gift card — {money((charge.amountCents ?? balance) + charge.tipCents)}</h2>
+                <input
+                  className="pos-tender"
+                  autoFocus
+                  placeholder="Card code (e.g. ALMA-XXXX-XXXX)"
+                  value={gift.code}
+                  onChange={(event) => setGift({ code: event.currentTarget.value.toUpperCase(), balanceCents: null, checking: false })}
+                />
+                {gift.balanceCents === null ? (
+                  <button
+                    type="button"
+                    className="pos-charge"
+                    disabled={busy || gift.checking || gift.code.trim().length < 4}
+                    onClick={() => {
+                      setGift({ ...gift, checking: true });
+                      void api<{ code: string; balanceCents: number }>(`/api/pos/gift-card?code=${encodeURIComponent(gift.code.trim())}`)
+                        .then((card) => setGift({ code: card.code, balanceCents: card.balanceCents, checking: false }))
+                        .catch((err) => {
+                          setGift({ ...gift, checking: false });
+                          setError(messageForError(err, 'Could not find that gift card.'));
+                        });
+                    }}
+                  >
+                    {gift.checking ? 'Checking…' : 'Check balance'}
+                  </button>
+                ) : (
+                  <>
+                    <p className="pos-change">Balance: {money(gift.balanceCents)}</p>
+                    {(() => {
+                      const wanted = (charge.amountCents ?? balance) + charge.tipCents;
+                      const applies = Math.min(gift.balanceCents, wanted);
+                      const coversAll = applies >= wanted;
+                      return (
+                        <button
+                          type="button"
+                          className="pos-charge"
+                          disabled={busy || applies <= 0}
+                          onClick={() => void takeGiftPayment(applies, coversAll)}
+                        >
+                          Apply {money(applies)}
+                          {coversAll ? '' : ` (leaves ${money(wanted - applies)} owing)`}
+                        </button>
+                      );
+                    })()}
+                  </>
+                )}
               </>
             ) : null}
             {charge.stage === 'cash' ? (
@@ -3090,11 +3198,17 @@ function CashPad({
   onTake: () => void;
 }) {
   const tenderedCents = Math.round(Number(tendered || '0') * 100);
+  const roundedDue = roundCash5(dueCents);
   return (
     <>
-      <h2>Cash — {money(dueCents)}</h2>
+      <h2>Cash — {money(roundedDue)}</h2>
+      {roundedDue !== dueCents ? (
+        <p className="pos-muted">
+          {money(dueCents)} rounds {roundedDue > dueCents ? 'up' : 'down'} to {money(roundedDue)} for cash.
+        </p>
+      ) : null}
       <div className="pos-choice-row">
-        {[dueCents, Math.ceil(dueCents / 5000) * 5000, Math.ceil(dueCents / 10000) * 10000]
+        {[roundedDue, Math.ceil(roundedDue / 5000) * 5000, Math.ceil(roundedDue / 10000) * 10000]
           .filter((value, index, all) => all.indexOf(value) === index)
           .map((cents) => (
             <button key={cents} type="button" onClick={() => setTendered(String(cents / 100))}>
@@ -3109,8 +3223,8 @@ function CashPad({
         value={tendered}
         onChange={(event) => setTendered(event.currentTarget.value)}
       />
-      {tendered && tenderedCents >= dueCents ? <p className="pos-change">Change: {money(tenderedCents - dueCents)}</p> : null}
-      <button type="button" className="pos-charge" disabled={busy || !tendered || tenderedCents < dueCents} onClick={onTake}>
+      {tendered && tenderedCents >= roundedDue ? <p className="pos-change">Change: {money(tenderedCents - roundedDue)}</p> : null}
+      <button type="button" className="pos-charge" disabled={busy || !tendered || tenderedCents < roundedDue} onClick={onTake}>
         Take cash
       </button>
     </>

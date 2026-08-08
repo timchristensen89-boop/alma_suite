@@ -5,6 +5,7 @@ import { env } from '../env.js';
 import { nswHolidayName } from '../lib/nsw-holidays.js';
 import { mailService } from './mail.service.js';
 import { authService } from './auth.service.js';
+import { giftCardService } from './gift-card.service.js';
 
 const stripe = env.stripe?.secretKey ? new Stripe(env.stripe.secretKey) : null;
 
@@ -129,6 +130,11 @@ async function recomputeOrder(id: string) {
 // When a venue's POS is its till, its settled orders roll up into the same
 // actuals the rest of the suite reads: SalesActualEntry (ex-GST + covers,
 // source alma-pos) and StaffTipCardEntry (card tips). Idempotent per day.
+// Australian cash rounding: cash amounts round to the nearest 5 cents.
+function roundCash5(cents: number): number {
+  return Math.round(cents / 5) * 5;
+}
+
 // Manager approval for register voids/refunds from floor-staff (device PIN)
 // sessions: the PIN must belong to an active profile whose role reads as a
 // manager. Suite logins (full accounts) bypass the gate.
@@ -208,15 +214,27 @@ async function postPosActuals(venue: string) {
 // Cash expected in a drawer: float + cash payments (incl. cash tips) taken
 // while it was open. Change was returned to guests, so payments count net.
 async function drawerExpectedCents(drawer: { venue: string; openingFloatCents: number; openedAt: Date }) {
-  const cash = await prisma.posPayment.aggregate({
+  const cash = await prisma.posPayment.findMany({
     where: {
       method: 'CASH',
       createdAt: { gte: drawer.openedAt },
       order: { venue: drawer.venue, training: false }
     },
-    _sum: { amountCents: true, tipCents: true }
+    select: { amountCents: true, tipCents: true, tenderedCents: true, changeCents: true }
   });
-  return drawer.openingFloatCents + (cash._sum.amountCents ?? 0) + (cash._sum.tipCents ?? 0);
+  // Physical cash in the drawer is what was handed over minus change given —
+  // that differs from amount+tip by the 5c rounding on each payment.
+  return (
+    drawer.openingFloatCents +
+    cash.reduce(
+      (sum, payment) =>
+        sum +
+        (payment.tenderedCents !== null && payment.changeCents !== null
+          ? payment.tenderedCents - payment.changeCents
+          : payment.amountCents + payment.tipCents),
+      0
+    )
+  );
 }
 
 // Settling an order refreshes the guest's CRM row: lifetime spend from their
@@ -755,8 +773,8 @@ export const posService = {
   async payOrder(id: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const method = str(body.method).toUpperCase();
-    if (!['CASH', 'CARD_EXTERNAL', 'STRIPE_TERMINAL'].includes(method)) {
-      throw new HttpError(400, 'method must be CASH, CARD_EXTERNAL or STRIPE_TERMINAL.');
+    if (!['CASH', 'CARD_EXTERNAL', 'STRIPE_TERMINAL', 'GIFT_CARD'].includes(method)) {
+      throw new HttpError(400, 'method must be CASH, CARD_EXTERNAL, STRIPE_TERMINAL or GIFT_CARD.');
     }
     const tipCents = body.tipCents === undefined ? 0 : asInt(body.tipCents, 'tip', { min: 0, max: 500_000 });
 
@@ -781,9 +799,29 @@ export const posService = {
     let tenderedCents: number | null = null;
     let changeCents: number | null = null;
     if (method === 'CASH') {
-      tenderedCents = asInt(body.tenderedCents ?? dueCents, 'tendered amount', { min: 0 });
-      if (tenderedCents < dueCents) throw new HttpError(400, 'Tendered amount is less than this payment.');
-      changeCents = tenderedCents - dueCents;
+      // Physical cash rounds to the nearest 5c; the order still settles on the
+      // exact amount — the few cents' difference is rounding, absorbed at the
+      // drawer (drawerExpectedCents counts tendered − change).
+      const roundedDueCents = roundCash5(dueCents);
+      tenderedCents = asInt(body.tenderedCents ?? roundedDueCents, 'tendered amount', { min: 0 });
+      if (tenderedCents < roundedDueCents) throw new HttpError(400, 'Tendered amount is less than this payment.');
+      changeCents = tenderedCents - roundedDueCents;
+    }
+
+    // Gift card: debit the card atomically BEFORE recording the payment — the
+    // gift card service guards balance/status under concurrency, and a failed
+    // redemption must leave the order untouched.
+    let giftCardRemainingCents: number | null = null;
+    let giftReference: string | null = null;
+    if (method === 'GIFT_CARD') {
+      const code = str(body.giftCardCode).toUpperCase();
+      if (!code) throw new HttpError(400, 'Gift card code is required.');
+      const redeemed = (await giftCardService.redeem(
+        { code, amountCents: dueCents, venue: order.venue, notes: `ALMA POS #${order.orderNumber}` },
+        undefined
+      )) as { balanceCents: number; code: string };
+      giftCardRemainingCents = redeemed.balanceCents;
+      giftReference = code;
     }
 
     const settled = amountCents >= balanceCents;
@@ -795,7 +833,7 @@ export const posService = {
         tipCents,
         tenderedCents,
         changeCents,
-        reference: str(body.reference) || null
+        reference: giftReference ?? (str(body.reference) || null)
       }
     });
     const updated = await prisma.posOrder.update({
@@ -816,7 +854,7 @@ export const posService = {
     if (settled) {
       await postPosActuals(updated.venue).catch(() => undefined);
     }
-    return { ...updated, changeCents, balanceCents: settled ? 0 : balanceCents - amountCents };
+    return { ...updated, changeCents, giftCardRemainingCents, balanceCents: settled ? 0 : balanceCents - amountCents };
   },
 
   async voidOrder(id: string, input: unknown, requireManager = false) {
@@ -837,6 +875,22 @@ export const posService = {
       data: { status: 'VOID', voidedAt: new Date(), voidReason: approvedBy ? `${reason ?? 'Void'} — approved by ${approvedBy}` : reason },
       include: ORDER_INCLUDE
     });
+  },
+
+  // Gift card balance check for the charge sheet. Mirrors redeem()'s gate
+  // (status ACTIVE + not expired) rather than lookup()'s paid-online check —
+  // counter-activated and comp cards have no Stripe payment but redeem fine.
+  async giftCardBalance(code: string) {
+    const clean = code.trim().toUpperCase();
+    if (!clean) throw new HttpError(400, 'Enter the gift card code.');
+    const card = await prisma.giftCard.findUnique({
+      where: { code: clean },
+      select: { code: true, status: true, balanceCents: true, recipientName: true, expiresAt: true }
+    });
+    if (!card) throw new HttpError(404, 'No gift card with that code.');
+    if (card.status !== 'ACTIVE') throw new HttpError(400, `That gift card is ${card.status.replace('_', ' ').toLowerCase()}.`);
+    if (card.expiresAt && card.expiresAt < new Date()) throw new HttpError(400, 'That gift card has expired.');
+    return { code: card.code, balanceCents: card.balanceCents, recipientName: card.recipientName ?? null };
   },
 
   // Standalone check so the register can pre-clear an approval sheet.

@@ -129,6 +129,14 @@ posRouter.get('/tables', async (req, res, next) => {
   }
 });
 
+posRouter.get('/gift-card', async (req, res, next) => {
+  try {
+    res.json(await posService.giftCardBalance(String(req.query.code ?? '')));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.post('/manager-approve', async (req, res, next) => {
   try {
     res.json(await posService.managerApprove(req.body));
