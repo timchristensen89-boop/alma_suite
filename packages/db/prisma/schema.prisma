@@ -2954,6 +2954,7 @@ model Recipe {
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
   lines              RecipeLine[]              @relation("RecipeLines")
+  posOrderLines      PosOrderLine[]
   usedByLines        RecipeLine[]              @relation("SubRecipeLines")
   itemSales          SalesItemActualEntry[]
   squareMenuMappings SquareMenuRecipeMapping[]
@@ -4672,4 +4673,64 @@ model FcSyncRun {
 
   @@index([companyId, sourceSystem, startedAt])
   @@map("fc_sync_runs")
+}
+
+// ── Alma POS (counter-mode register MVP) ─────────────────────────────────────
+// @domain: pos | home: suite
+model PosOrder {
+  id            String    @id @default(cuid())
+  orderNumber   Int       @unique @default(autoincrement())
+  venue         String
+  // UTC midnight of the Sydney trading day the order was PAID on (null while open).
+  serviceDate   DateTime?
+  status        String    @default("OPEN") // OPEN | PAID | VOID
+  subtotalCents Int       @default(0) // inc GST, before discount
+  discountCents Int       @default(0)
+  totalCents    Int       @default(0) // inc GST, after discount
+  gstCents      Int       @default(0) // 1/11 of total (GST-inclusive pricing)
+  tipCents      Int       @default(0)
+  notes         String?
+  openedByName  String?
+  paidAt        DateTime?
+  voidedAt      DateTime?
+  voidReason    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lines         PosOrderLine[]
+  payments      PosPayment[]
+
+  @@index([venue, serviceDate])
+  @@index([status])
+}
+
+model PosOrderLine {
+  id             String   @id @default(cuid())
+  orderId        String
+  recipeId       String?
+  name           String
+  unitPriceCents Int
+  quantity       Int
+  totalCents     Int
+  notes          String?
+  createdAt      DateTime @default(now())
+  order          PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  recipe         Recipe?  @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([recipeId])
+}
+
+model PosPayment {
+  id            String   @id @default(cuid())
+  orderId       String
+  method        String // CASH | CARD_EXTERNAL | STRIPE_TERMINAL
+  amountCents   Int
+  tipCents      Int      @default(0)
+  tenderedCents Int?
+  changeCents   Int?
+  reference     String?
+  createdAt     DateTime @default(now())
+  order         PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
 }
