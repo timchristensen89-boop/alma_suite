@@ -252,6 +252,13 @@ export function App() {
   // Phone layout: the bill lives in a bottom sheet behind a summary bar.
   const [cartOpen, setCartOpen] = useState(false);
   const [darkTheme, setDarkTheme] = useState(() => localStorage.getItem('alma.pos.theme') === 'dark');
+  // Two full designs: 'classic' tiles (v1) and the 'rail' sidebar-list (v2).
+  const [design, setDesign] = useState<'classic' | 'rail'>(() => (localStorage.getItem('alma.pos.design') === 'rail' ? 'rail' : 'classic'));
+
+  useEffect(() => {
+    document.body.classList.toggle('pos-v2', design === 'rail');
+    localStorage.setItem('alma.pos.design', design);
+  }, [design]);
   // St Alma and Alma Avalon are separate companies — receipts and the header
   // carry the selected venue's own identity.
   const [venueIdentity, setVenueIdentity] = useState<{ businessName: string; abn: string | null }>({ businessName: 'ALMA', abn: null });
@@ -332,6 +339,43 @@ export function App() {
       }
       if (dragPinIndex.current !== null && dragMoved.current) saveBoard(homeRef.current);
       dragPinIndex.current = null;
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  }
+
+  function folderItemPointerDown(event: React.PointerEvent, folderIndex: number, itemIndex: number) {
+    if (!boardEdit) return;
+    event.preventDefault();
+    let from = itemIndex;
+    let moved = false;
+    const onMove = (nativeEvent: PointerEvent) => {
+      const target = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY)?.closest('[data-fitem-index]');
+      if (!target) return;
+      const over = Number(target.getAttribute('data-fitem-index'));
+      if (Number.isNaN(over) || over === from) return;
+      moved = true;
+      setHome((current) => {
+        const pins = current.pins.map((pin, i) => {
+          if (i !== folderIndex || pin.t !== 'f') return pin;
+          const items = [...pin.items];
+          const [dragged] = items.splice(from, 1);
+          items.splice(over, 0, dragged!);
+          return { ...pin, items };
+        });
+        return { ...current, pins };
+      });
+      from = over;
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      if (moved) {
+        dragMoved.current = true;
+        saveBoard(homeRef.current);
+      }
     };
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
@@ -1242,6 +1286,73 @@ export function App() {
 
   return (
     <div className="pos-shell">
+      {design === 'rail' ? (
+        <aside className="pos-rail">
+          <div className="pos-rail-brand">
+            <img src="/brand/alma-wordmark-cream.png" alt="alma" />
+            <span>POS</span>
+          </div>
+          <div className="pos-rail-venue">
+            <i />
+            <select value={venue} onChange={(event) => setVenue(event.currentTarget.value)}>
+              {VENUES.map((name) => (
+                <option key={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="pos-rail-eyebrow">Tonight</div>
+          <button type="button" className={view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'} onClick={() => setView('register')}>
+            Sale
+          </button>
+          <button type="button" className={view === 'tables' ? 'pos-rail-item is-on' : 'pos-rail-item'} onClick={() => { setView('tables'); void refreshOpenOrders(); }}>
+            Tables
+            {openOrders.length > 0 ? <em>{openOrders.length} open</em> : null}
+          </button>
+          <button
+            type="button"
+            className="pos-rail-item"
+            onClick={() => {
+              void api<Order[]>(`/api/pos/orders?venue=${encodeURIComponent(venue)}&status=ALL`)
+                .then((rows) => setBills(rows.filter((row) => row.status !== 'OPEN')))
+                .catch((err) => setError(messageForError(err, 'Could not load bills.')));
+            }}
+          >
+            Bills
+          </button>
+          <div className="pos-rail-eyebrow">Menu</div>
+          <div className="pos-rail-cats">
+            <button type="button" className={activeCategory === HOME_TAB && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'} onClick={() => { setView('register'); setActiveCategory(HOME_TAB); }}>
+              ★ Home
+            </button>
+            <button type="button" className={activeCategory === '__all__' && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'} onClick={() => { setView('register'); setActiveCategory('__all__'); }}>
+              Full menu
+            </button>
+            {visibleTabs.map((token) => {
+              const isGroup = token.startsWith('g:');
+              const label = isGroup ? `📁 ${token.slice(2)}` : token;
+              const target = isGroup ? `__group__${token.slice(2)}` : token;
+              return (
+                <button
+                  key={token}
+                  type="button"
+                  className={activeCategory === target && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'}
+                  onClick={() => {
+                    setView('register');
+                    setActiveCategory(target);
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="pos-rail-foot">
+            <strong>{operatorName}</strong>
+            <small>On the till · {venueIdentity.businessName}</small>
+          </div>
+        </aside>
+      ) : null}
+      <div className="pos-main">
       <header className="pos-header">
         <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" onClick={() => { setOrder(null); void refreshOpenOrders(); }} />
         <strong onClick={() => { setOrder(null); void refreshOpenOrders(); }} style={{ cursor: 'pointer' }}>
@@ -1452,74 +1563,6 @@ export function App() {
               </button>
             ) : null}
           </div>
-          <div className="pos-mgmt-row">
-            {(home.buttons.length ? home.buttons : ['open-till', 'discount', 'comp', 'wastage', 'price']).map((key) => {
-              const labels: Record<string, string> = {
-                'open-till': 'Open till',
-                discount: 'Discount',
-                comp: 'Comp',
-                wastage: 'Wastage',
-                price: 'Change price'
-              };
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  className="pos-mgmt-btn"
-                  onClick={() => {
-                    if (key === 'open-till') {
-                      void (async () => {
-                        const [gate, drawer] = await Promise.all([
-                          api<CloseGate>(`/api/pos/close-day?venue=${encodeURIComponent(venue)}`),
-                          api<DrawerInfo>(`/api/pos/drawer?venue=${encodeURIComponent(venue)}`)
-                        ]);
-                        setClosing({ gate, drawer, stage: 'checklist', float: '', counts: {}, report: null });
-                      })().catch(() => undefined);
-                    } else if (key === 'wastage') {
-                      setWastage({ search: '', recipeId: '', itemName: '', quantity: '1', reason: '' });
-                    } else {
-                      setError('Open a table first, then use ' + labels[key] + ' from the order screen.');
-                    }
-                  }}
-                >
-                  {labels[key] ?? key}
-                </button>
-              );
-            })}
-            {home.pins.map((pin, index) => {
-              if (pin.t === 'f') {
-                return (
-                  <button
-                    key={`f-${index}`}
-                    type="button"
-                    className="pos-mgmt-btn pos-mgmt-pin"
-                    style={pin.c ? { borderColor: pin.c, color: pin.c } : undefined}
-                    onClick={() => setOpenFolder(pin)}
-                  >
-                    📁 {pin.name}
-                  </button>
-                );
-              }
-              const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id);
-              if (!item) return null;
-              return (
-                <button
-                  key={pin.id}
-                  type="button"
-                  className="pos-mgmt-btn pos-mgmt-pin"
-                  style={pin.c ? { borderColor: pin.c, color: pin.c } : undefined}
-                  disabled={busy}
-                  onClick={() => void quickSaleWithItem(item)}
-                  title="Pinned item — starts a quick sale with it"
-                >
-                  ★ {item.title}
-                </button>
-              );
-            })}
-            <button type="button" className="pos-mgmt-btn pos-mgmt-edit" onClick={() => setCustomise(true)}>
-              ⚙
-            </button>
-          </div>
           {homeView === 'floor' && floorTables.length > 0 ? (
             <FloorView
               tables={floorTables}
@@ -1641,7 +1684,47 @@ export function App() {
                   : null}
               </nav>
             ) : null}
-            {!search && activeCategory === HOME_TAB ? (
+            {design === 'rail' && (activeCategory === '__all__' || (menu.some((category) => category.name === activeCategory) && !search)) ? (
+              <div className="pos-list">
+                {(activeCategory === '__all__' ? menu : menu.filter((category) => category.name === activeCategory)).map((category) => {
+                  const rows = category.items.filter((item) => !search || item.title.toLowerCase().includes(search.toLowerCase()));
+                  if (rows.length === 0) return null;
+                  const qtyOf = (recipeId: string) =>
+                    (order?.lines ?? []).filter((line) => line.recipeId === recipeId).reduce((sum, line) => sum + line.quantity, 0);
+                  return (
+                    <section key={category.name} className="pos-list-section">
+                      <div className="pos-list-head">
+                        <i className={`pos-list-dot ${hueClass(hueForCategory(category.name))}`} />
+                        <h3>{category.name}</h3>
+                        <small>
+                          {rows.length} item{rows.length === 1 ? '' : 's'}
+                        </small>
+                      </div>
+                      <div className="pos-list-card">
+                        {rows.map((item) => {
+                          const quantity = qtyOf(item.recipeId);
+                          return (
+                            <button
+                              key={item.recipeId}
+                              type="button"
+                              className={`pos-list-row ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                              disabled={busy}
+                              onClick={() => addItem(item)}
+                            >
+                              <i className={`pos-list-dot ${hueClass(hueForCategory(category.name))}`} />
+                              <span>{item.title}</span>
+                              {quantity > 0 ? <em>×{quantity}</em> : null}
+                              <b>{eightySix.has(item.recipeId) ? "86'd" : money(item.priceCents)}</b>
+                              <u>＋</u>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            ) : !search && activeCategory === HOME_TAB ? (
               <div className="pos-grid pos-grid-home">
                 {(home.buttons.length ? home.buttons : ['open-till', 'discount', 'comp', 'wastage', 'price']).map((key) => {
                   const labels: Record<string, string> = {
@@ -1861,17 +1944,25 @@ export function App() {
                   const folderIndex = Number(activeCategory.slice('__folder__'.length));
                   const pin = home.pins[folderIndex];
                   if (!pin || pin.t !== 'f') return null;
-                  return pin.items.map((recipeId) => {
+                  return pin.items.map((recipeId, itemIndex) => {
                     const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === recipeId);
                     if (!item) return null;
                     return (
                       <button
                         key={recipeId}
                         type="button"
-                        className={`pos-item pos-item-pin ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                        data-fitem-index={itemIndex}
+                        className={`pos-item pos-item-pin ${hueClass(pin.c)} ${boardEdit ? 'is-editing' : ''} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
                         style={hueStyle(pin.c)}
                         disabled={busy && !boardEdit}
-                        onClick={() => (boardEdit ? undefined : addItem(item))}
+                        onPointerDown={boardEdit ? (event) => folderItemPointerDown(event, folderIndex, itemIndex) : undefined}
+                        onClick={() => {
+                          if (boardEdit) {
+                            if (dragMoved.current) dragMoved.current = false;
+                            return;
+                          }
+                          addItem(item);
+                        }}
                       >
                         {boardEdit ? (
                           <>
@@ -1978,7 +2069,10 @@ export function App() {
             </button>
             <div className="pos-cart-lines">
               {(order?.lines ?? []).length === 0 && !targetCourse ? (
-                <p className="pos-muted">Tap a course, then tap items — they land in that course.</p>
+                <div className="pos-cart-empty">
+                  <img src="/brand/alma-fish.png" alt="" className="pos-fish-empty" />
+                  <p className="pos-muted">Tap a course, then tap items — they land in that course.</p>
+                </div>
               ) : null}
               {billCourses.map(([groupCourse, entries]) => (
                 <div key={groupCourse} className={`pos-course-group ${courseIsOpen(groupCourse, entries.length) ? 'is-open' : ''}`}>
@@ -3348,6 +3442,19 @@ export function App() {
                 </button>
               ))}
             </div>
+            <p className="pos-muted">Design:</p>
+            <div className="pos-reason-list">
+              {(
+                [
+                  ['classic', 'Classic tiles'],
+                  ['rail', 'Sidebar list']
+                ] as const
+              ).map(([key, label]) => (
+                <button key={key} type="button" className={design === key ? 'is-on' : ''} onClick={() => setDesign(key)}>
+                  {label}
+                </button>
+              ))}
+            </div>
             <p className="pos-muted">Training:</p>
             <div className="pos-reason-list">
               <button
@@ -3794,6 +3901,7 @@ export function App() {
           </div>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }
