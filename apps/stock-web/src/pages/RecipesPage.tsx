@@ -258,7 +258,12 @@ function lineUnitOptions(
     }
   } else if (subRecipeId) {
     const rec = recipes.find((r) => r.id === subRecipeId);
-    if (rec) base = isLiquidUnit(rec.yieldUnit) ? LIQUID_UNIT_OPTIONS : SOLID_UNIT_OPTIONS;
+    if (rec && !rec.isPrepRecipe) {
+      // Linked menu dish: quantity means SERVES (0.5 = half a serve).
+      base = [{ label: 'serve', value: 'serve' }];
+    } else if (rec) {
+      base = isLiquidUnit(rec.yieldUnit) ? LIQUID_UNIT_OPTIONS : SOLID_UNIT_OPTIONS;
+    }
   }
   // Keep an existing non-standard unit as an option so editing an old recipe
   // doesn't silently change it; the user can switch to a standard one.
@@ -1642,18 +1647,22 @@ function RecipeLinesTable({
   const isSetMenu = detail.kind === 'SET_MENU';
   // Set menus compose whole menu dishes (and preps); normal recipes compose
   // production recipes only.
+  // Any recipe can link a MENU DISH as a line ("Kingfish Ceviche (1pc)*" =
+  // 0.5 serves of the main): the component's cost derives from the dish and
+  // follows it automatically. Preps list first, dishes after.
   const subRecipeOptions = useMemo(
     () => [
       { label: 'None', value: '' },
       ...allRecipes
-        .filter((recipe) =>
-          recipe.id !== detail.id &&
-          (isSetMenu
-            ? recipe.kind !== 'SET_MENU' && recipe.status === 'ACTIVE'
-            : recipe.isPrepRecipe)
+        .filter((recipe) => recipe.id !== detail.id && recipe.isPrepRecipe && !isSetMenu)
+        .map((recipe) => ({ label: `Prep · ${recipe.title}`, value: recipe.id })),
+      ...allRecipes
+        .filter(
+          (recipe) =>
+            recipe.id !== detail.id && !recipe.isPrepRecipe && recipe.kind !== 'SET_MENU' && recipe.status === 'ACTIVE'
         )
         .map((recipe) => ({
-          label: isSetMenu && recipe.venue ? `${recipe.title} · ${recipe.venue}` : recipe.title,
+          label: `Dish · ${recipe.title}${recipe.venue ? ` (${recipe.venue})` : ''}`,
           value: recipe.id
         }))
     ],

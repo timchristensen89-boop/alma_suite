@@ -529,6 +529,32 @@ async function findRecipeWithLines(id: string) {
   return row;
 }
 
+// A recipe's cost feeds every recipe that links it on a line (set menus,
+// fractional dish components like "Kingfish Ceviche (1pc)*" = 0.5 serves of
+// the main). After a recipe changes, walk and refresh its dependents so
+// linked costs cascade automatically. Depth-capped against link cycles.
+async function refreshRecipeDependents(recipeId: string) {
+  const seen = new Set<string>([recipeId]);
+  let frontier = [recipeId];
+  let depth = 0;
+  while (frontier.length > 0 && depth < 6) {
+    const dependents = await prisma.recipeLine.findMany({
+      where: { subRecipeId: { in: frontier } },
+      select: { recipeId: true },
+      distinct: ['recipeId']
+    });
+    const next: string[] = [];
+    for (const dependent of dependents) {
+      if (seen.has(dependent.recipeId)) continue;
+      seen.add(dependent.recipeId);
+      await refreshRecipeEstimatedCost(dependent.recipeId).catch(() => undefined);
+      next.push(dependent.recipeId);
+    }
+    frontier = next;
+    depth += 1;
+  }
+}
+
 async function refreshRecipeEstimatedCost(id: string) {
   const row = await findRecipeWithLines(id);
   const cost = calculateRecipeCost(row);
@@ -1457,6 +1483,7 @@ export const recipesService = {
       }
     });
     const refreshed = await refreshRecipeEstimatedCost(row.id);
+    await refreshRecipeDependents(row.id).catch(() => undefined);
     // Rule 4: auto-attach Square menu items / stock items that share this
     // recipe's title for manual review. Best-effort — failures don't
     // block recipe creation.
@@ -1572,7 +1599,9 @@ export const recipesService = {
         venuePrices: { select: { venue: true, salePriceCents: true } }
       }
     });
-    return toRecipeWithLinesPayload(await refreshRecipeEstimatedCost(row.id));
+    const refreshedRow = await refreshRecipeEstimatedCost(row.id);
+    await refreshRecipeDependents(row.id).catch(() => undefined);
+    return toRecipeWithLinesPayload(refreshedRow);
   },
 
   async deleteRecipes(input: unknown): Promise<{ deleted: number }> {
