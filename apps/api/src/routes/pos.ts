@@ -44,6 +44,22 @@ posRouter.get('/orders/:id', async (req, res, next) => {
   }
 });
 
+posRouter.patch('/orders/:id', async (req, res, next) => {
+  try {
+    res.json(await posService.updateOrder(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.get('/guests/:id', async (req, res, next) => {
+  try {
+    res.json(await posService.guestProfile(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 posRouter.put('/orders/:id/lines', async (req, res, next) => {
   try {
     res.json(await posService.setLines(String(req.params.id), req.body));

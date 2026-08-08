@@ -129,6 +129,48 @@ async function drawerExpectedCents(drawer: { venue: string; openingFloatCents: n
   return drawer.openingFloatCents + (cash._sum.amountCents ?? 0) + (cash._sum.tipCents ?? 0);
 }
 
+// Settling an order refreshes the guest's CRM row: lifetime spend from their
+// settled POS orders + reservation spend stays additive (we only add POS
+// deltas), visits bump once per Sydney day, favourites cached to preferences.
+async function updateGuestFromOrder(guestId: string) {
+  const [guest, posTotals, favourites] = await Promise.all([
+    prisma.reserveGuest.findUnique({ where: { id: guestId }, select: { lastVisitAt: true, preferences: true } }),
+    prisma.posOrder.aggregate({ where: { guestId, status: 'PAID' }, _sum: { totalCents: true, tipCents: true } }),
+    prisma.posOrderLine.groupBy({
+      by: ['name'],
+      where: { order: { guestId, status: 'PAID' } },
+      _sum: { quantity: true },
+      orderBy: { _sum: { quantity: 'desc' } },
+      take: 3
+    })
+  ]);
+  if (!guest) return;
+  const today = sydneyTodayUtcMidnight();
+  const sameDay = guest.lastVisitAt && guest.lastVisitAt >= today;
+  const preferences = {
+    ...((guest.preferences ?? {}) as Record<string, unknown>),
+    posSpendCents: (posTotals._sum.totalCents ?? 0) + (posTotals._sum.tipCents ?? 0),
+    favouriteItems: favourites.map((row) => row.name)
+  };
+  await prisma.reserveGuest.update({
+    where: { id: guestId },
+    data: {
+      totalSpendCents: { increment: 0 },
+      ...(sameDay ? {} : { totalVisits: { increment: 1 } }),
+      lastVisitAt: new Date(),
+      preferences: preferences as object
+    }
+  });
+  // Lifetime spend: recompute additively — reservation-side spend plus POS
+  // spend lives in preferences; totalSpendCents gets the POS running total
+  // when it exceeds what's recorded (never decrements CRM history).
+  const current = await prisma.reserveGuest.findUnique({ where: { id: guestId }, select: { totalSpendCents: true } });
+  const posSpend = (posTotals._sum.totalCents ?? 0) + (posTotals._sum.tipCents ?? 0);
+  if (current && posSpend > current.totalSpendCents) {
+    await prisma.reserveGuest.update({ where: { id: guestId }, data: { totalSpendCents: posSpend } });
+  }
+}
+
 function asInt(value: unknown, label: string, opts: { min?: number; max?: number } = {}): number {
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n) || !Number.isInteger(n)) throw new HttpError(400, `${label} must be a whole number.`);
@@ -143,7 +185,8 @@ function str(value: unknown): string {
 
 const ORDER_INCLUDE = {
   lines: { orderBy: { createdAt: 'asc' as const } },
-  payments: { orderBy: { createdAt: 'asc' as const } }
+  payments: { orderBy: { createdAt: 'asc' as const } },
+  guest: { select: { id: true, firstName: true, lastName: true, totalVisits: true, totalSpendCents: true, tags: true, allergyNotes: true, dietaryNotes: true } }
 };
 
 type LineInput = { recipeId?: string | null; name: string; unitPriceCents: number; quantity: number; course?: string | null; notes?: string | null };
@@ -198,15 +241,58 @@ export const posService = {
     const body = (input ?? {}) as Record<string, unknown>;
     const venue = str(body.venue);
     if (!venue) throw new HttpError(400, 'venue is required.');
+    const tableLabel = str(body.tableLabel) || null;
+
+    // Guest matching: tonight's reservation on this table links the order to
+    // the guest's CRM profile (spend + favourites update at settle).
+    let guestId: string | null = null;
+    let reservationId: string | null = null;
+    if (tableLabel) {
+      const reservation = await prisma.reserveReservation.findFirst({
+        where: {
+          venue,
+          serviceDate: sydneyTodayUtcMidnight(),
+          status: { notIn: ['CANCELLED', 'NO_SHOW'] },
+          OR: [
+            { table: { label: { equals: tableLabel, mode: 'insensitive' } } },
+            { tableLabels: { contains: tableLabel, mode: 'insensitive' } }
+          ]
+        },
+        orderBy: { startsAt: 'asc' },
+        select: { id: true, guestId: true }
+      });
+      if (reservation) {
+        guestId = reservation.guestId;
+        reservationId = reservation.id;
+      }
+    }
+
     return prisma.posOrder.create({
       data: {
         venue,
         openedByName: str(body.openedByName) || null,
-        tableLabel: str(body.tableLabel) || null,
+        tableLabel,
+        guestId,
+        reservationId,
         covers: body.covers === undefined || body.covers === null || body.covers === '' ? null : asInt(body.covers, 'covers', { min: 1, max: 200 })
       },
       include: ORDER_INCLUDE
     });
+  },
+
+  // Adjust table details mid-service (covers changes constantly on the floor).
+  async updateOrder(id: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true } });
+    if (!order) throw new HttpError(404, 'Order not found.');
+    if (order.status !== 'OPEN') throw new HttpError(400, 'Only open orders can be edited.');
+    const data: Record<string, unknown> = {};
+    if (body.covers !== undefined) {
+      data.covers = body.covers === null || body.covers === '' ? null : asInt(body.covers, 'covers', { min: 1, max: 200 });
+    }
+    if (body.tableLabel !== undefined) data.tableLabel = str(body.tableLabel) || null;
+    await prisma.posOrder.update({ where: { id }, data });
+    return this.getOrder(id);
   },
 
   async listOpenOrders(venue: string | null) {
@@ -313,6 +399,9 @@ export const posService = {
         : { tipCents: order.tipCents + tipCents },
       include: ORDER_INCLUDE
     });
+    if (settled && updated.guestId) {
+      await updateGuestFromOrder(updated.guestId).catch(() => undefined);
+    }
     return { ...updated, changeCents, balanceCents: settled ? 0 : balanceCents - amountCents };
   },
 
@@ -676,6 +765,42 @@ export const posService = {
       description: str(body.description) || 'ALMA POS'
     });
     return { id: intent.id, clientSecret: intent.client_secret };
+  },
+
+  // Live guest profile for the register: CRM totals + favourite items
+  // aggregated from every POS order they've settled.
+  async guestProfile(id: string) {
+    const guest = await prisma.reserveGuest.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        totalVisits: true,
+        totalSpendCents: true,
+        lastVisitAt: true,
+        tags: true,
+        allergyNotes: true,
+        dietaryNotes: true,
+        visitNotes: true
+      }
+    });
+    if (!guest) throw new HttpError(404, 'Guest not found.');
+    const favourites = await prisma.posOrderLine.groupBy({
+      by: ['name'],
+      where: { order: { guestId: id, status: 'PAID' } },
+      _sum: { quantity: true, totalCents: true },
+      orderBy: { _sum: { quantity: 'desc' } },
+      take: 5
+    });
+    return {
+      ...guest,
+      favourites: favourites.map((row) => ({
+        name: row.name,
+        quantity: row._sum.quantity ?? 0,
+        totalCents: row._sum.totalCents ?? 0
+      }))
+    };
   },
 
   // Tonight's bookings for the floor overlay — matched to tables by label.

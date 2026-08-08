@@ -1443,6 +1443,7 @@ model ReserveGuest {
   createdAt           DateTime                     @default(now())
   updatedAt           DateTime                     @updatedAt
   reservations        ReserveReservation[]
+  posOrders           PosOrder[]
   marketingContact    MarketingContact?
   tagAssignments      GuestTagAssignment[]
   automationRuns      MarketingAutomationRun[]
@@ -4721,8 +4722,13 @@ model PosOrder {
   tipCents      Int       @default(0)
   tableLabel    String?
   covers        Int?
+  // Matched guest (via tonight's reservation on this table) — feeds the CRM:
+  // spend, visits and favourite items update when the order settles.
+  guestId       String?
+  reservationId String?
   notes         String?
   openedByName  String?
+  guest         ReserveGuest? @relation(fields: [guestId], references: [id], onDelete: SetNull)
   paidAt        DateTime?
   voidedAt      DateTime?
   voidReason    String?

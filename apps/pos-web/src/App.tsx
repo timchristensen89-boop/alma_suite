@@ -20,9 +20,26 @@ type OrderLine = {
   course?: string | null;
 };
 type Payment = { method: string; amountCents: number; tipCents: number; createdAt?: string };
+type OrderGuest = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  totalVisits: number;
+  totalSpendCents: number;
+  tags: string[];
+  allergyNotes: string | null;
+  dietaryNotes: string | null;
+};
+type GuestProfile = OrderGuest & {
+  lastVisitAt: string | null;
+  visitNotes: string | null;
+  favourites: Array<{ name: string; quantity: number; totalCents: number }>;
+};
+type Pin = { t: 'i'; id: string; c?: string } | { t: 'f'; name: string; c?: string; items: string[] };
 type Order = {
   id: string;
   orderNumber: number;
+  guest?: OrderGuest | null;
   venue: string;
   status: 'OPEN' | 'PAID' | 'VOID';
   tableLabel: string | null;
@@ -144,7 +161,12 @@ export function App() {
   const [dockets, setDockets] = useState<Docket[] | null>(null);
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
-  const [home, setHome] = useState<{ buttons: string[]; pins: string[] }>({ buttons: [], pins: [] });
+  const [home, setHome] = useState<{ buttons: string[]; pins: Pin[] }>({ buttons: [], pins: [] });
+  const [guestView, setGuestView] = useState<GuestProfile | null>(null);
+  const [coversEdit, setCoversEdit] = useState<string>('');
+  const [coversOpen, setCoversOpen] = useState(false);
+  const [openFolder, setOpenFolder] = useState<Pin | null>(null);
+  const [folderDraft, setFolderDraft] = useState<null | { name: string; c: string; items: string[]; search: string }>(null);
   const [customise, setCustomise] = useState(false);
   const [wastage, setWastage] = useState<null | { search: string; recipeId: string; itemName: string; quantity: string; reason: string }>(null);
   const [lineAction, setLineAction] = useState<null | { lineId: string; name: string; kind: 'COMP' | 'PRICE_CHANGE'; reason: string; price: string }>(null);
@@ -244,8 +266,16 @@ export function App() {
     if (me === 'loading' || !me) return;
     const name = me.kind === 'staff' ? me.name : me.staffName ?? '';
     if (!name) return;
-    void api<{ buttons: string[]; pins: string[] }>(`/api/pos/homescreen?userKey=${encodeURIComponent(name.toLowerCase())}`)
-      .then(setHome)
+    void api<{ buttons: string[]; pins: unknown[] }>(`/api/pos/homescreen?userKey=${encodeURIComponent(name.toLowerCase())}`)
+      .then((config) =>
+        setHome({
+          buttons: config.buttons,
+          // Legacy pins were plain recipeId strings — normalise to the rich shape.
+          pins: (config.pins ?? []).map((pin) =>
+            typeof pin === 'string' ? ({ t: 'i', id: pin } as Pin) : (pin as Pin)
+          )
+        })
+      )
       .catch(() => undefined);
   }, [me]);
 
@@ -371,6 +401,28 @@ export function App() {
     void pushLines(next);
   }
 
+  async function quickSaleWithItem(item: MenuItem) {
+    setBusy(true);
+    try {
+      const created = await api<Order>('/api/pos/orders', {
+        method: 'POST',
+        body: JSON.stringify({ venue, openedByName: operatorName || undefined })
+      });
+      const updated = await api<Order>(`/api/pos/orders/${created.id}/lines`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          lines: [{ recipeId: item.recipeId, name: item.title, unitPriceCents: item.priceCents, quantity: 1, course: defaultCourse(kindByRecipe.get(item.recipeId) ?? 'FOOD') }]
+        })
+      });
+      setOrder(updated);
+      setOpenFolder(null);
+    } catch (err) {
+      setError(messageForError(err, 'Could not start the sale.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function openOrder(input: { tableLabel?: string; covers?: number }) {
     setBusy(true);
     setError(null);
@@ -447,7 +499,29 @@ export function App() {
         {order ? (
           <span className="pos-crumb">
             {order.tableLabel ? `Table ${order.tableLabel}` : `Sale #${order.orderNumber}`}
-            {order.covers ? ` · ${order.covers} covers` : ''}
+            <button
+              type="button"
+              className="pos-covers-chip"
+              onClick={() => {
+                setCoversEdit(String(order.covers ?? ''));
+                setCoversOpen(true);
+              }}
+            >
+              {order.covers ?? '–'} covers
+            </button>
+            {order.guest ? (
+              <button
+                type="button"
+                className="pos-guest-chip"
+                onClick={() => {
+                  void api<GuestProfile>(`/api/pos/guests/${order.guest!.id}`)
+                    .then(setGuestView)
+                    .catch((err) => setError(messageForError(err, 'Could not load the guest.')));
+                }}
+              >
+                ☺ {order.guest.firstName} {order.guest.lastName}
+              </button>
+            ) : null}
           </span>
         ) : (
           <select value={venue} onChange={(event) => setVenue(event.currentTarget.value)}>
@@ -583,19 +657,31 @@ export function App() {
                 </button>
               );
             })}
-            {home.pins.map((pin) => {
-              const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin);
+            {home.pins.map((pin, index) => {
+              if (pin.t === 'f') {
+                return (
+                  <button
+                    key={`f-${index}`}
+                    type="button"
+                    className="pos-mgmt-btn pos-mgmt-pin"
+                    style={pin.c ? { borderColor: pin.c, color: pin.c } : undefined}
+                    onClick={() => setOpenFolder(pin)}
+                  >
+                    📁 {pin.name}
+                  </button>
+                );
+              }
+              const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id);
               if (!item) return null;
               return (
                 <button
-                  key={pin}
+                  key={pin.id}
                   type="button"
                   className="pos-mgmt-btn pos-mgmt-pin"
+                  style={pin.c ? { borderColor: pin.c, color: pin.c } : undefined}
                   disabled={busy}
-                  onClick={() => {
-                    void openOrder({}).then(() => undefined);
-                  }}
-                  title="Pinned item — starts a quick sale"
+                  onClick={() => void quickSaleWithItem(item)}
+                  title="Pinned item — starts a quick sale with it"
                 >
                   ★ {item.title}
                 </button>
@@ -1017,6 +1103,191 @@ export function App() {
         </div>
       ) : null}
 
+      {guestView ? (
+        <div className="pos-modal" role="dialog" onClick={() => setGuestView(null)}>
+          <div className="pos-modal-panel" onClick={(event) => event.stopPropagation()}>
+            <h2>
+              {guestView.firstName} {guestView.lastName}
+            </h2>
+            <div className="pos-day-grid">
+              <div>
+                <small>Visits</small>
+                <strong>{guestView.totalVisits}</strong>
+              </div>
+              <div>
+                <small>Lifetime spend</small>
+                <strong>{money(guestView.totalSpendCents)}</strong>
+              </div>
+            </div>
+            {guestView.tags.length ? <p className="pos-muted">Tags: {guestView.tags.join(', ')}</p> : null}
+            {guestView.allergyNotes ? <p className="pos-error-inline">⚠ Allergies: {guestView.allergyNotes}</p> : null}
+            {guestView.dietaryNotes ? <p className="pos-muted">Dietary: {guestView.dietaryNotes}</p> : null}
+            {guestView.favourites.length ? (
+              <>
+                <p className="pos-muted">Favourites:</p>
+                {guestView.favourites.map((favourite) => (
+                  <div key={favourite.name} className="pos-day-item">
+                    <span>
+                      {favourite.quantity}× {favourite.name}
+                    </span>
+                    <span>{money(favourite.totalCents)}</span>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <p className="pos-muted">No POS history yet — favourites build as they order.</p>
+            )}
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setGuestView(null)}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {coversOpen && order ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Covers on {order.tableLabel ? `table ${order.tableLabel}` : 'this sale'}</h2>
+            <div className="pos-choice-row">
+              <button type="button" onClick={() => setCoversEdit(String(Math.max(1, (Number(coversEdit) || 1) - 1)))}>
+                −
+              </button>
+              <input
+                className="pos-tender"
+                style={{ flex: 1, textAlign: 'center' }}
+                inputMode="numeric"
+                value={coversEdit}
+                onChange={(event) => setCoversEdit(event.currentTarget.value)}
+              />
+              <button type="button" onClick={() => setCoversEdit(String((Number(coversEdit) || 0) + 1))}>
+                +
+              </button>
+            </div>
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={busy}
+              onClick={() => {
+                void api<Order>(`/api/pos/orders/${order.id}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ covers: coversEdit === '' ? null : Number(coversEdit) })
+                })
+                  .then((updated) => {
+                    setOrder(updated);
+                    setCoversOpen(false);
+                  })
+                  .catch((err) => setError(messageForError(err, 'Could not update covers.')));
+              }}
+            >
+              Save covers
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setCoversOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {openFolder && openFolder.t === 'f' ? (
+        <div className="pos-modal" role="dialog" onClick={() => setOpenFolder(null)}>
+          <div className="pos-modal-panel" onClick={(event) => event.stopPropagation()}>
+            <h2 style={openFolder.c ? { color: openFolder.c } : undefined}>📁 {openFolder.name}</h2>
+            <div className="pos-reason-list">
+              {openFolder.items.map((recipeId) => {
+                const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === recipeId);
+                if (!item) return null;
+                return (
+                  <button key={recipeId} type="button" disabled={busy} onClick={() => void quickSaleWithItem(item)}>
+                    {item.title} · {money(item.priceCents)}
+                  </button>
+                );
+              })}
+            </div>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setOpenFolder(null)}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {folderDraft ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>New folder</h2>
+            <input
+              className="pos-tender"
+              placeholder="Folder name (e.g. Happy hour, Kids)"
+              value={folderDraft.name}
+              onChange={(event) => setFolderDraft({ ...folderDraft, name: event.currentTarget.value })}
+            />
+            <div className="pos-reason-list">
+              {['#4f8f6b', '#7f9ac4', '#d9a05a', '#c4655a', '#a98ac4', '#9aa4ab'].map((colour) => (
+                <button
+                  key={colour}
+                  type="button"
+                  className={folderDraft.c === colour ? 'is-on' : ''}
+                  style={{ background: colour, borderColor: colour, minWidth: 44 }}
+                  onClick={() => setFolderDraft({ ...folderDraft, c: colour })}
+                >
+                  {' '}
+                </button>
+              ))}
+            </div>
+            <input
+              className="pos-tender"
+              placeholder="Search items to add…"
+              value={folderDraft.search}
+              onChange={(event) => setFolderDraft({ ...folderDraft, search: event.currentTarget.value })}
+            />
+            <div className="pos-reason-list">
+              {menu
+                .flatMap((category) => category.items)
+                .filter((item) => !folderDraft.search || item.title.toLowerCase().includes(folderDraft.search.toLowerCase()))
+                .slice(0, 10)
+                .map((item) => (
+                  <button
+                    key={item.recipeId}
+                    type="button"
+                    className={folderDraft.items.includes(item.recipeId) ? 'is-on' : ''}
+                    onClick={() =>
+                      setFolderDraft({
+                        ...folderDraft,
+                        items: folderDraft.items.includes(item.recipeId)
+                          ? folderDraft.items.filter((candidate) => candidate !== item.recipeId)
+                          : [...folderDraft.items, item.recipeId]
+                      })
+                    }
+                  >
+                    {item.title}
+                  </button>
+                ))}
+            </div>
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={!folderDraft.name.trim() || folderDraft.items.length === 0}
+              onClick={() => {
+                const next = {
+                  ...home,
+                  pins: [...home.pins, { t: 'f' as const, name: folderDraft.name.trim(), c: folderDraft.c, items: folderDraft.items }]
+                };
+                setHome(next);
+                setFolderDraft(null);
+                void api('/api/pos/homescreen', {
+                  method: 'PUT',
+                  body: JSON.stringify({ userKey, buttons: next.buttons, pins: next.pins, updatedBy: operatorName })
+                }).catch(() => undefined);
+              }}
+            >
+              Create folder ({folderDraft.items.length} items)
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setFolderDraft(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {wastage ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
@@ -1255,26 +1526,48 @@ export function App() {
                 </button>
               ))}
             </div>
-            <p className="pos-muted">Pinned items ({home.pins.length}) — tap a menu item on the order screen search to copy its name, or toggle the current top sellers:</p>
+            <p className="pos-muted">Pins &amp; folders (tap to cycle colour, ✕ to remove):</p>
+            <div className="pos-reason-list">
+              {home.pins.map((pin, index) => {
+                const palette = ['', '#4f8f6b', '#7f9ac4', '#d9a05a', '#c4655a', '#a98ac4'];
+                const label = pin.t === 'f' ? `📁 ${pin.name}` : menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id)?.title ?? '?';
+                return (
+                  <span key={index} className="pos-pin-edit">
+                    <button
+                      type="button"
+                      style={pin.c ? { borderColor: pin.c, color: pin.c } : undefined}
+                      onClick={() => {
+                        const next = palette[(palette.indexOf(pin.c ?? '') + 1) % palette.length];
+                        setHome({
+                          ...home,
+                          pins: home.pins.map((candidate, i) => (i === index ? { ...candidate, c: next || undefined } : candidate))
+                        });
+                      }}
+                    >
+                      {label}
+                    </button>
+                    <button type="button" onClick={() => setHome({ ...home, pins: home.pins.filter((_, i) => i !== index) })}>
+                      ✕
+                    </button>
+                  </span>
+                );
+              })}
+              <button type="button" onClick={() => setFolderDraft({ name: '', c: '#4f8f6b', items: [], search: '' })}>
+                + New folder
+              </button>
+            </div>
+            <p className="pos-muted">Add item pins:</p>
             <div className="pos-reason-list">
               {menu
                 .flatMap((category) => category.items)
-                .slice(0, 12)
+                .slice(0, 10)
                 .map((item) => (
                   <button
                     key={item.recipeId}
                     type="button"
-                    className={home.pins.includes(item.recipeId) ? 'is-on' : ''}
-                    onClick={() =>
-                      setHome({
-                        ...home,
-                        pins: home.pins.includes(item.recipeId)
-                          ? home.pins.filter((candidate) => candidate !== item.recipeId)
-                          : [...home.pins, item.recipeId]
-                      })
-                    }
+                    onClick={() => setHome({ ...home, pins: [...home.pins, { t: 'i', id: item.recipeId }] })}
                   >
-                    {item.title}
+                    + {item.title}
                   </button>
                 ))}
             </div>
