@@ -1580,17 +1580,15 @@ export function App() {
 
       {view === 'tables' ? (
         <div className="pos-home">
-          <div className="pos-home-actions">
-            {floorTables.length > 0 ? (
-              <button
-                type="button"
-                className="pos-home-new pos-home-quick pos-view-toggle"
-                onClick={() => setHomeView(homeView === 'floor' ? 'list' : 'floor')}
-              >
-                {homeView === 'floor' ? 'List view' : 'Floor view'}
-              </button>
-            ) : null}
-          </div>
+          {floorTables.length > 0 ? (
+            <button
+              type="button"
+              className="pos-view-chip"
+              onClick={() => setHomeView(homeView === 'floor' ? 'list' : 'floor')}
+            >
+              {homeView === 'floor' ? '☰ List' : '▦ Floor'}
+            </button>
+          ) : null}
           {homeView === 'floor' && floorTables.length > 0 ? (
             <FloorView
               tables={floorTables}
