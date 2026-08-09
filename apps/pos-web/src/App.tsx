@@ -1603,6 +1603,18 @@ export function App() {
     <div className="pos-shell">
       {design === 'rail' ? (
         <aside className="pos-rail">
+          <div
+            className="pos-rail-brand"
+            onClick={() => {
+              setOrder(null);
+              setView('register');
+              void refreshOpenOrders();
+            }}
+          >
+            <img src="/brand/alma-a-mark.png" alt="" />
+            <strong>{venueIdentity.businessName.toLowerCase()}</strong>
+            <span>POS</span>
+          </div>
           <div className="pos-rail-eyebrow">Tonight</div>
           <button type="button" className={view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'} onClick={() => setView('register')}>
             Sale

@@ -617,3 +617,17 @@ body:not(.pos-v2) .pos-cart .pos-meta-chips > button { border-color: rgba(255, 2
 .pos-cash-total strong { font-variant-numeric: tabular-nums; }
 .pos-cash-total .is-over strong { color: #b5772f; }
 .pos-cash-total .is-under strong { color: #b3402e; }
+
+/* Rail design: brand lives at the top of the rail; the header keeps the room */
+.pos-rail-brand { cursor: pointer; }
+.pos-rail-brand strong { flex: 1; font-family: var(--font-display); font-size: 17px; font-weight: 500; letter-spacing: 0; text-transform: lowercase; color: #f8f6f1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.pos-v2 .pos-header .pos-mark,
+body.pos-v2 .pos-header > strong,
+body.pos-v2 .pos-header .pos-wordmark-chip { display: none; }
+
+/* Full menu: category headers read as bold outlined buttons — night-proof */
+summary.pos-list-head { border: 1.5px solid var(--pos-border); background: var(--pos-card); border-radius: 12px; padding: 12px 15px; margin-bottom: 8px; }
+summary.pos-list-head h3 { font-weight: 800; font-size: 15px; letter-spacing: 0.02em; text-transform: uppercase; }
+summary.pos-list-head:hover { border-color: var(--pos-text2); }
+details[open] > summary.pos-list-head { border-color: var(--pos-text2); background: var(--pos-chip); }
+body.pos-dark summary.pos-list-head { border-color: rgba(248, 246, 241, 0.3); }
