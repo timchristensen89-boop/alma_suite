@@ -487,6 +487,7 @@ export function App() {
   // run the register browser in kiosk-printing mode.)
   const [autoPrint, setAutoPrint] = useState(false);
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
+  const [serviceCalls, setServiceCalls] = useState<Array<{ id: string; tableLabel: string; kind: string; createdAt: string }>>([]);
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
   const [home, setHome] = useState<{ buttons: string[]; pins: Pin[]; landingCategory?: string | null; categories?: TabsConfig | null }>({ buttons: [], pins: [] });
   const [renaming, setRenaming] = useState<null | { kind: 'pin' | 'group'; key: number | string; value: string }>(null);
@@ -580,6 +581,11 @@ export function App() {
       setReservations(await api<FloorReservation[]>(`/api/pos/floor-reservations?venue=${encodeURIComponent(venue)}`));
     } catch {
       /* overlay is optional */
+    }
+    try {
+      setServiceCalls(await api(`/api/pos/service-calls?venue=${encodeURIComponent(venue)}`));
+    } catch {
+      /* a table waiting is worth showing, but never blocks the floor view */
     }
   }, [venue]);
 
@@ -1839,6 +1845,28 @@ export function App() {
         </aside>
       ) : null}
       <div className="pos-main">
+      {serviceCalls.length > 0 ? (
+        <div className="pos-callbar">
+          {serviceCalls.map((call) => (
+            <button
+              key={call.id}
+              type="button"
+              title="Tap once you've been over"
+              onClick={() => {
+                void api(`/api/pos/service-calls/${call.id}/clear`, {
+                  method: 'POST',
+                  body: JSON.stringify({ staffName: operatorName })
+                })
+                  .then(() => setServiceCalls((current) => current.filter((entry) => entry.id !== call.id)))
+                  .catch(() => undefined);
+              }}
+            >
+              {call.kind === 'BILL' ? '🧾' : '🙋'} Table {call.tableLabel}
+              <em>{call.kind === 'BILL' ? 'wants the bill' : 'needs someone'}</em>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <header className="pos-header">
         <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" onClick={() => { setOrder(null); void refreshOpenOrders(); }} />
         <strong onClick={() => { setOrder(null); void refreshOpenOrders(); }} style={{ cursor: 'pointer' }}>

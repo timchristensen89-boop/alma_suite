@@ -708,3 +708,10 @@ body:not(.pos-v2) .pos-cart .pos-order-note { border-left-color: rgba(255, 255, 
 .pos-item:hover { transform: none; }
 .pos-item:active { transform: scale(0.985); }
 .pos-list-row { content-visibility: auto; contain-intrinsic-size: auto 44px; }
+
+/* A table asking for someone — impossible to miss, one tap to clear */
+.pos-callbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 16px; background: rgba(181, 119, 47, 0.14); border-bottom: 1px solid rgba(181, 119, 47, 0.35); }
+.pos-callbar button { display: inline-flex; align-items: center; gap: 8px; background: #b5772f; border: 0; border-radius: 9999px; color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 800; padding: 8px 15px; cursor: pointer; animation: pos-call-pulse 1.6s ease-in-out infinite; }
+.pos-callbar button em { font-style: normal; font-weight: 500; opacity: 0.85; }
+@keyframes pos-call-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.72; } }
+@media (prefers-reduced-motion: reduce) { .pos-callbar button { animation: none; } }

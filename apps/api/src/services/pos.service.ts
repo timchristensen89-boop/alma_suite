@@ -804,6 +804,22 @@ export const posService = {
     return { queued: true };
   },
 
+  async listServiceCalls(venue: string | null) {
+    return prisma.posServiceCall.findMany({
+      where: { clearedAt: null, ...(venue ? { venue } : {}) },
+      orderBy: { createdAt: 'asc' }
+    });
+  },
+
+  async clearServiceCall(id: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    await prisma.posServiceCall.update({
+      where: { id },
+      data: { clearedAt: new Date(), clearedBy: str(body.staffName) || null }
+    });
+    return { ok: true };
+  },
+
   // Lock-screen code: any ACTIVE staff member's PIN unlocks the register.
   async unlockPin(input: unknown, sessionEmail?: string | null) {
     const body = (input ?? {}) as Record<string, unknown>;

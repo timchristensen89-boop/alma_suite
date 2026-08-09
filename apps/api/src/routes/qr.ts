@@ -12,6 +12,14 @@ qrRouter.get('/context', async (req, res, next) => {
   }
 });
 
+qrRouter.post('/call', async (req, res, next) => {
+  try {
+    res.json(await qrOrderService.call(req.body, req.ip));
+  } catch (err) {
+    next(err);
+  }
+});
+
 qrRouter.post('/pay-intent', async (req, res, next) => {
   try {
     res.json(await qrOrderService.payIntent(req.body, req.ip));

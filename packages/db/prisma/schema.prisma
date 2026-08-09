@@ -2973,6 +2973,23 @@ model Recipe {
 }
 
 // @domain: pos | home: suite
+// A table asking for a person: raised from the QR page, cleared at the
+// register. Kept as rows (not a flag on the table) so the floor can see how
+// long a call has been waiting.
+model PosServiceCall {
+  id         String    @id @default(cuid())
+  venue      String
+  tableLabel String
+  kind       String    @default("WAITER") // WAITER | BILL
+  note       String?
+  createdAt  DateTime  @default(now())
+  clearedAt  DateTime?
+  clearedBy  String?
+
+  @@index([venue, clearedAt])
+}
+
+// @domain: pos | home: suite
 // One posted day per venue: proves the journal exists so a re-run never
 // double-posts, and gives Reports something to reconcile against.
 model PosXeroPost {

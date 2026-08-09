@@ -194,6 +194,23 @@ posRouter.get('/print-poll/:profileId', async (req, res, next) => {
 
 // Xero daily sales: status for a venue/day, and the push itself. The nightly
 // cron hits the scheduler route; these are the manual controls.
+// Tables waiting on someone, and clearing a call once it's answered.
+posRouter.get('/service-calls', async (req, res, next) => {
+  try {
+    res.json(await posService.listServiceCalls(req.query.venue ? String(req.query.venue) : null));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/service-calls/:id/clear', async (req, res, next) => {
+  try {
+    res.json(await posService.clearServiceCall(req.params.id, req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.get('/xero/status', async (req, res, next) => {
   try {
     const { integrationService } = await import('../services/integration.service.js');
@@ -227,7 +244,7 @@ posRouter.post('/xero/push', async (req, res, next) => {
     const dateText = String(req.body?.serviceDate ?? '');
     const serviceDate = dateText ? new Date(`${dateText}T00:00:00.000Z`) : new Date(Date.now() - 24 * 60 * 60 * 1000);
     serviceDate.setUTCHours(0, 0, 0, 0);
-    res.json(await integrationService.pushPosDayToXero({ venue, serviceDate, force: req.body?.force === true }));
+    res.json(await integrationService.pushPosDayToXero({ venue, serviceDate, force: req.body?.force === true, dryRun: req.body?.dryRun === true }));
   } catch (err) {
     next(err);
   }

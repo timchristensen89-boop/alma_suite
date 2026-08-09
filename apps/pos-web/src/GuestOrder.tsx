@@ -22,6 +22,8 @@ export function GuestOrder({ token }: { token: string }) {
   const [openCat, setOpenCat] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
+  const [dietary, setDietary] = useState<string[]>([]);
+  const [called, setCalled] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ orderNumber: number; itemCount: number } | null>(null);
   const [pay, setPay] = useState<null | {
@@ -108,6 +110,23 @@ export function GuestOrder({ token }: { token: string }) {
     });
   }
 
+  // "Can someone come over" — raises a call the register sees straight away.
+  async function callStaff(kind: 'WAITER' | 'BILL') {
+    try {
+      const res = await fetch(`${API}/api/qr/call`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ t: token, kind })
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.message ?? 'Could not reach the floor.');
+      setCalled(kind === 'BILL' ? 'The bill is on its way.' : 'Someone is on their way over.');
+      setTimeout(() => setCalled(null), 6000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reach the floor.');
+    }
+  }
+
   async function submit() {
     if (busy || cartCount === 0) return;
     setBusy(true);
@@ -119,6 +138,7 @@ export function GuestOrder({ token }: { token: string }) {
         body: JSON.stringify({
           t: token,
           name: name.trim() || undefined,
+          dietary: dietary.length > 0 ? dietary : undefined,
           lines: [...cart.entries()].map(([recipeId, quantity], index) => ({
             recipeId,
             quantity,
@@ -266,7 +286,33 @@ export function GuestOrder({ token }: { token: string }) {
       {cartCount > 0 ? (
         <div className="qr-cart">
           <input placeholder="Your name (optional)" value={name} onChange={(event) => setName(event.currentTarget.value)} maxLength={60} />
+          <div className="qr-diet">
+            <p className="qr-muted">Anything we need to know? These reach the kitchen with your order.</p>
+            <div className="qr-diet-chips">
+              {['Gluten free', 'Dairy free', 'Vegan', 'Vegetarian', 'Nut allergy', 'Shellfish allergy'].map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  className={dietary.includes(tag) ? 'is-on' : ''}
+                  onClick={() =>
+                    setDietary((current) => (current.includes(tag) ? current.filter((entry) => entry !== tag) : [...current, tag]))
+                  }
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
           <input placeholder="Any notes? (allergies etc.)" value={notes} onChange={(event) => setNotes(event.currentTarget.value)} maxLength={120} />
+          <div className="qr-callrow">
+            <button type="button" className="qr-call" onClick={() => void callStaff('WAITER')}>
+              🙋 Call someone over
+            </button>
+            <button type="button" className="qr-call" onClick={() => void callStaff('BILL')}>
+              🧾 Ask for the bill
+            </button>
+          </div>
+          {called ? <p className="qr-called">{called}</p> : null}
           <button type="button" className="qr-submit" disabled={busy} onClick={() => void submit()}>
             {busy ? 'Sending…' : `Send ${cartCount} item${cartCount === 1 ? '' : 's'} · ${money(cartTotal)}`}
           </button>

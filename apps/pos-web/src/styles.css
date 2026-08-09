@@ -513,3 +513,13 @@ input, select { font: inherit; }
 .pos-grid-groups { display: flex; flex-direction: column; gap: 14px; }
 .pos-group-head { margin: 0 0 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pos-muted, #8b939e); }
 @media (prefers-reduced-motion: reduce) { .pos-tabs button.is-tab-edit { animation: none; } }
+
+/* QR guest: dietary chips + calling the floor */
+.qr-diet { margin: 10px 0 4px; }
+.qr-diet-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 7px; }
+.qr-diet-chips button { background: #fff; border: 1px solid rgba(31,53,36,0.22); border-radius: 9999px; color: #1F2A1E; font: inherit; font-size: 13px; padding: 8px 13px; cursor: pointer; }
+.qr-diet-chips button.is-on { background: #1F3524; border-color: #1F3524; color: #F3EFE6; font-weight: 700; }
+.qr-callrow { display: flex; gap: 8px; margin: 12px 0 4px; }
+.qr-call { flex: 1; background: #fff; border: 1px solid rgba(31,53,36,0.22); border-radius: 12px; color: #1F2A1E; font: inherit; font-size: 13.5px; font-weight: 600; padding: 12px 10px; cursor: pointer; }
+.qr-call:active { background: rgba(31,53,36,0.06); }
+.qr-called { background: rgba(79,107,71,0.12); border-radius: 10px; color: #3F5738; font-size: 13px; font-weight: 600; margin: 8px 0 0; padding: 9px 12px; text-align: center; }

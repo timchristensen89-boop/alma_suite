@@ -8089,7 +8089,7 @@ export const integrationService = {
     };
   },
 
-  async pushPosDayToXero(input: { venue: string; serviceDate: Date; force?: boolean }) {
+  async pushPosDayToXero(input: { venue: string; serviceDate: Date; force?: boolean; dryRun?: boolean }) {
     const { venue, serviceDate } = input;
     const setting = await prisma.posVenueSetting.findUnique({ where: { venue } });
     const tenantId = setting?.xeroTenantId?.trim() || '';
@@ -8142,6 +8142,18 @@ export const integrationService = {
     }
 
     const contactName = 'ALMA POS daily sales';
+    // Posting writes a real record into a real set of books. dryRun returns
+    // exactly what would go in so it can be checked first.
+    if (input.dryRun) {
+      return {
+        venue,
+        skipped: true as const,
+        reason: 'Dry run — nothing posted.',
+        invoiceNumber,
+        preview: { tenantId, contactName, date: dateKey, lineItems },
+        summary
+      };
+    }
     try {
       const posted = await xeroPostJson<{ Invoices?: Array<{ InvoiceID?: string; InvoiceNumber?: string; Total?: number }> }>(
         '/api.xro/2.0/Invoices',

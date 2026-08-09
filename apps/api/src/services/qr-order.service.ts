@@ -88,6 +88,13 @@ export const qrOrderService = {
     const body = (input ?? {}) as Record<string, unknown>;
     const { venue, tableLabel } = parseToken(String(body.t ?? ''));
     const guestName = String(body.name ?? '').trim().slice(0, 60);
+    // Dietary flags the guest ticked. They join the order's flags (never
+    // replace staff-entered ones) and print on the kitchen docket like any
+    // other — a guest telling us about an allergy has to reach the pass.
+    const guestDietary = (Array.isArray(body.dietary) ? body.dietary : [])
+      .map((entry) => String(entry ?? '').trim().slice(0, 40))
+      .filter(Boolean)
+      .slice(0, 8);
     const rawLines = Array.isArray(body.lines) ? body.lines : [];
     if (rawLines.length === 0) throw new HttpError(400, 'Add something to your order first.');
     if (rawLines.length > 30) throw new HttpError(400, 'That order is too large for one round.');
@@ -123,13 +130,29 @@ export const qrOrderService = {
     let order = await prisma.posOrder.findFirst({
       where: { venue, status: 'OPEN', training: false, tableLabel: { equals: tableLabel, mode: 'insensitive' } },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, notes: true }
+      select: { id: true, notes: true, dietary: true }
     });
     if (!order) {
       const created = (await posService.createOrder({ venue, tableLabel, openedByName: 'QR order' })) as { id: string };
-      order = { id: created.id, notes: null };
+      order = { id: created.id, notes: null, dietary: [] };
     }
     const orderId = order.id;
+
+    // Merge the guest's dietary flags into the order's, keeping anything
+    // staff already recorded. Table-wide (seat null) — the guest is telling
+    // us about their own meal but we can't know their seat number.
+    if (guestDietary.length > 0) {
+      const current = (order.dietary as Array<{ tag: string; seat: number | null }> | null) ?? [];
+      const merged = [...current];
+      for (const tag of guestDietary) {
+        if (!merged.some((entry) => entry.tag.toLowerCase() === tag.toLowerCase())) {
+          merged.push({ tag, seat: null });
+        }
+      }
+      if (merged.length !== current.length) {
+        await prisma.posOrder.update({ where: { id: orderId }, data: { dietary: merged.slice(0, 12) } });
+      }
+    }
     if (guestName) {
       const tag = `QR: ${guestName}`;
       if (!(order.notes ?? '').includes(tag)) {
@@ -173,6 +196,22 @@ export const qrOrderService = {
   // The guest's bill so far. When checkout=true a Stripe Checkout session is
   // created (hosted page — secret key only, wallets included) and its URL
   // returned; the guest comes back with ?csid= for pay-confirm.
+  // "Can someone come over" / "can we get the bill" from the table.
+  async call(input: unknown, ip?: string) {
+    throttle(ip);
+    const body = (input ?? {}) as Record<string, unknown>;
+    const { venue, tableLabel } = parseToken(String(body.t ?? ''));
+    const kind = String(body.kind ?? 'WAITER') === 'BILL' ? 'BILL' : 'WAITER';
+    const note = String(body.note ?? '').trim().slice(0, 120) || null;
+    // One open call per table per kind — tapping twice doesn't spam the floor.
+    const existing = await prisma.posServiceCall.findFirst({
+      where: { venue, tableLabel, kind, clearedAt: null }
+    });
+    if (existing) return { ok: true, alreadyWaiting: true };
+    await prisma.posServiceCall.create({ data: { venue, tableLabel, kind, note } });
+    return { ok: true, alreadyWaiting: false };
+  },
+
   async payIntent(input: unknown, ip?: string) {
     throttle(ip);
     const body = (input ?? {}) as Record<string, unknown>;
