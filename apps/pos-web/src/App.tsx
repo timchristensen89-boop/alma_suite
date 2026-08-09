@@ -226,6 +226,24 @@ const CASH_DENOMS: Array<[string, number]> = [
   ['5c', 5]
 ];
 
+// How long this bill has been open, and how worried the floor should be.
+function elapsedMinutes(order: { createdAt?: string | null }): number | null {
+  if (!order.createdAt) return null;
+  return Math.max(0, Math.round((Date.now() - new Date(order.createdAt).getTime()) / 60000));
+}
+function elapsedLabel(minutes: number | null): string {
+  if (minutes === null) return '';
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+// Seated under an hour is calm; past two, someone should be checking in.
+function stayClass(minutes: number | null): string {
+  if (minutes === null) return '';
+  if (minutes >= 120) return 'is-stay-long';
+  if (minutes >= 60) return 'is-stay-mid';
+  return 'is-stay-fresh';
+}
+
 function money(cents: number) {
   return (cents / 100).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
 }
@@ -269,7 +287,10 @@ export function App() {
   const [homeView, setHomeView] = useState<'floor' | 'list'>(() => (localStorage.getItem('alma.pos.view') as 'floor' | 'list') ?? 'floor');
   const [order, setOrder] = useState<Order | null>(null);
   // Register-first: the app opens on menu + bill; Tables is a secondary view.
-  const [view, setView] = useState<'register' | 'tables'>('register');
+  const [view, setView] = useState<'register' | 'tables' | 'bills'>('register');
+  // Bills page: everything trading right now plus what's already settled.
+  const [settled, setSettled] = useState<Order[]>([]);
+  const [splitPick, setSplitPick] = useState<null | { mode: 'item' | 'seat'; picked: string[]; seat: number | null }>(null);
   const [bills, setBills] = useState<Order[] | null>(null);
   const [refunding, setRefunding] = useState<null | { order: Order; amount: string; reason: string; method: 'REFUND' | 'CASH' }>(null);
   const [merging, setMerging] = useState<Order[] | null>(null);
@@ -1748,6 +1769,15 @@ export function App() {
       .catch((err) => setError(messageForError(err, 'Could not print the receipt.')));
   }
 
+  async function loadSettled() {
+    try {
+      const rows = await api<Order[]>(`/api/pos/orders?venue=${encodeURIComponent(venue)}&status=ALL`);
+      setSettled(rows.filter((row) => row.status !== 'OPEN'));
+    } catch (err) {
+      setError(messageForError(err, 'Could not load bills.'));
+    }
+  }
+
   async function openDay() {
     try {
       setDay(await api<DaySummary>(`/api/pos/day-summary?venue=${encodeURIComponent(venue)}`));
@@ -1795,11 +1825,11 @@ export function App() {
           </button>
           <button
             type="button"
-            className="pos-rail-item"
+            className={view === 'bills' ? 'pos-rail-item is-on' : 'pos-rail-item'}
             onClick={() => {
-              void api<Order[]>(`/api/pos/orders?venue=${encodeURIComponent(venue)}&status=ALL`)
-                .then((rows) => setBills(rows.filter((row) => row.status !== 'OPEN')))
-                .catch((err) => setError(messageForError(err, 'Could not load bills.')));
+              setView('bills');
+              void refreshOpenOrders();
+              void loadSettled();
             }}
           >
             Bills
@@ -2056,9 +2086,9 @@ export function App() {
               type="button"
               className="pos-ghost"
               onClick={() => {
-                void api<Order[]>(`/api/pos/orders?venue=${encodeURIComponent(venue)}&status=ALL`)
-                  .then((rows) => setBills(rows.filter((row) => row.status !== 'OPEN')))
-                  .catch((err) => setError(messageForError(err, 'Could not load bills.')));
+                setView('bills');
+                void refreshOpenOrders();
+                void loadSettled();
               }}
             >
               Bills
@@ -2138,15 +2168,36 @@ export function App() {
         </div>
       ) : null}
 
+      {view === 'bills' ? (
+        <BillsPage
+          openOrders={openOrders}
+          settled={settled}
+          busy={busy}
+          onOpen={(row) => {
+            setOrder(row);
+            setView('register');
+          }}
+          onSplit={(row) => {
+            setOrder(row);
+            setView('register');
+            setCharge({ stage: 'split', tipCents: 0, amountCents: null });
+          }}
+          onReceipt={(row) => setReceipt(row as Order & { changeCents?: number | null })}
+          onNewOrder={() => {
+            setOrder(null);
+            setView('register');
+          }}
+          onRefresh={() => {
+            void refreshOpenOrders();
+            void loadSettled();
+          }}
+        />
+      ) : null}
       {view === 'tables' ? (
         <div className="pos-home">
-          {floorTables.length > 0 ? (
-            <button
-              type="button"
-              className="pos-view-chip"
-              onClick={() => setHomeView(homeView === 'floor' ? 'list' : 'floor')}
-            >
-              {homeView === 'floor' ? '☰ List' : '▦ Floor'}
+          {floorTables.length > 0 && homeView !== 'floor' ? (
+            <button type="button" className="pos-view-chip" onClick={() => setHomeView('floor')}>
+              ▦ Floor plan
             </button>
           ) : null}
           {homeView === 'floor' && floorTables.length > 0 ? (
@@ -3081,6 +3132,14 @@ export function App() {
                       Split ÷{n} ({money(Math.ceil(balance / n))})
                     </button>
                   ))}
+                </div>
+                <div className="pos-choice-row">
+                  <button type="button" onClick={() => setSplitPick({ mode: 'item', picked: [], seat: null })}>
+                    Split by item
+                  </button>
+                  <button type="button" onClick={() => setSplitPick({ mode: 'seat', picked: [], seat: null })}>
+                    Split by seat
+                  </button>
                 </div>
                 <input
                   className="pos-tender"
@@ -4335,6 +4394,99 @@ export function App() {
           </div>
         </div>
       ) : null}
+      {splitPick && order ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>{splitPick.mode === 'seat' ? 'Split by seat' : 'Split by item'}</h2>
+            {splitPick.mode === 'seat' ? (
+              <>
+                <p className="pos-muted">Whose seat is paying?</p>
+                <div className="pos-reason-list">
+                  {[...new Set(order.lines.map((line) => line.seat ?? 0))]
+                    .sort((a, b) => a - b)
+                    .map((seat) => (
+                      <button
+                        key={seat}
+                        type="button"
+                        className={splitPick.seat === seat ? 'is-on' : ''}
+                        onClick={() =>
+                          setSplitPick({
+                            mode: 'seat',
+                            seat,
+                            picked: order.lines.filter((line) => (line.seat ?? 0) === seat).map((line) => line.id ?? '')
+                          })
+                        }
+                      >
+                        {seat === 0 ? 'Unassigned' : `Seat ${seat}`}
+                      </button>
+                    ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="pos-muted">Tap what this person is paying for.</p>
+                <div className="pos-split-lines">
+                  {order.lines.map((line) => {
+                    const id = line.id ?? '';
+                    const on = splitPick.picked.includes(id);
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        className={on ? 'is-on' : ''}
+                        onClick={() =>
+                          setSplitPick({
+                            ...splitPick,
+                            picked: on ? splitPick.picked.filter((entry) => entry !== id) : [...splitPick.picked, id]
+                          })
+                        }
+                      >
+                        <span>
+                          {line.quantity}× {line.name}
+                          {line.seat ? ` · S${line.seat}` : ''}
+                        </span>
+                        <b>{money(line.unitPriceCents * line.quantity)}</b>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+            {(() => {
+              const picked = order.lines.filter((line) => splitPick.picked.includes(line.id ?? ''));
+              const gross = picked.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);
+              // Their share of the bill's surcharge/discount, so the parts
+              // still add up to the whole.
+              const share = order.subtotalCents > 0 ? gross / order.subtotalCents : 0;
+              const amountCents = Math.min(balance, Math.round(order.totalCents * share));
+              return (
+                <>
+                  <div className="pos-totals">
+                    <span>
+                      {picked.length} item{picked.length === 1 ? '' : 's'}
+                    </span>
+                    <strong>{money(amountCents)}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="pos-charge"
+                    disabled={busy || amountCents <= 0}
+                    onClick={() => {
+                      setSplitPick(null);
+                      setCharge({ stage: 'method', tipCents: 0, amountCents });
+                    }}
+                  >
+                    Charge {money(amountCents)}
+                  </button>
+                </>
+              );
+            })()}
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setSplitPick(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
       {voidConfirm && order ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
@@ -5267,6 +5419,144 @@ export function App() {
 
 // The venue floor plan — same tables + geometry the Reserve app's floor-plan
 // editor manages. Occupied = an open POS order whose table label matches.
+/**
+ * The Bills page — what the floor actually asks: who is sitting where, how
+ * long they've been there, what they owe, and who has already paid.
+ *
+ * This replaces the old bills popup. Splitting lives here too, because
+ * "can we split this" is a question asked about a bill, not about a till.
+ */
+function BillsPage({
+  openOrders,
+  settled,
+  busy,
+  onOpen,
+  onSplit,
+  onReceipt,
+  onNewOrder,
+  onRefresh
+}: {
+  openOrders: Order[];
+  settled: Order[];
+  busy: boolean;
+  onOpen: (order: Order) => void;
+  onSplit: (order: Order) => void;
+  onReceipt: (order: Order) => void;
+  onNewOrder: () => void;
+  onRefresh: () => void;
+}) {
+  // Re-render each minute so the "sitting 1h 20m" stays honest without a poll.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((value) => value + 1), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const guestName = (order: Order) => {
+    const guest = (order as Order & { guest?: { firstName?: string; lastName?: string } | null }).guest;
+    const named = guest ? `${guest.firstName ?? ''} ${guest.lastName ?? ''}`.trim() : '';
+    if (named) return named;
+    // QR orders record the guest's name in the note as "QR: Sam".
+    const fromNote = /QR:\s*([^·]+)/.exec(order.notes ?? '')?.[1]?.trim();
+    return fromNote || '';
+  };
+
+  return (
+    <div className="pos-home pos-bills-page">
+      <div className="pos-bills-head">
+        <h2>Bills</h2>
+        <span className="pos-muted">
+          {openOrders.length} open · {settled.length} settled today
+        </span>
+        <span style={{ flex: 1 }} />
+        <button type="button" className="pos-ghost" onClick={onRefresh}>
+          ↻ Refresh
+        </button>
+        <button type="button" className="pos-ghost" onClick={onNewOrder}>
+          ＋ New order
+        </button>
+      </div>
+
+      {openOrders.length === 0 ? <p className="pos-muted">Nothing open right now.</p> : null}
+      <div className="pos-bills-grid">
+        {openOrders.map((row) => {
+          const minutes = elapsedMinutes(row as Order & { createdAt?: string });
+          const owing = row.totalCents - paidCents(row);
+          const name = guestName(row);
+          const waiting = (row.lines as Array<{ sentAt?: string | null }>).some((line) => !line.sentAt);
+          return (
+            <div key={row.id} className={`pos-bill-card ${stayClass(minutes)}`}>
+              <div className="pos-bill-card-head">
+                <strong>{row.tableLabel ? `Table ${row.tableLabel}` : `Sale #${row.orderNumber}`}</strong>
+                {minutes !== null ? <em className="pos-bill-time">{elapsedLabel(minutes)}</em> : null}
+              </div>
+              {name ? <div className="pos-bill-guest">{name}</div> : null}
+              <div className="pos-bill-meta">
+                {row.covers ? `${row.covers} covers · ` : ''}
+                {row.lines.reduce((sum, line) => sum + line.quantity, 0)} items
+                {(row as Order & { openedByName?: string | null }).openedByName
+                  ? ` · ${(row as Order & { openedByName?: string | null }).openedByName}`
+                  : ''}
+              </div>
+              {(row.dietary ?? []).length > 0 ? (
+                <div className="pos-bill-diet">⚠ {(row.dietary ?? []).map((tag) => tag.tag).join(' · ')}</div>
+              ) : null}
+              <div className="pos-bill-figures">
+                <span>{paidCents(row) > 0 ? `${money(paidCents(row))} paid` : waiting ? 'Not yet sent' : 'Sent'}</span>
+                <b>{money(owing)}</b>
+              </div>
+              <div className="pos-bill-actions">
+                <button type="button" disabled={busy} onClick={() => onOpen(row)}>
+                  Open
+                </button>
+                <button type="button" disabled={busy || row.lines.length === 0} onClick={() => onSplit(row)}>
+                  Split
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {settled.length > 0 ? (
+        <>
+          <h3 className="pos-bills-subhead">Settled today</h3>
+          <div className="pos-bills-grid">
+            {settled.map((row) => {
+              const refunded = row.payments
+                .filter((payment) => payment.amountCents < 0)
+                .reduce((sum, payment) => sum - payment.amountCents, 0);
+              const name = guestName(row);
+              return (
+                <div key={row.id} className={`pos-bill-card is-settled ${row.status === 'VOID' ? 'is-void' : ''}`}>
+                  <div className="pos-bill-card-head">
+                    <strong>{row.tableLabel ? `Table ${row.tableLabel}` : `#${row.orderNumber}`}</strong>
+                    <em className="pos-bill-time">{row.status === 'VOID' ? 'void' : 'paid'}</em>
+                  </div>
+                  {name ? <div className="pos-bill-guest">{name}</div> : null}
+                  <div className="pos-bill-meta">
+                    {row.payments.map((payment) => payment.method.replace(/_/g, ' ').toLowerCase()).join(', ') || '—'}
+                    {refunded > 0 ? ` · ${money(refunded)} refunded` : ''}
+                  </div>
+                  <div className="pos-bill-figures">
+                    <span>{row.covers ? `${row.covers} covers` : ''}</span>
+                    <b>{money(row.totalCents)}</b>
+                  </div>
+                  <div className="pos-bill-actions">
+                    <button type="button" onClick={() => onReceipt(row)}>
+                      View
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function FloorView({
   tables,
   area,
@@ -5326,7 +5616,7 @@ function FloorView({
               key={table.id}
               type="button"
               disabled={busy}
-              className={`pos-floor-table ${open ? `is-occupied is-${fireState(open.lines as Array<{ sentAt?: string | null }>)}` : ''} ${!open && nextByTable.has(table.label.toLowerCase()) ? 'is-reserved' : ''} ${table.shape === 'round' ? 'is-round' : ''}`}
+              className={`pos-floor-table ${open ? `is-occupied is-${fireState(open.lines as Array<{ sentAt?: string | null }>)} ${stayClass(elapsedMinutes(open as Order & { createdAt?: string }))}` : ''} ${!open && nextByTable.has(table.label.toLowerCase()) ? 'is-reserved' : ''} ${table.shape === 'round' ? 'is-round' : ''}`}
               style={{
                 left: `${table.posX}%`,
                 top: `${table.posY}%`,
