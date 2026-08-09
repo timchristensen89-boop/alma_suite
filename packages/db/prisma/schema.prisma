@@ -4963,6 +4963,12 @@ model PosVenueSetting {
   // Each venue is its own company — receipts and payments carry its identity.
   businessName  String?
   abn           String?
+  address       String?
+  phone         String?
+  email         String?
+  website       String?
+  // Receipt logo as a data URL (downscaled on upload in the Office).
+  receiptLogo   String?
   postToReports Boolean @default(false)
 }
 

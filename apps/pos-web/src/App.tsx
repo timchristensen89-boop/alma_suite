@@ -297,7 +297,7 @@ export function App() {
   }, [billCollapsed]);
   const [darkTheme, setDarkTheme] = useState(() => localStorage.getItem('alma.pos.theme') === 'dark');
   // Two full designs: 'classic' tiles (v1) and the 'rail' sidebar-list (v2).
-  const [design, setDesign] = useState<'classic' | 'rail'>(() => (localStorage.getItem('alma.pos.design') === 'rail' ? 'rail' : 'classic'));
+  const [design, setDesign] = useState<'classic' | 'rail'>(() => (localStorage.getItem('alma.pos.design') === 'classic' ? 'classic' : 'rail'));
 
   useEffect(() => {
     document.body.classList.toggle('pos-v2', design === 'rail');
@@ -305,13 +305,23 @@ export function App() {
   }, [design]);
   // St Alma and Alma Avalon are separate companies — receipts and the header
   // carry the selected venue's own identity.
-  const [venueIdentity, setVenueIdentity] = useState<{ businessName: string; abn: string | null }>({ businessName: 'ALMA', abn: null });
+  const [venueIdentity, setVenueIdentity] = useState<{ businessName: string; abn: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; receiptLogo: string | null }>({ businessName: 'ALMA', abn: null, address: null, phone: null, email: null, website: null, receiptLogo: null });
 
   useEffect(() => {
     if (me === 'loading' || !me) return;
     void api<{ businessName: string; abn: string | null }>(`/api/pos/venue-settings?venue=${encodeURIComponent(venue)}`)
-      .then((setting) => setVenueIdentity({ businessName: setting.businessName || venue, abn: setting.abn ?? null }))
-      .catch(() => setVenueIdentity({ businessName: venue, abn: null }));
+      .then((setting) =>
+        setVenueIdentity({
+          businessName: setting.businessName || venue,
+          abn: setting.abn ?? null,
+          address: (setting as { address?: string | null }).address ?? null,
+          phone: (setting as { phone?: string | null }).phone ?? null,
+          email: (setting as { email?: string | null }).email ?? null,
+          website: (setting as { website?: string | null }).website ?? null,
+          receiptLogo: (setting as { receiptLogo?: string | null }).receiptLogo ?? null
+        })
+      )
+      .catch(() => setVenueIdentity({ businessName: venue, abn: null, address: null, phone: null, email: null, website: null, receiptLogo: null }));
   }, [venue, me]);
 
   useEffect(() => {
@@ -478,6 +488,7 @@ export function App() {
   const [voidConfirm, setVoidConfirm] = useState(false);
   const [lockScreen, setLockScreen] = useState(false);
   const [lockPin, setLockPin] = useState('');
+  const [switchSheet, setSwitchSheet] = useState<null | { pin: string }>(null);
   const [noteSheet, setNoteSheet] = useState<null | { value: string }>(null);
   const [cashCount, setCashCount] = useState<null | { counts: Record<string, string>; expected: number | null }>(null);
   const [dietSheet, setDietSheet] = useState<null | { tags: Array<{ tag: string; seat: number | null }>; custom: string; seat: string }>(null);
@@ -1575,7 +1586,33 @@ export function App() {
         .then(() => refreshAuth());
       return;
     }
+    setSwitchSheet({ pin: '' });
+  }
+
+  // Any active staff member's code becomes THEIR session on this register.
+  async function submitSwitch(pin: string) {
+    setBusy(true);
+    try {
+      const res = await api<{ user?: { firstName?: string; lastName?: string }; token?: string }>('/api/device/staff-pin-login', {
+        method: 'POST',
+        body: JSON.stringify({ pin })
+      });
+      setApiAuthToken(res.token);
+      setApiPinToken(null);
+      setSwitchSheet(null);
+      await refreshAuth();
+      setInfo(`On the till: ${`${res.user?.firstName ?? ''} ${res.user?.lastName ?? ''}`.trim() || 'signed in'}.`);
+    } catch (err) {
+      setSwitchSheet({ pin: '' });
+      setError(messageForError(err, 'That code did not match.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function signOutFully() {
     clearApiTokens();
+    setSwitchSheet(null);
     void api('/api/auth/logout', { method: 'POST' })
       .catch(() => undefined)
       .then(() => refreshAuth());
@@ -1584,7 +1621,16 @@ export function App() {
   async function unlockWithPin(pin: string) {
     setBusy(true);
     try {
-      await api('/api/pos/unlock', { method: 'POST', body: JSON.stringify({ pin }) });
+      // Whoever unlocks is on the till: their code switches the session to
+      // them; if that fails, fall back to a plain unlock for this account.
+      try {
+        const res = await api<{ token?: string }>('/api/device/staff-pin-login', { method: 'POST', body: JSON.stringify({ pin }) });
+        setApiAuthToken(res.token);
+        setApiPinToken(null);
+        await refreshAuth();
+      } catch {
+        await api('/api/pos/unlock', { method: 'POST', body: JSON.stringify({ pin }) });
+      }
       setLockScreen(false);
       setLockPin('');
     } catch (err) {
@@ -2978,8 +3024,14 @@ export function App() {
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel pos-receipt" id="pos-bill">
             <div className="pos-bill-head">
+              {venueIdentity.receiptLogo ? <img src={venueIdentity.receiptLogo} alt="" className="pos-receipt-logo" /> : null}
               <h2>{venueIdentity.businessName}</h2>
               {venueIdentity.abn ? <p className="pos-abn">ABN {venueIdentity.abn}</p> : null}
+              {[venueIdentity.address, venueIdentity.phone, venueIdentity.email, venueIdentity.website].some(Boolean) ? (
+                <p className="pos-abn">
+                  {[venueIdentity.address, venueIdentity.phone, venueIdentity.email, venueIdentity.website].filter(Boolean).join(' · ')}
+                </p>
+              ) : null}
               <p className="pos-muted">
                 {bill.venue}
                 <br />
@@ -3037,10 +3089,16 @@ export function App() {
       {receipt ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel pos-receipt" id="pos-receipt">
+            {venueIdentity.receiptLogo ? <img src={venueIdentity.receiptLogo} alt="" className="pos-receipt-logo" /> : null}
             <p className="pos-receipt-brand">
               {venueIdentity.businessName}
               {venueIdentity.abn ? ` · ABN ${venueIdentity.abn}` : ''}
             </p>
+            {[venueIdentity.address, venueIdentity.phone].some(Boolean) ? (
+              <p className="pos-receipt-brand pos-receipt-details">
+                {[venueIdentity.address, venueIdentity.phone, venueIdentity.email, venueIdentity.website].filter(Boolean).join(' · ')}
+              </p>
+            ) : null}
             <h2>
               Paid — {receipt.tableLabel ? `Table ${receipt.tableLabel}` : `order #${receipt.orderNumber}`}
             </h2>
@@ -3987,6 +4045,43 @@ export function App() {
           </div>
         </div>
       ) : null}
+      {switchSheet ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Change user</h2>
+            <p className="pos-muted">Enter your staff code — the register becomes yours.</p>
+            <input
+              className="pos-tender"
+              type="password"
+              inputMode="numeric"
+              autoFocus
+              placeholder="Staff code"
+              value={switchSheet.pin}
+              onChange={(event) => {
+                const next = event.currentTarget.value.replace(/\D/g, '').slice(0, 8);
+                setSwitchSheet({ pin: next });
+                if (next.length === 4) void submitSwitch(next);
+              }}
+            />
+            <PosKeypad
+              value={switchSheet.pin}
+              onChange={(next) => {
+                setSwitchSheet({ pin: next });
+                if (next.length === 4) void submitSwitch(next);
+              }}
+              onSubmit={() => {
+                if (switchSheet.pin.length >= 4) void submitSwitch(switchSheet.pin);
+              }}
+            />
+            <button type="button" className="pos-ghost" onClick={signOutFully}>
+              Sign out of this register
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setSwitchSheet(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
       {lockScreen ? (
         <div className="pos-modal pos-lock" role="dialog">
           <div className="pos-modal-panel">
@@ -4000,14 +4095,21 @@ export function App() {
               autoFocus
               placeholder="Staff code"
               value={lockPin}
-              onChange={(event) => setLockPin(event.currentTarget.value.replace(/\D/g, '').slice(0, 8))}
+              onChange={(event) => {
+                const next = event.currentTarget.value.replace(/\D/g, '').slice(0, 8);
+                setLockPin(next);
+                if (next.length === 4) void unlockWithPin(next);
+              }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && lockPin.length >= 4) void unlockWithPin(lockPin);
               }}
             />
             <PosKeypad
               value={lockPin}
-              onChange={setLockPin}
+              onChange={(next) => {
+                setLockPin(next);
+                if (next.length === 4) void unlockWithPin(next);
+              }}
               onSubmit={() => {
                 if (lockPin.length >= 4) void unlockWithPin(lockPin);
               }}
@@ -4147,11 +4249,18 @@ export function App() {
               autoFocus
               placeholder="Manager PIN"
               value={managerGate.pin}
-              onChange={(event) => setManagerGate({ ...managerGate, pin: event.currentTarget.value })}
+              onChange={(event) => {
+                const next = event.currentTarget.value.replace(/\D/g, '').slice(0, 8);
+                setManagerGate({ ...managerGate, pin: next });
+                if (next.length === 4) managerGate.retry(next);
+              }}
             />
             <PosKeypad
               value={managerGate.pin}
-              onChange={(next) => setManagerGate({ ...managerGate, pin: next })}
+              onChange={(next) => {
+                setManagerGate({ ...managerGate, pin: next });
+                if (next.length === 4) managerGate.retry(next);
+              }}
               onSubmit={() => {
                 if (managerGate.pin.length >= 4) managerGate.retry(managerGate.pin);
               }}

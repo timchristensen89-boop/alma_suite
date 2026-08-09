@@ -12,7 +12,7 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 type Profile = { id: string; name: string; matchKind: string; categoriesCsv: string; printerIp: string | null; active: boolean; sortOrder: number };
 type Rule = { id: string; kind: string; label: string; percent: number; weekdays: string; holidays: boolean; startMinute: number | null; endMinute: number | null; active: boolean };
 type ModGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: Array<{ id: string; name: string; priceCents: number }> };
-type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null };
+type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; receiptLogo: string | null };
 type MenuHide = { id: string; kind: string; key: string; createdAt: string };
 type MenuShape = { categories: Array<{ name: string; items: Array<{ recipeId: string; title: string; priceCents: number }> }> };
 type VariantOption = { recipeId: string; label: string; title: string; priceCents: number; self: boolean };
@@ -72,6 +72,35 @@ export function Office() {
     const timer = setTimeout(() => setInfo(null), 4000);
     return () => clearTimeout(timer);
   }, [info]);
+
+  // Receipt logo: read → downscale to ≤320px wide → PNG data URL → save.
+  async function uploadLogo(venue: string, file: File) {
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Could not read the image.'));
+        reader.readAsDataURL(file);
+      });
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Not a readable image.'));
+        img.src = dataUrl;
+      });
+      const scale = Math.min(1, 320 / image.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      canvas.getContext('2d')!.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const receiptLogo = canvas.toDataURL('image/png');
+      await api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue, receiptLogo }) });
+      setInfo('Logo saved — it prints on bills, receipts and emails.');
+      void refresh();
+    } catch (err) {
+      setError(messageForError(err, 'Could not upload the logo.'));
+    }
+  }
 
   async function saveProfile(profile: Partial<Profile>) {
     try {
@@ -740,6 +769,94 @@ export function Office() {
                         .catch((err) => setError(messageForError(err, 'Could not save.')));
                     }}
                   />
+                </div>
+                <div className="office-row">
+                  <input
+                    defaultValue={identity.address ?? ''}
+                    placeholder="Street address"
+                    className="office-input office-input-wide"
+                    onBlur={(event) => {
+                      const address = event.currentTarget.value.trim();
+                      if (address === (identity.address ?? '')) return;
+                      void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, address }) })
+                        .then(() => setInfo('Saved.'))
+                        .catch((err) => setError(messageForError(err, 'Could not save.')));
+                    }}
+                  />
+                  <input
+                    defaultValue={identity.phone ?? ''}
+                    placeholder="Phone"
+                    className="office-input"
+                    onBlur={(event) => {
+                      const phone = event.currentTarget.value.trim();
+                      if (phone === (identity.phone ?? '')) return;
+                      void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, phone }) })
+                        .then(() => setInfo('Saved.'))
+                        .catch((err) => setError(messageForError(err, 'Could not save.')));
+                    }}
+                  />
+                  <input
+                    defaultValue={identity.email ?? ''}
+                    placeholder="Email"
+                    className="office-input"
+                    onBlur={(event) => {
+                      const email = event.currentTarget.value.trim();
+                      if (email === (identity.email ?? '')) return;
+                      void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, email }) })
+                        .then(() => setInfo('Saved.'))
+                        .catch((err) => setError(messageForError(err, 'Could not save.')));
+                    }}
+                  />
+                  <input
+                    defaultValue={identity.website ?? ''}
+                    placeholder="Website"
+                    className="office-input"
+                    onBlur={(event) => {
+                      const website = event.currentTarget.value.trim();
+                      if (website === (identity.website ?? '')) return;
+                      void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, website }) })
+                        .then(() => setInfo('Saved.'))
+                        .catch((err) => setError(messageForError(err, 'Could not save.')));
+                    }}
+                  />
+                </div>
+                <div className="office-row office-logo-row">
+                  {identity.receiptLogo ? (
+                    <img src={identity.receiptLogo} alt="" className="office-logo-thumb" />
+                  ) : (
+                    <span className="office-variant-opts">No receipt logo yet</span>
+                  )}
+                  <label className="office-add office-upload">
+                    Upload logo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+                        if (file) void uploadLogo(identity.venue, file);
+                        event.currentTarget.value = '';
+                      }}
+                    />
+                  </label>
+                  {identity.receiptLogo ? (
+                    <button
+                      type="button"
+                      className="office-delete"
+                      onClick={() => {
+                        void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, receiptLogo: '' }) })
+                          .then(() => {
+                            setInfo('Logo removed.');
+                            void refresh();
+                          })
+                          .catch((err) => setError(messageForError(err, 'Could not remove it.')));
+                      }}
+                    >
+                      ✕
+                    </button>
+                  ) : null}
+                </div>
+                <div className="office-row">
                   <label className="office-toggle">
                     <input
                       type="checkbox"

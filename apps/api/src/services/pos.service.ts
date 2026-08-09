@@ -856,7 +856,12 @@ export const posService = {
       venue,
       postToReports: row?.postToReports ?? false,
       businessName: row?.businessName ?? venue,
-      abn: row?.abn ?? null
+      abn: row?.abn ?? null,
+      address: row?.address ?? null,
+      phone: row?.phone ?? null,
+      email: row?.email ?? null,
+      website: row?.website ?? null,
+      receiptLogo: row?.receiptLogo ?? null
     };
   },
 
@@ -868,6 +873,17 @@ export const posService = {
     if (body.postToReports !== undefined) patch.postToReports = body.postToReports === true;
     if (body.businessName !== undefined) patch.businessName = str(body.businessName).slice(0, 80) || null;
     if (body.abn !== undefined) patch.abn = str(body.abn).slice(0, 20) || null;
+    if (body.address !== undefined) patch.address = str(body.address).slice(0, 160) || null;
+    if (body.phone !== undefined) patch.phone = str(body.phone).slice(0, 30) || null;
+    if (body.email !== undefined) patch.email = str(body.email).slice(0, 80) || null;
+    if (body.website !== undefined) patch.website = str(body.website).slice(0, 80) || null;
+    if (body.receiptLogo !== undefined) {
+      const logo = str(body.receiptLogo);
+      if (logo && (!logo.startsWith('data:image/') || logo.length > 400_000)) {
+        throw new HttpError(400, 'Logo must be an image under ~300KB.');
+      }
+      patch.receiptLogo = logo || null;
+    }
     await prisma.posVenueSetting.upsert({
       where: { venue },
       create: { venue, postToReports: false, ...patch },
@@ -935,6 +951,11 @@ export const posService = {
     const identity = await prisma.posVenueSetting.findUnique({ where: { venue: order.venue } });
     const businessName = identity?.businessName ?? order.venue;
     const abnLine = identity?.abn ? `<p style="text-align:center;font-size:11px;color:#777;margin:2px 0 0">ABN ${identity.abn}</p>` : '';
+    const logoBlock = identity?.receiptLogo
+      ? `<div style="text-align:center;margin-bottom:6px"><img src="${identity.receiptLogo}" alt="" style="max-width:150px;max-height:80px"/></div>`
+      : '';
+    const detailBits = [identity?.address, identity?.phone, identity?.email, identity?.website].filter(Boolean).join(' · ');
+    const detailsLine = detailBits ? `<p style="text-align:center;font-size:11px;color:#777;margin:2px 0 0">${detailBits}</p>` : '';
     const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
     const rows = order.lines
       .map(
@@ -953,8 +974,10 @@ export const posService = {
     ].join('');
     const html = `
       <div style="font-family:Georgia,serif;max-width:420px;margin:0 auto;color:#1F2A1E">
+        ${logoBlock}
         <h2 style="letter-spacing:0.2em;text-align:center">${businessName}</h2>
         ${abnLine}
+        ${detailsLine}
         <p style="text-align:center;color:#666">${order.venue}<br>${order.tableLabel ? `Table ${order.tableLabel}` : `Order #${order.orderNumber}`} · ${new Date().toLocaleDateString('en-AU')}</p>
         <table width="100%" style="border-collapse:collapse;font-size:14px">${rows}${extras}
           <tr><td style="border-top:1px solid #ccc;padding-top:8px"><b>Total (incl. ${money(order.gstCents)} GST${order.tipCents ? ` + ${money(order.tipCents)} tip` : ''})</b></td>

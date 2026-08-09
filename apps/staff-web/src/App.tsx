@@ -1735,6 +1735,21 @@ function StaffProfilesPage({
     }
   }
 
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
+  async function reactivateProfile(member: StaffProfile) {
+    setReactivatingId(member.id);
+    setReonboardError(null);
+    try {
+      await api(`/api/staff/${member.id}`, { method: 'PATCH', body: JSON.stringify({ employmentStatus: 'ACTIVE' }) });
+      setReonboardMessage(`${member.firstName} ${member.lastName} is active again — records, PIN and history intact.`);
+      await reload();
+    } catch (err) {
+      setReonboardError(err instanceof Error ? err.message : 'Could not reactivate.');
+    } finally {
+      setReactivatingId(null);
+    }
+  }
+
   const renderStaffRow = (member: StaffProfile) => {
     const soon = member.records.filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate)).length;
     const uploadedDocuments = member.records.filter((record) => Boolean(record.documentUrl)).length;
@@ -1758,6 +1773,20 @@ function StaffProfilesPage({
           {isDeputyImportedProfile(member) ? <Badge tone="info">Roster import</Badge> : null}
           {isUnallocatedProfile(member) ? <Badge tone="warning">Unallocated</Badge> : null}
           <Badge tone={member.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>{member.employmentStatus}</Badge>
+          {isTerminatedStaffProfile(member) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={reactivatingId === member.id}
+              onClick={(event) => {
+                event.stopPropagation();
+                void reactivateProfile(member);
+              }}
+            >
+              {reactivatingId === member.id ? 'Reactivating…' : 'Reactivate'}
+            </Button>
+          ) : null}
           {isDeputyImportedProfile(member) ? (
             <Button
               type="button"
@@ -5193,7 +5222,7 @@ function StaffProfileForm({
           label="Status"
           value={draft.employmentStatus}
           onChange={(event) => update('employmentStatus', event.currentTarget.value)}
-          options={['ACTIVE', 'PENDING', 'ARCHIVED'].map((status) => ({ label: status, value: status }))}
+          options={['ACTIVE', 'PENDING', 'ARCHIVED', 'TERMINATED'].map((status) => ({ label: status, value: status }))}
         />
       </div>
       <Input label="Start date" type="date" value={draft.startDate} onChange={(event) => update('startDate', event.currentTarget.value)} />
@@ -7496,7 +7525,7 @@ function AccessPage({
                     <Input label="Email" type="email" value={profileDraft.email} onChange={(event) => updateProfile('email', event.currentTarget.value)} />
                     <Input label="Phone" value={profileDraft.phone} onChange={(event) => updateProfile('phone', event.currentTarget.value)} />
                     <Select label="Venue" value={profileDraft.venue} onChange={(event) => updateProfile('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
-                    <Select label="Status" value={profileDraft.employmentStatus} onChange={(event) => updateProfile('employmentStatus', event.currentTarget.value)} options={['ACTIVE', 'PENDING', 'ARCHIVED'].map((status) => ({ label: status, value: status }))} />
+                    <Select label="Status" value={profileDraft.employmentStatus} onChange={(event) => updateProfile('employmentStatus', event.currentTarget.value)} options={['ACTIVE', 'PENDING', 'ARCHIVED', 'TERMINATED'].map((status) => ({ label: status, value: status }))} />
                     <Input label="Start date" type="date" value={profileDraft.startDate} onChange={(event) => updateProfile('startDate', event.currentTarget.value)} />
                     <Input label="Date of birth" type="date" value={profileDraft.dateOfBirth} onChange={(event) => updateProfile('dateOfBirth', event.currentTarget.value)} />
                   </div>
