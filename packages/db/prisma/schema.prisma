@@ -2973,6 +2973,25 @@ model Recipe {
 }
 
 // @domain: pos | home: suite
+// One posted day per venue: proves the journal exists so a re-run never
+// double-posts, and gives Reports something to reconcile against.
+model PosXeroPost {
+  id            String   @id @default(cuid())
+  venue         String
+  serviceDate   DateTime
+  tenantId      String
+  invoiceId     String?
+  invoiceNumber String
+  totalCents    Int
+  status        String   @default("POSTED") // POSTED | FAILED
+  detail        String?
+  postedAt      DateTime @default(now())
+
+  @@unique([venue, serviceDate])
+  @@index([serviceDate])
+}
+
+// @domain: pos | home: suite
 // One product, several pours: each variant is a real Recipe (a glass is a
 // fractional sub-recipe of the bottle), grouped under one parent tile on the
 // register. A self-row (childRecipeId == parentRecipeId) labels the parent.
@@ -4986,6 +5005,14 @@ model PosVenueSetting {
   // Receipt logo as a data URL (downscaled on upload in the Office).
   receiptLogo   String?
   postToReports Boolean @default(false)
+  // Xero: which organisation this venue's takings post to, and the account
+  // codes the daily sales invoice uses. Blank tenant = never posts.
+  xeroTenantId       String?
+  xeroSalesAccount   String? // default 200 (Sales)
+  xeroTipsAccount    String? // blank = tips stay out of the invoice
+  xeroCashAccount    String? // clearing account cash lands in
+  xeroCardAccount    String? // clearing account card settlements land in
+  xeroGiftCardAccount String? // gift-card redemptions (liability drawdown)
 }
 
 model PosRule {

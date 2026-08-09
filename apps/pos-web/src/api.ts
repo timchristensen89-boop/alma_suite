@@ -64,24 +64,39 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (authToken && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${authToken}`);
   if (pinToken && !headers.has('x-device-pin-session')) headers.set('x-device-pin-session', pinToken);
 
-  // A register must never hang on a wedged connection (e.g. an API restart
-  // leaving a dead HTTP/2 stream): 15s hard timeout, surfaced as a network
-  // error so the offline machinery takes over where it applies.
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  // A register must never hang on a wedged connection. An API deploy leaves
+  // long-open tabs holding dead HTTP/2 streams: every request then stalls
+  // until it times out, which in service feels like the till has frozen.
+  //
+  // So: a short first attempt, and if it stalls or the socket is dead, ONE
+  // immediate retry — the browser opens a fresh connection for it, turning a
+  // 15-second hang into a blink. Retries are safe for reads; writes only
+  // retry when they never reached the server (a stalled fetch), and the
+  // order endpoints are idempotency-keyed besides.
+  const attempt = async (timeoutMs: number): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(`${API_BASE}${normalisePath(path)}`, {
+        credentials: 'include',
+        ...init,
+        headers,
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${normalisePath(path)}`, {
-      credentials: 'include',
-      ...init,
-      headers,
-      signal: controller.signal
-    });
-  } catch (err) {
-    if (controller.signal.aborted) throw new TypeError('Network timeout — the register could not reach the server.');
-    throw err;
-  } finally {
-    clearTimeout(timer);
+    response = await attempt(6000);
+  } catch {
+    try {
+      response = await attempt(15000);
+    } catch {
+      throw new TypeError('Network timeout — the register could not reach the server.');
+    }
   }
 
   if (!response.ok) {

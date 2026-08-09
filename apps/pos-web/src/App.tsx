@@ -142,10 +142,16 @@ function hueStyle(c?: string): React.CSSProperties | undefined {
   return c && !HUE_NAMES.includes(c) ? { borderColor: c, background: `${c}26` } : undefined;
 }
 // Menu tiles take a calm hue from their category so every grid reads warm.
+// Cached: the same handful of category names get hashed on every tile render.
+const hueCache = new Map<string, string>();
 function hueForCategory(name: string) {
+  const hit = hueCache.get(name);
+  if (hit) return hit;
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return HUE_NAMES[h % HUE_NAMES.length];
+  const hue = HUE_NAMES[h % HUE_NAMES.length]!;
+  hueCache.set(name, hue);
+  return hue;
 }
 
 // ── Offline layer ───────────────────────────────────────────────────────────
@@ -1220,11 +1226,19 @@ export function App() {
     if (boardPage > pinPages.length - 1) setBoardPage(Math.max(0, pinPages.length - 1));
   }, [pinPages.length, boardPage]);
 
+  // The grid reads a debounced term so a fast typist isn't re-filtering and
+  // re-rendering hundreds of tiles on every character.
+  const [searchTerm, setSearchTerm] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(search), 120);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const visibleItems = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = searchTerm.trim().toLowerCase();
     if (term) return menu.flatMap((category) => category.items).filter((item) => item.title.toLowerCase().includes(term)).slice(0, 60);
     return (menu.find((category) => category.name === activeCategory)?.items ?? []).filter((item) => !item.variantOf);
-  }, [menu, activeCategory, search]);
+  }, [menu, activeCategory, searchTerm]);
 
   // Drag a bill line into another course. Fired lines are locked — a
   // call-away is a promise to the kitchen and is never silently rearranged.
@@ -1294,8 +1308,20 @@ export function App() {
     }
   }
 
+  // recipeId → category, built once per menu. This used to be a nested scan
+  // run for every tile on every render — with 176 items across 23 categories
+  // that was tens of thousands of comparisons per keystroke.
+  const categoryByRecipe = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const category of menu) {
+      for (const item of category.items) map.set(item.recipeId, category.name);
+    }
+    return map;
+  }, [menu]);
+  const categoryOfRef = useRef(categoryByRecipe);
+  categoryOfRef.current = categoryByRecipe;
   function categoryOf(item: MenuItem): string {
-    return menu.find((category) => category.items.some((candidate) => candidate.recipeId === item.recipeId))?.name ?? '';
+    return categoryOfRef.current.get(item.recipeId) ?? '';
   }
 
   function addItem(item: MenuItem) {

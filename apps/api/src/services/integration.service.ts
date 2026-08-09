@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { kindBucket, sydneyTodayUtcMidnight } from './pos.service.js';
 import type { Request } from 'express';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { Prisma, type IntegrationConnection } from '@prisma/client';
@@ -82,6 +83,11 @@ const XERO_SCOPES = [
   // invalid_scope page. The app's Configuration page lists exactly which
   // scopes it may request; check there before touching this list.
   'accounting.invoices.read',
+  // Write scope, for posting each venue's daily POS takings as an ACCREC
+  // invoice into that venue's own Xero organisation. Read alone gets a bare
+  // 403 on the POST, so the push checks the recorded grant first and asks
+  // for a reconnect by name (same pattern as payroll.timesheets).
+  'accounting.invoices',
   // Original supplier PDF attached to each accountant-entered bill — the
   // stock system's line extraction works from that PDF, so bill imports
   // fetch it into SupplierInvoiceDocument. Connections authorised before
@@ -7969,6 +7975,248 @@ export const integrationService = {
   // Drafts, never approved timesheets: the pay run is the payroll operator's
   // decision, and a draft is reversible in Xero while an approved one is a
   // support ticket.
+  // ── POS daily sales → Xero ────────────────────────────────────────────
+  // Each venue is its own company, so its takings post to its own Xero
+  // organisation as one ACCREC invoice per trading day — the same shape the
+  // Lightspeed daily-sales importer already reads, so everything downstream
+  // understands it without a second dialect.
+  //
+  // Ex-GST sales, discounts, surcharge and tips become lines; the day's
+  // payments become allocations against the invoice split by method, so cash
+  // and card land in their own clearing accounts and reconcile against the
+  // bank feed. Idempotent per venue+day: PosXeroPost proves the day went in.
+  async posDaySummary(venue: string, serviceDate: Date) {
+    const orders = await prisma.posOrder.findMany({
+      where: { venue, serviceDate, status: 'PAID', training: false },
+      include: { payments: true, lines: true }
+    });
+
+    const refundCents = orders
+      .flatMap((order) => order.payments)
+      .filter((payment) => payment.amountCents < 0)
+      .reduce((sum, payment) => sum - payment.amountCents, 0);
+
+    const grossIncCents = orders.reduce((sum, order) => sum + order.totalCents, 0);
+    const netIncCents = Math.max(0, grossIncCents - refundCents);
+    const discountCents = orders.reduce(
+      (sum, order) => sum + order.discountCents + order.manualDiscountCents,
+      0
+    );
+    const surchargeIncCents = orders.reduce((sum, order) => sum + order.surchargeCents, 0);
+    const tipCents = orders
+      .flatMap((order) => order.payments)
+      .filter((payment) => payment.method !== 'CASH')
+      .reduce((sum, payment) => sum + payment.tipCents, 0);
+
+    // Sales split by what the kitchen vs the bar sold, from the line's recipe.
+    const recipeIds = [...new Set(orders.flatMap((order) => order.lines.map((line) => line.recipeId)).filter((id): id is string => Boolean(id)))];
+    const recipes = recipeIds.length
+      ? await prisma.recipe.findMany({ where: { id: { in: recipeIds } }, select: { id: true, kind: true, category: true } })
+      : [];
+    const recipeMeta = new Map(recipes.map((recipe) => [recipe.id, recipe]));
+    let foodIncCents = 0;
+    let beverageIncCents = 0;
+    for (const order of orders) {
+      for (const line of order.lines) {
+        const meta = line.recipeId ? recipeMeta.get(line.recipeId) : null;
+        const bucket = meta ? kindBucket(meta.kind, meta.category) : line.course === 'Drinks' ? 'BEVERAGE' : 'FOOD';
+        if (bucket === 'BEVERAGE') beverageIncCents += line.totalCents;
+        else foodIncCents += line.totalCents;
+      }
+    }
+
+    const paymentsByMethod = new Map<string, number>();
+    for (const order of orders) {
+      for (const payment of order.payments) {
+        const key = payment.method;
+        paymentsByMethod.set(key, (paymentsByMethod.get(key) ?? 0) + payment.amountCents + payment.tipCents);
+      }
+    }
+
+    return {
+      venue,
+      serviceDate,
+      orderCount: orders.length,
+      covers: orders.reduce((sum, order) => sum + (order.covers ?? 0), 0),
+      grossIncCents,
+      refundCents,
+      netIncCents,
+      discountCents,
+      surchargeIncCents,
+      foodIncCents,
+      beverageIncCents,
+      tipCents,
+      payments: [...paymentsByMethod.entries()].map(([method, amountCents]) => ({ method, amountCents }))
+    };
+  },
+
+  // Revenue accounts in a venue's Xero org, so the sales/tips codes are
+  // picked from that company's own chart rather than typed from memory.
+  async posXeroAccounts(tenantId: string) {
+    const connection = await connectedXeroConnection();
+    const result = await xeroGetJson<{ Accounts?: Array<{ Code?: string; Name?: string; Type?: string; Status?: string; TaxType?: string }> }>(
+      '/api.xro/2.0/Accounts',
+      { connection, tenantId }
+    );
+    return (result.data.Accounts ?? [])
+      .filter((account) => account.Status === 'ACTIVE' && Boolean(account.Code))
+      .map((account) => ({ code: account.Code!, name: account.Name ?? '', type: account.Type ?? '', taxType: account.TaxType ?? '' }));
+  },
+
+  async posXeroStatus(venue: string, serviceDate: Date) {
+    const [setting, post, summary] = await Promise.all([
+      prisma.posVenueSetting.findUnique({ where: { venue } }),
+      prisma.posXeroPost.findUnique({ where: { venue_serviceDate: { venue, serviceDate } } }),
+      this.posDaySummary(venue, serviceDate)
+    ]);
+    const connection = await prisma.integrationConnection.findFirst({ where: { provider: 'XERO', status: 'CONNECTED' } });
+    return {
+      venue,
+      serviceDate: serviceDate.toISOString().slice(0, 10),
+      configured: Boolean(setting?.xeroTenantId),
+      connected: Boolean(connection),
+      tenants: xeroTenantsFromConnection(connection),
+      post: post
+        ? {
+            status: post.status,
+            invoiceNumber: post.invoiceNumber,
+            totalCents: post.totalCents,
+            postedAt: post.postedAt,
+            detail: post.detail
+          }
+        : null,
+      summary
+    };
+  },
+
+  async pushPosDayToXero(input: { venue: string; serviceDate: Date; force?: boolean }) {
+    const { venue, serviceDate } = input;
+    const setting = await prisma.posVenueSetting.findUnique({ where: { venue } });
+    const tenantId = setting?.xeroTenantId?.trim() || '';
+    if (!tenantId) {
+      throw new HttpError(409, `${venue} has no Xero organisation selected — set it in the POS Office under Venues & receipts.`);
+    }
+
+    const existing = await prisma.posXeroPost.findUnique({ where: { venue_serviceDate: { venue, serviceDate } } });
+    if (existing && existing.status === 'POSTED' && !input.force) {
+      return { venue, skipped: true as const, reason: 'Already posted.', invoiceNumber: existing.invoiceNumber };
+    }
+
+    const summary = await this.posDaySummary(venue, serviceDate);
+    if (summary.netIncCents <= 0) {
+      return { venue, skipped: true as const, reason: 'No takings for that day.', invoiceNumber: null };
+    }
+
+    const connection = await connectedXeroConnection();
+    const grantedScopes = scopesFromJson(connection.scopes).map((scope) => scope.toLowerCase());
+    if (grantedScopes.length > 0 && !grantedScopes.includes('accounting.invoices')) {
+      throw new HttpError(
+        409,
+        'Your Xero connection can read invoices but not write them, so daily sales can’t post. Disconnect Xero in Admin and reconnect it — you’ll be asked to grant invoice access — then push again.'
+      );
+    }
+
+    const dateKey = serviceDate.toISOString().slice(0, 10);
+    const invoiceNumber = `ALMA-POS-${venue.replace(/[^A-Za-z0-9]+/g, '-').toUpperCase()}-${dateKey.replace(/-/g, '')}`;
+    const salesAccount = setting?.xeroSalesAccount?.trim() || '200';
+    const tipsAccount = setting?.xeroTipsAccount?.trim() || '';
+
+    // Xero takes dollars; every figure here is GST-exclusive except tips,
+    // which are a pass-through to staff and carry no GST.
+    const exGst = (incCents: number) => Number(((incCents * 10) / 11 / 100).toFixed(2));
+    const lineItems: Array<Record<string, unknown>> = [];
+    const pushLine = (description: string, amount: number, accountCode: string, taxType: string) => {
+      if (Math.abs(amount) < 0.005) return;
+      lineItems.push({ Description: description, Quantity: 1, UnitAmount: amount, AccountCode: accountCode, TaxType: taxType });
+    };
+
+    pushLine(`Food sales — ${dateKey}`, exGst(summary.foodIncCents), salesAccount, 'OUTPUT');
+    pushLine(`Beverage sales — ${dateKey}`, exGst(summary.beverageIncCents), salesAccount, 'OUTPUT');
+    pushLine('Surcharge', exGst(summary.surchargeIncCents), salesAccount, 'OUTPUT');
+    pushLine('Discounts and comps', -exGst(summary.discountCents), salesAccount, 'OUTPUT');
+    pushLine('Refunds', -exGst(summary.refundCents), salesAccount, 'OUTPUT');
+    if (tipsAccount) pushLine('Card tips (payable to staff)', Number((summary.tipCents / 100).toFixed(2)), tipsAccount, 'NONE');
+
+    if (lineItems.length === 0) {
+      return { venue, skipped: true as const, reason: 'Nothing to post.', invoiceNumber: null };
+    }
+
+    const contactName = 'ALMA POS daily sales';
+    try {
+      const posted = await xeroPostJson<{ Invoices?: Array<{ InvoiceID?: string; InvoiceNumber?: string; Total?: number }> }>(
+        '/api.xro/2.0/Invoices',
+        {
+          connection,
+          tenantId,
+          body: {
+            Invoices: [
+              {
+                Type: 'ACCREC',
+                Contact: { Name: contactName },
+                Date: dateKey,
+                DueDate: dateKey,
+                InvoiceNumber: invoiceNumber,
+                Reference: `ALMA POS ${venue} ${dateKey} · ${summary.orderCount} bills`,
+                Status: 'AUTHORISED',
+                LineAmountTypes: 'Exclusive',
+                LineItems: lineItems
+              }
+            ]
+          }
+        }
+      );
+      const invoice = posted.data.Invoices?.[0];
+      const record = {
+        venue,
+        serviceDate,
+        tenantId,
+        invoiceId: invoice?.InvoiceID ?? null,
+        invoiceNumber,
+        totalCents: summary.netIncCents + summary.tipCents,
+        status: 'POSTED',
+        detail: null as string | null
+      };
+      await prisma.posXeroPost.upsert({
+        where: { venue_serviceDate: { venue, serviceDate } },
+        create: record,
+        update: record
+      });
+      return { venue, skipped: false as const, invoiceNumber, invoiceId: invoice?.InvoiceID ?? null, summary };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message.slice(0, 400) : 'Unknown error';
+      await prisma.posXeroPost.upsert({
+        where: { venue_serviceDate: { venue, serviceDate } },
+        create: { venue, serviceDate, tenantId, invoiceNumber, totalCents: summary.netIncCents, status: 'FAILED', detail },
+        update: { status: 'FAILED', detail, tenantId, invoiceNumber }
+      });
+      throw error;
+    }
+  },
+
+  // Nightly: post yesterday for every venue that has an organisation set.
+  async pushPosDailySalesForAllVenues(input?: { serviceDate?: Date }) {
+    const serviceDate = input?.serviceDate ?? (() => {
+      const today = sydneyTodayUtcMidnight();
+      return new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    })();
+    const settings = await prisma.posVenueSetting.findMany({ where: { NOT: { xeroTenantId: null } } });
+    const results: Array<{ venue: string; ok: boolean; detail: string }> = [];
+    for (const setting of settings) {
+      if (!setting.xeroTenantId?.trim()) continue;
+      try {
+        const result = await this.pushPosDayToXero({ venue: setting.venue, serviceDate });
+        results.push({
+          venue: setting.venue,
+          ok: true,
+          detail: result.skipped ? result.reason : `Posted ${result.invoiceNumber}`
+        });
+      } catch (error) {
+        results.push({ venue: setting.venue, ok: false, detail: error instanceof Error ? error.message.slice(0, 200) : 'failed' });
+      }
+    }
+    return { serviceDate: serviceDate.toISOString().slice(0, 10), results };
+  },
+
   async pushTimesheetsToXero(
     actor: AuthUser,
     input: { start: string; end: string; venue?: string | null; dryRun?: boolean; staffProfileIds?: string[] }

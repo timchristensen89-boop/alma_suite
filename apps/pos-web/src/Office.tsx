@@ -12,7 +12,7 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 type Profile = { id: string; name: string; matchKind: string; categoriesCsv: string; printerIp: string | null; active: boolean; sortOrder: number };
 type Rule = { id: string; kind: string; label: string; percent: number; weekdays: string; holidays: boolean; startMinute: number | null; endMinute: number | null; active: boolean };
 type ModGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: Array<{ id: string; name: string; priceCents: number }> };
-type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; receiptLogo: string | null };
+type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; receiptLogo: string | null ; xeroTenantId: string | null; xeroSalesAccount: string | null; xeroTipsAccount: string | null };
 type MenuHide = { id: string; kind: string; key: string; createdAt: string };
 type MenuShape = { categories: Array<{ name: string; items: Array<{ recipeId: string; title: string; priceCents: number }> }> };
 type Special = { id: string; title: string; salePriceCents: number; category: string; venue: string | null };
@@ -44,6 +44,7 @@ export function Office() {
   const [optionSearch, setOptionSearch] = useState('');
   const [pour, setPour] = useState({ label: 'Glass 150ml', ml: '150', parentMl: '750', price: '' });
   const [specials, setSpecials] = useState<Special[]>([]);
+  const [xeroTenants, setXeroTenants] = useState<Array<{ id: string; name: string | null }>>([]);
   const [specialDraft, setSpecialDraft] = useState({ name: '', price: '', kind: 'FOOD', venue: '' });
 
   const refresh = useCallback(async () => {
@@ -60,6 +61,13 @@ export function Office() {
       setHides(await api<MenuHide[]>('/api/pos/menu-hides'));
       setVariantGroups(await api<VariantGroup[]>('/api/pos/variants'));
       setSpecials(await api<Special[]>('/api/pos/specials'));
+      // Which Xero organisations this connection can post into (blank when
+      // Xero isn't connected — the row then just explains that).
+      await api<{ tenants?: Array<{ id: string; name: string | null }> }>(
+        `/api/pos/xero/status?venue=${encodeURIComponent(VENUES[0] ?? '')}`
+      )
+        .then((status) => setXeroTenants(status.tenants ?? []))
+        .catch(() => setXeroTenants([]));
       setIdentities(await Promise.all(VENUES.map((venue) => api<Identity>(`/api/pos/venue-settings?venue=${encodeURIComponent(venue)}`))));
       setError(null);
     } catch (err) {
@@ -935,6 +943,51 @@ export function Office() {
                       const website = event.currentTarget.value.trim();
                       if (website === (identity.website ?? '')) return;
                       void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, website }) })
+                        .then(() => setInfo('Saved.'))
+                        .catch((err) => setError(messageForError(err, 'Could not save.')));
+                    }}
+                  />
+                </div>
+                <div className="office-row">
+                  <select
+                    className="office-input office-input-wide"
+                    defaultValue={identity.xeroTenantId ?? ''}
+                    onChange={(event) => {
+                      void api('/api/pos/venue-settings', {
+                        method: 'PUT',
+                        body: JSON.stringify({ venue: identity.venue, xeroTenantId: event.currentTarget.value })
+                      })
+                        .then(() => setInfo('Xero organisation saved — this venue posts its own daily sales.'))
+                        .catch((err) => setError(messageForError(err, 'Could not save.')));
+                    }}
+                  >
+                    <option value="">Xero: don't post this venue</option>
+                    {xeroTenants.map((tenant) => (
+                      <option key={tenant.id} value={tenant.id}>
+                        {tenant.name ?? tenant.id}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    defaultValue={identity.xeroSalesAccount ?? ''}
+                    placeholder="Sales account (200)"
+                    className="office-input"
+                    onBlur={(event) => {
+                      const xeroSalesAccount = event.currentTarget.value.trim();
+                      if (xeroSalesAccount === (identity.xeroSalesAccount ?? '')) return;
+                      void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, xeroSalesAccount }) })
+                        .then(() => setInfo('Saved.'))
+                        .catch((err) => setError(messageForError(err, 'Could not save.')));
+                    }}
+                  />
+                  <input
+                    defaultValue={identity.xeroTipsAccount ?? ''}
+                    placeholder="Tips account (blank = skip)"
+                    className="office-input"
+                    onBlur={(event) => {
+                      const xeroTipsAccount = event.currentTarget.value.trim();
+                      if (xeroTipsAccount === (identity.xeroTipsAccount ?? '')) return;
+                      void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, xeroTipsAccount }) })
                         .then(() => setInfo('Saved.'))
                         .catch((err) => setError(messageForError(err, 'Could not save.')));
                     }}

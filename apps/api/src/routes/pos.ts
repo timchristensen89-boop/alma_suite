@@ -192,6 +192,47 @@ posRouter.get('/print-poll/:profileId', async (req, res, next) => {
   }
 });
 
+// Xero daily sales: status for a venue/day, and the push itself. The nightly
+// cron hits the scheduler route; these are the manual controls.
+posRouter.get('/xero/status', async (req, res, next) => {
+  try {
+    const { integrationService } = await import('../services/integration.service.js');
+    const venue = String(req.query.venue ?? '');
+    if (!venue) throw new HttpError(400, 'venue is required.');
+    const dateText = String(req.query.serviceDate ?? '');
+    const serviceDate = dateText ? new Date(`${dateText}T00:00:00.000Z`) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    serviceDate.setUTCHours(0, 0, 0, 0);
+    res.json(await integrationService.posXeroStatus(venue, serviceDate));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get('/xero/accounts', async (req, res, next) => {
+  try {
+    const { integrationService } = await import('../services/integration.service.js');
+    const tenantId = String(req.query.tenantId ?? '');
+    if (!tenantId) throw new HttpError(400, 'tenantId is required.');
+    res.json(await integrationService.posXeroAccounts(tenantId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/xero/push', async (req, res, next) => {
+  try {
+    const { integrationService } = await import('../services/integration.service.js');
+    const venue = String(req.body?.venue ?? '');
+    if (!venue) throw new HttpError(400, 'venue is required.');
+    const dateText = String(req.body?.serviceDate ?? '');
+    const serviceDate = dateText ? new Date(`${dateText}T00:00:00.000Z`) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    serviceDate.setUTCHours(0, 0, 0, 0);
+    res.json(await integrationService.pushPosDayToXero({ venue, serviceDate, force: req.body?.force === true }));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.get('/specials', async (_req, res, next) => {
   try {
     res.json(await posService.listSpecials());

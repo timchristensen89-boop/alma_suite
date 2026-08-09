@@ -40,7 +40,7 @@ const GST_DIVISOR = 11;
 
 // Recipes carry loose kind strings ("Bar Dish", "Dish", "FOOD", "BEVERAGE").
 // Everything drink-ish routes to the bar; the rest is kitchen food.
-function kindBucket(kind: string | null, category: string | null): 'FOOD' | 'BEVERAGE' {
+export function kindBucket(kind: string | null, category: string | null): 'FOOD' | 'BEVERAGE' {
   const value = `${kind ?? ''} ${category ?? ''}`.toLowerCase();
   return /bar|bev|cocktail|drink|wine|beer|spirit|liquor|coffee|tea|juice|margarita|mezcal|tequila|vodka|gin|whiskey/.test(value)
     ? 'BEVERAGE'
@@ -62,7 +62,7 @@ function sydneyNow(): { dateKey: string; weekday: number; minute: number } {
   };
 }
 
-function sydneyTodayUtcMidnight(): Date {
+export function sydneyTodayUtcMidnight(): Date {
   return new Date(`${sydneyNow().dateKey}T00:00:00Z`);
 }
 
@@ -1181,7 +1181,10 @@ export const posService = {
       phone: row?.phone ?? null,
       email: row?.email ?? null,
       website: row?.website ?? null,
-      receiptLogo: row?.receiptLogo ?? null
+      receiptLogo: row?.receiptLogo ?? null,
+      xeroTenantId: row?.xeroTenantId ?? null,
+      xeroSalesAccount: row?.xeroSalesAccount ?? null,
+      xeroTipsAccount: row?.xeroTipsAccount ?? null
     };
   },
 
@@ -1197,6 +1200,9 @@ export const posService = {
     if (body.phone !== undefined) patch.phone = str(body.phone).slice(0, 30) || null;
     if (body.email !== undefined) patch.email = str(body.email).slice(0, 80) || null;
     if (body.website !== undefined) patch.website = str(body.website).slice(0, 80) || null;
+    if (body.xeroTenantId !== undefined) patch.xeroTenantId = str(body.xeroTenantId).slice(0, 80) || null;
+    if (body.xeroSalesAccount !== undefined) patch.xeroSalesAccount = str(body.xeroSalesAccount).slice(0, 20) || null;
+    if (body.xeroTipsAccount !== undefined) patch.xeroTipsAccount = str(body.xeroTipsAccount).slice(0, 20) || null;
     if (body.receiptLogo !== undefined) {
       const logo = str(body.receiptLogo);
       if (logo && (!logo.startsWith('data:image/') || logo.length > 400_000)) {
