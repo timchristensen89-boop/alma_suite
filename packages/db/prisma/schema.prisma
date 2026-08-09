@@ -4750,6 +4750,8 @@ model PosOrder {
   guestId       String?
   reservationId String?
   notes         String?
+  // Dietary flags: [{tag, seat|null}] — seat null applies to the whole table.
+  dietary       Json      @default("[]")
   openedByName  String?
   guest         ReserveGuest? @relation(fields: [guestId], references: [id], onDelete: SetNull)
   paidAt        DateTime?

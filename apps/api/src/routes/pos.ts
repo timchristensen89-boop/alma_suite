@@ -168,9 +168,17 @@ posRouter.get('/live', async (_req, res, next) => {
   }
 });
 
+posRouter.post('/orders/:id/meta', async (req, res, next) => {
+  try {
+    res.json(await posService.setOrderMeta(req.params.id, req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.post('/unlock', async (req, res, next) => {
   try {
-    res.json(await posService.unlockPin(req.body));
+    res.json(await posService.unlockPin(req.body, (req as unknown as { user?: { email?: string | null } }).user?.email ?? null));
   } catch (err) {
     next(err);
   }

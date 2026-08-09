@@ -138,7 +138,7 @@ function roundCash5(cents: number): number {
 // Manager approval for register voids/refunds from floor-staff (device PIN)
 // sessions: the PIN must belong to an active profile whose role reads as a
 // manager. Suite logins (full accounts) bypass the gate.
-const MANAGER_ROLE = /manager|owner|director|licensee/i;
+const MANAGER_ROLE = /manager|owner|director|licensee|admin/i;
 
 // St Alma and Alma Avalon are separate companies with separate Stripe
 // accounts: STRIPE_SECRET_KEY__ST_ALMA / __ALMA_AVALON override the default
@@ -171,6 +171,31 @@ async function verifyManagerPin(pin: string): Promise<string> {
     if (await authService.comparePin(pin, profile.pinHash!)) return `${profile.firstName} ${profile.lastName}`.trim();
   }
   throw new HttpError(403, 'That PIN does not belong to a manager.');
+}
+
+// Pull dietary flags out of booking free-text (SevenRooms notes / special
+// requests) so they follow the table onto the register automatically.
+const DIETARY_PATTERNS: Array<[RegExp, string]> = [
+  [/gluten[- ]?free|coeliac|celiac|\bgf\b/i, 'GF'],
+  [/dairy[- ]?free|lactose|\bdf\b/i, 'DF'],
+  [/\bvegan\b/i, 'Vegan'],
+  [/vegetarian/i, 'Vegetarian'],
+  [/\bnut\b|peanut|almond|cashew|walnut/i, 'Nut allergy'],
+  [/shellfish|crustacean|prawn|oyster|lobster/i, 'Shellfish allergy'],
+  [/pescatarian/i, 'Pescatarian'],
+  [/halal/i, 'Halal'],
+  [/kosher/i, 'Kosher'],
+  [/allerg|anaphyla|intoleran/i, 'Allergy — see note']
+];
+function dietaryFromText(text: string): Array<{ tag: string; seat: number | null }> {
+  if (!text) return [];
+  const tags: Array<{ tag: string; seat: number | null }> = [];
+  for (const [pattern, tag] of DIETARY_PATTERNS) {
+    if (!pattern.test(text)) continue;
+    if (tag === 'Allergy — see note' && tags.some((entry) => /allergy/i.test(entry.tag))) continue;
+    if (!tags.some((entry) => entry.tag === tag)) tags.push({ tag, seat: null });
+  }
+  return tags.slice(0, 8);
 }
 
 async function postPosActuals(venue: string) {
@@ -437,13 +462,43 @@ export const posService = {
     };
   },
 
+  // Order-wide note + dietary flags. Seat null = the whole table; dockets
+  // print tags on the header and under each dish (shared/unassigned dishes
+  // carry every tag — when unsure it prints on everything).
+  async setOrderMeta(id: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const data: { notes?: string | null; dietary?: Array<{ tag: string; seat: number | null }> } = {};
+    if (body.notes !== undefined) data.notes = str(body.notes).slice(0, 500) || null;
+    if (body.dietary !== undefined) {
+      const rows = Array.isArray(body.dietary) ? body.dietary : [];
+      data.dietary = rows
+        .map((entry) => {
+          const row = (entry ?? {}) as Record<string, unknown>;
+          const tag = str(row.tag).slice(0, 40);
+          if (!tag) return null;
+          const seat = row.seat === null || row.seat === undefined || row.seat === '' ? null : Number(row.seat);
+          return { tag, seat: Number.isFinite(seat) && (seat as number) > 0 ? Math.round(seat as number) : null };
+        })
+        .filter((row): row is { tag: string; seat: number | null } => row !== null)
+        .slice(0, 12);
+    }
+    return prisma.posOrder.update({ where: { id }, data, include: ORDER_INCLUDE });
+  },
+
   // Lock-screen code: any ACTIVE staff member's PIN unlocks the register.
-  async unlockPin(input: unknown) {
+  async unlockPin(input: unknown, sessionEmail?: string | null) {
     const body = (input ?? {}) as Record<string, unknown>;
     const pin = str(body.pin);
     if (!/^\d{4,8}$/.test(pin)) throw new HttpError(403, 'Enter your staff code.');
+    // Any ACTIVE staff code unlocks; the signed-in user's own code always
+    // works too (they already hold the session, whatever their roster state).
     const staff = await prisma.staffProfile.findMany({
-      where: { accountType: 'HUMAN', employmentStatus: 'ACTIVE', mergedIntoStaffProfileId: null, pinHash: { not: null } },
+      where: {
+        accountType: 'HUMAN',
+        mergedIntoStaffProfileId: null,
+        pinHash: { not: null },
+        OR: [{ employmentStatus: 'ACTIVE' }, ...(sessionEmail ? [{ email: sessionEmail }] : [])]
+      },
       select: { firstName: true, lastName: true, pinHash: true, pinLockedUntil: true }
     });
     for (const profile of staff) {
@@ -631,6 +686,8 @@ export const posService = {
     // the guest's CRM profile (spend + favourites update at settle).
     let guestId: string | null = null;
     let reservationId: string | null = null;
+    let bookingNotes: string | null = null;
+    let bookingDietary: Array<{ tag: string; seat: number | null }> = [];
     if (tableLabel) {
       const reservation = await prisma.reserveReservation.findFirst({
         where: {
@@ -643,11 +700,16 @@ export const posService = {
           ]
         },
         orderBy: { startsAt: 'asc' },
-        select: { id: true, guestId: true }
+        select: { id: true, guestId: true, notes: true, specialRequests: true }
       });
       if (reservation) {
         guestId = reservation.guestId;
         reservationId = reservation.id;
+        const bookingText = [reservation.notes, reservation.specialRequests].filter(Boolean).join(' · ');
+        if (bookingText) {
+          bookingNotes = `Booking: ${bookingText}`.slice(0, 500);
+          bookingDietary = dietaryFromText(bookingText);
+        }
       }
     }
 
@@ -661,6 +723,8 @@ export const posService = {
           tableLabel,
           guestId,
           reservationId,
+          notes: bookingNotes,
+          dietary: bookingDietary,
           covers: body.covers === undefined || body.covers === null || body.covers === '' ? null : asInt(body.covers, 'covers', { min: 1, max: 200 })
         },
         include: ORDER_INCLUDE
@@ -1381,6 +1445,8 @@ export const posService = {
           orderNumber: order.orderNumber,
           covers: order.covers,
           openedByName: order.openedByName,
+          orderNotes: order.notes,
+          dietary: (order.dietary as Array<{ tag: string; seat: number | null }> | null) ?? [],
           lines: sorted.map((line) => ({
             id: line.id,
             name: line.name,

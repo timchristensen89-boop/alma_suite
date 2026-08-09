@@ -45,6 +45,8 @@ type TabsConfig = { order: string[]; hidden: string[]; groups: Array<{ name: str
 type ModifierOption = { id: string; name: string; priceCents: number };
 type ModifierGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: ModifierOption[] };
 type Order = {
+  notes?: string | null;
+  dietary?: Array<{ tag: string; seat: number | null }> | null;
   id: string;
   orderNumber: number;
   guest?: OrderGuest | null;
@@ -95,6 +97,8 @@ type Docket = {
   orderNumber: number;
   covers: number | null;
   openedByName: string | null;
+  orderNotes?: string | null;
+  dietary?: Array<{ tag: string; seat: number | null }>;
   lines: Array<{ id: string; name: string; quantity: number; course: string | null; notes: string | null }>;
 };
 type DrawerInfo = {
@@ -460,6 +464,8 @@ export function App() {
   const [voidConfirm, setVoidConfirm] = useState(false);
   const [lockScreen, setLockScreen] = useState(false);
   const [lockPin, setLockPin] = useState('');
+  const [noteSheet, setNoteSheet] = useState<null | { value: string }>(null);
+  const [dietSheet, setDietSheet] = useState<null | { tags: Array<{ tag: string; seat: number | null }>; custom: string; seat: string }>(null);
   const [fireSheet, setFireSheet] = useState<null | Array<{ course: string; count: number; picked: boolean }>>(null);
   const [guestView, setGuestView] = useState<GuestProfile | null>(null);
   const [coversEdit, setCoversEdit] = useState<string>('');
@@ -1531,6 +1537,18 @@ export function App() {
     }
   }
 
+  async function saveOrderMeta(meta: { notes?: string; dietary?: Array<{ tag: string; seat: number | null }> }) {
+    if (!order) return;
+    try {
+      const updated = await api<Order>(`/api/pos/orders/${order.id}/meta`, { method: 'POST', body: JSON.stringify(meta) });
+      setOrder(updated);
+      setNoteSheet(null);
+      setDietSheet(null);
+    } catch (err) {
+      setError(messageForError(err, 'Could not save.'));
+    }
+  }
+
   async function unlockWithPin(pin: string) {
     setBusy(true);
     try {
@@ -2533,6 +2551,21 @@ export function App() {
               <b>{cartOpen ? 'Hide bill ▾' : 'View bill ▴'}</b>
             </button>
             <div className="pos-cart-lines">
+              {order ? (
+                <div className="pos-meta-chips">
+                  {(order.dietary ?? []).length ? (
+                    <div className="pos-diet-banner">
+                      ⚠ {(order.dietary ?? []).map((tag) => (tag.seat ? `${tag.tag} S${tag.seat}` : tag.tag)).join(' · ')}
+                    </div>
+                  ) : null}
+                  <button type="button" onClick={() => setNoteSheet({ value: order.notes ?? '' })}>
+                    ✎ Note{order.notes ? ' •' : ''}
+                  </button>
+                  <button type="button" onClick={() => setDietSheet({ tags: [...(order.dietary ?? [])], custom: '', seat: '' })}>
+                    ⚠ Dietary{(order.dietary ?? []).length ? ` ${(order.dietary ?? []).length}` : ''}
+                  </button>
+                </div>
+              ) : null}
               {(order?.lines ?? []).length === 0 && !targetCourse ? (
                 <div className="pos-cart-empty">
                   <img src="/brand/alma-fish.png" alt="" className="pos-fish-empty" />
@@ -3818,6 +3851,101 @@ export function App() {
         </div>
       ) : null}
 
+      {noteSheet && order ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Order note</h2>
+            <p className="pos-muted">Prints on every docket for this bill.</p>
+            <textarea
+              className="pos-tender pos-note-area"
+              autoFocus
+              rows={4}
+              value={noteSheet.value}
+              onChange={(event) => setNoteSheet({ value: event.currentTarget.value })}
+            />
+            <button type="button" className="pos-charge" disabled={busy} onClick={() => void saveOrderMeta({ notes: noteSheet.value })}>
+              Save note
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setNoteSheet(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {dietSheet && order ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Dietaries</h2>
+            <p className="pos-muted">
+              Tag the whole table, or set a seat number first to tag one guest. Tags print on the docket header and
+              under each dish — shared or unassigned dishes carry every tag, so when unsure it prints on everything.
+            </p>
+            <div className="pos-diet-current">
+              {dietSheet.tags.map((tag, index) => (
+                <button
+                  key={`${tag.tag}-${index}`}
+                  type="button"
+                  onClick={() => setDietSheet({ ...dietSheet, tags: dietSheet.tags.filter((_, i) => i !== index) })}
+                >
+                  {tag.seat ? `${tag.tag} · S${tag.seat}` : tag.tag} ✕
+                </button>
+              ))}
+              {dietSheet.tags.length === 0 ? <span className="pos-muted">No dietaries yet.</span> : null}
+            </div>
+            <input
+              className="pos-tender"
+              inputMode="numeric"
+              placeholder="Seat number (blank = whole table)"
+              value={dietSheet.seat}
+              onChange={(event) => setDietSheet({ ...dietSheet, seat: event.currentTarget.value.replace(/\D/g, '').slice(0, 2) })}
+            />
+            <div className="pos-reason-list">
+              {['GF', 'DF', 'Vegan', 'Vegetarian', 'Nut allergy', 'Shellfish allergy', 'Coeliac', 'Halal'].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() =>
+                    setDietSheet({
+                      ...dietSheet,
+                      tags: [...dietSheet.tags, { tag: preset, seat: dietSheet.seat ? Number(dietSheet.seat) : null }]
+                    })
+                  }
+                >
+                  + {preset}
+                </button>
+              ))}
+            </div>
+            <div className="pos-diet-row">
+              <input
+                className="pos-tender"
+                placeholder="Custom (e.g. anaphylaxis — sesame)"
+                value={dietSheet.custom}
+                onChange={(event) => setDietSheet({ ...dietSheet, custom: event.currentTarget.value })}
+              />
+              <button
+                type="button"
+                className="pos-ghost"
+                disabled={!dietSheet.custom.trim()}
+                onClick={() =>
+                  setDietSheet({
+                    ...dietSheet,
+                    custom: '',
+                    tags: [...dietSheet.tags, { tag: dietSheet.custom.trim().slice(0, 40), seat: dietSheet.seat ? Number(dietSheet.seat) : null }]
+                  })
+                }
+              >
+                Add
+              </button>
+            </div>
+            <button type="button" className="pos-charge" disabled={busy} onClick={() => void saveOrderMeta({ dietary: dietSheet.tags })}>
+              Save dietaries
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setDietSheet(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
       {lockScreen ? (
         <div className="pos-modal pos-lock" role="dialog">
           <div className="pos-modal-panel">
@@ -3834,6 +3962,13 @@ export function App() {
               onChange={(event) => setLockPin(event.currentTarget.value.replace(/\D/g, '').slice(0, 8))}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && lockPin.length >= 4) void unlockWithPin(lockPin);
+              }}
+            />
+            <PosKeypad
+              value={lockPin}
+              onChange={setLockPin}
+              onSubmit={() => {
+                if (lockPin.length >= 4) void unlockWithPin(lockPin);
               }}
             />
             <button type="button" className="pos-charge" disabled={busy || lockPin.length < 4} onClick={() => void unlockWithPin(lockPin)}>
@@ -3972,6 +4107,13 @@ export function App() {
               placeholder="Manager PIN"
               value={managerGate.pin}
               onChange={(event) => setManagerGate({ ...managerGate, pin: event.currentTarget.value })}
+            />
+            <PosKeypad
+              value={managerGate.pin}
+              onChange={(next) => setManagerGate({ ...managerGate, pin: next })}
+              onSubmit={() => {
+                if (managerGate.pin.length >= 4) managerGate.retry(managerGate.pin);
+              }}
             />
             <button
               type="button"
@@ -4223,6 +4365,12 @@ export function App() {
                     {docket.openedByName ? ` · ${docket.openedByName}` : ''}
                   </p>
                 </div>
+                {(docket.dietary ?? []).length ? (
+                  <div className="pos-docket-diet">
+                    ⚠ DIETARY: {(docket.dietary ?? []).map((tag) => (tag.seat ? `${tag.tag} (S${tag.seat})` : tag.tag)).join(' · ')}
+                  </div>
+                ) : null}
+                {docket.orderNotes ? <div className="pos-docket-note">✎ {docket.orderNotes}</div> : null}
                 {(() => {
                   // Courses print as proper ruled sub-headings with their
                   // items listed beneath, in service order.
@@ -4254,6 +4402,11 @@ export function App() {
                                 {line.notes ? `${((line as { modifiers?: Array<{ name: string }> }).modifiers ?? []).length ? ' — ' : ''}${line.notes}` : ''}
                               </small>
                             ) : null}
+                            {(() => {
+                              const seat = (line as { seat?: number | null }).seat ?? null;
+                              const tags = (docket.dietary ?? []).filter((tag) => tag.seat === null || seat === null || tag.seat === seat);
+                              return tags.length ? <em className="pos-docket-diettag">⚠ {tags.map((tag) => tag.tag).join(' · ')}</em> : null;
+                            })()}
                           </div>
                         ))}
                       </div>
@@ -4767,6 +4920,28 @@ function FloorView({
           })}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// On-screen keypad for iPads: codes never rely on a hardware keyboard.
+function PosKeypad({ value, onChange, onSubmit }: { value: string; onChange: (next: string) => void; onSubmit?: () => void }) {
+  return (
+    <div className="pos-keypad">
+      {['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', '✓'].map((key) => (
+        <button
+          key={key}
+          type="button"
+          className={key === '✓' ? 'is-go' : ''}
+          onClick={() => {
+            if (key === '⌫') onChange(value.slice(0, -1));
+            else if (key === '✓') onSubmit?.();
+            else if (value.length < 8) onChange(value + key);
+          }}
+        >
+          {key}
+        </button>
+      ))}
     </div>
   );
 }
