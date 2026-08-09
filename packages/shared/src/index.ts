@@ -608,6 +608,7 @@ export const staffLeaveRequestUpdateSchema = z.object({
 }).superRefine(validateLeaveRange);
 
 export const staffProfileCreateInputSchema = z.object({
+  posPermissions: z.record(z.boolean()).optional(),
   firstName: z.string().min(2),
   lastName: z.string().min(2),
   roleTemplateId: z.string().optional().or(z.literal('')),

@@ -154,7 +154,7 @@ export function stripeForVenue(venue: string | null | undefined): Stripe | null 
   return stripeByVenue.get(slug) ?? stripe;
 }
 
-async function verifyManagerPin(pin: string): Promise<string> {
+async function verifyManagerPin(pin: string, permission?: string): Promise<string> {
   if (!/^\d{4,8}$/.test(pin)) throw new HttpError(403, 'Manager PIN required.');
   const managers = await prisma.staffProfile.findMany({
     where: {
@@ -163,10 +163,13 @@ async function verifyManagerPin(pin: string): Promise<string> {
       mergedIntoStaffProfileId: null,
       pinHash: { not: null }
     },
-    select: { firstName: true, lastName: true, roleTitle: true, pinHash: true, pinLockedUntil: true }
+    select: { firstName: true, lastName: true, roleTitle: true, pinHash: true, pinLockedUntil: true, posPermissions: true }
   });
   for (const profile of managers) {
-    if (!MANAGER_ROLE.test(profile.roleTitle)) continue;
+    const granted =
+      permission !== undefined &&
+      ((profile.posPermissions as Record<string, boolean> | null)?.[permission] === true);
+    if (!MANAGER_ROLE.test(profile.roleTitle) && !granted) continue;
     if (profile.pinLockedUntil && profile.pinLockedUntil.getTime() > Date.now()) continue;
     if (await authService.comparePin(pin, profile.pinHash!)) return `${profile.firstName} ${profile.lastName}`.trim();
   }
@@ -816,12 +819,13 @@ export const posService = {
   // plus a mandatory-reason audit record. Cash refunds count against the
   // open drawer's expected cash automatically (negative CASH sum).
   async refundOrder(id: string, input: unknown, _requireManager = false) {
+    // 'refunds' permission (or any manager role) approves.
     const body = (input ?? {}) as Record<string, unknown>;
     const reason = str(body.reason);
     requireReason('COMP', reason);
     // Refunds are management-only for EVERY session type: a manager PIN is
     // entered for this one action and the approver lands on the audit trail.
-    const approvedBy = await verifyManagerPin(str(body.managerPin));
+    const approvedBy = await verifyManagerPin(str(body.managerPin), 'refunds');
     const staffName = `${str(body.staffName) || 'Unknown'} (approved by ${approvedBy})`;
     const method = str(body.method).toUpperCase() === 'CASH' ? 'CASH' : 'REFUND';
     const order = await prisma.posOrder.findUnique({ where: { id }, include: { payments: true } });
@@ -1156,7 +1160,7 @@ export const posService = {
     // Empty and training orders void freely; a real order with items needs a
     // manager when the session is a floor-staff PIN login.
     if (requireManager && !order.training && order.lines.length > 0) {
-      approvedBy = await verifyManagerPin(str(body.managerPin));
+      approvedBy = await verifyManagerPin(str(body.managerPin), 'voids');
     }
     const reason = str(body.reason) || null;
     return prisma.posOrder.update({
@@ -1257,7 +1261,7 @@ export const posService = {
   // system so the card balance stays true.
   async undoPayment(orderId: string, paymentId: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
-    const approvedBy = await verifyManagerPin(str(body.managerPin));
+    const approvedBy = await verifyManagerPin(str(body.managerPin), 'refunds');
     const payment = await prisma.posPayment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.orderId !== orderId) throw new HttpError(404, 'Payment not found on this bill.');
     if (payment.method === 'GIFT_CARD') {

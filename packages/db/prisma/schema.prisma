@@ -674,6 +674,8 @@ model StaffProfile {
   pinUpdatedAt                 DateTime?
   pinFailedAttempts            Int                        @default(0)
   pinLockedUntil               DateTime?
+  // POS abilities for non-managers: {refunds, voids, discounts, till, office}.
+  posPermissions               Json      @default("{}")
   pinLastFailedAt              DateTime?
   isAdmin                      Boolean                    @default(false)
   lastLoginAt                  DateTime?

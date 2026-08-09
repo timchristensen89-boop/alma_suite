@@ -2272,6 +2272,7 @@ export const staffService = {
           startDate: data.startDate ? new Date(data.startDate) : null
         }),
         ...onboardingDetailUpdateData(data),
+        ...(data.posPermissions !== undefined && { posPermissions: data.posPermissions }),
         ...(data.notes !== undefined && { notes: data.notes || null })
     };
 

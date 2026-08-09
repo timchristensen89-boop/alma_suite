@@ -1157,8 +1157,10 @@ export function App() {
     const measure = () => {
       const width = el.clientWidth - 32;
       const height = el.clientHeight - 22;
-      const cols = Math.max(2, Math.floor((width + 10) / (145 + 10)));
-      const rows = Math.max(1, Math.floor((height + 10) / (98 + 10)));
+      const tileW = el.clientWidth < 720 ? 104 : 145;
+      const tileH = el.clientWidth < 720 ? 80 : 98;
+      const cols = Math.max(2, Math.floor((width + 10) / (tileW + 10)));
+      const rows = Math.max(1, Math.floor((height + 10) / (tileH + 10)));
       setBoardSlots(cols * rows);
     };
     measure();
@@ -1939,6 +1941,16 @@ export function App() {
           <>
             <button type="button" className="pos-ghost" onClick={() => setView('register')}>
               Register
+            </button>
+            <button
+              type="button"
+              className="pos-ghost"
+              onClick={() => {
+                setOrder(null);
+                setView('register');
+              }}
+            >
+              ＋ New order
             </button>
             <button type="button" className={`pos-ghost ${editLayout ? 'pos-ghost-active' : ''}`} onClick={() => setEditLayout(!editLayout)}>
               {editLayout ? 'Done editing' : 'Edit layout'}
@@ -3236,6 +3248,17 @@ export function App() {
         <div className="pos-modal" role="dialog" onClick={() => setBills(null)}>
           <div className="pos-modal-panel" onClick={(event) => event.stopPropagation()}>
             <h2>Today's bills</h2>
+            <button
+              type="button"
+              className="pos-ghost"
+              onClick={() => {
+                setBills(null);
+                setOrder(null);
+                setView('register');
+              }}
+            >
+              ＋ New order
+            </button>
             {bills.length === 0 ? <p className="pos-muted">No settled bills yet today.</p> : null}
             {bills.map((row) => {
               const refunded = row.payments.filter((payment) => payment.amountCents < 0).reduce((sum, payment) => sum - payment.amountCents, 0);

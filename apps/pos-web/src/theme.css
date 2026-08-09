@@ -647,3 +647,23 @@ details.pos-list-section > summary.pos-list-head { margin-bottom: 6px; }
 .office-logo-thumb { height: 46px; max-width: 150px; object-fit: contain; border: 1px solid var(--pos-border, #ddd); border-radius: 8px; padding: 3px 6px; background: #fff; }
 .office-upload { cursor: pointer; }
 .office-logo-row { align-items: center; gap: 10px; }
+
+/* ── Mobile pass ─────────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  /* Floor plan: taller canvas on portrait phones, compact tap-safe tables */
+  .pos-floor-canvas { aspect-ratio: auto; height: 62vh; }
+  .pos-floor-table { min-width: 34px; min-height: 30px; border-radius: 8px; }
+  .pos-floor-table strong { font-size: 9.5px; }
+  .pos-floor-table small { font-size: 8px; }
+  .pos-header { flex-wrap: wrap; row-gap: 6px; padding: 8px 10px; }
+  .pos-header > strong { font-size: 21px; }
+  .pos-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
+  .pos-item { min-height: 78px; padding: 10px 11px; min-width: 0; }
+  .pos-item span { font-size: 12.5px; }
+  .pos-item small { font-size: 11px; }
+  .pos-tabs { padding: 8px 10px 4px; }
+  .pos-modal-panel { border-radius: 16px; padding: 16px; }
+  .pos-board-dots { padding: 4px 0 8px; }
+  summary.pos-list-head { padding: 10px 12px; }
+  .pos-list { padding: 10px 10px 40px; }
+}

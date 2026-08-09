@@ -7526,6 +7526,30 @@ function AccessPage({
                     <Input label="Phone" value={profileDraft.phone} onChange={(event) => updateProfile('phone', event.currentTarget.value)} />
                     <Select label="Venue" value={profileDraft.venue} onChange={(event) => updateProfile('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
                     <Select label="Status" value={profileDraft.employmentStatus} onChange={(event) => updateProfile('employmentStatus', event.currentTarget.value)} options={['ACTIVE', 'PENDING', 'ARCHIVED', 'TERMINATED'].map((status) => ({ label: status, value: status }))} />
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <span className="subtle" style={{ display: 'block', marginBottom: 6 }}>
+                        POS permissions — this person's code can approve these on the register (managers approve everything):
+                      </span>
+                      {(['refunds', 'voids', 'discounts', 'till', 'office'] as const).map((permissionKey) => {
+                        const current = ((selected as unknown as { posPermissions?: Record<string, boolean> })?.posPermissions) ?? {};
+                        return (
+                          <label key={permissionKey} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 16, fontSize: 13 }}>
+                            <input
+                              type="checkbox"
+                              defaultChecked={Boolean(current[permissionKey])}
+                              onChange={(event) => {
+                                if (!selected) return;
+                                const next = { ...current, [permissionKey]: event.currentTarget.checked };
+                                void api(`/api/staff/${selected.id}`, { method: 'PATCH', body: JSON.stringify({ posPermissions: next }) })
+                                  .then(() => reload())
+                                  .catch(() => setMessage('Could not save POS permissions.'));
+                              }}
+                            />
+                            {permissionKey}
+                          </label>
+                        );
+                      })}
+                    </div>
                     <Input label="Start date" type="date" value={profileDraft.startDate} onChange={(event) => updateProfile('startDate', event.currentTarget.value)} />
                     <Input label="Date of birth" type="date" value={profileDraft.dateOfBirth} onChange={(event) => updateProfile('dateOfBirth', event.currentTarget.value)} />
                   </div>
