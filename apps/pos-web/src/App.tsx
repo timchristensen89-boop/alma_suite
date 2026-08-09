@@ -599,10 +599,10 @@ export function App() {
         setLockScreen(true);
       }
     };
-    let timer = window.setTimeout(lock, 30000);
+    let timer = window.setTimeout(lock, 60000);
     const reset = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(lock, 30000);
+      timer = window.setTimeout(lock, 60000);
     };
     const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'];
     events.forEach((name) => document.addEventListener(name, reset, { passive: true }));
@@ -4173,7 +4173,7 @@ export function App() {
           <div className="pos-modal-panel">
             <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" />
             <h2>Register locked</h2>
-            <p className="pos-muted">Idle for 30 seconds — the bill is saved. Enter your staff code to keep going.</p>
+            <p className="pos-muted">Idle for a minute — the bill is saved. Enter your staff code to keep going.</p>
             <input
               className="pos-tender"
               type="password"
@@ -4592,9 +4592,30 @@ export function App() {
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel pos-receipt" id="pos-docket">
             {dockets.map((docket, index) => (
-              <div key={index} className="pos-docket">
+              <div key={index} className="pos-docket" data-docket-index={index}>
                 <div className="pos-docket-head">
-                  <h2>{docket.profile}</h2>
+                  <h2>
+                    {docket.profile}
+                    {dockets.length > 1 ? (
+                      <button
+                        type="button"
+                        className="pos-docket-printone"
+                        onClick={() => {
+                          document.querySelectorAll('.pos-docket').forEach((el) => {
+                            if (el.getAttribute('data-docket-index') !== String(index)) el.classList.add('pos-print-skip');
+                          });
+                          const clear = () => {
+                            document.querySelectorAll('.pos-docket.pos-print-skip').forEach((el) => el.classList.remove('pos-print-skip'));
+                            window.removeEventListener('afterprint', clear);
+                          };
+                          window.addEventListener('afterprint', clear);
+                          window.print();
+                        }}
+                      >
+                        ⎙ this station
+                      </button>
+                    ) : null}
+                  </h2>
                   <p className="pos-muted">
                     {docket.tableLabel ? `Table ${docket.tableLabel}` : `Order #${docket.orderNumber}`}
                     {docket.covers ? ` · ${docket.covers} covers` : ''}

@@ -679,3 +679,7 @@ summary.pos-list-head.is-tab-edit { animation: pin-jiggle 260ms ease-in-out infi
 .pos-list-editfab { position: sticky; bottom: 10px; margin-left: auto; display: flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; padding: 0 10px; border-radius: 9999px; border: 1px solid var(--pos-border); background: var(--pos-card); color: var(--pos-text2); font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; opacity: 0.75; box-shadow: 0 2px 10px rgba(31, 53, 36, 0.12); z-index: 5; }
 .pos-list-editfab:hover { opacity: 1; }
 .pos-list-editfab.is-on { background: var(--pos-accent-bg); color: var(--pos-accent-fg); border-color: transparent; opacity: 1; }
+
+/* Print one station's docket only */
+.pos-docket-printone { margin-left: 10px; background: transparent; border: 1px solid var(--pos-border); border-radius: 9999px; color: var(--pos-text2); font-family: var(--font-sans); font-size: 10px; font-weight: 700; padding: 4px 10px; cursor: pointer; vertical-align: middle; }
+@media print { .pos-docket.pos-print-skip { display: none !important; } .pos-docket-printone { display: none !important; } }
