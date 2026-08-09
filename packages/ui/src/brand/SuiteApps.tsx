@@ -503,11 +503,6 @@ export function SuiteAppSwitcher({
               />
             </span>
             <span className="suite-app-label">{app.label}</span>
-            {app.lifecycle && app.lifecycle !== 'live' && app.lifecycle !== 'hidden' ? (
-              <span className={`suite-app-lifecycle is-${app.lifecycle}`} aria-label={`Status: ${app.lifecycle}`}>
-                {app.lifecycle === 'pilot' ? 'Pilot' : app.lifecycle === 'preview' ? 'Preview' : 'Setup'}
-              </span>
-            ) : null}
             <span className="suite-app-tooltip" role="tooltip">
               <strong>Alma {app.label}</strong>
               <span>{app.description}</span>

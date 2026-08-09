@@ -12916,3 +12916,7 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
   flex: 0 0 auto;
   min-width: 56px;
 }
+
+/* App strip: logos only, evenly spaced, never overlapping */
+.suite-switcher:not(.suite-switcher--sidebar):not(.suite-switcher--topbar) .suite-app-tile { margin: 0; }
+.suite-app-lifecycle { display: none !important; }
