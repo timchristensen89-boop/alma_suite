@@ -2227,10 +2227,13 @@ export const posService = {
   },
 
   async terminalPaymentIntent(input: unknown) {
-    if (!stripe) throw new HttpError(503, 'Stripe is not configured on the server.');
     const body = (input ?? {}) as Record<string, unknown>;
+    // Each venue is its own company: the charge must be created on THAT
+    // venue's Stripe account, or the takings land in the wrong entity.
+    const venueStripe = stripeForVenue(str(body.venue) || null);
+    if (!venueStripe) throw new HttpError(503, 'Stripe is not configured on the server.');
     const amountCents = asInt(body.amountCents, 'amount', { min: 50 });
-    const intent = await stripe.paymentIntents.create({
+    const intent = await venueStripe.paymentIntents.create({
       amount: amountCents,
       currency: 'aud',
       payment_method_types: ['card_present'],

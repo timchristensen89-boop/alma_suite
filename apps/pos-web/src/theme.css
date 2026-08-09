@@ -715,3 +715,6 @@ body:not(.pos-v2) .pos-cart .pos-order-note { border-left-color: rgba(255, 255, 
 .pos-callbar button em { font-style: normal; font-weight: 500; opacity: 0.85; }
 @keyframes pos-call-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.72; } }
 @media (prefers-reduced-motion: reduce) { .pos-callbar button { animation: none; } }
+
+/* Tap to Pay — only shows inside the ALMA POS app shell */
+.pos-tap-btn { background: var(--pos-accent-bg) !important; color: var(--pos-accent-fg) !important; border-color: transparent !important; font-weight: 800 !important; }

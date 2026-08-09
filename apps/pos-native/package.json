@@ -1,0 +1,26 @@
+{
+  "name": "@alma/pos-native",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild --platform ios --clean",
+    "build:dev": "eas build --profile development --platform ios",
+    "build:prod": "eas build --profile production --platform ios"
+  },
+  "dependencies": {
+    "expo": "~52.0.0",
+    "expo-build-properties": "~0.13.1",
+    "expo-status-bar": "~2.0.0",
+    "react": "18.3.1",
+    "react-native": "0.76.5",
+    "react-native-webview": "13.12.5",
+    "@stripe/stripe-terminal-react-native": "^0.0.1-beta.24"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.12",
+    "typescript": "~5.3.3"
+  }
+}

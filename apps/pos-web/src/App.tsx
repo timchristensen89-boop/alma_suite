@@ -501,6 +501,17 @@ export function App() {
   const [modSheet, setModSheet] = useState<null | { item: MenuItem; category: string; groups: ModifierGroup[]; chosen: Record<string, string[]>; notes: string }>(null);
   const [variantSheet, setVariantSheet] = useState<MenuItem | null>(null);
   const [voidConfirm, setVoidConfirm] = useState(false);
+  // Running inside the ALMA POS iOS shell? Then this handset IS the card
+  // reader (Tap to Pay). In Safari this stays false and nothing changes.
+  const [nativeTapToPay, setNativeTapToPay] = useState(
+    () => typeof window !== 'undefined' && Boolean((window as { almaNative?: { tapToPay?: boolean } }).almaNative?.tapToPay)
+  );
+  useEffect(() => {
+    const onReady = () =>
+      setNativeTapToPay(Boolean((window as { almaNative?: { tapToPay?: boolean } }).almaNative?.tapToPay));
+    window.addEventListener('alma-native-ready', onReady);
+    return () => window.removeEventListener('alma-native-ready', onReady);
+  }, []);
   const [lockScreen, setLockScreen] = useState(false);
   const [lockPin, setLockPin] = useState('');
   const [switchSheet, setSwitchSheet] = useState<null | { pin: string }>(null);
@@ -1525,6 +1536,39 @@ export function App() {
       setView('register');
     } catch (err) {
       setError(messageForError(err, 'Could not open the order.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Tap to Pay: the shell collects the card on this phone, then the payment
+  // is recorded against the bill exactly like any other card tender.
+  async function takeTapToPay() {
+    if (!order || !charge || busy) return;
+    const amountCents = (charge.amountCents ?? balance) + charge.tipCents;
+    const bridge = (window as { almaNative?: { charge?: (request: unknown) => Promise<{ paymentIntentId?: string }> } }).almaNative;
+    if (!bridge?.charge) {
+      setError('Tap to Pay needs the ALMA POS app on this device.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await bridge.charge({ amountCents, venue, orderId: order.id, description: `Table ${order.tableLabel ?? order.orderNumber}` });
+      const updated = await api<Order>(`/api/pos/orders/${order.id}/pay`, {
+        method: 'POST',
+        body: JSON.stringify({
+          method: 'STRIPE_TERMINAL',
+          amountCents: charge.amountCents ?? balance,
+          tipCents: charge.tipCents,
+          reference: result.paymentIntentId
+        })
+      });
+      setReceipt(updated as Order & { changeCents?: number | null });
+      setOrder(null);
+      setCharge(null);
+      void refreshOpenOrders();
+    } catch (err) {
+      setError(messageForError(err, 'The card was not charged.'));
     } finally {
       setBusy(false);
     }
@@ -3069,6 +3113,11 @@ export function App() {
               <>
                 <h2>{money((charge.amountCents ?? balance) + charge.tipCents)}</h2>
                 <div className="pos-choice-row">
+                  {nativeTapToPay ? (
+                    <button type="button" className="pos-tap-btn" disabled={busy} onClick={() => void takeTapToPay()}>
+                      📲 Tap to Pay
+                    </button>
+                  ) : null}
                   <button type="button" disabled={busy} onClick={() => void takePayment('CARD_EXTERNAL')}>
                     Card (EFTPOS)
                   </button>
