@@ -214,7 +214,19 @@ export function App() {
   const [setupMsg, setSetupMsg] = useState('');
   const [confirm, setConfirm] = useState<ConfirmInfo | null>(null);
 
-  const apps = useMemo(() => quickLaunchApps(), []);
+  // General staff only see the apps their access rows enable; admins and the
+  // venue kiosks keep the full set.
+  const apps = useMemo(() => {
+    const all = quickLaunchApps();
+    const account = user as
+      | (typeof user & { isAdmin?: boolean; appAccess?: Array<{ appId: string; status: string }> })
+      | null;
+    if (!account || account.isAdmin || isVenueDeviceUser(user)) return all;
+    const enabled = (account.appAccess ?? [])
+      .filter((access) => access.status === 'ENABLED')
+      .map((access) => access.appId.toLowerCase());
+    return all.filter((app) => enabled.includes(app.id));
+  }, [user]);
   const pinSetupHref = useMemo(() => staffPinHref(), []);
   const deviceReady = isVenueDeviceRoute && isVenueDeviceUser(user);
 

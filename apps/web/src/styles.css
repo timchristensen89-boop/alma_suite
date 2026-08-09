@@ -12902,3 +12902,17 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
   .app-shell-brand-mark::after { animation: none; }
   .sidebar-nav a:hover { transform: none; }
 }
+
+/* Login-page app strip: let the tiles breathe — wrap instead of squeezing
+   (the ninth app pushed auto-fit columns below icon size and squashed the
+   wordmarks together). */
+.suite-switcher:not(.suite-switcher--sidebar):not(.suite-switcher--topbar) .suite-app-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px 18px;
+}
+.suite-switcher:not(.suite-switcher--sidebar):not(.suite-switcher--topbar) .suite-app-tile {
+  flex: 0 0 auto;
+  min-width: 56px;
+}

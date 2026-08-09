@@ -756,7 +756,14 @@ function canApprovePayChange(user: ReturnType<typeof useAuth>['user']) {
 
 function navItemsForUser(user: ReturnType<typeof useAuth>['user']) {
   if (user?.accountType === 'VENUE_DEVICE') return DEVICE_NAV_ITEMS;
-  if (user?.role === 'STAFF') return STAFF_MEMBER_NAV_ITEMS;
+  if (user?.role === 'STAFF') {
+    const hasStock =
+      Boolean((user as { isAdmin?: boolean }).isAdmin) ||
+      ((user as { appAccess?: Array<{ appId: string; status: string }> }).appAccess ?? []).some(
+        (access) => access.appId === 'STOCK' && access.status === 'ENABLED'
+      );
+    return hasStock ? STAFF_MEMBER_NAV_ITEMS : STAFF_MEMBER_NAV_ITEMS.filter((item) => item.to !== '/stocktake');
+  }
   const items = canAccessSettings(user)
     ? NAV_ITEMS
     : NAV_ITEMS.filter((item) => item.to !== '/settings' && item.to !== '/admin');
@@ -3828,10 +3835,17 @@ type FridgeAsset = {
  * inside the same app and the seam disappears entirely.
  */
 function StocktakeHandoffPage() {
+  const { user } = useAuth();
   const [failed, setFailed] = useState(false);
   const target = `${STOCK_WEB_URL.replace(/\/+$/, '')}/`;
+  const stockAllowed =
+    Boolean((user as { isAdmin?: boolean } | null)?.isAdmin) ||
+    ((user as { appAccess?: Array<{ appId: string; status: string }> } | null)?.appAccess ?? []).some(
+      (access) => access.appId === 'STOCK' && access.status === 'ENABLED'
+    );
 
   useEffect(() => {
+    if (!stockAllowed) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -3846,7 +3860,19 @@ function StocktakeHandoffPage() {
     return () => {
       cancelled = true;
     };
-  }, [target]);
+  }, [stockAllowed, target]);
+
+  if (!stockAllowed) {
+    return (
+      <div style={{ padding: 24, maxWidth: 480 }}>
+        <h2>Stocktake needs Stock access</h2>
+        <p style={{ opacity: 0.75 }}>
+          Counting runs in the Stock app, and this account doesn't have it enabled. Ask a manager to switch on Stock
+          access for you in Staff, then this button lands straight on the count.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="page-stack">

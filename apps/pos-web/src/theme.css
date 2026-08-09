@@ -693,3 +693,7 @@ summary.pos-list-head.is-tab-edit { animation: pin-jiggle 260ms ease-in-out infi
 /* Till receipt button on bill/receipt sheets — hidden from paper prints */
 .pos-till-print { align-self: center; margin-bottom: 4px; }
 @media print { .pos-till-print { display: none !important; } }
+
+/* The order note reads on the bill itself; tap it to edit */
+.pos-order-note { flex-basis: 100%; text-align: left; background: transparent; border: 0; border-left: 3px solid var(--pos-border); color: inherit; opacity: 0.85; font-family: inherit; font-size: 11.5px; font-style: italic; padding: 4px 8px; cursor: pointer; }
+body:not(.pos-v2) .pos-cart .pos-order-note { border-left-color: rgba(255, 255, 255, 0.3); }

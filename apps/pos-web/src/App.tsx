@@ -2741,6 +2741,11 @@ export function App() {
                   <button type="button" onClick={() => setDietSheet({ tags: [...(order.dietary ?? [])], custom: '', seat: '' })}>
                     ⚠ Dietary{(order.dietary ?? []).length ? ` ${(order.dietary ?? []).length}` : ''}
                   </button>
+                  {order.notes ? (
+                    <button type="button" className="pos-order-note" onClick={() => setNoteSheet({ value: order.notes ?? '' })}>
+                      ✎ {order.notes}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
               {(order?.lines ?? []).length === 0 && !targetCourse ? (

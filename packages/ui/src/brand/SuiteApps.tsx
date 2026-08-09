@@ -412,6 +412,27 @@ type SuiteAppSwitcherProps = {
   switcherHref?: string;
 };
 
+// Per-user app visibility. Call once the signed-in user is known: admins see
+// every app; everyone else only the apps their access rows enable. The
+// switcher and app grids read this before rendering tiles.
+export function installSuiteAppAccess(
+  user: { isAdmin?: boolean; appAccess?: Array<{ appId: string; status: string }> } | null | undefined
+) {
+  const g = globalThis as typeof globalThis & { almaAllowedSuiteAppIds?: string[] };
+  if (!user || user.isAdmin) {
+    delete g.almaAllowedSuiteAppIds;
+    return;
+  }
+  g.almaAllowedSuiteAppIds = (user.appAccess ?? [])
+    .filter((access) => access.status === 'ENABLED')
+    .map((access) => access.appId.toLowerCase());
+}
+
+export function suiteAppAllowed(id: string) {
+  const allowed = (globalThis as typeof globalThis & { almaAllowedSuiteAppIds?: string[] }).almaAllowedSuiteAppIds;
+  return !allowed || allowed.includes(id);
+}
+
 export function SuiteAppSwitcher({
   currentApp,
   apps = SUITE_APPS,
@@ -451,9 +472,11 @@ export function SuiteAppSwitcher({
     });
   }, []);
 
+  const allowedIds = (globalThis as typeof globalThis & { almaAllowedSuiteAppIds?: string[] }).almaAllowedSuiteAppIds;
+  const visibleApps = allowedIds ? apps.filter((app) => allowedIds.includes(app.id) || app.id === currentApp) : apps;
   const grid = (
     <div className="suite-app-grid">
-      {apps.map((app) => {
+      {visibleApps.map((app) => {
         const isCurrent = app.id === currentApp;
         const hasHref = Boolean(app.href);
         const isAvailable = app.status === 'active' && hasHref;

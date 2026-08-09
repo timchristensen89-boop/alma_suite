@@ -27,7 +27,7 @@ import type {
   ReserveWaitlistEntry,
   ReserveWaitlistStatus
 } from '@alma/shared';
-import {
+import { installSuiteAppAccess,
   ActionFeedback,
   AlmaHomeBubble,
   AlmaPill,
@@ -590,12 +590,15 @@ function useReserveAuth() {
       const handoffUser = await consumeSuiteHandoffToken();
       if (handoffUser) {
         setUser(handoffUser);
+        installSuiteAppAccess(handoffUser as never);
         return;
       }
       const data = await api<{ user: AuthUser | null }>('/api/auth/me');
       setUser(data.user);
+        installSuiteAppAccess(data.user as never);
     } catch {
       setUser(null);
+        installSuiteAppAccess(null as never);
     } finally {
       setLoading(false);
     }
@@ -614,12 +617,14 @@ function useReserveAuth() {
     });
     setApiAuthToken(session.token);
     setUser(session.user);
+        installSuiteAppAccess(session.user as never);
   }, []);
 
   const logout = useCallback(async () => {
     await api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
     clearApiAuthToken();
     setUser(null);
+        installSuiteAppAccess(null as never);
   }, []);
 
   return { user, loading, login, logout };
