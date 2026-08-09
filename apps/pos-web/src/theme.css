@@ -767,3 +767,98 @@ body:not(.pos-v2) .pos-cart .pos-order-note { border-left-color: rgba(255, 255, 
   .pos-cart.is-open .pos-cart-foot { display: block; }
 }
 .pos-bill-note { font-size: 11.5px; font-style: italic; color: var(--pos-text2); border-left: 2px solid var(--pos-border); padding-left: 7px; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   REFINEMENT PASS — one spacing rhythm, one type scale, less air where it
+   was doing nothing and more where it aids the eye. Everything below is
+   deliberately last in the file so it settles the cascade.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Header: tighter, and the venue name carries it ───────────────────── */
+.pos-header { padding: 10px 16px; gap: 8px; align-items: center; }
+.pos-header > strong { font-size: 23px; line-height: 1; }
+.pos-crumb { font-size: 13px; }
+.pos-search { padding: 8px 15px; font-size: 13px; min-width: 190px; }
+.pos-ghost { padding: 7px 14px; font-size: 10px; }
+.pos-staff-chip { padding: 7px 13px; font-size: 11.5px; }
+.pos-theme-btn { width: 32px; height: 32px; }
+
+/* ── Left rail: denser list, clearer section breaks ───────────────────── */
+.pos-rail { flex: 0 0 178px; padding: 16px 10px; gap: 2px; }
+.pos-rail-eyebrow { padding: 14px 8px 5px; font-size: 8.5px; }
+.pos-rail-eyebrow:first-child { padding-top: 2px; }
+.pos-rail-item { padding: 7px 10px; font-size: 12px; border-radius: 9px; }
+.pos-rail-foot { padding-top: 12px; }
+.pos-rail-foot strong { font-size: 12.5px; }
+.pos-rail-foot small { font-size: 10px; }
+
+/* ── Menu grid: even rhythm, tiles that sit on a line ─────────────────── */
+.pos-grid { gap: 8px; padding: 12px 16px 16px; grid-auto-rows: minmax(88px, auto); }
+.pos-item { min-height: 88px; padding: 12px 13px; border-radius: 14px; gap: 6px; }
+.pos-item span { font-size: 13.5px; line-height: 1.2; }
+.pos-item small { font-size: 11.5px; opacity: 0.72; }
+/* Sized tiles keep their footprint but stay on the same baseline grid */
+.pos-size-w { grid-column: span 2; }
+.pos-size-b { grid-column: span 2; grid-row: span 2; }
+.pos-item-slim { min-height: 54px; }
+.pos-grid-mgmt { padding-bottom: 0; gap: 8px; }
+.pos-grid-mgmt .pos-item { min-height: 50px; padding: 10px 14px; }
+.pos-grid-mgmt .pos-item span { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.75; }
+
+/* ── Category pills ───────────────────────────────────────────────────── */
+.pos-tabs { padding: 10px 16px 2px; gap: 6px; }
+.pos-tabs button { padding: 7px 14px; font-size: 10.5px; }
+
+/* ── The bill: compact empty state, courses that don't sprawl ─────────── */
+.pos-cart-empty { padding: 18px 12px; gap: 6px; }
+.pos-fish-empty { width: 68px; opacity: 0.5; }
+.pos-cart-empty .pos-muted { font-size: 12px; max-width: 210px; margin: 0 auto; }
+.pos-cart .pos-course-head { padding: 8px 8px; font-size: 10px; }
+.pos-cart .pos-line { padding: 7px 0; gap: 8px; }
+.pos-cart-lines { padding: 10px 12px; }
+.pos-cart-foot { padding: 12px 14px; }
+.pos-cart .pos-sumline { font-size: 11.5px; }
+.pos-cart .pos-totals { padding-top: 8px; }
+.pos-cart-actions { gap: 7px; margin-top: 10px; }
+.pos-cart-actions .pos-ghost { padding: 11px 12px; }
+.pos-charge { padding: 13px 18px; font-size: 12px; letter-spacing: 0.14em; }
+
+/* Rail layout: give the bill card a defined edge against the paper */
+body.pos-v2 .pos-cart { padding: 12px 12px 12px 0; }
+body.pos-v2 .pos-cart-lines { border-color: var(--pos-border); }
+body.pos-v2 .pos-cart-foot { border-color: var(--pos-border); }
+
+/* ── Modals: one shape, one rhythm ────────────────────────────────────── */
+.pos-modal-panel { padding: 20px; gap: 11px; border-radius: 18px; }
+.pos-modal-panel h2 { font-size: 22px; line-height: 1.15; }
+.pos-modal-panel .pos-muted { font-size: 12.5px; line-height: 1.45; }
+.pos-tender { padding: 12px 14px; font-size: 15px; }
+.pos-reason-list { gap: 6px; }
+.pos-reason-list button { padding: 8px 13px; font-size: 12px; }
+
+/* ── Bills page ───────────────────────────────────────────────────────── */
+.pos-bills-page { padding: 14px 16px 24px; }
+.pos-bills-head { margin-bottom: 12px; gap: 10px; }
+.pos-bills-head h2 { font-size: 24px; }
+.pos-bills-grid { gap: 9px; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); }
+.pos-bill-card { padding: 11px 13px; gap: 4px; border-radius: 13px; }
+.pos-bill-guest { font-size: 16px; line-height: 1.2; }
+.pos-bill-figures b { font-size: 16px; }
+
+/* ── Floor plan ───────────────────────────────────────────────────────── */
+.pos-home { padding: 14px 16px; }
+.pos-floor-canvas { border-radius: 14px; }
+.pos-floor-table strong { font-size: 11.5px; }
+.pos-floor-table small { font-size: 9.5px; opacity: 0.8; }
+
+/* ── Phones: reclaim every pixel the thumb doesn't need ───────────────── */
+@media (max-width: 700px) {
+  .pos-header { padding: 8px 12px; }
+  .pos-header > strong { font-size: 19px; }
+  .pos-grid { padding: 10px 12px; gap: 7px; }
+  .pos-item { min-height: 76px; padding: 10px 11px; }
+  .pos-bills-page { padding: 12px; }
+  .pos-bills-grid { grid-template-columns: 1fr; }
+  .pos-modal-panel { padding: 16px; }
+  .pos-home { padding: 10px 12px 90px; }
+}

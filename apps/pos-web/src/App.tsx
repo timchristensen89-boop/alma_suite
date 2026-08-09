@@ -2250,7 +2250,7 @@ export function App() {
             {openOrders.length === 0 ? <p className="pos-muted">No open tables at {venue}.</p> : null}
           </div>
         </div>
-      ) : (
+      ) : view === 'bills' ? null : (
         <div className="pos-body">
           <div className="pos-menu">
             {!search ? (
