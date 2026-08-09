@@ -818,6 +818,15 @@ export function App() {
 
   useEffect(() => {
     if (!dockets || !autoPrint) return;
+    // Dockets with a printer assigned print DIRECT (the Epson polls for
+    // them) — the browser only prints what has no printer of its own.
+    if (!dockets.some((docket) => !docket.printerIp)) {
+      const closer = setTimeout(() => {
+        setDockets(null);
+        setAutoPrint(false);
+      }, 1400);
+      return () => clearTimeout(closer);
+    }
     const timer = setTimeout(() => window.print(), 300);
     const after = () => {
       setDockets(null);
@@ -4592,10 +4601,11 @@ export function App() {
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel pos-receipt" id="pos-docket">
             {dockets.map((docket, index) => (
-              <div key={index} className="pos-docket" data-docket-index={index}>
+              <div key={index} className={`pos-docket ${docket.printerIp ? 'pos-print-skip' : ''}`} data-docket-index={index} data-direct={docket.printerIp ? '1' : undefined}>
                 <div className="pos-docket-head">
                   <h2>
                     {docket.profile}
+                    {docket.printerIp ? <em className="pos-docket-direct">⚡ printing at the station</em> : null}
                     {dockets.length > 1 ? (
                       <button
                         type="button"
@@ -4603,9 +4613,12 @@ export function App() {
                         onClick={() => {
                           document.querySelectorAll('.pos-docket').forEach((el) => {
                             if (el.getAttribute('data-docket-index') !== String(index)) el.classList.add('pos-print-skip');
+                            else el.classList.remove('pos-print-skip');
                           });
                           const clear = () => {
-                            document.querySelectorAll('.pos-docket.pos-print-skip').forEach((el) => el.classList.remove('pos-print-skip'));
+                            document.querySelectorAll('.pos-docket').forEach((el) => {
+                              el.classList.toggle('pos-print-skip', el.getAttribute('data-direct') === '1');
+                            });
                             window.removeEventListener('afterprint', clear);
                           };
                           window.addEventListener('afterprint', clear);

@@ -4850,6 +4850,20 @@ model PosCourse {
 }
 
 // Docket routing: which kinds/categories print where (kitchen vs bar).
+// Server Direct Print queue: the PRINTER polls our API over HTTPS for
+// jobs, so browsers never need LAN access and iPads just work.
+model PosPrintJob {
+  id        String    @id @default(cuid())
+  profileId String
+  status    String    @default("QUEUED") // QUEUED | SENT | PRINTED | FAILED
+  payload   Json
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+  doneAt    DateTime?
+
+  @@index([profileId, status, createdAt])
+}
+
 model PosPrinterProfile {
   id            String  @id @default(cuid())
   name          String

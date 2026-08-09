@@ -1,13 +1,15 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { HttpError } from '../lib/http.js';
 import { posService } from '../services/pos.service.js';
 
 // Register endpoints: any authenticated identity may ring up sales — a venue
-// device (the counter iPad) or a signed-in staff/manager account. Nothing
-// here is public.
+// device (the counter iPad) or a signed-in staff/manager account. The ONE
+// exception is /print-poll/: the Epson printer polls it with no session —
+// the unguessable station cuid in the path is the credential.
 export const posRouter = Router();
 
 posRouter.use((req, _res, next) => {
+  if (req.path.startsWith('/print-poll/')) return next();
   if (!req.user && !req.deviceUser) return next(new HttpError(401, 'Sign in the register first.'));
   next();
 });
@@ -163,6 +165,36 @@ posRouter.get('/audit', async (req, res, next) => {
 posRouter.get('/live', async (_req, res, next) => {
   try {
     res.json(await posService.liveBoard());
+  } catch (err) {
+    next(err);
+  }
+});
+
+const printPollBody = express.urlencoded({ extended: true });
+
+posRouter.post('/print-poll/:profileId', printPollBody, async (req, res, next) => {
+  try {
+    const result = await posService.printPoll(req.params.profileId, (req.body ?? {}) as Record<string, unknown>);
+    res.set('Content-Type', 'text/xml; charset=utf-8');
+    res.send(result.xml);
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get('/print-poll/:profileId', async (req, res, next) => {
+  try {
+    const result = await posService.printPoll(req.params.profileId, {});
+    res.set('Content-Type', 'text/xml; charset=utf-8');
+    res.send(result.xml);
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/printer-profiles/:id/test', async (req, res, next) => {
+  try {
+    res.json(await posService.printTest(req.params.id));
   } catch (err) {
     next(err);
   }

@@ -201,6 +201,93 @@ function dietaryFromText(text: string): Array<{ tag: string; seat: number | null
   return tags.slice(0, 8);
 }
 
+type DocketPayload = {
+  profile: string;
+  tableLabel: string | null;
+  orderNumber: number;
+  covers: number | null;
+  openedByName: string | null;
+  orderNotes?: string | null;
+  dietary?: Array<{ tag: string; seat: number | null }>;
+  lines: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    course: string | null;
+    seat?: number | null;
+    modifiers?: Array<{ name: string }>;
+    notes?: string | null;
+  }>;
+};
+
+function xmlEscape(value: string) {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// A docket as ePOS-Print XML: big table header, unmissable dietary banner,
+// ruled course headings, per-line tags, feed and cut.
+function buildPrintRequestXml(jobId: string, docket: DocketPayload) {
+  const parts: string[] = [];
+  const line = (text = '') => parts.push(`<text>${xmlEscape(text)}&#10;</text>`);
+  parts.push('<text lang="en"/>');
+  parts.push('<text align="center"/>');
+  parts.push('<text width="2" height="2" em="true"/>');
+  line(docket.tableLabel ? `TABLE ${docket.tableLabel}` : `ORDER #${docket.orderNumber}`);
+  parts.push('<text width="1" height="1" em="false"/>');
+  line(
+    `${docket.profile}${docket.covers ? ` - ${docket.covers} covers` : ''}${docket.openedByName ? ` - ${docket.openedByName}` : ''}`
+  );
+  parts.push('<text align="left"/>');
+  const dietary = docket.dietary ?? [];
+  if (dietary.length > 0) {
+    parts.push('<text em="true"/>');
+    line('****** DIETARY ******');
+    for (const tag of dietary) line(`* ${tag.tag}${tag.seat ? ` (S${tag.seat})` : ''}`);
+    line('*********************');
+    parts.push('<text em="false"/>');
+  }
+  if (docket.orderNotes) line(`NOTE: ${docket.orderNotes}`);
+  line('------------------------------------------');
+  let currentCourse: string | null = null;
+  for (const row of docket.lines) {
+    const course = row.course ?? 'NOW';
+    if (course !== currentCourse) {
+      currentCourse = course;
+      parts.push('<text em="true"/>');
+      line(`--- ${course.toUpperCase()} ---`);
+      parts.push('<text em="false"/>');
+    }
+    parts.push('<text width="2" height="1"/>');
+    line(`${row.quantity} x ${row.name}${row.seat ? `  S${row.seat}` : ''}`);
+    parts.push('<text width="1" height="1"/>');
+    const mods = (row.modifiers ?? []).map((modifier) => modifier.name).join(', ');
+    if (mods) line(`   ${mods}`);
+    if (row.notes) line(`   ${row.notes}`);
+    if (dietary.length > 0) {
+      const seat = row.seat ?? null;
+      const tags = dietary.filter((tag) => tag.seat === null || seat === null || tag.seat === seat);
+      if (tags.length > 0) line(`   !! ${tags.map((tag) => tag.tag).join(' / ')}`);
+    }
+  }
+  parts.push('<feed line="3"/>');
+  parts.push('<cut type="feed"/>');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<PrintRequestInfo Version="2.00">
+<ePOSPrint>
+<Parameter>
+<devid>local_printer</devid>
+<timeout>10000</timeout>
+<printjobid>${jobId}</printjobid>
+</Parameter>
+<PrintData>
+<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+${parts.join('\n')}
+</epos-print>
+</PrintData>
+</ePOSPrint>
+</PrintRequestInfo>`;
+}
+
 async function postPosActuals(venue: string) {
   const setting = await prisma.posVenueSetting.findUnique({ where: { venue } });
   if (!setting?.postToReports) return;
@@ -486,6 +573,54 @@ export const posService = {
         .slice(0, 12);
     }
     return prisma.posOrder.update({ where: { id }, data, include: ORDER_INCLUDE });
+  },
+
+  // ── Epson Server Direct Print ─────────────────────────────────────────
+  // The printer polls us: GetRequest → oldest queued job as ePOS-Print XML;
+  // SetResponse → mark the job printed/failed. (If the printer posts a body
+  // we can't parse, it just falls through to GetRequest — printing still
+  // works, only the status tracking is skipped.)
+  async printPoll(profileId: string, body: Record<string, unknown>) {
+    const connectionType = str(body.ConnectionType ?? body.connectiontype);
+    if (/setresponse/i.test(connectionType)) {
+      const file = str(body.ResponseFile ?? body.responsefile);
+      const jobId = /printjobid>([^<]+)</i.exec(file)?.[1] ?? /printjobid="([^"]+)"/i.exec(file)?.[1] ?? '';
+      const success = /success\s*=\s*"?(true|1)/i.test(file);
+      if (jobId) {
+        await prisma.posPrintJob
+          .updateMany({ where: { id: jobId }, data: { status: success ? 'PRINTED' : 'FAILED', doneAt: new Date() } })
+          .catch(() => undefined);
+      }
+      return { xml: '<?xml version="1.0" encoding="UTF-8"?>\n<PrintResponseInfo Version="2.00"/>' };
+    }
+    const job = await prisma.posPrintJob.findFirst({
+      where: { profileId, status: 'QUEUED' },
+      orderBy: { createdAt: 'asc' }
+    });
+    if (!job) return { xml: '' };
+    await prisma.posPrintJob.update({ where: { id: job.id }, data: { status: 'SENT', sentAt: new Date() } });
+    return { xml: buildPrintRequestXml(job.id, job.payload as DocketPayload) };
+  },
+
+  async printTest(profileId: string) {
+    const profile = await prisma.posPrinterProfile.findUnique({ where: { id: profileId } });
+    if (!profile) throw new HttpError(404, 'Station not found.');
+    await prisma.posPrintJob.create({
+      data: {
+        profileId,
+        payload: {
+          profile: profile.name,
+          tableLabel: null,
+          orderNumber: 0,
+          covers: null,
+          openedByName: 'ALMA POS',
+          orderNotes: 'Test docket — if you can read this, the direct line works.',
+          dietary: [],
+          lines: [{ id: 'test', name: 'Direct print test', quantity: 1, course: 'NOW', seat: null, modifiers: [], notes: null }]
+        }
+      }
+    });
+    return { queued: true };
   },
 
   // Lock-screen code: any ACTIVE staff member's PIN unlocks the register.
@@ -1494,6 +1629,16 @@ export const posService = {
     // Persist each docket as a KDS ticket. Training orders never reach the
     // kitchen screens or printers — the register shows the docket preview only.
     if (dockets.length > 0 && !order.training) {
+      const directJobs = dockets
+        .filter((docket) => docket.printerIp)
+        .map((docket) => {
+          const profile = profiles.find((candidate) => candidate.name === docket.profile);
+          return profile ? { profileId: profile.id, payload: docket as object } : null;
+        })
+        .filter((job): job is { profileId: string; payload: object } => job !== null);
+      if (directJobs.length > 0) {
+        await prisma.posPrintJob.createMany({ data: directJobs });
+      }
       await prisma.posTicket.createMany({
         data: dockets.map((docket) => ({
           venue: order.venue,

@@ -187,6 +187,28 @@ export function Office() {
                 >
                   ✕
                 </button>
+                {profile.printerIp ? (
+                  <div className="office-poll-row">
+                    <input
+                      readOnly
+                      className="office-input office-input-wide"
+                      value={`https://api.almagroup.com.au/api/pos/print-poll/${profile.id}`}
+                      onFocus={(event) => event.currentTarget.select()}
+                      title="Paste this URL into the printer's Server Direct Print settings"
+                    />
+                    <button
+                      type="button"
+                      className="office-add"
+                      onClick={() => {
+                        void api(`/api/pos/printer-profiles/${profile.id}/test`, { method: 'POST' })
+                          .then(() => setInfo('Test docket queued — the printer picks it up on its next poll.'))
+                          .catch((err) => setError(messageForError(err, 'Could not queue the test.')));
+                      }}
+                    >
+                      Test print
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ))}
             <button type="button" className="office-add" onClick={() => void saveProfile({ name: 'New station', matchKind: 'FOOD', categoriesCsv: '', sortOrder: profiles.length })}>
