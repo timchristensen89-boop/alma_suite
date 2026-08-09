@@ -2176,16 +2176,6 @@ export function App() {
             ) : null}
             {(activeCategory === '__all__' && !search) || (design === 'rail' && menu.some((category) => category.name === activeCategory) && !search) ? (
               <div className="pos-list">
-                {activeCategory === '__all__' ? (
-                  <div className="pos-list-toolbar">
-                    <button type="button" className="pos-ghost" onClick={() => setBoardEdit(!boardEdit)}>
-                      {boardEdit ? '✓ Done' : '✎ Edit menu'}
-                    </button>
-                    {boardEdit ? (
-                      <span className="pos-muted">Drag headings to reorder · drop one onto another for a folder · tap to hide</span>
-                    ) : null}
-                  </div>
-                ) : null}
                 {(activeCategory === '__all__'
                   ? visibleTabs
                       .map((token) => {
@@ -2265,6 +2255,16 @@ export function App() {
                     </details>
                   );
                 })}
+                {activeCategory === '__all__' ? (
+                  <button
+                    type="button"
+                    className={`pos-list-editfab ${boardEdit ? 'is-on' : ''}`}
+                    title="Edit menu — drag headings to reorder, drop one onto another for a folder, tap to hide"
+                    onClick={() => setBoardEdit(!boardEdit)}
+                  >
+                    {boardEdit ? '✓ Done' : '✎'}
+                  </button>
+                ) : null}
               </div>
             ) : !search && activeCategory === HOME_TAB ? (
               <div className="pos-home-wrap">
