@@ -7,6 +7,29 @@
 
 const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/+$/, '');
 
+// Safari (iPads!) blocks cross-site cookies, and the API lives on its own
+// domain — so sessions ALSO travel as tokens, like the other suite apps.
+const TOKEN_KEY = 'alma.pos.authToken';
+const PIN_TOKEN_KEY = 'alma.pos.pinToken';
+let authToken: string | null = localStorage.getItem(TOKEN_KEY);
+let pinToken: string | null = localStorage.getItem(PIN_TOKEN_KEY);
+
+export function setApiAuthToken(token?: string | null) {
+  if (!token) return;
+  authToken = token;
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function setApiPinToken(token?: string | null) {
+  if (token) {
+    pinToken = token;
+    localStorage.setItem(PIN_TOKEN_KEY, token);
+  } else {
+    pinToken = null;
+    localStorage.removeItem(PIN_TOKEN_KEY);
+  }
+}
+
 function normalisePath(path: string) {
   return path.startsWith('/') ? path : `/${path}`;
 }
@@ -31,6 +54,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
+  if (authToken && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${authToken}`);
+  if (pinToken && !headers.has('x-device-pin-session')) headers.set('x-device-pin-session', pinToken);
 
   // A register must never hang on a wedged connection (e.g. an API restart
   // leaving a dead HTTP/2 stream): 15s hard timeout, surfaced as a network
@@ -76,7 +101,8 @@ export async function consumeSuiteHandoffToken(): Promise<boolean> {
   if (!token) return false;
   let ok = true;
   try {
-    await api('/api/auth/handoff/consume', { method: 'POST', body: JSON.stringify({ token }) });
+    const data = await api<{ token?: string }>('/api/auth/handoff/consume', { method: 'POST', body: JSON.stringify({ token }) });
+    setApiAuthToken(data.token);
   } catch {
     ok = false;
   }

@@ -190,7 +190,10 @@ export async function authMiddleware(
     if (sessionUser) {
       req.user = sessionUser;
       if (sessionUser.accountType === 'VENUE_DEVICE') {
-        const pinPayload = parseDevicePinSessionToken(req.cookies?.[DEVICE_PIN_SESSION_COOKIE] as string | undefined);
+        const pinPayload = parseDevicePinSessionToken(
+          (req.cookies?.[DEVICE_PIN_SESSION_COOKIE] as string | undefined) ??
+            (req.headers['x-device-pin-session'] as string | undefined)
+        );
         if (pinPayload?.deviceUserId === sessionUser.id) {
           const pinUser = await authService.getActiveHumanById(pinPayload.pinUserId);
           if (

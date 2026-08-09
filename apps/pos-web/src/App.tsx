@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { loadStripeTerminal, type Terminal, type Reader } from '@stripe/terminal-js';
-import { api, consumeSuiteHandoffToken, messageForError } from './api';
+import { api, consumeSuiteHandoffToken, messageForError, setApiAuthToken, setApiPinToken } from './api';
 
 // ── ALMA POS v2 ─────────────────────────────────────────────────────────────
 // Home screen (open tables/tabs + quick sale + day glance) → order screen
@@ -572,6 +572,7 @@ export function App() {
     const lock = () => {
       localStorage.setItem('alma.pos.resumeOrder', orderIdRef.current ?? '');
       if (kind === 'device') {
+        setApiPinToken(null);
         void api('/api/device/pin-logout', { method: 'POST' })
           .then(() => refreshAuth())
           .catch(() => undefined);
@@ -1779,7 +1780,8 @@ export function App() {
             title="Switch staff"
             onClick={() => {
               if (me.kind !== 'device') return;
-              void api('/api/device/pin-logout', { method: 'POST' })
+              setApiPinToken(null);
+                void api('/api/device/pin-logout', { method: 'POST' })
                 .catch(() => undefined)
                 .then(() => refreshAuth());
             }}
@@ -5107,10 +5109,11 @@ function PinScreen({ staffList, onSignedIn }: { staffList: StaffOption[]; onSign
     setBusy(true);
     setError(null);
     try {
-      await api('/api/device/pin-login', {
+      const res = await api<{ pinToken?: string }>('/api/device/pin-login', {
         method: 'POST',
         body: JSON.stringify({ staffProfileId: selected.id, pin: nextPin })
       });
+      setApiPinToken(res.pinToken);
       await onSignedIn();
     } catch (err) {
       setError(messageForError(err, 'Wrong PIN.'));
@@ -5187,7 +5190,8 @@ function SignIn({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
     setBusy(true);
     setError(null);
     try {
-      await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+      const res = await api<{ token?: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+      setApiAuthToken(res.token);
       await onSignedIn();
     } catch (err) {
       setError(messageForError(err, 'Sign in failed.'));

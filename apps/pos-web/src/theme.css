@@ -631,3 +631,8 @@ summary.pos-list-head h3 { font-weight: 800; font-size: 15px; letter-spacing: 0.
 summary.pos-list-head:hover { border-color: var(--pos-text2); }
 details[open] > summary.pos-list-head { border-color: var(--pos-text2); background: var(--pos-chip); }
 body.pos-dark summary.pos-list-head { border-color: rgba(248, 246, 241, 0.3); }
+
+/* Full menu: categories sit closer together */
+details.pos-list-section { margin-bottom: 6px; }
+details.pos-list-section[open] { margin-bottom: 14px; }
+details.pos-list-section > summary.pos-list-head { margin-bottom: 6px; }
