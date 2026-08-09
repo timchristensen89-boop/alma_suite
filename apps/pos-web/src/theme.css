@@ -636,3 +636,7 @@ body.pos-dark summary.pos-list-head { border-color: rgba(248, 246, 241, 0.3); }
 details.pos-list-section { margin-bottom: 6px; }
 details.pos-list-section[open] { margin-bottom: 14px; }
 details.pos-list-section > summary.pos-list-head { margin-bottom: 6px; }
+
+/* Change user from the rail foot */
+.pos-rail-switch { margin-top: 8px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 9999px; color: rgba(255, 255, 255, 0.85); font-family: inherit; font-size: 11px; font-weight: 700; padding: 7px 12px; cursor: pointer; width: 100%; }
+.pos-rail-switch:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }

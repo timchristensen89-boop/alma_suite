@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { loadStripeTerminal, type Terminal, type Reader } from '@stripe/terminal-js';
-import { api, consumeSuiteHandoffToken, messageForError, setApiAuthToken, setApiPinToken } from './api';
+import { api, clearApiTokens, consumeSuiteHandoffToken, messageForError, setApiAuthToken, setApiPinToken } from './api';
 
 // ── ALMA POS v2 ─────────────────────────────────────────────────────────────
 // Home screen (open tables/tabs + quick sale + day glance) → order screen
@@ -1565,6 +1565,22 @@ export function App() {
     }
   }
 
+  // Change user: device registers drop to the staff PIN screen; personal
+  // logins sign out fully (back to the Alma Home button).
+  function switchUser() {
+    if (me !== 'loading' && me && me.kind === 'device') {
+      setApiPinToken(null);
+      void api('/api/device/pin-logout', { method: 'POST' })
+        .catch(() => undefined)
+        .then(() => refreshAuth());
+      return;
+    }
+    clearApiTokens();
+    void api('/api/auth/logout', { method: 'POST' })
+      .catch(() => undefined)
+      .then(() => refreshAuth());
+  }
+
   async function unlockWithPin(pin: string) {
     setBusy(true);
     try {
@@ -1713,6 +1729,9 @@ export function App() {
           <div className="pos-rail-foot">
             <strong>{operatorName}</strong>
             <small>On the till · {venueIdentity.businessName}</small>
+            <button type="button" className="pos-rail-switch" onClick={switchUser}>
+              ⇄ Change user
+            </button>
           </div>
         </aside>
       ) : null}
@@ -1778,16 +1797,9 @@ export function App() {
             type="button"
             className="pos-staff-chip"
             title="Switch staff"
-            onClick={() => {
-              if (me.kind !== 'device') return;
-              setApiPinToken(null);
-                void api('/api/device/pin-logout', { method: 'POST' })
-                .catch(() => undefined)
-                .then(() => refreshAuth());
-            }}
+            onClick={switchUser}
           >
-            {operatorName}
-            {me.kind === 'device' ? ' · switch' : ''}
+            {operatorName} · switch
           </button>
         ) : null}
         {view === 'register' && order ? (

@@ -20,6 +20,13 @@ export function setApiAuthToken(token?: string | null) {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
+export function clearApiTokens() {
+  authToken = null;
+  pinToken = null;
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(PIN_TOKEN_KEY);
+}
+
 export function setApiPinToken(token?: string | null) {
   if (token) {
     pinToken = token;
