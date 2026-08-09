@@ -3611,7 +3611,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
         {showDashboard && (() => {
           // Editorial Bookings · tonight header — only on the dashboard tab.
-          const isToday = selectedDate === new Date().toISOString().slice(0, 10);
+          const isToday = selectedDate === todayInput();
           const venueLabel = venueFilter === ALL_VENUES ? 'All venues' : venueFilter;
           const dateObj = new Date(`${selectedDate}T12:00:00`);
           const dateLabel = dateObj.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -3634,10 +3634,10 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
             r.occasion
           ).length;
           const periodLabel = (() => {
+            // Alma runs lunch + dinner — mornings the floor is being set for
+            // lunch, from late afternoon it's dinner. No breakfast service.
             const h = new Date().getHours();
-            if (h < 12) return 'BREAKFAST';
-            if (h < 17) return 'LUNCH';
-            return 'DINNER';
+            return h < 16 ? 'LUNCH' : 'DINNER';
           })();
           return (
             <>
@@ -4042,10 +4042,12 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
             {showFloorPlan ? (
             <section id="floor-plan">
+              {(venueFilter === ALL_VENUES ? KNOWN_VENUES : [venueFilter]).map((floorVenue) => (
               <FloorPlanSection
-                venue={venueFilter === ALL_VENUES ? KNOWN_VENUES[0]! : venueFilter}
-                tables={tables.filter((t) => t.isActive && (venueFilter === ALL_VENUES || t.venue === venueFilter))}
-                reservations={dashboard?.todayReservations ?? []}
+                key={floorVenue}
+                venue={floorVenue}
+                tables={tables.filter((t) => t.isActive && t.venue === floorVenue)}
+                reservations={(dashboard?.todayReservations ?? []).filter((r) => ((r as { venue?: string }).venue ?? floorVenue) === floorVenue)}
                 onAssignTable={async (reservationId, tableId) => {
                   try {
                     await api(`/api/reserve/reservations/${reservationId}`, {
@@ -4063,7 +4065,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     await api('/api/reserve/tables/layout', {
                       method: 'PATCH',
                       body: JSON.stringify({
-                        venue: venueFilter === ALL_VENUES ? KNOWN_VENUES[0]! : venueFilter,
+                        venue: floorVenue,
                         tables: updates
                       })
                     });
@@ -4076,10 +4078,10 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 onAutoAssign={async () => {
                   // Greedy: seat the largest parties first into the smallest free
                   // table that fits (min/max covers), so big tables aren't wasted.
-                  const venueTables = tables.filter(
-                    (t) => t.isActive && (venueFilter === ALL_VENUES || t.venue === venueFilter)
+                  const venueTables = tables.filter((t) => t.isActive && t.venue === floorVenue);
+                  const todays = (dashboard?.todayReservations ?? []).filter(
+                    (r) => ((r as { venue?: string }).venue ?? floorVenue) === floorVenue
                   );
-                  const todays = dashboard?.todayReservations ?? [];
                   const taken = new Set(todays.filter((r) => r.tableId).map((r) => r.tableId));
                   const free = venueTables
                     .filter((t) => !taken.has(t.id))
@@ -4123,6 +4125,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   }
                 }}
               />
+              ))}
             </section>
             ) : null}
 

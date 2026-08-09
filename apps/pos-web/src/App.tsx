@@ -206,6 +206,20 @@ function pinDisplay(pin: Pin, baseName: string): { main: string; cls: string } {
   return { main: name, cls: '' };
 }
 
+const CASH_DENOMS: Array<[string, number]> = [
+  ['100', 10000],
+  ['50', 5000],
+  ['20', 2000],
+  ['10', 1000],
+  ['5', 500],
+  ['2', 200],
+  ['1', 100],
+  ['50c', 50],
+  ['20c', 20],
+  ['10c', 10],
+  ['5c', 5]
+];
+
 function money(cents: number) {
   return (cents / 100).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
 }
@@ -465,6 +479,7 @@ export function App() {
   const [lockScreen, setLockScreen] = useState(false);
   const [lockPin, setLockPin] = useState('');
   const [noteSheet, setNoteSheet] = useState<null | { value: string }>(null);
+  const [cashCount, setCashCount] = useState<null | { counts: Record<string, string>; expected: number | null }>(null);
   const [dietSheet, setDietSheet] = useState<null | { tags: Array<{ tag: string; seat: number | null }>; custom: string; seat: string }>(null);
   const [fireSheet, setFireSheet] = useState<null | Array<{ course: string; count: number; picked: boolean }>>(null);
   const [guestView, setGuestView] = useState<GuestProfile | null>(null);
@@ -4788,7 +4803,83 @@ export function App() {
                 My shift report
               </button>
             ) : null}
+            <button
+              type="button"
+              className="pos-ghost"
+              onClick={() => {
+                setCashCount({ counts: {}, expected: null });
+                void api<DrawerInfo>(`/api/pos/drawer?venue=${encodeURIComponent(venue)}`)
+                  .then((info) => setCashCount((current) => (current ? { ...current, expected: info.expectedCents } : current)))
+                  .catch(() => undefined);
+              }}
+            >
+              Cash count
+            </button>
             <button type="button" className="pos-ghost pos-modal-close" onClick={() => setDay(null)}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {cashCount ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Cash count</h2>
+            <p className="pos-muted">How many of each — the total and variance work themselves out.</p>
+            <div className="pos-cash-rows">
+              {CASH_DENOMS.map(([label, cents]) => {
+                const qty = Number(cashCount.counts[label] || '0');
+                return (
+                  <label key={label} className="pos-cash-row">
+                    <b>{label.endsWith('c') ? label : `$${label}`}</b>
+                    <input
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={cashCount.counts[label] ?? ''}
+                      onChange={(event) =>
+                        setCashCount({
+                          ...cashCount,
+                          counts: { ...cashCount.counts, [label]: event.currentTarget.value.replace(/\D/g, '').slice(0, 4) }
+                        })
+                      }
+                    />
+                    <span>{qty > 0 ? money(qty * cents) : '—'}</span>
+                  </label>
+                );
+              })}
+            </div>
+            {(() => {
+              const total = CASH_DENOMS.reduce((sum, [label, cents]) => sum + Number(cashCount.counts[label] || '0') * cents, 0);
+              return (
+                <div className="pos-cash-total">
+                  <div>
+                    <span>Counted</span>
+                    <strong>{money(total)}</strong>
+                  </div>
+                  {cashCount.expected !== null ? (
+                    <>
+                      <div>
+                        <span>Expected in drawer</span>
+                        <strong>{money(cashCount.expected)}</strong>
+                      </div>
+                      <div className={total - cashCount.expected === 0 ? '' : total - cashCount.expected > 0 ? 'is-over' : 'is-under'}>
+                        <span>Variance</span>
+                        <strong>
+                          {total - cashCount.expected >= 0 ? '+' : '−'}
+                          {money(Math.abs(total - cashCount.expected))}
+                        </strong>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="pos-muted">No open drawer to compare — total only.</p>
+                  )}
+                </div>
+              );
+            })()}
+            <button type="button" className="pos-ghost" onClick={() => setCashCount({ ...cashCount, counts: {} })}>
+              Clear
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setCashCount(null)}>
               Close
             </button>
           </div>

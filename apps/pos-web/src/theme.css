@@ -605,3 +605,15 @@ body:not(.pos-v2) .pos-cart .pos-meta-chips > button { border-color: rgba(255, 2
 .pos-docket-diet { border: 2px solid #000; padding: 6px 8px; font-weight: 800; font-size: 13px; margin: 6px 0; }
 .pos-docket-note { font-size: 12px; font-style: italic; margin: 4px 0 6px; }
 .pos-docket-diettag { display: block; font-size: 11px; font-weight: 800; font-style: normal; margin-top: 1px; }
+
+/* Cash count calculator */
+.pos-cash-rows { display: flex; flex-direction: column; gap: 5px; }
+.pos-cash-row { display: grid; grid-template-columns: 52px 1fr 84px; gap: 10px; align-items: center; }
+.pos-cash-row b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.pos-cash-row input { background: var(--pos-card); border: 1px solid var(--pos-border); border-radius: 10px; color: var(--pos-text); font-family: inherit; font-size: 15px; padding: 8px 11px; text-align: center; }
+.pos-cash-row span { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--pos-text2); }
+.pos-cash-total { border-top: 1px solid var(--pos-border); margin-top: 8px; padding-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+.pos-cash-total div { display: flex; justify-content: space-between; font-size: 13.5px; }
+.pos-cash-total strong { font-variant-numeric: tabular-nums; }
+.pos-cash-total .is-over strong { color: #b5772f; }
+.pos-cash-total .is-under strong { color: #b3402e; }
