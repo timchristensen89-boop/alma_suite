@@ -2885,7 +2885,7 @@ export function App() {
                     </div>
                   ) : null}
                   <button type="button" onClick={() => setNoteSheet({ value: order.notes ?? '' })}>
-                    ✎ Note{order.notes ? ' •' : ''}
+                    ✎ {order.notes ? 'Edit comment' : 'Add comment'}
                   </button>
                   <button type="button" onClick={() => setDietSheet({ tags: [...(order.dietary ?? [])], custom: '', seat: '' })}>
                     ⚠ Dietary{(order.dietary ?? []).length ? ` ${(order.dietary ?? []).length}` : ''}
@@ -5501,6 +5501,7 @@ function BillsPage({
               {(row.dietary ?? []).length > 0 ? (
                 <div className="pos-bill-diet">⚠ {(row.dietary ?? []).map((tag) => tag.tag).join(' · ')}</div>
               ) : null}
+              {row.notes ? <div className="pos-bill-note">✎ {row.notes}</div> : null}
               <div className="pos-bill-figures">
                 <span>{paidCents(row) > 0 ? `${money(paidCents(row))} paid` : waiting ? 'Not yet sent' : 'Sent'}</span>
                 <b>{money(owing)}</b>
