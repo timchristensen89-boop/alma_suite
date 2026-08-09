@@ -574,3 +574,11 @@ summary.pos-list-head::-webkit-details-marker { display: none; }
 summary.pos-list-head::after { content: '▸'; margin-left: auto; opacity: 0.5; font-size: 12px; }
 details[open] > summary.pos-list-head::after { content: '▾'; }
 details.pos-list-section > summary.pos-list-head h3 ~ small { margin-left: 8px; }
+
+/* Height chain: the menu column is exactly the body's height, so grids and
+   lists scroll INSIDE their panel instead of growing past the screen
+   (folders with 40 wines were unreachable below the fold). */
+.pos-body { grid-template-rows: minmax(0, 1fr); }
+.pos-menu { min-height: 0; }
+.pos-grid { min-height: 0; }
+.pos-list { min-height: 0; overflow-y: auto; }
