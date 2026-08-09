@@ -192,6 +192,38 @@ posRouter.get('/print-poll/:profileId', async (req, res, next) => {
   }
 });
 
+posRouter.get('/specials', async (_req, res, next) => {
+  try {
+    res.json(await posService.listSpecials());
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/specials', async (req, res, next) => {
+  try {
+    res.json(await posService.createSpecial(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.delete('/specials/:id', async (req, res, next) => {
+  try {
+    res.json(await posService.retireSpecial(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/orders/:id/print-receipt', async (req, res, next) => {
+  try {
+    res.json(await posService.printReceipt(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.post('/printer-profiles/:id/test', async (req, res, next) => {
   try {
     res.json(await posService.printTest(req.params.id));

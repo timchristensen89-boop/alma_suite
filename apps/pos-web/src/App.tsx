@@ -1666,6 +1666,12 @@ export function App() {
     }
   }
 
+  function printTillReceipt(orderId: string) {
+    void api<{ queued: number }>(`/api/pos/orders/${orderId}/print-receipt`, { method: 'POST' })
+      .then(() => setInfo('Receipt printing at the till.'))
+      .catch((err) => setError(messageForError(err, 'Could not print the receipt.')));
+  }
+
   async function openDay() {
     try {
       setDay(await api<DaySummary>(`/api/pos/day-summary?venue=${encodeURIComponent(venue)}`));
@@ -3107,6 +3113,9 @@ export function App() {
       {bill ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel pos-receipt" id="pos-bill">
+            <button type="button" className="pos-ghost pos-till-print" onClick={() => bill && printTillReceipt(bill.id)}>
+              ⚡ Print at the till
+            </button>
             <div className="pos-bill-head">
               {venueIdentity.receiptLogo ? <img src={venueIdentity.receiptLogo} alt="" className="pos-receipt-logo" /> : null}
               <h2>{venueIdentity.businessName}</h2>
@@ -3173,6 +3182,9 @@ export function App() {
       {receipt ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel pos-receipt" id="pos-receipt">
+            <button type="button" className="pos-ghost pos-till-print" onClick={() => printTillReceipt(receipt.id)}>
+              ⚡ Print at the till
+            </button>
             {venueIdentity.receiptLogo ? <img src={venueIdentity.receiptLogo} alt="" className="pos-receipt-logo" /> : null}
             <p className="pos-receipt-brand">
               {venueIdentity.businessName}

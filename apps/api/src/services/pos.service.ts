@@ -288,6 +288,99 @@ ${parts.join('\n')}
 </PrintRequestInfo>`;
 }
 
+type ReceiptPayload = {
+  kind: 'RECEIPT';
+  businessName: string;
+  abn: string | null;
+  address: string | null;
+  phone: string | null;
+  website: string | null;
+  venue: string;
+  paid: boolean;
+  tableLabel: string | null;
+  orderNumber: number;
+  covers: number | null;
+  lines: Array<{ name: string; quantity: number; totalCents: number; modifiers: string[] }>;
+  subtotalCents: number;
+  discountCents: number;
+  discountLabel: string;
+  surchargeCents: number;
+  surchargeLabel: string;
+  totalCents: number;
+  gstCents: number;
+  tipCents: number;
+  payments: Array<{ method: string; amountCents: number }>;
+};
+
+// 42-column receipt: identity header, price-aligned lines, totals, GST.
+function buildReceiptXml(jobId: string, receipt: ReceiptPayload) {
+  const WIDTH = 42;
+  const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+  const row = (label: string, value: string) => {
+    const space = Math.max(1, WIDTH - label.length - value.length);
+    return `${label.slice(0, WIDTH - value.length - 1)}${' '.repeat(space)}${value}`;
+  };
+  const parts: string[] = [];
+  const line = (text = '') => parts.push(`<text>${xmlEscape(text)}&#10;</text>`);
+  parts.push('<text lang="en"/>');
+  parts.push('<text align="center"/>');
+  parts.push('<text width="2" height="2" em="true"/>');
+  line(receipt.businessName.toUpperCase());
+  parts.push('<text width="1" height="1" em="false"/>');
+  if (receipt.abn) line(`ABN ${receipt.abn}`);
+  if (receipt.address) line(receipt.address);
+  if (receipt.phone) line(receipt.phone);
+  line();
+  line(
+    `${receipt.tableLabel ? `Table ${receipt.tableLabel}` : `Order #${receipt.orderNumber}`}${receipt.covers ? ` - ${receipt.covers} guests` : ''}`
+  );
+  line(new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney', dateStyle: 'medium', timeStyle: 'short' }));
+  parts.push('<text align="left"/>');
+  line('-'.repeat(WIDTH));
+  for (const item of receipt.lines) {
+    line(row(`${item.quantity} x ${item.name}`, dollars(item.totalCents)));
+    for (const modifier of item.modifiers) line(`   ${modifier}`);
+  }
+  line('-'.repeat(WIDTH));
+  line(row('Subtotal', dollars(receipt.subtotalCents)));
+  if (receipt.discountCents > 0) line(row(receipt.discountLabel, `-${dollars(receipt.discountCents)}`));
+  if (receipt.surchargeCents > 0) line(row(receipt.surchargeLabel, `+${dollars(receipt.surchargeCents)}`));
+  parts.push('<text em="true" width="2" height="2"/>');
+  // Double-width text halves the columns: pad TOTAL to 21 chars.
+  {
+    const value = dollars(receipt.totalCents);
+    line(`TOTAL${' '.repeat(Math.max(1, 21 - 5 - value.length))}${value}`);
+  }
+  parts.push('<text em="false" width="1" height="1"/>');
+  line(row('GST included', dollars(receipt.gstCents)));
+  if (receipt.tipCents > 0) line(row('Tip', dollars(receipt.tipCents)));
+  if (receipt.payments.length > 0) {
+    line();
+    for (const payment of receipt.payments) line(row(payment.method, dollars(payment.amountCents)));
+  }
+  line();
+  parts.push('<text align="center"/>');
+  line(receipt.paid ? 'Paid - thank you' : 'Not yet paid');
+  if (receipt.website) line(receipt.website);
+  parts.push('<feed line="3"/>');
+  parts.push('<cut type="feed"/>');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<PrintRequestInfo Version="2.00">
+<ePOSPrint>
+<Parameter>
+<devid>local_printer</devid>
+<timeout>10000</timeout>
+<printjobid>${jobId}</printjobid>
+</Parameter>
+<PrintData>
+<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+${parts.join('\n')}
+</epos-print>
+</PrintData>
+</ePOSPrint>
+</PrintRequestInfo>`;
+}
+
 async function postPosActuals(venue: string) {
   const setting = await prisma.posVenueSetting.findUnique({ where: { venue } });
   if (!setting?.postToReports) return;
@@ -599,7 +692,95 @@ export const posService = {
     });
     if (!job) return { xml: '' };
     await prisma.posPrintJob.update({ where: { id: job.id }, data: { status: 'SENT', sentAt: new Date() } });
-    return { xml: buildPrintRequestXml(job.id, job.payload as DocketPayload) };
+    const payload = job.payload as { kind?: string };
+    return {
+      xml:
+        payload.kind === 'RECEIPT'
+          ? buildReceiptXml(job.id, job.payload as ReceiptPayload)
+          : buildPrintRequestXml(job.id, job.payload as DocketPayload)
+    };
+  },
+
+  // The till's receipt printer: prints the customer bill (open orders) or
+  // the paid receipt on demand. Stations with matchKind RECEIPT never get
+  // kitchen dockets — line routing can't match them.
+  async printReceipt(orderId: string) {
+    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, include: { lines: true, payments: true } });
+    if (!order) throw new HttpError(404, 'Bill not found.');
+    const stations = await prisma.posPrinterProfile.findMany({ where: { active: true, matchKind: 'RECEIPT', printerIp: { not: null } } });
+    if (stations.length === 0) throw new HttpError(409, 'No receipt station configured — add one in the Office with kind Receipts and a printer.');
+    const identity = await prisma.posVenueSetting.findUnique({ where: { venue: order.venue } });
+    const payload = {
+      kind: 'RECEIPT',
+      businessName: identity?.businessName ?? order.venue,
+      abn: identity?.abn ?? null,
+      address: identity?.address ?? null,
+      phone: identity?.phone ?? null,
+      website: identity?.website ?? null,
+      venue: order.venue,
+      paid: order.status === 'PAID',
+      tableLabel: order.tableLabel,
+      orderNumber: order.orderNumber,
+      covers: order.covers,
+      lines: order.lines.map((line) => ({
+        name: line.name,
+        quantity: line.quantity,
+        totalCents: line.totalCents,
+        modifiers: ((line.modifiers as Array<{ name: string }> | null) ?? []).map((modifier) => modifier.name)
+      })),
+      subtotalCents: order.subtotalCents,
+      discountCents: order.discountCents + order.manualDiscountCents,
+      discountLabel: order.manualDiscountLabel ?? order.discountLabel ?? 'Discount',
+      surchargeCents: order.surchargeCents,
+      surchargeLabel: order.surchargeLabel ?? 'Surcharge',
+      totalCents: order.totalCents,
+      gstCents: order.gstCents,
+      tipCents: order.tipCents,
+      payments: order.payments.map((payment) => ({ method: payment.method, amountCents: payment.amountCents }))
+    };
+    await prisma.posPrintJob.createMany({ data: stations.map((station) => ({ profileId: station.id, payload })) });
+    return { queued: stations.length };
+  },
+
+  // Daily specials: real recipes in 'Food Specials' / 'Drink Specials', so
+  // they flow through menus, docket routing, sales and reports like any dish.
+  async listSpecials() {
+    return prisma.recipe.findMany({
+      where: { status: 'ACTIVE', category: { in: ['Food Specials', 'Drink Specials'] } },
+      select: { id: true, title: true, salePriceCents: true, category: true, venue: true },
+      orderBy: { createdAt: 'desc' }
+    });
+  },
+
+  async createSpecial(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const name = str(body.name).slice(0, 80);
+    const priceCents = Math.round(Number(body.priceCents));
+    const kind = str(body.kind) === 'BEVERAGE' ? 'BEVERAGE' : 'FOOD';
+    const venue = str(body.venue) || null;
+    if (!name) throw new HttpError(400, 'Name the special.');
+    if (!Number.isFinite(priceCents) || priceCents <= 0) throw new HttpError(400, 'A price is required.');
+    return prisma.recipe.create({
+      data: {
+        title: name,
+        kind,
+        category: kind === 'BEVERAGE' ? 'Drink Specials' : 'Food Specials',
+        venue,
+        salePriceCents: priceCents,
+        status: 'ACTIVE',
+        isPrepRecipe: false,
+        notes: 'Register special — created in the POS Office.'
+      },
+      select: { id: true, title: true, salePriceCents: true, category: true, venue: true }
+    });
+  },
+
+  async retireSpecial(id: string) {
+    await prisma.recipe.updateMany({
+      where: { id, category: { in: ['Food Specials', 'Drink Specials'] } },
+      data: { status: 'ARCHIVED' }
+    });
+    return { ok: true };
   },
 
   async printTest(profileId: string) {

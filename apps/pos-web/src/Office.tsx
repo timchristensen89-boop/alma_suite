@@ -15,11 +15,12 @@ type ModGroup = { id: string; name: string; required: boolean; maxSelect: number
 type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; receiptLogo: string | null };
 type MenuHide = { id: string; kind: string; key: string; createdAt: string };
 type MenuShape = { categories: Array<{ name: string; items: Array<{ recipeId: string; title: string; priceCents: number }> }> };
+type Special = { id: string; title: string; salePriceCents: number; category: string; venue: string | null };
 type VariantOption = { recipeId: string; label: string; title: string; priceCents: number; self: boolean };
 type VariantGroup = { parentRecipeId: string; parentTitle: string; options: VariantOption[] };
 
 export function Office() {
-  const [tab, setTab] = useState<'printers' | 'menu' | 'modifiers' | 'variants' | 'rules' | 'identity'>('printers');
+  const [tab, setTab] = useState<'printers' | 'menu' | 'modifiers' | 'variants' | 'specials' | 'rules' | 'identity'>('printers');
   const [hides, setHides] = useState<MenuHide[]>([]);
   const [fullMenu, setFullMenu] = useState<MenuShape | null>(null);
   const [hideSearch, setHideSearch] = useState('');
@@ -42,6 +43,8 @@ export function Office() {
   const [variantSearch, setVariantSearch] = useState('');
   const [optionSearch, setOptionSearch] = useState('');
   const [pour, setPour] = useState({ label: 'Glass 150ml', ml: '150', parentMl: '750', price: '' });
+  const [specials, setSpecials] = useState<Special[]>([]);
+  const [specialDraft, setSpecialDraft] = useState({ name: '', price: '', kind: 'FOOD', venue: '' });
 
   const refresh = useCallback(async () => {
     try {
@@ -56,6 +59,7 @@ export function Office() {
       setFullMenu(menu as unknown as MenuShape);
       setHides(await api<MenuHide[]>('/api/pos/menu-hides'));
       setVariantGroups(await api<VariantGroup[]>('/api/pos/variants'));
+      setSpecials(await api<Special[]>('/api/pos/specials'));
       setIdentities(await Promise.all(VENUES.map((venue) => api<Identity>(`/api/pos/venue-settings?venue=${encodeURIComponent(venue)}`))));
       setError(null);
     } catch (err) {
@@ -141,6 +145,7 @@ export function Office() {
             ['menu', 'Menu visibility'],
             ['modifiers', 'Modifiers'],
             ['variants', 'Variants'],
+            ['specials', 'Specials'],
             ['rules', 'Surcharges & discounts'],
             ['identity', 'Venues & receipts']
           ] as const
@@ -166,6 +171,7 @@ export function Office() {
                 <select defaultValue={profile.matchKind} onChange={(event) => void saveProfile({ ...profile, matchKind: event.currentTarget.value })} className="office-input">
                   <option value="FOOD">Food</option>
                   <option value="BEVERAGE">Beverage</option>
+                  <option value="RECEIPT">Receipts (till)</option>
                 </select>
                 <input defaultValue={profile.categoriesCsv} placeholder="Categories (csv, overrides kind)" onBlur={(event) => event.currentTarget.value !== profile.categoriesCsv && void saveProfile({ ...profile, categoriesCsv: event.currentTarget.value })} className="office-input office-input-wide" />
                 <input defaultValue={profile.printerIp ?? ''} placeholder="Printer IP (blank = KDS only)" onBlur={(event) => event.currentTarget.value !== (profile.printerIp ?? '') && void saveProfile({ ...profile, printerIp: event.currentTarget.value })} className="office-input" />
@@ -688,6 +694,98 @@ export function Office() {
                 </div>
               </div>
             )}
+          </section>
+        ) : null}
+
+        {tab === 'specials' ? (
+          <section>
+            <p className="office-lead">
+              Tonight's food and drink specials — they appear on every register under Food Specials / Drink Specials the
+              moment you add them, route to the right printer, and retire with one tap when they sell out for good.
+            </p>
+            <div className="office-card">
+              <input
+                className="office-input office-input-wide"
+                placeholder="Special (e.g. Market Fish Tostada)"
+                value={specialDraft.name}
+                onChange={(event) => setSpecialDraft({ ...specialDraft, name: event.currentTarget.value })}
+              />
+              <input
+                className="office-input office-input-num"
+                placeholder="Price $"
+                inputMode="decimal"
+                value={specialDraft.price}
+                onChange={(event) => setSpecialDraft({ ...specialDraft, price: event.currentTarget.value })}
+              />
+              <select
+                className="office-input"
+                value={specialDraft.kind}
+                onChange={(event) => setSpecialDraft({ ...specialDraft, kind: event.currentTarget.value })}
+              >
+                <option value="FOOD">Food special</option>
+                <option value="BEVERAGE">Drink special</option>
+              </select>
+              <select
+                className="office-input"
+                value={specialDraft.venue}
+                onChange={(event) => setSpecialDraft({ ...specialDraft, venue: event.currentTarget.value })}
+              >
+                <option value="">Both venues</option>
+                {VENUES.map((venueName) => (
+                  <option key={venueName} value={venueName}>
+                    {venueName}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="office-add"
+                disabled={!specialDraft.name.trim() || !Number(specialDraft.price)}
+                onClick={() => {
+                  void api('/api/pos/specials', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      name: specialDraft.name.trim(),
+                      priceCents: Math.round(Number(specialDraft.price) * 100),
+                      kind: specialDraft.kind,
+                      venue: specialDraft.venue
+                    })
+                  })
+                    .then(() => {
+                      setSpecialDraft({ name: '', price: '', kind: specialDraft.kind, venue: specialDraft.venue });
+                      setInfo('Special is live on the registers.');
+                      void refresh();
+                    })
+                    .catch((err) => setError(messageForError(err, 'Could not add the special.')));
+                }}
+              >
+                ＋ Add special
+              </button>
+            </div>
+            {specials.map((special) => (
+              <div key={special.id} className="office-card">
+                <strong className="office-variant-title">{special.title}</strong>
+                <span className="office-variant-opts">
+                  {special.category} · ${(special.salePriceCents / 100).toFixed(2)} · {special.venue ?? 'both venues'}
+                </span>
+                <button
+                  type="button"
+                  className="office-delete"
+                  title="Retire the special"
+                  onClick={() => {
+                    void api(`/api/pos/specials/${special.id}`, { method: 'DELETE' })
+                      .then(() => {
+                        setInfo('Special retired.');
+                        void refresh();
+                      })
+                      .catch((err) => setError(messageForError(err, 'Could not retire it.')));
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            {specials.length === 0 ? <p className="office-lead">No specials running.</p> : null}
           </section>
         ) : null}
 

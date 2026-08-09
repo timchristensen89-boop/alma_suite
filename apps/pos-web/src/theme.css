@@ -689,3 +689,7 @@ summary.pos-list-head.is-tab-edit { animation: pin-jiggle 260ms ease-in-out infi
 .office-card { flex-wrap: wrap; }
 .office-poll-row { flex-basis: 100%; display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 .office-poll-row input { font-size: 11px; font-family: ui-monospace, monospace; }
+
+/* Till receipt button on bill/receipt sheets — hidden from paper prints */
+.pos-till-print { align-self: center; margin-bottom: 4px; }
+@media print { .pos-till-print { display: none !important; } }
