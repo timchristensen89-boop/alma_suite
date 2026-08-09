@@ -247,7 +247,15 @@ export function App() {
   const [me, setMe] = useState<AuthShape>('loading');
   const [bill, setBill] = useState<Order | null>(null);
   const [venue, setVenue] = useState<string>(() => localStorage.getItem('alma.pos.venue') ?? VENUES[0]!);
-  const [menu, setMenu] = useState<MenuCategory[]>([]);
+  const [rawMenu, setRawMenu] = useState<MenuCategory[]>([]);
+  // Each venue sells its own menu: St Alma items at St Alma, Avalon's at
+  // Avalon. Unassigned items and Functions / Pop-up see everything.
+  const menu = useMemo(() => {
+    if (venue !== 'St Alma' && venue !== 'Alma Avalon') return rawMenu;
+    return rawMenu
+      .map((category) => ({ ...category, items: category.items.filter((item) => !item.venue || item.venue === venue) }))
+      .filter((category) => category.items.length > 0);
+  }, [rawMenu, venue]);
   const [kindByRecipe, setKindByRecipe] = useState<Map<string, string>>(new Map());
   const [openOrders, setOpenOrders] = useState<Order[]>([]);
   const [floorTables, setFloorTables] = useState<FloorTable[]>([]);
@@ -641,7 +649,7 @@ export function App() {
           .catch(() => undefined);
         void api<Record<string, string[]>>('/api/pos/adjust-reasons').then(setReasons).catch(() => undefined);
         const res = await api<{ categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] }>('/api/pos/menu');
-        setMenu(res.categories);
+        setRawMenu(res.categories);
         setEightySix(new Set(res.eightySix ?? []));
         setModifierGroups(res.modifierGroups ?? []);
         setOffline(false);
@@ -661,7 +669,7 @@ export function App() {
         const cached = localStorage.getItem('alma.pos.menuCache');
         if (cached && isNetworkError(err)) {
           const res = JSON.parse(cached) as { categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] };
-          setMenu(res.categories);
+          setRawMenu(res.categories);
           setEightySix(new Set(res.eightySix ?? []));
           setModifierGroups(res.modifierGroups ?? []);
           setOffline(true);
@@ -690,7 +698,13 @@ export function App() {
           )
         });
         setActiveCategory((current) =>
-          current && current !== HOME_TAB ? current : localStorage.getItem('alma.pos.deviceLanding') || landing || HOME_TAB
+          current && current !== HOME_TAB
+            ? current
+            : localStorage.getItem('alma.pos.deviceLanding') ||
+              landing ||
+              // No board built yet? Land on the Full menu instead of an
+              // empty Home.
+              ((config.pins ?? []).length > 0 ? HOME_TAB : '__all__')
         );
       })
       .catch(() => undefined);
@@ -984,7 +998,7 @@ export function App() {
       if (over === dragTabToken.current) return;
       // Centre third of the target = "drop into a group"; edges = reorder.
       const rect = target.getBoundingClientRect();
-      const ratio = target.closest('.pos-rail-cats')
+      const ratio = target.closest('.pos-rail-cats, .pos-list')
         ? (nativeEvent.clientY - rect.y) / rect.height
         : (nativeEvent.clientX - rect.x) / rect.width;
       if (ratio > 0.3 && ratio < 0.7 && !dragTabToken.current.startsWith('g:')) {
@@ -2092,6 +2106,13 @@ export function App() {
                 >
                   {HOME_TAB}
                 </button>
+                <button
+                  type="button"
+                  className={activeCategory === '__all__' ? 'is-active' : ''}
+                  onClick={() => setActiveCategory('__all__')}
+                >
+                  Full menu
+                </button>
                 {visibleTabs.map((token) => {
                   const isGroup = token.startsWith('g:');
                   const groupName = isGroup ? token.slice(2) : null;
@@ -2153,49 +2174,91 @@ export function App() {
                 ) : null}
               </nav>
             ) : null}
-            {design === 'rail' && (activeCategory === '__all__' || (menu.some((category) => category.name === activeCategory) && !search)) ? (
+            {(activeCategory === '__all__' && !search) || (design === 'rail' && menu.some((category) => category.name === activeCategory) && !search) ? (
               <div className="pos-list">
-                {(activeCategory === '__all__' ? menu : menu.filter((category) => category.name === activeCategory)).map((category) => {
-                  const rows = category.items.filter((item) => (search ? item.title.toLowerCase().includes(search.toLowerCase()) : !item.variantOf));
-                  if (rows.length === 0) return null;
+                {activeCategory === '__all__' ? (
+                  <div className="pos-list-toolbar">
+                    <button type="button" className="pos-ghost" onClick={() => setBoardEdit(!boardEdit)}>
+                      {boardEdit ? '✓ Done' : '✎ Edit menu'}
+                    </button>
+                    {boardEdit ? (
+                      <span className="pos-muted">Drag headings to reorder · drop one onto another for a folder · tap to hide</span>
+                    ) : null}
+                  </div>
+                ) : null}
+                {(activeCategory === '__all__'
+                  ? visibleTabs
+                      .map((token) => {
+                        if (token.startsWith('g:')) {
+                          const folderName = token.slice(2);
+                          const group = tabsConfig.groups.find((candidate) => candidate.name === folderName);
+                          const cats = (group?.cats ?? [])
+                            .map((name) => menu.find((category) => category.name === name))
+                            .filter((category): category is MenuCategory => Boolean(category));
+                          return { token, folderName, cats };
+                        }
+                        const category = menu.find((candidate) => candidate.name === token);
+                        return category ? { token, folderName: null as string | null, cats: [category] } : null;
+                      })
+                      .filter((unit): unit is { token: string; folderName: string | null; cats: MenuCategory[] } => unit !== null)
+                  : menu
+                      .filter((category) => category.name === activeCategory)
+                      .map((category) => ({ token: category.name, folderName: null as string | null, cats: [category] }))
+                ).map(({ token, folderName, cats }) => {
                   const qtyOf = (recipeId: string) =>
                     (order?.lines ?? []).filter((line) => line.recipeId === recipeId).reduce((sum, line) => sum + line.quantity, 0);
                   const collapsible = activeCategory === '__all__' && !search;
+                  const total = cats.reduce((sum, category) => sum + category.items.filter((item) => !item.variantOf).length, 0);
+                  if (total === 0 && !boardEdit) return null;
                   return (
-                    <details
-                      key={category.name}
-                      className="pos-list-section"
-                      {...(collapsible ? {} : { open: true })}
-                    >
+                    <details key={token} className="pos-list-section" {...(collapsible ? {} : { open: true })}>
                       <summary
-                        className="pos-list-head"
+                        className={`pos-list-head ${boardEdit && collapsible ? 'is-tab-edit' : ''}`}
+                        data-tab-token={collapsible ? token : undefined}
+                        onPointerDown={collapsible && boardEdit ? (event) => tabPointerDown(event, token) : undefined}
                         onClick={(event) => {
-                          if (!collapsible) event.preventDefault();
+                          if (!collapsible) {
+                            event.preventDefault();
+                            return;
+                          }
+                          if (boardEdit) {
+                            event.preventDefault();
+                            if (folderName) setGroupSheet({ name: folderName });
+                          }
                         }}
                       >
-                        <i className={`pos-list-dot ${hueClass(hueForCategory(category.name))}`} />
-                        <h3>{category.name}</h3>
+                        <i className={`pos-list-dot ${hueClass(hueForCategory(cats[0]?.name ?? token))}`} />
+                        <h3>{folderName ? `📁 ${folderName}` : token}</h3>
                         <small>
-                          {rows.length} item{rows.length === 1 ? '' : 's'}
+                          {total} item{total === 1 ? '' : 's'}
                         </small>
                       </summary>
                       <div className="pos-list-card">
-                        {rows.map((item) => {
-                          const quantity = qtyOf(item.recipeId);
+                        {cats.map((category) => {
+                          const rows = category.items.filter((item) => !item.variantOf);
+                          if (rows.length === 0) return null;
                           return (
-                            <button
-                              key={item.recipeId}
-                              type="button"
-                              className={`pos-list-row ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
-                              disabled={busy}
-                              onClick={() => addItem(item)}
-                            >
-                              <i className={`pos-list-dot ${hueClass(hueForCategory(category.name))}`} />
-                              <span>{item.title}</span>
-                              {quantity > 0 ? <em>×{quantity}</em> : null}
-                              <b>{eightySix.has(item.recipeId) ? "86'd" : money(item.priceCents)}</b>
-                              <u>＋</u>
-                            </button>
+                            <div key={category.name} className="pos-list-subgroup">
+                              {folderName ? <div className="pos-list-subhead">{category.name}</div> : null}
+                              {rows.map((item) => {
+                                const quantity = qtyOf(item.recipeId);
+                                return (
+                                  <button
+                                    key={item.recipeId}
+                                    type="button"
+                                    className={`pos-list-row ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                                    disabled={busy}
+                                    onClick={() => addItem(item)}
+                                  >
+                                    <i className={`pos-list-dot ${hueClass(hueForCategory(category.name))}`} />
+                                    <span>{item.title}</span>
+                                    {quantity > 0 ? <em>×{quantity}</em> : null}
+                                    <b>{eightySix.has(item.recipeId) ? "86'd" : money(item.priceCents)}</b>
+                                    <u>＋</u>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           );
                         })}
                       </div>
@@ -2609,7 +2672,7 @@ export function App() {
                           void api('/api/pos/menu-hides', { method: 'POST', body: JSON.stringify({ kind: 'ITEM', key: item.recipeId, hiddenBy: item.title }) })
                             .then(() => {
                               setInfo(`${item.title} hidden from the POS — restore it in the Office.`);
-                              setMenu((current) => current.map((category) => ({ ...category, items: category.items.filter((candidate) => candidate.recipeId !== item.recipeId) })));
+                              setRawMenu((current) => current.map((category) => ({ ...category, items: category.items.filter((candidate) => candidate.recipeId !== item.recipeId) })));
                             })
                             .catch((err) => setError(messageForError(err, 'Could not hide it.')));
                         }}
