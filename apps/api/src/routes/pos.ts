@@ -10,6 +10,8 @@ export const posRouter = Router();
 
 posRouter.use((req, _res, next) => {
   if (req.path.startsWith('/print-poll/')) return next();
+  // The print bridge reads its station list the same way a printer polls.
+  if (req.path === '/print-stations') return next();
   if (!req.user && !req.deviceUser) return next(new HttpError(401, 'Sign in the register first.'));
   next();
 });
@@ -165,6 +167,14 @@ posRouter.get('/audit', async (req, res, next) => {
 posRouter.get('/live', async (_req, res, next) => {
   try {
     res.json(await posService.liveBoard());
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get('/print-stations', async (req, res, next) => {
+  try {
+    res.json(await posService.listPrintStations(req.query.venue ? String(req.query.venue) : null));
   } catch (err) {
     next(err);
   }

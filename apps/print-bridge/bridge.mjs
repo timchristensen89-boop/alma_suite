@@ -20,7 +20,15 @@
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 
-const STATIONS = (process.env.ALMA_STATIONS ?? '')
+// Preferred: name the venue and let the bridge ask the API which stations to
+// serve and where they are. Change a printer's IP in Office -> Printers and
+// the bridge follows within a minute; no restart, no editing a command line.
+const API = (process.env.ALMA_API ?? 'https://api.almagroup.com.au').replace(/\/+$/, '');
+const VENUE = process.env.ALMA_VENUE ?? '';
+
+// Fallback: an explicit "<station-url>=<printer-ip>" list, for a venue that
+// isn't in the config yet or a one-off test.
+const STATIC_STATIONS = (process.env.ALMA_STATIONS ?? '')
   .split(';')
   .map((entry) => entry.trim())
   .filter(Boolean)
@@ -32,14 +40,54 @@ const STATIONS = (process.env.ALMA_STATIONS ?? '')
   })
   .filter((station) => station.url && station.host);
 
+let stations = STATIC_STATIONS;
+
+async function refreshStations() {
+  if (!VENUE) return;
+  try {
+    const res = await fetch(`${API}/api/pos/print-stations?venue=${encodeURIComponent(VENUE)}`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const rows = await res.json();
+    const next = rows
+      .filter((row) => row.printerIp)
+      .map((row) => {
+        const [host, port] = String(row.printerIp).split(':');
+        return { url: `${API}/api/pos/print-poll/${row.id}`, host: host.trim(), port: Number(port) || 9100, name: row.name };
+      });
+    const changed = JSON.stringify(next.map((s) => `${s.name}@${s.host}`)) !== JSON.stringify(stations.map((s) => `${s.name}@${s.host}`));
+    stations = next;
+    if (changed) {
+      console.log('[bridge] stations:');
+      for (const station of stations) console.log(`[bridge]   ${station.name} -> ${station.host}:${station.port}`);
+    }
+  } catch (err) {
+    console.error(`[bridge] could not read stations: ${err.message}`);
+  }
+}
+
 const INTERVAL_MS = Number(process.env.ALMA_POLL_MS ?? 5000);
 
-const HELP = `No stations configured.
+// Physical page setup, in printer dots. A docket printed hard against the
+// edge is hard to read and hard to tear straight, so leave a margin both
+// sides and a little air top and bottom.
+// 80mm paper is ~576 printable dots (58mm is ~384) at 8 dots/mm.
+const MARGIN_DOTS = Number(process.env.ALMA_MARGIN_DOTS ?? 24); // ~3mm each side
+const PAPER_DOTS = Number(process.env.ALMA_PAPER_DOTS ?? 576);
+const LEAD_LINES = Number(process.env.ALMA_LEAD_LINES ?? 2);
+const TAIL_LINES = Number(process.env.ALMA_TAIL_LINES ?? 4);
+// Line pitch in dots. The printer default (~34) leaves dockets airy and
+// wastes paper; 26 is tight but still readable at arm's length.
+const LINE_DOTS = Number(process.env.ALMA_LINE_DOTS ?? 26);
 
-Set ALMA_STATIONS to one or more "<station-url>=<printer-ip>" pairs, separated by ";".
+const HELP = `Nothing to serve.
 
-  ALMA_STATIONS="https://api.almagroup.com.au/api/pos/print-poll/stalma-kitchen=192.168.1.16" \\
-    node bridge.mjs
+Normal use — name the venue and the bridge reads the rest from the Office:
+
+  ALMA_VENUE="St Alma" node bridge.mjs
+
+Fallback — pin stations by hand ("<station-url>=<printer-ip>", ";" separated):
+
+  ALMA_STATIONS="https://api.almagroup.com.au/api/pos/print-poll/<id>=192.168.1.16" node bridge.mjs
 `;
 
 // ── ePOS-Print XML → ESC/POS ───────────────────────────────────────────────
@@ -64,6 +112,13 @@ function attr(tag, name) {
 export function xmlToEscPos(xml) {
   const body = /<epos-print[^>]*>([\s\S]*?)<\/epos-print>/i.exec(xml)?.[1] ?? xml;
   let out = `${ESC}@`; // initialise
+  // Left margin (GS L) and a matching right one by narrowing the print area
+  // (GS W), then a couple of blank lines so the header isn't at the tear.
+  const width = Math.max(64, PAPER_DOTS - MARGIN_DOTS * 2);
+  out += `${GS}L${String.fromCharCode(MARGIN_DOTS % 256)}${String.fromCharCode(Math.floor(MARGIN_DOTS / 256))}`;
+  out += `${GS}W${String.fromCharCode(width % 256)}${String.fromCharCode(Math.floor(width / 256))}`;
+  out += `${ESC}3${String.fromCharCode(Math.min(Math.max(LINE_DOTS, 12), 255))}`; // line pitch
+  if (LEAD_LINES > 0) out += `${ESC}d${String.fromCharCode(LEAD_LINES)}`;
   const tokens = body.match(/<[^>]+>[^<]*/g) ?? [];
 
   for (const token of tokens) {
@@ -87,7 +142,7 @@ export function xmlToEscPos(xml) {
       if (reverse !== null) out += `${GS}B${reverse === 'true' ? '\x01' : '\x00'}`;
       const underline = attr(tag, 'ul');
       if (underline !== null) out += `${ESC}-${underline === 'true' ? '\x01' : '\x00'}`;
-      if (text) out += decodeEntities(text);
+      if (text.trim()) out += decodeEntities(text);
       continue;
     }
     if (name === 'feed') {
@@ -103,10 +158,11 @@ export function xmlToEscPos(xml) {
       out += `${ESC}p\x00\x19\xfa`; // kick the cash drawer
       continue;
     }
-    if (text) out += decodeEntities(text);
+    if (text.trim()) out += decodeEntities(text);
   }
-  // Leave paper clear of the head, and cut if the docket didn't say to.
-  if (!/\<cut/i.test(body)) out += `${ESC}d\x03${GS}VA\x00`;
+  // Leave paper clear of the head. The docket's own <cut> fires before this,
+  // so only add a cut when it didn't ask for one.
+  if (!/\<cut/i.test(body)) out += `${ESC}d${String.fromCharCode(TAIL_LINES)}${GS}VA\x00`;
   return Buffer.from(out, 'binary');
 }
 
@@ -172,7 +228,7 @@ async function pollStation(station) {
 }
 
 async function tick() {
-  for (const station of STATIONS) {
+  for (const station of stations) {
     try {
       // Drain rather than one-per-tick, so a burst of courses doesn't trickle.
       for (let i = 0; i < 10; i += 1) {
@@ -189,14 +245,17 @@ async function tick() {
 // converter, say) must not start polling. fileURLToPath, not string compare:
 // this repo's path contains a space, which import.meta.url percent-encodes.
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  if (STATIONS.length === 0) {
+  if (!VENUE && STATIC_STATIONS.length === 0) {
     console.error(HELP);
     process.exit(1);
   }
-  console.log('[bridge] ALMA print bridge running');
-  for (const station of STATIONS) console.log(`[bridge]   ${station.host}:${station.port}  <-  ${station.url}`);
+  console.log(`[bridge] ALMA print bridge running${VENUE ? ` for ${VENUE}` : ''}`);
+  await refreshStations();
+  for (const station of stations) console.log(`[bridge]   ${station.name ?? station.host} -> ${station.host}:${station.port}`);
   await tick();
   setInterval(() => {
     void tick();
   }, INTERVAL_MS);
+  // Pick up printer changes made in the Office without a restart.
+  if (VENUE) setInterval(() => void refreshStations(), 60_000);
 }

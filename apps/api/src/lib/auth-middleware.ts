@@ -44,6 +44,7 @@ const PUBLIC_PREFIXES = [
   // the query/body is the auth, and the service throttles per IP.
   '/api/qr/',
   '/api/pos/print-poll/',
+  '/api/pos/print-stations',
   '/api/gift-cards/session/',
   '/api/gift-cards/print/',
   '/api/gift-cards/qr/',

@@ -1829,6 +1829,20 @@ export const posService = {
   // Gift card balance check for the charge sheet. Mirrors redeem()'s gate
   // (status ACTIVE + not expired) rather than lookup()'s paid-online check —
   // counter-activated and comp cards have no Stripe payment but redeem fine.
+  // The print bridge asks which stations to serve and where they live, so a
+  // printer IP changed in the Office takes effect without restarting it.
+  // Public like /print-poll (a bridge has no session); returns nothing but
+  // station names and LAN addresses.
+  async listPrintStations(venue: string | null) {
+    const rows = await prisma.posPrinterProfile.findMany({
+      where: { active: true, printerIp: { not: null } },
+      orderBy: [{ venue: 'asc' }, { sortOrder: 'asc' }]
+    });
+    return rows
+      .filter((row) => !venue || !row.venue || row.venue === venue)
+      .map((row) => ({ id: row.id, name: row.name, venue: row.venue, printerIp: row.printerIp, matchKind: row.matchKind }));
+  },
+
   async giftCardBalance(code: string) {
     const clean = code.trim().toUpperCase();
     if (!clean) throw new HttpError(400, 'Enter the gift card code.');
@@ -1933,7 +1947,11 @@ export const posService = {
       name: str(body.name).slice(0, 40),
       // Blank = every venue (how it worked before St Alma had its own).
       venue: str(body.venue).slice(0, 60) || null,
-      matchKind: str(body.matchKind).toUpperCase() === 'BEVERAGE' ? 'BEVERAGE' : 'FOOD',
+      // RECEIPT is a real kind (the till printer) — coercing it to FOOD is why
+      // "Receipts (till)" wouldn't stick and the station kept printing dockets.
+      matchKind: ['BEVERAGE', 'RECEIPT'].includes(str(body.matchKind).toUpperCase())
+        ? str(body.matchKind).toUpperCase()
+        : 'FOOD',
       categoriesCsv: str(body.categoriesCsv).slice(0, 400),
       printerIp: str(body.printerIp).slice(0, 60) || null,
       active: body.active !== false,

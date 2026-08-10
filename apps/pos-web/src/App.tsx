@@ -2275,6 +2275,7 @@ export function App() {
             setOrder(row);
             setView('register');
           }}
+          onPrint={(row) => void printTillReceipt(row.id)}
           onSplit={(row) => {
             setOrder(row);
             setView('register');
@@ -3380,9 +3381,6 @@ export function App() {
       {bill ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel pos-receipt" id="pos-bill">
-            <button type="button" className="pos-ghost pos-till-print" onClick={() => bill && printTillReceipt(bill.id)}>
-              ⚡ Print at the till
-            </button>
             <div className="pos-bill-head">
               {venueIdentity.receiptLogo ? <img src={venueIdentity.receiptLogo} alt="" className="pos-receipt-logo" /> : null}
               <h2>{venueIdentity.businessName}</h2>
@@ -3438,8 +3436,10 @@ export function App() {
               <button type="button" className="pos-ghost" onClick={() => setBill(null)}>
                 Close
               </button>
-              <button type="button" className="pos-charge" onClick={() => window.print()}>
-                Print bill
+              {/* One print, and it goes to the till — the browser dialog could
+                  never choose the right printer anyway. */}
+              <button type="button" className="pos-charge" onClick={() => bill && void printTillReceipt(bill.id)}>
+                Print docket
               </button>
             </div>
           </div>
@@ -5857,6 +5857,7 @@ function BillsPage({
   busy,
   onOpen,
   onSplit,
+  onPrint,
   onReceipt,
   onNewOrder,
   onRefresh
@@ -5866,6 +5867,7 @@ function BillsPage({
   busy: boolean;
   onOpen: (order: Order) => void;
   onSplit: (order: Order) => void;
+  onPrint: (order: Order) => void;
   onReceipt: (order: Order) => void;
   onNewOrder: () => void;
   onRefresh: () => void;
@@ -5935,8 +5937,12 @@ function BillsPage({
                 <button type="button" disabled={busy} onClick={() => onOpen(row)}>
                   Open
                 </button>
+                {/* Same screen as before — it just says what it's for. */}
                 <button type="button" disabled={busy || row.lines.length === 0} onClick={() => onSplit(row)}>
-                  Split
+                  Pay
+                </button>
+                <button type="button" disabled={busy || row.lines.length === 0} onClick={() => onPrint(row)}>
+                  Print
                 </button>
               </div>
             </div>
