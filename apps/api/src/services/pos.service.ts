@@ -2268,9 +2268,17 @@ export const posService = {
     let categories: object | null = null;
     if (body.categories && typeof body.categories === 'object') {
       const raw = body.categories as Record<string, unknown>;
+      // Per-category mark overrides: name -> icon key ('' = deliberately none).
+      const icons: Record<string, string> = {};
+      if (raw.icons && typeof raw.icons === 'object') {
+        for (const [name, value] of Object.entries(raw.icons as Record<string, unknown>)) {
+          if (typeof value === 'string' && value.length <= 20) icons[name.slice(0, 60)] = value;
+        }
+      }
       categories = {
         order: (Array.isArray(raw.order) ? raw.order : []).map(String).slice(0, 60),
         hidden: (Array.isArray(raw.hidden) ? raw.hidden : []).map(String).slice(0, 60),
+        icons,
         groups: (Array.isArray(raw.groups) ? raw.groups : [])
           .map((group) => {
             if (!group || typeof group !== 'object') return null;

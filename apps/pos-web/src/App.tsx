@@ -419,13 +419,13 @@ export function App() {
   // A mark for this name, or nothing. Rendered as inline SVG so it takes the
   // ink colour of whatever it sits in.
   function Mark({ name, className }: { name: string; className?: string }) {
-    const key = iconsOn ? iconKeyFor(name) : '';
+    const key = iconsOn ? iconKeyFor(name, home.categories?.icons) : '';
     if (!key) return null;
     return (
       <i className={className ?? 'pos-nav-icon'} dangerouslySetInnerHTML={{ __html: iconSvg(key, iconStyle) }} />
     );
   }
-  const hasMark = (name: string) => Boolean(iconsOn && iconKeyFor(name));
+  const hasMark = (name: string) => Boolean(iconsOn && iconKeyFor(name, home.categories?.icons));
   // Column count is kept alongside the slot total so the board editor's
   // preview can lay tiles out on the same grid the register measured.
   const [boardCols, setBoardCols] = useState(4);
@@ -443,6 +443,22 @@ export function App() {
     dragMoved.current = false;
     const carried = (event.currentTarget as HTMLElement);
     carried.classList.add('is-dragging');
+    // A ghost of the tile rides the finger, so you can see what you picked
+    // up and where it is. Plain DOM, moved by transform — React never sees
+    // it, so a 60fps drag costs no renders.
+    const box = carried.getBoundingClientRect();
+    const ghost = document.createElement('div');
+    ghost.className = 'pos-drag-ghost';
+    ghost.style.width = `${box.width}px`;
+    ghost.style.height = `${box.height}px`;
+    ghost.textContent = (carried.querySelector('span')?.textContent ?? '').trim();
+    const grabX = event.clientX - box.left;
+    const grabY = event.clientY - box.top;
+    const placeGhost = (x: number, y: number) => {
+      ghost.style.transform = `translate3d(${Math.round(x - grabX)}px, ${Math.round(y - grabY)}px, 0)`;
+    };
+    placeGhost(event.clientX, event.clientY);
+    document.body.appendChild(ghost);
     // Pointer capture keeps the gesture with this tile even if the grid
     // re-renders underneath it mid-drag.
     try {
@@ -458,6 +474,7 @@ export function App() {
     const dropFolder = { name: null as string | null };
     const onMove = (nativeEvent: PointerEvent) => {
       if (dragPinIndex.current === null) return;
+      placeGhost(nativeEvent.clientX, nativeEvent.clientY);
       const pager = boardPagerRef.current;
       if (pager) {
         const rect = pager.getBoundingClientRect();
@@ -508,6 +525,7 @@ export function App() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
       document.removeEventListener('pointercancel', onUp);
+      ghost.remove();
       document.querySelectorAll('.pos-item-pin.is-dragging').forEach((el) => el.classList.remove('is-dragging'));
       document.querySelectorAll('.pos-item-pin.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
       if (dragKey && dropFolder.name !== null) {
@@ -538,7 +556,23 @@ export function App() {
     event.preventDefault();
     let from = itemIndex;
     let moved = false;
+    const held = event.currentTarget as HTMLElement;
+    held.classList.add('is-dragging');
+    const box = held.getBoundingClientRect();
+    const ghost = document.createElement('div');
+    ghost.className = 'pos-drag-ghost';
+    ghost.style.width = `${box.width}px`;
+    ghost.style.height = `${box.height}px`;
+    ghost.textContent = (held.querySelector('span')?.textContent ?? '').trim();
+    const grabX = event.clientX - box.left;
+    const grabY = event.clientY - box.top;
+    const placeGhost = (x: number, y: number) => {
+      ghost.style.transform = `translate3d(${Math.round(x - grabX)}px, ${Math.round(y - grabY)}px, 0)`;
+    };
+    placeGhost(event.clientX, event.clientY);
+    document.body.appendChild(ghost);
     const onMove = (nativeEvent: PointerEvent) => {
+      placeGhost(nativeEvent.clientX, nativeEvent.clientY);
       const target = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY)?.closest('[data-fitem-index]');
       if (!target) return;
       const over = Number(target.getAttribute('data-fitem-index'));
@@ -563,6 +597,8 @@ export function App() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
       document.removeEventListener('pointercancel', onUp);
+      ghost.remove();
+      held.classList.remove('is-dragging');
       if (moved) {
         dragMoved.current = true;
         saveBoard(homeRef.current);

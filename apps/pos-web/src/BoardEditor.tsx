@@ -5,6 +5,7 @@ import {
   HUE_DOTS,
   MGMT_KEYS,
   MGMT_LABELS,
+  ICON_KEYS,
   ICON_STYLES,
   hueClass,
   hueStyle,
@@ -82,6 +83,14 @@ export function BoardEditor({
 
   const pins = home.pins;
   const tabsConfig: TabsConfig = home.categories ?? { order: [], hidden: [], groups: [] };
+  const iconOverrides = tabsConfig.icons ?? {};
+  function setIcon(name: string, key: string | null) {
+    const icons = { ...iconOverrides };
+    // null = back to the automatic match; '' = deliberately no mark.
+    if (key === null) delete icons[name];
+    else icons[name] = key;
+    commitTabs({ ...tabsConfig, icons });
+  }
 
   const allItems = useMemo(() => menu.flatMap((category) => category.items), [menu]);
   const categoryOfRecipe = useMemo(() => {
@@ -273,7 +282,7 @@ export function BoardEditor({
   function Mark({ name, fallback, folder, mgmt, className }: { name: string; fallback?: string; folder?: boolean; mgmt?: boolean; className?: string }) {
     const cls = className ?? 'pos-nav-icon';
     if (mgmt) return <i className={`${cls} pos-nav-folder`}>⚙</i>;
-    const key = iconStyle !== 'off' ? iconKeyFor(name) || iconKeyFor(fallback ?? '') : '';
+    const key = iconStyle !== 'off' ? iconKeyFor(name, iconOverrides) || iconKeyFor(fallback ?? '', iconOverrides) : '';
     if (!key) return folder ? <i className={`${cls} pos-nav-folder`}>▤</i> : null;
     return <i className={cls} dangerouslySetInnerHTML={{ __html: iconSvg(key, iconStyle) }} />;
   }
@@ -794,7 +803,8 @@ export function BoardEditor({
                         </span>
                         <button type="button" className="pos-be-rowbody" onClick={() => setNavSelected(navSelected === token ? null : token)}>
                           <span className="pos-be-rowname">
-                            {isGroup ? `📁 ${groupName}` : token}
+                            <Mark name={isGroup ? groupName! : token} folder={isGroup} />
+                            {isGroup ? groupName : token}
                           </span>
                           <em>{isGroup ? `${group?.cats.length ?? 0} categories` : `${count} items`}</em>
                         </button>
@@ -848,6 +858,39 @@ export function BoardEditor({
                           </ol>
                         </li>
                       ) : null}
+                      {navSelected === token ? (
+                        <li className="pos-be-subrows">
+                          <span className="pos-be-hint">Mark</span>
+                          <div className="pos-be-markpick">
+                            <button
+                              type="button"
+                              className={!(token in iconOverrides) ? 'is-on' : ''}
+                              title="Match it automatically"
+                              onClick={() => setIcon(token, null)}
+                            >
+                              Auto
+                            </button>
+                            <button
+                              type="button"
+                              className={iconOverrides[token] === '' ? 'is-on' : ''}
+                              title="No mark on this one"
+                              onClick={() => setIcon(token, '')}
+                            >
+                              None
+                            </button>
+                            {ICON_KEYS.map((key) => (
+                              <button
+                                key={key}
+                                type="button"
+                                className={iconOverrides[token] === key ? 'is-on' : ''}
+                                title={key}
+                                onClick={() => setIcon(token, key)}
+                                dangerouslySetInnerHTML={{ __html: iconSvg(key, iconStyle === 'off' ? 'line' : iconStyle) }}
+                              />
+                            ))}
+                          </div>
+                        </li>
+                      ) : null}
                       {!isGroup && navSelected === token && tabsConfig.groups.length > 0 ? (
                         <li className="pos-be-subrows">
                           <span className="pos-be-hint">Put into folder</span>
@@ -894,7 +937,8 @@ export function BoardEditor({
                   <div className="pos-be-railitem">Full menu</div>
                   {tokens.map((token) => (
                     <div key={token} className={navSelected === token ? 'pos-be-railitem is-sel' : 'pos-be-railitem'}>
-                      {token.startsWith('g:') ? `📁 ${token.slice(2)}` : token}
+                      <Mark name={token.startsWith('g:') ? token.slice(2) : token} folder={token.startsWith('g:')} />
+                      {token.startsWith('g:') ? token.slice(2) : token}
                     </div>
                   ))}
                 </div>
@@ -908,7 +952,8 @@ export function BoardEditor({
                   <span>Full menu</span>
                   {tokens.map((token) => (
                     <span key={token} className={navSelected === token ? 'is-sel' : ''}>
-                      {token.startsWith('g:') ? `📁 ${token.slice(2)}` : token}
+                      <Mark name={token.startsWith('g:') ? token.slice(2) : token} folder={token.startsWith('g:')} />
+                      {token.startsWith('g:') ? token.slice(2) : token}
                     </span>
                   ))}
                 </div>

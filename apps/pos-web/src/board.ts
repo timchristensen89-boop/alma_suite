@@ -23,7 +23,14 @@ export type Pin =
   // 'm' = a management action (open till, wastage…). Same tile, same board.
   | ({ t: 'm'; key: string } & PinExtras);
 
-export type TabsConfig = { order: string[]; hidden: string[]; groups: Array<{ name: string; cats: string[]; c?: string }> };
+// icons: per-category mark overrides, name -> IconKey ('' = deliberately
+// none). Absent means "use the automatic match".
+export type TabsConfig = {
+  order: string[];
+  hidden: string[];
+  groups: Array<{ name: string; cats: string[]; c?: string }>;
+  icons?: Record<string, string>;
+};
 
 export type HomeConfig = {
   buttons: string[];
@@ -120,7 +127,22 @@ const ICON_RULES: Array<[RegExp, IconKey]> = [
 ];
 
 const iconCache = new Map<string, IconKey | ''>();
-export function iconKeyFor(name: string): IconKey | '' {
+export const ICON_KEYS: IconKey[] = [
+  'cocktail', 'spirit', 'wine', 'beer', 'soft', 'coffee',
+  'taco', 'fish', 'meat', 'salad', 'dessert', 'kids',
+  'side', 'setmenu', 'dip', 'bread', 'cheese', 'pizza',
+  'pasta', 'burger', 'egg', 'snack', 'star'
+];
+export function isIconKey(value: unknown): value is IconKey {
+  return typeof value === 'string' && (ICON_KEYS as string[]).includes(value);
+}
+
+// A hand-picked mark always beats the guess; '' means "no mark here".
+export function iconKeyFor(name: string, overrides?: Record<string, string>): IconKey | '' {
+  if (overrides && name in overrides) {
+    const chosen = overrides[name];
+    return isIconKey(chosen) ? chosen : '';
+  }
   if (!name) return '';
   const hit = iconCache.get(name);
   if (hit !== undefined) return hit;
@@ -139,31 +161,56 @@ export const ICON_STYLES: Array<{ key: IconStyle; label: string; hint: string }>
   { key: 'off', label: 'None', hint: 'text only' }
 ];
 
-// 24×24 paths, drawn on one baseline so they optically match at small sizes.
+// 24x24, drawn on one optical baseline (cap ~4, foot ~20) so a row of them
+// sits level. Curves over corners, a little asymmetry where a real pen
+// would wander, and no detail that dies below 16px.
 const ICON_PATHS: Record<IconKey, string> = {
-  cocktail: 'M4 5h16l-8 8v6M9 19h6M7.5 8.5h9',
-  spirit: 'M7 3h10v5l-2 3v10H9V11L7 8V3M7 6h10',
-  wine: 'M8 3h8v4a4 4 0 0 1-8 0V3M12 11v8M9 19h6',
-  beer: 'M6 7h10v13H6V7M16 10h3v6h-3M8 4c1-1.2 3-1.2 4 0s3 1.2 4 0',
-  soft: 'M7 5h10l-1.4 15H8.4L7 5M9 9h6M12 5V2',
-  coffee: 'M5 8h12v7a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V8M17 10h3v4h-3M8 4c0-1 1-1 1-2M12 4c0-1 1-1 1-2',
-  taco: 'M3 16a9 9 0 0 1 18 0M3 16h18M7 13c1.5-1.5 3-1.5 4.5 0M13 12.5c1.2-1 2.4-1 3.5 0',
-  fish: 'M3 12c4-5 11-5 15 0-4 5-11 5-15 0M18 12l3-3v6l-3-3M8 11.5h.01',
-  meat: 'M6 15a5 5 0 0 1 7-7l6 6a5 5 0 0 1-7 7l-6-6M6 15l-3 3M9 18l-3 3',
-  salad: 'M3 11h18a9 9 0 0 1-18 0M8 11c0-3 2-5 4-5s4 2 4 5M12 6V3',
-  dessert: 'M6 10h12l-1.5 10h-9L6 10M8 10c0-3 8-3 8 0M12 4v3M10 6.5l2-2 2 2',
-  kids: 'M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8M5 21c0-4 3-6 7-6s7 2 7 6M9.5 8h.01M14.5 8h.01',
-  side: 'M8 8h8l-1 12H9L8 8M8 8l1-4h6l1 4M11 11v6M13 11v6',
-  setmenu: 'M4 4v7a2 2 0 0 0 2 2h1v8M6 4v6M8 4v6M20 4c-2 2-2 6-2 8h-2c0-4 1-7 3-8v16',
-  dip: 'M4 13h16a8 8 0 0 1-16 0M9 9c1-1.5 2.5-2 4-1M8 6c1.5-1 3-1 4.5 0',
-  bread: 'M4 9c0-3 4-4 8-4s8 1 8 4v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9M8 9v10M12 9v10M16 9v10',
-  cheese: 'M3 16l9-8h9v8H3M3 16v3h18v-3M8 13h.01M13 12h.01',
-  pizza: 'M12 3l9 16H3L12 3M10 12h.01M14 13h.01M12 16h.01',
-  pasta: 'M5 6h14v3a7 7 0 0 1-14 0V6M8 6c0-2 8-2 8 0M7 18h10M9 15c1 2 5 2 6 0',
-  burger: 'M4 9c0-3 3.6-5 8-5s8 2 8 5H4M4 12h16M4 15h16c0 3-3.6 4-8 4s-8-1-8-4',
-  egg: 'M12 4c3.5 0 6 4.5 6 8a6 6 0 0 1-12 0c0-3.5 2.5-8 6-8M12 12h.01',
-  snack: 'M12 4a8 8 0 1 1 0 16 8 8 0 0 1 0-16M9 10h.01M14 9h.01M11 14h.01M15 13h.01',
-  star: 'M12 3l2.7 5.9 6.3.7-4.7 4.3 1.3 6.1L12 17l-5.6 3 1.3-6.1L3 9.6l6.3-.7L12 3'
+  // Coupe: a shallow bowl on a slim stem, not a triangle.
+  cocktail: 'M5.2 6.4h13.6c0 3.9-3 6.6-6.8 6.6S5.2 10.3 5.2 6.4ZM12 13v6.1M8.6 19.4c1.4-.7 5.4-.7 6.8 0',
+  // Rocks glass with a tapered base and a measure line.
+  spirit: 'M7.4 6.6h9.2l-1 12.2a1.5 1.5 0 0 1-1.5 1.3h-4.2a1.5 1.5 0 0 1-1.5-1.3ZM8.1 13.4h7.8',
+  // Bowl on a stem, with the wine sitting low.
+  wine: 'M7.6 3.6h8.8v4.1a4.4 4.4 0 0 1-8.8 0ZM7.7 7.7h8.6M12 12.2v7.2M9 19.7c1.2-.6 4.8-.6 6 0',
+  // Tankard with a handle and a drawn-on head.
+  beer: 'M6.4 8.3h9.4v10.4a1.6 1.6 0 0 1-1.6 1.6H8a1.6 1.6 0 0 1-1.6-1.6ZM15.8 10.6h2.3a1.5 1.5 0 0 1 1.5 1.5v2.6a1.5 1.5 0 0 1-1.5 1.5h-2.3M6.6 8.3c.8-1.6 2.4-2.2 3.6-1.3 1-1.4 3.4-1.4 4.4 0',
+  // Tumbler, straw, a slice of citrus on the rim.
+  soft: 'M7.6 7.4h8.8l-1.1 11.4a1.5 1.5 0 0 1-1.5 1.3h-3.6a1.5 1.5 0 0 1-1.5-1.3ZM13.4 7.2 15.6 3M8.2 11.4h7.6',
+  // Cup and saucer with a rising curl of steam.
+  coffee: 'M5.6 9.2h10.6v5.4a4.6 4.6 0 0 1-4.6 4.6H10.2a4.6 4.6 0 0 1-4.6-4.6ZM16.2 10.8h1.9a2 2 0 0 1 0 4h-1.9M4.4 20.4h13M9.6 6.4c1-.9-.6-1.8.4-2.8M13 6.4c1-.9-.6-1.8.4-2.8',
+  // Folded shell with a filling that spills a little.
+  taco: 'M3.4 16.6a8.6 8.6 0 0 1 17.2 0ZM3.4 16.6c1.6 1.5 15.6 1.5 17.2 0M7.4 13.4c1.1-1.3 2.6-1.5 3.8-.4M13 12.6c1-1 2.3-1 3.3.1',
+  // A fish with a fanned tail and one gill line.
+  fish: 'M3.6 12.3c3.6-4.6 10.4-4.6 14 0-3.6 4.6-10.4 4.6-14 0ZM17.6 12.3c1.1-1.4 2.1-2.3 2.8-2.6.3 1.7.3 3.5 0 5.2-.7-.3-1.7-1.2-2.8-2.6M8.4 11.6h.01M6.5 12.3c.9.7 1.8 1.3 2.7 1.7',
+  // A chop: the eye of the meat and the bone below.
+  meat: 'M6.6 12.2a5.6 5.6 0 0 1 11 1.4c0 2.6-2.2 4.6-5.2 4.6s-5.8-1.6-5.8-4.2ZM9.6 13.2a2.6 2.6 0 0 1 4.6 1M8.6 18.6c-1.2 1-2.8.8-3.4-.4-.9.3-1.8-.4-1.7-1.4',
+  // A leaf over a shallow bowl.
+  salad: 'M3.6 12.4h16.8a8.4 8.4 0 0 1-16.8 0ZM12 12.4c-2.4-2-2-5.4.6-6.6 1.3 2.5.9 5-.6 6.6ZM12 12.4c-.6-1.7-2.4-2.6-4-2',
+  // A scoop in a waffle cone.
+  dessert: 'M8.2 9.6a3.8 3.8 0 0 1 7.6 0ZM7.6 9.6h8.8L12 20.4Zm2.2 3.6 3.4 3.6M13.6 12.6l-2.6 2.8',
+  // A small face — kids' menu.
+  kids: 'M12 3.8a4.1 4.1 0 1 1 0 8.2 4.1 4.1 0 0 1 0-8.2ZM4.8 20.6c.4-3.6 3.4-5.6 7.2-5.6s6.8 2 7.2 5.6M10.3 7.6h.01M13.7 7.6h.01M10.6 9.9c.9.6 1.9.6 2.8 0',
+  // A small bowl of fries.
+  side: 'M8 10.6h8l-.9 8.2a1.6 1.6 0 0 1-1.6 1.4h-3a1.6 1.6 0 0 1-1.6-1.4ZM9 10.6 9.7 5M12 10.6V4.2M15 10.6 14.3 5.4',
+  // Fork and knife: a set menu.
+  setmenu: 'M7.6 3.8v5.4a2 2 0 0 0 2 2h.2v9M7.6 3.8v4.4M9.8 3.8v4.4M16.6 3.8c-1.6 1.6-2 4.4-1.6 6.6h3.2c.4-2.2 0-5-1.6-6.6Zm0 6.6v9.8',
+  // A rounded bowl with two scoops served over it.
+  dip: 'M4.4 13.4h15.2a7.6 7.6 0 0 1-15.2 0ZM9.4 9.6c.8-1.4 2.4-1.8 3.6-.8M8.4 6.6c1.4-1 3-.8 4.2.4',
+  // A round loaf with a scored crust.
+  bread: 'M4.4 10.4c0-3 3.4-4.8 7.6-4.8s7.6 1.8 7.6 4.8v7.4a2 2 0 0 1-2 2H6.4a2 2 0 0 1-2-2ZM8.2 9.4c.6 1.2.6 2.6 0 3.8M12 9.2c.6 1.3.6 2.8 0 4.1M15.8 9.4c.6 1.2.6 2.6 0 3.8',
+  // A wedge with two eyes.
+  cheese: 'M3.6 15.4 12.4 8h7.2a.8.8 0 0 1 .8.8v6.6ZM3.6 15.4v2.8a.8.8 0 0 0 .8.8h15.2a.8.8 0 0 0 .8-.8v-2.8M8.4 13.6h.01M13.6 12.4h.01M16.4 15.8h.01',
+  // A slice with the crust curved.
+  pizza: 'M12 3.6c3.6 2.4 6.4 6.6 8 12.4-5.2 2.2-10.8 2.2-16 0 1.6-5.8 4.4-10 8-12.4ZM5.4 15.2c4.4 1.8 8.8 1.8 13.2 0M10.2 10.4h.01M13.8 11.6h.01M11.8 14.6h.01',
+  // A bowl of pasta with a twirl.
+  pasta: 'M4.4 11.6h15.2a7.6 7.6 0 0 1-15.2 0ZM4.4 11.6c0-3 3.4-5 7.6-5s7.6 2 7.6 5M8.4 9.4c1.4-1.2 3-1.6 4.6-1.2M6.6 20.4h10.8',
+  // Bun, filling, bun.
+  burger: 'M4.4 10.4c0-3.2 3.4-5.4 7.6-5.4s7.6 2.2 7.6 5.4ZM4.4 12.9h15.2M4.6 15.4h14.8c0 2.8-3.2 4.6-7.4 4.6s-7.4-1.8-7.4-4.6ZM9 8.2h.01M13.4 7.6h.01',
+  // An egg in a pan, from above.
+  egg: 'M11.4 4.6c3.4 0 6 3.8 6 7.4a6 6 0 0 1-12 0c0-3.6 2.6-7.4 6-7.4ZM11.4 13.4a2.4 2.4 0 1 1 0-4.8 2.4 2.4 0 0 1 0 4.8M17.4 12h3.2',
+  // Olives in a dish.
+  snack: 'M4 13.6h16a8 8 0 0 1-16 0ZM9 11a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4M14.6 12.6a1.9 1.9 0 1 1 0-3.8 1.9 1.9 0 0 1 0 3.8M9 8.8h.01',
+  // A five-point star drawn in one stroke.
+  star: 'M12 3.4 14.6 9l6.1.8-4.5 4.2 1.2 6-5.4-2.9-5.4 2.9 1.2-6L3.3 9.8 9.4 9Z'
 };
 
 // The mark itself. Inherits colour and sits on the text baseline; the
