@@ -1724,6 +1724,33 @@ export const posService = {
     return { code: card.code, balanceCents: card.balanceCents, recipientName: card.recipientName ?? null };
   },
 
+  // Sell a gift card at the register. Reuses the same issuer as the counter
+  // flow in giftcards-web, so a card sold at the till is identical to one
+  // bought online: real code, ACTIVE, three-year expiry, emailed if the
+  // guest wants it. The tender is recorded ON the card — that is what lets
+  // gift-card money reconcile against the night's takings instead of
+  // appearing from nowhere.
+  async sellGiftCard(input: unknown, actor?: { id?: string | null; email?: string | null } | null) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const amountCents = asInt(body.amountCents, 'amountCents', { min: 500, max: 100000 });
+    const tenderRaw = str(body.tender).toUpperCase();
+    const tender = ['CASH', 'CARD', 'EFTPOS', 'COMP'].includes(tenderRaw) ? tenderRaw : 'CARD';
+    const card = await giftCardService.activatePhysicalCard(
+      {
+        // A blank code means "issue me a number to write on the card".
+        code: str(body.code) || undefined,
+        initialValueCents: amountCents,
+        purchaserName: str(body.purchaserName) || str(body.soldByName) || 'Counter sale',
+        recipientName: str(body.recipientName) || undefined,
+        recipientEmail: str(body.recipientEmail) || undefined,
+        tender,
+        tenderReference: str(body.venue) ? `POS ${str(body.venue)}` : 'POS'
+      },
+      (actor ?? null) as never
+    );
+    return card;
+  },
+
   // Standalone check so the register can pre-clear an approval sheet.
   async managerApprove(input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;

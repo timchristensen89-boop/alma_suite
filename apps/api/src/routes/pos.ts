@@ -378,6 +378,16 @@ posRouter.get('/gift-card', async (req, res, next) => {
   }
 });
 
+// Selling a card at the till. Staff-authenticated like every other POS
+// route; the seller is recorded on the card.
+posRouter.post('/gift-cards/sell', async (req, res, next) => {
+  try {
+    res.json(await posService.sellGiftCard(req.body, req.user ?? null));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.post('/manager-approve', async (req, res, next) => {
   try {
     res.json(await posService.managerApprove(req.body));

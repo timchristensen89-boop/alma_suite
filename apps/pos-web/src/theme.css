@@ -1411,3 +1411,16 @@ body.pos-dark .pos-action-list .pos-action-danger em { color: rgba(232, 138, 119
 .pos-be-markpick button:first-child, .pos-be-markpick button:nth-child(2) { width: auto; padding: 0 12px; color: var(--pos-text2); }
 .pos-be-markpick button svg { width: 100%; height: 100%; }
 .pos-be-markpick button.is-on { background: var(--pos-text); color: var(--pos-card); border-color: var(--pos-text); }
+
+/* The issued gift card number, sized to be read out and written down. */
+.pos-giftcode {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 30px;
+  letter-spacing: 0.16em;
+  text-align: center;
+  padding: 16px 12px;
+  border: 2px dashed var(--pos-border);
+  border-radius: 14px;
+  margin: 4px 0 2px;
+  word-break: break-all;
+}

@@ -47,7 +47,8 @@ export const MGMT_LABELS: Record<string, string> = {
   discount: 'Discount',
   comp: 'Comp',
   wastage: 'Wastage',
-  price: 'Change price'
+  price: 'Change price',
+  'gift-sell': 'Sell gift card'
 };
 export const MGMT_KEYS = Object.keys(MGMT_LABELS);
 
