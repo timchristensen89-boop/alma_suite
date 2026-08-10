@@ -64,6 +64,8 @@ type GuestProfile = OrderGuest & {
 type ModifierOption = { id: string; name: string; priceCents: number };
 type ModifierGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: ModifierOption[] };
 type Order = {
+  orderType?: 'DINE_IN' | 'TAKEAWAY' | null;
+  openedByName?: string | null;
   notes?: string | null;
   dietary?: Array<{ tag: string; seat: number | null }> | null;
   id: string;
@@ -118,6 +120,16 @@ type Docket = {
   openedByName: string | null;
   orderNotes?: string | null;
   dietary?: Array<{ tag: string; seat: number | null }>;
+  // What this piece of paper IS: a call-away the kitchen must cook now, a
+  // hold copy to work from, or the whole order for reference. The kitchen
+  // must never have to guess which.
+  kind?: 'FIRE' | 'HOLD' | 'FULL';
+  orderType?: 'DINE_IN' | 'TAKEAWAY';
+  // Who took the order vs who called it away — different people, different
+  // questions when something goes wrong.
+  firedByName?: string | null;
+  orderedAt?: string | null;
+  firedAt?: string | null;
   lines: Array<{ id: string; name: string; quantity: number; course: string | null; notes: string | null }>;
 };
 type DrawerInfo = {
@@ -141,6 +153,19 @@ type DaySummary = {
 };
 
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
+
+// Dine in unless the order says otherwise — the kitchen packs differently.
+function orderTypeOf(order: { orderType?: string | null } | null): 'DINE_IN' | 'TAKEAWAY' {
+  return order?.orderType === 'TAKEAWAY' ? 'TAKEAWAY' : 'DINE_IN';
+}
+// Kitchen clocks are wall clocks: 7:42pm, not an ISO string.
+function clockTime(iso?: string | null) {
+  if (!iso) return '';
+  return new Date(iso)
+    .toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', timeZone: 'Australia/Sydney' })
+    .toLowerCase()
+    .replace(' ', '');
+}
 // Fire progress of an order: 'waiting' = lines not yet called away,
 // 'away' = everything fired, 'empty' = no lines.
 function fireState(lines: Array<{ sentAt?: string | null }>): 'waiting' | 'away' | 'empty' {
@@ -947,17 +972,33 @@ export function App() {
   function courseIsOpen(name: string, count: number) {
     return courseOpen[name] ?? count > 0;
   }
+  // The server builds the docket, but the register knows things the current
+  // API doesn't return yet (order type, who took it, when it was opened) —
+  // fill them in here so a call-away prints complete either way.
+  function stampDockets(rows: Docket[], from: Order): Docket[] {
+    const now = new Date().toISOString();
+    return rows.map((docket) => ({
+      ...docket,
+      kind: docket.kind ?? 'FIRE',
+      orderType: docket.orderType ?? orderTypeOf(from),
+      openedByName: docket.openedByName ?? from.openedByName ?? operatorName,
+      firedByName: docket.firedByName ?? operatorName,
+      orderedAt: docket.orderedAt ?? from.createdAt,
+      firedAt: docket.firedAt ?? now
+    }));
+  }
+
   async function fireCourse(name: string) {
     if (!order || order.id.startsWith('local-') || busy) return;
     setBusy(true);
     try {
       const result = await api<{ dockets: Docket[]; sent: number }>(`/api/pos/orders/${order.id}/send`, {
         method: 'POST',
-        body: JSON.stringify({ courses: [name] })
+        body: JSON.stringify({ courses: [name], firedByName: operatorName })
       });
       if (result.dockets.length > 0) {
         setAutoPrint(true);
-        setDockets(result.dockets);
+        setDockets(stampDockets(result.dockets, order));
       }
       const stamp = new Date().toISOString();
       setOrder((current) =>
@@ -1670,10 +1711,19 @@ export function App() {
       {
         profile: 'Full order',
         printerIp: null,
+        kind: 'FULL',
+        orderType: orderTypeOf(order),
         tableLabel: order.tableLabel,
         orderNumber: order.orderNumber,
         covers: order.covers,
-        openedByName: operatorName,
+        // The person who took the order, not whoever is standing at the till.
+        openedByName: (order as Order & { openedByName?: string | null }).openedByName ?? operatorName,
+        firedByName: null,
+        orderedAt: order.createdAt,
+        firedAt: null,
+        // These were missing: a docket without its allergens is dangerous.
+        orderNotes: order.notes ?? null,
+        dietary: (order.dietary as Array<{ tag: string; seat: number | null }> | null) ?? [],
         lines: sorted.map((line) => ({
           id: line.id ?? line.recipeId ?? line.name,
           name: line.name,
@@ -1854,6 +1904,25 @@ export function App() {
               }}
             >
               {order.covers ?? '–'} covers
+            </button>
+            {/* Tap to flip — it heads every docket, so it must be one tap. */}
+            <button
+              type="button"
+              className={`pos-covers-chip pos-type-chip is-${orderTypeOf(order) === 'TAKEAWAY' ? 'away' : 'in'}`}
+              title="Dine in or takeaway — prints at the top of every docket"
+              disabled={busy}
+              onClick={() => {
+                const next = orderTypeOf(order) === 'TAKEAWAY' ? 'DINE_IN' : 'TAKEAWAY';
+                setOrder({ ...order, orderType: next });
+                void api<Order>(`/api/pos/orders/${order.id}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ orderType: next })
+                })
+                  .then(setOrder)
+                  .catch((err) => setError(messageForError(err, 'Could not change the order type.')));
+              }}
+            >
+              {orderTypeOf(order) === 'TAKEAWAY' ? '🥡 Takeaway' : '🍽 Dine in'}
             </button>
             {order.guest ? (
               <button
@@ -3742,14 +3811,14 @@ export function App() {
                 const picked = fireSheet.filter((entry) => entry.picked).map((entry) => entry.course);
                 void api<{ dockets: Docket[]; sent: number }>(`/api/pos/orders/${order.id}/send`, {
                   method: 'POST',
-                  body: JSON.stringify({ courses: picked })
+                  body: JSON.stringify({ courses: picked, firedByName: operatorName })
                 })
                   .then(async (result) => {
                     setFireSheet(null);
                     if (result.dockets.length > 0) {
-                  setAutoPrint(true);
-                  setDockets(result.dockets);
-                }
+                      setAutoPrint(true);
+                      setDockets(stampDockets(result.dockets, order));
+                    }
                     setOrder(await api<Order>(`/api/pos/orders/${order.id}`));
                   })
                   .catch((err) => setError(messageForError(err, 'Could not fire the courses.')));
@@ -4865,10 +4934,27 @@ export function App() {
                       </button>
                     ) : null}
                   </h2>
-                  <p className="pos-muted">
-                    {docket.tableLabel ? `Table ${docket.tableLabel}` : `Order #${docket.orderNumber}`}
-                    {docket.covers ? ` · ${docket.covers} covers` : ''}
-                    {docket.openedByName ? ` · ${docket.openedByName}` : ''}
+                  {/* The kitchen reads this top-down: what kind of docket,
+                      where it goes, when it was called, who to ask. */}
+                  <div className={`pos-docket-kind is-${(docket.kind ?? 'FIRE').toLowerCase()}`}>
+                    {docket.kind === 'HOLD' ? 'HOLD — DO NOT MAKE' : docket.kind === 'FULL' ? 'FULL ORDER — REFERENCE' : '🔥 FIRE — MAKE NOW'}
+                  </div>
+                  <div className="pos-docket-where">
+                    <strong>{docket.tableLabel ? `TABLE ${docket.tableLabel}` : `ORDER #${docket.orderNumber}`}</strong>
+                    <span className={`pos-docket-type is-${(docket.orderType ?? 'DINE_IN') === 'TAKEAWAY' ? 'away' : 'in'}`}>
+                      {(docket.orderType ?? 'DINE_IN') === 'TAKEAWAY' ? 'TAKEAWAY' : 'DINE IN'}
+                    </span>
+                    {docket.covers ? <span className="pos-docket-covers">{docket.covers} guests</span> : null}
+                  </div>
+                  <p className="pos-muted pos-docket-meta">
+                    {docket.tableLabel ? `Order #${docket.orderNumber} · ` : ''}
+                    Ordered {clockTime(docket.orderedAt) || '—'}
+                    {docket.firedAt ? ` · Fired ${clockTime(docket.firedAt)}` : ''}
+                    {` · Printed ${clockTime(new Date().toISOString())}`}
+                  </p>
+                  <p className="pos-muted pos-docket-meta">
+                    Taken by {docket.openedByName || '—'}
+                    {docket.firedByName ? ` · Called away by ${docket.firedByName}` : ''}
                   </p>
                 </div>
                 {(docket.dietary ?? []).length ? (

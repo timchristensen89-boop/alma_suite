@@ -203,10 +203,15 @@ function dietaryFromText(text: string): Array<{ tag: string; seat: number | null
 
 type DocketPayload = {
   profile: string;
+  kind?: 'FIRE' | 'HOLD' | 'FULL';
+  orderType?: string | null;
   tableLabel: string | null;
   orderNumber: number;
   covers: number | null;
   openedByName: string | null;
+  firedByName?: string | null;
+  orderedAt?: string | null;
+  firedAt?: string | null;
   orderNotes?: string | null;
   dietary?: Array<{ tag: string; seat: number | null }>;
   lines: Array<{
@@ -229,15 +234,41 @@ function xmlEscape(value: string) {
 function buildPrintRequestXml(jobId: string, docket: DocketPayload) {
   const parts: string[] = [];
   const line = (text = '') => parts.push(`<text>${xmlEscape(text)}&#10;</text>`);
+  // Kitchen wall clock, Sydney — never an ISO string on paper.
+  const clock = (iso?: string | null) =>
+    iso
+      ? new Date(iso)
+          .toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', timeZone: 'Australia/Sydney' })
+          .toLowerCase()
+          .replace(' ', '')
+      : '';
   parts.push('<text lang="en"/>');
   parts.push('<text align="center"/>');
-  parts.push('<text width="2" height="2" em="true"/>');
+  // What this docket IS, before anything else.
+  parts.push('<text width="2" height="2" em="true" reverse="true"/>');
+  line(docket.kind === 'HOLD' ? ' HOLD - DO NOT MAKE ' : docket.kind === 'FULL' ? ' FULL ORDER - REF ' : ' FIRE - MAKE NOW ');
+  parts.push('<text reverse="false"/>');
   line(docket.tableLabel ? `TABLE ${docket.tableLabel}` : `ORDER #${docket.orderNumber}`);
   parts.push('<text width="1" height="1" em="false"/>');
+  parts.push('<text width="2" height="1" em="true"/>');
   line(
-    `${docket.profile}${docket.covers ? ` - ${docket.covers} covers` : ''}${docket.openedByName ? ` - ${docket.openedByName}` : ''}`
+    `${(docket.orderType ?? 'DINE_IN') === 'TAKEAWAY' ? 'TAKEAWAY' : 'DINE IN'}${docket.covers ? ` - ${docket.covers} GUESTS` : ''}`
   );
+  parts.push('<text width="1" height="1" em="false"/>');
+  line(docket.profile);
   parts.push('<text align="left"/>');
+  // Timestamps: the kitchen-performance trail lives on the paper too.
+  const stamps = [
+    docket.orderedAt ? `Ordered ${clock(docket.orderedAt)}` : '',
+    docket.firedAt ? `Fired ${clock(docket.firedAt)}` : '',
+    `Printed ${clock(new Date().toISOString())}`
+  ].filter(Boolean);
+  line(stamps.join('  '));
+  const people = [
+    docket.openedByName ? `Taken by ${docket.openedByName}` : '',
+    docket.firedByName ? `Away by ${docket.firedByName}` : ''
+  ].filter(Boolean);
+  if (people.length > 0) line(people.join('  '));
   const dietary = docket.dietary ?? [];
   if (dietary.length > 0) {
     parts.push('<text em="true"/>');
@@ -1074,6 +1105,7 @@ export const posService = {
           idempotencyKey,
           training: body.training === true,
           openedByName: str(body.openedByName) || null,
+          orderType: str(body.orderType).toUpperCase() === 'TAKEAWAY' ? 'TAKEAWAY' : 'DINE_IN',
           tableLabel,
           guestId,
           reservationId,
@@ -1105,6 +1137,9 @@ export const posService = {
       data.covers = body.covers === null || body.covers === '' ? null : asInt(body.covers, 'covers', { min: 1, max: 200 });
     }
     if (body.tableLabel !== undefined) data.tableLabel = str(body.tableLabel) || null;
+    if (body.orderType !== undefined) {
+      data.orderType = str(body.orderType).toUpperCase() === 'TAKEAWAY' ? 'TAKEAWAY' : 'DINE_IN';
+    }
     await prisma.posOrder.update({ where: { id }, data });
     return this.getOrder(id);
   },
@@ -1787,6 +1822,8 @@ export const posService = {
 
   async sendOrder(id: string, input?: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
+    const firedBy = str(body.firedByName) || null;
+    const firedAt = new Date();
     const fireCourses = Array.isArray(body.courses) ? (body.courses as unknown[]).map(String) : null;
     const onlyLineIds = Array.isArray(body.lineIds) ? new Set((body.lineIds as unknown[]).map(String)) : null;
     const order = await prisma.posOrder.findUnique({
@@ -1825,10 +1862,16 @@ export const posService = {
         return {
           profile: profile.name,
           printerIp: profile.printerIp,
+          // A call-away: the kitchen makes this now.
+          kind: 'FIRE' as const,
+          orderType: order.orderType,
           tableLabel: order.tableLabel,
           orderNumber: order.orderNumber,
           covers: order.covers,
           openedByName: order.openedByName,
+          firedByName: firedBy,
+          orderedAt: order.createdAt.toISOString(),
+          firedAt: firedAt.toISOString(),
           orderNotes: order.notes,
           dietary: (order.dietary as Array<{ tag: string; seat: number | null }> | null) ?? [],
           lines: sorted.map((line) => ({
@@ -1846,7 +1889,9 @@ export const posService = {
 
     await prisma.posOrderLine.updateMany({
       where: { id: { in: order.lines.map((line) => line.id) } },
-      data: { sentAt: new Date() }
+      // Same instant as the docket says, and who called it — the kitchen
+      // performance trail is ordered-at → fired-at → by whom.
+      data: { sentAt: firedAt, sentByName: firedBy }
     });
     // Persist each docket as a KDS ticket. Training orders never reach the
     // kitchen screens or printers — the register shows the docket preview only.

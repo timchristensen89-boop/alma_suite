@@ -1292,3 +1292,34 @@ body.pos-dark .pos-action-list .pos-action-danger em { color: rgba(232, 138, 119
 .pos-be-row.is-lifted { opacity: 0.5; border-style: dashed; }
 .pos-be-row.is-dimmed { opacity: 0.35; }
 .pos-be-head .pos-be-add:disabled { opacity: 0.35; cursor: default; }
+
+/* ── Docket header ───────────────────────────────────────────────────────
+   A kitchen reads a docket in a second, at arm's length, under pressure:
+   what it is, where it goes, when it was called. Print styles matter more
+   than screen ones here — this ends up on 80mm paper.                    */
+.pos-docket-kind {
+  font-size: 15px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  text-align: center; padding: 7px 10px; border-radius: 6px; margin: 0 0 8px;
+  background: #1f3524; color: #f3efe6;
+}
+.pos-docket-kind.is-hold { background: #b5772f; }
+.pos-docket-kind.is-full { background: transparent; color: var(--pos-text2); border: 1px dashed var(--pos-border); }
+.pos-docket-where { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.pos-docket-where strong { font-size: 25px; font-weight: 800; letter-spacing: 0.01em; }
+.pos-docket-type {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+  border: 2px solid currentColor; border-radius: 5px; padding: 2px 7px;
+}
+.pos-docket-type.is-away { color: #9a3a2e; }
+.pos-docket-covers { font-size: 14px; font-weight: 700; }
+.pos-docket-meta { font-size: 12px !important; margin: 2px 0 !important; }
+
+@media print {
+  /* Ink is free on thermal paper; ambiguity is not. */
+  .pos-docket-kind { background: #000 !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 16px; }
+  .pos-docket-kind.is-full { background: #fff !important; color: #000 !important; border: 1px dashed #000; }
+  .pos-docket-where strong { font-size: 27px; }
+  .pos-docket-type { border-color: #000; color: #000 !important; }
+  .pos-docket-meta { font-size: 11.5px !important; color: #000 !important; }
+}
+.pos-type-chip.is-away { border-color: #9a3a2e; color: #9a3a2e; }

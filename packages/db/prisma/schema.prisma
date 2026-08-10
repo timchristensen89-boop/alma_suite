@@ -4790,6 +4790,9 @@ model PosOrder {
   notes         String?
   // Dietary flags: [{tag, seat|null}] — seat null applies to the whole table.
   dietary       Json      @default("[]")
+  // DINE_IN | TAKEAWAY — the kitchen plates and packs differently, so it
+  // prints at the top of every docket.
+  orderType     String    @default("DINE_IN")
   openedByName  String?
   guest         ReserveGuest? @relation(fields: [guestId], references: [id], onDelete: SetNull)
   paidAt        DateTime?
@@ -4820,6 +4823,9 @@ model PosOrderLine {
   notes          String?
   // Set when the line's course has been FIRED to its printer profile.
   sentAt         DateTime?
+  // Who called it away. With sentAt this is the kitchen-performance trail:
+  // ordered at (createdAt) → fired at (sentAt) → by whom.
+  sentByName     String?
   createdAt      DateTime @default(now())
   order          PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   recipe         Recipe?  @relation(fields: [recipeId], references: [id], onDelete: SetNull)
