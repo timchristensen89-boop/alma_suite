@@ -40,7 +40,20 @@ type GuestProfile = OrderGuest & {
   favourites: Array<{ name: string; quantity: number; totalCents: number }>;
 };
 type PinExtras = { c?: string; label?: string; s?: 'w' | 'b'; d?: 'sh' | 'hs' | 'big' };
-type Pin = ({ t: 'i'; id: string } & PinExtras) | ({ t: 'f'; name: string; items: string[] } & PinExtras);
+type Pin =
+  | ({ t: 'i'; id: string } & PinExtras)
+  | ({ t: 'f'; name: string; items: string[] } & PinExtras)
+  // 'm' = a management action (open till, wastage…). Same tile, same board.
+  | ({ t: 'm'; key: string } & PinExtras);
+
+const MGMT_LABELS: Record<string, string> = {
+  'open-till': 'Open till',
+  discount: 'Discount',
+  comp: 'Comp',
+  wastage: 'Wastage',
+  price: 'Change price'
+};
+const MGMT_KEYS = Object.keys(MGMT_LABELS);
 type TabsConfig = { order: string[]; hidden: string[]; groups: Array<{ name: string; cats: string[]; c?: string }> };
 type ModifierOption = { id: string; name: string; priceCents: number };
 type ModifierGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: ModifierOption[] };
@@ -743,6 +756,19 @@ export function App() {
           pins: (config.pins ?? []).map((pin) =>
             typeof pin === 'string' ? ({ t: 'i', id: pin } as Pin) : (pin as Pin)
           )
+        });
+        // Management buttons used to live in their own strip. Fold them into
+        // the board as pins so they can be moved and sized like anything else.
+        setHome((current) => {
+          const legacy = current.buttons ?? [];
+          if (legacy.length === 0 || current.pins.some((pin) => pin.t === 'm')) return current;
+          const next = {
+            ...current,
+            pins: [...current.pins, ...legacy.filter((key) => MGMT_KEYS.includes(key)).map((key) => ({ t: 'm' as const, key }))],
+            buttons: []
+          };
+          setTimeout(() => saveBoard(next), 0);
+          return next;
         });
         setActiveCategory((current) =>
           current && current !== HOME_TAB
@@ -1821,6 +1847,27 @@ export function App() {
     }
   }
 
+  // What a management tile does when tapped — one definition, wherever the
+  // tile happens to be sitting on the board.
+  function runManagement(key: string) {
+    if (key === 'open-till') {
+      void (async () => {
+        const [gate, drawer] = await Promise.all([
+          api<CloseGate>(`/api/pos/close-day?venue=${encodeURIComponent(venue)}`),
+          api<DrawerInfo>(`/api/pos/drawer?venue=${encodeURIComponent(venue)}`)
+        ]);
+        setClosing({ gate, drawer, stage: 'checklist', float: '', counts: {}, report: null });
+      })().catch(() => undefined);
+    } else if (key === 'wastage') {
+      setWastage({ search: '', recipeId: '', itemName: '', quantity: '1', reason: '' });
+    } else if (key === 'discount') {
+      if (order && order.lines.length > 0) setDiscounting({ mode: 'percent', value: '10', reason: '' });
+      else setError('Start a sale first, then apply the discount.');
+    } else {
+      setError(`Tap the item's name on the bill to ${key === 'comp' ? 'comp it' : 'change its price'}.`);
+    }
+  }
+
   async function openDay() {
     try {
       setDay(await api<DaySummary>(`/api/pos/day-summary?venue=${encodeURIComponent(venue)}`));
@@ -2500,85 +2547,6 @@ export function App() {
               </div>
             ) : !search && activeCategory === HOME_TAB ? (
               <div className="pos-home-wrap">
-              <div className="pos-grid pos-grid-home pos-grid-mgmt">
-                {(home.buttons.length ? home.buttons : ['open-till', 'discount', 'comp', 'wastage', 'price']).map((key) => {
-                  const labels: Record<string, string> = {
-                    'open-till': 'Open till',
-                    discount: 'Discount',
-                    comp: 'Comp',
-                    wastage: 'Wastage',
-                    price: 'Change price'
-                  };
-                  const mgmtSize = (home.buttonSizes ?? {})[key];
-                  const mgmtSizeClass = mgmtSize === 'w' ? 'pos-size-w' : mgmtSize === 'b' ? 'pos-size-b' : '';
-                  const cycleMgmtSize = (event: React.MouseEvent) => {
-                    event.stopPropagation();
-                    const next: 'w' | 'b' | undefined = mgmtSize === 'w' ? 'b' : mgmtSize === 'b' ? undefined : 'w';
-                    const sizes = { ...(home.buttonSizes ?? {}) };
-                    if (next) sizes[key] = next;
-                    else delete sizes[key];
-                    const board = { ...home, buttonSizes: sizes };
-                    setHome(board);
-                    saveBoard(board);
-                  };
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      className={`pos-item pos-item-mgmt ${mgmtSizeClass || 'pos-item-slim'}`}
-                      onClick={() => {
-                        if (boardEdit) {
-                          const board = { ...home, buttons: (home.buttons.length ? home.buttons : ['open-till', 'discount', 'comp', 'wastage', 'price']).filter((candidate) => candidate !== key) };
-                          setHome(board);
-                          saveBoard(board);
-                          return;
-                        }
-                        if (key === 'open-till') {
-                          void (async () => {
-                            const [gate, drawer] = await Promise.all([
-                              api<CloseGate>(`/api/pos/close-day?venue=${encodeURIComponent(venue)}`),
-                              api<DrawerInfo>(`/api/pos/drawer?venue=${encodeURIComponent(venue)}`)
-                            ]);
-                            setClosing({ gate, drawer, stage: 'checklist', float: '', counts: {}, report: null });
-                          })().catch(() => undefined);
-                        } else if (key === 'wastage') {
-                          setWastage({ search: '', recipeId: '', itemName: '', quantity: '1', reason: '' });
-                        } else if (key === 'discount') {
-                          if (order && order.lines.length > 0) setDiscounting({ mode: 'percent', value: '10', reason: '' });
-                          else setError('Start a sale first, then apply the discount.');
-                        } else {
-                          setError(`Tap the item's name on the bill to ${key === 'comp' ? 'comp it' : 'change its price'}.`);
-                        }
-                      }}
-                    >
-                      {boardEdit ? <i className="pos-pin-x">✕</i> : null}
-                      {boardEdit ? <i className="pos-pin-size" onClick={cycleMgmtSize}>⤢</i> : null}
-                      <span>{labels[key] ?? key}</span>
-                    </button>
-                  );
-                })}
-                {boardEdit
-                  ? ['open-till', 'discount', 'comp', 'wastage', 'price']
-                      .filter((key) => !(home.buttons.length ? home.buttons : ['open-till', 'discount', 'comp', 'wastage', 'price']).includes(key))
-                      .map((key) => {
-                        const labels: Record<string, string> = { 'open-till': 'Open till', discount: 'Discount', comp: 'Comp', wastage: 'Wastage', price: 'Change price' };
-                        return (
-                          <button
-                            key={`add-${key}`}
-                            type="button"
-                            className="pos-item pos-item-mgmt pos-item-slim is-addable"
-                            onClick={() => {
-                              const board = { ...home, buttons: [...(home.buttons.length ? home.buttons : []), key] };
-                              setHome(board);
-                              saveBoard(board);
-                            }}
-                          >
-                            <span>＋ {labels[key]}</span>
-                          </button>
-                        );
-                      })
-                  : null}
-              </div>
               <div
                 className="pos-board-pager"
                 ref={boardPagerRef}
@@ -2673,6 +2641,32 @@ export function App() {
                         }}
                       />
                     ) : null;
+                  if (pin.t === 'm') {
+                    return (
+                      <button
+                        key={`m-${pin.key}-${index}`}
+                        type="button"
+                        data-pin-index={index}
+                        className={`pos-item pos-item-pin ${hueClass(pin.c)} ${sizeClass} ${boardEdit ? 'is-editing' : ''}`}
+                        style={hueStyle(pin.c)}
+                        {...editProps}
+                        onClick={() => {
+                          if (dragMoved.current) {
+                            dragMoved.current = false;
+                            return;
+                          }
+                          if (boardEdit) {
+                            cycleColour();
+                            return;
+                          }
+                          runManagement(pin.key);
+                        }}
+                      >
+                        {badges}
+                        {renameInput ?? <span className={pinDisplay(pin, MGMT_LABELS[pin.key] ?? pin.key).cls}>{pinDisplay(pin, MGMT_LABELS[pin.key] ?? pin.key).main}</span>}
+                      </button>
+                    );
+                  }
                   if (pin.t === 'f') {
                     return (
                       <button
@@ -4734,26 +4728,29 @@ export function App() {
             <h2>Customise {operatorName ? `${operatorName}'s` : 'this'} homescreen</h2>
             <details className="pos-acc">
               <summary>
-                Management buttons <small>{home.buttons.length ? home.buttons.join(', ') : 'none'}</small>
+                Management buttons <small>{home.pins.filter((pin) => pin.t === 'm').length} on the board</small>
               </summary>
               <div className="pos-acc-body">
-                {['open-till', 'discount', 'comp', 'wastage', 'price'].map((key) => (
-                  <label key={key} className="pos-check-row">
-                    <input
-                      type="checkbox"
-                      checked={home.buttons.includes(key)}
-                      onChange={() =>
-                        setHome({
-                          ...home,
-                          buttons: home.buttons.includes(key)
-                            ? home.buttons.filter((candidate) => candidate !== key)
-                            : [...home.buttons, key]
-                        })
-                      }
-                    />
-                    {key}
-                  </label>
-                ))}
+                {MGMT_KEYS.map((key) => {
+                  const on = home.pins.some((pin) => pin.t === 'm' && pin.key === key);
+                  return (
+                    <label key={key} className="pos-check-row">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() =>
+                          setHome({
+                            ...home,
+                            pins: on
+                              ? home.pins.filter((pin) => !(pin.t === 'm' && pin.key === key))
+                              : [...home.pins, { t: 'm' as const, key }]
+                          })
+                        }
+                      />
+                      {MGMT_LABELS[key]}
+                    </label>
+                  );
+                })}
               </div>
             </details>
             <details className="pos-acc">
@@ -4780,7 +4777,12 @@ export function App() {
               <div className="pos-acc-body">
                 <div className="pos-reason-list">
                   {home.pins.map((pin, index) => {
-                    const label = pin.t === 'f' ? `📁 ${pin.name}` : menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id)?.title ?? '?';
+                    const label =
+                      pin.t === 'f'
+                        ? `📁 ${pin.name}`
+                        : pin.t === 'm'
+                          ? `⚙ ${MGMT_LABELS[pin.key] ?? pin.key}`
+                          : menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id)?.title ?? '?';
                     return (
                       <span key={index} className="pos-pin-edit">
                         <button type="button" style={pin.c && !HUE_NAMES.includes(pin.c) ? { borderColor: pin.c, color: pin.c } : pin.c ? { borderColor: HUE_DOTS[pin.c], color: HUE_DOTS[pin.c] } : undefined}>

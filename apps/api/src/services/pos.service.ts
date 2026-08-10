@@ -2201,6 +2201,10 @@ export const posService = {
           if (row.t === 'i' && typeof row.id === 'string') {
             return { t: 'i', id: row.id, ...pinExtras };
           }
+          // Management actions are pins too, so they move and size like the rest.
+          if (row.t === 'm' && typeof row.key === 'string') {
+            return { t: 'm', key: row.key.slice(0, 40), ...pinExtras };
+          }
           if (row.t === 'f' && typeof row.name === 'string' && Array.isArray(row.items)) {
             return {
               t: 'f',
