@@ -674,9 +674,10 @@ export function App() {
     recipientName: string;
     recipientEmail: string;
     code: string;
-    tender: 'CASH' | 'CARD' | 'EFTPOS' | 'COMP';
-    sold: null | { code: string; balanceCents: number };
   }>(null);
+  // Codes issued when a bill settles, shown once so staff can write them on
+  // the cards they hand over.
+  const [giftIssued, setGiftIssued] = useState<Array<{ code: string; amountCents: number }>>([]);
   const [pickLine, setPickLine] = useState<null | 'COMP' | 'PRICE_CHANGE'>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const [reader, setReader] = useState<Reader | null>(null);
@@ -939,6 +940,7 @@ export function App() {
         body: JSON.stringify({ method: 'STRIPE_TERMINAL', tipCents, amountCents, reference: intent.id })
       });
       if (result.status === 'PAID') {
+        collectIssuedGiftCards(result.id);
         setReceipt(result);
         setOrder(null);
         setCharge(null);
@@ -1630,6 +1632,7 @@ export function App() {
       });
       setTendered('');
       if (result.status === 'PAID') {
+        collectIssuedGiftCards(result.id);
         setReceipt(result);
         setOrder(null);
         setCharge(null);
@@ -1649,6 +1652,19 @@ export function App() {
   // a balance we don't hold, so it lands as an external tender with the
   // number on the payment for reconciliation. Staff verify the balance in
   // the other system before accepting.
+  // A settled bill may have just issued gift cards. Fetch the codes so staff
+  // can write them on the cards before the guest walks off.
+  function collectIssuedGiftCards(orderId: string) {
+    void api<Array<{ amountCents: number; issuedCode: string | null }>>(`/api/pos/orders/${orderId}/gift-cards`)
+      .then((sales) => {
+        const issued = sales
+          .filter((sale) => sale.issuedCode)
+          .map((sale) => ({ code: sale.issuedCode as string, amountCents: sale.amountCents }));
+        if (issued.length > 0) setGiftIssued(issued);
+      })
+      .catch(() => undefined);
+  }
+
   async function takeExternalGiftPayment(amountCents: number) {
     if (!order || !charge || busy) return;
     setBusy(true);
@@ -1690,6 +1706,7 @@ export function App() {
         setInfo(`Gift card ${gift.code.trim()} — ${money(result.giftCardRemainingCents)} remaining.`);
       }
       if (result.status === 'PAID') {
+        collectIssuedGiftCards(result.id);
         setReceipt(result);
         setOrder(null);
         setCharge(null);
@@ -1870,7 +1887,11 @@ export function App() {
         setClosing({ gate, drawer, stage: 'checklist', float: '', counts: {}, report: null });
       })().catch(() => undefined);
     } else if (key === 'gift-sell') {
-      setGiftSell({ amount: '50', recipientName: '', recipientEmail: '', code: '', tender: 'CARD', sold: null });
+      if (!order) {
+        setError('Start a sale first, then add the gift card to it.');
+        return;
+      }
+      setGiftSell({ amount: '50', recipientName: '', recipientEmail: '', code: '' });
     } else if (key === 'wastage') {
       setWastage({ search: '', recipeId: '', itemName: '', quantity: '1', reason: '' });
     } else if (key === 'discount') {
@@ -4514,111 +4535,107 @@ export function App() {
         </div>
       ) : null}
 
-      {/* Selling a gift card. Same issuer as online, so the card a guest
-          walks out with is a real ALMA card with a real balance. */}
+      {/* The codes this bill just issued. Shown once, big enough to copy
+          onto the physical cards. */}
+      {giftIssued.length > 0 ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>{giftIssued.length === 1 ? 'Gift card issued' : `${giftIssued.length} gift cards issued`}</h2>
+            <p className="pos-muted">Write these on the cards and hand them over. Each is valid for three years.</p>
+            {giftIssued.map((card) => (
+              <div key={card.code}>
+                <div className="pos-giftcode">{card.code}</div>
+                <p className="pos-change">{money(card.amountCents)}</p>
+              </div>
+            ))}
+            <button type="button" className="pos-charge" onClick={() => window.print()}>
+              ⎙ Print
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setGiftIssued([])}>
+              Done
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Selling a gift card: it goes ON THE BILL and is paid for like
+          anything else. The card itself is issued when the bill settles. */}
       {giftSell ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
-            {giftSell.sold ? (
-              <>
-                <h2>Gift card sold</h2>
-                <p className="pos-muted">Write this code on the card and hand it over.</p>
-                <div className="pos-giftcode">{giftSell.sold.code}</div>
-                <p className="pos-change">{money(giftSell.sold.balanceCents)} loaded · valid 3 years</p>
-                {giftSell.recipientEmail ? (
-                  <p className="pos-muted">A copy has been emailed to {giftSell.recipientEmail}.</p>
-                ) : null}
-                <button type="button" className="pos-charge" onClick={() => window.print()}>
-                  ⎙ Print
-                </button>
-                <button type="button" className="pos-ghost pos-modal-close" onClick={() => setGiftSell(null)}>
-                  Done
-                </button>
-              </>
-            ) : (
-              <>
-                <h2>Sell a gift card</h2>
-                <div className="pos-choice-row">
-                  {[50, 100, 150, 200].map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={giftSell.amount === String(value) ? 'is-on' : ''}
-                      onClick={() => setGiftSell({ ...giftSell, amount: String(value) })}
-                    >
-                      ${value}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  className="pos-tender"
-                  inputMode="decimal"
-                  placeholder="Amount $"
-                  value={giftSell.amount}
-                  onChange={(event) => setGiftSell({ ...giftSell, amount: event.currentTarget.value.replace(/[^0-9.]/g, '') })}
-                />
-                <input
-                  className="pos-tender"
-                  placeholder="Who it's for (optional)"
-                  value={giftSell.recipientName}
-                  onChange={(event) => setGiftSell({ ...giftSell, recipientName: event.currentTarget.value })}
-                />
-                <input
-                  className="pos-tender"
-                  inputMode="email"
-                  placeholder="Email it to them (optional)"
-                  value={giftSell.recipientEmail}
-                  onChange={(event) => setGiftSell({ ...giftSell, recipientEmail: event.currentTarget.value })}
-                />
-                <input
-                  className="pos-tender"
-                  placeholder="Pre-printed card number (leave blank to issue one)"
-                  value={giftSell.code}
-                  onChange={(event) => setGiftSell({ ...giftSell, code: event.currentTarget.value.toUpperCase() })}
-                />
-                <p className="pos-actions-head">Paid by</p>
-                <div className="pos-choice-row">
-                  {(['CARD', 'CASH', 'EFTPOS', 'COMP'] as const).map((tender) => (
-                    <button
-                      key={tender}
-                      type="button"
-                      className={giftSell.tender === tender ? 'is-on' : ''}
-                      onClick={() => setGiftSell({ ...giftSell, tender })}
-                    >
-                      {tender === 'COMP' ? 'Comp' : tender === 'CARD' ? 'Card' : tender === 'CASH' ? 'Cash' : 'EFTPOS'}
-                    </button>
-                  ))}
-                </div>
+            <h2>Add a gift card</h2>
+            <p className="pos-muted">
+              It goes on the bill and is paid for with everything else. The card is issued once the bill
+              is settled — no GST, and no surcharge or discount applies to it.
+            </p>
+            <div className="pos-choice-row">
+              {[50, 100, 150, 200].map((value) => (
                 <button
+                  key={value}
                   type="button"
-                  className="pos-charge"
-                  disabled={busy || !(Number(giftSell.amount) >= 5)}
-                  onClick={() => {
-                    setBusy(true);
-                    void api<{ code: string; balanceCents: number }>('/api/pos/gift-cards/sell', {
-                      method: 'POST',
-                      body: JSON.stringify({
-                        amountCents: Math.round(Number(giftSell.amount) * 100),
-                        recipientName: giftSell.recipientName.trim() || undefined,
-                        recipientEmail: giftSell.recipientEmail.trim() || undefined,
-                        code: giftSell.code.trim() || undefined,
-                        tender: giftSell.tender,
-                        soldByName: operatorName,
-                        venue
-                      })
-                    })
-                      .then((card) => setGiftSell({ ...giftSell, sold: { code: card.code, balanceCents: card.balanceCents } }))
-                      .catch((err) => setError(messageForError(err, 'Could not sell the gift card.')))
-                      .finally(() => setBusy(false));
-                  }}
+                  className={giftSell.amount === String(value) ? 'is-on' : ''}
+                  onClick={() => setGiftSell({ ...giftSell, amount: String(value) })}
                 >
-                  Sell {Number(giftSell.amount) >= 5 ? money(Math.round(Number(giftSell.amount) * 100)) : 'card'}
+                  ${value}
                 </button>
-                <button type="button" className="pos-ghost pos-modal-close" onClick={() => setGiftSell(null)}>
-                  Cancel
-                </button>
-              </>
-            )}
+              ))}
+            </div>
+            <input
+              className="pos-tender"
+              inputMode="decimal"
+              placeholder="Amount $"
+              value={giftSell.amount}
+              onChange={(event) => setGiftSell({ ...giftSell, amount: event.currentTarget.value.replace(/[^0-9.]/g, '') })}
+            />
+            <input
+              className="pos-tender"
+              placeholder="Who it's for (optional)"
+              value={giftSell.recipientName}
+              onChange={(event) => setGiftSell({ ...giftSell, recipientName: event.currentTarget.value })}
+            />
+            <input
+              className="pos-tender"
+              inputMode="email"
+              placeholder="Email it to them (optional)"
+              value={giftSell.recipientEmail}
+              onChange={(event) => setGiftSell({ ...giftSell, recipientEmail: event.currentTarget.value })}
+            />
+            <input
+              className="pos-tender"
+              placeholder="Pre-printed card number (leave blank to issue one)"
+              value={giftSell.code}
+              onChange={(event) => setGiftSell({ ...giftSell, code: event.currentTarget.value.toUpperCase() })}
+            />
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={busy || !order || !(Number(giftSell.amount) >= 5)}
+              onClick={() => {
+                if (!order) return;
+                setBusy(true);
+                void api<Order>(`/api/pos/orders/${order.id}/gift-cards`, {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    amountCents: Math.round(Number(giftSell.amount) * 100),
+                    recipientName: giftSell.recipientName.trim() || undefined,
+                    recipientEmail: giftSell.recipientEmail.trim() || undefined,
+                    code: giftSell.code.trim() || undefined
+                  })
+                })
+                  .then((updated) => {
+                    setOrder(updated);
+                    setGiftSell(null);
+                    setInfo('Gift card added to the bill — charge it to issue the card.');
+                  })
+                  .catch((err) => setError(messageForError(err, 'Could not add the gift card.')))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {order ? `Add ${Number(giftSell.amount) >= 5 ? money(Math.round(Number(giftSell.amount) * 100)) : 'card'} to the bill` : 'Start a sale first'}
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setGiftSell(null)}>
+              Cancel
+            </button>
           </div>
         </div>
       ) : null}

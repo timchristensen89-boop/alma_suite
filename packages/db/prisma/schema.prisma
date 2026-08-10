@@ -4798,6 +4798,7 @@ model PosOrder {
   paidAt        DateTime?
   voidedAt      DateTime?
   voidReason    String?
+  giftCardSales PosGiftCardSale[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   lines         PosOrderLine[]
@@ -4821,6 +4822,10 @@ model PosOrderLine {
   // their deltas; dockets print them under the item.
   modifiers      Json?
   notes          String?
+  // A face-value voucher, not food: no GST at sale, no surcharge, no
+  // discount, never sent to the kitchen. Rebuilt from PosGiftCardSale, so
+  // a client line edit can never lose or duplicate it.
+  isGiftCard     Boolean  @default(false)
   // Set when the line's course has been FIRED to its printer profile.
   sentAt         DateTime?
   // Who called it away. With sentAt this is the kitchen-performance trail:
@@ -4832,6 +4837,27 @@ model PosOrderLine {
 
   @@index([orderId])
   @@index([recipeId])
+}
+
+// A gift card being SOLD on a bill. The card itself is only issued when the
+// bill settles — an unpaid or voided bill must never put a live card in
+// someone's hand. Linked to the order, not the line: setLines deletes and
+// recreates every line, so line ids are not stable.
+model PosGiftCardSale {
+  id             String    @id @default(cuid())
+  orderId        String
+  amountCents    Int
+  // A pre-printed card the guest is buying, if the venue has stock.
+  requestedCode  String?
+  recipientName  String?
+  recipientEmail String?
+  // Filled in at settle.
+  issuedCode     String?
+  issuedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  order          PosOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
 }
 
 model PosPayment {

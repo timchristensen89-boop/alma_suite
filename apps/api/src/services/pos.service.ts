@@ -104,14 +104,20 @@ async function applicableRules() {
 // Recompute an order's money from its lines + the rules in force right now.
 async function recomputeOrder(id: string) {
   const lines = await prisma.posOrderLine.findMany({ where: { orderId: id } });
-  const subtotalCents = lines.reduce((sum, line) => sum + line.totalCents, 0);
+  // A gift card is a FACE VALUE VOUCHER, not a sale of food: it attracts no
+  // GST at the point of sale (GST is accounted for when it's redeemed), and
+  // it must never be surcharged or discounted — $100 of card costs $100.
+  const giftCents = lines.filter((line) => line.isGiftCard).reduce((sum, line) => sum + line.totalCents, 0);
+  const goodsCents = lines.filter((line) => !line.isGiftCard).reduce((sum, line) => sum + line.totalCents, 0);
+  const subtotalCents = goodsCents + giftCents;
   const { surcharge, discounts } = await applicableRules();
-  const surchargeCents = surcharge ? Math.round((subtotalCents * surcharge.percent) / 100) : 0;
+  const surchargeCents = surcharge ? Math.round((goodsCents * surcharge.percent) / 100) : 0;
   const autoDiscount = discounts[0] ?? null;
-  const discountCents = autoDiscount ? Math.round((subtotalCents * autoDiscount.percent) / 100) : 0;
+  const discountCents = autoDiscount ? Math.round((goodsCents * autoDiscount.percent) / 100) : 0;
   const existing = await prisma.posOrder.findUnique({ where: { id }, select: { manualDiscountCents: true } });
-  const manualDiscountCents = Math.min(existing?.manualDiscountCents ?? 0, subtotalCents);
-  const totalCents = Math.max(0, subtotalCents - discountCents - manualDiscountCents + surchargeCents);
+  const manualDiscountCents = Math.min(existing?.manualDiscountCents ?? 0, goodsCents);
+  const goodsTotalCents = Math.max(0, goodsCents - discountCents - manualDiscountCents + surchargeCents);
+  const totalCents = goodsTotalCents + giftCents;
   return prisma.posOrder.update({
     where: { id },
     data: {
@@ -122,8 +128,29 @@ async function recomputeOrder(id: string) {
       discountLabel: autoDiscount?.label ?? null,
       manualDiscountCents,
       totalCents,
-      gstCents: Math.round(totalCents / GST_DIVISOR)
+      // GST on the food and drink only.
+      gstCents: Math.round(goodsTotalCents / GST_DIVISOR)
     }
+  });
+}
+
+// Gift card lines are rebuilt from the sale records after any line edit, so
+// a client that echoes or drops them cannot corrupt the bill.
+async function syncGiftCardLines(orderId: string) {
+  const sales = await prisma.posGiftCardSale.findMany({ where: { orderId }, orderBy: { createdAt: 'asc' } });
+  await prisma.posOrderLine.deleteMany({ where: { orderId, isGiftCard: true } });
+  if (sales.length === 0) return;
+  await prisma.posOrderLine.createMany({
+    data: sales.map((sale) => ({
+      orderId,
+      recipeId: null,
+      name: `Gift card${sale.recipientName ? ` - ${sale.recipientName}` : ''}`,
+      unitPriceCents: sale.amountCents,
+      quantity: 1,
+      totalCents: sale.amountCents,
+      course: null,
+      isGiftCard: true
+    }))
   });
 }
 
@@ -412,15 +439,54 @@ ${parts.join('\n')}
 </PrintRequestInfo>`;
 }
 
+// Turn every unissued gift card sale on a settled bill into a real card.
+// Failures are logged, never thrown: the guest has already paid, and losing
+// the payment because an email bounced would be far worse than a card that
+// needs re-issuing from the sale record (which is still sitting right here).
+async function issuePendingGiftCards(orderId: string, method: string, venue: string) {
+  const pending = await prisma.posGiftCardSale.findMany({ where: { orderId, issuedAt: null } });
+  if (pending.length === 0) return [] as Array<{ code: string; amountCents: number }>;
+  const tender = method === 'CASH' ? 'CASH' : method === 'CARD_EXTERNAL' ? 'EFTPOS' : 'CARD';
+  const issued: Array<{ code: string; amountCents: number }> = [];
+  for (const sale of pending) {
+    try {
+      const card = await giftCardService.activatePhysicalCard({
+        code: sale.requestedCode ?? undefined,
+        initialValueCents: sale.amountCents,
+        purchaserName: 'Counter sale',
+        recipientName: sale.recipientName ?? undefined,
+        recipientEmail: sale.recipientEmail ?? undefined,
+        tender,
+        tenderReference: `POS ${venue}`
+      });
+      await prisma.posGiftCardSale.update({
+        where: { id: sale.id },
+        data: { issuedCode: card.code, issuedAt: new Date() }
+      });
+      issued.push({ code: card.code, amountCents: sale.amountCents });
+    } catch (err) {
+      console.error('[pos] gift card issue failed', sale.id, err);
+    }
+  }
+  return issued;
+}
+
 async function postPosActuals(venue: string) {
   const setting = await prisma.posVenueSetting.findUnique({ where: { venue } });
   if (!setting?.postToReports) return;
   const serviceDate = sydneyTodayUtcMidnight();
   const orders = await prisma.posOrder.findMany({
     where: { venue, serviceDate, status: 'PAID', training: false },
-    include: { payments: true }
+    include: { payments: true, lines: { where: { isGiftCard: true }, select: { totalCents: true } } }
   });
-  const totalIncCents = orders.reduce((sum, order) => sum + order.totalCents, 0);
+  // Selling a gift card is not revenue — it is a liability until the card is
+  // spent, and the spend is what shows up as a sale. Counting it here would
+  // book the same money twice.
+  const giftIncCents = orders.reduce(
+    (sum, order) => sum + order.lines.reduce((lineSum, line) => lineSum + line.totalCents, 0),
+    0
+  );
+  const totalIncCents = orders.reduce((sum, order) => sum + order.totalCents, 0) - giftIncCents;
   const refunds = orders
     .flatMap((order) => order.payments)
     .filter((payment) => payment.amountCents < 0)
@@ -560,6 +626,7 @@ type LineInput = {
   seat?: number | null;
   modifiers?: Array<{ name: string; priceCents: number }> | null;
   notes?: string | null;
+  isGiftCard?: boolean;
 };
 
 function parseLines(raw: unknown): LineInput[] {
@@ -582,7 +649,8 @@ function parseLines(raw: unknown): LineInput[] {
             .filter((modifier) => modifier.name)
             .slice(0, 12)
         : null,
-      notes: str(row.notes) ? str(row.notes).slice(0, 200) : null
+      notes: str(row.notes) ? str(row.notes).slice(0, 200) : null,
+      isGiftCard: row.isGiftCard === true
     };
   });
 }
@@ -1416,7 +1484,7 @@ export const posService = {
   // (weekend/holiday surcharge, timed discounts) in force right now.
   async setLines(id: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
-    const lines = parseLines(body.lines);
+    const lines = parseLines(body.lines).filter((line) => !line.isGiftCard);
     const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true } });
     if (!order) throw new HttpError(404, 'Order not found.');
     if (order.status !== 'OPEN') throw new HttpError(400, `Order is ${order.status} — start a new sale.`);
@@ -1448,6 +1516,10 @@ export const posService = {
         }))
       })
     ]);
+    // The client echoes the whole bill back, gift cards included — those are
+    // the server's to own, so they're rebuilt from the sale records rather
+    // than trusted from the payload.
+    await syncGiftCardLines(id);
     await recomputeOrder(id);
     return this.getOrder(id);
   },
@@ -1533,6 +1605,11 @@ export const posService = {
         : { tipCents: order.tipCents + tipCents },
       include: ORDER_INCLUDE
     });
+    // Bill settled: NOW the cards become real. Not a moment earlier — an
+    // unpaid or voided bill must never put a live card in someone's hand.
+    if (settled) {
+      await issuePendingGiftCards(id, method, updated.venue);
+    }
     if (settled && updated.guestId) {
       await updateGuestFromOrder(updated.guestId).catch(() => undefined);
     }
@@ -1724,31 +1801,52 @@ export const posService = {
     return { code: card.code, balanceCents: card.balanceCents, recipientName: card.recipientName ?? null };
   },
 
-  // Sell a gift card at the register. Reuses the same issuer as the counter
-  // flow in giftcards-web, so a card sold at the till is identical to one
-  // bought online: real code, ACTIVE, three-year expiry, emailed if the
-  // guest wants it. The tender is recorded ON the card — that is what lets
-  // gift-card money reconcile against the night's takings instead of
-  // appearing from nowhere.
-  async sellGiftCard(input: unknown, actor?: { id?: string | null; email?: string | null } | null) {
+  // Add a gift card to the CURRENT BILL. It is not a card yet — just a line
+  // the guest is about to pay for. That way the money goes through the till,
+  // the drawer and the day's takings like any other tender.
+  async addGiftCardSale(orderId: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
+    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, select: { status: true } });
+    if (!order) throw new HttpError(404, 'Order not found.');
+    if (order.status !== 'OPEN') throw new HttpError(400, `Order is ${order.status} — start a new sale.`);
     const amountCents = asInt(body.amountCents, 'amountCents', { min: 500, max: 100000 });
-    const tenderRaw = str(body.tender).toUpperCase();
-    const tender = ['CASH', 'CARD', 'EFTPOS', 'COMP'].includes(tenderRaw) ? tenderRaw : 'CARD';
-    const card = await giftCardService.activatePhysicalCard(
-      {
-        // A blank code means "issue me a number to write on the card".
-        code: str(body.code) || undefined,
-        initialValueCents: amountCents,
-        purchaserName: str(body.purchaserName) || str(body.soldByName) || 'Counter sale',
-        recipientName: str(body.recipientName) || undefined,
-        recipientEmail: str(body.recipientEmail) || undefined,
-        tender,
-        tenderReference: str(body.venue) ? `POS ${str(body.venue)}` : 'POS'
-      },
-      (actor ?? null) as never
-    );
-    return card;
+    const requestedCode = str(body.code).toUpperCase() || null;
+    if (requestedCode) {
+      if (!/^[A-Z0-9-]+$/.test(requestedCode)) throw new HttpError(400, 'A card number may only contain letters, numbers and dashes.');
+      const clash = await prisma.giftCard.findUnique({ where: { code: requestedCode }, select: { id: true } });
+      if (clash) throw new HttpError(409, `Card ${requestedCode} is already in use.`);
+    }
+    await prisma.posGiftCardSale.create({
+      data: {
+        orderId,
+        amountCents,
+        requestedCode,
+        recipientName: str(body.recipientName) || null,
+        recipientEmail: str(body.recipientEmail).toLowerCase() || null
+      }
+    });
+    await syncGiftCardLines(orderId);
+    await recomputeOrder(orderId);
+    return this.getOrder(orderId);
+  },
+
+  async removeGiftCardSale(orderId: string, saleId: string) {
+    const sale = await prisma.posGiftCardSale.findUnique({ where: { id: saleId } });
+    if (!sale || sale.orderId !== orderId) throw new HttpError(404, 'Gift card sale not found.');
+    if (sale.issuedAt) throw new HttpError(400, 'That card has already been issued — refund the bill instead.');
+    await prisma.posGiftCardSale.delete({ where: { id: saleId } });
+    await syncGiftCardLines(orderId);
+    await recomputeOrder(orderId);
+    return this.getOrder(orderId);
+  },
+
+  // Codes issued against a bill, so the register can show and print them.
+  async listGiftCardSales(orderId: string) {
+    return prisma.posGiftCardSale.findMany({
+      where: { orderId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, amountCents: true, recipientName: true, recipientEmail: true, issuedCode: true, issuedAt: true }
+    });
   },
 
   // Standalone check so the register can pre-clear an approval sheet.
@@ -1858,6 +1956,8 @@ export const posService = {
       include: { lines: { where: { sentAt: null }, orderBy: { createdAt: 'asc' } } }
     });
     if (!order) throw new HttpError(404, 'Order not found.');
+    // A gift card is not something anyone cooks.
+    order.lines = order.lines.filter((line) => !line.isGiftCard);
     if (onlyLineIds) order.lines = order.lines.filter((line) => onlyLineIds.has(line.id));
     if (fireCourses) order.lines = order.lines.filter((line) => fireCourses.includes(line.course ?? 'Mains'));
     if (order.lines.length === 0) return { dockets: [], sent: 0 };
