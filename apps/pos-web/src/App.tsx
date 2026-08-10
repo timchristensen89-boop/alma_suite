@@ -317,7 +317,18 @@ export function App() {
   const [charge, setCharge] = useState<null | { stage: 'tip' | 'method' | 'cash' | 'split' | 'gift'; tipCents: number; amountCents: number | null }>(null);
   // `external` = the code isn't ours (an old Gift Up card, say) — we can
   // still take it, recorded as an outside tender against the number.
-  const [gift, setGift] = useState<{ code: string; balanceCents: number | null; checking: boolean; external?: boolean }>({ code: '', balanceCents: null, checking: false });
+  const [gift, setGift] = useState<{
+    code: string;
+    balanceCents: number | null;
+    checking: boolean;
+    external?: boolean;
+    // How much of THIS card to take — the guest decides, it needn't be all
+    // of it and needn't clear the bill.
+    take: string;
+    holder?: string | null;
+  }>({ code: '', balanceCents: null, checking: false, take: '' });
+  // Cards already put against this bill, so staff can see what's been taken.
+  const [giftApplied, setGiftApplied] = useState<Array<{ code: string; amountCents: number; remainingCents: number | null }>>([]);
   const [info, setInfo] = useState<string | null>(null);
   const [tendered, setTendered] = useState('');
   const [receipt, setReceipt] = useState<Order | null>(null);
@@ -1681,7 +1692,7 @@ export function App() {
       });
       setOrder(result);
       setCharge(null);
-      setGift({ code: '', balanceCents: null, checking: false });
+      setGift({ code: '', balanceCents: null, checking: false, take: '' });
       setInfo(`Outside gift card ${gift.code.trim().toUpperCase()} taken for ${money(amountCents)}.`);
       void refreshOpenOrders();
     } catch (err) {
@@ -1696,26 +1707,36 @@ export function App() {
     setBusy(true);
     setError(null);
     try {
-      const amountCents = coversAll ? (charge.amountCents ?? undefined) : Math.max(1, appliesCents);
+      // The tip rides on the payment that finishes the bill, never on a part
+      // payment — otherwise it gets charged more than once.
+      const amountCents = Math.max(1, appliesCents);
       const tipCents = coversAll ? charge.tipCents : 0;
+      const code = gift.code.trim().toUpperCase();
       const result = await api<Order & { status: string; giftCardRemainingCents?: number | null }>(`/api/pos/orders/${order.id}/pay`, {
         method: 'POST',
-        body: JSON.stringify({ method: 'GIFT_CARD', giftCardCode: gift.code.trim(), amountCents, tipCents })
+        body: JSON.stringify({ method: 'GIFT_CARD', giftCardCode: code, amountCents, tipCents })
       });
-      if (result.giftCardRemainingCents !== null && result.giftCardRemainingCents !== undefined) {
-        setInfo(`Gift card ${gift.code.trim()} — ${money(result.giftCardRemainingCents)} remaining.`);
-      }
+      const remaining = result.giftCardRemainingCents ?? null;
+      setGiftApplied((current) => [...current, { code, amountCents, remainingCents: remaining }]);
       if (result.status === 'PAID') {
         collectIssuedGiftCards(result.id);
         setReceipt(result);
         setOrder(null);
         setCharge(null);
+        setGiftApplied([]);
         void refreshOpenOrders();
+        setInfo(remaining !== null ? `${code} — ${money(remaining)} left on the card.` : 'Paid by gift card.');
       } else {
+        // Still owing: stay right here so the next card goes straight in.
         setOrder(result);
-        setCharge({ stage: 'split', tipCents: coversAll ? 0 : charge.tipCents, amountCents: null });
+        setCharge({ ...charge, amountCents: null });
+        setInfo(
+          remaining !== null
+            ? `${money(amountCents)} taken · ${money(remaining)} left on ${code}. Next card, or pay the rest another way.`
+            : `${money(amountCents)} taken from ${code}.`
+        );
       }
-      setGift({ code: '', balanceCents: null, checking: false });
+      setGift({ code: '', balanceCents: null, checking: false, take: '' });
     } catch (err) {
       setError(messageForError(err, 'Gift card payment failed.'));
     } finally {
@@ -3180,7 +3201,7 @@ export function App() {
                       type="button"
                       disabled={busy}
                       onClick={() => {
-                        setGift({ code: '', balanceCents: null, checking: false });
+                        setGift({ code: '', balanceCents: null, checking: false, take: '' });
                         setCharge({ ...charge, stage: 'gift' });
                       }}
                     >
@@ -3198,7 +3219,7 @@ export function App() {
                   autoFocus
                   placeholder="Card code (e.g. ALMA-XXXX-XXXX)"
                   value={gift.code}
-                  onChange={(event) => setGift({ code: event.currentTarget.value.toUpperCase(), balanceCents: null, checking: false })}
+                  onChange={(event) => setGift({ code: event.currentTarget.value.toUpperCase(), balanceCents: null, checking: false, take: '' })}
                 />
                 {gift.balanceCents === null ? (
                   <>
@@ -3208,14 +3229,27 @@ export function App() {
                     disabled={busy || gift.checking || gift.code.trim().length < 4}
                     onClick={() => {
                       setGift({ ...gift, checking: true });
-                      void api<{ code: string; balanceCents: number }>(`/api/pos/gift-card?code=${encodeURIComponent(gift.code.trim())}`)
-                        .then((card) => setGift({ code: card.code, balanceCents: card.balanceCents, checking: false }))
+                      void api<{ code: string; balanceCents: number; recipientName?: string | null }>(
+                        `/api/pos/gift-card?code=${encodeURIComponent(gift.code.trim())}`
+                      )
+                        .then((card) => {
+                          const outstanding = (charge?.amountCents ?? balance) + (charge?.tipCents ?? 0);
+                          // Default to whichever runs out first, then let staff type over it.
+                          const suggested = Math.min(card.balanceCents, Math.max(0, outstanding));
+                          setGift({
+                            code: card.code,
+                            balanceCents: card.balanceCents,
+                            checking: false,
+                            take: (suggested / 100).toFixed(2),
+                            holder: card.recipientName ?? null
+                          });
+                        })
                         .catch((err) => {
                           // Not an ALMA card. Old Gift Up cards are still out
                           // there, so offer to take it as an outside card with
                           // the number recorded against the payment rather than
                           // turning the guest away.
-                          setGift({ ...gift, checking: false, external: true });
+                          setGift({ ...gift, checking: false, external: true, take: '' });
                           setError(messageForError(err, 'Could not find that gift card.'));
                         });
                     }}
@@ -3244,25 +3278,81 @@ export function App() {
                   </>
                 ) : (
                   <>
-                    <p className="pos-change">Balance: {money(gift.balanceCents)}</p>
+                    <p className="pos-change">
+                      Card balance {money(gift.balanceCents)}
+                      {gift.holder ? ` · ${gift.holder}` : ''}
+                    </p>
                     {(() => {
-                      const wanted = (charge.amountCents ?? balance) + charge.tipCents;
-                      const applies = Math.min(gift.balanceCents, wanted);
-                      const coversAll = applies >= wanted;
+                      const outstanding = (charge.amountCents ?? balance) + charge.tipCents;
+                      const most = Math.min(gift.balanceCents ?? 0, outstanding);
+                      const takeCents = Math.round(Number(gift.take || 0) * 100);
+                      const valid = takeCents > 0 && takeCents <= (gift.balanceCents ?? 0);
+                      const coversAll = takeCents >= outstanding;
                       return (
-                        <button
-                          type="button"
-                          className="pos-charge"
-                          disabled={busy || applies <= 0}
-                          onClick={() => void takeGiftPayment(applies, coversAll)}
-                        >
-                          Apply {money(applies)}
-                          {coversAll ? '' : ` (leaves ${money(wanted - applies)} owing)`}
-                        </button>
+                        <>
+                          <p className="pos-muted">
+                            {money(outstanding)} left on this bill. Take any amount up to{' '}
+                            {money(gift.balanceCents ?? 0)} — it doesn't have to clear the bill.
+                          </p>
+                          <div className="pos-choice-row">
+                            <button type="button" onClick={() => setGift({ ...gift, take: (most / 100).toFixed(2) })}>
+                              {most >= outstanding ? 'Pay it off' : 'Whole card'}
+                            </button>
+                            {[20, 50].map((value) =>
+                              value * 100 <= (gift.balanceCents ?? 0) ? (
+                                <button key={value} type="button" onClick={() => setGift({ ...gift, take: value.toFixed(2) })}>
+                                  ${value}
+                                </button>
+                              ) : null
+                            )}
+                          </div>
+                          <input
+                            className="pos-tender"
+                            inputMode="decimal"
+                            placeholder="Take from this card $"
+                            value={gift.take}
+                            onChange={(event) => setGift({ ...gift, take: event.currentTarget.value.replace(/[^0-9.]/g, '') })}
+                          />
+                          <button
+                            type="button"
+                            className="pos-charge"
+                            disabled={busy || !valid}
+                            onClick={() => void takeGiftPayment(takeCents, coversAll)}
+                          >
+                            Take {valid ? money(takeCents) : '—'}
+                            {valid && !coversAll ? ` · ${money(outstanding - takeCents)} still owing` : ''}
+                          </button>
+                          {takeCents > (gift.balanceCents ?? 0) ? (
+                            <p className="pos-muted">That's more than the card holds.</p>
+                          ) : null}
+                        </>
                       );
                     })()}
                   </>
                 )}
+                {giftApplied.length > 0 ? (
+                  <button
+                    type="button"
+                    className="pos-ghost"
+                    onClick={() => setCharge({ ...charge, stage: 'split', amountCents: null })}
+                  >
+                    Pay the rest another way
+                  </button>
+                ) : null}
+                {giftApplied.length > 0 ? (
+                  <div className="pos-gift-applied">
+                    <p className="pos-actions-head">Taken from cards</p>
+                    {giftApplied.map((entry, index) => (
+                      <p key={`${entry.code}-${index}`} className="pos-sumline">
+                        <span>{entry.code}</span>
+                        <span>
+                          −{money(entry.amountCents)}
+                          {entry.remainingCents !== null ? ` (${money(entry.remainingCents)} left)` : ''}
+                        </span>
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
               </>
             ) : null}
             {charge.stage === 'cash' ? (

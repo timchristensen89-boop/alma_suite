@@ -1302,8 +1302,46 @@ export const posService = {
         amountCents
       }
     });
+    // A refunded bill must not leave a live card in the wild. Only a FULL
+    // refund kills the cards — a partial refund is usually one dish, not the
+    // voucher, so those are reported instead of cancelled.
+    const giftNotes: string[] = [];
+    const sold = await prisma.posGiftCardSale.findMany({ where: { orderId: id, issuedCode: { not: null } } });
+    if (sold.length > 0) {
+      if (amountCents >= paid) {
+        for (const sale of sold) {
+          try {
+            await giftCardService.cancel(sale.issuedCode!, {
+              reason: `Bill refunded: ${reason}`,
+              refundNote: `POS refund of ${order.tableLabel ? `table ${order.tableLabel}` : `#${order.orderNumber}`}`
+            });
+            giftNotes.push(`${sale.issuedCode} cancelled`);
+          } catch (err) {
+            // Already spent or already cancelled — say so rather than fail the
+            // refund the guest is standing there waiting for.
+            giftNotes.push(`${sale.issuedCode} could NOT be cancelled: ${(err as Error).message}`);
+          }
+        }
+      } else {
+        giftNotes.push(
+          `Partial refund — ${sold.map((sale) => sale.issuedCode).join(', ')} left ACTIVE. Cancel in Gift Cards if the card is coming back.`
+        );
+      }
+      await prisma.posAdjustment.create({
+        data: {
+          venue: order.venue,
+          orderId: id,
+          kind: 'COMP',
+          reason,
+          staffName,
+          itemName: `GIFT CARDS: ${giftNotes.join(' · ')}`.slice(0, 190),
+          amountCents: 0
+        }
+      });
+    }
     await postPosActuals(order.venue).catch(() => undefined);
-    return this.getOrder(id);
+    const refunded = await this.getOrder(id);
+    return { ...refunded, giftCardNotes: giftNotes };
   },
 
   // ── Venue till settings / shift report / email receipt ─────────────────
