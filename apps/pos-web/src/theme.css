@@ -1227,3 +1227,40 @@ summary.pos-list-head.is-tab-edit {
   .pos-be-right { grid-template-rows: minmax(140px, 1fr) auto; }
   .pos-be-who { display: none; }
 }
+
+/* ── Bill actions chooser ────────────────────────────────────────────────
+   The Discount button opens one sheet holding every action that used to
+   crowd the toolbar (or sit next to Charge). Rows are big touch targets
+   with the consequence spelled out underneath.                           */
+.pos-actions-head {
+  margin: 14px 0 6px;
+  font-size: 11.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--pos-text2);
+}
+.pos-action-list { display: flex; flex-direction: column; gap: 8px; }
+.pos-action-list button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: var(--pos-btn, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--pos-border);
+  border-radius: 12px;
+  color: var(--pos-text);
+  font-family: inherit;
+  padding: 12px 15px;
+  min-height: 56px;
+  cursor: pointer;
+}
+.pos-action-list button span { font-size: 15px; font-weight: 600; }
+.pos-action-list button em { font-style: normal; font-size: 12.5px; color: var(--pos-text2); }
+.pos-action-list button:hover { border-color: var(--pos-text-soft); }
+.pos-action-list button:disabled { opacity: 0.4; cursor: default; }
+.pos-action-list .pos-action-danger { border-color: rgba(154, 58, 46, 0.45); color: #9a3a2e; }
+.pos-action-list .pos-action-danger em { color: rgba(154, 58, 46, 0.75); }
+body.pos-dark .pos-action-list .pos-action-danger { color: #e88a77; border-color: rgba(232, 138, 119, 0.4); }
+body.pos-dark .pos-action-list .pos-action-danger em { color: rgba(232, 138, 119, 0.75); }

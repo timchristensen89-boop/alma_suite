@@ -246,10 +246,6 @@ function defaultCourse(_kind: string) {
   return 'NOW';
 }
 
-function ageMinutes(iso: string) {
-  return Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-}
-
 type StaffOption = { id: string; name: string; roleTitle: string; hasPin: boolean };
 type AuthShape =
   | 'loading'
@@ -274,7 +270,6 @@ export function App() {
   const [openOrders, setOpenOrders] = useState<Order[]>([]);
   const [floorTables, setFloorTables] = useState<FloorTable[]>([]);
   const [floorArea, setFloorArea] = useState('');
-  const [homeView, setHomeView] = useState<'floor' | 'list'>(() => (localStorage.getItem('alma.pos.view') as 'floor' | 'list') ?? 'floor');
   const [order, setOrder] = useState<Order | null>(null);
   // Register-first: the app opens on menu + bill; Tables is a secondary view.
   const [view, setView] = useState<'register' | 'tables' | 'bills' | 'board'>('register');
@@ -554,6 +549,11 @@ export function App() {
   const [wastage, setWastage] = useState<null | { search: string; recipeId: string; itemName: string; quantity: string; reason: string }>(null);
   const [lineAction, setLineAction] = useState<null | { lineId: string; name: string; kind: 'COMP' | 'PRICE_CHANGE'; reason: string; price: string }>(null);
   const [discounting, setDiscounting] = useState<null | { mode: 'percent' | 'amount'; value: string; reason: string }>(null);
+  // One chooser for everything you do TO a bill (discount, comp, split,
+  // merge, print, void) — so the toolbar stays four buttons and nothing
+  // destructive sits beside Charge.
+  const [billActions, setBillActions] = useState(false);
+  const [pickLine, setPickLine] = useState<null | 'COMP' | 'PRICE_CHANGE'>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const [reader, setReader] = useState<Reader | null>(null);
   const [readerBusy, setReaderBusy] = useState<string | null>(null);
@@ -625,10 +625,6 @@ export function App() {
       /* a table waiting is worth showing, but never blocks the floor view */
     }
   }, [venue]);
-
-  useEffect(() => {
-    localStorage.setItem('alma.pos.view', homeView);
-  }, [homeView]);
 
   // 30s idle → lock the register. Bills live on the server so nothing is
   // lost: device sessions drop to the staff PIN screen, personal sessions
@@ -1834,6 +1830,33 @@ export function App() {
 
   // What a management tile does when tapped — one definition, wherever the
   // tile happens to be sitting on the board.
+  // The whole bill as ONE docket, course-ordered, built client-side: nothing
+  // is fired and no line is stamped sentAt — print at order time, call the
+  // courses away individually after.
+  function printFullOrder() {
+    if (!order) return;
+    const sorted = [...order.lines].sort((a, b) => courses.indexOf(a.course ?? 'NOW') - courses.indexOf(b.course ?? 'NOW'));
+    setDockets([
+      {
+        profile: 'Full order',
+        printerIp: null,
+        tableLabel: order.tableLabel,
+        orderNumber: order.orderNumber,
+        covers: order.covers,
+        openedByName: operatorName,
+        lines: sorted.map((line) => ({
+          id: line.id ?? line.recipeId ?? line.name,
+          name: line.name,
+          quantity: line.quantity,
+          course: line.course ?? 'NOW',
+          seat: line.seat ?? null,
+          modifiers: (line.modifiers as Array<{ name: string; priceCents: number }> | null) ?? [],
+          notes: line.notes ?? null
+        }))
+      } as Docket
+    ]);
+  }
+
   function runManagement(key: string) {
     if (key === 'open-till') {
       void (async () => {
@@ -1848,8 +1871,12 @@ export function App() {
     } else if (key === 'discount') {
       if (order && order.lines.length > 0) setDiscounting({ mode: 'percent', value: '10', reason: '' });
       else setError('Start a sale first, then apply the discount.');
+    } else if (order && order.lines.length > 0) {
+      // Comp and price changes need a line — offer the picker rather than
+      // telling the operator to go hunting for the tap target.
+      setPickLine(key === 'comp' ? 'COMP' : 'PRICE_CHANGE');
     } else {
-      setError(`Tap the item's name on the bill to ${key === 'comp' ? 'comp it' : 'change its price'}.`);
+      setError(`Start a sale first, then ${key === 'comp' ? 'comp the item' : 'change the price'}.`);
     }
   }
 
@@ -2110,13 +2137,20 @@ export function App() {
             {operatorName} · switch
           </button>
         ) : null}
-        {view === 'register' && order ? (
+        {view === 'board' ? (
+          <button type="button" className="pos-ghost" onClick={closeBoardEditor}>
+            ← Register
+          </button>
+        ) : view === 'register' ? (
+          // Four things, always in the same place: call away, the bills page,
+          // the floor, and a fresh order. Everything else lives on the bill.
           <>
             <button
               type="button"
               className="pos-ghost"
-              disabled={busy || order.lines.every((line) => (line as { sentAt?: string | null }).sentAt)}
+              disabled={busy || !order || order.lines.every((line) => (line as { sentAt?: string | null }).sentAt)}
               onClick={() => {
+                if (!order) return;
                 const held = new Map<string, number>();
                 for (const line of order.lines) {
                   if ((line as { sentAt?: string | null }).sentAt) continue;
@@ -2132,66 +2166,6 @@ export function App() {
             <button
               type="button"
               className="pos-ghost"
-              disabled={order.lines.length === 0}
-              title="Print the full order docket — nothing is fired; call courses away when ready"
-              onClick={() => {
-                const sorted = [...order.lines].sort(
-                  (a, b) => courses.indexOf(a.course ?? 'NOW') - courses.indexOf(b.course ?? 'NOW')
-                );
-                setDockets([
-                  {
-                    profile: 'Full order',
-                    printerIp: null,
-                    tableLabel: order.tableLabel,
-                    orderNumber: order.orderNumber,
-                    covers: order.covers,
-                    openedByName: operatorName,
-                    lines: sorted.map((line) => ({
-                      id: line.id ?? line.recipeId ?? line.name,
-                      name: line.name,
-                      quantity: line.quantity,
-                      course: line.course ?? 'NOW',
-                      seat: line.seat ?? null,
-                      modifiers: (line.modifiers as Array<{ name: string; priceCents: number }> | null) ?? [],
-                      notes: line.notes ?? null
-                    }))
-                  } as Docket
-                ]);
-              }}
-            >
-              Print
-            </button>
-            <button type="button" className="pos-ghost" disabled={order.lines.length === 0} onClick={() => setBill(order)}>
-              Bill
-            </button>
-            {order.tableLabel ? (
-              <button
-                type="button"
-                className="pos-ghost"
-                onClick={() => setMerging(openOrders.filter((open) => open.id !== order.id))}
-              >
-                Merge
-              </button>
-            ) : null}
-            <button type="button" className="pos-ghost" onClick={() => { setOrder(null); }}>
-              Exit
-            </button>
-            <button type="button" className="pos-ghost" onClick={() => { setView('tables'); void refreshOpenOrders(); }}>
-              Tables
-            </button>
-          </>
-        ) : view === 'board' ? (
-          <button type="button" className="pos-ghost" onClick={closeBoardEditor}>
-            ← Register
-          </button>
-        ) : view === 'register' ? (
-          <>
-            <button type="button" className="pos-ghost" onClick={() => { setView('tables'); void refreshOpenOrders(); }}>
-              Tables
-            </button>
-            <button
-              type="button"
-              className="pos-ghost"
               onClick={() => {
                 setView('bills');
                 void refreshOpenOrders();
@@ -2199,6 +2173,12 @@ export function App() {
               }}
             >
               Bills
+            </button>
+            <button type="button" className="pos-ghost" onClick={() => { setView('tables'); void refreshOpenOrders(); }}>
+              Tables
+            </button>
+            <button type="button" className="pos-ghost" onClick={() => { setOrder(null); setView('register'); }}>
+              ＋ New order
             </button>
           </>
         ) : (
@@ -2313,13 +2293,9 @@ export function App() {
         />
       ) : null}
       {view === 'tables' ? (
+        // Tables IS the floor plan now — the old card list moved to Bills,
+        // which is also where a sale with no table shows up.
         <div className="pos-home">
-          {floorTables.length > 0 && homeView !== 'floor' ? (
-            <button type="button" className="pos-view-chip" onClick={() => setHomeView('floor')}>
-              ▦ Floor plan
-            </button>
-          ) : null}
-          {homeView === 'floor' && floorTables.length > 0 ? (
             <FloorView
               tables={floorTables}
               area={floorArea}
@@ -2345,29 +2321,6 @@ export function App() {
                 else void openOrder({ tableLabel: table.label, covers: table.seats ?? undefined });
               }}
             />
-          ) : null}
-          {homeView === 'floor' && floorTables.length > 0 ? null : null}
-          <div className="pos-home-grid" style={homeView === 'floor' && floorTables.length > 0 ? { display: 'none' } : undefined}>
-            {openOrders.map((open) => (
-              <button
-                key={open.id}
-                type="button"
-                className={`pos-table-card is-${fireState(open.lines as Array<{ sentAt?: string | null }>)}`}
-                onClick={() => { setOrder(open); setView('register'); }}
-              >
-                <strong>{open.tableLabel ? `Table ${open.tableLabel}` : `#${open.orderNumber}`}</strong>
-                <span className="pos-muted">
-                  {open.covers ? `${open.covers} covers · ` : ''}
-                  {ageMinutes(open.createdAt)}m
-                </span>
-                <span className="pos-table-total">
-                  {money(open.totalCents)}
-                  {paidCents(open) > 0 ? <small> ({money(open.totalCents - paidCents(open))} owing)</small> : null}
-                </span>
-              </button>
-            ))}
-            {openOrders.length === 0 ? <p className="pos-muted">No open tables at {venue}.</p> : null}
-          </div>
         </div>
       ) : view === 'bills' || view === 'board' ? null : (
         <div className="pos-body">
@@ -3121,17 +3074,20 @@ export function App() {
                   type="button"
                   className="pos-ghost"
                   disabled={busy || !order || order.lines.length === 0}
-                  onClick={() => setDiscounting({ mode: 'percent', value: '10', reason: '' })}
+                  onClick={() => setBillActions(true)}
                 >
-                  Disc.
+                  Discount
                 </button>
+                {/* Void used to sit here, one slip away from Charge — it now
+                    lives behind the chooser and Print takes the slot. */}
                 <button
                   type="button"
                   className="pos-ghost"
-                  disabled={busy || !order || order.lines.length === 0 || paidCents(order) > 0}
-                  onClick={() => setVoidConfirm(true)}
+                  disabled={!order || order.lines.length === 0}
+                  title="Print the full order docket — nothing is fired; call courses away when ready"
+                  onClick={printFullOrder}
                 >
-                  Void
+                  Print
                 </button>
                 <button
                   type="button"
@@ -4618,6 +4574,168 @@ export function App() {
           </div>
         </div>
       ) : null}
+
+      {/* Everything you do TO a bill, in one chooser off the Discount button. */}
+      {billActions && order ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>{order.tableLabel ? `Table ${order.tableLabel}` : `Sale #${order.orderNumber}`}</h2>
+            <p className="pos-muted">
+              {order.lines.length} item{order.lines.length === 1 ? '' : 's'} · {money(order.totalCents)}
+              {paidCents(order) > 0 ? ` · ${money(order.totalCents - paidCents(order))} owing` : ''}
+            </p>
+
+            <p className="pos-actions-head">Discount &amp; comp</p>
+            <div className="pos-action-list">
+              <button
+                type="button"
+                onClick={() => {
+                  setBillActions(false);
+                  setDiscounting({ mode: 'percent', value: '10', reason: '' });
+                }}
+              >
+                <span>Discount %</span>
+                <em>a percentage off the whole bill</em>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBillActions(false);
+                  setDiscounting({ mode: 'amount', value: '', reason: '' });
+                }}
+              >
+                <span>Discount $</span>
+                <em>a fixed amount off the whole bill</em>
+              </button>
+              <button
+                type="button"
+                disabled={order.lines.length === 0}
+                onClick={() => {
+                  setBillActions(false);
+                  setPickLine('COMP');
+                }}
+              >
+                <span>Comp an item</span>
+                <em>on the house — pick the item, give a reason</em>
+              </button>
+              <button
+                type="button"
+                disabled={order.lines.length === 0}
+                onClick={() => {
+                  setBillActions(false);
+                  setPickLine('PRICE_CHANGE');
+                }}
+              >
+                <span>Change an item price</span>
+                <em>override one line's price</em>
+              </button>
+            </div>
+
+            <p className="pos-actions-head">This bill</p>
+            <div className="pos-action-list">
+              <button
+                type="button"
+                disabled={order.lines.length === 0}
+                onClick={() => {
+                  setBillActions(false);
+                  setBill(order);
+                }}
+              >
+                <span>Print bill</span>
+                <em>the guest's itemised bill</em>
+              </button>
+              <button
+                type="button"
+                disabled={order.lines.length === 0 || balance <= 0}
+                onClick={() => {
+                  setBillActions(false);
+                  setCharge({ stage: 'split', tipCents: 0, amountCents: null });
+                }}
+              >
+                <span>Split payment</span>
+                <em>by guests, by item, by seat or a custom amount</em>
+              </button>
+              {order.tableLabel ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBillActions(false);
+                    setMerging(openOrders.filter((open) => open.id !== order.id));
+                  }}
+                >
+                  <span>Merge with another table</span>
+                  <em>bring two bills together</em>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setBillActions(false);
+                  setOrder(null);
+                }}
+              >
+                <span>Leave this bill</span>
+                <em>stays open on the floor</em>
+              </button>
+            </div>
+
+            <p className="pos-actions-head">Careful</p>
+            <div className="pos-action-list">
+              <button
+                type="button"
+                className="pos-action-danger"
+                disabled={busy || order.lines.length === 0 || paidCents(order) > 0}
+                onClick={() => {
+                  setBillActions(false);
+                  setVoidConfirm(true);
+                }}
+              >
+                <span>Void this bill</span>
+                <em>{paidCents(order) > 0 ? 'already part-paid — refund it instead' : 'needs a manager'}</em>
+              </button>
+            </div>
+
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setBillActions(false)}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Comp / price change need a line — pick it here rather than making
+          the operator hunt for the tap target on the bill. */}
+      {pickLine && order ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>{pickLine === 'COMP' ? 'Comp which item?' : 'Change which price?'}</h2>
+            <div className="pos-action-list">
+              {order.lines.map((line) => (
+                <button
+                  key={line.id ?? `${line.recipeId}-${line.name}`}
+                  type="button"
+                  disabled={!line.id}
+                  onClick={() => {
+                    setPickLine(null);
+                    setLineAction({ lineId: line.id!, name: line.name, kind: pickLine, reason: '', price: '' });
+                  }}
+                >
+                  <span>
+                    {line.quantity} × {line.name}
+                  </span>
+                  <em>
+                    {money(line.unitPriceCents * line.quantity)}
+                    {line.course ? ` · ${line.course}` : ''}
+                  </em>
+                </button>
+              ))}
+            </div>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setPickLine(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {variantSheet ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
@@ -5826,6 +5944,7 @@ function FloorView({
         {placed.length === 0 ? (
           <p className="pos-muted pos-floor-empty">
             No tables placed for this area yet — arrange them in Reserve → Settings → Floor plan and they appear here.
+            Sales without a table live on the Bills page.
           </p>
         ) : null}
       </div>
