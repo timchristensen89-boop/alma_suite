@@ -952,3 +952,12 @@ body:not(.pos-v2) .pos-cart .pos-fish-empty { opacity: 0.35; filter: brightness(
 .pos-rail-move { margin-left: auto; display: inline-flex; flex-direction: column; line-height: 0.75; }
 .pos-rail-move i { font-style: normal; font-size: 8px; opacity: 0.55; padding: 1px 3px; cursor: pointer; }
 .pos-rail-move i:hover { opacity: 1; }
+
+/* ── Why sheets wouldn't scroll ────────────────────────────────────────
+   .pos-modal-panel is a flex column, and flex children shrink by default.
+   An open accordion was being CRUSHED from 244px to 28px rather than
+   overflowing — so the content never exceeded the panel, there was nothing
+   to scroll, and the sections were unusable. Children keep their natural
+   height; the panel then genuinely overflows and scrolls. */
+.pos-modal-panel > * { flex-shrink: 0; }
+.pos-acc-body { max-height: none; }
