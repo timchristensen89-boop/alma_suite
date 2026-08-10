@@ -154,6 +154,10 @@ type DaySummary = {
 };
 
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
+// Set when we send someone to Alma Home to sign in. If they come back still
+// signed out, the handoff didn't stick — show the device sign-in rather than
+// ping-ponging between the two apps.
+const BOUNCE_KEY = 'alma.pos.signinBounce';
 
 // Dine in unless the order says otherwise — the kitchen packs differently.
 function orderTypeOf(order: { orderType?: string | null } | null): 'DINE_IN' | 'TAKEAWAY' {
@@ -812,7 +816,9 @@ export function App() {
 
   useEffect(() => {
     void (async () => {
-      await consumeSuiteHandoffToken();
+      const handedOff = await consumeSuiteHandoffToken();
+      // The round trip worked — forget we ever bounced.
+      if (handedOff) sessionStorage.removeItem(BOUNCE_KEY);
       await refreshAuth();
     })();
   }, [refreshAuth]);
@@ -6256,6 +6262,8 @@ function SignIn({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // We were sent to Alma Home to sign in and we're still here signed out.
+  const [bounced] = useState(() => Boolean(sessionStorage.getItem(BOUNCE_KEY)));
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -6277,10 +6285,40 @@ function SignIn({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
       <div className="pos-signin">
         <img src="/brand/alma-a-mark.png" alt="" className="pos-mark pos-signin-mark" />
         <h1>ALMA POS</h1>
-        <p className="pos-muted">Sign in at Alma Home, then tap the POS button.</p>
-        <button type="button" className="pos-charge" onClick={() => { window.location.href = 'https://alma-home.web.app'; }}>
-          Sign in at Alma Home
-        </button>
+        {bounced ? (
+          <>
+            <p className="pos-muted">
+              Alma Home sent you here but the sign-in didn't carry across. Rather than bounce you back
+              and forth, sign in on this device below.
+            </p>
+            <button
+              type="button"
+              className="pos-ghost"
+              onClick={() => {
+                sessionStorage.removeItem(BOUNCE_KEY);
+                window.location.href = 'https://alma-home.web.app';
+              }}
+            >
+              Try Alma Home once more
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="pos-muted">Sign in at Alma Home, then tap the POS button.</p>
+            <button
+              type="button"
+              className="pos-charge"
+              onClick={() => {
+                // Remember we've been sent out once, so a failed handoff shows
+                // the device sign-in instead of starting the round trip again.
+                sessionStorage.setItem(BOUNCE_KEY, String(Date.now()));
+                window.location.href = 'https://alma-home.web.app';
+              }}
+            >
+              Sign in at Alma Home
+            </button>
+          </>
+        )}
         <details className="pos-signin-fallback">
           <summary>Use a device account instead</summary>
           <form onSubmit={submit}>

@@ -4843,6 +4843,22 @@ model PosOrderLine {
 // bill settles — an unpaid or voided bill must never put a live card in
 // someone's hand. Linked to the order, not the line: setLines deletes and
 // recreates every line, so line ids are not stable.
+// Every employmentStatus transition, with a stack so a silent deactivation
+// is traceable to its caller instead of being guessed at. Written by the
+// Prisma guard in packages/db/src/prisma.ts.
+model StaffStatusChange {
+  id             String   @id @default(cuid())
+  staffProfileId String
+  fromStatus     String
+  toStatus       String
+  source         String   @default("unknown")
+  stack          String?
+  createdAt      DateTime @default(now())
+
+  @@index([staffProfileId])
+  @@index([createdAt])
+}
+
 model PosGiftCardSale {
   id             String    @id @default(cuid())
   orderId        String

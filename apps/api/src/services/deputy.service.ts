@@ -372,6 +372,9 @@ function matchStaffCandidate<T extends StaffNameCandidate>(
 // Deputy name that matches an archived duplicate (e.g. "Andres Felipe valdes")
 // resolves to the surviving profile it was merged into, instead of minting the
 // duplicate all over again on the next sync.
+// Roles a roster sync must never deactivate — these people own the software.
+const SUITE_PROTECTED_ROLE = /manager|owner|director|licensee|admin/i;
+
 async function loadStaffCandidates() {
   const rows = await prisma.staffProfile.findMany({
     where: { accountType: 'HUMAN' }
@@ -731,6 +734,9 @@ export async function syncEmployees(connection: IntegrationConnection) {
   let updated = 0;
   let unchanged = 0;
   const conflicts: Array<{ deputyId: number; reason: string }> = [];
+  // Suite logins Deputy WANTED to terminate but wasn't allowed to. Surfaced in
+  // the sync result so this is visible instead of silent.
+  const protectedFromTermination: string[] = [];
   const staffCandidates = await loadStaffCandidates();
 
   for (const employee of Array.isArray(employees) ? employees : []) {
@@ -802,7 +808,23 @@ export async function syncEmployees(connection: IntegrationConnection) {
     if (!profile.emergencyContactPhone && employee.EmergencyContactNumber) updates.emergencyContactPhone = employee.EmergencyContactNumber.trim();
     if (!profile.dateOfBirth && dob && Number.isFinite(dob.getTime())) updates.dateOfBirth = dob;
     if (!profile.startDate && startDate && Number.isFinite(startDate.getTime())) updates.startDate = startDate;
-    if (profile.employmentStatus === 'ACTIVE' && employmentStatus === 'TERMINATED') updates.employmentStatus = 'TERMINATED';
+    // A ROSTERING tool must never be able to switch off someone's login to the
+    // business's own software. A stale or inactive Deputy record was silently
+    // terminating the owner's suite account every morning at 05:40 — which
+    // locked him out of the POS (every PIN gate requires ACTIVE) and made him
+    // look deleted. Deputy may still terminate ordinary rostered staff; it may
+    // NOT terminate an account that can sign in, or a manager/owner role.
+    if (profile.employmentStatus === 'ACTIVE' && employmentStatus === 'TERMINATED') {
+      const isSuiteLogin = Boolean(profile.passwordHash);
+      const isPrivileged = SUITE_PROTECTED_ROLE.test(profile.roleTitle ?? '');
+      if (isSuiteLogin || isPrivileged) {
+        protectedFromTermination.push(
+          `${profile.firstName} ${profile.lastName}`.trim() || profile.id
+        );
+      } else {
+        updates.employmentStatus = 'TERMINATED';
+      }
+    }
 
     // Append the Deputy id once for traceability — skip if it's already there.
     if (!(profile.notes ?? '').includes(noteMarker)) {
@@ -833,7 +855,8 @@ export async function syncEmployees(connection: IntegrationConnection) {
     created,
     updated,
     unchanged,
-    conflicts
+    conflicts,
+    protectedFromTermination
   };
 }
 
