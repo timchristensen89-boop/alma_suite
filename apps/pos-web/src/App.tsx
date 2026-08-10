@@ -1830,6 +1830,23 @@ export function App() {
 
   // What a management tile does when tapped — one definition, wherever the
   // tile happens to be sitting on the board.
+  // Call away: offer the courses that still have unsent lines on them.
+  function openFireSheet() {
+    if (!order) return;
+    const held = new Map<string, number>();
+    for (const line of order.lines) {
+      if ((line as { sentAt?: string | null }).sentAt) continue;
+      const course = line.course ?? 'Mains';
+      held.set(course, (held.get(course) ?? 0) + line.quantity);
+    }
+    const courseList = courses
+      .filter((course) => held.has(course))
+      .concat([...held.keys()].filter((course) => !courses.includes(course)));
+    setFireSheet(courseList.map((course, index) => ({ course, count: held.get(course) ?? 0, picked: index === 0 })));
+  }
+
+  const nothingToFire = !order || order.lines.every((line) => (line as { sentAt?: string | null }).sentAt);
+
   // The whole bill as ONE docket, course-ordered, built client-side: nothing
   // is fired and no line is stamped sentAt — print at order time, call the
   // courses away individually after.
@@ -2142,27 +2159,9 @@ export function App() {
             ← Register
           </button>
         ) : view === 'register' ? (
-          // Four things, always in the same place: call away, the bills page,
-          // the floor, and a fresh order. Everything else lives on the bill.
+          // The top nav is NAVIGATION only — where you go. What you do to the
+          // bill (send, more, charge) sits on the bill itself.
           <>
-            <button
-              type="button"
-              className="pos-ghost"
-              disabled={busy || !order || order.lines.every((line) => (line as { sentAt?: string | null }).sentAt)}
-              onClick={() => {
-                if (!order) return;
-                const held = new Map<string, number>();
-                for (const line of order.lines) {
-                  if ((line as { sentAt?: string | null }).sentAt) continue;
-                  const course = line.course ?? 'Mains';
-                  held.set(course, (held.get(course) ?? 0) + line.quantity);
-                }
-                const courseList = courses.filter((course) => held.has(course)).concat([...held.keys()].filter((course) => !courses.includes(course)));
-                setFireSheet(courseList.map((course, index) => ({ course, count: held.get(course) ?? 0, picked: index === 0 })));
-              }}
-            >
-              Send
-            </button>
             <button
               type="button"
               className="pos-ghost"
@@ -3074,20 +3073,21 @@ export function App() {
                   type="button"
                   className="pos-ghost"
                   disabled={busy || !order || order.lines.length === 0}
+                  title="Discount, comp, split, merge, print, void"
                   onClick={() => setBillActions(true)}
                 >
-                  Discount
+                  More
                 </button>
-                {/* Void used to sit here, one slip away from Charge — it now
-                    lives behind the chooser and Print takes the slot. */}
+                {/* Send sits with the bill, not in the nav — it's the action
+                    you reach for most, and Void no longer lives beside Charge. */}
                 <button
                   type="button"
                   className="pos-ghost"
-                  disabled={!order || order.lines.length === 0}
-                  title="Print the full order docket — nothing is fired; call courses away when ready"
-                  onClick={printFullOrder}
+                  disabled={busy || nothingToFire}
+                  title="Call away — choose which courses go to the kitchen"
+                  onClick={openFireSheet}
                 >
-                  Print
+                  Send
                 </button>
                 <button
                   type="button"
@@ -4643,6 +4643,17 @@ export function App() {
               >
                 <span>Print bill</span>
                 <em>the guest's itemised bill</em>
+              </button>
+              <button
+                type="button"
+                disabled={order.lines.length === 0}
+                onClick={() => {
+                  setBillActions(false);
+                  printFullOrder();
+                }}
+              >
+                <span>Print docket</span>
+                <em>the whole order for the kitchen — fires nothing</em>
               </button>
               <button
                 type="button"
