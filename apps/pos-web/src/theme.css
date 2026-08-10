@@ -863,72 +863,81 @@ body.pos-v2 .pos-cart-foot { border-color: var(--pos-border); }
   .pos-home { padding: 10px 12px 90px; }
 }
 
-/* ── The bill is solid ALMA green, both layouts ────────────────────────
-   It was translucent paper in the sidebar design and hard to read against
-   the board behind it. Now it's one opaque forest panel, top to bottom. */
-.pos-cart,
-body.pos-v2 .pos-cart {
-  background: #1f3524;
-  color: #f3efe6;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0;
-  opacity: 1;
-  backdrop-filter: none;
+/* ── Bill palette ──────────────────────────────────────────────────────
+   Solid ALMA green only where there's no left nav to carry it: the classic
+   layout, and every phone (the rail hides below 700px). The sidebar layout
+   keeps its paper bill — a green rail AND a green bill is too much green. */
+.pos-cart {
+  --bill-bg: var(--pos-panel);
+  --bill-fg: var(--pos-text);
+  --bill-fg-soft: var(--pos-text2);
+  --bill-fg-faint: var(--pos-text3);
+  --bill-rule: var(--pos-border-soft);
+  --bill-raise: rgba(0, 0, 0, 0.05);
+  --bill-accent: #b5772f;
 }
-body.pos-dark .pos-cart, body.pos-dark.pos-v2 .pos-cart { background: #10160f; }
-
-/* Every panel inside it shares the green — no white cards floating on it */
-.pos-cart .pos-cart-lines,
-.pos-cart .pos-cart-foot,
-body.pos-v2 .pos-cart .pos-cart-lines,
-body.pos-v2 .pos-cart .pos-cart-foot {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
+body:not(.pos-v2) .pos-cart,
+body:not(.pos-v2) .pos-cart-strip {
+  --bill-bg: #1f3524;
+  --bill-fg: #f3efe6;
+  --bill-fg-soft: rgba(243, 239, 230, 0.78);
+  --bill-fg-faint: rgba(243, 239, 230, 0.6);
+  --bill-rule: rgba(255, 255, 255, 0.16);
+  --bill-raise: rgba(255, 255, 255, 0.1);
+  --bill-accent: #eeb96b;
 }
-.pos-cart .pos-cart-foot,
-body.pos-v2 .pos-cart .pos-cart-foot { border-top: 1px solid rgba(255, 255, 255, 0.16); }
-
-/* Type and controls re-contrasted for the dark ground */
-.pos-cart .pos-muted,
-.pos-cart .pos-cart-empty,
-.pos-cart .pos-cart-empty .pos-muted { color: rgba(243, 239, 230, 0.6); }
-.pos-cart .pos-course-head { color: rgba(243, 239, 230, 0.92); background: rgba(255, 255, 255, 0.06); border-bottom-color: rgba(255, 255, 255, 0.12); }
-.pos-cart .pos-course-head.is-target { background: rgba(255, 255, 255, 0.16); }
-.pos-cart .pos-line { border-color: rgba(255, 255, 255, 0.1); }
-.pos-cart .pos-line-name,
-.pos-cart .pos-line-total,
-.pos-cart .pos-cart-summary,
-.pos-cart .pos-cart-fold,
-.pos-cart .pos-totals,
-.pos-cart .pos-stepper b { color: #f3efe6; }
-.pos-cart .pos-line-mods { color: rgba(243, 239, 230, 0.6); }
-.pos-cart .pos-sumline { color: rgba(243, 239, 230, 0.78); }
-.pos-cart .pos-sumline-good { color: #eeb96b; }
-.pos-cart .pos-totals { border-color: rgba(255, 255, 255, 0.16); }
-.pos-cart .pos-course { background: rgba(255, 255, 255, 0.14); color: #f3efe6; }
-.pos-cart .pos-held { color: #eeb96b; }
-.pos-cart .pos-stepper { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.18); }
-.pos-cart .pos-stepper button { color: rgba(243, 239, 230, 0.85); }
-.pos-cart .pos-stepper button:hover { background: rgba(255, 255, 255, 0.12); }
-.pos-cart .pos-ghost { color: #f3efe6; border-color: rgba(255, 255, 255, 0.32); background: transparent; }
-.pos-cart .pos-ghost:hover { background: rgba(255, 255, 255, 0.1); }
-.pos-cart .pos-charge { background: #f3efe6 !important; color: #1f3524 !important; border-color: #f3efe6 !important; }
-.pos-cart .pos-line-chips button { color: rgba(243, 239, 230, 0.8); border-color: rgba(255, 255, 255, 0.25); background: transparent; }
-.pos-cart .pos-line-grip { color: rgba(243, 239, 230, 0.8); }
-.pos-cart .pos-meta-chips > button { border-color: rgba(255, 255, 255, 0.3); color: rgba(243, 239, 230, 0.85); }
-.pos-cart .pos-order-note { border-left-color: rgba(255, 255, 255, 0.3); color: rgba(243, 239, 230, 0.85); }
-.pos-cart .pos-diet-banner { background: rgba(238, 185, 107, 0.14); border-color: rgba(238, 185, 107, 0.5); color: #eeb96b; }
-.pos-cart .pos-fish-empty { opacity: 0.35; filter: brightness(0) invert(1); }
-.pos-cart-strip { background: #1f3524; color: #f3efe6; border-color: rgba(255, 255, 255, 0.1); }
-
-/* The collapse control belongs to the green panel, not the paper */
-.pos-cart .pos-cart-fold {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.28);
-  color: #f3efe6;
+@media (max-width: 700px) {
+  .pos-cart, .pos-cart-strip {
+    --bill-bg: #1f3524;
+    --bill-fg: #f3efe6;
+    --bill-fg-soft: rgba(243, 239, 230, 0.78);
+    --bill-fg-faint: rgba(243, 239, 230, 0.6);
+    --bill-rule: rgba(255, 255, 255, 0.16);
+    --bill-raise: rgba(255, 255, 255, 0.1);
+    --bill-accent: #eeb96b;
+  }
 }
-.pos-cart .pos-cart-fold:hover { background: rgba(255, 255, 255, 0.2); }
-/* Charge stays cream when it's live, and reads as off when there's nothing owing */
-.pos-cart .pos-charge:disabled { background: rgba(255, 255, 255, 0.12) !important; color: rgba(243, 239, 230, 0.45) !important; border-color: transparent !important; }
+body.pos-dark:not(.pos-v2) .pos-cart { --bill-bg: #10160f; }
+
+/* One opaque panel — nothing shows through, nothing floats white on it */
+.pos-cart { background: var(--bill-bg); color: var(--bill-fg); opacity: 1; backdrop-filter: none; }
+.pos-cart-strip { background: var(--bill-bg); color: var(--bill-fg); border-color: var(--bill-rule); }
+.pos-cart .pos-cart-lines, .pos-cart .pos-cart-foot { background: transparent; box-shadow: none; }
+.pos-cart .pos-cart-foot { border-top: 1px solid var(--bill-rule); }
+body:not(.pos-v2) .pos-cart { border-left: 1px solid var(--bill-rule); padding: 0; }
+body:not(.pos-v2) .pos-cart .pos-cart-lines,
+body:not(.pos-v2) .pos-cart .pos-cart-foot { border: 0; border-radius: 0; }
+body:not(.pos-v2) .pos-cart .pos-cart-foot { border-top: 1px solid var(--bill-rule); }
+
+/* Everything inside reads from the palette, so both looks stay correct */
+.pos-cart .pos-muted, .pos-cart .pos-cart-empty, .pos-cart .pos-cart-empty .pos-muted { color: var(--bill-fg-faint); }
+.pos-cart .pos-course-head { color: var(--bill-fg); background: var(--bill-raise); border-bottom-color: var(--bill-rule); }
+.pos-cart .pos-course-head.is-target { background: var(--bill-raise); filter: brightness(1.35); }
+.pos-cart .pos-line { border-color: var(--bill-rule); }
+.pos-cart .pos-line-name, .pos-cart .pos-line-total, .pos-cart .pos-cart-summary,
+.pos-cart .pos-cart-fold, .pos-cart .pos-totals, .pos-cart .pos-stepper b { color: var(--bill-fg); }
+.pos-cart .pos-line-mods { color: var(--bill-fg-faint); }
+.pos-cart .pos-sumline { color: var(--bill-fg-soft); }
+.pos-cart .pos-sumline-good, .pos-cart .pos-held { color: var(--bill-accent); }
+.pos-cart .pos-totals { border-color: var(--bill-rule); }
+.pos-cart .pos-course { background: var(--bill-raise); color: var(--bill-fg); }
+.pos-cart .pos-stepper { background: var(--bill-raise); border-color: var(--bill-rule); }
+.pos-cart .pos-stepper button { color: var(--bill-fg-soft); }
+.pos-cart .pos-ghost { color: var(--bill-fg); border-color: var(--bill-rule); background: transparent; }
+.pos-cart .pos-line-chips button { color: var(--bill-fg-soft); border-color: var(--bill-rule); background: transparent; }
+.pos-cart .pos-line-grip, .pos-cart .pos-meta-chips > button, .pos-cart .pos-order-note { color: var(--bill-fg-soft); }
+.pos-cart .pos-meta-chips > button, .pos-cart .pos-order-note { border-color: var(--bill-rule); }
+.pos-cart .pos-cart-fold { background: var(--bill-raise); border-color: var(--bill-rule); }
+
+/* Cream charge button + inverted fish only where the ground is green */
+body:not(.pos-v2) .pos-cart .pos-charge,
+body:not(.pos-v2) .pos-cart .pos-diet-banner { color: #1f3524; }
+body:not(.pos-v2) .pos-cart .pos-charge { background: #f3efe6; border-color: #f3efe6; }
+body:not(.pos-v2) .pos-cart .pos-charge:disabled { background: rgba(255, 255, 255, 0.12); color: rgba(243, 239, 230, 0.45); border-color: transparent; }
+body:not(.pos-v2) .pos-cart .pos-diet-banner { background: rgba(238, 185, 107, 0.16); border-color: rgba(238, 185, 107, 0.5); color: #eeb96b; }
+body:not(.pos-v2) .pos-cart .pos-fish-empty { opacity: 0.35; filter: brightness(0) invert(1); }
+@media (max-width: 700px) {
+  .pos-cart .pos-charge { background: #f3efe6; color: #1f3524; border-color: #f3efe6; }
+  .pos-cart .pos-charge:disabled { background: rgba(255, 255, 255, 0.12); color: rgba(243, 239, 230, 0.45); border-color: transparent; }
+  .pos-cart .pos-fish-empty { opacity: 0.35; filter: brightness(0) invert(1); }
+}

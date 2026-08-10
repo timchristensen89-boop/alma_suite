@@ -8,7 +8,8 @@
     "ios": "expo run:ios",
     "prebuild": "expo prebuild --platform ios --clean",
     "build:dev": "eas build --profile development --platform ios",
-    "build:prod": "eas build --profile production --platform ios"
+    "build:prod": "eas build --profile production --platform ios",
+    "android": "expo run:android"
   },
   "dependencies": {
     "expo": "~52.0.0",
