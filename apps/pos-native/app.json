@@ -12,9 +12,6 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Stripe requires your location to accept card payments on this device.",
         "NSCameraUsageDescription": "Scan gift cards and QR codes at the register."
-      },
-      "entitlements": {
-        "com.apple.developer.proximity-reader.payment.acceptance": true
       }
     },
     "plugins": [
@@ -29,7 +26,11 @@
       ],
       [
         "expo-build-properties",
-        { "ios": { "deploymentTarget": "16.4" } }
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
       ]
     ]
   }

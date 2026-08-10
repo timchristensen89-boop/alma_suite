@@ -12,13 +12,14 @@
     "android": "expo run:android"
   },
   "dependencies": {
+    "@stripe/stripe-terminal-react-native": "^0.0.1-beta.24",
     "expo": "~52.0.0",
+    "expo-asset": "^57.0.9",
     "expo-build-properties": "~0.13.1",
     "expo-status-bar": "~2.0.0",
     "react": "18.3.1",
     "react-native": "0.76.5",
-    "react-native-webview": "13.12.5",
-    "@stripe/stripe-terminal-react-native": "^0.0.1-beta.24"
+    "react-native-webview": "13.12.5"
   },
   "devDependencies": {
     "@types/react": "~18.3.12",
