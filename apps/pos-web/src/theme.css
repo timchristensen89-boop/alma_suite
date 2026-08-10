@@ -1424,3 +1424,54 @@ body.pos-dark .pos-action-list .pos-action-danger em { color: rgba(232, 138, 119
   margin: 4px 0 2px;
   word-break: break-all;
 }
+
+/* ── The register does not scroll or zoom ────────────────────────────────
+   A till is a fixed console: the page itself never moves, the header stays
+   put, and only the panels that genuinely overflow (the menu, the bill's
+   line list) scroll inside themselves. Rubber-banding the whole document
+   over a bill mid-service is how you tap the wrong thing. */
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  /* Kills the 300ms double-tap-to-zoom without killing scroll in panels. */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+body.pos-v2 .pos-shell, .pos-shell { overflow: hidden; }
+
+/* The top bar stays where it is, whatever the view is doing underneath. */
+.pos-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  flex: none;
+}
+
+/* The bill: fits the screen and doesn't move. If the order genuinely
+   outgrows the panel, the LINE LIST scrolls — never the whole bill, so the
+   total and Charge never slide out of reach. */
+@media (min-width: 701px) {
+  .pos-cart:not(.is-collapsed) {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .pos-cart:not(.is-collapsed) .pos-cart-lines {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .pos-cart:not(.is-collapsed) .pos-cart-foot { flex: none; margin-top: 0; }
+}
+
+/* Same contract on the handheld sheet: the sheet is fixed, its lines scroll. */
+@media (max-width: 700px) {
+  .pos-cart.is-open .pos-cart-lines {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}

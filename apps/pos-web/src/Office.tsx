@@ -9,7 +9,7 @@ import { api, messageForError } from './api';
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-type Profile = { id: string; name: string; matchKind: string; categoriesCsv: string; printerIp: string | null; active: boolean; sortOrder: number };
+type Profile = { id: string; name: string; venue?: string | null; matchKind: string; categoriesCsv: string; printerIp: string | null; active: boolean; sortOrder: number };
 type Rule = { id: string; kind: string; label: string; percent: number; weekdays: string; holidays: boolean; startMinute: number | null; endMinute: number | null; active: boolean };
 type ModGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: Array<{ id: string; name: string; priceCents: number }> };
 type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; receiptLogo: string | null ; xeroTenantId: string | null; xeroSalesAccount: string | null; xeroTipsAccount: string | null };
@@ -176,6 +176,18 @@ export function Office() {
             {profiles.map((profile) => (
               <div key={profile.id} className="office-card">
                 <input defaultValue={profile.name} onBlur={(event) => event.currentTarget.value !== profile.name && void saveProfile({ ...profile, name: event.currentTarget.value })} className="office-input office-input-name" />
+                {/* A station belongs to one venue, or every venue if left blank. */}
+                <select
+                  defaultValue={profile.venue ?? ''}
+                  onChange={(event) => void saveProfile({ ...profile, venue: event.currentTarget.value })}
+                  className="office-input"
+                  title="Which venue this printer lives at"
+                >
+                  <option value="">All venues</option>
+                  <option value="Alma Avalon">Alma Avalon</option>
+                  <option value="St Alma">St Alma</option>
+                  <option value="Functions / Pop-up">Functions / Pop-up</option>
+                </select>
                 <select defaultValue={profile.matchKind} onChange={(event) => void saveProfile({ ...profile, matchKind: event.currentTarget.value })} className="office-input">
                   <option value="FOOD">Food</option>
                   <option value="BEVERAGE">Beverage</option>

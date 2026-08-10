@@ -4951,6 +4951,10 @@ model PosPrintJob {
 model PosPrinterProfile {
   id            String  @id @default(cuid())
   name          String
+  // Which venue's stations these are. NULL = every venue (how it behaved
+  // before there was a second venue). Two venues sharing a station would
+  // print St Alma's dockets in Avalon's kitchen.
+  venue         String?
   // FOOD or BEVERAGE — the default router; categoriesCsv narrows/overrides.
   matchKind     String
   categoriesCsv String  @default("")

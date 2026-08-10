@@ -806,7 +806,10 @@ export const posService = {
   async printReceipt(orderId: string) {
     const order = await prisma.posOrder.findUnique({ where: { id: orderId }, include: { lines: true, payments: true } });
     if (!order) throw new HttpError(404, 'Bill not found.');
-    const stations = await prisma.posPrinterProfile.findMany({ where: { active: true, matchKind: 'RECEIPT', printerIp: { not: null } } });
+    // Same rule as dockets: only this venue's receipt stations.
+    const stations = (
+      await prisma.posPrinterProfile.findMany({ where: { active: true, matchKind: 'RECEIPT', printerIp: { not: null } } })
+    ).filter((station) => !station.venue || station.venue === order.venue);
     if (stations.length === 0) throw new HttpError(409, 'No receipt station configured — add one in the Office with kind Receipts and a printer.');
     const identity = await prisma.posVenueSetting.findUnique({ where: { venue: order.venue } });
     const payload = {
@@ -1928,6 +1931,8 @@ export const posService = {
     const body = (input ?? {}) as Record<string, unknown>;
     const data = {
       name: str(body.name).slice(0, 40),
+      // Blank = every venue (how it worked before St Alma had its own).
+      venue: str(body.venue).slice(0, 60) || null,
       matchKind: str(body.matchKind).toUpperCase() === 'BEVERAGE' ? 'BEVERAGE' : 'FOOD',
       categoriesCsv: str(body.categoriesCsv).slice(0, 400),
       printerIp: str(body.printerIp).slice(0, 60) || null,
@@ -2011,6 +2016,9 @@ export const posService = {
     const courseRank = new Map(courses.map((course, index) => [course.name, index]));
 
     const dockets = profiles
+      // A station belongs to its venue: St Alma's dockets must never come out
+      // of Avalon's kitchen. Unset venue = shared, as before.
+      .filter((profile) => !profile.venue || profile.venue === order.venue)
       .map((profile) => {
         const categories = profile.categoriesCsv.split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
         const lines = order.lines.filter((line) => {
