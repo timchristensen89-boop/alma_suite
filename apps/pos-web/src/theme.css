@@ -961,3 +961,33 @@ body:not(.pos-v2) .pos-cart .pos-fish-empty { opacity: 0.35; filter: brightness(
    height; the panel then genuinely overflows and scrolls. */
 .pos-modal-panel > * { flex-shrink: 0; }
 .pos-acc-body { max-height: none; }
+
+/* ── Edit mode: a calm pulse, not a jiggle ─────────────────────────────
+   The old wobble animated transform, which moved the tile out from under
+   your finger mid-drag — tiles felt "sticky" and drops missed. Editing is
+   now signalled by a soft fade and a dashed edge: nothing moves, so the
+   pointer always lands where you aimed. */
+.pos-item-pin.is-editing,
+.pos-tabs button.is-tab-edit,
+.pos-rail-item.is-tab-edit,
+summary.pos-list-head.is-tab-edit {
+  animation: alma-edit-pulse 1.8s ease-in-out infinite;
+  transform: none !important;
+}
+@keyframes alma-edit-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.72; }
+}
+.pos-item-pin.is-editing {
+  outline: 1px dashed var(--pos-border);
+  outline-offset: 2px;
+  cursor: grab;
+  touch-action: none;
+}
+.pos-item-pin.is-editing:active { cursor: grabbing; }
+/* The tile being carried lifts clearly, and never intercepts its own drop */
+.pos-item-pin.is-dragging { opacity: 0.5; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .pos-item-pin.is-editing, .pos-tabs button.is-tab-edit,
+  .pos-rail-item.is-tab-edit, summary.pos-list-head.is-tab-edit { animation: none; }
+}

@@ -397,6 +397,15 @@ export function App() {
     event.preventDefault();
     dragPinIndex.current = index;
     dragMoved.current = false;
+    const carried = (event.currentTarget as HTMLElement);
+    carried.classList.add('is-dragging');
+    // Pointer capture keeps the gesture with this tile even if the grid
+    // re-renders underneath it mid-drag.
+    try {
+      carried.setPointerCapture(event.pointerId);
+    } catch {
+      /* capture is a nicety, not a requirement */
+    }
     // Fast drags outrun React renders, so hover decisions read the DOM's own
     // data attributes (always in sync with what's on screen) and the drop is
     // resolved by STABLE keys, never indices.
@@ -449,6 +458,7 @@ export function App() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
       document.removeEventListener('pointercancel', onUp);
+      document.querySelectorAll('.pos-item-pin.is-dragging').forEach((el) => el.classList.remove('is-dragging'));
       document.querySelectorAll('.pos-item-pin.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
       if (dragKey && dropFolder.name !== null) {
         const folderName = dropFolder.name;
