@@ -283,7 +283,7 @@ export function BoardEditor({
     const cls = className ?? 'pos-nav-icon';
     if (mgmt) return <i className={`${cls} pos-nav-folder`}>⚙</i>;
     const key = iconStyle !== 'off' ? iconKeyFor(name, iconOverrides) || iconKeyFor(fallback ?? '', iconOverrides) : '';
-    if (!key) return folder ? <i className={`${cls} pos-nav-folder`}>▤</i> : null;
+    if (!key) return folder ? <i className={cls} dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} /> : null;
     return <i className={cls} dangerouslySetInnerHTML={{ __html: iconSvg(key, iconStyle) }} />;
   }
 

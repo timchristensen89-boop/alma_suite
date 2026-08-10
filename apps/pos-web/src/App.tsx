@@ -2018,7 +2018,7 @@ export function App() {
                     setActiveCategory(target);
                   }}
                 >
-                  {isGroup ? <i className="pos-nav-icon pos-nav-folder">▤</i> : <Mark name={token} />}
+                  {isGroup ? <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} /> : <Mark name={token} />}
                   {isGroup ? groupName : token}
                 </button>
               );
@@ -2360,7 +2360,7 @@ export function App() {
                       className={`${active ? 'is-active' : ''} ${isGroup ? 'is-group' : ''}`}
                       onClick={() => setActiveCategory(isGroup ? `__group__${groupName}` : token)}
                     >
-                      {isGroup ? <i className="pos-nav-icon pos-nav-folder">▤</i> : <Mark name={token} />}
+                      {isGroup ? <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} /> : <Mark name={token} />}
                       {isGroup ? groupName : token}
                     </button>
                   );
@@ -2407,7 +2407,7 @@ export function App() {
                         }}
                       >
                         {folderName ? (
-                          <i className="pos-nav-icon pos-list-icon pos-nav-folder">▤</i>
+                          <i className="pos-nav-icon pos-list-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />
                         ) : hasMark(token) ? (
                           <Mark name={token} className="pos-nav-icon pos-list-icon" />
                         ) : (
@@ -2605,7 +2605,7 @@ export function App() {
                         {renameInput ?? (
                           <>
                             <span className={pinDisplay(pin, pin.name).cls}>
-                              {hasMark(pin.name) ? <Mark name={pin.name} className="pos-tile-icon" /> : <i className="pos-tile-icon pos-nav-folder">▤</i>}
+                              {hasMark(pin.name) ? <Mark name={pin.name} className="pos-tile-icon" /> : <i className="pos-tile-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />}
                               {pinDisplay(pin, pin.name).main}
                             </span>
                             <small>{pin.items.length} items</small>
