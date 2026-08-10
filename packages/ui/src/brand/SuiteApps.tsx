@@ -423,9 +423,12 @@ export function installSuiteAppAccess(
     delete g.almaAllowedSuiteAppIds;
     return;
   }
-  g.almaAllowedSuiteAppIds = (user.appAccess ?? [])
-    .filter((access) => access.status === 'ENABLED')
-    .map((access) => access.appId.toLowerCase());
+  g.almaAllowedSuiteAppIds = [
+    // The register isn't in the app-access vocabulary — it's gated by the
+    // staff PIN and per-staff POS permissions instead — so it stays visible.
+    'pos',
+    ...(user.appAccess ?? []).filter((access) => access.status === 'ENABLED').map((access) => access.appId.toLowerCase())
+  ];
 }
 
 export function suiteAppAllowed(id: string) {

@@ -222,9 +222,12 @@ export function App() {
       | (typeof user & { isAdmin?: boolean; appAccess?: Array<{ appId: string; status: string }> })
       | null;
     if (!account || account.isAdmin || isVenueDeviceUser(user)) return all;
-    const enabled = (account.appAccess ?? [])
-      .filter((access) => access.status === 'ENABLED')
-      .map((access) => access.appId.toLowerCase());
+    const enabled = [
+      // POS has no app-access row to grant — the register checks the staff
+      // PIN itself — so it always shows.
+      'pos',
+      ...(account.appAccess ?? []).filter((access) => access.status === 'ENABLED').map((access) => access.appId.toLowerCase())
+    ];
     return all.filter((app) => enabled.includes(app.id));
   }, [user]);
   const pinSetupHref = useMemo(() => staffPinHref(), []);
