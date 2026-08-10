@@ -991,3 +991,239 @@ summary.pos-list-head.is-tab-edit {
   .pos-item-pin.is-editing, .pos-tabs button.is-tab-edit,
   .pos-rail-item.is-tab-edit, summary.pos-list-head.is-tab-edit { animation: none; }
 }
+
+/* ── Board editor ────────────────────────────────────────────────────────
+   Lives at the END of theme.css deliberately: this sheet loads after
+   styles.css, so rules here are not out-argued by the unscoped ones above.
+   Layout is grid, not flex — no descendant can be crushed the way a
+   .pos-modal-panel child is.                                             */
+/* .pos-main is a flex column whose default min-height:auto lets a tall child
+   grow the page instead of scrolling inside itself — measured: .pos-main
+   stretched to 1446px against a 720px shell. Scoped with :has so only this
+   screen changes. */
+.pos-main:has(.pos-boardedit) { min-height: 0; }
+.pos-boardedit {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--pos-bg);
+  color: var(--pos-text);
+}
+.pos-be-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--pos-border-soft);
+  background: var(--pos-card);
+}
+.pos-be-tabs { display: flex; gap: 6px; }
+.pos-be-tabs button {
+  border: 1px solid var(--pos-border);
+  background: transparent;
+  color: var(--pos-text2);
+  border-radius: 9999px;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  min-height: 40px;
+}
+.pos-be-tabs button.is-on { background: var(--pos-text); color: var(--pos-card); border-color: var(--pos-text); }
+.pos-be-who { color: var(--pos-text2); font-size: 12.5px; margin-left: auto; }
+.pos-be-done {
+  border: 1px solid var(--pos-text);
+  background: var(--pos-text);
+  color: var(--pos-card);
+  border-radius: 9999px;
+  padding: 10px 20px;
+  font-size: 15px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.pos-be-body {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+.pos-be-list, .pos-be-right { min-height: 0; min-width: 0; }
+.pos-be-list {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--pos-border-soft);
+  border-radius: 16px;
+  background: var(--pos-card);
+  padding: 12px;
+}
+.pos-be-right { display: grid; grid-template-rows: minmax(200px, 1.15fr) minmax(0, 1fr); gap: 14px; }
+/* Nothing selected: the inspector is one line of guidance, so give the
+   preview the rest of the column instead of holding half of it empty. */
+.pos-be-right:has(.pos-be-nosel) { grid-template-rows: minmax(200px, 1fr) auto; }
+
+.pos-be-listhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 2px 10px; }
+.pos-be-listhead strong { font-family: var(--font-display); font-size: 18px; font-weight: 500; }
+.pos-be-add {
+  border: 1px solid var(--pos-border);
+  background: transparent;
+  color: var(--pos-text);
+  border-radius: 9999px;
+  padding: 8px 14px;
+  cursor: pointer;
+  min-height: 40px;
+}
+.pos-be-add.is-on { background: var(--pos-text); color: var(--pos-card); }
+
+.pos-be-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pos-be-pagerow {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 12px 4px 4px; color: var(--pos-text2);
+  font-size: 11.5px; letter-spacing: 0.09em; text-transform: uppercase;
+}
+.pos-be-pagerow em { font-style: normal; opacity: 0.7; }
+.pos-be-row {
+  display: flex; align-items: stretch; gap: 8px;
+  border: 1px solid var(--pos-border-soft); border-radius: 12px;
+  background: var(--pos-bg); padding: 6px;
+}
+.pos-be-row.is-on { border-color: var(--pos-text); box-shadow: inset 0 0 0 1px var(--pos-text); }
+.pos-be-move { display: flex; flex-direction: column; gap: 3px; flex: none; }
+.pos-be-move button {
+  width: 34px; height: 25px; line-height: 1; font-size: 12px;
+  border: 1px solid var(--pos-border); border-radius: 7px;
+  background: var(--pos-card); color: var(--pos-text); cursor: pointer;
+}
+.pos-be-move button:disabled { opacity: 0.25; cursor: default; }
+.pos-be-rowbody {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px;
+  border: 0; background: transparent; color: var(--pos-text);
+  text-align: left; cursor: pointer; padding: 4px 6px; font-size: 14.5px;
+}
+.pos-be-dot { width: 9px; height: 9px; border-radius: 9999px; background: var(--pos-border); flex: none; }
+.pos-be-rowname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pos-be-rowbody em { font-style: normal; color: var(--pos-text2); font-size: 12px; flex: none; }
+.pos-be-size {
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  border: 1px solid var(--pos-border); border-radius: 5px; padding: 1px 5px; color: var(--pos-text2); font-weight: 500;
+}
+.pos-be-x {
+  flex: none; border: 1px solid var(--pos-border); background: var(--pos-card);
+  color: var(--pos-text2); border-radius: 8px; padding: 0 10px; cursor: pointer; font-size: 12.5px; min-height: 34px;
+}
+.pos-be-empty, .pos-be-hint { color: var(--pos-text2); font-size: 12.5px; line-height: 1.5; margin: 6px 2px; }
+.pos-be-nosel { padding: 18px; text-align: center; }
+
+.pos-be-addpanel {
+  border: 1px dashed var(--pos-border); border-radius: 12px;
+  padding: 10px; margin-bottom: 10px; background: var(--pos-bg);
+}
+.pos-be-search {
+  width: 100%; box-sizing: border-box;
+  border: 1px solid var(--pos-border); border-radius: 10px;
+  background: var(--pos-card); color: var(--pos-text);
+  padding: 10px 12px; font-size: 15px; min-height: 44px;
+}
+.pos-be-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.pos-be-chips button {
+  border: 1px solid var(--pos-border); border-radius: 9999px;
+  background: var(--pos-card); color: var(--pos-text);
+  padding: 8px 12px; font-size: 13px; cursor: pointer; min-height: 38px;
+}
+
+.pos-be-preview {
+  border: 1px solid var(--pos-border-soft); border-radius: 16px;
+  background: var(--pos-card); padding: 10px 12px 12px;
+  display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; overflow: hidden;
+}
+.pos-be-previewhead {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  color: var(--pos-text2); font-size: 11.5px; letter-spacing: 0.09em;
+  text-transform: uppercase; padding: 2px 2px 8px;
+}
+.pos-be-pagebtns { display: flex; gap: 4px; }
+.pos-be-pagebtns button {
+  min-width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid var(--pos-border); background: transparent;
+  color: var(--pos-text2); cursor: pointer; font-size: 12px;
+}
+.pos-be-pagebtns button.is-on { background: var(--pos-text); color: var(--pos-card); border-color: var(--pos-text); }
+/* The preview reuses the real tile styles; only the column count is pinned
+   so page breaks land exactly where the register puts them. */
+.pos-be-board { padding: 0; overflow: auto; align-content: start; }
+.pos-be-board .pos-item { min-height: 74px; }
+.pos-item-pin.is-be-selected { outline: 2px solid var(--pos-text); outline-offset: 2px; }
+.pos-be-ghost { opacity: 0.45; border-style: dashed; pointer-events: none; }
+
+.pos-be-inspector {
+  border: 1px solid var(--pos-border-soft); border-radius: 16px;
+  background: var(--pos-card); padding: 12px 14px;
+  overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0;
+}
+.pos-be-inspecthead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 8px; }
+.pos-be-inspecthead strong { font-family: var(--font-display); font-size: 19px; font-weight: 500; }
+.pos-be-remove {
+  border: 1px solid var(--pos-border); background: transparent; color: var(--pos-text2);
+  border-radius: 9999px; padding: 8px 14px; cursor: pointer; min-height: 40px;
+}
+.pos-be-field { display: block; margin: 10px 0; }
+.pos-be-field > span {
+  display: block; color: var(--pos-text2); font-size: 11.5px;
+  letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 6px;
+}
+.pos-be-seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.pos-be-seg button {
+  border: 1px solid var(--pos-border); border-radius: 10px;
+  background: transparent; color: var(--pos-text);
+  padding: 8px 14px; cursor: pointer; font-size: 14px; min-height: 42px;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+}
+.pos-be-seg button em { font-style: normal; font-size: 10.5px; color: var(--pos-text2); }
+.pos-be-seg button.is-on { background: var(--pos-text); color: var(--pos-card); border-color: var(--pos-text); }
+.pos-be-seg button.is-on em { color: var(--pos-card); opacity: 0.75; }
+.pos-be-pages button { min-width: 44px; }
+.pos-be-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.pos-be-swatches button {
+  width: 38px; height: 38px; border-radius: 9999px;
+  border: 1px solid var(--pos-border); background: transparent;
+  color: var(--pos-text2); cursor: pointer;
+}
+.pos-be-swatches button.is-on { outline: 2px solid var(--pos-text); outline-offset: 2px; }
+.pos-be-folderitems { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.pos-be-folderitems li { display: flex; align-items: center; gap: 8px; }
+.pos-be-folderitems li em { flex: 1 1 auto; min-width: 0; font-style: normal; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pos-be-subrows { padding: 8px 8px 10px 46px; }
+.pos-be-subrows ol { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.pos-be-subrows li { display: flex; align-items: center; gap: 8px; }
+.pos-be-subrows li em { flex: 1 1 auto; font-style: normal; font-size: 13.5px; }
+
+/* Nav previews: a scaled-down read of the rail and the tab bar. */
+.pos-be-rail {
+  background: #1f3524; color: #f3efe6; border-radius: 12px;
+  padding: 10px; overflow-y: auto; min-height: 0;
+}
+.pos-be-raileyebrow {
+  font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  opacity: 0.6; padding: 4px 8px 8px;
+}
+.pos-be-railitem { padding: 9px 12px; border-radius: 9px; font-size: 14px; opacity: 0.85; }
+.pos-be-railitem.is-on { background: rgba(243, 239, 230, 0.16); opacity: 1; }
+.pos-be-railitem.is-sel { outline: 1px solid #f3efe6; opacity: 1; }
+.pos-be-tabbar { display: flex; flex-wrap: wrap; gap: 6px; align-content: start; overflow-y: auto; min-height: 0; }
+.pos-be-tabbar span {
+  border: 1px solid var(--pos-border); border-radius: 9999px;
+  padding: 7px 13px; font-size: 13px; color: var(--pos-text2);
+}
+.pos-be-tabbar span.is-on { background: var(--pos-text); color: var(--pos-card); border-color: var(--pos-text); }
+.pos-be-tabbar span.is-sel { outline: 1px solid var(--pos-text); color: var(--pos-text); }
+
+/* Handhelds: one column at a time — the list first, preview underneath. */
+@media (max-width: 860px) {
+  .pos-be-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr); overflow-y: auto; }
+  .pos-be-right { grid-template-rows: minmax(140px, 1fr) auto; }
+  .pos-be-who { display: none; }
+}

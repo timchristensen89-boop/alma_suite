@@ -1,6 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { loadStripeTerminal, type Terminal, type Reader } from '@stripe/terminal-js';
 import { api, clearApiTokens, consumeSuiteHandoffToken, messageForError, setApiAuthToken, setApiPinToken } from './api';
+import { BoardEditor } from './BoardEditor';
+// Board + nav vocabulary (pin shapes, tab tokens, page breaks) is shared with
+// the board editor so the two can never drift apart.
+import {
+  BRIGHT_PALETTE,
+  HOME_TAB,
+  HUE_DOTS,
+  HUE_NAMES,
+  MGMT_KEYS,
+  MGMT_LABELS,
+  hueClass,
+  hueStyle,
+  paginatePins,
+  pinDisplay,
+  visibleTabTokens,
+  type HomeConfig,
+  type MenuCategory,
+  type MenuItem,
+  type Pin,
+  type TabsConfig
+} from './board';
 
 // ── ALMA POS v2 ─────────────────────────────────────────────────────────────
 // Home screen (open tables/tabs + quick sale + day glance) → order screen
@@ -9,8 +30,6 @@ import { api, clearApiTokens, consumeSuiteHandoffToken, messageForError, setApiA
 // automatic weekend/public-holiday surcharge and any timed discounts — are
 // computed server-side on every cart change.
 
-type MenuItem = { recipeId: string; title: string; priceCents: number; venue: string | null; variantOf?: string | null; variants?: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null; label: string }> | null };
-type MenuCategory = { name: string; kind: string; items: MenuItem[] };
 type OrderLine = {
   id?: string;
   recipeId: string | null;
@@ -39,22 +58,6 @@ type GuestProfile = OrderGuest & {
   visitNotes: string | null;
   favourites: Array<{ name: string; quantity: number; totalCents: number }>;
 };
-type PinExtras = { c?: string; label?: string; s?: 'w' | 'b'; d?: 'sh' | 'hs' | 'big' };
-type Pin =
-  | ({ t: 'i'; id: string } & PinExtras)
-  | ({ t: 'f'; name: string; items: string[] } & PinExtras)
-  // 'm' = a management action (open till, wastage…). Same tile, same board.
-  | ({ t: 'm'; key: string } & PinExtras);
-
-const MGMT_LABELS: Record<string, string> = {
-  'open-till': 'Open till',
-  discount: 'Discount',
-  comp: 'Comp',
-  wastage: 'Wastage',
-  price: 'Change price'
-};
-const MGMT_KEYS = Object.keys(MGMT_LABELS);
-type TabsConfig = { order: string[]; hidden: string[]; groups: Array<{ name: string; cats: string[]; c?: string }> };
 type ModifierOption = { id: string; name: string; priceCents: number };
 type ModifierGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: ModifierOption[] };
 type Order = {
@@ -135,7 +138,6 @@ type DaySummary = {
 };
 
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
-const HOME_TAB = '\u2605 Home';
 // Fire progress of an order: 'waiting' = lines not yet called away,
 // 'away' = everything fired, 'empty' = no lines.
 function fireState(lines: Array<{ sentAt?: string | null }>): 'waiting' | 'away' | 'empty' {
@@ -144,16 +146,6 @@ function fireState(lines: Array<{ sentAt?: string | null }>): 'waiting' | 'away'
 }
 // Australian cash rounding — physical cash rounds to the nearest 5c.
 const roundCash5 = (cents: number) => Math.round(cents / 5) * 5;
-const BRIGHT_PALETTE = ['', 'terra', 'amber', 'moss', 'slate', 'shell', 'cocoa'];
-const HUE_NAMES = ['terra', 'amber', 'moss', 'slate', 'shell', 'cocoa'];
-// Swatch dot colours for the customise sheet (light-theme tile inks).
-const HUE_DOTS: Record<string, string> = { terra: '#9a3a2e', amber: '#b5772f', moss: '#4f6b47', slate: '#4d5e7a', shell: '#a8613f', cocoa: '#684a4a' };
-function hueClass(c?: string) {
-  return c && HUE_NAMES.includes(c) ? `pos-hue-${c}` : '';
-}
-function hueStyle(c?: string): React.CSSProperties | undefined {
-  return c && !HUE_NAMES.includes(c) ? { borderColor: c, background: `${c}26` } : undefined;
-}
 // Menu tiles take a calm hue from their category so every grid reads warm.
 // Cached: the same handful of category names get hashed on every tile render.
 const hueCache = new Map<string, string>();
@@ -209,21 +201,6 @@ function offlineSurcharge(subtotalCents: number, rules: Array<{ kind: string; pe
 const FALLBACK_COURSES = ['NOW', 'Course 1', 'Course 2', 'Course 3', 'Course 4', 'Course 5', 'Course 6'];
 // AU cash denominations, cents.
 const DENOMS = [10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5];
-
-// How a pinned tile shows its name: default heading+sub, 'sh' abbreviated
-// (initials or first four letters), 'hs' larger heading with the sub line,
-// 'big' one large title only. Kitchen-facing names never change.
-function pinDisplay(pin: Pin, baseName: string): { main: string; cls: string } {
-  const name = (pin.label ?? baseName).trim() || baseName;
-  if (pin.d === 'sh') {
-    const words = name.split(/\s+/).filter(Boolean);
-    const short = words.length >= 2 ? words.map((word) => word[0]).join('').toUpperCase() : name.slice(0, 4).toUpperCase();
-    return { main: short, cls: 'pos-label-short' };
-  }
-  if (pin.d === 'big') return { main: name, cls: 'pos-label-big' };
-  if (pin.d === 'hs') return { main: name, cls: 'pos-label-hs' };
-  return { main: name, cls: '' };
-}
 
 const CASH_DENOMS: Array<[string, number]> = [
   ['100', 10000],
@@ -300,7 +277,7 @@ export function App() {
   const [homeView, setHomeView] = useState<'floor' | 'list'>(() => (localStorage.getItem('alma.pos.view') as 'floor' | 'list') ?? 'floor');
   const [order, setOrder] = useState<Order | null>(null);
   // Register-first: the app opens on menu + bill; Tables is a secondary view.
-  const [view, setView] = useState<'register' | 'tables' | 'bills'>('register');
+  const [view, setView] = useState<'register' | 'tables' | 'bills' | 'board'>('register');
   // Bills page: everything trading right now plus what's already settled.
   const [settled, setSettled] = useState<Order[]>([]);
   const [splitPick, setSplitPick] = useState<null | { mode: 'item' | 'seat'; picked: string[]; seat: number | null }>(null);
@@ -385,6 +362,9 @@ export function App() {
   // Home pages: the board never scrolls — pins flow onto pages left/right.
   const [boardPage, setBoardPage] = useState(0);
   const [boardSlots, setBoardSlots] = useState(24);
+  // Column count is kept alongside the slot total so the board editor's
+  // preview can lay tiles out on the same grid the register measured.
+  const [boardCols, setBoardCols] = useState(4);
   const boardPagerRef = useRef<HTMLDivElement | null>(null);
   const pinPageCountRef = useRef(1);
   const pageFlipStamp = useRef(0);
@@ -535,7 +515,7 @@ export function App() {
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
   const [serviceCalls, setServiceCalls] = useState<Array<{ id: string; tableLabel: string; kind: string; createdAt: string }>>([]);
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
-  const [home, setHome] = useState<{ buttons: string[]; pins: Pin[]; landingCategory?: string | null; categories?: TabsConfig | null; buttonSizes?: Record<string, 'w' | 'b'> }>({ buttons: [], pins: [] });
+  const [home, setHome] = useState<HomeConfig>({ buttons: [], pins: [] });
   const [renaming, setRenaming] = useState<null | { kind: 'pin' | 'group'; key: number | string; value: string }>(null);
   const [groupSheet, setGroupSheet] = useState<null | { name: string }>(null);
   const homeRef = useRef(home);
@@ -1017,38 +997,7 @@ export function App() {
 
   // The category tab bar, honouring the user's saved order/hidden/groups.
   const tabsConfig: TabsConfig = home.categories ?? { order: [], hidden: [], groups: [] };
-  const visibleTabs = useMemo(() => {
-    const catNames = menu.map((category) => category.name);
-    const grouped = new Set(tabsConfig.groups.flatMap((group) => group.cats));
-    const hidden = new Set(tabsConfig.hidden);
-    const tokens: string[] = [];
-    const seen = new Set<string>();
-    for (const token of tabsConfig.order) {
-      if (token.startsWith('g:')) {
-        if (tabsConfig.groups.some((group) => group.name === token.slice(2)) && !seen.has(token)) {
-          tokens.push(token);
-          seen.add(token);
-        }
-      } else if (catNames.includes(token) && !grouped.has(token) && !hidden.has(token) && !seen.has(token)) {
-        tokens.push(token);
-        seen.add(token);
-      }
-    }
-    for (const group of tabsConfig.groups) {
-      const token = `g:${group.name}`;
-      if (!seen.has(token)) {
-        tokens.push(token);
-        seen.add(token);
-      }
-    }
-    for (const name of catNames) {
-      if (!grouped.has(name) && !hidden.has(name) && !seen.has(name)) {
-        tokens.push(name);
-        seen.add(name);
-      }
-    }
-    return tokens;
-  }, [menu, tabsConfig]);
+  const visibleTabs = useMemo(() => visibleTabTokens(menu.map((category) => category.name), tabsConfig), [menu, tabsConfig]);
 
   function saveTabs(mutate: (config: TabsConfig) => TabsConfig) {
     setHome((current) => {
@@ -1266,6 +1215,46 @@ export function App() {
   const visibleTabsRef = useRef(visibleTabs);
   visibleTabsRef.current = visibleTabs;
 
+  // The editor saves as you go, but a rename is one keystroke per PUT — so
+  // the write is debounced and flushed on the way out. State updates stay
+  // immediate: the preview must never lag behind the press.
+  const boardSaveTimer = useRef<number | null>(null);
+  function queueBoardSave(next: HomeConfig) {
+    setHome(next);
+    if (boardSaveTimer.current) window.clearTimeout(boardSaveTimer.current);
+    boardSaveTimer.current = window.setTimeout(() => {
+      boardSaveTimer.current = null;
+      saveBoard();
+    }, 500);
+  }
+  function flushBoardSave() {
+    if (!boardSaveTimer.current) return;
+    window.clearTimeout(boardSaveTimer.current);
+    boardSaveTimer.current = null;
+    saveBoard();
+  }
+
+  // Leaving the board editor: editing can dissolve the group (or shuffle the
+  // folder) the register was sitting on, so send it somewhere that still
+  // exists rather than to an empty screen.
+  function closeBoardEditor() {
+    flushBoardSave();
+    setActiveCategory((current) => {
+      if (current.startsWith('__group__')) {
+        const name = current.slice('__group__'.length);
+        return homeRef.current.categories?.groups.some((group) => group.name === name) ? current : HOME_TAB;
+      }
+      if (current.startsWith('__folder__')) {
+        const at = Number(current.slice('__folder__'.length));
+        return homeRef.current.pins[at]?.t === 'f' ? current : HOME_TAB;
+      }
+      return current;
+    });
+    setBoardEdit(false);
+    setBoardPage(0);
+    setView('register');
+  }
+
   // Measure how many standard tiles fit without scrolling; big/wide tiles
   // count as 4/2 slots. Under-estimating is safe (a roomier page), scrolling
   // away is not.
@@ -1280,6 +1269,7 @@ export function App() {
       const cols = Math.max(2, Math.floor((width + 10) / (tileW + 10)));
       const rows = Math.max(1, Math.floor((height + 10) / (tileH + 10)));
       setBoardSlots(cols * rows);
+      setBoardCols(cols);
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -1287,27 +1277,12 @@ export function App() {
     return () => observer.disconnect();
   }, [activeCategory, design, view, search]);
 
-  const pinPages = useMemo(() => {
-    const weight = (pin: Pin) => (pin.s === 'b' ? 4 : pin.s === 'w' ? 2 : 1);
+  const pinPages = useMemo(
     // Trailing action tiles (Edit this page / the edit-mode set) render on
     // every page — hold seats for them so nothing clips.
-    const capacity = Math.max(2, boardSlots - (boardEdit ? 4 : 1));
-    const pages: Array<Array<{ pin: Pin; index: number }>> = [];
-    let current: Array<{ pin: Pin; index: number }> = [];
-    let used = 0;
-    home.pins.forEach((pin, index) => {
-      const w = weight(pin);
-      if (used + w > capacity && current.length > 0) {
-        pages.push(current);
-        current = [];
-        used = 0;
-      }
-      current.push({ pin, index });
-      used += w;
-    });
-    if (current.length > 0 || pages.length === 0) pages.push(current);
-    return pages;
-  }, [home.pins, boardSlots, boardEdit]);
+    () => paginatePins(home.pins, Math.max(2, boardSlots - (boardEdit ? 5 : 1))),
+    [home.pins, boardSlots, boardEdit]
+  );
   pinPageCountRef.current = pinPages.length;
   const boardPageSafe = Math.min(boardPage, pinPages.length - 1);
 
@@ -1936,6 +1911,9 @@ export function App() {
           </button>
           <div className="pos-rail-eyebrow">
             Menu
+            <button type="button" className="pos-rail-editbtn" title="Board editor — arrange with buttons" onClick={() => setView('board')}>
+              ⚙
+            </button>
             <button type="button" className="pos-rail-editbtn" onClick={() => setBoardEdit(!boardEdit)}>
               {boardEdit ? 'Done' : '✎ Edit'}
             </button>
@@ -2202,6 +2180,10 @@ export function App() {
               Tables
             </button>
           </>
+        ) : view === 'board' ? (
+          <button type="button" className="pos-ghost" onClick={closeBoardEditor}>
+            ← Register
+          </button>
         ) : view === 'register' ? (
           <>
             <button type="button" className="pos-ghost" onClick={() => { setView('tables'); void refreshOpenOrders(); }}>
@@ -2293,6 +2275,18 @@ export function App() {
         </div>
       ) : null}
 
+      {view === 'board' ? (
+        <BoardEditor
+          home={home}
+          menu={menu}
+          topSellers={topSellers}
+          boardSlots={boardSlots}
+          boardCols={boardCols}
+          operatorName={operatorName}
+          onChange={queueBoardSave}
+          onClose={closeBoardEditor}
+        />
+      ) : null}
       {view === 'bills' ? (
         <BillsPage
           openOrders={openOrders}
@@ -2375,7 +2369,7 @@ export function App() {
             {openOrders.length === 0 ? <p className="pos-muted">No open tables at {venue}.</p> : null}
           </div>
         </div>
-      ) : view === 'bills' ? null : (
+      ) : view === 'bills' || view === 'board' ? null : (
         <div className="pos-body">
           <div className="pos-menu">
             {!search ? (
@@ -2457,9 +2451,14 @@ export function App() {
                       ))
                   : null}
                 {boardEdit ? (
-                  <button type="button" className="pos-tab-newfolder" onClick={newTabFolder}>
-                    ＋ Folder
-                  </button>
+                  <>
+                    <button type="button" className="pos-tab-newfolder" onClick={newTabFolder}>
+                      ＋ Folder
+                    </button>
+                    <button type="button" className="pos-tab-newfolder" onClick={() => setView('board')}>
+                      ⚙ Editor
+                    </button>
+                  </>
                 ) : null}
               </nav>
             ) : null}
@@ -2746,6 +2745,10 @@ export function App() {
                     <button type="button" className="pos-item pos-item-edit" onClick={() => setCustomise(true)}>
                       <span>＋ Add pins</span>
                       <small>search the menu</small>
+                    </button>
+                    <button type="button" className="pos-item pos-item-edit" onClick={() => setView('board')}>
+                      <span>⚙ Board editor</span>
+                      <small>arrange with buttons</small>
                     </button>
                     <button
                       type="button"
@@ -5004,9 +5007,19 @@ export function App() {
               className="pos-charge"
               disabled={busy || !userKey}
               onClick={() => {
+                // Send the WHOLE config: the server rebuilds the row from the
+                // body, so omitting categories/buttonSizes wipes the nav.
                 void api('/api/pos/homescreen', {
                   method: 'PUT',
-                  body: JSON.stringify({ userKey, buttons: home.buttons, pins: home.pins, landingCategory: home.landingCategory ?? '', updatedBy: operatorName })
+                  body: JSON.stringify({
+                    userKey,
+                    buttons: home.buttons,
+                    pins: home.pins,
+                    categories: home.categories ?? undefined,
+                    buttonSizes: home.buttonSizes ?? undefined,
+                    landingCategory: home.landingCategory ?? '',
+                    updatedBy: operatorName
+                  })
                 })
                   .then(() => setCustomise(false))
                   .catch((err) => setError(messageForError(err, 'Could not save.')));
