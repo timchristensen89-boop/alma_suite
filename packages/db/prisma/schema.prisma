@@ -4938,6 +4938,8 @@ model PosHomescreen {
   // Per-user category tab bar: {order: string[], hidden: string[],
   // groups: [{name, cats: string[], c?}]}. Null = the menu's natural order.
   categories      Json?
+  // Management tile sizes: { 'open-till': 'w' | 'b' } — same vocabulary as pins.
+  buttonSizes     Json?
   landingCategory String?
   updatedBy String?
   updatedAt DateTime @updatedAt

@@ -291,6 +291,8 @@ export function App() {
   // Bills page: everything trading right now plus what's already settled.
   const [settled, setSettled] = useState<Order[]>([]);
   const [splitPick, setSplitPick] = useState<null | { mode: 'item' | 'seat'; picked: string[]; seat: number | null }>(null);
+  // What this venue actually sells — suggestions beat a blank search box.
+  const [topSellers, setTopSellers] = useState<string[]>([]);
   const [bills, setBills] = useState<Order[] | null>(null);
   const [refunding, setRefunding] = useState<null | { order: Order; amount: string; reason: string; method: 'REFUND' | 'CASH' }>(null);
   const [merging, setMerging] = useState<Order[] | null>(null);
@@ -499,7 +501,7 @@ export function App() {
     const board = next ?? homeRef.current;
     void api('/api/pos/homescreen', {
       method: 'PUT',
-      body: JSON.stringify({ userKey, buttons: board.buttons, pins: board.pins, categories: board.categories ?? undefined, landingCategory: board.landingCategory ?? '', updatedBy: operatorName })
+      body: JSON.stringify({ userKey, buttons: board.buttons, pins: board.pins, categories: board.categories ?? undefined, buttonSizes: board.buttonSizes ?? undefined, landingCategory: board.landingCategory ?? '', updatedBy: operatorName })
     }).catch((err) => setError(messageForError(err, 'Could not save the board.')));
   }
   const [dockets, setDockets] = useState<Docket[] | null>(null);
@@ -510,7 +512,7 @@ export function App() {
   const [reservations, setReservations] = useState<FloorReservation[]>([]);
   const [serviceCalls, setServiceCalls] = useState<Array<{ id: string; tableLabel: string; kind: string; createdAt: string }>>([]);
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
-  const [home, setHome] = useState<{ buttons: string[]; pins: Pin[]; landingCategory?: string | null; categories?: TabsConfig | null }>({ buttons: [], pins: [] });
+  const [home, setHome] = useState<{ buttons: string[]; pins: Pin[]; landingCategory?: string | null; categories?: TabsConfig | null; buttonSizes?: Record<string, 'w' | 'b'> }>({ buttons: [], pins: [] });
   const [renaming, setRenaming] = useState<null | { kind: 'pin' | 'group'; key: number | string; value: string }>(null);
   const [groupSheet, setGroupSheet] = useState<null | { name: string }>(null);
   const homeRef = useRef(home);
@@ -736,6 +738,7 @@ export function App() {
           landingCategory: landing,
           buttons: config.buttons,
           categories: ((config as { categories?: TabsConfig | null }).categories as TabsConfig | null) ?? null,
+          buttonSizes: (config as { buttonSizes?: Record<string, 'w' | 'b'> }).buttonSizes ?? undefined,
           // Legacy pins were plain recipeId strings — normalise to the rich shape.
           pins: (config.pins ?? []).map((pin) =>
             typeof pin === 'string' ? ({ t: 'i', id: pin } as Pin) : (pin as Pin)
@@ -1192,6 +1195,18 @@ export function App() {
     if (!value || value === oldName) return;
     commitGroupRename(oldName, value);
     setGroupSheet({ name: value });
+  }
+
+  // Dragging is fine with a mouse; on a busy iPad an arrow is surer.
+  function moveTab(token: string, delta: number) {
+    saveTabs((config) => {
+      const order = [...visibleTabsRef.current];
+      const at = order.indexOf(token);
+      const to = at + delta;
+      if (at === -1 || to < 0 || to >= order.length) return config;
+      order.splice(to, 0, order.splice(at, 1)[0]!);
+      return { ...config, order };
+    });
   }
 
   function newTabFolder() {
@@ -1790,6 +1805,13 @@ export function App() {
       .catch((err) => setError(messageForError(err, 'Could not print the receipt.')));
   }
 
+  useEffect(() => {
+    if (!customise) return;
+    void api<Array<{ recipeId: string }>>(`/api/pos/top-items?venue=${encodeURIComponent(venue)}`)
+      .then((rows) => setTopSellers(rows.map((row) => row.recipeId)))
+      .catch(() => undefined);
+  }, [customise, venue]);
+
   async function loadSettled() {
     try {
       const rows = await api<Order[]>(`/api/pos/orders?venue=${encodeURIComponent(venue)}&status=ALL`);
@@ -1894,7 +1916,10 @@ export function App() {
                   type="button"
                   data-tab-token={token}
                   className={`${activeCategory === target && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'}${boardEdit ? ' is-tab-edit' : ''}`}
-                  onPointerDown={(event) => tabPointerDown(event, token)}
+                  onPointerDown={(event) => {
+                    if ((event.target as HTMLElement).closest('.pos-rail-move')) return;
+                    tabPointerDown(event, token);
+                  }}
                   onClick={() => {
                     if (boardEdit) {
                       if (isGroup) setGroupSheet({ name: groupName! });
@@ -1905,6 +1930,28 @@ export function App() {
                   }}
                 >
                   {label}
+                  {boardEdit ? (
+                    <span className="pos-rail-move">
+                      <i
+                        title="Move up"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          moveTab(token, -1);
+                        }}
+                      >
+                        ▲
+                      </i>
+                      <i
+                        title="Move down"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          moveTab(token, 1);
+                        }}
+                      >
+                        ▼
+                      </i>
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -2462,11 +2509,23 @@ export function App() {
                     wastage: 'Wastage',
                     price: 'Change price'
                   };
+                  const mgmtSize = (home.buttonSizes ?? {})[key];
+                  const mgmtSizeClass = mgmtSize === 'w' ? 'pos-size-w' : mgmtSize === 'b' ? 'pos-size-b' : '';
+                  const cycleMgmtSize = (event: React.MouseEvent) => {
+                    event.stopPropagation();
+                    const next: 'w' | 'b' | undefined = mgmtSize === 'w' ? 'b' : mgmtSize === 'b' ? undefined : 'w';
+                    const sizes = { ...(home.buttonSizes ?? {}) };
+                    if (next) sizes[key] = next;
+                    else delete sizes[key];
+                    const board = { ...home, buttonSizes: sizes };
+                    setHome(board);
+                    saveBoard(board);
+                  };
                   return (
                     <button
                       key={key}
                       type="button"
-                      className="pos-item pos-item-mgmt pos-item-slim"
+                      className={`pos-item pos-item-mgmt ${mgmtSizeClass || 'pos-item-slim'}`}
                       onClick={() => {
                         if (boardEdit) {
                           const board = { ...home, buttons: (home.buttons.length ? home.buttons : ['open-till', 'discount', 'comp', 'wastage', 'price']).filter((candidate) => candidate !== key) };
@@ -2493,6 +2552,7 @@ export function App() {
                       }}
                     >
                       {boardEdit ? <i className="pos-pin-x">✕</i> : null}
+                      {boardEdit ? <i className="pos-pin-size" onClick={cycleMgmtSize}>⤢</i> : null}
                       <span>{labels[key] ?? key}</span>
                     </button>
                   );
@@ -3841,30 +3901,30 @@ export function App() {
               value={folderDraft.name}
               onChange={(event) => setFolderDraft({ ...folderDraft, name: event.currentTarget.value })}
             />
-            <div className="pos-reason-list">
+            <span className="pos-swatches pos-swatches-row">
               {['#4f8f6b', '#7f9ac4', '#d9a05a', '#c4655a', '#a98ac4', '#9aa4ab'].map((colour) => (
                 <button
                   key={colour}
                   type="button"
-                  className={folderDraft.c === colour ? 'is-on' : ''}
-                  style={{ background: colour, borderColor: colour, minWidth: 44 }}
+                  className={`pos-swatch ${folderDraft.c === colour ? 'is-on' : ''}`}
+                  style={{ background: colour }}
+                  title={colour}
                   onClick={() => setFolderDraft({ ...folderDraft, c: colour })}
-                >
-                  {' '}
-                </button>
+                />
               ))}
-            </div>
+            </span>
             <input
               className="pos-tender"
               placeholder="Search items to add…"
               value={folderDraft.search}
               onChange={(event) => setFolderDraft({ ...folderDraft, search: event.currentTarget.value })}
             />
-            <div className="pos-reason-list">
+            <div className="pos-reason-list pos-pick-scroll">
               {menu
                 .flatMap((category) => category.items)
+                .filter((item) => !item.variantOf)
                 .filter((item) => !folderDraft.search || item.title.toLowerCase().includes(folderDraft.search.toLowerCase()))
-                .slice(0, 10)
+                .slice(0, 60)
                 .map((item) => (
                   <button
                     key={item.recipeId}
@@ -4782,21 +4842,80 @@ export function App() {
                 </div>
               </div>
             </details>
-            <details className="pos-acc">
+            <details className="pos-acc" open>
               <summary>Add item pins</summary>
               <div className="pos-acc-body">
+                {(() => {
+                  const pinned = new Set(home.pins.filter((pin) => pin.t === 'i').map((pin) => (pin as { id: string }).id));
+                  const all = menu.flatMap((category) => category.items);
+                  const suggestions = topSellers
+                    .filter((recipeId) => !pinned.has(recipeId))
+                    .map((recipeId) => all.find((item) => item.recipeId === recipeId))
+                    .filter((item): item is MenuItem => Boolean(item))
+                    .slice(0, 10);
+                  const folders = [...menu]
+                    .filter((category) => !home.pins.some((pin) => pin.t === 'f' && pin.name === category.name))
+                    .sort((a, b) => b.items.length - a.items.length)
+                    .slice(0, 6);
+                  return (
+                    <>
+                      {suggestions.length > 0 ? (
+                        <>
+                          <p className="pos-muted">Your best sellers this month:</p>
+                          <div className="pos-reason-list">
+                            {suggestions.map((item) => (
+                              <button
+                                key={item.recipeId}
+                                type="button"
+                                onClick={() => setHome({ ...home, pins: [...home.pins, { t: 'i', id: item.recipeId }] })}
+                              >
+                                ＋ {item.title}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      ) : null}
+                      {folders.length > 0 ? (
+                        <>
+                          <p className="pos-muted">Suggested folders:</p>
+                          <div className="pos-reason-list">
+                            {folders.map((category) => (
+                              <button
+                                key={category.name}
+                                type="button"
+                                onClick={() =>
+                                  setHome({
+                                    ...home,
+                                    pins: [
+                                      ...home.pins,
+                                      { t: 'f', name: category.name, items: category.items.filter((item) => !item.variantOf).map((item) => item.recipeId).slice(0, 40) }
+                                    ]
+                                  })
+                                }
+                              >
+                                📁 {category.name} ({category.items.length})
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      ) : null}
+                    </>
+                  );
+                })()}
+                <p className="pos-muted">Or search:</p>
                 <input
                   className="pos-tender"
                   placeholder="Search items to pin…"
                   value={pinSearch}
                   onChange={(event) => setPinSearch(event.currentTarget.value)}
                 />
-                <div className="pos-reason-list">
+                <div className="pos-reason-list pos-pick-scroll">
                   {menu
                     .flatMap((category) => category.items)
+                    .filter((item) => !item.variantOf)
                     .filter((item) => !pinSearch || item.title.toLowerCase().includes(pinSearch.toLowerCase()))
                     .filter((item) => !home.pins.some((pin) => pin.t === 'i' && pin.id === item.recipeId))
-                    .slice(0, 14)
+                    .slice(0, 40)
                     .map((item) => (
                       <button
                         key={item.recipeId}

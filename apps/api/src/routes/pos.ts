@@ -195,6 +195,14 @@ posRouter.get('/print-poll/:profileId', async (req, res, next) => {
 // Xero daily sales: status for a venue/day, and the push itself. The nightly
 // cron hits the scheduler route; these are the manual controls.
 // Tables waiting on someone, and clearing a call once it's answered.
+posRouter.get('/top-items', async (req, res, next) => {
+  try {
+    res.json(await posService.topItems(req.query.venue ? String(req.query.venue) : null));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.get('/service-calls', async (req, res, next) => {
   try {
     res.json(await posService.listServiceCalls(req.query.venue ? String(req.query.venue) : null));

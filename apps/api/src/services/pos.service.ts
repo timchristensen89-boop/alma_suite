@@ -820,6 +820,25 @@ export const posService = {
     return { ok: true };
   },
 
+  // What this venue actually sells, last 30 days — drives the pin
+  // suggestions so a new board starts from reality, not a guess.
+  async topItems(venue: string | null, limit = 24) {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const rows = await prisma.posOrderLine.groupBy({
+      by: ['recipeId'],
+      where: {
+        recipeId: { not: null },
+        order: { status: 'PAID', training: false, createdAt: { gte: since }, ...(venue ? { venue } : {}) }
+      },
+      _sum: { quantity: true },
+      orderBy: { _sum: { quantity: 'desc' } },
+      take: limit
+    });
+    return rows
+      .filter((row) => row.recipeId)
+      .map((row) => ({ recipeId: row.recipeId!, sold: row._sum.quantity ?? 0 }));
+  },
+
   // Lock-screen code: any ACTIVE staff member's PIN unlocks the register.
   async unlockPin(input: unknown, sessionEmail?: string | null) {
     const body = (input ?? {}) as Record<string, unknown>;
@@ -2157,6 +2176,13 @@ export const posService = {
     const userKey = str(body.userKey).toLowerCase();
     if (!userKey) throw new HttpError(400, 'userKey is required.');
     const buttons = Array.isArray(body.buttons) ? (body.buttons as unknown[]).map(String).slice(0, 12) : [];
+    // Management tiles can be sized like pins: { 'open-till': 'w' | 'b' }.
+    const buttonSizes: Record<string, string> = {};
+    if (body.buttonSizes && typeof body.buttonSizes === 'object') {
+      for (const [key, value] of Object.entries(body.buttonSizes as Record<string, unknown>)) {
+        if (value === 'w' || value === 'b') buttonSizes[key.slice(0, 40)] = value;
+      }
+    }
     // Pins are rich objects ({t:'i',id} items / {t:'f',name,items} folders) —
     // pass through with a shallow shape check; legacy string pins upgrade.
     const pins = (Array.isArray(body.pins) ? (body.pins as unknown[]) : [])
@@ -2213,8 +2239,8 @@ export const posService = {
     }
     return prisma.posHomescreen.upsert({
       where: { userKey },
-      create: { userKey, buttons, pins, categories: categories ?? undefined, landingCategory, updatedBy: str(body.updatedBy) || null },
-      update: { buttons, pins, categories: categories ?? undefined, landingCategory, updatedBy: str(body.updatedBy) || null }
+      create: { userKey, buttons, pins, categories: categories ?? undefined, buttonSizes, landingCategory, updatedBy: str(body.updatedBy) || null },
+      update: { buttons, pins, categories: categories ?? undefined, buttonSizes, landingCategory, updatedBy: str(body.updatedBy) || null }
     });
   },
 

@@ -941,3 +941,14 @@ body:not(.pos-v2) .pos-cart .pos-fish-empty { opacity: 0.35; filter: brightness(
   .pos-cart .pos-charge:disabled { background: rgba(255, 255, 255, 0.12); color: rgba(243, 239, 230, 0.45); border-color: transparent; }
   .pos-cart .pos-fish-empty { opacity: 0.35; filter: brightness(0) invert(1); }
 }
+
+/* Editor sheets: compact colour swatches, scrollable pick lists */
+.pos-swatches-row { display: inline-flex; gap: 7px; flex-wrap: wrap; }
+.pos-swatches-row .pos-swatch { width: 30px; height: 30px; border-radius: 9999px; border: 2px solid transparent; cursor: pointer; }
+.pos-swatches-row .pos-swatch.is-on { border-color: var(--pos-text); box-shadow: 0 0 0 2px var(--pos-card) inset; }
+.pos-pick-scroll { max-height: 34vh; overflow-y: auto; align-content: start; padding-right: 2px; }
+
+/* Rail: nudge categories up and down while editing */
+.pos-rail-move { margin-left: auto; display: inline-flex; flex-direction: column; line-height: 0.75; }
+.pos-rail-move i { font-style: normal; font-size: 8px; opacity: 0.55; padding: 1px 3px; cursor: pointer; }
+.pos-rail-move i:hover { opacity: 1; }
