@@ -372,6 +372,22 @@ function matchStaffCandidate<T extends StaffNameCandidate>(
 // Deputy name that matches an archived duplicate (e.g. "Andres Felipe valdes")
 // resolves to the surviving profile it was merged into, instead of minting the
 // duplicate all over again on the next sync.
+// Which system owns staff records. 'SUITE' means Alma is authoritative and the
+// Deputy employee sync stops editing people who already exist here — it still
+// reports what it WOULD have changed, so drift is visible instead of silent,
+// and still creates genuinely new starters so a new hire is never lost.
+// Stored in AppSettings.staffDefaults so it can be switched without a deploy.
+export type StaffSourceOfTruth = 'SUITE' | 'DEPUTY';
+
+export async function staffSourceOfTruth(): Promise<StaffSourceOfTruth> {
+  const settings = await prisma.appSettings.findUnique({
+    where: { id: 'singleton' },
+    select: { staffDefaults: true }
+  });
+  const defaults = (settings?.staffDefaults ?? {}) as Record<string, unknown>;
+  return defaults.staffSourceOfTruth === 'SUITE' ? 'SUITE' : 'DEPUTY';
+}
+
 // Roles a roster sync must never deactivate — these people own the software.
 const SUITE_PROTECTED_ROLE = /manager|owner|director|licensee|admin/i;
 
@@ -737,6 +753,10 @@ export async function syncEmployees(connection: IntegrationConnection) {
   // Suite logins Deputy WANTED to terminate but wasn't allowed to. Surfaced in
   // the sync result so this is visible instead of silent.
   const protectedFromTermination: string[] = [];
+  // When Alma owns staff records, Deputy stops editing existing people — but
+  // we still report what it would have done.
+  const sourceOfTruth = await staffSourceOfTruth();
+  const suiteOwned: Array<{ name: string; wouldChange: string[] }> = [];
   const staffCandidates = await loadStaffCandidates();
 
   for (const employee of Array.isArray(employees) ? employees : []) {
@@ -835,6 +855,16 @@ export async function syncEmployees(connection: IntegrationConnection) {
       unchanged += 1;
       continue;
     }
+
+    if (sourceOfTruth === 'SUITE') {
+      // Alma is authoritative: record the drift, change nothing.
+      suiteOwned.push({
+        name: `${profile.firstName} ${profile.lastName}`.trim() || profile.id,
+        wouldChange: Object.keys(updates)
+      });
+      unchanged += 1;
+      continue;
+    }
     await prisma.staffProfile.update({ where: { id: profile.id }, data: updates });
     updated += 1;
 
@@ -856,7 +886,9 @@ export async function syncEmployees(connection: IntegrationConnection) {
     updated,
     unchanged,
     conflicts,
-    protectedFromTermination
+    protectedFromTermination,
+    sourceOfTruth,
+    suiteOwned
   };
 }
 
