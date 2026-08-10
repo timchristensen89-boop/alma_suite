@@ -20,14 +20,19 @@ import {
  */
 
 const POS_URL = 'https://alma-pos.web.app';
+// Set per charge by the web app, read by the SDK's token provider.
+const latestConnectionToken = { current: '' };
 const API_URL = 'https://api.almagroup.com.au';
 
 type ChargeRequest = {
   type: 'ALMA_TAP_TO_PAY';
   amountCents: number;
-  venue: string;
-  orderId: string;
-  description?: string;
+  // The web app is the one holding the register's session, so IT calls the
+  // API and passes down only what the reader needs. React Native's fetch
+  // shares neither cookies nor the stored bearer token with the WebView, so
+  // a shell that called the API itself would just get 401s.
+  clientSecret: string;
+  connectionToken: string;
 };
 
 // Injected into the page so the web POS knows it can offer Tap to Pay, and
@@ -111,27 +116,15 @@ function Register() {
       };
 
       try {
+        latestConnectionToken.current = request.connectionToken;
         await ensureReader();
         setStatus('Ask the guest to tap their card…');
 
-        // The intent is created server-side on the VENUE'S Stripe account —
-        // St Alma and Alma Avalon are different companies and their takings
-        // must never cross.
-        const created = await fetch(`${API_URL}/api/pos/terminal/payment-intent`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            amountCents: request.amountCents,
-            venue: request.venue,
-            description: request.description ?? `ALMA POS ${request.venue}`
-          })
-        }).then((response) => response.json());
-
-        if (!created?.clientSecret) throw new Error(created?.message ?? 'Could not start the payment.');
-
+        // The intent was created by the web app on the VENUE'S Stripe
+        // account — St Alma and Alma Avalon are different companies and
+        // their takings must never cross.
         const { paymentIntent, error: retrieveError } = await createPaymentIntent({
-          clientSecret: created.clientSecret
+          clientSecret: request.clientSecret
         });
         if (retrieveError) throw new Error(retrieveError.message);
 
@@ -180,16 +173,9 @@ function Register() {
 export default function App() {
   // Stripe hands the SDK a short-lived token minted by our server, so no
   // secret key ever ships inside the app.
-  const fetchTokenProvider = useCallback(async () => {
-    const response = await fetch(`${API_URL}/api/pos/terminal/connection-token`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
-    });
-    const payload = await response.json();
-    return payload.secret as string;
-  }, []);
+  // Handed in by the web app with each charge (it has the session); the SDK
+  // asks for it whenever it needs to re-authenticate.
+  const fetchTokenProvider = useCallback(async () => latestConnectionToken.current, []);
 
   return (
     <StripeTerminalProvider logLevel="verbose" tokenProvider={fetchTokenProvider}>

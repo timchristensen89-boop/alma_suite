@@ -1574,7 +1574,28 @@ export function App() {
     }
     setBusy(true);
     try {
-      const result = await bridge.charge({ amountCents, venue, orderId: order.id, description: `Table ${order.tableLabel ?? order.orderNumber}` });
+      // We hold the session, so we mint both: the reader's connection token
+      // and the intent on THIS venue's Stripe account. The shell only drives
+      // the card — it has no session of its own.
+      const [connection, intent] = await Promise.all([
+        api<{ secret: string }>('/api/pos/terminal/connection-token', {
+          method: 'POST',
+          body: JSON.stringify({ venue })
+        }),
+        api<{ clientSecret: string }>('/api/pos/terminal/payment-intent', {
+          method: 'POST',
+          body: JSON.stringify({
+            amountCents,
+            venue,
+            description: `ALMA ${venue} · ${order.tableLabel ? `table ${order.tableLabel}` : `bill #${order.orderNumber}`}`
+          })
+        })
+      ]);
+      const result = await bridge.charge({
+        amountCents,
+        clientSecret: intent.clientSecret,
+        connectionToken: connection.secret
+      });
       const updated = await api<Order>(`/api/pos/orders/${order.id}/pay`, {
         method: 'POST',
         body: JSON.stringify({
