@@ -80,38 +80,47 @@ export function pinDisplay(pin: Pin, baseName: string): { main: string; cls: str
 }
 
 // ── Category icons ──────────────────────────────────────────────────────
-// A glanceable mark per food group, matched on the category (or dish) name.
+// Hand-drawn line marks, not emoji: one ink colour (currentColor), even
+// stroke weight, no fills — they sit with the serif wordmark instead of
+// shouting over it. Matched on the category (or dish) name.
+//
 // Order matters: "Espresso Martini" must read as a cocktail, not a coffee,
 // so the drinks patterns are tested before the kitchen ones. No match =
-// no icon — a wrong icon is worse than none.
-const ICON_RULES: Array<[RegExp, string]> = [
-  [/margarita|cocktail|martini|negroni|spritz|aperol|daiquiri|mojito|paloma/i, '🍸'],
-  [/whisk|gin\b|vodka|rum\b|tequila|mezcal|spirit|liqueur|amaro|brandy/i, '🥃'],
-  [/wine|rosé|rose\b|chardonnay|pinot|riesling|sauv|shiraz|merlot|prosecco|champagne|sparkling|by the glass/i, '🍷'],
-  [/beer|lager|ale\b|xpa|ipa\b|pilsner|cider|tinnie|schooner/i, '🍺'],
-  [/non.?alcohol|soft drink|juice|soda|mocktail|lemonade|water/i, '🥤'],
-  [/coffee|espresso|latte|cappucc|flat white|tea\b/i, '☕'],
-  [/taco|tostada|quesadilla|burrito|nacho|tortilla/i, '🌮'],
-  [/oyster|fish|seafood|prawn|kingfish|ceviche|squid|octopus|scallop/i, '🐟'],
-  [/steak|beef|lamb|pork|chicken|carnitas|meat|brisket|rib\b/i, '🥩'],
-  [/salad|veg|greens|slaw/i, '🥗'],
-  [/dessert|churro|flan|ice cream|gelato|sweet|cake|pudding/i, '🍨'],
-  [/kids?\b|child/i, '🧒'],
-  [/side|fries|chips|elote|beans|rice/i, '🍟'],
-  [/set menu|banquet|feed me|share|degustation/i, '🍽️'],
-  [/dip|guac|hummus|salsa/i, '🫓'],
-  [/bread|bakery|sourdough|bun\b/i, '🥖'],
-  [/cheese|burrata|halloumi/i, '🧀'],
-  [/pizza/i, '🍕'],
-  [/pasta|gnocchi|risotto/i, '🍝'],
-  [/burger/i, '🍔'],
-  [/breakfast|brunch|egg/i, '🍳'],
-  [/snack|nuts|olives|bar snack/i, '🥜'],
-  [/special/i, '⭐']
+// no mark; a wrong one is worse than none.
+export type IconKey =
+  | 'cocktail' | 'spirit' | 'wine' | 'beer' | 'soft' | 'coffee'
+  | 'taco' | 'fish' | 'meat' | 'salad' | 'dessert' | 'kids'
+  | 'side' | 'setmenu' | 'dip' | 'bread' | 'cheese' | 'pizza'
+  | 'pasta' | 'burger' | 'egg' | 'snack' | 'star';
+
+const ICON_RULES: Array<[RegExp, IconKey]> = [
+  [/margarita|cocktail|martini|negroni|spritz|aperol|daiquiri|mojito|paloma/i, 'cocktail'],
+  [/whisk|gin\b|vodka|rum\b|tequila|mezcal|spirit|liqueur|amaro|brandy/i, 'spirit'],
+  [/wine|rosé|rose\b|chardonnay|pinot|riesling|sauv|shiraz|merlot|prosecco|champagne|sparkling|by the glass/i, 'wine'],
+  [/beer|lager|ale\b|xpa|ipa\b|pilsner|cider|tinnie|schooner/i, 'beer'],
+  [/non.?alcohol|soft drink|juice|soda|mocktail|lemonade|water/i, 'soft'],
+  [/coffee|espresso|latte|cappucc|flat white|tea\b/i, 'coffee'],
+  [/taco|tostada|quesadilla|burrito|nacho|tortilla/i, 'taco'],
+  [/oyster|fish|seafood|prawn|kingfish|ceviche|squid|octopus|scallop/i, 'fish'],
+  [/steak|beef|lamb|pork|chicken|carnitas|meat|brisket|rib\b/i, 'meat'],
+  [/salad|veg|greens|slaw|cauliflower/i, 'salad'],
+  [/dessert|churro|flan|ice cream|gelato|sweet|cake|pudding/i, 'dessert'],
+  [/kids?\b|child/i, 'kids'],
+  [/side|fries|chips|elote|beans|rice/i, 'side'],
+  [/set menu|banquet|feed me|share|degustation/i, 'setmenu'],
+  [/dip|guac|hummus|salsa/i, 'dip'],
+  [/bread|bakery|sourdough|bun\b/i, 'bread'],
+  [/cheese|burrata|halloumi/i, 'cheese'],
+  [/pizza/i, 'pizza'],
+  [/pasta|gnocchi|risotto/i, 'pasta'],
+  [/burger/i, 'burger'],
+  [/breakfast|brunch|egg/i, 'egg'],
+  [/snack|nuts|olives|bar snack/i, 'snack'],
+  [/special/i, 'star']
 ];
 
-const iconCache = new Map<string, string>();
-export function iconFor(name: string): string {
+const iconCache = new Map<string, IconKey | ''>();
+export function iconKeyFor(name: string): IconKey | '' {
   if (!name) return '';
   const hit = iconCache.get(name);
   if (hit !== undefined) return hit;
@@ -120,10 +129,59 @@ export function iconFor(name: string): string {
   return found;
 }
 
+// Two drawn sets to choose from, plus off. 'line' is the house style: a
+// single continuous stroke. 'solid' is heavier for tired eyes and bright
+// rooms. Both are one colour and inherit it from the text around them.
+export type IconStyle = 'line' | 'solid' | 'off';
+export const ICON_STYLES: Array<{ key: IconStyle; label: string; hint: string }> = [
+  { key: 'line', label: 'Sketch', hint: 'fine hand-drawn line' },
+  { key: 'solid', label: 'Bold', hint: 'heavier stroke' },
+  { key: 'off', label: 'None', hint: 'text only' }
+];
+
+// 24×24 paths, drawn on one baseline so they optically match at small sizes.
+const ICON_PATHS: Record<IconKey, string> = {
+  cocktail: 'M4 5h16l-8 8v6M9 19h6M7.5 8.5h9',
+  spirit: 'M7 3h10v5l-2 3v10H9V11L7 8V3M7 6h10',
+  wine: 'M8 3h8v4a4 4 0 0 1-8 0V3M12 11v8M9 19h6',
+  beer: 'M6 7h10v13H6V7M16 10h3v6h-3M8 4c1-1.2 3-1.2 4 0s3 1.2 4 0',
+  soft: 'M7 5h10l-1.4 15H8.4L7 5M9 9h6M12 5V2',
+  coffee: 'M5 8h12v7a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V8M17 10h3v4h-3M8 4c0-1 1-1 1-2M12 4c0-1 1-1 1-2',
+  taco: 'M3 16a9 9 0 0 1 18 0M3 16h18M7 13c1.5-1.5 3-1.5 4.5 0M13 12.5c1.2-1 2.4-1 3.5 0',
+  fish: 'M3 12c4-5 11-5 15 0-4 5-11 5-15 0M18 12l3-3v6l-3-3M8 11.5h.01',
+  meat: 'M6 15a5 5 0 0 1 7-7l6 6a5 5 0 0 1-7 7l-6-6M6 15l-3 3M9 18l-3 3',
+  salad: 'M3 11h18a9 9 0 0 1-18 0M8 11c0-3 2-5 4-5s4 2 4 5M12 6V3',
+  dessert: 'M6 10h12l-1.5 10h-9L6 10M8 10c0-3 8-3 8 0M12 4v3M10 6.5l2-2 2 2',
+  kids: 'M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8M5 21c0-4 3-6 7-6s7 2 7 6M9.5 8h.01M14.5 8h.01',
+  side: 'M8 8h8l-1 12H9L8 8M8 8l1-4h6l1 4M11 11v6M13 11v6',
+  setmenu: 'M4 4v7a2 2 0 0 0 2 2h1v8M6 4v6M8 4v6M20 4c-2 2-2 6-2 8h-2c0-4 1-7 3-8v16',
+  dip: 'M4 13h16a8 8 0 0 1-16 0M9 9c1-1.5 2.5-2 4-1M8 6c1.5-1 3-1 4.5 0',
+  bread: 'M4 9c0-3 4-4 8-4s8 1 8 4v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9M8 9v10M12 9v10M16 9v10',
+  cheese: 'M3 16l9-8h9v8H3M3 16v3h18v-3M8 13h.01M13 12h.01',
+  pizza: 'M12 3l9 16H3L12 3M10 12h.01M14 13h.01M12 16h.01',
+  pasta: 'M5 6h14v3a7 7 0 0 1-14 0V6M8 6c0-2 8-2 8 0M7 18h10M9 15c1 2 5 2 6 0',
+  burger: 'M4 9c0-3 3.6-5 8-5s8 2 8 5H4M4 12h16M4 15h16c0 3-3.6 4-8 4s-8-1-8-4',
+  egg: 'M12 4c3.5 0 6 4.5 6 8a6 6 0 0 1-12 0c0-3.5 2.5-8 6-8M12 12h.01',
+  snack: 'M12 4a8 8 0 1 1 0 16 8 8 0 0 1 0-16M9 10h.01M14 9h.01M11 14h.01M15 13h.01',
+  star: 'M12 3l2.7 5.9 6.3.7-4.7 4.3 1.3 6.1L12 17l-5.6 3 1.3-6.1L3 9.6l6.3-.7L12 3'
+};
+
+// The mark itself. Inherits colour and sits on the text baseline; the
+// stroke thickens for the 'solid' set. Decorative, so hidden from readers.
+export function iconSvg(key: IconKey, style: IconStyle = 'line'): string {
+  const path = ICON_PATHS[key];
+  if (!path || style === 'off') return '';
+  const width = style === 'solid' ? 2.1 : 1.45;
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`;
+}
+
 // Icons are a per-device preference (registers are shared, staff are not).
-export const ICONS_KEY = 'alma.pos.icons';
-export function loadIconsOn(): boolean {
-  return localStorage.getItem(ICONS_KEY) !== '0';
+export const ICONS_KEY = 'alma.pos.iconStyle';
+export function loadIconStyle(): IconStyle {
+  const saved = localStorage.getItem(ICONS_KEY);
+  if (saved === 'line' || saved === 'solid' || saved === 'off') return saved;
+  // Legacy on/off flag from the emoji version.
+  return localStorage.getItem('alma.pos.icons') === '0' ? 'off' : 'line';
 }
 
 // A big tile eats four standard slots, a wide one two.

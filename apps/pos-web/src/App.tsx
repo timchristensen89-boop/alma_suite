@@ -14,8 +14,9 @@ import {
   ICONS_KEY,
   hueClass,
   hueStyle,
-  iconFor,
-  loadIconsOn,
+  iconKeyFor,
+  iconSvg,
+  loadIconStyle,
   paginatePins,
   pinDisplay,
   visibleTabTokens,
@@ -383,12 +384,48 @@ export function App() {
   const dragPinIndex = useRef<number | null>(null);
   const dragMoved = useRef(false);
   // Home pages: the board never scrolls — pins flow onto pages left/right.
+  // A register tab stays open for days, so a deploy never reaches it. Poll
+  // the shell for a new asset hash and offer a one-tap reload — never force
+  // one, that could land mid-order.
+  const [updateReady, setUpdateReady] = useState(false);
+  useEffect(() => {
+    const mine = new URL(import.meta.url).pathname.split('/').pop() ?? '';
+    let stop = false;
+    const check = async () => {
+      try {
+        const html = await (await fetch('/', { cache: 'no-store' })).text();
+        const live = /assets\/(index-[A-Za-z0-9_-]+\.js)/.exec(html)?.[1];
+        if (!stop && live && mine && live !== mine) setUpdateReady(true);
+      } catch {
+        /* offline: the queue handles it, nothing to update */
+      }
+    };
+    const timer = setInterval(check, 5 * 60_000);
+    const onFocus = () => void check();
+    window.addEventListener('focus', onFocus);
+    void check();
+    return () => {
+      stop = true;
+      clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
   const [boardPage, setBoardPage] = useState(0);
   const [boardSlots, setBoardSlots] = useState(24);
-  // Food-group icons on the nav and the board, per device.
-  const [iconsOn, setIconsOn] = useState(loadIconsOn);
-  // No icon when they're off, and never one on a folder (it has its own 📁).
-  const icon = (name: string) => (iconsOn ? iconFor(name) : '');
+  // Drawn food-group marks on the nav and the board, per device.
+  const [iconStyle, setIconStyle] = useState(loadIconStyle);
+  const iconsOn = iconStyle !== 'off';
+  // A mark for this name, or nothing. Rendered as inline SVG so it takes the
+  // ink colour of whatever it sits in.
+  function Mark({ name, className }: { name: string; className?: string }) {
+    const key = iconsOn ? iconKeyFor(name) : '';
+    if (!key) return null;
+    return (
+      <i className={className ?? 'pos-nav-icon'} dangerouslySetInnerHTML={{ __html: iconSvg(key, iconStyle) }} />
+    );
+  }
+  const hasMark = (name: string) => Boolean(iconsOn && iconKeyFor(name));
   // Column count is kept alongside the slot total so the board editor's
   // preview can lay tiles out on the same grid the register measured.
   const [boardCols, setBoardCols] = useState(4);
@@ -449,9 +486,16 @@ export function App() {
       const over = Number(target.getAttribute('data-pin-index'));
       if (Number.isNaN(over) || over === dragPinIndex.current) return;
       dragMoved.current = true;
+      // THE BUG THAT MADE DRAG DO NOTHING (fixed 2026-08-11): this updater
+      // used to read dragPinIndex.current, which the next line reassigns.
+      // React runs updaters at RENDER time (twice under StrictMode), by which
+      // point the ref already equalled `over` — so every swap was a no-op and
+      // the board never moved. Capture the index first; keep the updater pure.
+      const from = dragPinIndex.current;
+      dragPinIndex.current = over;
+      if (from === null || from === over) return;
       setHome((current) => {
-        const from = dragPinIndex.current;
-        if (from === null || from >= current.pins.length || over >= current.pins.length) return current;
+        if (from >= current.pins.length || over >= current.pins.length) return current;
         // SWAP places — the dragged tile and the one under it trade spots.
         const pins = [...current.pins];
         const held = pins[from]!;
@@ -459,7 +503,6 @@ export function App() {
         pins[over] = held;
         return { ...current, pins };
       });
-      dragPinIndex.current = over;
     };
     const onUp = () => {
       document.removeEventListener('pointermove', onMove);
@@ -501,17 +544,20 @@ export function App() {
       const over = Number(target.getAttribute('data-fitem-index'));
       if (Number.isNaN(over) || over === from) return;
       moved = true;
+      // Same trap as the board drag: `from` is reassigned right after, and the
+      // updater runs later — so freeze it before calling setHome.
+      const start = from;
+      from = over;
       setHome((current) => {
         const pins = current.pins.map((pin, i) => {
           if (i !== folderIndex || pin.t !== 'f') return pin;
           const items = [...pin.items];
-          const [dragged] = items.splice(from, 1);
+          const [dragged] = items.splice(start, 1);
           items.splice(over, 0, dragged!);
           return { ...pin, items };
         });
         return { ...current, pins };
       });
-      from = over;
     };
     const onUp = () => {
       document.removeEventListener('pointermove', onMove);
@@ -1834,7 +1880,6 @@ export function App() {
             {visibleTabs.map((token) => {
               const isGroup = token.startsWith('g:');
               const groupName = isGroup ? token.slice(2) : null;
-              const mark = isGroup ? '📁' : icon(token);
               const target = isGroup ? `__group__${groupName}` : token;
               return (
                 <button
@@ -1846,7 +1891,7 @@ export function App() {
                     setActiveCategory(target);
                   }}
                 >
-                  {mark ? <i className="pos-nav-icon">{mark}</i> : null}
+                  {isGroup ? <i className="pos-nav-icon pos-nav-folder">▤</i> : <Mark name={token} />}
                   {isGroup ? groupName : token}
                 </button>
               );
@@ -2050,6 +2095,14 @@ export function App() {
           {info}
         </div>
       ) : null}
+      {updateReady ? (
+        <div className="pos-update">
+          <span>New version ready</span>
+          <button type="button" onClick={() => window.location.reload()}>
+            Update now
+          </button>
+        </div>
+      ) : null}
       {training ? (
         <div
           className="pos-training"
@@ -2077,10 +2130,10 @@ export function App() {
           boardSlots={boardSlots}
           boardCols={boardCols}
           operatorName={operatorName}
-          iconsOn={iconsOn}
-          onToggleIcons={(next) => {
-            setIconsOn(next);
-            localStorage.setItem(ICONS_KEY, next ? '1' : '0');
+          iconStyle={iconStyle}
+          onIconStyle={(next) => {
+            setIconStyle(next);
+            localStorage.setItem(ICONS_KEY, next);
           }}
           onChange={queueBoardSave}
           onClose={closeBoardEditor}
@@ -2173,7 +2226,6 @@ export function App() {
                   const isGroup = token.startsWith('g:');
                   const groupName = isGroup ? token.slice(2) : null;
                   const active = isGroup ? activeCategory === `__group__${groupName}` : activeCategory === token;
-                  const mark = isGroup ? '📁' : icon(token);
                   return (
                     <button
                       key={token}
@@ -2181,7 +2233,7 @@ export function App() {
                       className={`${active ? 'is-active' : ''} ${isGroup ? 'is-group' : ''}`}
                       onClick={() => setActiveCategory(isGroup ? `__group__${groupName}` : token)}
                     >
-                      {mark ? <i className="pos-nav-icon">{mark}</i> : null}
+                      {isGroup ? <i className="pos-nav-icon pos-nav-folder">▤</i> : <Mark name={token} />}
                       {isGroup ? groupName : token}
                     </button>
                   );
@@ -2227,14 +2279,13 @@ export function App() {
                           if (!collapsible) event.preventDefault();
                         }}
                       >
-                        {(() => {
-                          const mark = folderName ? '📁' : icon(token);
-                          return mark ? (
-                            <i className="pos-nav-icon pos-list-icon">{mark}</i>
-                          ) : (
-                            <i className={`pos-list-dot ${hueClass(hueForCategory(cats[0]?.name ?? token))}`} />
-                          );
-                        })()}
+                        {folderName ? (
+                          <i className="pos-nav-icon pos-list-icon pos-nav-folder">▤</i>
+                        ) : hasMark(token) ? (
+                          <Mark name={token} className="pos-nav-icon pos-list-icon" />
+                        ) : (
+                          <i className={`pos-list-dot ${hueClass(hueForCategory(cats[0]?.name ?? token))}`} />
+                        )}
                         <h3>{folderName ?? token}</h3>
                         <small>
                           {total} item{total === 1 ? '' : 's'}
@@ -2427,7 +2478,8 @@ export function App() {
                         {renameInput ?? (
                           <>
                             <span className={pinDisplay(pin, pin.name).cls}>
-                              {icon(pin.name) || '📁'} {pinDisplay(pin, pin.name).main}
+                              {hasMark(pin.name) ? <Mark name={pin.name} className="pos-tile-icon" /> : <i className="pos-tile-icon pos-nav-folder">▤</i>}
+                              {pinDisplay(pin, pin.name).main}
                             </span>
                             <small>{pin.items.length} items</small>
                           </>
@@ -2453,10 +2505,7 @@ export function App() {
                         <>
                           <span className={pinDisplay(pin, item.title).cls}>
                             {/* The dish's own mark, else its category's. */}
-                            {(() => {
-                              const mark = icon(item.title) || icon(categoryOf(item));
-                              return mark ? <i className="pos-tile-icon">{mark}</i> : null;
-                            })()}
+                            <Mark name={hasMark(item.title) ? item.title : categoryOf(item)} className="pos-tile-icon" />
                             {pinDisplay(pin, item.title).main}
                           </span>
                           <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>

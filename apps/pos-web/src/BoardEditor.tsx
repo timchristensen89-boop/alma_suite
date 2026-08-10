@@ -5,15 +5,18 @@ import {
   HUE_DOTS,
   MGMT_KEYS,
   MGMT_LABELS,
+  ICON_STYLES,
   hueClass,
   hueStyle,
-  iconFor,
+  iconKeyFor,
+  iconSvg,
   moveInArray,
   movePinToPage,
   paginatePins,
   pinDisplay,
   visibleTabTokens,
   type HomeConfig,
+  type IconStyle,
   type MenuCategory,
   type MenuItem,
   type Pin,
@@ -32,8 +35,8 @@ type Props = {
   boardSlots: number;
   boardCols: number;
   operatorName: string;
-  iconsOn: boolean;
-  onToggleIcons: (next: boolean) => void;
+  iconStyle: IconStyle;
+  onIconStyle: (next: IconStyle) => void;
   onChange: (next: HomeConfig) => void;
   onClose: () => void;
 };
@@ -58,8 +61,8 @@ export function BoardEditor({
   boardSlots,
   boardCols,
   operatorName,
-  iconsOn,
-  onToggleIcons,
+  iconStyle,
+  onIconStyle,
   onChange,
   onClose
 }: Props) {
@@ -81,6 +84,11 @@ export function BoardEditor({
   const tabsConfig: TabsConfig = home.categories ?? { order: [], hidden: [], groups: [] };
 
   const allItems = useMemo(() => menu.flatMap((category) => category.items), [menu]);
+  const categoryOfRecipe = useMemo(() => {
+    const map = new Map<string, string>();
+    menu.forEach((category) => category.items.forEach((item) => map.set(item.recipeId, category.name)));
+    return map;
+  }, [menu]);
   const itemById = useMemo(() => {
     const map = new Map<string, MenuItem>();
     allItems.forEach((item) => map.set(item.recipeId, item));
@@ -261,6 +269,15 @@ export function BoardEditor({
     setNavSelected(`g:${name}`);
   }
 
+  // Same drawn marks as the register, so the preview tells the truth.
+  function Mark({ name, fallback, folder, mgmt, className }: { name: string; fallback?: string; folder?: boolean; mgmt?: boolean; className?: string }) {
+    const cls = className ?? 'pos-nav-icon';
+    if (mgmt) return <i className={`${cls} pos-nav-folder`}>⚙</i>;
+    const key = iconStyle !== 'off' ? iconKeyFor(name) || iconKeyFor(fallback ?? '') : '';
+    if (!key) return folder ? <i className={`${cls} pos-nav-folder`}>▤</i> : null;
+    return <i className={cls} dangerouslySetInnerHTML={{ __html: iconSvg(key, iconStyle) }} />;
+  }
+
   const selectedPin = selected === null ? null : pins[selected] ?? null;
   const folders = pins.map((pin, index) => ({ pin, index })).filter((entry) => entry.pin.t === 'f');
   const pinnedIds = new Set(pins.filter((pin) => pin.t === 'i').map((pin) => (pin as { id: string }).id));
@@ -277,14 +294,24 @@ export function BoardEditor({
           </button>
         </div>
         <span className="pos-be-who">{operatorName ? `${operatorName}'s layout` : 'This layout'} · saves as you go</span>
-        <button
-          type="button"
-          className={iconsOn ? 'pos-be-add is-on' : 'pos-be-add'}
-          title="Food-group icons on the nav and the board"
-          onClick={() => onToggleIcons(!iconsOn)}
-        >
-          {iconsOn ? '🍸 Icons on' : 'Icons off'}
-        </button>
+        <span className="pos-be-iconpick" title="Food-group marks on the nav and the board">
+          {ICON_STYLES.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              className={iconStyle === option.key ? 'is-on' : ''}
+              title={option.hint}
+              onClick={() => onIconStyle(option.key)}
+            >
+              {option.key === 'off' ? (
+                'None'
+              ) : (
+                <i dangerouslySetInnerHTML={{ __html: iconSvg('cocktail', option.key) }} />
+              )}
+              {option.key === 'off' ? '' : option.label}
+            </button>
+          ))}
+        </span>
         <button type="button" className="pos-be-add" disabled={!undo} onClick={undoLast}>
           ↶ Undo
         </button>
@@ -441,13 +468,12 @@ export function BoardEditor({
                             <button type="button" className="pos-be-rowbody" onClick={() => setSelected(index)}>
                               <i className="pos-be-dot" style={pin.c ? { background: HUE_DOTS[pin.c] ?? pin.c } : undefined} />
                               <span className="pos-be-rowname">
-                                {pin.t === 'f'
-                                  ? `${(iconsOn && iconFor(pin.name)) || '📁'} `
-                                  : pin.t === 'm'
-                                    ? '⚙ '
-                                    : iconsOn && iconFor(pinLabel(pin))
-                                      ? `${iconFor(pinLabel(pin))} `
-                                      : ''}
+                                <Mark
+                                  name={pin.t === 'f' ? pin.name : pinLabel(pin)}
+                                  fallback={pin.t === 'i' ? categoryOfRecipe.get(pin.id) : undefined}
+                                  folder={pin.t === 'f'}
+                                  mgmt={pin.t === 'm'}
+                                />
                                 {pinLabel(pin)}
                               </span>
                               <em>{pinKind(pin)}</em>
@@ -513,7 +539,12 @@ export function BoardEditor({
                         onClick={() => setSelected(index)}
                       >
                         <span className={display.cls}>
-                          {pin.t === 'f' ? `${iconsOn ? iconFor(base) || '📁' : '📁'} ` : iconsOn && iconFor(base) ? `${iconFor(base)} ` : ''}
+                          <Mark
+                            name={base}
+                            fallback={pin.t === 'i' ? categoryOfRecipe.get(pin.id) : undefined}
+                            folder={pin.t === 'f'}
+                            className="pos-tile-icon"
+                          />
                           {display.main}
                         </span>
                         {pin.d === 'big' ? null : <small>{pin.t === 'f' ? `${pin.items.length} items` : pinKind(pin)}</small>}

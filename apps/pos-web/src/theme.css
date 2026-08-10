@@ -1265,11 +1265,52 @@ summary.pos-list-head.is-tab-edit {
 body.pos-dark .pos-action-list .pos-action-danger { color: #e88a77; border-color: rgba(232, 138, 119, 0.4); }
 body.pos-dark .pos-action-list .pos-action-danger em { color: rgba(232, 138, 119, 0.75); }
 
-/* Food-group icons: a mark, not a decoration — sized to sit with the text. */
-.pos-nav-icon { font-style: normal; margin-right: 8px; font-size: 15px; line-height: 1; flex: none; }
-.pos-list-icon { font-size: 17px; margin-right: 10px; }
-.pos-tile-icon { font-style: normal; margin-right: 6px; font-size: 15px; }
+/* ── Drawn category marks ────────────────────────────────────────────────
+   Line art, one ink, inheriting colour from the text it sits beside. Sized
+   to the cap height so a row of them reads as typography, not clip-art.  */
+.pos-nav-icon, .pos-tile-icon {
+  font-style: normal;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  margin-right: 0.5em;
+  vertical-align: -0.18em;
+  opacity: 0.82;
+}
+.pos-nav-icon svg, .pos-tile-icon svg { width: 100%; height: 100%; display: block; }
+.pos-nav-folder { font-size: 0.95em; opacity: 0.55; }
+.pos-list-icon { width: 1.3em; height: 1.3em; margin-right: 0.6em; opacity: 0.7; }
+.is-on .pos-nav-icon, .is-active .pos-nav-icon { opacity: 1; }
 .pos-label-short .pos-tile-icon, .pos-label-big .pos-tile-icon { display: none; }
+
+/* Icon-set picker in the editor header */
+.pos-be-iconpick { display: inline-flex; gap: 4px; }
+.pos-be-iconpick button {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--pos-border); background: transparent; color: var(--pos-text2);
+  border-radius: 9999px; padding: 7px 12px; cursor: pointer; font-size: 12.5px; min-height: 38px;
+}
+.pos-be-iconpick button i { width: 16px; height: 16px; display: inline-flex; }
+.pos-be-iconpick button i svg { width: 100%; height: 100%; }
+.pos-be-iconpick button.is-on { background: var(--pos-text); color: var(--pos-card); border-color: var(--pos-text); }
+
+/* A deploy only reaches a register that reloads — registers never do. */
+.pos-update {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; z-index: 60;
+  display: flex; align-items: center; gap: 12px;
+  background: var(--pos-text); color: var(--pos-card);
+  border-radius: 9999px; padding: 11px 14px 11px 18px;
+  box-shadow: 0 8px 26px rgba(31, 53, 36, 0.28); font-size: 14px;
+}
+.pos-update button {
+  border: 0; background: var(--pos-card); color: var(--pos-text);
+  border-radius: 9999px; padding: 8px 16px; font-family: inherit;
+  font-size: 13.5px; font-weight: 600; cursor: pointer; min-height: 38px;
+}
+@media print { .pos-update { display: none; } }
 
 /* Board editor: place mode, filter, lifted row */
 .pos-be-filter { margin-bottom: 10px; }
