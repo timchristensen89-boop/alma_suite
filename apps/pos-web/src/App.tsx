@@ -11,8 +11,11 @@ import {
   HUE_NAMES,
   MGMT_KEYS,
   MGMT_LABELS,
+  ICONS_KEY,
   hueClass,
   hueStyle,
+  iconFor,
+  loadIconsOn,
   paginatePins,
   pinDisplay,
   visibleTabTokens,
@@ -357,6 +360,10 @@ export function App() {
   // Home pages: the board never scrolls — pins flow onto pages left/right.
   const [boardPage, setBoardPage] = useState(0);
   const [boardSlots, setBoardSlots] = useState(24);
+  // Food-group icons on the nav and the board, per device.
+  const [iconsOn, setIconsOn] = useState(loadIconsOn);
+  // No icon when they're off, and never one on a folder (it has its own 📁).
+  const icon = (name: string) => (iconsOn ? iconFor(name) : '');
   // Column count is kept alongside the slot total so the board editor's
   // preview can lay tiles out on the same grid the register measured.
   const [boardCols, setBoardCols] = useState(4);
@@ -512,7 +519,6 @@ export function App() {
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
   const [home, setHome] = useState<HomeConfig>({ buttons: [], pins: [] });
   const [renaming, setRenaming] = useState<null | { kind: 'pin' | 'group'; key: number | string; value: string }>(null);
-  const [groupSheet, setGroupSheet] = useState<null | { name: string }>(null);
   const homeRef = useRef(home);
   homeRef.current = home;
   const orderIdRef = useRef<string | null>(null);
@@ -995,122 +1001,9 @@ export function App() {
   const tabsConfig: TabsConfig = home.categories ?? { order: [], hidden: [], groups: [] };
   const visibleTabs = useMemo(() => visibleTabTokens(menu.map((category) => category.name), tabsConfig), [menu, tabsConfig]);
 
-  function saveTabs(mutate: (config: TabsConfig) => TabsConfig) {
-    setHome((current) => {
-      const config = mutate(current.categories ?? { order: [], hidden: [], groups: [] });
-      const next = { ...current, categories: config };
-      setTimeout(() => saveBoard(next), 0);
-      return next;
-    });
-  }
-
-  // Tab drag (edit mode): reorder, or drop a tab ONTO another to group them.
-  const dragTabToken = useRef<string | null>(null);
-  function tabPointerDown(event: React.PointerEvent, token: string) {
-    if (!boardEdit) return;
-    event.preventDefault();
-    dragTabToken.current = token;
-    let dropOn: string | null = null;
-    let dropBoard = false;
-    let movedTab = false;
-    const stamp = Date.now();
-    const onMove = (nativeEvent: PointerEvent) => {
-      if (dragTabToken.current === null) return;
-      const hit = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY);
-      const target = hit?.closest('[data-tab-token]');
-      document.querySelectorAll('[data-tab-token].is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
-      document.querySelectorAll('.pos-grid-home.is-board-drop').forEach((el) => el.classList.remove('is-board-drop'));
-      if (!target) {
-        const board = hit?.closest('.pos-grid-home');
-        if (board) {
-          dropBoard = true;
-          board.classList.add('is-board-drop');
-        } else {
-          dropBoard = false;
-        }
-        return;
-      }
-      dropBoard = false;
-      const over = target.getAttribute('data-tab-token')!;
-      if (over === dragTabToken.current) return;
-      // Centre third of the target = "drop into a group"; edges = reorder.
-      const rect = target.getBoundingClientRect();
-      const ratio = target.closest('.pos-rail-cats, .pos-list')
-        ? (nativeEvent.clientY - rect.y) / rect.height
-        : (nativeEvent.clientX - rect.x) / rect.width;
-      if (ratio > 0.3 && ratio < 0.7 && !dragTabToken.current.startsWith('g:')) {
-        dropOn = over;
-        target.classList.add('is-drop-target');
-        return;
-      }
-      dropOn = null;
-      movedTab = true;
-      const from = dragTabToken.current;
-      saveTabsQuiet((config) => {
-        const order = visibleTabsRef.current.filter((candidate) => candidate !== from);
-        order.splice(order.indexOf(over) + (ratio >= 0.5 ? 1 : 0), 0, from);
-        return { ...config, order };
-      });
-    };
-    const onUp = () => {
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
-      document.removeEventListener('pointercancel', onUp);
-      document.querySelectorAll('[data-tab-token].is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
-      document.querySelectorAll('.pos-grid-home.is-board-drop').forEach((el) => el.classList.remove('is-board-drop'));
-      const from = dragTabToken.current;
-      dragTabToken.current = null;
-      if (from && dropBoard) {
-        // Whole category (or group) dropped on the board → folder with its items.
-        const catNames = from.startsWith('g:')
-          ? (homeRef.current.categories?.groups.find((group) => group.name === from.slice(2))?.cats ?? [])
-          : [from];
-        const items = catNames.flatMap((name) => menu.find((category) => category.name === name)?.items.map((item) => item.recipeId) ?? []);
-        if (items.length > 0) {
-          const folderName = from.startsWith('g:') ? from.slice(2) : from;
-          const board = { ...homeRef.current, pins: [...homeRef.current.pins, { t: 'f' as const, name: folderName, items: items.slice(0, 40) }] };
-          setHome(board);
-          saveBoard(board);
-          setInfo(`${folderName} added to Home as a folder (${Math.min(items.length, 40)} items).`);
-        }
-        return;
-      }
-      if (from && dropOn) {
-        // Group the two tabs (or add to an existing group).
-        saveTabs((config) => {
-          if (dropOn!.startsWith('g:')) {
-            const groupName = dropOn!.slice(2);
-            return {
-              ...config,
-              order: visibleTabsRef.current.filter((candidate) => candidate !== from),
-              groups: config.groups.map((group) => (group.name === groupName ? { ...group, cats: [...group.cats, from] } : group))
-            };
-          }
-          let name = 'New group';
-          let n = 2;
-          while (config.groups.some((group) => group.name === name)) name = `New group ${n++}`;
-          const order = visibleTabsRef.current.map((candidate) => (candidate === dropOn ? `g:${name}` : candidate)).filter((candidate) => candidate !== from);
-          return { ...config, order, groups: [...config.groups, { name, cats: [dropOn!, from] }] };
-        });
-
-      } else if (movedTab) {
-        saveBoard(homeRef.current);
-      } else if (Date.now() - stamp < 400 && from) {
-        // Plain tap in edit mode: hide/show a category tab.
-        if (!from.startsWith('g:')) {
-          saveTabs((config) => ({
-            ...config,
-            hidden: config.hidden.includes(from) ? config.hidden.filter((candidate) => candidate !== from) : [...config.hidden, from],
-            order: visibleTabsRef.current
-          }));
-        }
-      }
-    };
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
-    document.addEventListener('pointercancel', onUp);
-  }
-
+  // Nav editing (reorder, group, hide, rename) lives ONLY in the board
+  // editor now — the register just reads this config. Board TILES are still
+  // editable in place, so their rename stays here.
   function commitPinRename(index: number, rawValue: string) {
     const value = rawValue.trim().slice(0, 40);
     setRenaming(null);
@@ -1126,86 +1019,6 @@ export function App() {
       setTimeout(() => saveBoard(next), 0);
       return next;
     });
-  }
-
-  function commitGroupRename(oldName: string, rawValue: string) {
-    const value = rawValue.trim().slice(0, 30);
-    setRenaming(null);
-    if (value === oldName) return;
-    if (!value) {
-      dissolveGroup(oldName);
-      return;
-    }
-    saveTabs((config) => ({
-      ...config,
-      order: (config.order.length ? config.order : visibleTabsRef.current).map((token) => (token === `g:${oldName}` ? `g:${value}` : token)),
-      groups: config.groups.map((group) => (group.name === oldName ? { ...group, name: value } : group))
-    }));
-    setActiveCategory((current) => (current === `__group__${oldName}` ? `__group__${value}` : current));
-  }
-
-  // Remove the folder, keep its categories — they return to the bar in place.
-  function dissolveGroup(name: string) {
-    saveTabs((config) => {
-      const cats = config.groups.find((group) => group.name === name)?.cats ?? [];
-      const base = config.order.length ? config.order : visibleTabsRef.current;
-      return {
-        ...config,
-        order: base.flatMap((token) => (token === `g:${name}` ? cats : [token])),
-        groups: config.groups.filter((group) => group.name !== name)
-      };
-    });
-    setActiveCategory((current) => (current === `__group__${name}` ? HOME_TAB : current));
-  }
-
-  // Pull ONE category out of a folder, back onto the bar beside it.
-  function releaseFromGroup(name: string, cat: string) {
-    saveTabs((config) => {
-      const base = (config.order.length ? config.order : visibleTabsRef.current).filter((token) => token !== cat);
-      const at = base.indexOf(`g:${name}`);
-      return {
-        ...config,
-        order: at === -1 ? [...base, cat] : [...base.slice(0, at + 1), cat, ...base.slice(at + 1)],
-        groups: config.groups.map((group) => (group.name === name ? { ...group, cats: group.cats.filter((c) => c !== cat) } : group))
-      };
-    });
-  }
-
-  function renameGroupFromSheet(oldName: string, raw: string) {
-    const value = raw.trim().slice(0, 30);
-    if (!value || value === oldName) return;
-    commitGroupRename(oldName, value);
-    setGroupSheet({ name: value });
-  }
-
-  // Dragging is fine with a mouse; on a busy iPad an arrow is surer.
-  function moveTab(token: string, delta: number) {
-    saveTabs((config) => {
-      const order = [...visibleTabsRef.current];
-      const at = order.indexOf(token);
-      const to = at + delta;
-      if (at === -1 || to < 0 || to >= order.length) return config;
-      order.splice(to, 0, order.splice(at, 1)[0]!);
-      return { ...config, order };
-    });
-  }
-
-  function newTabFolder() {
-    saveTabs((config) => {
-      let name = 'New folder';
-      let n = 2;
-      while (config.groups.some((group) => group.name === name)) name = `New folder ${n++}`;
-      return {
-        ...config,
-        order: [...visibleTabsRef.current, `g:${name}`],
-        groups: [...config.groups, { name, cats: [] }]
-      };
-    });
-  }
-
-  // Reorders during a drag must not thrash the server — quiet save, flush on up.
-  function saveTabsQuiet(mutate: (config: TabsConfig) => TabsConfig) {
-    setHome((current) => ({ ...current, categories: mutate(current.categories ?? { order: [], hidden: [], groups: [] }) }));
   }
 
   const visibleTabsRef = useRef(visibleTabs);
@@ -1953,13 +1766,12 @@ export function App() {
           >
             Bills
           </button>
+          {/* The nav is READ-ONLY here — it is arranged in the board editor,
+              so a busy service can't reorder it by accident. */}
           <div className="pos-rail-eyebrow">
             Menu
-            <button type="button" className="pos-rail-editbtn" title="Board editor — arrange with buttons" onClick={() => setView('board')}>
-              ⚙
-            </button>
-            <button type="button" className="pos-rail-editbtn" onClick={() => setBoardEdit(!boardEdit)}>
-              {boardEdit ? 'Done' : '✎ Edit'}
+            <button type="button" className="pos-rail-editbtn" title="Edit the menu nav in the board editor" onClick={() => setView('board')}>
+              ✎ Edit
             </button>
           </div>
           <div className="pos-rail-cats">
@@ -1972,89 +1784,23 @@ export function App() {
             {visibleTabs.map((token) => {
               const isGroup = token.startsWith('g:');
               const groupName = isGroup ? token.slice(2) : null;
-              if (renaming?.kind === 'group' && renaming.key === groupName) {
-                return (
-                  <input
-                    key={token}
-                    className="pos-rail-rename"
-                    autoFocus
-                    defaultValue={groupName ?? ''}
-                    onBlur={(event) => commitGroupRename(groupName!, event.currentTarget.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') commitGroupRename(groupName!, event.currentTarget.value);
-                      if (event.key === 'Escape') setRenaming(null);
-                    }}
-                  />
-                );
-              }
-              const label = isGroup ? `📁 ${groupName}` : token;
+              const mark = isGroup ? '📁' : icon(token);
               const target = isGroup ? `__group__${groupName}` : token;
               return (
                 <button
                   key={token}
                   type="button"
-                  data-tab-token={token}
-                  className={`${activeCategory === target && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'}${boardEdit ? ' is-tab-edit' : ''}`}
-                  onPointerDown={(event) => {
-                    if ((event.target as HTMLElement).closest('.pos-rail-move')) return;
-                    tabPointerDown(event, token);
-                  }}
+                  className={activeCategory === target && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'}
                   onClick={() => {
-                    if (boardEdit) {
-                      if (isGroup) setGroupSheet({ name: groupName! });
-                      return;
-                    }
                     setView('register');
                     setActiveCategory(target);
                   }}
                 >
-                  {label}
-                  {boardEdit ? (
-                    <span className="pos-rail-move">
-                      <i
-                        title="Move up"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          moveTab(token, -1);
-                        }}
-                      >
-                        ▲
-                      </i>
-                      <i
-                        title="Move down"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          moveTab(token, 1);
-                        }}
-                      >
-                        ▼
-                      </i>
-                    </span>
-                  ) : null}
+                  {mark ? <i className="pos-nav-icon">{mark}</i> : null}
+                  {isGroup ? groupName : token}
                 </button>
               );
             })}
-            {boardEdit
-              ? tabsConfig.hidden
-                  .filter((name) => menu.some((category) => category.name === name))
-                  .map((name) => (
-                    <button
-                      key={`rail-hidden-${name}`}
-                      type="button"
-                      className="pos-rail-item pos-rail-hidden"
-                      onClick={() =>
-                        saveTabs((config) => ({ ...config, hidden: config.hidden.filter((candidate) => candidate !== name) }))
-                      }
-                    >
-                      {name} 🚫
-                    </button>
-                  ))
-              : null}
-            {boardEdit ? (
-              <button type="button" className="pos-rail-item pos-rail-newfolder" onClick={newTabFolder}>
-                ＋ New folder
-              </button>
-            ) : null}
           </div>
           <div className="pos-rail-foot">
             <strong>{operatorName}</strong>
@@ -2262,6 +2008,11 @@ export function App() {
           boardSlots={boardSlots}
           boardCols={boardCols}
           operatorName={operatorName}
+          iconsOn={iconsOn}
+          onToggleIcons={(next) => {
+            setIconsOn(next);
+            localStorage.setItem(ICONS_KEY, next ? '1' : '0');
+          }}
           onChange={queueBoardSave}
           onClose={closeBoardEditor}
         />
@@ -2348,69 +2099,28 @@ export function App() {
                 >
                   Full menu
                 </button>
+                {/* Read-only: the tab bar is arranged in the board editor. */}
                 {visibleTabs.map((token) => {
                   const isGroup = token.startsWith('g:');
                   const groupName = isGroup ? token.slice(2) : null;
                   const active = isGroup ? activeCategory === `__group__${groupName}` : activeCategory === token;
-                  if (renaming?.kind === 'group' && renaming.key === groupName) {
-                    return (
-                      <input
-                        key={token}
-                        className="pos-tab-rename"
-                        autoFocus
-                        defaultValue={groupName ?? ''}
-                        onBlur={(event) => commitGroupRename(groupName!, event.currentTarget.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') commitGroupRename(groupName!, event.currentTarget.value);
-                          if (event.key === 'Escape') setRenaming(null);
-                        }}
-                      />
-                    );
-                  }
+                  const mark = isGroup ? '📁' : icon(token);
                   return (
                     <button
                       key={token}
                       type="button"
-                      data-tab-token={token}
-                      className={`${active ? 'is-active' : ''} ${isGroup ? 'is-group' : ''} ${boardEdit ? 'is-tab-edit' : ''}`}
-                      onPointerDown={(event) => tabPointerDown(event, token)}
-                      onClick={() => {
-                        if (boardEdit) {
-                          if (isGroup) setGroupSheet({ name: groupName! });
-                          return;
-                        }
-                        setActiveCategory(isGroup ? `__group__${groupName}` : token);
-                      }}
+                      className={`${active ? 'is-active' : ''} ${isGroup ? 'is-group' : ''}`}
+                      onClick={() => setActiveCategory(isGroup ? `__group__${groupName}` : token)}
                     >
-                      {isGroup ? `📁 ${groupName}` : token}
+                      {mark ? <i className="pos-nav-icon">{mark}</i> : null}
+                      {isGroup ? groupName : token}
                     </button>
                   );
                 })}
-                {boardEdit
-                  ? tabsConfig.hidden
-                      .filter((name) => menu.some((category) => category.name === name))
-                      .map((name) => (
-                        <button
-                          key={`hidden-${name}`}
-                          type="button"
-                          className="is-tab-hidden"
-                          onClick={() =>
-                            saveTabs((config) => ({ ...config, hidden: config.hidden.filter((candidate) => candidate !== name) }))
-                          }
-                        >
-                          {name} 🚫
-                        </button>
-                      ))
-                  : null}
                 {boardEdit ? (
-                  <>
-                    <button type="button" className="pos-tab-newfolder" onClick={newTabFolder}>
-                      ＋ Folder
-                    </button>
-                    <button type="button" className="pos-tab-newfolder" onClick={() => setView('board')}>
-                      ⚙ Editor
-                    </button>
-                  </>
+                  <button type="button" className="pos-tab-newfolder" onClick={() => setView('board')}>
+                    ⚙ Editor
+                  </button>
                 ) : null}
               </nav>
             ) : null}
@@ -2443,22 +2153,20 @@ export function App() {
                   return (
                     <details key={token} className="pos-list-section" {...(collapsible ? {} : { open: true })}>
                       <summary
-                        className={`pos-list-head ${boardEdit && collapsible ? 'is-tab-edit' : ''}`}
-                        data-tab-token={collapsible ? token : undefined}
-                        onPointerDown={collapsible && boardEdit ? (event) => tabPointerDown(event, token) : undefined}
+                        className="pos-list-head"
                         onClick={(event) => {
-                          if (!collapsible) {
-                            event.preventDefault();
-                            return;
-                          }
-                          if (boardEdit) {
-                            event.preventDefault();
-                            if (folderName) setGroupSheet({ name: folderName });
-                          }
+                          if (!collapsible) event.preventDefault();
                         }}
                       >
-                        <i className={`pos-list-dot ${hueClass(hueForCategory(cats[0]?.name ?? token))}`} />
-                        <h3>{folderName ? `📁 ${folderName}` : token}</h3>
+                        {(() => {
+                          const mark = folderName ? '📁' : icon(token);
+                          return mark ? (
+                            <i className="pos-nav-icon pos-list-icon">{mark}</i>
+                          ) : (
+                            <i className={`pos-list-dot ${hueClass(hueForCategory(cats[0]?.name ?? token))}`} />
+                          );
+                        })()}
+                        <h3>{folderName ?? token}</h3>
                         <small>
                           {total} item{total === 1 ? '' : 's'}
                         </small>
@@ -2498,11 +2206,11 @@ export function App() {
                 {activeCategory === '__all__' ? (
                   <button
                     type="button"
-                    className={`pos-list-editfab ${boardEdit ? 'is-on' : ''}`}
-                    title="Edit menu — drag headings to reorder, drop one onto another for a folder, tap to hide"
-                    onClick={() => setBoardEdit(!boardEdit)}
+                    className="pos-list-editfab"
+                    title="Arrange the menu nav in the board editor"
+                    onClick={() => setView('board')}
                   >
-                    {boardEdit ? '✓ Done' : '✎'}
+                    ✎
                   </button>
                 ) : null}
               </div>
@@ -2649,7 +2357,9 @@ export function App() {
                         {badges}
                         {renameInput ?? (
                           <>
-                            <span className={pinDisplay(pin, pin.name).cls}>📁 {pinDisplay(pin, pin.name).main}</span>
+                            <span className={pinDisplay(pin, pin.name).cls}>
+                              {icon(pin.name) || '📁'} {pinDisplay(pin, pin.name).main}
+                            </span>
                             <small>{pin.items.length} items</small>
                           </>
                         )}
@@ -2672,7 +2382,14 @@ export function App() {
                       {badges}
                       {renameInput ?? (
                         <>
-                          <span className={pinDisplay(pin, item.title).cls}>{pinDisplay(pin, item.title).main}</span>
+                          <span className={pinDisplay(pin, item.title).cls}>
+                            {/* The dish's own mark, else its category's. */}
+                            {(() => {
+                              const mark = icon(item.title) || icon(categoryOf(item));
+                              return mark ? <i className="pos-tile-icon">{mark}</i> : null;
+                            })()}
+                            {pinDisplay(pin, item.title).main}
+                          </span>
                           <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
                         </>
                       )}
@@ -4770,53 +4487,6 @@ export function App() {
             </div>
             <button type="button" className="pos-ghost pos-modal-close" onClick={() => setVariantSheet(null)}>
               Cancel
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {groupSheet ? (
-        <div className="pos-modal" role="dialog">
-          <div className="pos-modal-panel">
-            <h2>📁 {groupSheet.name}</h2>
-            <input
-              key={groupSheet.name}
-              className="pos-tender"
-              defaultValue={groupSheet.name}
-              maxLength={30}
-              onBlur={(event) => renameGroupFromSheet(groupSheet.name, event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') renameGroupFromSheet(groupSheet.name, event.currentTarget.value);
-              }}
-            />
-            {(() => {
-              const cats = tabsConfig.groups.find((group) => group.name === groupSheet.name)?.cats ?? [];
-              return cats.length > 0 ? (
-                <>
-                  <p className="pos-muted">Tap a category to move it back onto the bar:</p>
-                  <div className="pos-group-chips">
-                    {cats.map((cat) => (
-                      <button key={cat} type="button" onClick={() => releaseFromGroup(groupSheet.name, cat)}>
-                        {cat} ⤴
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p className="pos-muted">This folder is empty — drag categories onto it, or remove it below.</p>
-              );
-            })()}
-            <button
-              type="button"
-              className="pos-ghost pos-danger-ghost"
-              onClick={() => {
-                dissolveGroup(groupSheet.name);
-                setGroupSheet(null);
-              }}
-            >
-              Remove folder (categories go back on the bar)
-            </button>
-            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setGroupSheet(null)}>
-              Done
             </button>
           </div>
         </div>

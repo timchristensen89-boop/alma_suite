@@ -7,6 +7,7 @@ import {
   MGMT_LABELS,
   hueClass,
   hueStyle,
+  iconFor,
   moveInArray,
   movePinToPage,
   paginatePins,
@@ -31,6 +32,8 @@ type Props = {
   boardSlots: number;
   boardCols: number;
   operatorName: string;
+  iconsOn: boolean;
+  onToggleIcons: (next: boolean) => void;
   onChange: (next: HomeConfig) => void;
   onClose: () => void;
 };
@@ -48,7 +51,18 @@ const LABEL_STYLES: Array<{ key: undefined | 'sh' | 'hs' | 'big'; tag: string; l
   { key: 'big', tag: 'A', label: 'Big title' }
 ];
 
-export function BoardEditor({ home, menu, topSellers, boardSlots, boardCols, operatorName, onChange, onClose }: Props) {
+export function BoardEditor({
+  home,
+  menu,
+  topSellers,
+  boardSlots,
+  boardCols,
+  operatorName,
+  iconsOn,
+  onToggleIcons,
+  onChange,
+  onClose
+}: Props) {
   const [tab, setTab] = useState<'board' | 'nav'>('board');
   const [selected, setSelected] = useState<number | null>(null);
   const [page, setPage] = useState(0);
@@ -56,6 +70,12 @@ export function BoardEditor({ home, menu, topSellers, boardSlots, boardCols, ope
   const [addSearch, setAddSearch] = useState('');
   const [folderSearch, setFolderSearch] = useState('');
   const [navSelected, setNavSelected] = useState<string | null>(null);
+  // "Place mode": tap a tile to pick it up, then tap a gap to drop it in.
+  // A two-tap move beats holding ▲ fourteen times, and needs no gesture.
+  const [placing, setPlacing] = useState<number | null>(null);
+  const [listFilter, setListFilter] = useState('');
+  // One step back, for the fat-finger moment.
+  const [undo, setUndo] = useState<HomeConfig | null>(null);
 
   const pins = home.pins;
   const tabsConfig: TabsConfig = home.categories ?? { order: [], hidden: [], groups: [] };
@@ -75,10 +95,32 @@ export function BoardEditor({ home, menu, topSellers, boardSlots, boardCols, ope
   const tokens = useMemo(() => visibleTabTokens(menu.map((category) => category.name), tabsConfig), [menu, tabsConfig]);
 
   function commitPins(next: Pin[]) {
+    setUndo(home);
     onChange({ ...home, pins: next });
   }
   function commitTabs(next: TabsConfig) {
+    setUndo(home);
     onChange({ ...home, categories: next });
+  }
+  function undoLast() {
+    if (!undo) return;
+    onChange(undo);
+    setUndo(null);
+    setSelected(null);
+    setPlacing(null);
+  }
+
+  // Lift a tile out and drop it back at `at` (an index in the list WITHOUT
+  // it), so a move across pages is two taps instead of a run of ▲.
+  function placeAt(from: number, at: number) {
+    const pin = pins[from];
+    if (!pin) return;
+    const rest = pins.filter((_, i) => i !== from);
+    const next = [...rest.slice(0, at), pin, ...rest.slice(at)];
+    commitPins(next);
+    setPlacing(null);
+    setSelected(at);
+    setPage(Math.max(0, paginatePins(next, capacity).findIndex((entries) => entries.some((entry) => entry.index === at))));
   }
   function patchPin(index: number, patch: Partial<PinPatch>) {
     commitPins(pins.map((pin, i) => (i === index ? ({ ...pin, ...patch } as Pin) : pin)));
@@ -235,6 +277,17 @@ export function BoardEditor({ home, menu, topSellers, boardSlots, boardCols, ope
           </button>
         </div>
         <span className="pos-be-who">{operatorName ? `${operatorName}'s layout` : 'This layout'} · saves as you go</span>
+        <button
+          type="button"
+          className={iconsOn ? 'pos-be-add is-on' : 'pos-be-add'}
+          title="Food-group icons on the nav and the board"
+          onClick={() => onToggleIcons(!iconsOn)}
+        >
+          {iconsOn ? '🍸 Icons on' : 'Icons off'}
+        </button>
+        <button type="button" className="pos-be-add" disabled={!undo} onClick={undoLast}>
+          ↶ Undo
+        </button>
         <button type="button" className="pos-be-done" onClick={onClose}>
           ✓ Done
         </button>
@@ -327,6 +380,24 @@ export function BoardEditor({ home, menu, topSellers, boardSlots, boardCols, ope
                 </div>
               ) : null}
 
+              {pins.length > 8 && !adding ? (
+                <input
+                  className="pos-be-search pos-be-filter"
+                  placeholder="Find a tile on the board…"
+                  value={listFilter}
+                  onChange={(event) => setListFilter(event.currentTarget.value)}
+                />
+              ) : null}
+
+              {placing !== null ? (
+                <p className="pos-be-placing">
+                  Moving <strong>{pinLabel(pins[placing]!)}</strong> — tap a gap to drop it.
+                  <button type="button" onClick={() => setPlacing(null)}>
+                    Cancel
+                  </button>
+                </p>
+              ) : null}
+
               <ol className="pos-be-rows">
                 {pages.map((entries, pageIndex) => (
                   <React.Fragment key={pageIndex}>
@@ -336,29 +407,73 @@ export function BoardEditor({ home, menu, topSellers, boardSlots, boardCols, ope
                         {entries.length} tile{entries.length === 1 ? '' : 's'}
                       </em>
                     </li>
-                    {entries.map(({ pin, index }) => (
-                      <li key={index} className={selected === index ? 'pos-be-row is-on' : 'pos-be-row'}>
-                        <span className="pos-be-move">
-                          <button type="button" title="Move up" disabled={index === 0} onClick={() => movePin(index, -1)}>
-                            ▲
-                          </button>
-                          <button type="button" title="Move down" disabled={index === pins.length - 1} onClick={() => movePin(index, 1)}>
-                            ▼
-                          </button>
-                        </span>
-                        <button type="button" className="pos-be-rowbody" onClick={() => setSelected(index)}>
-                          <i className="pos-be-dot" style={pin.c ? { background: HUE_DOTS[pin.c] ?? pin.c } : undefined} />
-                          <span className="pos-be-rowname">
-                            {pin.t === 'f' ? '📁 ' : pin.t === 'm' ? '⚙ ' : ''}
-                            {pinLabel(pin)}
-                          </span>
-                          <em>{pinKind(pin)}</em>
-                          {pin.s ? <b className="pos-be-size">{pin.s === 'w' ? 'Wide' : 'Big'}</b> : null}
-                        </button>
-                      </li>
-                    ))}
+                    {entries.map(({ pin, index }) => {
+                      const term = listFilter.trim().toLowerCase();
+                      const hidden = term ? !pinLabel(pin).toLowerCase().includes(term) : false;
+                      if (hidden && placing === null) return null;
+                      // In place mode every row gets a gap above it; the index
+                      // is measured on the list WITHOUT the travelling tile.
+                      const gapAt = index > placing! ? index - 1 : index;
+                      return (
+                        <React.Fragment key={index}>
+                          {/* The gap straight after the lifted tile would put
+                              it back where it started — don't offer it. */}
+                          {placing !== null && placing !== index && index !== placing + 1 ? (
+                            <li className="pos-be-gap">
+                              <button type="button" onClick={() => placeAt(placing, gapAt)}>
+                                ↳ drop here
+                              </button>
+                            </li>
+                          ) : null}
+                          <li
+                            className={`pos-be-row ${selected === index ? 'is-on' : ''} ${placing === index ? 'is-lifted' : ''} ${
+                              hidden ? 'is-dimmed' : ''
+                            }`}
+                          >
+                            <span className="pos-be-move">
+                              <button type="button" title="Move up" disabled={index === 0} onClick={() => movePin(index, -1)}>
+                                ▲
+                              </button>
+                              <button type="button" title="Move down" disabled={index === pins.length - 1} onClick={() => movePin(index, 1)}>
+                                ▼
+                              </button>
+                            </span>
+                            <button type="button" className="pos-be-rowbody" onClick={() => setSelected(index)}>
+                              <i className="pos-be-dot" style={pin.c ? { background: HUE_DOTS[pin.c] ?? pin.c } : undefined} />
+                              <span className="pos-be-rowname">
+                                {pin.t === 'f'
+                                  ? `${(iconsOn && iconFor(pin.name)) || '📁'} `
+                                  : pin.t === 'm'
+                                    ? '⚙ '
+                                    : iconsOn && iconFor(pinLabel(pin))
+                                      ? `${iconFor(pinLabel(pin))} `
+                                      : ''}
+                                {pinLabel(pin)}
+                              </span>
+                              <em>{pinKind(pin)}</em>
+                              {pin.s ? <b className="pos-be-size">{pin.s === 'w' ? 'Wide' : 'Big'}</b> : null}
+                            </button>
+                            <button
+                              type="button"
+                              className="pos-be-x"
+                              title="Move this tile somewhere else"
+                              onClick={() => setPlacing(placing === index ? null : index)}
+                            >
+                              ⇅
+                            </button>
+                          </li>
+                        </React.Fragment>
+                      );
+                    })}
                   </React.Fragment>
                 ))}
+                {placing !== null ? (
+                  <li className="pos-be-gap">
+                    <button type="button" onClick={() => placeAt(placing, pins.length - 1)}>
+                      ↳ drop at the end
+                    </button>
+                  </li>
+                ) : null}
                 {pins.length === 0 ? <li className="pos-be-empty">Nothing on the board yet — add pins above.</li> : null}
               </ol>
             </section>
@@ -398,7 +513,7 @@ export function BoardEditor({ home, menu, topSellers, boardSlots, boardCols, ope
                         onClick={() => setSelected(index)}
                       >
                         <span className={display.cls}>
-                          {pin.t === 'f' ? '📁 ' : ''}
+                          {pin.t === 'f' ? `${iconsOn ? iconFor(base) || '📁' : '📁'} ` : iconsOn && iconFor(base) ? `${iconFor(base)} ` : ''}
                           {display.main}
                         </span>
                         {pin.d === 'big' ? null : <small>{pin.t === 'f' ? `${pin.items.length} items` : pinKind(pin)}</small>}
@@ -514,6 +629,21 @@ export function BoardEditor({ home, menu, topSellers, boardSlots, boardCols, ope
                         ))}
                         <button type="button" onClick={() => sendToPage(selected!, pages.length)}>
                           ＋ New page
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="pos-be-field">
+                      <span>Move within the board</span>
+                      <div className="pos-be-seg">
+                        <button type="button" disabled={selected === 0} onClick={() => placeAt(selected!, 0)}>
+                          ⤒ To the front
+                        </button>
+                        <button type="button" disabled={selected === pins.length - 1} onClick={() => placeAt(selected!, pins.length - 1)}>
+                          ⤓ To the end
+                        </button>
+                        <button type="button" className={placing === selected ? 'is-on' : ''} onClick={() => setPlacing(placing === selected ? null : selected)}>
+                          ⇅ Move to…
                         </button>
                       </div>
                     </div>

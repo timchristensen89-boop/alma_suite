@@ -79,6 +79,53 @@ export function pinDisplay(pin: Pin, baseName: string): { main: string; cls: str
   return { main: name, cls: '' };
 }
 
+// ── Category icons ──────────────────────────────────────────────────────
+// A glanceable mark per food group, matched on the category (or dish) name.
+// Order matters: "Espresso Martini" must read as a cocktail, not a coffee,
+// so the drinks patterns are tested before the kitchen ones. No match =
+// no icon — a wrong icon is worse than none.
+const ICON_RULES: Array<[RegExp, string]> = [
+  [/margarita|cocktail|martini|negroni|spritz|aperol|daiquiri|mojito|paloma/i, '🍸'],
+  [/whisk|gin\b|vodka|rum\b|tequila|mezcal|spirit|liqueur|amaro|brandy/i, '🥃'],
+  [/wine|rosé|rose\b|chardonnay|pinot|riesling|sauv|shiraz|merlot|prosecco|champagne|sparkling|by the glass/i, '🍷'],
+  [/beer|lager|ale\b|xpa|ipa\b|pilsner|cider|tinnie|schooner/i, '🍺'],
+  [/non.?alcohol|soft drink|juice|soda|mocktail|lemonade|water/i, '🥤'],
+  [/coffee|espresso|latte|cappucc|flat white|tea\b/i, '☕'],
+  [/taco|tostada|quesadilla|burrito|nacho|tortilla/i, '🌮'],
+  [/oyster|fish|seafood|prawn|kingfish|ceviche|squid|octopus|scallop/i, '🐟'],
+  [/steak|beef|lamb|pork|chicken|carnitas|meat|brisket|rib\b/i, '🥩'],
+  [/salad|veg|greens|slaw/i, '🥗'],
+  [/dessert|churro|flan|ice cream|gelato|sweet|cake|pudding/i, '🍨'],
+  [/kids?\b|child/i, '🧒'],
+  [/side|fries|chips|elote|beans|rice/i, '🍟'],
+  [/set menu|banquet|feed me|share|degustation/i, '🍽️'],
+  [/dip|guac|hummus|salsa/i, '🫓'],
+  [/bread|bakery|sourdough|bun\b/i, '🥖'],
+  [/cheese|burrata|halloumi/i, '🧀'],
+  [/pizza/i, '🍕'],
+  [/pasta|gnocchi|risotto/i, '🍝'],
+  [/burger/i, '🍔'],
+  [/breakfast|brunch|egg/i, '🍳'],
+  [/snack|nuts|olives|bar snack/i, '🥜'],
+  [/special/i, '⭐']
+];
+
+const iconCache = new Map<string, string>();
+export function iconFor(name: string): string {
+  if (!name) return '';
+  const hit = iconCache.get(name);
+  if (hit !== undefined) return hit;
+  const found = ICON_RULES.find(([pattern]) => pattern.test(name))?.[1] ?? '';
+  iconCache.set(name, found);
+  return found;
+}
+
+// Icons are a per-device preference (registers are shared, staff are not).
+export const ICONS_KEY = 'alma.pos.icons';
+export function loadIconsOn(): boolean {
+  return localStorage.getItem(ICONS_KEY) !== '0';
+}
+
 // A big tile eats four standard slots, a wide one two.
 export function pinWeight(pin: Pin) {
   return pin.s === 'b' ? 4 : pin.s === 'w' ? 2 : 1;

@@ -1264,3 +1264,31 @@ summary.pos-list-head.is-tab-edit {
 .pos-action-list .pos-action-danger em { color: rgba(154, 58, 46, 0.75); }
 body.pos-dark .pos-action-list .pos-action-danger { color: #e88a77; border-color: rgba(232, 138, 119, 0.4); }
 body.pos-dark .pos-action-list .pos-action-danger em { color: rgba(232, 138, 119, 0.75); }
+
+/* Food-group icons: a mark, not a decoration — sized to sit with the text. */
+.pos-nav-icon { font-style: normal; margin-right: 8px; font-size: 15px; line-height: 1; flex: none; }
+.pos-list-icon { font-size: 17px; margin-right: 10px; }
+.pos-tile-icon { font-style: normal; margin-right: 6px; font-size: 15px; }
+.pos-label-short .pos-tile-icon, .pos-label-big .pos-tile-icon { display: none; }
+
+/* Board editor: place mode, filter, lifted row */
+.pos-be-filter { margin-bottom: 10px; }
+.pos-be-placing {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--pos-chip); border-radius: 10px;
+  padding: 9px 12px; margin: 0 0 10px; font-size: 13px; color: var(--pos-text);
+}
+.pos-be-placing button {
+  margin-left: auto; border: 1px solid var(--pos-border); background: var(--pos-card);
+  color: var(--pos-text2); border-radius: 9999px; padding: 5px 12px; cursor: pointer; font-size: 12.5px;
+}
+.pos-be-gap { list-style: none; }
+.pos-be-gap button {
+  width: 100%; border: 1px dashed var(--pos-border); background: transparent;
+  color: var(--pos-text2); border-radius: 10px; padding: 9px; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; min-height: 40px;
+}
+.pos-be-gap button:hover { border-color: var(--pos-text); color: var(--pos-text); }
+.pos-be-row.is-lifted { opacity: 0.5; border-style: dashed; }
+.pos-be-row.is-dimmed { opacity: 0.35; }
+.pos-be-head .pos-be-add:disabled { opacity: 0.35; cursor: default; }
