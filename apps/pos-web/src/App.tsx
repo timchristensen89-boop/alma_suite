@@ -1906,6 +1906,12 @@ export function App() {
 
   function runManagement(key: string) {
     if (key === 'open-till') {
+      // The drawer is wired to the receipt printer, so kick it as well as
+      // opening the till screen. Silent if no till printer is set up — the
+      // screen is still the point of the button.
+      void api('/api/pos/open-drawer', { method: 'POST', body: JSON.stringify({ venue }) })
+        .then(() => setInfo('Drawer opened.'))
+        .catch(() => undefined);
       void (async () => {
         const [gate, drawer] = await Promise.all([
           api<CloseGate>(`/api/pos/close-day?venue=${encodeURIComponent(venue)}`),

@@ -258,6 +258,25 @@ function xmlEscape(value: string) {
 
 // A docket as ePOS-Print XML: big table header, unmissable dietary banner,
 // ruled course headings, per-line tags, feed and cut.
+// Just the drawer kick — no text, no cut, no paper.
+function buildDrawerXml(jobId: string) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<PrintRequestInfo Version="2.00">
+<ePOSPrint>
+<Parameter>
+<devid>local_printer</devid>
+<timeout>10000</timeout>
+<printjobid>${jobId}</printjobid>
+</Parameter>
+<PrintData>
+<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+<pulse drawer="1" time="100"/>
+</epos-print>
+</PrintData>
+</ePOSPrint>
+</PrintRequestInfo>`;
+}
+
 function buildPrintRequestXml(jobId: string, docket: DocketPayload) {
   const parts: string[] = [];
   const line = (text = '') => parts.push(`<text>${xmlEscape(text)}&#10;</text>`);
@@ -792,6 +811,9 @@ export const posService = {
     if (!job) return { xml: '' };
     await prisma.posPrintJob.update({ where: { id: job.id }, data: { status: 'SENT', sentAt: new Date() } });
     const payload = job.payload as { kind?: string };
+    if (payload.kind === 'DRAWER') {
+      return { xml: buildDrawerXml(job.id) };
+    }
     return {
       xml:
         payload.kind === 'RECEIPT'
@@ -1841,6 +1863,22 @@ export const posService = {
     return rows
       .filter((row) => !venue || !row.venue || row.venue === venue)
       .map((row) => ({ id: row.id, name: row.name, venue: row.venue, printerIp: row.printerIp, matchKind: row.matchKind }));
+  },
+
+  // The cash drawer is wired to the receipt printer (RJ12), so opening it
+  // means sending that printer a kick. Queued like any other print job, so it
+  // goes through whatever is driving that station — bridge or i-printer.
+  async openCashDrawer(venue: string) {
+    const stations = (
+      await prisma.posPrinterProfile.findMany({ where: { active: true, matchKind: 'RECEIPT', printerIp: { not: null } } })
+    ).filter((station) => !station.venue || station.venue === venue);
+    if (stations.length === 0) {
+      throw new HttpError(409, 'No till printer set up for this venue — add a Receipts station with its IP in the Office.');
+    }
+    await prisma.posPrintJob.createMany({
+      data: stations.map((station) => ({ profileId: station.id, status: 'QUEUED', payload: { kind: 'DRAWER' } }))
+    });
+    return { ok: true, stations: stations.map((station) => station.name) };
   },
 
   async giftCardBalance(code: string) {

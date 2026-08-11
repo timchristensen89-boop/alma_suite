@@ -172,6 +172,14 @@ posRouter.get('/live', async (_req, res, next) => {
   }
 });
 
+posRouter.post('/open-drawer', async (req, res, next) => {
+  try {
+    res.json(await posService.openCashDrawer(String(req.body?.venue ?? '')));
+  } catch (err) {
+    next(err);
+  }
+});
+
 posRouter.get('/print-stations', async (req, res, next) => {
   try {
     res.json(await posService.listPrintStations(req.query.venue ? String(req.query.venue) : null));

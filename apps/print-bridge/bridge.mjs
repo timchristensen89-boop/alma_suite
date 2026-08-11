@@ -199,7 +199,35 @@ async function post(url, fields) {
   return res.text();
 }
 
+// Is the printer actually there? Checked BEFORE collecting a job, because
+// collecting one we can't print loses it: the API marks it SENT, and a
+// failure marks it FAILED — neither is ever retried. A printer that's off
+// should simply hold its dockets until someone switches it on.
+function printerReachable(host, port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    const done = (ok) => {
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(2500, () => done(false));
+    socket.on('error', () => done(false));
+    socket.on('connect', () => done(true));
+  });
+}
+
 async function pollStation(station) {
+  if (!(await printerReachable(station.host, station.port))) {
+    if (!station.warned) {
+      console.log(`[bridge] ${station.name ?? station.host} is offline — holding its dockets`);
+      station.warned = true;
+    }
+    return false;
+  }
+  if (station.warned) {
+    console.log(`[bridge] ${station.name ?? station.host} is back`);
+    station.warned = false;
+  }
   const xml = await post(station.url, { ConnectionType: 'GetRequest' });
   if (!xml || !xml.trim()) return false; // nothing waiting
 
