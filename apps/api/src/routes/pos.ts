@@ -1,6 +1,7 @@
 import express, { Router } from 'express';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
+import { mailService } from '../services/mail.service.js';
 import { posService } from '../services/pos.service.js';
 import { posTerminalService } from '../services/pos-terminal.service.js';
 
@@ -61,11 +62,43 @@ posRouter.post('/bug-reports', async (req, res, next) => {
         severity: body.severity === 'BLOCKING' ? 'BLOCKING' : 'NORMAL'
       }
     });
+    // A report that says "we can't serve" must not wait for the next sweep.
+    // The agent still picks it up on its tick; this is so a human knows now.
+    if (created.severity === 'BLOCKING') {
+      void mailService
+        .sendDocument({
+          to: (process.env.POS_SUPPORT_EMAIL ?? 'tim@almagroup.com.au').trim(),
+          subject: `ALMA POS BLOCKING — ${created.venue}${created.reportedBy ? ` (${created.reportedBy})` : ''}`,
+          text: [
+            created.body,
+            '',
+            `venue: ${created.venue}`,
+            `screen: ${created.screen ?? '—'}`,
+            `bill: ${created.orderId ?? '—'}`,
+            `build: ${created.appVersion ?? '—'}`,
+            `browser error: ${created.clientError ?? 'none'}`
+          ].join('\n'),
+          html: `<p><strong>${escapeForMail(created.body)}</strong></p><ul>${[
+            ['venue', created.venue],
+            ['screen', created.screen],
+            ['bill', created.orderId],
+            ['build', created.appVersion],
+            ['browser error', created.clientError]
+          ]
+            .map(([label, value]) => `<li>${label}: ${escapeForMail(String(value ?? '—'))}</li>`)
+            .join('')}</ul>`
+        })
+        .catch(() => undefined);
+    }
     res.json({ id: created.id, ok: true });
   } catch (error) {
     next(error);
   }
 });
+
+function escapeForMail(value: string) {
+  return value.replace(/[&<>]/g, (char) => (char === '&' ? '&amp;' : char === '<' ? '&lt;' : '&gt;'));
+}
 
 posRouter.get('/bug-reports', async (req, res, next) => {
   try {
