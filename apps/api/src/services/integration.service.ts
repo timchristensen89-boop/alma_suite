@@ -69,7 +69,14 @@ const SQUARE_SCOPES = [
   'PAYMENTS_READ',
   'ORDERS_READ',
   'ITEMS_READ',
-  'INVENTORY_READ'
+  'INVENTORY_READ',
+  // Driving a Square Terminal from our own register (Terminal API): pair the
+  // device, then push it a checkout. Square's in-person rate is well under
+  // Stripe's, and the venue already owns the hardware — but the existing
+  // token is read-only, so /v2/devices returns INSUFFICIENT_SCOPES until the
+  // merchant re-authorises with these.
+  'PAYMENTS_WRITE',
+  'DEVICE_CREDENTIAL_MANAGEMENT'
 ];
 
 const XERO_SCOPES = [
