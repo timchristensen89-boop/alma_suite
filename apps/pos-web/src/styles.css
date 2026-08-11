@@ -51,7 +51,7 @@ input, select { font: inherit; }
   background: var(--pos-panel); border: 1px solid var(--pos-line); border-radius: 14px;
 }
 .pos-item:active { background: var(--pos-raise); }
-.pos-item span { font-weight: 600; font-size: 14px; line-height: 1.25; }
+.pos-item span { font-weight: 600; font-size: calc(14px * var(--pos-text-scale, 1)); line-height: 1.25; }
 .pos-item small { color: var(--pos-muted); }
 
 .pos-cart { display: flex; flex-direction: column; background: var(--pos-panel); border-left: 1px solid var(--pos-line); min-height: 0; }

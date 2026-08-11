@@ -210,7 +210,7 @@ body.pos-dark .pos-modal { background: rgba(0, 0, 0, 0.55); }
 
 /* slim admin tiles */
 .pos-item-slim { min-height: 46px; padding: 10px 14px; flex-direction: row; align-items: center; justify-content: flex-start; border-radius: 9999px; }
-.pos-item-slim span { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.pos-item-slim span { font-size: calc(12px * var(--pos-text-scale, 1)); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .pos-item-slim.is-addable { border-style: dashed; opacity: 0.65; }
 .pos-item-slim .pos-pin-x { top: -6px; right: -6px; }
 
@@ -578,7 +578,7 @@ body:not(.pos-v2) .pos-cart .pos-line-grip { color: rgba(243, 239, 230, 0.8); }
 .pos-lock input { text-align: center; letter-spacing: 0.4em; font-size: 18px; }
 
 /* Pin label styles + bigger folder text */
-.pos-item-pin[data-pin-folder] span { font-size: 17.5px; }
+.pos-item-pin[data-pin-folder] span { font-size: calc(17.5px * var(--pos-text-scale, 1)); }
 .pos-item span.pos-label-short { font-size: calc(23px * var(--pos-text-scale, 1)); letter-spacing: 0.04em; }
 .pos-item span.pos-label-hs { font-size: calc(17.5px * var(--pos-text-scale, 1)); }
 .pos-item span.pos-label-big { font-size: calc(20px * var(--pos-text-scale, 1)); line-height: 1.15; }
@@ -678,8 +678,8 @@ details.pos-list-section > summary.pos-list-head { margin-bottom: 6px; }
   .pos-header > strong { font-size: 21px; }
   .pos-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
   .pos-item { min-height: 78px; padding: 10px 11px; min-width: 0; }
-  .pos-item span { font-size: 12.5px; }
-  .pos-item small { font-size: 11px; }
+  .pos-item span { font-size: calc(12.5px * var(--pos-text-scale, 1)); }
+  .pos-item small { font-size: calc(11px * var(--pos-text-scale, 1)); }
   .pos-tabs { padding: 8px 10px 4px; }
   .pos-modal-panel { border-radius: 16px; padding: 16px; }
   .pos-board-dots { padding: 4px 0 8px; }
@@ -812,15 +812,15 @@ body:not(.pos-v2) .pos-cart .pos-order-note { border-left-color: rgba(255, 255, 
 /* ── Menu grid: even rhythm, tiles that sit on a line ─────────────────── */
 .pos-grid { gap: 8px; padding: 12px 16px 16px; grid-auto-rows: minmax(88px, auto); }
 .pos-item { min-height: 88px; padding: 12px 13px; border-radius: 14px; gap: 6px; }
-.pos-item span { font-size: 13.5px; line-height: 1.2; }
-.pos-item small { font-size: 11.5px; opacity: 0.72; }
+.pos-item span { font-size: calc(13.5px * var(--pos-text-scale, 1)); line-height: 1.2; }
+.pos-item small { font-size: calc(11.5px * var(--pos-text-scale, 1)); opacity: 0.72; }
 /* Sized tiles keep their footprint but stay on the same baseline grid */
 .pos-size-w { grid-column: span 2; }
 .pos-size-b { grid-column: span 2; grid-row: span 2; }
 .pos-item-slim { min-height: 54px; }
 .pos-grid-mgmt { padding-bottom: 0; gap: 8px; }
 .pos-grid-mgmt .pos-item { min-height: 50px; padding: 10px 14px; }
-.pos-grid-mgmt .pos-item span { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.75; }
+.pos-grid-mgmt .pos-item span { font-size: calc(11px * var(--pos-text-scale, 1)); letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.75; }
 
 /* ── Category pills ───────────────────────────────────────────────────── */
 .pos-tabs { padding: 10px 16px 2px; gap: 6px; }
