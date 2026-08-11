@@ -59,9 +59,11 @@ sudo systemctl restart alma-print-bridge
 **One bridge serves one venue** — each venue needs its own, on its own
 network, because the printers are only reachable from inside.
 
-**An old Pi may be too old.** Pi 1 and Pi Zero are ARMv6, which Node dropped
-official builds for; the installer checks and tells you rather than failing
-obscurely later. Pi 2 or newer is fine, as is any mini PC.
+**Any Pi works, including a very old one.** Pi 2 and newer take Node from
+NodeSource. Pi 1 and Pi Zero are ARMv6, which Node stopped shipping official
+builds for — the installer pulls the current LTS from the nodejs
+unofficial-builds project instead. The bridge only polls and writes to a
+socket, so a 700MHz single core is ample.
 
 A till that needs someone to remember to launch a script is a till that stops
 printing after the first power cut — hence a service, not a login item.

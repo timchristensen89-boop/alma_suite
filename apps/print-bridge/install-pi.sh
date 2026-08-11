@@ -29,23 +29,14 @@ echo "== ALMA print bridge =="
 echo "   venue : $VENUE"
 echo "   arch  : $ARCH"
 
-# An "old Pi" is the one real risk here. Pi 1 and Pi Zero are ARMv6, which
-# Node dropped official builds for years ago — better to say so plainly than
-# to fail three steps later with something cryptic.
+# Every Pi works, including the very old ones — the arch only decides where
+# Node comes from.
 case "$ARCH" in
-  armv6l)
-    cat >&2 <<'MSG'
-
-This is an ARMv6 Pi (Pi 1 / Pi Zero). Node.js has no official builds for it
-any more, so the bridge cannot run here without an unofficial toolchain.
-
-Options that do work:
-  - a Pi 2 or newer (ARMv7/ARM64), or
-  - any always-on mini PC / spare laptop on the venue network.
-
-MSG
-    exit 1
-    ;;
+  # Pi 1 / Pi Zero. Node stopped shipping official ARMv6 builds, but the
+  # nodejs unofficial-builds project still publishes them for current LTS —
+  # so an old Pi works fine. The bridge only polls and writes to a socket;
+  # a 700MHz single core is ample.
+  armv6l) echo "   note  : ARMv6 — using nodejs unofficial-builds" ;;
   armv7l|aarch64|arm64|x86_64) ;;
   *) echo "   (unrecognised arch — continuing, but node may not install)" ;;
 esac
@@ -64,9 +55,24 @@ if command -v node >/dev/null 2>&1; then
 fi
 
 if [ "$NEED_NODE" -eq 1 ]; then
-  echo "-- installing Node 20"
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-  apt-get install -y nodejs
+  if [ "$ARCH" = "armv6l" ]; then
+    # NodeSource has no ARMv6 packages; take the tarball instead.
+    echo "-- installing Node (unofficial ARMv6 build)"
+    VER="$(curl -fsSL https://unofficial-builds.nodejs.org/download/release/index.json \
+      | python3 -c "import json,sys;rows=json.load(sys.stdin);print(next(r['version'] for r in rows if 'linux-armv6l' in r['files'] and r.get('lts')))")"
+    echo "   version: $VER"
+    TMP="$(mktemp -d)"
+    curl -fsSL "https://unofficial-builds.nodejs.org/download/release/$VER/node-$VER-linux-armv6l.tar.gz" \
+      -o "$TMP/node.tar.gz"
+    tar -xzf "$TMP/node.tar.gz" -C "$TMP"
+    cp -R "$TMP/node-$VER-linux-armv6l"/{bin,include,lib,share} /usr/local/
+    rm -rf "$TMP"
+    hash -r
+  else
+    echo "-- installing Node 20"
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
+  fi
   echo "   node  : $(node -v)"
 fi
 
@@ -102,7 +108,7 @@ Environment=ALMA_VENUE=$VENUE
 #Environment=ALMA_LINE_DOTS=26
 #Environment=ALMA_LEAD_LINES=2
 #Environment=ALMA_TAIL_LINES=4
-ExecStart=/usr/bin/node $INSTALL_DIR/bridge.mjs
+ExecStart=$(command -v node) $INSTALL_DIR/bridge.mjs
 Restart=always
 RestartSec=5
 # The venue's wifi comes back before the printers do; just keep trying.
