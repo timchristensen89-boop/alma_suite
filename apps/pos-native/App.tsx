@@ -20,6 +20,24 @@ import {
  */
 
 const POS_URL = 'https://alma-pos.web.app';
+
+/**
+ * Whether to offer Tap to Pay to the register.
+ *
+ * OFF deliberately. Two things have to be true before this can be flipped:
+ *
+ *   1. Apple grants the proximity-reader entitlement. That needs an
+ *      ORGANIZATION developer account — an Individual membership cannot hold
+ *      it, however much it has paid.
+ *   2. This shell is rewritten against Square's Mobile Payments SDK. The
+ *      Stripe Terminal path below predates the move to Square and would take
+ *      money on the wrong processor.
+ *
+ * With it true, the register shows a Tap to Pay button. Shipping that before
+ * both are done puts a button on the pay screen that fails in front of a
+ * guest, which is worse than not having it.
+ */
+const TAP_TO_PAY_ENABLED = false;
 // Set per charge by the web app, read by the SDK's token provider.
 const latestConnectionToken = { current: '' };
 const API_URL = 'https://api.almagroup.com.au';
@@ -45,7 +63,7 @@ const BRIDGE = `
     var seq = 0;
     window.almaNative = {
       platform: 'ios',
-      tapToPay: true,
+      tapToPay: __TAP_TO_PAY__,
       charge: function (request) {
         return new Promise(function (resolve, reject) {
           var id = 'c' + (++seq);
@@ -152,7 +170,7 @@ function Register() {
       <WebView
         ref={webRef}
         source={{ uri: POS_URL }}
-        injectedJavaScriptBeforeContentLoaded={BRIDGE}
+        injectedJavaScriptBeforeContentLoaded={BRIDGE.replace('__TAP_TO_PAY__', String(TAP_TO_PAY_ENABLED))}
         onMessage={(event) => void onMessage(event)}
         sharedCookiesEnabled
         thirdPartyCookiesEnabled
