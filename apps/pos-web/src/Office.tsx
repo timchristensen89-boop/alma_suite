@@ -173,7 +173,32 @@ export function Office() {
               Each profile is a docket station: items route by kind (food / beverage) or by exact categories. Give a profile an
               IP when a physical Epson printer arrives — until then its station shows on the KDS.
             </p>
-            {profiles.map((profile) => (
+            {/* Grouped by venue: two venues each with a station called "Kitchen"
+                in one flat list is how Avalon's kitchen ended up pointing at
+                St Alma's printer. */}
+            {(() => {
+              const order = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
+              const groups = new Map<string, Profile[]>();
+              for (const profile of profiles) {
+                const key = profile.venue?.trim() || 'All venues';
+                groups.set(key, [...(groups.get(key) ?? []), profile]);
+              }
+              return [...groups.entries()]
+                .sort((a, b) => {
+                  const ai = order.indexOf(a[0]);
+                  const bi = order.indexOf(b[0]);
+                  return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a[0].localeCompare(b[0]);
+                })
+                .map(([venueName, rows]) => (
+                  <div key={venueName} className="office-venue-group">
+                    <h3 className="office-venue-head">
+                      {venueName}
+                      <small>
+                        {rows.length} station{rows.length === 1 ? '' : 's'}
+                        {rows.some((row) => row.printerIp) ? '' : ' · no printer yet'}
+                      </small>
+                    </h3>
+                    {rows.map((profile) => (
               <div key={profile.id} className="office-card">
                 <input defaultValue={profile.name} onBlur={(event) => event.currentTarget.value !== profile.name && void saveProfile({ ...profile, name: event.currentTarget.value })} className="office-input office-input-name" />
                 {/* A station belongs to one venue, or every venue if left blank. */}
@@ -236,7 +261,10 @@ export function Office() {
                   </div>
                 ) : null}
               </div>
-            ))}
+                    ))}
+                  </div>
+                ));
+            })()}
             <button type="button" className="office-add" onClick={() => void saveProfile({ name: 'New station', matchKind: 'FOOD', categoriesCsv: '', sortOrder: profiles.length })}>
               ＋ Add a station
             </button>
