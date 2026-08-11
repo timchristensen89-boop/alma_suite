@@ -77,6 +77,34 @@ printing after the first power cut — hence a service, not a login item.
 - `SENT` — collected, no result reported yet
 - `PRINTED` / `FAILED` — the bridge reported back
 
+## On a Mac at the venue
+
+Any Mac that lives at the venue works — a back-office iMac, or someone's
+laptop that stays on site.
+
+```bash
+sudo ./install-mac.sh "St Alma"        # or "Alma Avalon"
+```
+
+Installs a LaunchDaemon, not a LaunchAgent, so it runs from boot rather than
+from login — otherwise the first restart with the login window up would stop
+every docket at that venue with nothing to show why.
+
+Two things stop a Mac bridge printing, and both are worth deciding before
+you rely on it:
+
+- **Sleep.** A sleeping Mac prints nothing. If it lives on mains at the
+  venue: `sudo pmset -c sleep 0 disablesleep 1` (charger-only, so battery
+  life is untouched).
+- **It leaves.** The bridge reaches the printers over the venue LAN, so a
+  laptop that goes home at night is a part-time print server. Nothing is
+  lost — jobs queue and print when it's back on the venue wifi — but nothing
+  prints while it's away. If that machine is also someone's work computer,
+  assume it will leave.
+
+A Pi costs about $50 and has neither problem, which is why it's still the
+recommendation for anything that has to work every service.
+
 ## On an Android tablet instead
 
 A spare Android tablet works — it's on the venue wifi, runs Node under
