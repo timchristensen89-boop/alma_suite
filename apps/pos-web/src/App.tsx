@@ -17,6 +17,10 @@ import {
   iconKeyFor,
   iconSvg,
   loadIconStyle,
+  loadTextScale,
+  textScaleValue,
+  TEXT_SCALE_KEY,
+  type TextScale,
   paginatePins,
   pinDisplay,
   visibleTabTokens,
@@ -370,11 +374,20 @@ export function App() {
   const [darkTheme, setDarkTheme] = useState(() => localStorage.getItem('alma.pos.theme') === 'dark');
   // Two full designs: 'classic' tiles (v1) and the 'rail' sidebar-list (v2).
   const [design, setDesign] = useState<'classic' | 'rail'>(() => (localStorage.getItem('alma.pos.design') === 'classic' ? 'classic' : 'rail'));
+  const [textScale, setTextScale] = useState<TextScale>(loadTextScale);
 
   useEffect(() => {
     document.body.classList.toggle('pos-v2', design === 'rail');
     localStorage.setItem('alma.pos.design', design);
   }, [design]);
+
+  // One number drives the board type, the tile size and the nav; the pager's
+  // measurement reads the same value so bigger text means fewer tiles per
+  // page rather than tiles scrolling off the bottom.
+  useEffect(() => {
+    localStorage.setItem(TEXT_SCALE_KEY, textScale);
+    document.body.style.setProperty('--pos-text-scale', String(textScaleValue(textScale)));
+  }, [textScale]);
   // St Alma and Alma Avalon are separate companies — receipts and the header
   // carry the selected venue's own identity.
   const [venueIdentity, setVenueIdentity] = useState<{ businessName: string; abn: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; receiptLogo: string | null }>({ businessName: 'ALMA', abn: null, address: null, phone: null, email: null, website: null, receiptLogo: null });
@@ -1269,8 +1282,12 @@ export function App() {
     const measure = () => {
       const width = el.clientWidth - 32;
       const height = el.clientHeight - 22;
-      const tileW = el.clientWidth < 720 ? 104 : 145;
-      const tileH = el.clientWidth < 720 ? 80 : 98;
+      // Tiles grow with the text size, so the "how many fit" maths has to use
+      // the same multiplier — otherwise turning the text up just pushes tiles
+      // off the bottom of the page instead of onto the next one.
+      const scale = textScaleValue(textScale);
+      const tileW = (el.clientWidth < 720 ? 104 : 145) * scale;
+      const tileH = (el.clientWidth < 720 ? 80 : 98) * scale;
       const cols = Math.max(2, Math.floor((width + 10) / (tileW + 10)));
       const rows = Math.max(1, Math.floor((height + 10) / (tileH + 10)));
       setBoardSlots(cols * rows);
@@ -1280,7 +1297,7 @@ export function App() {
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [activeCategory, design, view, search]);
+  }, [activeCategory, design, view, search, textScale]);
 
   const pinPages = useMemo(
     // Trailing action tiles (Edit this page / the edit-mode set) render on
@@ -1642,6 +1659,34 @@ export function App() {
       void refreshOpenOrders();
     } catch (err) {
       setError(messageForError(err, 'The card was not charged.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Where the split screen goes next. With a card machine paired the guest
+  // picks their own tip on it, so the register never asks — the tip screen is
+  // for cash and EFTPOS, where nobody else can.
+  const tipStage = squareTerminals.length > 0 ? ('method' as const) : ('tip' as const);
+
+  // Turn one bill into N bills of its own — 71 (1), 71 (2), 71 (3) — each
+  // with a share of every item. Each is then an ordinary bill: its guest taps
+  // their own card and picks their own tip on the machine.
+  async function splitIntoBills(ways: number) {
+    if (!order || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const bills = await api<Order[]>(`/api/pos/orders/${order.id}/split-evenly`, {
+        method: 'POST',
+        body: JSON.stringify({ ways })
+      });
+      setCharge(null);
+      setOrder(null);
+      await refreshOpenOrders();
+      setInfo(`Split into ${bills.length} bills — ${bills.map((bill) => bill.tableLabel).join(', ')}`);
+    } catch (err) {
+      setError(messageForError(err, 'Could not split the bill.'));
     } finally {
       setBusy(false);
     }
@@ -2385,6 +2430,8 @@ export function App() {
             setIconStyle(next);
             localStorage.setItem(ICONS_KEY, next);
           }}
+          textScale={textScale}
+          onTextScale={setTextScale}
           onChange={queueBoardSave}
           onClose={closeBoardEditor}
         />
@@ -3186,7 +3233,7 @@ export function App() {
                   type="button"
                   className="pos-charge"
                   disabled={!order || order.lines.length === 0 || busy || balance <= 0}
-                  onClick={() => setCharge({ stage: 'tip', tipCents: 0, amountCents: null })}
+                  onClick={() => setCharge({ stage: 'split', tipCents: 0, amountCents: null })}
                 >
                   Charge {money(balance)}
                 </button>
@@ -3239,17 +3286,43 @@ export function App() {
             {charge.stage === 'tip' ? (
               <>
                 <h2>Add a tip?</h2>
+                <p className="pos-muted">Cash and EFTPOS only — on a card machine the guest picks their own.</p>
                 <div className="pos-choice-row">
                   {[0, 5, 10].map((pct) => (
                     <button
                       key={pct}
                       type="button"
-                      onClick={() => setCharge({ stage: 'split', tipCents: Math.round((balance * pct) / 100), amountCents: null })}
+                      onClick={() => setCharge({ ...charge, stage: 'method', tipCents: Math.round(((charge.amountCents ?? balance) * pct) / 100) })}
                     >
                       {pct === 0 ? 'No tip' : `+${pct}% (${money(Math.round((balance * pct) / 100))})`}
                     </button>
                   ))}
                 </div>
+                {/* A regular leaving $50 on a big table shouldn't be capped by
+                    whichever percentages we happened to pick. */}
+                <input
+                  className="pos-tender"
+                  inputMode="decimal"
+                  placeholder="Or a custom tip $"
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    const cents = Math.round(Number(event.currentTarget.value || '0') * 100);
+                    if (cents > 0) setCharge({ ...charge, stage: 'method', tipCents: cents });
+                  }}
+                  onBlur={(event) => {
+                    const cents = Math.round(Number(event.currentTarget.value || '0') * 100);
+                    if (cents > 0) setCharge({ ...charge, tipCents: cents });
+                  }}
+                />
+                {charge.tipCents > 0 ? (
+                  <button
+                    type="button"
+                    className="pos-charge"
+                    onClick={() => setCharge({ ...charge, stage: 'method' })}
+                  >
+                    Tip {money(charge.tipCents)} — continue
+                  </button>
+                ) : null}
               </>
             ) : null}
             {charge.stage === 'split' ? (
@@ -3257,14 +3330,14 @@ export function App() {
                 <h2>{money(balance + charge.tipCents)}</h2>
                 {charge.tipCents > 0 ? <p className="pos-muted">includes {money(charge.tipCents)} tip on this payment</p> : null}
                 <div className="pos-choice-row">
-                  <button type="button" onClick={() => setCharge({ ...charge, stage: 'method', amountCents: null })}>
+                  <button type="button" onClick={() => setCharge({ ...charge, stage: tipStage, amountCents: null })}>
                     Pay in full
                   </button>
                   {[2, 3, 4].map((n) => (
                     <button
                       key={n}
                       type="button"
-                      onClick={() => setCharge({ ...charge, stage: 'method', amountCents: Math.ceil(balance / n) })}
+                      onClick={() => setCharge({ ...charge, stage: tipStage, amountCents: Math.ceil(balance / n) })}
                     >
                       Split ÷{n} ({money(Math.ceil(balance / n))})
                     </button>
@@ -3278,6 +3351,21 @@ export function App() {
                     Split by seat
                   </button>
                 </div>
+                {/* Separate bills, not part-payments: each one is its own
+                    table, so each guest taps their own card and picks their
+                    own tip on the machine. */}
+                {paidCents(order) === 0 ? (
+                  <>
+                    <p className="pos-muted">Or give everyone their own bill:</p>
+                    <div className="pos-choice-row">
+                      {[2, 3, 4, 5].map((n) => (
+                        <button key={n} type="button" disabled={busy} onClick={() => void splitIntoBills(n)}>
+                          {n} separate bills
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
                 <input
                   className="pos-tender"
                   inputMode="decimal"

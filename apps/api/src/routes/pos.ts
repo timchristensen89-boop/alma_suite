@@ -38,6 +38,16 @@ posRouter.get('/orders', async (req, res, next) => {
   }
 });
 
+// Split a bill into N bills of its own — 71 (1), 71 (2), 71 (3) — each with
+// an equal share of every item, each payable and tippable on its own.
+posRouter.post('/orders/:id/split-evenly', async (req, res, next) => {
+  try {
+    res.json(await posService.splitEvenly(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 posRouter.post('/orders/:id/merge', async (req, res, next) => {
   try {
     res.json(await posService.mergeOrders(String(req.params.id), req.body));

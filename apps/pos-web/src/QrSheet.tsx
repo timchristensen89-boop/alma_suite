@@ -10,7 +10,10 @@ const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
 
 type TableToken = { label: string; token: string; url: string };
 
-export function QrSheet() {
+// `embedded` renders it as an Office tab rather than its own page: same
+// sheet, minus the standalone chrome, so the QRs live with the rest of the
+// venue's settings instead of behind a URL nobody remembers.
+export function QrSheet({ embedded = false }: { embedded?: boolean } = {}) {
   const [venue, setVenue] = useState(VENUES[0]!);
   const [tables, setTables] = useState<Array<TableToken & { qr: string }>>([]);
   const [error, setError] = useState<string | null>(null);
@@ -29,9 +32,9 @@ export function QrSheet() {
   }, [venue]);
 
   return (
-    <div className="qrs-shell">
+    <div className={embedded ? 'qrs-embed' : 'qrs-shell'}>
       <header className="qrs-header">
-        <strong>Table ordering QRs</strong>
+        {embedded ? null : <strong>Table ordering QRs</strong>}
         <select value={venue} onChange={(event) => setVenue(event.currentTarget.value)}>
           {VENUES.map((name) => (
             <option key={name}>{name}</option>

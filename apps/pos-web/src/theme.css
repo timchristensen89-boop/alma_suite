@@ -86,18 +86,18 @@ body {
 
 /* ── Category pills ── */
 .pos-tabs { border-bottom: 0; padding: 12px 16px 4px; gap: 7px; }
-.pos-tabs button { background: transparent; border: 1px solid var(--pos-border); border-radius: 9999px; color: var(--pos-text2); font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; padding: 8px 16px; cursor: pointer; transition: all 180ms var(--ease-out); font-family: inherit; }
+.pos-tabs button { background: transparent; border: 1px solid var(--pos-border); border-radius: 9999px; color: var(--pos-text2); font-size: calc(11px * var(--pos-text-scale, 1)); font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; padding: 8px 16px; cursor: pointer; transition: all 180ms var(--ease-out); font-family: inherit; }
 .pos-tabs button:hover { background: var(--pos-hover); }
 .pos-tabs button.is-active { background: var(--pos-accent-bg); color: var(--pos-accent-fg); border-color: transparent; }
 .pos-tabs button.is-86 { border-color: var(--pos-danger); color: var(--pos-danger); }
 .pos-tabs button.is-home { font-weight: 800; }
 
 /* ── Item tiles (heritage hues) ── */
-.pos-item { background: var(--pos-card); border: 1px solid var(--pos-border); border-radius: 16px; color: var(--pos-text); display: flex; flex-direction: column; justify-content: space-between; gap: 10px; min-height: 96px; padding: 14px 16px; text-align: left; cursor: pointer; transition: transform 260ms var(--ease-out), background 180ms var(--ease-out), border-color 180ms var(--ease-out); font-family: inherit; }
+.pos-item { background: var(--pos-card); border: 1px solid var(--pos-border); border-radius: 16px; color: var(--pos-text); display: flex; flex-direction: column; justify-content: space-between; gap: 10px; min-height: calc(96px * var(--pos-text-scale, 1)); padding: 14px 16px; text-align: left; cursor: pointer; transition: transform 260ms var(--ease-out), background 180ms var(--ease-out), border-color 180ms var(--ease-out); font-family: inherit; }
 .pos-item:hover { transform: translateY(-3px); }
 .pos-item:active { transform: translateY(0); opacity: 0.7; }
-.pos-item span { font-size: 14.5px; font-weight: 700; line-height: 1.25; }
-.pos-item small { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; opacity: 0.82; }
+.pos-item span { font-size: calc(14.5px * var(--pos-text-scale, 1)); font-weight: 700; line-height: 1.25; }
+.pos-item small { font-size: calc(12.5px * var(--pos-text-scale, 1)); font-weight: 700; font-variant-numeric: tabular-nums; opacity: 0.82; }
 .pos-item.is-86d { opacity: 0.45; text-decoration: line-through; }
 .pos-hue-terra { background: var(--tile-terra-bg); color: var(--tile-terra-fg); border-color: var(--tile-terra-bd); }
 .pos-hue-amber { background: var(--tile-amber-bg); color: var(--tile-amber-fg); border-color: var(--tile-amber-bd); }
@@ -112,7 +112,7 @@ body {
 .pos-item-edit.is-done { border-color: var(--pos-accent); color: var(--pos-text); }
 .pos-item-pin { border-width: 1px; }
 .pos-item-pin.is-drop-target { outline: 2px dashed var(--pos-text); outline-offset: 3px; transform: scale(1.04); }
-.pos-grid { gap: 10px; padding: 14px 16px; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); }
+.pos-grid { gap: 10px; padding: 14px 16px; grid-template-columns: repeat(auto-fill, minmax(calc(145px * var(--pos-text-scale, 1)), 1fr)); }
 .pos-group-head { color: var(--pos-text3); }
 
 /* edit badges */
@@ -579,9 +579,9 @@ body:not(.pos-v2) .pos-cart .pos-line-grip { color: rgba(243, 239, 230, 0.8); }
 
 /* Pin label styles + bigger folder text */
 .pos-item-pin[data-pin-folder] span { font-size: 17.5px; }
-.pos-item span.pos-label-short { font-size: 23px; letter-spacing: 0.04em; }
-.pos-item span.pos-label-hs { font-size: 17.5px; }
-.pos-item span.pos-label-big { font-size: 20px; line-height: 1.15; }
+.pos-item span.pos-label-short { font-size: calc(23px * var(--pos-text-scale, 1)); letter-spacing: 0.04em; }
+.pos-item span.pos-label-hs { font-size: calc(17.5px * var(--pos-text-scale, 1)); }
+.pos-item span.pos-label-big { font-size: calc(20px * var(--pos-text-scale, 1)); line-height: 1.15; }
 .pos-item span.pos-label-big + small { display: none; }
 .pos-dstyle { display: inline-flex; gap: 3px; margin-left: 6px; }
 .pos-dstyle button { background: transparent; border: 1px solid var(--pos-border); border-radius: 7px; color: var(--pos-text2); font-family: inherit; font-size: 10px; font-weight: 700; padding: 3px 7px; cursor: pointer; }
@@ -1533,3 +1533,10 @@ body.pos-v2 .pos-shell, .pos-shell { overflow: hidden; }
   text-transform: uppercase;
   color: var(--pos-text2);
 }
+
+/* The QR sheet rendered as an Office tab rather than its own page. */
+.qrs-embed { display: block; }
+.qrs-embed .qrs-header { padding: 0 0 12px; border-bottom: 0; }
+/* Text-size picker: three A's at the sizes they actually produce. */
+.pos-be-textsize button { min-width: 30px; justify-content: center; }
+.pos-be-textsize button span { line-height: 1; }

@@ -212,13 +212,20 @@ export const posTerminalService = {
       });
     }
 
+    // Who picks the tip. On the terminal the guest chooses in private, which
+    // is the fairer arrangement and the reason it's the default here. The
+    // register only sends a tip of its own when someone has already keyed one
+    // in — a phone order, or a guest who asked the server to add it.
+    const tipOnDevice = body.tipOnDevice !== false && tipCents === 0;
+
     const context = await contextForDevice(device);
     const created = await squareTerminalPost<{ checkout?: SquareCheckout }>(context, '/terminals/checkouts', {
       idempotency_key: idempotencyKey(),
       checkout: {
-        // Square charges the card for amount + tip in one go; we split them
-        // back out when we tender, so the tip lands where reports expect it.
-        amount_money: { amount: amountCents + tipCents, currency: context.currency },
+        // Tipping on the device means Square adds the tip on top of what we
+        // send, and we read back what the guest chose. A tip keyed in here is
+        // charged as one amount and split out again when we tender.
+        amount_money: { amount: amountCents + (tipOnDevice ? 0 : tipCents), currency: context.currency },
         reference_id: `alma-${order.orderNumber}`,
         note: order.tableLabel ? `Table ${order.tableLabel}` : `Bill #${order.orderNumber}`,
         device_options: {
@@ -226,7 +233,21 @@ export const posTerminalService = {
           // The register prints (or emails) the receipt, and a guest waiting
           // for the terminal to finish asking about receipts holds up the pass.
           skip_receipt_screen: true,
-          collect_signature: false
+          collect_signature: false,
+          ...(tipOnDevice
+            ? {
+                tip_settings: {
+                  allow_tipping: true,
+                  // Its own screen, so tipping is a deliberate choice rather
+                  // than something folded into the total.
+                  separate_tip_screen: true,
+                  // "Custom" — a regular leaving $50 on a big table shouldn't
+                  // be capped by whichever three percentages we picked.
+                  custom_tip_field: true,
+                  tip_percentages: [5, 10, 15]
+                }
+              }
+            : {})
         }
       }
     });
@@ -295,13 +316,34 @@ export const posTerminalService = {
       return { status: 'COMPLETED', settled: true, order: await posService.getOrder(row.orderId) };
     }
 
+    // What the guest actually tipped is only knowable from the payment — the
+    // checkout doesn't carry it. Ask Square rather than assume: if they used
+    // the custom field, no percentage we know about would match.
+    let tipCents = row.tipCents;
+    if (squarePaymentId) {
+      try {
+        const paid = await squareTerminalGet<{ payment?: { tip_money?: { amount?: number } } }>(
+          context,
+          `/payments/${squarePaymentId}`
+        );
+        const tipped = paid.payment?.tip_money?.amount;
+        if (typeof tipped === 'number' && tipped >= 0) tipCents = tipped;
+      } catch {
+        // Reading the tip back is not worth failing a settled payment over.
+        // The bill still closes for the right amount; the tip stays as keyed.
+      }
+    }
+
     try {
       const order = await posService.payOrder(row.orderId, {
         method: 'SQUARE_TERMINAL',
         amountCents: row.amountCents,
-        tipCents: row.tipCents,
+        tipCents,
         reference: squarePaymentId
       });
+      if (tipCents !== row.tipCents) {
+        await prisma.posTerminalCheckout.update({ where: { id: row.id }, data: { tipCents } });
+      }
       const payment = await prisma.posPayment.findFirst({
         where: { orderId: row.orderId, method: 'SQUARE_TERMINAL' },
         orderBy: { createdAt: 'desc' }

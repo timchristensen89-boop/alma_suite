@@ -537,3 +537,30 @@ export function movePinToPage(pins: Pin[], index: number, page: number, capacity
   const head = pages[page]?.[0]?.index ?? rest.length;
   return [...rest.slice(0, head), pin, ...rest.slice(head)];
 }
+
+// ── Text size ───────────────────────────────────────────────────────────────
+// Some staff can't comfortably read 11px uppercase across a bar at arm's
+// length. This scales the board labels and the nav, and — because a bigger
+// label needs a bigger tile — the tiles with them, which is why the register
+// feeds the same number into its "how many tiles fit a page" measurement.
+//
+// Per-device, like the theme: it's about whoever is standing at THIS till,
+// not whose layout is loaded.
+export const TEXT_SCALE_KEY = 'alma.pos.textScale';
+
+export const TEXT_SCALES = [
+  { key: 'S', scale: 1, label: 'Standard' },
+  { key: 'M', scale: 1.18, label: 'Large' },
+  { key: 'L', scale: 1.36, label: 'Largest' }
+] as const;
+
+export type TextScale = (typeof TEXT_SCALES)[number]['key'];
+
+export function loadTextScale(): TextScale {
+  const saved = localStorage.getItem(TEXT_SCALE_KEY);
+  return TEXT_SCALES.some((option) => option.key === saved) ? (saved as TextScale) : 'S';
+}
+
+export function textScaleValue(key: TextScale): number {
+  return TEXT_SCALES.find((option) => option.key === key)?.scale ?? 1;
+}

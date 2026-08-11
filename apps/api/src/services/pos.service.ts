@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
@@ -1336,6 +1337,109 @@ export const posService = {
 
   // Merge another open bill into this one: lines and payments move across,
   // totals recompute, and the source order voids with an audit note.
+  // Split a bill into N bills of its own — 71 (1), 71 (2), 71 (3) — each
+  // holding an equal share of EVERY item. Each is then a normal bill: it can
+  // go to the card machine on its own, and its guest picks their own tip.
+  //
+  // The share is taken on each line's TOTAL, never its unit price. A $20 item
+  // three ways is 6.67 / 6.67 / 6.66 — dividing the unit price instead drifts
+  // by a cent per line per bill, and the parts stop adding back up to the
+  // whole, which is the one thing a split must never do.
+  async splitEvenly(id: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const ways = asInt(body.ways, 'ways', { min: 2, max: 12 });
+    const order = await prisma.posOrder.findUnique({
+      where: { id },
+      include: { lines: { orderBy: { createdAt: 'asc' } }, payments: true, giftCardSales: true }
+    });
+    if (!order) throw new HttpError(404, 'Bill not found.');
+    if (order.status !== 'OPEN') throw new HttpError(400, `Bill is already ${order.status}.`);
+    if (order.lines.length === 0) throw new HttpError(400, 'Nothing to split.');
+    // A part-paid bill has money that belongs to whoever already paid; there
+    // is no honest way to spread it across new bills.
+    if (order.payments.length > 0) {
+      throw new HttpError(400, 'This bill already has a payment on it — finish or refund it before splitting.');
+    }
+    // A gift card is a specific voucher for a specific buyer, not a share of
+    // a table. Splitting one into thirds would be meaningless.
+    if (order.giftCardSales.length > 0) {
+      throw new HttpError(400, 'Bills selling gift cards cannot be split — take the cards on their own bill.');
+    }
+    // The share is computed from line totals, so a manual discount sitting on
+    // the order would simply be dropped. Say so rather than quietly lose it.
+    if (order.manualDiscountCents > 0) {
+      throw new HttpError(400, 'Take the manual discount off first, split, then re-apply it to each bill.');
+    }
+
+    const base = order.tableLabel ?? `#${order.orderNumber}`;
+    const created: string[] = [];
+
+    for (let part = 0; part < ways; part += 1) {
+      const child = await prisma.posOrder.create({
+        data: {
+          venue: order.venue,
+          training: order.training,
+          tableLabel: `${base} (${part + 1})`,
+          // Covers follow the split so per-head reporting still means
+          // something; the remainder lands on the first bills.
+          covers: order.covers ? Math.floor(order.covers / ways) + (part < order.covers % ways ? 1 : 0) || null : null,
+          orderType: order.orderType,
+          dietary: order.dietary as Prisma.InputJsonValue,
+          notes: order.notes,
+          openedByName: order.openedByName,
+          // Only the first child keeps the guest/reservation link — copying it
+          // to all of them would multiply one visit into N in the CRM.
+          guestId: part === 0 ? order.guestId : null,
+          reservationId: part === 0 ? order.reservationId : null,
+          lines: {
+            create: order.lines.map((line) => {
+              const lineTotal = line.unitPriceCents * line.quantity;
+              const share = Math.floor(lineTotal / ways) + (part < lineTotal % ways ? 1 : 0);
+              return {
+                recipeId: line.recipeId,
+                // Quantity 1 at the share price, so the money is exact. The
+                // name carries what it actually is.
+                name: line.quantity > 1 ? `${line.quantity}× ${line.name} (1/${ways})` : `${line.name} (1/${ways})`,
+                unitPriceCents: share,
+                quantity: 1,
+                totalCents: share,
+                course: line.course,
+                seat: line.seat,
+                modifiers: (line.modifiers ?? undefined) as Prisma.InputJsonValue | undefined,
+                notes: line.notes,
+                // Already fired — carry that across so splitting a bill at the
+                // end of service can't re-print the whole table's food.
+                sentAt: line.sentAt,
+                sentByName: line.sentByName
+              };
+            })
+          }
+        }
+      });
+      await recomputeOrder(child.id);
+      created.push(child.id);
+    }
+
+    // The parent stops existing as a payable bill. Same shape as a merge: the
+    // lines have gone somewhere, and the void reason says where.
+    await prisma.$transaction([
+      prisma.posOrderLine.deleteMany({ where: { orderId: id } }),
+      prisma.posOrder.update({
+        where: { id },
+        data: {
+          status: 'VOID',
+          voidedAt: new Date(),
+          voidReason: `Split ${ways} ways into ${base} (1)–(${ways})`,
+          subtotalCents: 0,
+          totalCents: 0,
+          gstCents: 0
+        }
+      })
+    ]);
+
+    return Promise.all(created.map((childId) => posService.getOrder(childId)));
+  },
+
   async mergeOrders(targetId: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const sourceId = str(body.sourceOrderId);

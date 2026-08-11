@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, messageForError } from './api';
+import { QrSheet } from './QrSheet';
 
 // ── POS back office — alma-pos.web.app/#office ─────────────────────────────
 // Register settings live here, out of the way of service: printer/docket
@@ -30,7 +31,7 @@ type Terminal = {
 };
 
 export function Office() {
-  const [tab, setTab] = useState<'printers' | 'terminals' | 'menu' | 'modifiers' | 'variants' | 'specials' | 'rules' | 'identity'>('printers');
+  const [tab, setTab] = useState<'printers' | 'terminals' | 'qr' | 'menu' | 'modifiers' | 'variants' | 'specials' | 'rules' | 'identity'>('printers');
   const [hides, setHides] = useState<MenuHide[]>([]);
   const [fullMenu, setFullMenu] = useState<MenuShape | null>(null);
   const [hideSearch, setHideSearch] = useState('');
@@ -209,6 +210,7 @@ export function Office() {
           [
             ['printers', 'Printers & dockets'],
             ['terminals', 'Card terminals'],
+            ['qr', 'Table QR codes'],
             ['menu', 'Menu visibility'],
             ['modifiers', 'Modifiers'],
             ['variants', 'Variants'],
@@ -389,6 +391,16 @@ export function Office() {
                 ))}
               </ul>
             )}
+          </section>
+        ) : null}
+
+        {tab === 'qr' ? (
+          <section>
+            <p className="office-lead">
+              One ordering QR per table, print-ready — cut them out and drop them into the table stands. They come from the
+              venue's table list, so adding a table on the floor plan is enough to get its code.
+            </p>
+            <QrSheet embedded />
           </section>
         ) : null}
 

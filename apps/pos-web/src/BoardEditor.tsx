@@ -7,6 +7,8 @@ import {
   MGMT_LABELS,
   ICON_KEYS,
   ICON_STYLES,
+  TEXT_SCALES,
+  type TextScale,
   hueClass,
   hueStyle,
   iconKeyFor,
@@ -37,6 +39,8 @@ type Props = {
   boardCols: number;
   operatorName: string;
   iconStyle: IconStyle;
+  textScale: TextScale;
+  onTextScale: (next: TextScale) => void;
   onIconStyle: (next: IconStyle) => void;
   onChange: (next: HomeConfig) => void;
   onClose: () => void;
@@ -63,6 +67,8 @@ export function BoardEditor({
   boardCols,
   operatorName,
   iconStyle,
+  textScale,
+  onTextScale,
   onIconStyle,
   onChange,
   onClose
@@ -318,6 +324,22 @@ export function BoardEditor({
                 <i dangerouslySetInnerHTML={{ __html: iconSvg('cocktail', option.key) }} />
               )}
               {option.key === 'off' ? '' : option.label}
+            </button>
+          ))}
+        </span>
+        {/* Not everyone rostered on can read 11px uppercase across a bar.
+            Per-device, so turning it up for one till doesn't change the
+            layout everyone else is looking at. */}
+        <span className="pos-be-iconpick pos-be-textsize" title="Text size on the board and the nav">
+          {TEXT_SCALES.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              className={textScale === option.key ? 'is-on' : ''}
+              title={option.label}
+              onClick={() => onTextScale(option.key)}
+            >
+              <span style={{ fontSize: `${11 * option.scale}px`, fontWeight: 800 }}>A</span>
             </button>
           ))}
         </span>
