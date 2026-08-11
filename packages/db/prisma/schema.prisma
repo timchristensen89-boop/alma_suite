@@ -4804,6 +4804,7 @@ model PosOrder {
   updatedAt           DateTime              @updatedAt
   lines               PosOrderLine[]
   payments            PosPayment[]
+  terminalRefunds     PosTerminalRefund[]
 
   @@index([venue, serviceDate])
   @@index([status])
@@ -5088,6 +5089,7 @@ model PosTerminalDevice {
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   checkouts      PosTerminalCheckout[]
+  refunds        PosTerminalRefund[]
 
   @@index([venue, status])
 }
@@ -5116,6 +5118,34 @@ model PosTerminalCheckout {
 
   @@index([orderId])
   @@index([status])
+}
+
+// One attempt to push a refund back to a Square Terminal — the mirror of
+// PosTerminalCheckout, latch and all. `refundPaymentId` is set exactly once,
+// when Square first reports the refund COMPLETED, so a repeated poll cannot
+// credit the bill twice.
+//
+// The manager who approved it is recorded here at START, before the card is
+// touched. The PIN itself is never stored.
+model PosTerminalRefund {
+  id              String            @id // Square's terminal refund id
+  orderId         String
+  deviceId        String
+  venue           String
+  amountCents     Int
+  status          String            @default("PENDING") // PENDING | IN_PROGRESS | COMPLETED | CANCELED
+  squarePaymentId String // the original payment being refunded
+  approvedBy      String
+  staffName       String
+  reason          String
+  refundPaymentId String?
+  failureReason   String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  order           PosOrder          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  device          PosTerminalDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
 }
 
 model PosVenueSetting {

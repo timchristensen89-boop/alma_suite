@@ -674,6 +674,87 @@ function parseLines(raw: unknown): LineInput[] {
   });
 }
 
+// Everything a refund does AFTER a manager has approved it: the negative
+// payment, the reason-audited adjustment, any gift cards the bill issued, and
+// the actuals repost.
+//
+// Split out of refundOrder so the Square Terminal refund can reuse it. That
+// flow takes the manager PIN BEFORE it touches the card — asking again once
+// the money is already back on the guest's card would be both absurd and
+// unsafe, and duplicating the bookkeeping here is how the two drift apart.
+async function applyRefund(input: {
+  orderId: string;
+  amountCents?: number;
+  reason: string;
+  staffName: string; // already carries "(approved by …)"
+  method: 'CASH' | 'REFUND';
+}) {
+  const { orderId, reason, staffName, method } = input;
+  requireReason('COMP', reason);
+  const order = await prisma.posOrder.findUnique({ where: { id: orderId }, include: { payments: true } });
+  if (!order) throw new HttpError(404, 'Bill not found.');
+  if (order.status !== 'PAID') throw new HttpError(400, 'Only paid bills can be refunded.');
+  const paid = order.payments.reduce((sum, payment) => sum + payment.amountCents + payment.tipCents, 0);
+  const amountCents = input.amountCents ?? paid;
+  if (amountCents > paid) throw new HttpError(400, `Only ${(paid / 100).toFixed(2)} was paid on this bill.`);
+  await prisma.posPayment.create({
+    data: { orderId, method, amountCents: -amountCents, tipCents: 0, reference: 'refund' }
+  });
+  await prisma.posAdjustment.create({
+    data: {
+      venue: order.venue,
+      orderId,
+      kind: 'COMP',
+      reason,
+      staffName,
+      itemName: `REFUND ${order.tableLabel ? `table ${order.tableLabel}` : `#${order.orderNumber}`}`,
+      amountCents
+    }
+  });
+  // A refunded bill must not leave a live card in the wild. Only a FULL
+  // refund kills the cards — a partial refund is usually one dish, not the
+  // voucher, so those are reported instead of cancelled.
+  const giftNotes: string[] = [];
+  const sold = await prisma.posGiftCardSale.findMany({ where: { orderId, issuedCode: { not: null } } });
+  if (sold.length > 0) {
+    if (amountCents >= paid) {
+      for (const sale of sold) {
+        try {
+          await giftCardService.cancel(sale.issuedCode!, {
+            reason: `Bill refunded: ${reason}`,
+            refundNote: `POS refund of ${order.tableLabel ? `table ${order.tableLabel}` : `#${order.orderNumber}`}`
+          });
+          giftNotes.push(`${sale.issuedCode} cancelled`);
+        } catch (err) {
+          // Already spent or already cancelled — say so rather than fail the
+          // refund the guest is standing there waiting for.
+          giftNotes.push(`${sale.issuedCode} could NOT be cancelled: ${(err as Error).message}`);
+        }
+      }
+    } else {
+      giftNotes.push(
+        `Partial refund — ${sold.map((sale) => sale.issuedCode).join(', ')} left ACTIVE. Cancel in Gift Cards if the card is coming back.`
+      );
+    }
+    await prisma.posAdjustment.create({
+      data: {
+        venue: order.venue,
+        orderId,
+        kind: 'COMP',
+        reason,
+        staffName,
+        itemName: `GIFT CARDS: ${giftNotes.join(' · ')}`.slice(0, 190),
+        amountCents: 0
+      }
+    });
+  }
+  await postPosActuals(order.venue).catch(() => undefined);
+  const refunded = await posService.getOrder(orderId);
+  return { ...refunded, giftCardNotes: giftNotes };
+}
+
+export { applyRefund, requireReason, verifyManagerPin };
+
 export const posService = {
   // The sellable menu, grouped for the register grid: active non-prep recipes
   // with a price, plus set menus. Categories keep the recipe's own category.
@@ -1305,68 +1386,13 @@ export const posService = {
     // Refunds are management-only for EVERY session type: a manager PIN is
     // entered for this one action and the approver lands on the audit trail.
     const approvedBy = await verifyManagerPin(str(body.managerPin), 'refunds');
-    const staffName = `${str(body.staffName) || 'Unknown'} (approved by ${approvedBy})`;
-    const method = str(body.method).toUpperCase() === 'CASH' ? 'CASH' : 'REFUND';
-    const order = await prisma.posOrder.findUnique({ where: { id }, include: { payments: true } });
-    if (!order) throw new HttpError(404, 'Bill not found.');
-    if (order.status !== 'PAID') throw new HttpError(400, 'Only paid bills can be refunded.');
-    const paid = order.payments.reduce((sum, payment) => sum + payment.amountCents + payment.tipCents, 0);
-    const amountCents = body.amountCents === undefined ? paid : asInt(body.amountCents, 'refund amount', { min: 1 });
-    if (amountCents > paid) throw new HttpError(400, `Only ${(paid / 100).toFixed(2)} was paid on this bill.`);
-    await prisma.posPayment.create({
-      data: { orderId: id, method, amountCents: -amountCents, tipCents: 0, reference: 'refund' }
+    return applyRefund({
+      orderId: id,
+      amountCents: body.amountCents === undefined ? undefined : asInt(body.amountCents, 'refund amount', { min: 1 }),
+      reason,
+      staffName: `${str(body.staffName) || 'Unknown'} (approved by ${approvedBy})`,
+      method: str(body.method).toUpperCase() === 'CASH' ? 'CASH' : 'REFUND'
     });
-    await prisma.posAdjustment.create({
-      data: {
-        venue: order.venue,
-        orderId: id,
-        kind: 'COMP',
-        reason,
-        staffName,
-        itemName: `REFUND ${order.tableLabel ? `table ${order.tableLabel}` : `#${order.orderNumber}`}`,
-        amountCents
-      }
-    });
-    // A refunded bill must not leave a live card in the wild. Only a FULL
-    // refund kills the cards — a partial refund is usually one dish, not the
-    // voucher, so those are reported instead of cancelled.
-    const giftNotes: string[] = [];
-    const sold = await prisma.posGiftCardSale.findMany({ where: { orderId: id, issuedCode: { not: null } } });
-    if (sold.length > 0) {
-      if (amountCents >= paid) {
-        for (const sale of sold) {
-          try {
-            await giftCardService.cancel(sale.issuedCode!, {
-              reason: `Bill refunded: ${reason}`,
-              refundNote: `POS refund of ${order.tableLabel ? `table ${order.tableLabel}` : `#${order.orderNumber}`}`
-            });
-            giftNotes.push(`${sale.issuedCode} cancelled`);
-          } catch (err) {
-            // Already spent or already cancelled — say so rather than fail the
-            // refund the guest is standing there waiting for.
-            giftNotes.push(`${sale.issuedCode} could NOT be cancelled: ${(err as Error).message}`);
-          }
-        }
-      } else {
-        giftNotes.push(
-          `Partial refund — ${sold.map((sale) => sale.issuedCode).join(', ')} left ACTIVE. Cancel in Gift Cards if the card is coming back.`
-        );
-      }
-      await prisma.posAdjustment.create({
-        data: {
-          venue: order.venue,
-          orderId: id,
-          kind: 'COMP',
-          reason,
-          staffName,
-          itemName: `GIFT CARDS: ${giftNotes.join(' · ')}`.slice(0, 190),
-          amountCents: 0
-        }
-      });
-    }
-    await postPosActuals(order.venue).catch(() => undefined);
-    const refunded = await this.getOrder(id);
-    return { ...refunded, giftCardNotes: giftNotes };
   },
 
   // ── Venue till settings / shift report / email receipt ─────────────────

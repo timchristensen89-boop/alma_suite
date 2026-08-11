@@ -171,6 +171,30 @@ posRouter.post('/terminal-checkouts/:checkoutId/cancel', async (req, res, next) 
   }
 });
 
+posRouter.get('/orders/:id/refundable-cards', async (req, res, next) => {
+  try {
+    res.json(await posTerminalService.refundableCards(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/orders/:id/terminal-refund', async (req, res, next) => {
+  try {
+    res.json(await posTerminalService.startRefund(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.get('/terminal-refunds/:refundId', async (req, res, next) => {
+  try {
+    res.json(await posTerminalService.pollRefund(String(req.params.refundId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 posRouter.post('/orders/:id/payments/:paymentId/undo', async (req, res, next) => {
   try {
     res.json(await posService.undoPayment(String(req.params.id), String(req.params.paymentId), req.body));

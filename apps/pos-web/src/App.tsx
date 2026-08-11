@@ -312,7 +312,11 @@ export function App() {
   // What this venue actually sells — suggestions beat a blank search box.
   const [topSellers, setTopSellers] = useState<string[]>([]);
   const [bills, setBills] = useState<Order[] | null>(null);
-  const [refunding, setRefunding] = useState<null | { order: Order; amount: string; reason: string; method: 'REFUND' | 'CASH' }>(null);
+  const [refunding, setRefunding] = useState<null | { order: Order; amount: string; reason: string; method: 'REFUND' | 'CASH' | 'TERMINAL' }>(null);
+  // Card payments on the bill being refunded that Square can actually send
+  // money back to. Empty = no terminal option offered, so a cash bill never
+  // shows a button that can only fail.
+  const [refundCards, setRefundCards] = useState<Array<{ squarePaymentId: string; refundableCents: number; devices: Array<{ id: string; name: string }> }>>([]);
   const [merging, setMerging] = useState<Order[] | null>(null);
   const [editLayout, setEditLayout] = useState(false);
   const [activeCategory, setActiveCategory] = useState('');
@@ -832,6 +836,21 @@ export function App() {
   useEffect(() => {
     localStorage.setItem('alma.pos.venue', venue);
   }, [venue]);
+
+  // Opening the refund dialog: ask the server what can actually go back to a
+  // card. Quiet failure — a refund to cash must still work if Square is down.
+  useEffect(() => {
+    const orderId = refunding?.order.id;
+    if (!orderId) {
+      setRefundCards([]);
+      return;
+    }
+    void api<Array<{ squarePaymentId: string; refundableCents: number; devices: Array<{ id: string; name: string }> }>>(
+      `/api/pos/orders/${orderId}/refundable-cards`
+    )
+      .then(setRefundCards)
+      .catch(() => setRefundCards([]));
+  }, [refunding?.order.id]);
 
   // Which card terminals this venue can charge to. Quiet failure on purpose:
   // Square being unreachable must not stop anyone taking cash.
@@ -3817,12 +3836,24 @@ export function App() {
               onChange={(event) => setRefunding({ ...refunding, amount: event.currentTarget.value })}
             />
             <div className="pos-choice-row">
+              {/* Only offered when the bill actually has a Square card payment
+                  with money left on it — this one moves real money, the other
+                  two just record that someone else did. */}
+              {refundCards.length > 0 && refundCards[0]!.devices.length > 0 ? (
+                <button
+                  type="button"
+                  className={refunding.method === 'TERMINAL' ? 'is-on' : ''}
+                  onClick={() => setRefunding({ ...refunding, method: 'TERMINAL' })}
+                >
+                  To the card (terminal)
+                </button>
+              ) : null}
               <button
                 type="button"
                 className={refunding.method === 'REFUND' ? 'is-on' : ''}
                 onClick={() => setRefunding({ ...refunding, method: 'REFUND' })}
               >
-                Back to card
+                Card (recorded only)
               </button>
               <button
                 type="button"
@@ -3832,6 +3863,11 @@ export function App() {
                 Cash from till
               </button>
             </div>
+            {refunding.method === 'TERMINAL' ? (
+              <p className="pos-muted">
+                Goes back on {refundCards[0]!.devices[0]!.name} — up to {money(refundCards[0]!.refundableCents)}.
+              </p>
+            ) : null}
             <p className="pos-muted">Reason (required):</p>
             <div className="pos-reason-list">
               {(reasons.COMP ?? []).map((reason) => (
@@ -3851,11 +3887,64 @@ export function App() {
               disabled={busy || !refunding.reason || !refunding.amount}
               onClick={() => {
                 const snapshot = refunding;
+                const amountCents = Math.round(Number(snapshot.amount) * 100);
+                const card = refundCards[0];
+
+                // Money actually going back on the card: push it to the
+                // terminal and wait for Square, exactly like taking one.
+                const attemptTerminal = (pin?: string) => {
+                  void api<{ refundId: string; deviceName: string }>(
+                    `/api/pos/orders/${snapshot.order.id}/terminal-refund`,
+                    {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        amountCents,
+                        reason: snapshot.reason,
+                        staffName: operatorName || 'Unknown',
+                        deviceId: card?.devices[0]?.id,
+                        squarePaymentId: card?.squarePaymentId,
+                        managerPin: pin
+                      })
+                    }
+                  )
+                    .then(async (started) => {
+                      setManagerGate(null);
+                      setInfo(`Refund sent to ${started.deviceName}…`);
+                      const deadline = Date.now() + 5 * 60_000;
+                      for (;;) {
+                        await new Promise((resolve) => setTimeout(resolve, 1500));
+                        if (Date.now() > deadline) {
+                          setError('The terminal did not respond. Check Square before refunding again.');
+                          return;
+                        }
+                        const poll = await api<{ status: string; settled?: boolean; reason?: string }>(
+                          `/api/pos/terminal-refunds/${started.refundId}`
+                        );
+                        if (poll.settled) {
+                          setRefunding(null);
+                          setBills(null);
+                          setInfo('Refunded to the card.');
+                          void refreshOpenOrders();
+                          return;
+                        }
+                        if (poll.status === 'CANCELED') {
+                          setError(poll.reason ?? 'The refund was cancelled on the terminal.');
+                          return;
+                        }
+                      }
+                    })
+                    .catch((err) => {
+                      const message = messageForError(err, 'Refund failed.');
+                      if (/manager/i.test(message)) setManagerGate({ message, pin: '', retry: attemptTerminal });
+                      else setError(message);
+                    });
+                };
+
                 const attempt = (pin?: string) => {
                   void api(`/api/pos/orders/${snapshot.order.id}/refund`, {
                     method: 'POST',
                     body: JSON.stringify({
-                      amountCents: Math.round(Number(snapshot.amount) * 100),
+                      amountCents,
                       reason: snapshot.reason,
                       method: snapshot.method,
                       staffName: operatorName || 'Unknown',
@@ -3873,7 +3962,9 @@ export function App() {
                       else setError(message);
                     });
                 };
-                attempt();
+
+                if (snapshot.method === 'TERMINAL') attemptTerminal();
+                else attempt();
               }}
             >
               Refund {refunding.amount ? money(Math.round(Number(refunding.amount) * 100)) : ''}

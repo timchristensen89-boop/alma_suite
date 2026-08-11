@@ -7,7 +7,7 @@ import {
   squareTerminalPost,
   type SquareTerminalContext
 } from './integration.service.js';
-import { posService } from './pos.service.js';
+import { applyRefund, posService, requireReason, verifyManagerPin } from './pos.service.js';
 
 // ── Square Terminal on the ALMA register ────────────────────────────────────
 //
@@ -38,6 +38,15 @@ type SquareCheckout = {
   cancel_reason?: string;
   payment_ids?: string[];
   amount_money?: { amount?: number; currency?: string };
+};
+
+type SquareTerminalRefund = {
+  id: string;
+  status?: string; // PENDING | IN_PROGRESS | CANCELED | COMPLETED
+  cancel_reason?: string;
+  refund_id?: string;
+  payment_id?: string;
+  reason?: string;
 };
 
 // Square's own vocabulary for a terminal that has finished with a card.
@@ -318,6 +327,175 @@ export const posTerminalService = {
         500,
         'The card was charged but the bill did not settle. Do NOT charge again — check Square and settle by hand.',
         { squarePaymentId }
+      );
+    }
+  },
+
+  // ── Giving money back ────────────────────────────────────────────────────
+
+  // Which card payments on this bill can be refunded to the terminal, and how
+  // much is left on each. The register asks before offering the option, so a
+  // cash-only bill never shows a terminal refund it can't do.
+  async refundableCards(orderId: string) {
+    const order = await prisma.posOrder.findUnique({
+      where: { id: orderId },
+      include: { payments: true, terminalRefunds: true }
+    });
+    if (!order) throw new HttpError(404, 'Bill not found.');
+    const devices = await prisma.posTerminalDevice.findMany({
+      where: { venue: order.venue, status: 'PAIRED' },
+      orderBy: { createdAt: 'asc' }
+    });
+    return order.payments
+      .filter((payment) => payment.method === 'SQUARE_TERMINAL' && payment.amountCents > 0 && payment.reference)
+      .map((payment) => {
+        // Money already sent back against this same card.
+        const returned = order.terminalRefunds
+          .filter((refund) => refund.squarePaymentId === payment.reference && refund.refundPaymentId)
+          .reduce((sum, refund) => sum + refund.amountCents, 0);
+        return {
+          squarePaymentId: payment.reference!,
+          paidCents: payment.amountCents + payment.tipCents,
+          refundedCents: returned,
+          refundableCents: payment.amountCents + payment.tipCents - returned
+        };
+      })
+      .filter((row) => row.refundableCents > 0)
+      .map((row) => ({ ...row, devices: devices.map((device) => ({ id: device.id, name: device.name })) }));
+  },
+
+  // Push a refund to the terminal. The manager PIN is checked HERE, before any
+  // money moves — by the time Square confirms, the approval is already on the
+  // record and the books settle without asking again.
+  async startRefund(orderId: string, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const deviceId = text(body.deviceId);
+    if (!deviceId) throw new HttpError(400, 'Pick a terminal.');
+    const reason = text(body.reason);
+    requireReason('COMP', reason);
+    const approvedBy = await verifyManagerPin(text(body.managerPin), 'refunds');
+
+    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, include: { payments: true } });
+    if (!order) throw new HttpError(404, 'Bill not found.');
+    if (order.status !== 'PAID') throw new HttpError(400, 'Only paid bills can be refunded.');
+
+    const cards = await posTerminalService.refundableCards(orderId);
+    const squarePaymentId = text(body.squarePaymentId) || cards[0]?.squarePaymentId || '';
+    const card = cards.find((row) => row.squarePaymentId === squarePaymentId);
+    if (!card) throw new HttpError(400, 'Nothing on this bill was paid on a Square terminal.');
+
+    const amountCents =
+      body.amountCents === undefined || body.amountCents === null
+        ? card.refundableCents
+        : Math.round(Number(body.amountCents));
+    if (!Number.isFinite(amountCents) || amountCents < 1) throw new HttpError(400, 'Refund must be at least 1c.');
+    if (amountCents > card.refundableCents) {
+      throw new HttpError(400, `Only ${(card.refundableCents / 100).toFixed(2)} is left on that card.`);
+    }
+
+    const device = await prisma.posTerminalDevice.findUnique({ where: { id: deviceId } });
+    if (!device?.squareDeviceId || device.status !== 'PAIRED') throw new HttpError(400, 'That terminal isn\'t paired.');
+
+    const inFlight = await prisma.posTerminalRefund.findFirst({
+      where: { orderId, status: { in: ['PENDING', 'IN_PROGRESS'] } }
+    });
+    if (inFlight) throw new HttpError(409, 'A refund is already on a terminal for this bill.');
+
+    const context = await squareTerminalContext(order.venue);
+    const created = await squareTerminalPost<{ refund?: SquareTerminalRefund }>(context, '/terminals/refunds', {
+      idempotency_key: idempotencyKey(),
+      refund: {
+        payment_id: squarePaymentId,
+        amount_money: { amount: amountCents, currency: context.currency },
+        reason: reason.slice(0, 192),
+        device_id: device.squareDeviceId
+      }
+    });
+    const refund = created.refund;
+    if (!refund?.id) throw new HttpError(502, 'Square did not return a refund.');
+
+    const row = await prisma.posTerminalRefund.create({
+      data: {
+        id: refund.id,
+        orderId,
+        deviceId: device.id,
+        venue: order.venue,
+        amountCents,
+        status: refund.status ?? 'PENDING',
+        squarePaymentId,
+        approvedBy,
+        staffName: `${text(body.staffName) || 'Unknown'} (approved by ${approvedBy})`,
+        reason
+      }
+    });
+    return { refundId: row.id, status: row.status, amountCents, deviceName: device.name };
+  },
+
+  // Poll a refund. The books move only once Square says the money is back.
+  async pollRefund(refundId: string) {
+    const row = await prisma.posTerminalRefund.findUnique({ where: { id: refundId } });
+    if (!row) throw new HttpError(404, 'Refund not found.');
+    if (row.refundPaymentId) {
+      return { status: 'COMPLETED', settled: true, order: await posService.getOrder(row.orderId) };
+    }
+    if (row.status === 'CANCELED') return { status: 'CANCELED', settled: false, reason: row.failureReason };
+
+    const context = await squareTerminalContext(row.venue);
+    const response = await squareTerminalGet<{ refund?: SquareTerminalRefund }>(context, `/terminals/refunds/${row.id}`);
+    const status = response.refund?.status ?? row.status;
+
+    if (!TERMINAL_DONE.has(status)) {
+      if (status !== row.status) await prisma.posTerminalRefund.update({ where: { id: row.id }, data: { status } });
+      return { status, settled: false };
+    }
+    if (status === 'CANCELED') {
+      await prisma.posTerminalRefund.update({
+        where: { id: row.id },
+        data: { status, failureReason: response.refund?.cancel_reason ?? 'Cancelled on the terminal' }
+      });
+      return { status, settled: false, reason: response.refund?.cancel_reason ?? 'Cancelled on the terminal' };
+    }
+
+    // Same latch as the charge: claim the row before touching the books.
+    const claimed = await prisma.posTerminalRefund.updateMany({
+      where: { id: row.id, refundPaymentId: null },
+      data: { status, refundPaymentId: 'PENDING' }
+    });
+    if (claimed.count === 0) {
+      return { status: 'COMPLETED', settled: true, order: await posService.getOrder(row.orderId) };
+    }
+
+    try {
+      const order = await applyRefund({
+        orderId: row.orderId,
+        amountCents: row.amountCents,
+        reason: row.reason,
+        staffName: row.staffName,
+        method: 'REFUND'
+      });
+      const payment = await prisma.posPayment.findFirst({
+        where: { orderId: row.orderId, method: 'REFUND' },
+        orderBy: { createdAt: 'desc' }
+      });
+      await prisma.posTerminalRefund.update({
+        where: { id: row.id },
+        data: { refundPaymentId: payment?.id ?? row.id }
+      });
+      return { status: 'COMPLETED', settled: true, order };
+    } catch (error) {
+      // The guest HAS their money back — Square said so. Keep the latch shut
+      // so nobody refunds a second time, and make the mismatch loud.
+      await prisma.posTerminalRefund.update({
+        where: { id: row.id },
+        data: {
+          failureReason: `Refunded on Square but the bill did not update: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`
+        }
+      });
+      throw new HttpError(
+        500,
+        'The refund went through on the card but the bill did not update. Do NOT refund again — fix the bill by hand.'
       );
     }
   },
