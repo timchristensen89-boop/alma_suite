@@ -459,6 +459,13 @@ export function App() {
   // React's synthetic move events are unreliable under pointer capture.
   function boardPinPointerDown(event: React.PointerEvent, index: number) {
     if (!boardEdit) return;
+    // A pointerdown on one of the tile's OWN controls (remove / resize /
+    // rename) must not start a drag. This handler sits on the tile, so those
+    // presses bubble into it, and the preventDefault + setPointerCapture
+    // below then swallow the click that should have followed — which is
+    // exactly why ✕, ⤢ and ✎ did nothing at all in edit mode. Any control
+    // added to a tile in future needs `pos-pin-act` for the same reason.
+    if ((event.target as HTMLElement).closest('.pos-pin-act')) return;
     event.preventDefault();
     dragPinIndex.current = index;
     dragMoved.current = false;
@@ -2584,7 +2591,12 @@ export function App() {
                 className="pos-board-pager"
                 ref={boardPagerRef}
                 onPointerDown={(event) => {
-                  if (boardEdit) return;
+                  // While editing, a press on a TILE is a drag — that has its
+                  // own edge-flip and must not also swipe the page. But a
+                  // swipe on the empty part of the board still needs to turn
+                  // the page: this used to bail on boardEdit outright, which
+                  // left page 2 reachable only by dragging a tile to the edge.
+                  if (boardEdit && (event.target as HTMLElement).closest('[data-pin-index]')) return;
                   const startX = event.clientX;
                   const startY = event.clientY;
                   const onSwipeMove = (nativeEvent: PointerEvent) => {
@@ -2654,9 +2666,11 @@ export function App() {
                   };
                   const badges = boardEdit ? (
                     <>
-                      <i className="pos-pin-x" onClick={removePin}>✕</i>
-                      <i className="pos-pin-size" onClick={cycleSize}>⤢</i>
-                      <i className="pos-pin-rename" onClick={startRename}>✎</i>
+                      {/* pos-pin-act marks these as the tile's own controls,
+                          so the drag handler leaves their taps alone. */}
+                      <i className="pos-pin-x pos-pin-act" onClick={removePin}>✕</i>
+                      <i className="pos-pin-size pos-pin-act" onClick={cycleSize}>⤢</i>
+                      <i className="pos-pin-rename pos-pin-act" onClick={startRename}>✎</i>
                     </>
                   ) : null;
                   const renameInput =
