@@ -19,6 +19,10 @@ export function GuestOrder({ token }: { token: string }) {
   const [menu, setMenu] = useState<GuestMenu | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cart, setCart] = useState<Map<string, number>>(new Map());
+  // The basket opens over the menu, which is right when you're finishing and
+  // wrong when you're still choosing — a table ordering a second round could
+  // not see past it. Collapsed leaves a one-line summary you can tap to open.
+  const [cartOpen, setCartOpen] = useState(true);
   const [openCat, setOpenCat] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
@@ -284,7 +288,18 @@ export function GuestOrder({ token }: { token: string }) {
       ))}
 
       {cartCount > 0 ? (
-        <div className="qr-cart">
+        <div className={cartOpen ? 'qr-cart' : 'qr-cart is-min'}>
+          <button
+            type="button"
+            className="qr-cart-toggle"
+            aria-expanded={cartOpen}
+            onClick={() => setCartOpen((open) => !open)}
+          >
+            <span>
+              {cartCount} item{cartCount === 1 ? '' : 's'} · {money(cartTotal)}
+            </span>
+            <em>{cartOpen ? '▾ hide' : '▴ show'}</em>
+          </button>
           <input placeholder="Your name (optional)" value={name} onChange={(event) => setName(event.currentTarget.value)} maxLength={60} />
           <div className="qr-diet">
             <p className="qr-muted">Anything we need to know? These reach the kitchen with your order.</p>

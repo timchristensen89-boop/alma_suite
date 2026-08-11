@@ -2493,6 +2493,27 @@ export function App() {
             setView('register');
           }}
           onPrint={(row) => void printTillReceipt(row.id)}
+          onReinstate={(row) => {
+            void api<Order>(`/api/pos/orders/${row.id}/reopen`, { method: 'POST' })
+              .then((reopened) => {
+                setOrder(reopened);
+                setView('register');
+                void refreshOpenOrders();
+                setInfo(`${reopened.tableLabel ? `Table ${reopened.tableLabel}` : `#${reopened.orderNumber}`} is open again — the payment stays on it.`);
+              })
+              .catch((err) => setError(messageForError(err, 'Could not reinstate that bill.')));
+          }}
+          onRefund={(row) => {
+            const refunded = row.payments
+              .filter((payment) => payment.amountCents < 0)
+              .reduce((sum, payment) => sum - payment.amountCents, 0);
+            setRefunding({
+              order: row,
+              amount: String((row.totalCents + row.tipCents - refunded) / 100),
+              reason: '',
+              method: 'REFUND'
+            });
+          }}
           onSplit={(row) => {
             setOrder(row);
             setView('register');
@@ -6294,7 +6315,9 @@ function BillsPage({
   onPrint,
   onReceipt,
   onNewOrder,
-  onRefresh
+  onRefresh,
+  onReinstate,
+  onRefund
 }: {
   openOrders: Order[];
   settled: Order[];
@@ -6305,6 +6328,8 @@ function BillsPage({
   onReceipt: (order: Order) => void;
   onNewOrder: () => void;
   onRefresh: () => void;
+  onReinstate: (order: Order) => void;
+  onRefund: (order: Order) => void;
 }) {
   // Re-render each minute so the "sitting 1h 20m" stays honest without a poll.
   const [, setTick] = useState(0);
@@ -6412,6 +6437,19 @@ function BillsPage({
                     <button type="button" onClick={() => onReceipt(row)}>
                       View
                     </button>
+                    {/* A settled bill is not a closed book. A wrong item, a
+                        return, a guest who came back for one more — all of it
+                        happens after someone has paid. */}
+                    {row.status === 'PAID' ? (
+                      <>
+                        <button type="button" disabled={busy} onClick={() => onReinstate(row)}>
+                          Reinstate
+                        </button>
+                        <button type="button" disabled={busy} onClick={() => onRefund(row)}>
+                          Refund
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               );

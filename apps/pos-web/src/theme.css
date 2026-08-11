@@ -1548,3 +1548,15 @@ body.pos-v2 .pos-shell, .pos-shell { overflow: hidden; }
 /* Text-size picker: three A's at the sizes they actually produce. */
 .pos-be-textsize button { min-width: 30px; justify-content: center; }
 .pos-be-textsize button span { line-height: 1; }
+
+/* Guest basket: collapsible, so a table ordering a second round can still
+   see the menu underneath it. */
+.qr-cart-toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; background: transparent; border: 0; padding: 4px 2px 10px;
+  font-family: inherit; font-size: 15px; font-weight: 700; color: inherit; cursor: pointer;
+}
+.qr-cart-toggle em { font-style: normal; font-size: 12px; font-weight: 700; opacity: 0.6; }
+/* Collapsed: everything but the summary bar folds away. */
+.qr-cart.is-min > *:not(.qr-cart-toggle) { display: none; }
+.qr-cart.is-min .qr-cart-toggle { padding-bottom: 4px; }
