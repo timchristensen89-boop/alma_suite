@@ -3936,6 +3936,60 @@ async function recordWebhook(provider: Provider, rawBody: string, accountKey: Sq
   }
 }
 
+// ── Square Terminal access ─────────────────────────────────────────────────
+// The register drives Square Terminals through these three. Everything about
+// OAuth tokens, refresh-on-401 and which of the two merchant accounts a venue
+// belongs to stays in this file — the POS service only ever deals in devices
+// and checkouts.
+
+export type SquareTerminalContext = {
+  connection: IntegrationConnection;
+  accountKey: SquareAccountKey;
+  locationId: string;
+  currency: string;
+};
+
+// Taking money needs scopes a read-only connection doesn't have, and Square
+// answers INSUFFICIENT_SCOPES with a 403 that reads like a bug. Check up
+// front so the register can say "reconnect Square" instead.
+const SQUARE_TERMINAL_SCOPES = ['PAYMENTS_WRITE', 'DEVICE_CREDENTIAL_MANAGEMENT'];
+
+export async function squareTerminalContext(venue: string): Promise<SquareTerminalContext> {
+  const accountKey = inferSquareAccountKeyFromVenue(venue);
+  const connection = await connectionSelect('SQUARE', accountKey);
+  if (!connection || connection.status !== 'CONNECTED') {
+    throw new HttpError(503, `Square isn't connected for ${venue}. Reconnect it in Admin → Integrations.`);
+  }
+  const scopes = Array.isArray(connection.scopes) ? connection.scopes.map((scope) => String(scope)) : [];
+  const missing = SQUARE_TERMINAL_SCOPES.filter((scope) => !scopes.includes(scope));
+  if (missing.length > 0) {
+    throw new HttpError(
+      503,
+      `The Square connection for ${venue} is read-only — reconnect it so it can take payments (missing ${missing.join(', ')}).`
+    );
+  }
+  const { locations } = squareMetadataStatus(connection);
+  const location = locations.find((candidate) => candidate.status !== 'INACTIVE') ?? locations[0];
+  if (!location) {
+    throw new HttpError(503, `The Square connection for ${venue} has no location on it.`);
+  }
+  return { connection, accountKey, locationId: location.id, currency: location.currency ?? 'AUD' };
+}
+
+export async function squareTerminalGet<T>(context: SquareTerminalContext, path: string): Promise<T> {
+  const { data } = await squareGetJson<T>(path, { connection: context.connection });
+  return data;
+}
+
+export async function squareTerminalPost<T>(
+  context: SquareTerminalContext,
+  path: string,
+  body: Record<string, unknown>
+): Promise<T> {
+  const { data } = await squarePostJson<T>(path, body as Prisma.InputJsonObject, { connection: context.connection });
+  return data;
+}
+
 export const integrationService = {
   normaliseProvider,
 

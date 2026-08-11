@@ -18,9 +18,19 @@ type MenuShape = { categories: Array<{ name: string; items: Array<{ recipeId: st
 type Special = { id: string; title: string; salePriceCents: number; category: string; venue: string | null };
 type VariantOption = { recipeId: string; label: string; title: string; priceCents: number; self: boolean };
 type VariantGroup = { parentRecipeId: string; parentTitle: string; options: VariantOption[] };
+type Terminal = {
+  id: string;
+  venue: string;
+  name: string;
+  code: string;
+  status: string;
+  squareDeviceId: string | null;
+  pairedAt: string | null;
+  lastUsedAt: string | null;
+};
 
 export function Office() {
-  const [tab, setTab] = useState<'printers' | 'menu' | 'modifiers' | 'variants' | 'specials' | 'rules' | 'identity'>('printers');
+  const [tab, setTab] = useState<'printers' | 'terminals' | 'menu' | 'modifiers' | 'variants' | 'specials' | 'rules' | 'identity'>('printers');
   const [hides, setHides] = useState<MenuHide[]>([]);
   const [fullMenu, setFullMenu] = useState<MenuShape | null>(null);
   const [hideSearch, setHideSearch] = useState('');
@@ -46,6 +56,10 @@ export function Office() {
   const [specials, setSpecials] = useState<Special[]>([]);
   const [xeroTenants, setXeroTenants] = useState<Array<{ id: string; name: string | null }>>([]);
   const [specialDraft, setSpecialDraft] = useState({ name: '', price: '', kind: 'FOOD', venue: '' });
+  const [terminalVenue, setTerminalVenue] = useState(VENUES[0]!);
+  const [terminals, setTerminals] = useState<Terminal[]>([]);
+  const [terminalName, setTerminalName] = useState('');
+  const [pairing, setPairing] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -84,6 +98,50 @@ export function Office() {
     const timer = setTimeout(() => setInfo(null), 4000);
     return () => clearTimeout(timer);
   }, [info]);
+
+  const loadTerminals = useCallback(async (venue: string) => {
+    try {
+      setTerminals(await api<Terminal[]>(`/api/pos/terminals?venue=${encodeURIComponent(venue)}`));
+    } catch (err) {
+      setError(messageForError(err, 'Could not load the terminals.'));
+    }
+  }, []);
+
+  // While a code is on screen the server is the only one who knows whether
+  // it's been typed in yet, so poll — otherwise staff pair the terminal and
+  // then stare at a screen that still says "waiting".
+  useEffect(() => {
+    if (tab !== 'terminals') return;
+    void loadTerminals(terminalVenue);
+    const timer = setInterval(() => void loadTerminals(terminalVenue), 4000);
+    return () => clearInterval(timer);
+  }, [tab, terminalVenue, loadTerminals]);
+
+  async function pairTerminal() {
+    setPairing(true);
+    try {
+      const created = await api<Terminal>('/api/pos/terminals/pair', {
+        method: 'POST',
+        body: JSON.stringify({ venue: terminalVenue, name: terminalName.trim() || undefined })
+      });
+      setTerminalName('');
+      setInfo(`Type ${created.code} into the terminal to finish pairing.`);
+      await loadTerminals(terminalVenue);
+    } catch (err) {
+      setError(messageForError(err, 'Square would not issue a device code.'));
+    } finally {
+      setPairing(false);
+    }
+  }
+
+  async function removeTerminal(id: string) {
+    try {
+      await api(`/api/pos/terminals/${id}`, { method: 'DELETE' });
+      await loadTerminals(terminalVenue);
+    } catch (err) {
+      setError(messageForError(err, 'Could not remove the terminal.'));
+    }
+  }
 
   // Receipt logo: read → downscale to ≤320px wide → PNG data URL → save.
   async function uploadLogo(venue: string, file: File) {
@@ -150,6 +208,7 @@ export function Office() {
         {(
           [
             ['printers', 'Printers & dockets'],
+            ['terminals', 'Card terminals'],
             ['menu', 'Menu visibility'],
             ['modifiers', 'Modifiers'],
             ['variants', 'Variants'],
@@ -268,6 +327,68 @@ export function Office() {
             <button type="button" className="office-add" onClick={() => void saveProfile({ name: 'New station', matchKind: 'FOOD', categoriesCsv: '', sortOrder: profiles.length })}>
               ＋ Add a station
             </button>
+          </section>
+        ) : null}
+
+        {tab === 'terminals' ? (
+          <section>
+            <p className="office-lead">
+              Square Terminals take the card and the register settles the bill when Square says it went through. There's no IP
+              to set — the terminal talks to Square over the internet, so it works on venue wifi or its own 4G.
+            </p>
+            <div className="office-row">
+              <select value={terminalVenue} onChange={(event) => setTerminalVenue(event.currentTarget.value)}>
+                {VENUES.map((venue) => (
+                  <option key={venue} value={venue}>
+                    {venue}
+                  </option>
+                ))}
+              </select>
+              <input
+                placeholder="Name it (Handheld 1, Front stand…)"
+                value={terminalName}
+                onChange={(event) => setTerminalName(event.currentTarget.value)}
+              />
+              <button type="button" className="office-add" disabled={pairing} onClick={() => void pairTerminal()}>
+                {pairing ? 'Asking Square…' : '＋ Pair a terminal'}
+              </button>
+            </div>
+
+            {terminals.length === 0 ? (
+              <p className="office-hint">No terminals paired for {terminalVenue} yet.</p>
+            ) : (
+              <ul className="office-list">
+                {terminals.map((terminal) => (
+                  <li key={terminal.id} className="office-list-row">
+                    <div>
+                      <strong>{terminal.name}</strong>
+                      {terminal.status === 'PAIRED' ? (
+                        <span className="office-pill is-on">Ready</span>
+                      ) : terminal.status === 'EXPIRED' ? (
+                        <span className="office-pill">Code expired — pair again</span>
+                      ) : (
+                        <span className="office-pill">Waiting for the code</span>
+                      )}
+                      {terminal.status === 'PAIRING' ? (
+                        <p className="office-hint">
+                          On the terminal: <strong>Sign in with a device code</strong>, then type{' '}
+                          <code className="office-code">{terminal.code}</code>. This list refreshes on its own.
+                        </p>
+                      ) : (
+                        <p className="office-hint">
+                          {terminal.lastUsedAt
+                            ? `Last charge ${new Date(terminal.lastUsedAt).toLocaleString('en-AU')}`
+                            : 'Not used yet'}
+                        </p>
+                      )}
+                    </div>
+                    <button type="button" className="office-danger" onClick={() => void removeTerminal(terminal.id)}>
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         ) : null}
 

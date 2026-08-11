@@ -697,6 +697,12 @@ export function App() {
   const terminalRef = useRef<Terminal | null>(null);
   const [reader, setReader] = useState<Reader | null>(null);
   const [readerBusy, setReaderBusy] = useState<string | null>(null);
+  // Square Terminals paired to this venue, and the charge currently sitting on
+  // one of them. `squareCheckout` being non-null is what puts the register into
+  // "waiting for the guest to tap" — it must be cleared on every exit path or
+  // the pay screen stays stuck.
+  const [squareTerminals, setSquareTerminals] = useState<Array<{ id: string; name: string; status: string }>>([]);
+  const [squareCheckout, setSquareCheckout] = useState<null | { id: string; deviceName: string; status: string }>(null);
   const [closing, setClosing] = useState<null | {
     gate: CloseGate | null;
     drawer: DrawerInfo | null;
@@ -826,6 +832,17 @@ export function App() {
   useEffect(() => {
     localStorage.setItem('alma.pos.venue', venue);
   }, [venue]);
+
+  // Which card terminals this venue can charge to. Quiet failure on purpose:
+  // Square being unreachable must not stop anyone taking cash.
+  useEffect(() => {
+    if (!me || me === 'loading') return;
+    void api<Array<{ id: string; name: string; status: string }>>(
+      `/api/pos/terminals?venue=${encodeURIComponent(venue)}`
+    )
+      .then((rows) => setSquareTerminals(rows.filter((row) => row.status === 'PAIRED')))
+      .catch(() => setSquareTerminals([]));
+  }, [venue, me]);
 
   useEffect(() => {
     if (!me || me === 'loading') return;
@@ -1601,6 +1618,80 @@ export function App() {
       setError(messageForError(err, 'The card was not charged.'));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Square Terminal: the register pushes the amount to the paired hardware and
+  // then waits. Square owns the card — we tender the bill only once Square
+  // confirms, so a terminal that times out or gets cancelled leaves the bill
+  // exactly as it was.
+  async function payWithSquareTerminal(deviceId: string) {
+    if (!order || !charge || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const started = await api<{ checkoutId: string; deviceName: string; status: string }>(
+        `/api/pos/orders/${order.id}/terminal-checkout`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            deviceId,
+            amountCents: charge.amountCents ?? balance,
+            tipCents: charge.tipCents
+          })
+        }
+      );
+      setSquareCheckout({ id: started.checkoutId, deviceName: started.deviceName, status: started.status });
+
+      // Poll until Square is done with the card. Give up after five minutes —
+      // long past the point where staff should be looking at the terminal.
+      const deadline = Date.now() + 5 * 60_000;
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (Date.now() > deadline) {
+          setError('The terminal did not respond. Check it, then cancel or retry.');
+          break;
+        }
+        const poll = await api<{ status: string; settled?: boolean; reason?: string; order?: Order }>(
+          `/api/pos/terminal-checkouts/${started.checkoutId}`
+        );
+        setSquareCheckout((current) => (current ? { ...current, status: poll.status } : current));
+        if (poll.settled && poll.order) {
+          setSquareCheckout(null);
+          if (poll.order.status === 'PAID') {
+            collectIssuedGiftCards(poll.order.id);
+            setReceipt(poll.order);
+            setOrder(null);
+            setCharge(null);
+            void refreshOpenOrders();
+          } else {
+            setOrder(poll.order);
+            setCharge({ stage: 'split', tipCents: 0, amountCents: null });
+          }
+          return;
+        }
+        if (poll.status === 'CANCELED') {
+          setSquareCheckout(null);
+          setError(poll.reason ?? 'The card was cancelled on the terminal.');
+          return;
+        }
+      }
+    } catch (err) {
+      setSquareCheckout(null);
+      setError(messageForError(err, 'The card was not charged.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelSquareCheckout() {
+    if (!squareCheckout) return;
+    try {
+      await api(`/api/pos/terminal-checkouts/${squareCheckout.id}/cancel`, { method: 'POST' });
+    } catch (err) {
+      setError(messageForError(err, 'Could not cancel — check the terminal.'));
+    } finally {
+      setSquareCheckout(null);
     }
   }
 
@@ -3184,12 +3275,36 @@ export function App() {
             {charge.stage === 'method' ? (
               <>
                 <h2>{money((charge.amountCents ?? balance) + charge.tipCents)}</h2>
+                {squareCheckout ? (
+                  <div className="pos-terminal-wait">
+                    <strong>On {squareCheckout.deviceName}</strong>
+                    <p>
+                      {squareCheckout.status === 'IN_PROGRESS'
+                        ? 'Guest is paying…'
+                        : 'Waiting for the guest to tap…'}
+                    </p>
+                    <button type="button" className="pos-ghost" onClick={() => void cancelSquareCheckout()}>
+                      Cancel on terminal
+                    </button>
+                  </div>
+                ) : null}
                 <div className="pos-choice-row">
                   {nativeTapToPay ? (
                     <button type="button" className="pos-tap-btn" disabled={busy} onClick={() => void takeTapToPay()}>
                       📲 Tap to Pay
                     </button>
                   ) : null}
+                  {squareTerminals.map((terminal) => (
+                    <button
+                      key={terminal.id}
+                      type="button"
+                      className="pos-charge"
+                      disabled={busy}
+                      onClick={() => void payWithSquareTerminal(terminal.id)}
+                    >
+                      Card · {terminal.name}
+                    </button>
+                  ))}
                   <button type="button" disabled={busy} onClick={() => void takePayment('CARD_EXTERNAL')}>
                     Card (EFTPOS)
                   </button>

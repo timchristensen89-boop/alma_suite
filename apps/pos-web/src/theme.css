@@ -469,6 +469,23 @@ body.pos-dark .pos-danger-ghost { color: #e88a77 !important; border-color: rgba(
 .office-variant-actions { display: flex; gap: 10px; margin-top: 14px; align-items: center; }
 .office-variant-editor { border: 1px solid var(--pos-border, #ddd); border-radius: 14px; padding: 14px; margin-top: 10px; }
 
+/* Waiting on a Square Terminal: the one thing on screen that matters, and a
+   way out that doesn't involve charging the guest twice. */
+.pos-terminal-wait { border: 1px solid var(--pos-accent, #4a5d3a); border-radius: 16px; padding: 16px; margin: 12px 0; text-align: center; }
+.pos-terminal-wait strong { display: block; font-size: 15px; }
+.pos-terminal-wait p { margin: 6px 0 12px; color: var(--pos-text2); font-size: 13px; }
+
+/* Card terminals: paired Square devices, and the code staff type into one */
+.office-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px; }
+.office-list-row { display: flex; align-items: flex-start; gap: 12px; border: 1px solid var(--pos-border, #ddd); border-radius: 14px; padding: 12px 14px; }
+.office-list-row > div { flex: 1; min-width: 0; }
+.office-list-row p { margin: 4px 0 0; }
+.office-pill { display: inline-block; margin-left: 8px; border: 1px solid var(--pos-border, #ddd); border-radius: 9999px; padding: 2px 10px; font-size: 11px; font-weight: 700; color: var(--pos-text2); vertical-align: middle; }
+.office-pill.is-on { border-color: var(--pos-accent, #4a5d3a); color: var(--pos-accent, #4a5d3a); }
+/* The pairing code is read aloud across a bar, so it gets to be big. */
+.office-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 17px; font-weight: 700; letter-spacing: 0.12em; color: var(--pos-text); }
+.office-danger { align-self: center; background: transparent; border: 1px solid var(--pos-border, #ddd); border-radius: 9999px; color: var(--pos-danger, #b3402e); font-family: inherit; font-size: 12px; font-weight: 700; padding: 8px 14px; cursor: pointer; }
+
 /* Void confirm: unmistakably destructive */
 .pos-void-confirm { background: #b3402e !important; border-color: #b3402e !important; color: #fff !important; }
 

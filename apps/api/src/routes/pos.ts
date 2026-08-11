@@ -1,6 +1,7 @@
 import express, { Router } from 'express';
 import { HttpError } from '../lib/http.js';
 import { posService } from '../services/pos.service.js';
+import { posTerminalService } from '../services/pos-terminal.service.js';
 
 // Register endpoints: any authenticated identity may ring up sales — a venue
 // device (the counter iPad) or a signed-in staff/manager account. The ONE
@@ -112,6 +113,59 @@ posRouter.put('/orders/:id/lines', async (req, res, next) => {
 posRouter.post('/orders/:id/pay', async (req, res, next) => {
   try {
     res.json(await posService.payOrder(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Square Terminal ────────────────────────────────────────────────────────
+// Pairing is per venue; charging is per bill. The register starts a checkout
+// and then polls it — the guest still has to tap, and Square is the only one
+// who knows when they have.
+
+posRouter.get('/terminals', async (req, res, next) => {
+  try {
+    res.json(await posTerminalService.listDevices(req.query.venue));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/terminals/pair', async (req, res, next) => {
+  try {
+    res.json(await posTerminalService.pairDevice(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.delete('/terminals/:id', async (req, res, next) => {
+  try {
+    res.json(await posTerminalService.removeDevice(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/orders/:id/terminal-checkout', async (req, res, next) => {
+  try {
+    res.json(await posTerminalService.startCheckout(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.get('/terminal-checkouts/:checkoutId', async (req, res, next) => {
+  try {
+    res.json(await posTerminalService.pollCheckout(String(req.params.checkoutId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.post('/terminal-checkouts/:checkoutId/cancel', async (req, res, next) => {
+  try {
+    res.json(await posTerminalService.cancelCheckout(String(req.params.checkoutId)));
   } catch (error) {
     next(error);
   }
