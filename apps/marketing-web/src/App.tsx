@@ -54,6 +54,20 @@ import {
 import { SuiteSignOutButton } from '@alma/ui';
 import { MARKETING_WEB_URL, RESERVE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
+import {
+  IconBadgeCheck,
+  IconCalendarCheck,
+  IconChecklist,
+  IconDashboard,
+  IconEdit,
+  IconFileText,
+  IconFiles,
+  IconImages,
+  IconMegaphone,
+  IconPieChart,
+  IconPlug,
+  IconUsers
+} from '../../web/src/lib/icons';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const ALL_VENUES = 'All venues';
@@ -86,18 +100,18 @@ const AUTOMATION_TRIGGERS: MarketingAutomationTriggerType[] = [
 ];
 const TEMPLATE_STATUSES = ['DRAFT', 'ACTIVE', 'ARCHIVED'] as const;
 const MARKETING_NAV_ITEMS = [
-  { href: '/', label: 'Overview', description: 'Metrics, alerts, and activity', icon: <DocumentIcon /> },
-  { href: '/guests', label: 'Guests', description: 'Profiles, consent, and tags', icon: <SearchIcon /> },
-  { href: '/segments', label: 'Segments', description: 'Tag and audience logic', icon: <GearIcon /> },
-  { href: '/campaigns', label: 'Campaigns', description: 'Preview and simulate', icon: <DocumentIcon /> },
-  { href: '/content', label: 'Content', description: 'Social overview', icon: <DocumentIcon /> },
-  { href: '/content/assets', label: 'Assets', description: 'Upload and library', icon: <DocumentIcon /> },
-  { href: '/content/composer', label: 'Composer', description: 'Draft and preview posts', icon: <DocumentIcon /> },
-  { href: '/content/calendar', label: 'Calendar', description: 'Scheduled social posts', icon: <DocumentIcon /> },
-  { href: '/content/approvals', label: 'Approvals', description: 'Review social posts', icon: <DocumentIcon /> },
-  { href: '/content/performance', label: 'Performance', description: 'Reach, likes, comments — Meta read-back', icon: <ChartIcon /> },
-  { href: '/automations', label: 'Automations', description: 'Trigger-based drafts', icon: <GearIcon /> },
-  { href: '/templates', label: 'Templates', description: 'Reusable email content', icon: <DocumentIcon /> }
+  { href: '/', label: 'Overview', description: 'Metrics, alerts, and activity', icon: <IconDashboard /> },
+  { href: '/guests', label: 'Guests', description: 'Profiles, consent, and tags', icon: <IconUsers /> },
+  { href: '/segments', label: 'Segments', description: 'Tag and audience logic', icon: <IconChecklist /> },
+  { href: '/campaigns', label: 'Campaigns', description: 'Preview and simulate', icon: <IconMegaphone /> },
+  { href: '/content', label: 'Content', description: 'Social overview', icon: <IconImages /> },
+  { href: '/content/assets', label: 'Assets', description: 'Upload and library', icon: <IconFiles /> },
+  { href: '/content/composer', label: 'Composer', description: 'Draft and preview posts', icon: <IconEdit /> },
+  { href: '/content/calendar', label: 'Calendar', description: 'Scheduled social posts', icon: <IconCalendarCheck /> },
+  { href: '/content/approvals', label: 'Approvals', description: 'Review social posts', icon: <IconBadgeCheck /> },
+  { href: '/content/performance', label: 'Performance', description: 'Reach, likes, comments — Meta read-back', icon: <IconPieChart /> },
+  { href: '/automations', label: 'Automations', description: 'Trigger-based drafts', icon: <IconPlug /> },
+  { href: '/templates', label: 'Templates', description: 'Reusable email content', icon: <IconFileText /> }
 ];
 
 type FeedbackTone = 'success' | 'error';

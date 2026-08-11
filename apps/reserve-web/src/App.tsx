@@ -60,6 +60,15 @@ import { SuiteSignOutButton } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import { DrinksPaymentPanel } from './DrinksPaymentPanel';
+import {
+  IconClock,
+  IconDashboard,
+  IconGlobe,
+  IconMap,
+  IconPlug,
+  IconSettings,
+  IconUsers
+} from '../../web/src/lib/icons';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const ALL_VENUES = 'All venues';
@@ -97,13 +106,13 @@ const servicePeriodLabels: Record<ReserveServicePeriod, string> = {
   EVENT: 'Event'
 };
 const MANAGER_NAV_ITEMS = [
-  { href: '#dashboard', label: 'Dashboard', description: 'Bookings and covers', icon: <DocumentIcon /> },
-  { href: '#service', label: 'Service', description: 'Live floor — seat, courses, bill', icon: <DocumentIcon /> },
-  { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <SearchIcon /> },
-  { href: '#waitlist', label: 'Waitlist', description: 'Walk-in queue for peak periods', icon: <SearchIcon /> },
-  { href: '#settings', label: 'Settings', description: 'Rules, packages, tables, floor plan', icon: <GearIcon /> },
-  { href: '#widget-preview', label: 'Widget', description: 'Safe public booking preview', icon: <DocumentIcon /> },
-  { href: '#google-reserve', label: 'Google Reserve', description: 'Setup-required integration', icon: <GearIcon /> }
+  { href: '#dashboard', label: 'Dashboard', description: 'Bookings and covers', icon: <IconDashboard /> },
+  { href: '#service', label: 'Service', description: 'Live floor — seat, courses, bill', icon: <IconMap /> },
+  { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <IconUsers /> },
+  { href: '#waitlist', label: 'Waitlist', description: 'Walk-in queue for peak periods', icon: <IconClock /> },
+  { href: '#settings', label: 'Settings', description: 'Rules, packages, tables, floor plan', icon: <IconSettings /> },
+  { href: '#widget-preview', label: 'Widget', description: 'Safe public booking preview', icon: <IconGlobe /> },
+  { href: '#google-reserve', label: 'Google Reserve', description: 'Setup-required integration', icon: <IconPlug /> }
 ];
 
 // Config surfaces (booking rules, drink packages, tables, floor plan) live under

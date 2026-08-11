@@ -64,6 +64,25 @@ import {
 import { ADMIN_WEB_URL, COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForWeek, normaliseHistoricalVenue, isVenueOpenOnDate } from './data/historicalSales';
 import { Donut, HBars, TrendLine, CHART_COLORS } from './components/Charts';
+import {
+  IconAudit,
+  IconBadgeCheck,
+  IconCalendarCheck,
+  IconCalendarClock,
+  IconDashboard,
+  IconDownload,
+  IconEdit,
+  IconFiles,
+  IconGift,
+  IconHandbook,
+  IconImages,
+  IconLiquor,
+  IconMegaphone,
+  IconPieChart,
+  IconReceipt,
+  IconStaff,
+  IconStore
+} from '../../web/src/lib/icons';
 
 // The heavy report pages load on demand. They are whole reports in their own
 // right — the forecasting module alone is 581 lines plus its charts — and
@@ -250,7 +269,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'This Week',
     title: 'This Week',
     description: 'Your week at a glance: takings, the cost triangle, covers, and what needs attention.',
-    icon: <ChartIcon />,
+    icon: <IconDashboard />,
     group: 'core'
   },
   {
@@ -258,7 +277,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Sales',
     title: 'Sales',
     description: 'Takings by venue and day, plus forecast vs actual for Alma Avalon and St Alma.',
-    icon: <ChartIcon />,
+    icon: <IconReceipt />,
     group: 'core'
   },
   {
@@ -266,7 +285,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Forecast',
     title: 'Forecast',
     description: 'The weeks ahead: covers, sales, wages, COGS and the 13-week cash runway — predicted from your own trading history.',
-    icon: <ChartIcon />,
+    icon: <IconPieChart />,
     group: 'core'
   },
   {
@@ -274,7 +293,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Enter sales',
     title: 'Sales entry',
     description: 'Type takings by hand or upload a file. This is what feeds the forecast now the POS is not connected.',
-    icon: <ChartIcon />,
+    icon: <IconEdit />,
     group: 'core'
   },
   {
@@ -282,7 +301,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Forecasting',
     title: 'Forecasting module',
     description: 'Entity-separated cash, margin and creditor modelling for Two Cooked Chooks and Alma Freshwater.',
-    icon: <ChartIcon />,
+    icon: <IconCalendarClock />,
     group: 'core',
     // Unlinked on purpose: this is the creditor-facing model, not an operating
     // report. The route still resolves for anyone who has the link.
@@ -293,7 +312,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Supplier spend',
     title: 'Projected supplier spend',
     description: 'Projected spend per supplier per week: the COGS trend from Xero P&L totals applied to the sales forecast, split food and beverage, then by supplier share.',
-    icon: <ChartIcon />,
+    icon: <IconStore />,
     group: 'core'
   },
   {
@@ -301,7 +320,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Labour',
     title: 'Labour (wages)',
     description: 'Wage cost vs sales by venue, payroll readiness, tips, and staff attention.',
-    icon: <ChartIcon />,
+    icon: <IconStaff />,
     group: 'core'
   },
   {
@@ -309,7 +328,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Food & Bev Cost',
     title: 'Food & Bev Cost (COGS)',
     description: 'What you spent to sell — food cost %, purchases, wastage, and stock value.',
-    icon: <DocumentIcon />,
+    icon: <IconLiquor />,
     group: 'core'
   },
   {
@@ -317,7 +336,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Menu',
     title: 'Menu',
     description: 'Which dishes make money and which lose it — sales, cost, and margin per item.',
-    icon: <ChartIcon />,
+    icon: <IconHandbook />,
     group: 'core'
   },
   {
@@ -325,7 +344,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Monthly Recap',
     title: 'Monthly Recap',
     description: 'The month closed out: sales, labour, food cost and total cost vs target and last year.',
-    icon: <ChartIcon />,
+    icon: <IconFiles />,
     group: 'core'
   },
   // ── More: secondary reports, kept out of the daily flow ──
@@ -334,7 +353,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Compliance',
     title: 'Compliance Reports',
     description: 'Outstanding compliance records, expiring items, and venue attention signals.',
-    icon: <DocumentIcon />,
+    icon: <IconBadgeCheck />,
     group: 'more'
   },
   {
@@ -342,7 +361,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Reserve',
     title: 'Reserve Reports',
     description: 'Bookings, covers, cancellations, no-shows, and guest mix.',
-    icon: <ChartIcon />,
+    icon: <IconCalendarCheck />,
     group: 'more'
   },
   {
@@ -350,7 +369,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Marketing',
     title: 'Marketing Reports',
     description: 'Guest CRM reach, consent, campaigns, and simulated sends.',
-    icon: <DocumentIcon />,
+    icon: <IconMegaphone />,
     group: 'more'
   },
   {
@@ -358,7 +377,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Content',
     title: 'Content Reports',
     description: 'Scheduled posts, approvals, simulated publishing, and social setup readiness.',
-    icon: <DocumentIcon />,
+    icon: <IconImages />,
     group: 'more'
   },
   {
@@ -366,7 +385,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Gift Cards',
     title: 'Gift Card Reports',
     description: 'Pending gift card orders, value, fulfilment, and payment readiness.',
-    icon: <DocumentIcon />,
+    icon: <IconGift />,
     group: 'more'
   },
   {
@@ -374,7 +393,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Register Audit',
     title: 'Register Audit',
     description: 'Every discount, comp, void, refund and wastage entry from the registers — who, what, and why.',
-    icon: <DocumentIcon />,
+    icon: <IconAudit />,
     group: 'more'
   },
   {
@@ -382,7 +401,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Exports',
     title: 'Exports',
     description: 'Read-only CSV downloads and weekly summary exports.',
-    icon: <DocumentIcon />,
+    icon: <IconDownload />,
     group: 'more'
   }
 ];

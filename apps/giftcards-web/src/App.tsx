@@ -51,6 +51,14 @@ import { installSuiteAppAccess,
 import { SuiteSignOutButton } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
+import {
+  IconKeyRound,
+  IconReceipt,
+  IconScan,
+  IconSettings,
+  IconStore,
+  IconWallet
+} from '../../web/src/lib/icons';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const AMOUNTS = [
@@ -65,37 +73,37 @@ const GIFTCARD_NAV_ITEMS = [
     href: '/',
     label: 'Shop',
     description: 'Public purchase page',
-    icon: <ChartIcon />
+    icon: <IconStore />
   },
   {
     href: '/orders#recent',
     label: 'Orders',
     description: 'Recent cards and balances',
-    icon: <DocumentIcon />
+    icon: <IconReceipt />
   },
   {
     href: '/redeem#redeem',
     label: 'Redeem',
     description: 'Check and redeem',
-    icon: <SearchIcon />
+    icon: <IconScan />
   },
   {
     href: '/counter',
     label: 'Sell at the counter',
     description: 'Take payment, issue a number, check a balance',
-    icon: <SearchIcon />
+    icon: <IconWallet />
   },
   {
     href: '/activate#activate',
     label: 'Activate pre-printed',
     description: 'A card that already has a number on it',
-    icon: <SearchIcon />
+    icon: <IconKeyRound />
   },
   {
     href: '/admin#settings',
     label: 'Admin setup',
     description: 'Checkout, promos, artwork',
-    icon: <ChartIcon />
+    icon: <IconSettings />
   }
 ];
 
