@@ -76,7 +76,11 @@ const SQUARE_SCOPES = [
   // token is read-only, so /v2/devices returns INSUFFICIENT_SCOPES until the
   // merchant re-authorises with these.
   'PAYMENTS_WRITE',
-  'DEVICE_CREDENTIAL_MANAGEMENT'
+  'DEVICE_CREDENTIAL_MANAGEMENT',
+  // Guest QR ordering pays through Square's hosted checkout, which creates an
+  // order behind the scenes — so a payment link is refused with
+  // INSUFFICIENT_SCOPES without this, however much PAYMENTS_WRITE we have.
+  'ORDERS_WRITE'
 ];
 
 const XERO_SCOPES = [
