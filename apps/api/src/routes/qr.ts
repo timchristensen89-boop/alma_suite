@@ -43,3 +43,13 @@ qrRouter.post('/order', async (req, res, next) => {
     next(err);
   }
 });
+
+// The guest is back from Square's checkout. Verified server-side against
+// Square before anything reaches the bill — the redirect proves nothing.
+qrRouter.post('/confirm', async (req, res, next) => {
+  try {
+    res.json(await qrOrderService.confirmPaid(req.body, req.ip));
+  } catch (error) {
+    next(error);
+  }
+});

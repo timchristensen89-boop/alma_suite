@@ -5178,6 +5178,38 @@ model PosBugReport {
   @@index([status, createdAt])
 }
 
+// A guest's QR round, held here until Square says it's paid.
+//
+// The whole point is that NOTHING touches the table's bill or the kitchen
+// until the money is in. An abandoned checkout leaves a dead row here rather
+// than phantom items a server has to notice and strip out mid-service.
+//
+// `lines` is the SERVER's priced copy, not the client's — the basket is
+// repriced at submit and never re-read from the browser afterwards.
+model PosQrPendingOrder {
+  id                  String    @id @default(cuid())
+  venue               String
+  tableLabel          String
+  guestName           String?
+  notes               String?
+  dietary             Json      @default("[]")
+  lines               Json
+  totalCents          Int
+  squarePaymentLinkId String?
+  squareOrderId       String?
+  checkoutUrl         String?
+  status              String    @default("PENDING") // PENDING | PAID | EXPIRED
+  // Set exactly once, when the paid basket becomes real lines on a bill.
+  // This is the latch that stops a refreshed success page ordering twice.
+  posOrderId          String?
+  paidAt              DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([venue, tableLabel])
+}
+
 model PosVenueSetting {
   id                  String  @id @default(cuid())
   venue               String  @unique

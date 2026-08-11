@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import Stripe from 'stripe';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
+import { squareTerminalContext, squareTerminalGet, squareTerminalPost } from './integration.service.js';
 import { env } from '../env.js';
 import { posService, stripeForVenue } from './pos.service.js';
 
@@ -55,6 +56,114 @@ function throttle(ip: string | undefined) {
       if (now - entry.windowStart > 60_000) hits.delete(candidate);
     }
   }
+}
+
+// Turn a PAID pending basket into real lines on the table's bill, record the
+// money, and fire it to the kitchen. Only ever called after Square has
+// confirmed — see confirmPaid, which holds the latch.
+async function materialisePending(pending: {
+  id: string;
+  venue: string;
+  tableLabel: string;
+  guestName: string | null;
+  notes: string | null;
+  dietary: unknown;
+  lines: unknown;
+  totalCents: number;
+  squareOrderId: string | null;
+}) {
+  const venue = pending.venue;
+  const tableLabel = pending.tableLabel;
+  const guestName = pending.guestName ?? '';
+  const guestDietary = (Array.isArray(pending.dietary) ? pending.dietary : []).map((entry) => String(entry));
+  const lines = (Array.isArray(pending.lines) ? pending.lines : []) as Array<{
+    recipeId: string;
+    name: string;
+    unitPriceCents: number;
+    quantity: number;
+    notes: string | null;
+  }>;
+
+  // The table's open bill, or a fresh one.
+  let order = await prisma.posOrder.findFirst({
+    where: { venue, status: 'OPEN', training: false, tableLabel: { equals: tableLabel, mode: 'insensitive' } },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, notes: true, dietary: true }
+  });
+  if (!order) {
+    const created = (await posService.createOrder({ venue, tableLabel, openedByName: 'QR order' })) as { id: string };
+    order = { id: created.id, notes: null, dietary: [] };
+  }
+  const orderId = order.id;
+
+  // Merge the guest's dietary flags into the order's, keeping anything staff
+  // already recorded. Table-wide (seat null) — the guest is telling us about
+  // their own meal but we can't know their seat number.
+  if (guestDietary.length > 0) {
+    const current = (order.dietary as Array<{ tag: string; seat: number | null }> | null) ?? [];
+    const merged = [...current];
+    for (const tag of guestDietary) {
+      if (!merged.some((entry) => entry.tag.toLowerCase() === tag.toLowerCase())) merged.push({ tag, seat: null });
+    }
+    if (merged.length !== current.length) {
+      await prisma.posOrder.update({ where: { id: orderId }, data: { dietary: merged.slice(0, 12) } });
+    }
+  }
+  if (guestName) {
+    const tag = `QR: ${guestName}`;
+    if (!(order.notes ?? '').includes(tag)) {
+      await prisma.posOrder.update({
+        where: { id: orderId },
+        data: { notes: order.notes ? `${order.notes} · ${tag}` : tag }
+      });
+    }
+  }
+
+  const created = await prisma.$transaction(
+    lines.map((line) =>
+      prisma.posOrderLine.create({
+        data: {
+          orderId,
+          recipeId: line.recipeId,
+          name: line.name,
+          unitPriceCents: line.unitPriceCents,
+          quantity: line.quantity,
+          totalCents: line.unitPriceCents * line.quantity,
+          course: 'NOW',
+          notes: line.notes ? `${line.notes}${guestName ? ` — ${guestName}` : ''}` : guestName ? `— ${guestName}` : null
+        },
+        select: { id: true }
+      })
+    )
+  );
+  await posService.recomputeOrderTotals(orderId);
+
+  // The guest has already paid Square for exactly this round, so the money
+  // goes on the bill now. Without this the table would look unpaid and could
+  // be charged twice.
+  await prisma.posPayment.create({
+    data: {
+      orderId,
+      method: 'ONLINE',
+      amountCents: pending.totalCents,
+      tipCents: 0,
+      reference: pending.squareOrderId
+    }
+  });
+
+  // Fire only this round — anything a waiter is still building stays held.
+  await posService.sendOrder(orderId, { lineIds: created.map((line) => line.id) });
+
+  const final = await prisma.posOrder.findUniqueOrThrow({
+    where: { id: orderId },
+    select: { orderNumber: true }
+  });
+  return {
+    orderId,
+    orderNumber: final.orderNumber,
+    tableLabel,
+    itemCount: lines.reduce((sum, line) => sum + line.quantity, 0)
+  };
 }
 
 export const qrOrderService = {
@@ -139,71 +248,106 @@ export const qrOrderService = {
       }
     }
 
-    // The table's open bill, or a fresh one.
-    let order = await prisma.posOrder.findFirst({
-      where: { venue, status: 'OPEN', training: false, tableLabel: { equals: tableLabel, mode: 'insensitive' } },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, notes: true, dietary: true }
-    });
-    if (!order) {
-      const created = (await posService.createOrder({ venue, tableLabel, openedByName: 'QR order' })) as { id: string };
-      order = { id: created.id, notes: null, dietary: [] };
-    }
-    const orderId = order.id;
+    // Nothing touches the bill or the kitchen yet. Hold the priced basket and
+    // send the guest to Square; confirmPaid turns it into real lines once the
+    // money is in. An abandoned checkout leaves a dead row here rather than
+    // phantom items on a table that a server has to notice and strip out.
+    const totalCents = wanted.reduce(
+      (sum, line) => sum + (recipeById.get(line.recipeId)!.salePriceCents ?? 0) * line.quantity,
+      0
+    );
+    if (totalCents <= 0) throw new HttpError(400, 'That order came to nothing — please order with your server.');
 
-    // Merge the guest's dietary flags into the order's, keeping anything
-    // staff already recorded. Table-wide (seat null) — the guest is telling
-    // us about their own meal but we can't know their seat number.
-    if (guestDietary.length > 0) {
-      const current = (order.dietary as Array<{ tag: string; seat: number | null }> | null) ?? [];
-      const merged = [...current];
-      for (const tag of guestDietary) {
-        if (!merged.some((entry) => entry.tag.toLowerCase() === tag.toLowerCase())) {
-          merged.push({ tag, seat: null });
-        }
-      }
-      if (merged.length !== current.length) {
-        await prisma.posOrder.update({ where: { id: orderId }, data: { dietary: merged.slice(0, 12) } });
-      }
-    }
-    if (guestName) {
-      const tag = `QR: ${guestName}`;
-      if (!(order.notes ?? '').includes(tag)) {
-        await prisma.posOrder.update({
-          where: { id: orderId },
-          data: { notes: order.notes ? `${order.notes} · ${tag}` : tag }
-        });
-      }
-    }
-
-
-    const created = await prisma.$transaction(
-      wanted.map((line) => {
-        const recipe = recipeById.get(line.recipeId)!;
-        return prisma.posOrderLine.create({
-          data: {
-            orderId,
+    const pending = await prisma.posQrPendingOrder.create({
+      data: {
+        venue,
+        tableLabel,
+        guestName: guestName || null,
+        notes: String(body.notes ?? '').trim().slice(0, 120) || null,
+        dietary: guestDietary,
+        totalCents,
+        lines: wanted.map((line) => {
+          const recipe = recipeById.get(line.recipeId)!;
+          return {
             recipeId: recipe.id,
             name: recipe.title,
             unitPriceCents: recipe.salePriceCents ?? 0,
             quantity: line.quantity,
-            totalCents: (recipe.salePriceCents ?? 0) * line.quantity,
-            course: 'NOW',
-            notes: line.notes ? `${line.notes}${guestName ? ` — ${guestName}` : ''}` : guestName ? `— ${guestName}` : null
-          },
-          select: { id: true }
-        });
-      })
-    );
-    await posService.recomputeOrderTotals(orderId);
-    // Fire only the QR lines — any lines a waiter is still building stay held.
-    await posService.sendOrder(orderId, { lineIds: created.map((line) => line.id) });
-
-    const final = await prisma.posOrder.findUniqueOrThrow({
-      where: { id: orderId },
-      select: { orderNumber: true, totalCents: true }
+            notes: line.notes
+          };
+        })
+      }
     });
-    return { ok: true, orderNumber: final.orderNumber, tableLabel, itemCount: wanted.reduce((sum, line) => sum + line.quantity, 0) };
+
+    // Square's hosted checkout, on this venue's own merchant account.
+    const context = await squareTerminalContext(venue);
+    const link = await squareTerminalPost<{
+      payment_link?: { id?: string; order_id?: string; url?: string; long_url?: string };
+    }>(context, '/online-checkout/payment-links', {
+      // The pending row's id is a natural idempotency key: retrying the same
+      // basket returns the same link instead of a second one.
+      idempotency_key: pending.id,
+      quick_pay: {
+        name: `ALMA ${venue} · table ${tableLabel}`,
+        price_money: { amount: totalCents, currency: context.currency },
+        location_id: context.locationId
+      },
+      checkout_options: {
+        redirect_url: `https://alma-pos.web.app/?qrp=${pending.id}#o/${String(body.t ?? '')}`,
+        ask_for_shipping_address: false
+      }
+    });
+    const checkoutUrl = link.payment_link?.url ?? link.payment_link?.long_url ?? null;
+    if (!checkoutUrl) {
+      await prisma.posQrPendingOrder.update({ where: { id: pending.id }, data: { status: 'EXPIRED' } });
+      throw new HttpError(502, 'Could not start the payment. Please order with your server.');
+    }
+    await prisma.posQrPendingOrder.update({
+      where: { id: pending.id },
+      data: {
+        squarePaymentLinkId: link.payment_link?.id ?? null,
+        squareOrderId: link.payment_link?.order_id ?? null,
+        checkoutUrl
+      }
+    });
+    return { pendingId: pending.id, checkoutUrl, totalCents };
+  },
+
+  // The guest is back from Square. The redirect proves nothing on its own —
+  // anyone can type that URL — so ask Square whether the money is actually in,
+  // and only then put the round on the bill and fire it.
+  async confirmPaid(input: unknown, ip?: string) {
+    throttle(ip);
+    const body = (input ?? {}) as Record<string, unknown>;
+    const pending = await prisma.posQrPendingOrder.findUnique({ where: { id: String(body.pendingId ?? '') } });
+    if (!pending) throw new HttpError(404, 'That order was not found.');
+    // Already done. A refreshed success page must not order a second round.
+    if (pending.posOrderId && pending.posOrderId !== 'PENDING') {
+      return { ok: true, alreadyDone: true };
+    }
+    if (!pending.squareOrderId) throw new HttpError(409, 'That order never reached Square.');
+
+    const context = await squareTerminalContext(pending.venue);
+    const squareOrder = await squareTerminalGet<{ order?: { state?: string } }>(
+      context,
+      `/orders/${pending.squareOrderId}`
+    );
+    const state = squareOrder.order?.state ?? 'OPEN';
+    if (state !== 'COMPLETED') {
+      return { ok: false, state, message: 'That payment has not completed yet.' };
+    }
+
+    // Claim it before touching the bill: the conditional update is the lock,
+    // so two tabs coming back at once can only produce one round.
+    const claimed = await prisma.posQrPendingOrder.updateMany({
+      where: { id: pending.id, posOrderId: null },
+      data: { posOrderId: 'PENDING', status: 'PAID', paidAt: new Date() }
+    });
+    if (claimed.count === 0) return { ok: true, alreadyDone: true };
+
+    const result = await materialisePending(pending);
+    await prisma.posQrPendingOrder.update({ where: { id: pending.id }, data: { posOrderId: result.orderId } });
+    return { ok: true, ...result };
   },
 
   // The guest's bill so far. When checkout=true a Stripe Checkout session is

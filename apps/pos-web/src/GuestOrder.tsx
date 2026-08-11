@@ -67,6 +67,33 @@ export function GuestOrder({ token }: { token: string }) {
     }
   }
 
+  // Back from Square's checkout: ?qrp=<pending order id>. The redirect proves
+  // nothing on its own, so the server re-checks with Square before anything
+  // reaches the kitchen — this call is what actually places the round.
+  useEffect(() => {
+    const qrp = new URLSearchParams(window.location.search).get('qrp');
+    if (!qrp) return;
+    window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    setBusy(true);
+    fetch(`${API}/api/qr/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pendingId: qrp })
+    })
+      .then((res) => res.json())
+      .then((payload) => {
+        if (payload?.ok) {
+          setDone({ orderNumber: payload.orderNumber ?? 0, itemCount: payload.itemCount ?? 0 });
+          setCart(new Map());
+        } else {
+          setError(payload?.message ?? 'That payment has not completed.');
+        }
+      })
+      .catch(() => setError('We could not confirm that payment — please check with your server.'))
+      .finally(() => setBusy(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Returning from Stripe Checkout: ?csid=<session id> confirms + records.
   useEffect(() => {
     const csid = new URLSearchParams(window.location.search).get('csid');
@@ -152,8 +179,14 @@ export function GuestOrder({ token }: { token: string }) {
       });
       const payload = await res.json();
       if (!res.ok) throw new Error(payload?.message ?? 'Could not send your order.');
-      setDone({ orderNumber: payload.orderNumber, itemCount: payload.itemCount });
-      setCart(new Map());
+      // Pay first: the kitchen sees nothing until Square confirms. The basket
+      // is deliberately left intact — if they abandon checkout and come back,
+      // their order is still here rather than silently gone.
+      if (payload.checkoutUrl) {
+        window.location.href = payload.checkoutUrl;
+        return;
+      }
+      throw new Error('Could not start the payment. Please order with your server.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send your order.');
     } finally {
@@ -164,11 +197,11 @@ export function GuestOrder({ token }: { token: string }) {
   if (done) {
     return (
       <div className="qr-shell qr-done">
-        <h1>Sent to the kitchen 🎉</h1>
+        <h1>Paid — off to the kitchen 🎉</h1>
         <p>
           {done.itemCount} item{done.itemCount === 1 ? '' : 's'} on the way for table {menu?.tableLabel}.
         </p>
-        <p className="qr-muted">Order another round any time — everything lands on the same bill, and you pay at the table or counter as usual.</p>
+        <p className="qr-muted">Paid — thank you. Order another round any time; each one is paid as you go.</p>
         <button type="button" className="qr-submit" onClick={() => setDone(null)}>
           Order more
         </button>
@@ -329,7 +362,7 @@ export function GuestOrder({ token }: { token: string }) {
           </div>
           {called ? <p className="qr-called">{called}</p> : null}
           <button type="button" className="qr-submit" disabled={busy} onClick={() => void submit()}>
-            {busy ? 'Sending…' : `Send ${cartCount} item${cartCount === 1 ? '' : 's'} · ${money(cartTotal)}`}
+            {busy ? 'Taking you to payment…' : `Pay ${money(cartTotal)} · ${cartCount} item${cartCount === 1 ? '' : 's'}`}
           </button>
         </div>
       ) : null}
