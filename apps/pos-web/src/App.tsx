@@ -3557,10 +3557,19 @@ export function App() {
               <button type="button" className="pos-ghost" onClick={() => setBill(null)}>
                 Close
               </button>
-              {/* One print, and it goes to the till — the browser dialog could
-                  never choose the right printer anyway. */}
-              <button type="button" className="pos-charge" onClick={() => bill && void printTillReceipt(bill.id)}>
-                Print docket
+              {/* Everything you'd want while looking at a guest's bill —
+                  discount, comp, split, merge, and both prints — is already in
+                  the register's options sheet, so open that rather than
+                  keeping a second, smaller set of actions in sync here. */}
+              <button
+                type="button"
+                className="pos-charge"
+                onClick={() => {
+                  setBill(null);
+                  setBillActions(true);
+                }}
+              >
+                More
               </button>
             </div>
           </div>
