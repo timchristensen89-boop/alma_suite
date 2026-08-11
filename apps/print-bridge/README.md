@@ -76,3 +76,24 @@ printing after the first power cut — hence a service, not a login item.
   has no printer IP)
 - `SENT` — collected, no result reported yet
 - `PRINTED` / `FAILED` — the bridge reported back
+
+## On an Android tablet instead
+
+A spare Android tablet works — it's on the venue wifi, runs Node under
+Termux, and can open a socket to the printer.
+
+```bash
+./install-termux.sh "Alma Avalon"
+```
+
+Install **Termux** and **Termux:Boot** from F-Droid first (the Play Store
+builds are years out of date). Then set Termux and Termux:Boot to
+*Unrestricted* battery, or Android suspends them overnight.
+
+**iPads cannot do this.** iOS won't run Node or keep a background process
+alive; no app changes that. iPads are still the right thing for the register
+and the kitchen display (`alma-pos.web.app/#kds`) — just not the bridge.
+
+**Battery warning.** An old tablet held at 100% for months is how you get a
+swollen battery, and this one lives in a cupboard behind a printer. Check it
+still sits flat before committing it, and prefer a Pi for the long run.
