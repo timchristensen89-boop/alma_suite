@@ -1448,18 +1448,29 @@ body.pos-dark .pos-action-list .pos-action-danger em { color: rgba(232, 138, 119
    line list) scroll inside themselves. Rubber-banding the whole document
    over a bill mid-service is how you tap the wrong thing. */
 html, body {
+  height: 100%;
+  overflow: hidden;
   overscroll-behavior: none;
   /* Kills the 300ms double-tap-to-zoom without killing scroll in panels. */
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
 }
-/* Scoped to the register on purpose. This stylesheet also serves the back
-   office, the KDS, Live, the QR sheet and the guest's own ordering page —
-   ordinary documents that MUST scroll. Locking html/body globally put
-   everything below the fold out of reach on all of them. */
-html:has(.pos-shell), body:has(.pos-shell) {
+
+/* The lock above is written for the till console, but this stylesheet also
+   serves the back office, the KDS, Live, the QR sheet and the guest's own
+   ordering page — ordinary documents that must scroll, and which lost
+   everything below the fold while the document was the only scroller.
+   They get their own scroll container instead of loosening the lock: the
+   register's layout is measured against a fixed viewport (the board works
+   out how many tiles fit a page from it), so nothing above may move. */
+.office-shell,
+.kds-shell,
+.live-shell,
+.qrs-shell,
+.qr-shell {
   height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 body.pos-v2 .pos-shell, .pos-shell { overflow: hidden; }
 
