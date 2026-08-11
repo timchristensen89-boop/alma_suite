@@ -1560,3 +1560,17 @@ body.pos-v2 .pos-shell, .pos-shell { overflow: hidden; }
 /* Collapsed: everything but the summary bar folds away. */
 .qr-cart.is-min > *:not(.qr-cart-toggle) { display: none; }
 .qr-cart.is-min .qr-cart-toggle { padding-bottom: 4px; }
+
+/* Money is never set in the display serif. --font-display is Cormorant
+   Garamond, whose figures are OLD-STYLE: the 0s and 4s sit below the
+   x-height, so "$44.00" reads as a squiggle at arm's length. Fine for a
+   venue name, wrong for the number a guest is about to be charged. */
+.pos-modal-panel h2 { font-variant-numeric: lining-nums tabular-nums; }
+.pos-charge-total {
+  font-family: var(--font-sans);
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--pos-text);
+}

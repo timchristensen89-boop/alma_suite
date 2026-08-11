@@ -72,6 +72,28 @@ async function contextForDevice(device: { venue: string }): Promise<SquareTermin
   return squareTerminalContext(device.venue);
 }
 
+// Square's cancel reasons are constants like SELLER_CANCELED and
+// BUYER_CANCELED. They are fine in a log and useless on a register — a server
+// mid-service should read a sentence, not an enum.
+function cancelReasonText(reason: string | null | undefined): string {
+  switch (reason) {
+    case 'SELLER_CANCELED':
+      return 'Cancelled on the terminal.';
+    case 'BUYER_CANCELED':
+      return 'The guest cancelled on the terminal.';
+    case 'TIMED_OUT':
+      return 'The terminal timed out waiting for a card.';
+    case 'CANCELED_BY_API':
+      return 'Cancelled from the register.';
+    case 'PAYMENT_METHOD_NOT_SUPPORTED':
+      return 'That card type is not accepted on this terminal.';
+    case 'AMOUNT_TOO_HIGH':
+      return 'That amount is over the terminal\'s limit.';
+    default:
+      return reason ? `The terminal stopped: ${reason.replace(/_/g, ' ').toLowerCase()}.` : 'The card was cancelled.';
+  }
+}
+
 export const posTerminalService = {
   // ── Pairing ──────────────────────────────────────────────────────────────
 
@@ -299,9 +321,9 @@ export const posTerminalService = {
     if (status === 'CANCELED') {
       await prisma.posTerminalCheckout.update({
         where: { id: row.id },
-        data: { status, failureReason: checkout?.cancel_reason ?? 'Cancelled on the terminal' }
+        data: { status, failureReason: cancelReasonText(checkout?.cancel_reason) }
       });
-      return { status, settled: false, reason: checkout?.cancel_reason ?? 'Cancelled on the terminal' };
+      return { status, settled: false, reason: cancelReasonText(checkout?.cancel_reason) };
     }
 
     // COMPLETED. Claim the row before tendering: the conditional update is the
@@ -493,9 +515,9 @@ export const posTerminalService = {
     if (status === 'CANCELED') {
       await prisma.posTerminalRefund.update({
         where: { id: row.id },
-        data: { status, failureReason: response.refund?.cancel_reason ?? 'Cancelled on the terminal' }
+        data: { status, failureReason: cancelReasonText(response.refund?.cancel_reason) }
       });
-      return { status, settled: false, reason: response.refund?.cancel_reason ?? 'Cancelled on the terminal' };
+      return { status, settled: false, reason: cancelReasonText(response.refund?.cancel_reason) };
     }
 
     // Same latch as the charge: claim the row before touching the books.

@@ -3395,7 +3395,7 @@ export function App() {
             ) : null}
             {charge.stage === 'split' ? (
               <>
-                <h2>{money(balance + charge.tipCents)}</h2>
+                <h2 className="pos-charge-total">{money(balance + charge.tipCents)}</h2>
                 {charge.tipCents > 0 ? <p className="pos-muted">includes {money(charge.tipCents)} tip on this payment</p> : null}
                 <div className="pos-choice-row">
                   <button type="button" onClick={() => setCharge({ ...charge, stage: tipStage, amountCents: null })}>
@@ -3463,7 +3463,7 @@ export function App() {
             ) : null}
             {charge.stage === 'method' ? (
               <>
-                <h2>{money((charge.amountCents ?? balance) + charge.tipCents)}</h2>
+                <h2 className="pos-charge-total">{money((charge.amountCents ?? balance) + charge.tipCents)}</h2>
                 {squareCheckout ? (
                   <div className="pos-terminal-wait">
                     <strong>On {squareCheckout.deviceName}</strong>
