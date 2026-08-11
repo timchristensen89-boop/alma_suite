@@ -727,6 +727,9 @@ export function App() {
   // the pay screen stays stuck.
   const [squareTerminals, setSquareTerminals] = useState<Array<{ id: string; name: string; status: string }>>([]);
   const [squareCheckout, setSquareCheckout] = useState<null | { id: string; deviceName: string; status: string }>(null);
+  // Reporting a bug from the floor. The register attaches the context, so the
+  // person who hit it only has to say what happened.
+  const [reporting, setReporting] = useState<null | { text: string; blocking: boolean; sent: boolean }>(null);
   const [closing, setClosing] = useState<null | {
     gate: CloseGate | null;
     drawer: DrawerInfo | null;
@@ -1667,6 +1670,50 @@ export function App() {
   // Where the split screen goes next. With a card machine paired the guest
   // picks their own tip on it, so the register never asks — the tip screen is
   // for cash and EFTPOS, where nobody else can.
+  // Whatever the browser last complained about. A staff member reporting
+  // "it went weird" is far more useful with the actual exception attached.
+  const lastClientError = useRef<string>('');
+  useEffect(() => {
+    const onError = (event: ErrorEvent) => {
+      lastClientError.current = `${event.message} @ ${event.filename}:${event.lineno}`;
+    };
+    const onRejection = (event: PromiseRejectionEvent) => {
+      lastClientError.current = `unhandled rejection: ${String(event.reason).slice(0, 300)}`;
+    };
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, []);
+
+  async function sendBugReport() {
+    if (!reporting || busy) return;
+    setBusy(true);
+    try {
+      await api('/api/pos/bug-reports', {
+        method: 'POST',
+        body: JSON.stringify({
+          venue,
+          body: reporting.text,
+          severity: reporting.blocking ? 'BLOCKING' : 'NORMAL',
+          screen: view,
+          orderId: order?.id ?? null,
+          reportedBy: operatorName || null,
+          appVersion: document.querySelector('script[src*="/assets/"]')?.getAttribute('src') ?? null,
+          userAgent: navigator.userAgent,
+          clientError: lastClientError.current || null
+        })
+      });
+      setReporting({ ...reporting, sent: true });
+    } catch (err) {
+      setError(messageForError(err, 'Could not send the report.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const tipStage = squareTerminals.length > 0 ? ('method' as const) : ('tip' as const);
 
   // Turn one bill into N bills of its own — 71 (1), 71 (2), 71 (3) — each
@@ -4078,6 +4125,60 @@ export function App() {
         </div>
       ) : null}
 
+      {reporting ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            {reporting.sent ? (
+              <>
+                <h2>Sent — thank you</h2>
+                <p className="pos-muted">
+                  It's on the list with what you were doing, which bill, and which version of the register. Nobody needs to
+                  ring anyone.
+                </p>
+                <button type="button" className="pos-charge" onClick={() => setReporting(null)}>
+                  Back to service
+                </button>
+              </>
+            ) : (
+              <>
+                <h2>What went wrong?</h2>
+                <p className="pos-muted">
+                  In your own words — what you were doing and what happened. The venue, the screen, the bill and the version
+                  are attached automatically.
+                </p>
+                <textarea
+                  className="pos-tender"
+                  rows={4}
+                  autoFocus
+                  placeholder="e.g. hit Send and the docket never printed at the bar"
+                  value={reporting.text}
+                  onChange={(event) => setReporting({ ...reporting, text: event.currentTarget.value })}
+                />
+                <label className="pos-check-row">
+                  <input
+                    type="checkbox"
+                    checked={reporting.blocking}
+                    onChange={(event) => setReporting({ ...reporting, blocking: event.currentTarget.checked })}
+                  />
+                  <span>It's stopping us serving right now</span>
+                </label>
+                <button
+                  type="button"
+                  className="pos-charge"
+                  disabled={busy || reporting.text.trim().length < 3}
+                  onClick={() => void sendBugReport()}
+                >
+                  Send it
+                </button>
+                <button type="button" className="pos-ghost pos-modal-close" onClick={() => setReporting(null)}>
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       {merging && order ? (
         <div className="pos-modal" role="dialog" onClick={() => setMerging(null)}>
           <div className="pos-modal-panel" onClick={(event) => event.stopPropagation()}>
@@ -5171,6 +5272,16 @@ export function App() {
               >
                 <span>Leave this bill</span>
                 <em>stays open on the floor</em>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBillActions(false);
+                  setReporting({ text: '', blocking: false, sent: false });
+                }}
+              >
+                <span>Report a problem</span>
+                <em>something's wrong with the register — tell whoever fixes it</em>
               </button>
             </div>
 

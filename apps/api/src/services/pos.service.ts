@@ -1929,6 +1929,17 @@ export const posService = {
     if (payment.method === 'GIFT_CARD') {
       throw new HttpError(409, 'Gift card payments are reversed through the Gift Cards admin so the card balance stays right.');
     }
+    // Undo DELETES the payment. For a tender we only recorded (cash, EFTPOS)
+    // that's honest — someone else moved the money and someone else can move
+    // it back. For a card we actually charged, it would take the money off our
+    // books and leave it on the guest's card, which is the worst of both. Send
+    // it to Refund, which reverses the card and leaves an audit trail.
+    if (payment.method === 'SQUARE_TERMINAL' || payment.method === 'STRIPE_TERMINAL') {
+      throw new HttpError(
+        409,
+        'That card was really charged — use Refund so the money goes back to the guest. Undo would only remove it from this bill.'
+      );
+    }
     const order = await prisma.posOrder.findUnique({ where: { id: orderId }, select: { venue: true, status: true, orderNumber: true, tableLabel: true, tipCents: true } });
     if (!order) throw new HttpError(404, 'Bill not found.');
     await prisma.posPayment.delete({ where: { id: paymentId } });

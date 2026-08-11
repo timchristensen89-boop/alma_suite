@@ -5148,6 +5148,36 @@ model PosTerminalRefund {
   @@index([orderId])
 }
 
+// A bug reported from the register by whoever hit it, while they still
+// remember what they were doing. The point is that a problem at 7pm on a
+// Friday costs a server fifteen seconds, not a phone call to someone who
+// wasn't there — so the form asks almost nothing and the register attaches
+// the context itself.
+model PosBugReport {
+  id          String    @id @default(cuid())
+  venue       String
+  // What they were doing and what happened. One box, their words.
+  body        String
+  // Auto-attached by the register: which screen, which bill, which build,
+  // which device. This is what makes a one-line report actionable.
+  screen      String?
+  orderId     String?
+  appVersion  String?
+  userAgent   String?
+  reportedBy  String?
+  // Recent console errors, if the browser had any.
+  clientError String?
+  severity    String    @default("NORMAL") // NORMAL | BLOCKING
+  status      String    @default("NEW") // NEW | TRIAGED | FIXED | WONTFIX | NEEDS_INFO
+  // Filled in when it's worked: what was wrong and what changed.
+  resolution  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, createdAt])
+}
+
 model PosVenueSetting {
   id                  String  @id @default(cuid())
   venue               String  @unique

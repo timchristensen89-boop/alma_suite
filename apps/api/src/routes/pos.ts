@@ -1,4 +1,5 @@
 import express, { Router } from 'express';
+import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { posService } from '../services/pos.service.js';
 import { posTerminalService } from '../services/pos-terminal.service.js';
@@ -33,6 +34,62 @@ posRouter.get('/orders', async (req, res, next) => {
         typeof req.query.status === 'string' ? req.query.status : null
       )
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Bug reports from the floor ─────────────────────────────────────────────
+// Staff hit the problem; staff report it, in their words, while they still
+// remember what they were doing. Everything else is attached automatically.
+
+posRouter.post('/bug-reports', async (req, res, next) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const text = typeof body.body === 'string' ? body.body.trim() : '';
+    if (text.length < 3) throw new HttpError(400, 'Tell us what happened.');
+    const created = await prisma.posBugReport.create({
+      data: {
+        venue: typeof body.venue === 'string' ? body.venue : 'Unknown',
+        body: text.slice(0, 4000),
+        screen: typeof body.screen === 'string' ? body.screen.slice(0, 80) : null,
+        orderId: typeof body.orderId === 'string' ? body.orderId.slice(0, 40) : null,
+        appVersion: typeof body.appVersion === 'string' ? body.appVersion.slice(0, 80) : null,
+        userAgent: typeof body.userAgent === 'string' ? body.userAgent.slice(0, 300) : null,
+        reportedBy: typeof body.reportedBy === 'string' ? body.reportedBy.slice(0, 80) : null,
+        clientError: typeof body.clientError === 'string' ? body.clientError.slice(0, 2000) : null,
+        severity: body.severity === 'BLOCKING' ? 'BLOCKING' : 'NORMAL'
+      }
+    });
+    res.json({ id: created.id, ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.get('/bug-reports', async (req, res, next) => {
+  try {
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    res.json(
+      await prisma.posBugReport.findMany({
+        where: status ? { status } : { status: { in: ['NEW', 'TRIAGED', 'NEEDS_INFO'] } },
+        orderBy: [{ severity: 'desc' }, { createdAt: 'asc' }],
+        take: 100
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+posRouter.patch('/bug-reports/:id', async (req, res, next) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const patch: Record<string, unknown> = {};
+    if (typeof body.status === 'string') patch.status = body.status;
+    if (typeof body.resolution === 'string') patch.resolution = body.resolution.slice(0, 2000);
+    if (body.status === 'FIXED' || body.status === 'WONTFIX') patch.resolvedAt = new Date();
+    res.json(await prisma.posBugReport.update({ where: { id: String(req.params.id) }, data: patch }));
   } catch (error) {
     next(error);
   }
