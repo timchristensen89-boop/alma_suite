@@ -66,14 +66,27 @@ export const qrOrderService = {
       eightySix?: string[];
     };
     const eightySix = new Set(menu.eightySix ?? []);
+    // What guests may order is curated separately from what staff sell. The
+    // register menu has already had its own hides applied; these are the
+    // guest-only ones on top.
+    const qrHides = await prisma.posMenuHide.findMany({
+      where: { kind: { in: ['QR_ITEM', 'QR_CATEGORY'] } },
+      select: { kind: true, key: true }
+    });
+    const qrHiddenItems = new Set(qrHides.filter((hide) => hide.kind === 'QR_ITEM').map((hide) => hide.key));
+    const qrHiddenCats = new Set(
+      qrHides.filter((hide) => hide.kind === 'QR_CATEGORY').map((hide) => hide.key.toLowerCase())
+    );
     return {
       venue,
       tableLabel,
       categories: menu.categories
+        .filter((category) => !qrHiddenCats.has(category.name.toLowerCase()))
         .map((category) => ({
           name: category.name,
           items: category.items
             .filter((item) => !eightySix.has(item.recipeId))
+            .filter((item) => !qrHiddenItems.has(item.recipeId))
             .filter((item) => !item.venue || item.venue === venue)
             .map((item) => ({ recipeId: item.recipeId, title: item.title, priceCents: item.priceCents }))
         }))

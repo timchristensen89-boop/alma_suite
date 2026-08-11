@@ -14,7 +14,7 @@ type Profile = { id: string; name: string; venue?: string | null; matchKind: str
 type Rule = { id: string; kind: string; label: string; percent: number; weekdays: string; holidays: boolean; startMinute: number | null; endMinute: number | null; active: boolean };
 type ModGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: Array<{ id: string; name: string; priceCents: number }> };
 type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; receiptLogo: string | null ; xeroTenantId: string | null; xeroSalesAccount: string | null; xeroTipsAccount: string | null };
-type MenuHide = { id: string; kind: string; key: string; createdAt: string };
+type MenuHide = { id: string; kind: string; key: string; hiddenBy?: string | null; createdAt: string };
 type MenuShape = { categories: Array<{ name: string; items: Array<{ recipeId: string; title: string; priceCents: number }> }> };
 type Special = { id: string; title: string; salePriceCents: number; category: string; venue: string | null };
 type VariantOption = { recipeId: string; label: string; title: string; priceCents: number; self: boolean };
@@ -61,6 +61,7 @@ export function Office() {
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [terminalName, setTerminalName] = useState('');
   const [pairing, setPairing] = useState(false);
+  const [qrItemSearch, setQrItemSearch] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -132,6 +133,21 @@ export function Office() {
       setError(messageForError(err, 'Square would not issue a device code.'));
     } finally {
       setPairing(false);
+    }
+  }
+
+  // Guest-menu visibility. Same table as the register hides, a different
+  // kind — so one list can be curated without touching the other.
+  async function toggleQrHide(kind: 'QR_ITEM' | 'QR_CATEGORY', key: string, hiddenId?: string, label?: string) {
+    try {
+      if (hiddenId) {
+        await api(`/api/pos/menu-hides/${hiddenId}`, { method: 'DELETE' });
+      } else {
+        await api('/api/pos/menu-hides', { method: 'POST', body: JSON.stringify({ kind, key, hiddenBy: label ?? key }) });
+      }
+      setHides(await api<MenuHide[]>('/api/pos/menu-hides'));
+    } catch (err) {
+      setError(messageForError(err, 'Could not change the guest menu.'));
     }
   }
 
@@ -401,6 +417,75 @@ export function Office() {
               venue's table list, so adding a table on the floor plan is enough to get its code.
             </p>
             <QrSheet embedded />
+
+            <div className="office-venue-head" style={{ marginTop: 28 }}>
+              What guests can order <small>guest menu only</small>
+            </div>
+            <p className="office-lead">
+              What a table can order unattended isn't the same list your staff sell from — a bottle that needs decanting, a
+              set menu that needs explaining, anything you'd rather a person handled. Hiding here affects the QR menu only.
+              Hiding on <strong>Menu visibility</strong> still hides it everywhere, guests included.
+            </p>
+            <p className="office-hint">Categories — tap to hide from guests or restore:</p>
+            <div className="office-chiprow">
+              {(fullMenu?.categories ?? []).map((category) => {
+                const hidden = hides.find((hide) => hide.kind === 'QR_CATEGORY' && hide.key.toLowerCase() === category.name.toLowerCase());
+                return (
+                  <button
+                    key={category.name}
+                    type="button"
+                    className={hidden ? 'is-off' : ''}
+                    onClick={() => void toggleQrHide('QR_CATEGORY', category.name, hidden?.id)}
+                  >
+                    {category.name}
+                    {hidden ? ' — hidden' : ''}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="office-hint">Single items — search, then tap to hide from guests:</p>
+            <input
+              className="office-input office-input-wide"
+              placeholder="Search the menu…"
+              value={qrItemSearch}
+              onChange={(event) => setQrItemSearch(event.currentTarget.value)}
+            />
+            <div className="office-chiprow">
+              {qrItemSearch.trim().length > 1
+                ? (fullMenu?.categories ?? [])
+                    .flatMap((category) => category.items)
+                    .filter((item) => item.title.toLowerCase().includes(qrItemSearch.trim().toLowerCase()))
+                    .slice(0, 40)
+                    .map((item) => {
+                      const hidden = hides.find((hide) => hide.kind === 'QR_ITEM' && hide.key === item.recipeId);
+                      return (
+                        <button
+                          key={item.recipeId}
+                          type="button"
+                          className={hidden ? 'is-off' : ''}
+                          onClick={() => void toggleQrHide('QR_ITEM', item.recipeId, hidden?.id, item.title)}
+                        >
+                          {item.title}
+                          {hidden ? ' — hidden' : ''}
+                        </button>
+                      );
+                    })
+                : null}
+            </div>
+            {hides.filter((hide) => hide.kind === 'QR_ITEM').length > 0 ? (
+              <>
+                <p className="office-hint">Hidden from guests:</p>
+                <div className="office-chiprow">
+                  {hides
+                    .filter((hide) => hide.kind === 'QR_ITEM')
+                    .map((hide) => (
+                      <button key={hide.id} type="button" onClick={() => void toggleQrHide('QR_ITEM', hide.key, hide.id)}>
+                        {hide.hiddenBy ?? hide.key} — show
+                      </button>
+                    ))}
+                </div>
+              </>
+            ) : null}
           </section>
         ) : null}
 

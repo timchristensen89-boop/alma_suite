@@ -1972,9 +1972,15 @@ export const posService = {
     return prisma.posMenuHide.findMany({ orderBy: { createdAt: 'desc' } });
   },
 
+  // QR_* kinds hide something from the GUEST menu only. What a venue is happy
+  // for a table to order unattended is not the same list the staff sell from:
+  // a bottle of Barolo, a set menu that needs explaining, anything age-gated.
+  // Hiding on the register still hides everywhere, guests included.
   async hideMenu(input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
-    const kind = str(body.kind).toUpperCase() === 'CATEGORY' ? 'CATEGORY' : 'ITEM';
+    const raw = str(body.kind).toUpperCase();
+    const kind =
+      raw === 'CATEGORY' ? 'CATEGORY' : raw === 'QR_CATEGORY' ? 'QR_CATEGORY' : raw === 'QR_ITEM' ? 'QR_ITEM' : 'ITEM';
     const key = str(body.key);
     if (!key) throw new HttpError(400, 'key is required.');
     return prisma.posMenuHide.upsert({
