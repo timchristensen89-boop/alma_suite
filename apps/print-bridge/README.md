@@ -40,12 +40,31 @@ Separate stations with `;`. Add `:port` after the IP if it isn't 9100.
 Station ids are shown in POS → Office → Printers, and a station only queues
 jobs if it has a printer IP set there.
 
-## Keeping it running
+## Putting it on a Pi (the permanent home)
 
-macOS — save as `~/Library/LaunchAgents/com.alma.printbridge.plist`, then
-`launchctl load` it. Linux — a systemd unit with `Restart=always`. Either way
-it should start on boot; a till that needs someone to launch a script is a
-till that stops printing on the first power cut.
+Copy this folder to the Pi and run:
+
+```bash
+sudo ./install-pi.sh "Alma Avalon"     # or "St Alma"
+```
+
+That installs Node if needed, drops the bridge in `/opt/alma-print-bridge`,
+and registers a systemd service that starts on boot and restarts if it dies.
+
+```bash
+journalctl -u alma-print-bridge -f     # watch it
+sudo systemctl restart alma-print-bridge
+```
+
+**One bridge serves one venue** — each venue needs its own, on its own
+network, because the printers are only reachable from inside.
+
+**An old Pi may be too old.** Pi 1 and Pi Zero are ARMv6, which Node dropped
+official builds for; the installer checks and tells you rather than failing
+obscurely later. Pi 2 or newer is fine, as is any mini PC.
+
+A till that needs someone to remember to launch a script is a till that stops
+printing after the first power cut — hence a service, not a login item.
 
 ## Checking it
 
