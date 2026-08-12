@@ -1623,3 +1623,43 @@ body.pos-v2 .pos-cart .pos-charge {
      would park four rows of chrome over the menu the whole way down. */
   .pos-header { position: static; }
 }
+
+/* The bill's summary bar ("2 items · $44 — Hide bill") is the top edge of the
+   sheet, but in the rail design the surface lives on .pos-cart-lines and
+   .pos-cart-foot rather than on .pos-cart itself — so this bar alone had no
+   background. On a phone, where the bill is a FIXED bottom sheet, that meant
+   it floated over the category tabs behind it with nothing underneath.
+   Give it the same surface and the sheet's rounded top, so the panel visibly
+   begins where the bar begins. */
+.pos-cart .pos-cart-summary {
+  background: var(--bill-bg);
+  border-top: 1px solid var(--bill-rule);
+  border-radius: 18px 18px 0 0;
+}
+@media (max-width: 700px) {
+  /* Lift it off the content behind, so the sheet reads as one panel. */
+  .pos-cart .pos-cart-summary { box-shadow: 0 -8px 24px rgba(31, 53, 36, 0.12); }
+  /* Open, the lines below carry on the same surface — no seam, no second
+     rounded corner halfway down the sheet. */
+  .pos-cart.is-open .pos-cart-lines { border-radius: 0; border-top: 0; }
+}
+
+@media (max-width: 700px) {
+  /* The bill is pinned to the bottom of the phone and never leaves — that is
+     the point of it. So everything that scrolls has to STOP SHORT of it.
+     Without this the last row of tiles sits under the bar: you can't read it
+     and you can't tap it, which is what "lose this last row" was describing.
+     60px is the collapsed bar, plus the home-indicator inset. */
+  .pos-menu,
+  .pos-home-wrap,
+  .pos-board-pager,
+  .pos-grid {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+  /* Nested containers would otherwise add the gap several times over. */
+  .pos-home-wrap .pos-board-pager,
+  .pos-home-wrap .pos-grid,
+  .pos-menu .pos-grid {
+    padding-bottom: 0;
+  }
+}
