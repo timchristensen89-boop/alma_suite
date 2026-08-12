@@ -4294,6 +4294,89 @@ export async function pushStaffToXero(staffProfileId: string) {
   return { staff: `${staff.firstName} ${staff.lastName}`, venue: staff.venue, organisations: results, warnings };
 }
 
+// Work out which company each pre-existing xeroEmployeeId actually belongs to.
+//
+// Before per-company linking, a profile carried one id and nothing said which
+// organisation it came from. Isla's said "St Alma" on her profile and turned
+// out to be the AVALON record — so this asks Xero rather than inferring from
+// the venue, which would have been wrong for her and may be wrong for others.
+export async function backfillXeroEmployeeLinks(options?: { dryRun?: boolean }) {
+  const dryRun = options?.dryRun === true;
+  const initial = await connectionSelect('XERO');
+  if (!initial || initial.status !== 'CONNECTED') throw new HttpError(409, 'Xero is not connected.');
+  let connection: IntegrationConnection = initial;
+  const tenants = xeroTenantsFromConnection(connection);
+  if (tenants.length === 0) throw new HttpError(409, 'No Xero organisation is connected.');
+
+  const staff = await prisma.staffProfile.findMany({
+    where: { xeroEmployeeId: { not: null }, mergedIntoStaffProfileId: null },
+    select: {
+      id: true, firstName: true, lastName: true, venue: true, xeroEmployeeId: true,
+      xeroEmployees: { select: { tenantId: true } }
+    },
+    orderBy: [{ firstName: 'asc' }]
+  });
+
+  const linked: Array<{ name: string; venue: string | null; org: string | null; alreadyLinked?: boolean }> = [];
+  const orphaned: Array<{ name: string; venue: string | null; xeroEmployeeId: string }> = [];
+  const needsSecond: Array<{ name: string; missingOrg: string | null }> = [];
+
+  for (const person of staff) {
+    const id = person.xeroEmployeeId!;
+    if (person.xeroEmployees.length > 0) {
+      linked.push({ name: `${person.firstName} ${person.lastName}`, venue: person.venue, org: null, alreadyLinked: true });
+      continue;
+    }
+
+    let found: { tenantId: string; tenantName: string | null } | null = null;
+    for (const tenant of tenants) {
+      try {
+        const response = await xeroGetJson<{ Employees?: Array<{ EmployeeID?: string }> }>(
+          `/payroll.xro/1.0/Employees/${encodeURIComponent(id)}`,
+          { connection, tenantId: tenant.id }
+        );
+        connection = response.connection;
+        if (response.data.Employees?.[0]?.EmployeeID) {
+          found = { tenantId: tenant.id, tenantName: tenant.name };
+          break;
+        }
+      } catch {
+        // 404 just means "not this organisation" — ask the next.
+      }
+    }
+
+    if (!found) {
+      orphaned.push({ name: `${person.firstName} ${person.lastName}`, venue: person.venue, xeroEmployeeId: id });
+      continue;
+    }
+
+    if (!dryRun) {
+      await prisma.staffXeroEmployee.upsert({
+        where: { staffProfileId_tenantId: { staffProfileId: person.id, tenantId: found.tenantId } },
+        create: {
+          staffProfileId: person.id,
+          tenantId: found.tenantId,
+          tenantName: found.tenantName,
+          xeroEmployeeId: id,
+          syncedAt: new Date()
+        },
+        update: { xeroEmployeeId: id, tenantName: found.tenantName }
+      });
+    }
+    linked.push({ name: `${person.firstName} ${person.lastName}`, venue: person.venue, org: found.tenantName });
+
+    // Somebody on "Both" who only resolved in one company still needs the
+    // other created — that's a push, not a backfill, so just say so.
+    const expected = xeroTenantsForVenue(person.venue, tenants);
+    const missing = expected.find((tenant) => tenant.id !== found!.tenantId);
+    if (expected.length > 1 && missing) {
+      needsSecond.push({ name: `${person.firstName} ${person.lastName}`, missingOrg: missing.name });
+    }
+  }
+
+  return { dryRun, checked: staff.length, linked, orphaned, needsSecond };
+}
+
 export const integrationService = {
   normaliseProvider,
 

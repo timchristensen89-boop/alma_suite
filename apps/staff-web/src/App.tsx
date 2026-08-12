@@ -15195,20 +15195,52 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
    * does need them on Saturday's roster can still say so — they're asked for a
    * reason, which is written onto the profile where payroll will see it.
    */
+  // Push (or re-push) someone into Xero Payroll by hand. Needed when the
+  // automatic push on approval failed for a missing field, and whenever their
+  // bank, tax or super details change afterwards.
+  async function pushToXero(memberId: string) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`profile:${memberId}`);
+    try {
+      const result = await api<{
+        organisations: Array<{ tenantName: string | null; action: string }>;
+        warnings?: string[];
+      }>(`/api/staff/${memberId}/push-to-xero`, { method: 'POST' });
+      const where = result.organisations
+        .map((org) => `${org.tenantName ?? 'Xero'} (${org.action})`)
+        .join(', ');
+      const warn = result.warnings?.length ? ` — ${result.warnings.join(' ')}` : '';
+      setMessage(`Sent to ${where}.${warn}`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not push to Xero.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function approveProfile(memberId: string, options: { force?: boolean; reason?: string } = {}) {
     setSaving(true);
     setMessage(null);
     setMessageTarget(`profile:${memberId}`);
     try {
-      await api<StaffProfile>(`/api/staff/${memberId}/onboarding/approve`, {
-        method: 'POST',
-        body: JSON.stringify(options)
-      });
+      const approved = await api<StaffProfile & { xeroPush?: { ok: boolean; message: string } | null }>(
+        `/api/staff/${memberId}/onboarding/approve`,
+        { method: 'POST', body: JSON.stringify(options) }
+      );
       await reload();
+      // Approval also pushes them into Xero Payroll. It never blocks the
+      // approval, so say plainly whether payroll got them — a manager who
+      // isn't told will assume it worked.
+      const xero = approved.xeroPush
+        ? approved.xeroPush.ok
+          ? ` Xero: ${approved.xeroPush.message}`
+          : ` Xero did NOT get them — ${approved.xeroPush.message}`
+        : '';
       setMessage(
-        options.force
+        (options.force
           ? 'Activated with onboarding gaps. Noted on their profile for payroll.'
-          : 'Onboarding approved and profile activated.'
+          : 'Onboarding approved and profile activated.') + xero
       );
     } catch (err) {
       const text = err instanceof Error ? err.message : 'Could not approve onboarding.';
@@ -15319,6 +15351,16 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
                     <Badge tone="warning">Pending onboarding</Badge>
                     <Button type="button" size="sm" disabled={saving || !readyToApprove} onClick={() => void approveProfile(member.id)}>
                       {readyToApprove ? 'Approve onboarding' : 'Approve documents first'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={saving}
+                      title="Send their details to Xero Payroll — both companies if they work at both"
+                      onClick={() => void pushToXero(member.id)}
+                    >
+                      Push to Xero
                     </Button>
                     <ActionFeedback
                       message={messageTarget === `profile:${member.id}` ? message : null}
