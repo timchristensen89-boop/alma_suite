@@ -4059,9 +4059,23 @@ function xeroEmployeeBody(staff: {
   suburb: string | null;
   state: string | null;
   postcode: string | null;
-}) {
+  taxFileNumber: string | null;
+  taxResidencyStatus: string | null;
+  taxFreeThreshold: boolean | null;
+  bankAccountName: string | null;
+  bankBsb: string | null;
+  bankAccountNumber: string | null;
+  superMemberNumber: string | null;
+}, extra?: { employeeId?: string; superFundId?: string | null }) {
   const iso = (value: Date | null) => (value ? value.toISOString().slice(0, 10) : undefined);
+  const digits = (value: string | null) => (value ? value.replace(/\D/g, '') : '');
+  const bsb = digits(staff.bankBsb);
+  const account = digits(staff.bankAccountNumber);
+
   return {
+    // Present on an update, absent on a create — Xero AU payroll treats POST
+    // with an EmployeeID as "update this one".
+    EmployeeID: extra?.employeeId,
     FirstName: staff.firstName.slice(0, 35),
     LastName: staff.lastName.slice(0, 35),
     DateOfBirth: iso(staff.dateOfBirth),
@@ -4076,8 +4090,62 @@ function xeroEmployeeBody(staff: {
           PostalCode: staff.postcode ?? undefined,
           Country: 'AUSTRALIA'
         }
+      : undefined,
+    // Where their pay goes. Remainder means "the balance of the pay" — with a
+    // single account that is all of it, which is what everyone here has.
+    BankAccounts:
+      bsb && account
+        ? [
+            {
+              StatementText: 'ALMA wages',
+              AccountName: (staff.bankAccountName ?? `${staff.firstName} ${staff.lastName}`).slice(0, 32),
+              BSB: bsb,
+              AccountNumber: account,
+              Remainder: true
+            }
+          ]
+        : undefined,
+    // Without a tax declaration Xero taxes them at the no-TFN rate, which is
+    // roughly half their pay — so this is not an optional nicety.
+    TaxDeclaration: staff.taxFileNumber
+      ? {
+          TaxFileNumber: digits(staff.taxFileNumber),
+          AustralianResidentForTaxPurposes: (staff.taxResidencyStatus ?? 'resident').toLowerCase().includes('resident'),
+          TaxFreeThresholdClaimed: staff.taxFreeThreshold ?? true,
+          EmploymentBasis: 'CASUAL'
+        }
+      : undefined,
+    // Super needs the fund's id INSIDE that organisation, so it's resolved by
+    // the caller per company and passed in.
+    SuperMemberships: extra?.superFundId
+      ? [{ SuperFundID: extra.superFundId, EmployeeNumber: staff.superMemberNumber ?? undefined }]
       : undefined
   };
+}
+
+// Find a super fund in ONE organisation. Xero references funds by an id that
+// is local to each company, so the same HOSTPLUS is a different id in
+// Freshwater and Avalon — matched on ABN first, then USI, then name.
+async function xeroSuperFundId(
+  connection: IntegrationConnection,
+  tenantId: string,
+  fund: { abn: string | null; usi: string | null; name: string | null }
+): Promise<{ id: string | null; connection: IntegrationConnection }> {
+  if (!fund.abn && !fund.usi && !fund.name) return { id: null, connection };
+  try {
+    const response = await xeroGetJson<{
+      SuperFunds?: Array<{ SuperFundID?: string; Name?: string; ABN?: string; USI?: string }>;
+    }>('/payroll.xro/1.0/Superfunds', { connection, tenantId });
+    const digits = (value: string | null | undefined) => (value ? value.replace(/\D/g, '') : '');
+    const funds = response.data.SuperFunds ?? [];
+    const match =
+      (fund.abn && funds.find((row) => digits(row.ABN) === digits(fund.abn))) ||
+      (fund.usi && funds.find((row) => (row.USI ?? '').toUpperCase() === fund.usi!.toUpperCase())) ||
+      (fund.name && funds.find((row) => normaliseMatchText(row.Name ?? '') === normaliseMatchText(fund.name!)));
+    return { id: match ? match.SuperFundID ?? null : null, connection: response.connection };
+  } catch {
+    return { id: null, connection };
+  }
 }
 
 // Push one staff member into every Xero organisation their venue implies.
@@ -4092,6 +4160,9 @@ export async function pushStaffToXero(staffProfileId: string) {
       id: true, firstName: true, lastName: true, email: true, phone: true, venue: true,
       dateOfBirth: true, startDate: true, addressLine1: true, suburb: true, state: true,
       postcode: true, employmentStatus: true, xeroEmployeeId: true,
+      taxFileNumber: true, taxResidencyStatus: true, taxFreeThreshold: true,
+      bankAccountName: true, bankBsb: true, bankAccountNumber: true,
+      superFundName: true, superFundAbn: true, superFundUsi: true, superMemberNumber: true,
       xeroEmployees: { select: { tenantId: true, xeroEmployeeId: true } }
     }
   });
@@ -4126,40 +4197,79 @@ export async function pushStaffToXero(staffProfileId: string) {
   }
 
   const results: Array<{ tenantId: string; tenantName: string | null; xeroEmployeeId: string; action: string }> = [];
+  const warnings: string[] = [];
 
   for (const tenant of targets) {
     const already = staff.xeroEmployees.find((link) => link.tenantId === tenant.id);
-    if (already) {
-      results.push({ tenantId: tenant.id, tenantName: tenant.name, xeroEmployeeId: already.xeroEmployeeId, action: 'already linked' });
-      continue;
-    }
+    let existingId = already?.xeroEmployeeId ?? null;
 
-    // Look before creating. A duplicate in a live payroll is not undoable.
-    const list = await xeroGetJson<{ Employees?: XeroPayrollEmployeeSummary[] }>('/payroll.xro/1.0/Employees', {
-      connection,
-      tenantId: tenant.id
-    });
-    connection = list.connection;
-    const match = (list.data.Employees ?? []).find(
-      (employee: XeroPayrollEmployeeSummary) =>
-        normaliseMatchText(`${employee.FirstName ?? ''} ${employee.LastName ?? ''}`) ===
-        normaliseMatchText(`${staff.firstName} ${staff.lastName}`)
-    );
-
-    let xeroEmployeeId = match?.EmployeeID ?? null;
-    let action = 'linked existing';
-
-    if (!xeroEmployeeId) {
-      const created = await xeroPostJson<{ Employees?: XeroPayrollEmployeeSummary[] }>('/payroll.xro/1.0/Employees', {
+    if (!existingId) {
+      // Look before creating. A duplicate in a live payroll is not undoable.
+      const list = await xeroGetJson<{ Employees?: XeroPayrollEmployeeSummary[] }>('/payroll.xro/1.0/Employees', {
         connection,
-        tenantId: tenant.id,
-        body: [xeroEmployeeBody(staff)]
+        tenantId: tenant.id
       });
-      connection = created.connection;
-      xeroEmployeeId = created.data.Employees?.[0]?.EmployeeID ?? null;
-      action = 'created';
-      if (!xeroEmployeeId) throw new HttpError(502, `Xero did not return an employee id for ${tenant.name ?? tenant.id}.`);
+      connection = list.connection;
+      const match = (list.data.Employees ?? []).find(
+        (employee: XeroPayrollEmployeeSummary) =>
+          normaliseMatchText(`${employee.FirstName ?? ''} ${employee.LastName ?? ''}`) ===
+          normaliseMatchText(`${staff.firstName} ${staff.lastName}`)
+      );
+      existingId = match?.EmployeeID ?? null;
     }
+
+    // Does this employee already have super set up here? Sending
+    // SuperMemberships on an update REPLACES the list, and Xero refuses to
+    // drop one a pay run has referenced — "is being referenced and can't be
+    // deleted". So an existing membership is left completely alone; we only
+    // ever add one where there is none.
+    let hasSuperAlready = false;
+    if (existingId) {
+      try {
+        const detail = await xeroGetJson<{ Employees?: Array<{ SuperMemberships?: unknown[] }> }>(
+          `/payroll.xro/1.0/Employees/${encodeURIComponent(existingId)}`,
+          { connection, tenantId: tenant.id }
+        );
+        connection = detail.connection;
+        hasSuperAlready = (detail.data.Employees?.[0]?.SuperMemberships ?? []).length > 0;
+      } catch {
+        // Can't tell — assume they have one and don't touch it. A duplicate
+        // fund is worse than leaving super to be set by hand.
+        hasSuperAlready = true;
+      }
+    }
+
+    // The fund's id is local to this company, so resolve it here rather than
+    // once for the person.
+    const fund = hasSuperAlready
+      ? { id: null as string | null, connection }
+      : await xeroSuperFundId(connection, tenant.id, {
+          abn: staff.superFundAbn,
+          usi: staff.superFundUsi,
+          name: staff.superFundName
+        });
+    connection = fund.connection;
+    if (!hasSuperAlready && !fund.id && (staff.superFundAbn || staff.superFundUsi)) {
+      warnings.push(
+        `${staff.superFundName ?? 'Their super fund'} isn't set up in ${tenant.name ?? tenant.id} — add it in Xero (Payroll → Superannuation), then push again.`
+      );
+    }
+    if (hasSuperAlready) {
+      warnings.push(`Super in ${tenant.name ?? tenant.id} was already set and was left untouched.`);
+    }
+
+    // Always POST the full record. With an EmployeeID this UPDATES, which is
+    // how bank, tax and super reach someone who already existed — skipping
+    // them, as this did first time round, is why Isla's never arrived.
+    const saved = await xeroPostJson<{ Employees?: XeroPayrollEmployeeSummary[] }>('/payroll.xro/1.0/Employees', {
+      connection,
+      tenantId: tenant.id,
+      body: [xeroEmployeeBody(staff, { employeeId: existingId ?? undefined, superFundId: fund.id })]
+    });
+    connection = saved.connection;
+    const xeroEmployeeId = saved.data.Employees?.[0]?.EmployeeID ?? existingId;
+    const action = existingId ? 'updated' : 'created';
+    if (!xeroEmployeeId) throw new HttpError(502, `Xero did not return an employee id for ${tenant.name ?? tenant.id}.`);
 
     await prisma.staffXeroEmployee.upsert({
       where: { staffProfileId_tenantId: { staffProfileId: staff.id, tenantId: tenant.id } },
@@ -4181,7 +4291,7 @@ export async function pushStaffToXero(staffProfileId: string) {
     await prisma.staffProfile.update({ where: { id: staff.id }, data: { xeroEmployeeId: results[0].xeroEmployeeId } });
   }
 
-  return { staff: `${staff.firstName} ${staff.lastName}`, venue: staff.venue, organisations: results };
+  return { staff: `${staff.firstName} ${staff.lastName}`, venue: staff.venue, organisations: results, warnings };
 }
 
 export const integrationService = {
@@ -8565,7 +8675,8 @@ export const integrationService = {
             email: true,
             xeroEmployeeId: true,
             xeroEarningsRateId: true,
-            mergedIntoStaffProfileId: true
+            mergedIntoStaffProfileId: true,
+            venue: true
           }
         }
       }
@@ -8656,6 +8767,30 @@ export const integrationService = {
     // posted to the org that actually employs them.
     type ResolvedEmployee = { employee: XeroPayrollEmployee; tenantId: string; tenantName: string | null };
     const employeeCache = new Map<string, ResolvedEmployee | null>();
+
+    // Ask one specific organisation. Used when a StaffXeroEmployee link has
+    // already told us which company employs them for these hours.
+    const fetchEmployeeInTenant = async (id: string, tenantId: string): Promise<ResolvedEmployee | null> => {
+      const key = `${id.toLowerCase()}::${tenantId}`;
+      const cached = employeeCache.get(key);
+      if (cached !== undefined) return cached;
+      let resolved: ResolvedEmployee | null = null;
+      try {
+        const response = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+          `/payroll.xro/1.0/Employees/${encodeURIComponent(id)}`,
+          { connection, tenantId }
+        );
+        const employee = response.data.Employees?.[0];
+        if (employee) {
+          const tenant = tenants.find((candidate) => candidate.id === tenantId);
+          resolved = { employee, tenantId, tenantName: tenant?.name ?? null };
+        }
+      } catch {
+        // Reported per employee below rather than aborting the payroll.
+      }
+      employeeCache.set(key, resolved);
+      return resolved;
+    };
     const fetchEmployee = async (id: string): Promise<ResolvedEmployee | null> => {
       const key = id.toLowerCase();
       const cached = employeeCache.get(key);
@@ -8703,12 +8838,40 @@ export const integrationService = {
       : [];
     const canonicalById = new Map(canonicalProfiles.map((profile) => [profile.id, profile]));
 
-    const byStaff = new Map<string, typeof entries>();
+    // Which Xero employee record belongs to which company, per person. A
+    // person rostered at both venues has two, because Alma Freshwater and
+    // Alma Avalon are separate payrolls.
+    const linkRows = await prisma.staffXeroEmployee.findMany({
+      where: {
+        staffProfileId: {
+          in: [...new Set(entries.map((entry) => entry.staffProfile.mergedIntoStaffProfileId ?? entry.staffProfileId))]
+        }
+      },
+      select: { staffProfileId: true, tenantId: true, xeroEmployeeId: true }
+    });
+    const linkFor = (staffProfileId: string, tenantId: string) =>
+      linkRows.find((row) => row.staffProfileId === staffProfileId && row.tenantId === tenantId) ?? null;
+
+    // Group by (person, ORGANISATION), not by person. Grouping by person alone
+    // put every hour they worked into whichever company happened to hold their
+    // single id — so a shift at Avalon could be paid by Freshwater. The venue
+    // on the timesheet decides, falling back to the venue on their profile.
+    const byStaffTenant = new Map<
+      string,
+      { staffProfileId: string; tenantId: string | null; entries: typeof entries }
+    >();
     for (const entry of entries) {
-      const key = entry.staffProfile.mergedIntoStaffProfileId ?? entry.staffProfileId;
-      const list = byStaff.get(key) ?? [];
-      list.push(entry);
-      byStaff.set(key, list);
+      const staffProfileId = entry.staffProfile.mergedIntoStaffProfileId ?? entry.staffProfileId;
+      const entryVenue = entry.venue ?? entry.staffProfile.venue ?? null;
+      const matched = xeroTenantsForVenue(entryVenue, tenants);
+      // Exactly one company, or we can't say — an ambiguous venue ("Both" on a
+      // timesheet that never recorded where it was worked) falls through to the
+      // old try-every-org behaviour rather than guessing which payroll pays it.
+      const tenantId = matched.length === 1 ? matched[0]!.id : null;
+      const key = `${staffProfileId}::${tenantId ?? 'unresolved'}`;
+      const group = byStaffTenant.get(key) ?? { staffProfileId, tenantId, entries: [] as typeof entries };
+      group.entries.push(entry);
+      byStaffTenant.set(key, group);
     }
 
     let publicHolidayWarned = false;
@@ -8718,7 +8881,9 @@ export const integrationService = {
     let failed = 0;
     let skipped = 0;
 
-    for (const [staffProfileId, staffEntries] of byStaff) {
+    for (const group of byStaffTenant.values()) {
+      const { staffProfileId, tenantId: groupTenantId } = group;
+      const staffEntries = group.entries;
       const ownProfile = staffEntries[0]?.staffProfile;
       if (!ownProfile) continue;
       // The surviving profile when these rows came from a merged duplicate.
@@ -8734,12 +8899,22 @@ export const integrationService = {
         results.push({ employee: name, staffProfileId, status: 'failed', message, hours: 0, periodStart: null, periodEnd: null, xeroTimesheetId: null });
       };
 
-      const xeroEmployeeId = staffEntries.find((entry) => entry.xeroEmployeeId)?.xeroEmployeeId ?? profile.xeroEmployeeId;
+      // The employee record for THIS company, when we know which company it is.
+      const link = groupTenantId ? linkFor(staffProfileId, groupTenantId) : null;
+      const xeroEmployeeId =
+        link?.xeroEmployeeId ??
+        staffEntries.find((entry) => entry.xeroEmployeeId)?.xeroEmployeeId ??
+        profile.xeroEmployeeId;
       if (!xeroEmployeeId) {
-        fail('No Xero employee is linked to this staff profile. Link them in Admin → Xero employees, then push again.');
+        fail('No Xero employee is linked to this staff profile. Push them to Xero from their profile, then push timesheets again.');
         continue;
       }
-      const resolved = await fetchEmployee(xeroEmployeeId);
+      // With a link we know the company, so ask that one only. Without a link
+      // we fall back to trying each — which is how the 31 people who predate
+      // per-company linking keep working.
+      const resolved = link
+        ? await fetchEmployeeInTenant(xeroEmployeeId, groupTenantId!)
+        : await fetchEmployee(xeroEmployeeId);
       if (!resolved) {
         fail(
           `Xero has no employee ${xeroEmployeeId} in ${tenants.length === 1 ? 'the connected organisation' : `any of the ${tenants.length} connected organisations`}. Re-link the staff profile, then push again.`

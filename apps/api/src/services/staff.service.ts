@@ -7326,7 +7326,33 @@ export const staffService = {
       }
     }
 
-    return redactStaffProfileFields(withoutStaffSecrets(approvedProfile), actor);
+    // Approved → they exist as a person, so make them exist in payroll. Into
+    // BOTH companies when their venue is "Both": Alma Freshwater and Alma
+    // Avalon are separate entities with separate payrolls.
+    //
+    // Never fails the approval. A missing date of birth shouldn't stop someone
+    // starting on Friday — it's reported back so a manager can fix the profile
+    // and push again from their page.
+    let xeroPush: { ok: boolean; message: string; organisations?: unknown } | null = null;
+    if (approvedProfile.accountType === 'HUMAN') {
+      try {
+        const { pushStaffToXero } = await import('./integration.service.js');
+        const pushed = await pushStaffToXero(staffProfileId);
+        xeroPush = {
+          ok: true,
+          message: `Added to ${pushed.organisations.map((org) => org.tenantName ?? org.tenantId).join(' and ')}.`,
+          organisations: pushed.organisations
+        };
+      } catch (err) {
+        xeroPush = { ok: false, message: err instanceof Error ? err.message : 'Could not push to Xero.' };
+        console.error('[staff.approveOnboarding] Xero employee push failed', {
+          staffProfileId,
+          error: xeroPush.message
+        });
+      }
+    }
+
+    return { ...redactStaffProfileFields(withoutStaffSecrets(approvedProfile), actor), xeroPush };
   },
 
   async changeOwnPin(actor: AuthUser, input: unknown) {
