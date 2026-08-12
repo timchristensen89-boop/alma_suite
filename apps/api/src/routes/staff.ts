@@ -165,6 +165,17 @@ staffRouter.post('/profiles', requireManager, async (req, res, next) => {
   }
 });
 
+// Push a staff member into Xero Payroll — into BOTH companies when their
+// venue is "Both", because Freshwater and Avalon are separate payrolls.
+staffRouter.post('/:id/push-to-xero', requireManager, async (req, res, next) => {
+  try {
+    const { pushStaffToXero } = await import('../services/integration.service.js');
+    res.json(await pushStaffToXero(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.post('/merge', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');

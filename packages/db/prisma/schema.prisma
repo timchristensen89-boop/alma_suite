@@ -660,6 +660,7 @@ model StaffProfile {
   visaExpiryDate               DateTime?
   workRightsNotes              String?
   xeroEmployeeId               String?
+  xeroEmployees                StaffXeroEmployee[]
   xeroPayrollCalendarId        String?
   xeroEarningsRateId           String?
   defaultArea                  String?
@@ -5245,4 +5246,30 @@ model PosRule {
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// One row per (staff member, Xero organisation).
+//
+// St Alma trades as Alma Freshwater Pty Ltd and Alma Avalon is a separate
+// company: separate ABNs, separate payrolls, separate employee records. So
+// somebody rostered across both is TWO employees in Xero, and a single
+// StaffProfile.xeroEmployeeId cannot say which company the id belongs to —
+// which is exactly why Isla could not be pushed to both.
+model StaffXeroEmployee {
+  id             String       @id @default(cuid())
+  staffProfileId String
+  // Xero tenant (organisation) id, and its name kept alongside so the UI can
+  // say "Alma Freshwater Pty Ltd" without another API call.
+  tenantId       String
+  tenantName     String?
+  xeroEmployeeId String
+  // Null until we have actually pushed/matched; set on every successful sync.
+  syncedAt       DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([staffProfileId, tenantId])
+  @@index([tenantId])
+  @@index([xeroEmployeeId])
 }

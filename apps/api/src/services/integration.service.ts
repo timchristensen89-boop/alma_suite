@@ -608,7 +608,9 @@ async function safeResponseDetails(response: Response) {
   return {
     status: response.status,
     category: safeXeroErrorCategory(response.status),
-    detail: text ? text.slice(0, 300) : response.statusText
+    // Xero puts ValidationErrors at the END of the payload, so a 300-char
+    // cut reliably hides the only part that says what was actually wrong.
+    detail: text ? text.slice(0, 4000) : response.statusText
   };
 }
 
@@ -3992,6 +3994,194 @@ export async function squareTerminalPost<T>(
 ): Promise<T> {
   const { data } = await squarePostJson<T>(path, body as Prisma.InputJsonObject, { connection: context.connection });
   return data;
+}
+
+// ── Staff → Xero Payroll ────────────────────────────────────────────────────
+//
+// St Alma trades as Alma Freshwater Pty Ltd; Alma Avalon is a separate
+// company. Separate ABNs, separate payrolls, separate employee records — so
+// somebody rostered across both is TWO employees in Xero, one per
+// organisation, and the link is kept in StaffXeroEmployee rather than a
+// single id on the profile that can't say which company it belongs to.
+
+type XeroPayrollEmployeeSummary = {
+  EmployeeID: string;
+  FirstName?: string;
+  LastName?: string;
+  Status?: string;
+};
+
+// Which organisations a person should exist in, from the venue on their
+// profile. "Both" is a real value in this data — four people carry it.
+function xeroTenantsForVenue(
+  venue: string | null | undefined,
+  tenants: Array<{ id: string; name: string | null }>
+): Array<{ id: string; name: string | null }> {
+  const wanted = normaliseMatchText(venue ?? '');
+  const freshwater = tenants.find((tenant) => normaliseMatchText(tenant.name ?? '').includes('freshwater'));
+  const avalon = tenants.find((tenant) => normaliseMatchText(tenant.name ?? '').includes('avalon'));
+  if (wanted === 'both') return [freshwater, avalon].filter(Boolean) as Array<{ id: string; name: string | null }>;
+  if (wanted.includes('avalon')) return avalon ? [avalon] : [];
+  // "St Alma" is the trading name of the Freshwater entity — the one mapping
+  // nobody guesses right from the names alone.
+  if (wanted.includes('st alma') || wanted.includes('freshwater')) return freshwater ? [freshwater] : [];
+  return [];
+}
+
+// Xero AU payroll wants the state as a code — "New South Wales" comes back
+// as "Invalid Region", which is not a phrase anyone would connect to a state
+// field. Staff type it however they like, so normalise on the way out.
+const AU_STATE_CODES: Record<string, string> = {
+  'new south wales': 'NSW', nsw: 'NSW',
+  victoria: 'VIC', vic: 'VIC',
+  queensland: 'QLD', qld: 'QLD',
+  'south australia': 'SA', sa: 'SA',
+  'western australia': 'WA', wa: 'WA',
+  tasmania: 'TAS', tas: 'TAS',
+  'northern territory': 'NT', nt: 'NT',
+  'australian capital territory': 'ACT', act: 'ACT'
+};
+
+function auStateCode(value: string | null | undefined): string | undefined {
+  const key = (value ?? '').trim().toLowerCase();
+  if (!key) return undefined;
+  return AU_STATE_CODES[key] ?? value?.trim().toUpperCase().slice(0, 3);
+}
+
+function xeroEmployeeBody(staff: {
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  dateOfBirth: Date | null;
+  startDate: Date | null;
+  addressLine1: string | null;
+  suburb: string | null;
+  state: string | null;
+  postcode: string | null;
+}) {
+  const iso = (value: Date | null) => (value ? value.toISOString().slice(0, 10) : undefined);
+  return {
+    FirstName: staff.firstName.slice(0, 35),
+    LastName: staff.lastName.slice(0, 35),
+    DateOfBirth: iso(staff.dateOfBirth),
+    Email: staff.email ?? undefined,
+    Mobile: staff.phone ?? undefined,
+    StartDate: iso(staff.startDate),
+    HomeAddress: staff.addressLine1
+      ? {
+          AddressLine1: staff.addressLine1,
+          City: staff.suburb ?? undefined,
+          Region: auStateCode(staff.state),
+          PostalCode: staff.postcode ?? undefined,
+          Country: 'AUSTRALIA'
+        }
+      : undefined
+  };
+}
+
+// Push one staff member into every Xero organisation their venue implies.
+//
+// Matching before creating is the whole safety story: 32 people already exist
+// in Xero from before this was wired up, and creating a duplicate employee in
+// a live payroll is not something you undo with a delete.
+export async function pushStaffToXero(staffProfileId: string) {
+  const staff = await prisma.staffProfile.findUnique({
+    where: { id: staffProfileId },
+    select: {
+      id: true, firstName: true, lastName: true, email: true, phone: true, venue: true,
+      dateOfBirth: true, startDate: true, addressLine1: true, suburb: true, state: true,
+      postcode: true, employmentStatus: true, xeroEmployeeId: true,
+      xeroEmployees: { select: { tenantId: true, xeroEmployeeId: true } }
+    }
+  });
+  if (!staff) throw new HttpError(404, 'Staff member not found.');
+
+  const initialConnection = await connectionSelect('XERO');
+  if (!initialConnection || initialConnection.status !== 'CONNECTED') {
+    throw new HttpError(409, 'Xero is not connected. Reconnect it in Admin → Integrations.');
+  }
+  // Explicitly typed: the helpers hand back a refreshed connection each call,
+  // and reassigning an inferred `| null` makes TS chase its own tail.
+  let connection: IntegrationConnection = initialConnection;
+  const scopes = Array.isArray(connection.scopes) ? connection.scopes.map(String) : [];
+  if (!scopes.includes('payroll.employees')) {
+    throw new HttpError(409, 'The Xero connection is read-only for payroll — reconnect it to allow writing employees.');
+  }
+
+  const tenants = xeroTenantsFromConnection(connection);
+  const targets = xeroTenantsForVenue(staff.venue, tenants);
+  if (targets.length === 0) {
+    throw new HttpError(400, `No Xero organisation matches the venue "${staff.venue ?? '(none)'}" — set it to St Alma, Alma Avalon or Both.`);
+  }
+
+  // Xero AU payroll refuses an employee without these, and the message it
+  // returns is not one a manager can act on. Say it plainly first.
+  const missing: string[] = [];
+  if (!staff.dateOfBirth) missing.push('date of birth');
+  if (!staff.addressLine1) missing.push('street address');
+  if (!staff.postcode) missing.push('postcode');
+  if (missing.length > 0) {
+    throw new HttpError(400, `Xero needs ${missing.join(', ')} before ${staff.firstName} can be created. Fill it in on their profile.`);
+  }
+
+  const results: Array<{ tenantId: string; tenantName: string | null; xeroEmployeeId: string; action: string }> = [];
+
+  for (const tenant of targets) {
+    const already = staff.xeroEmployees.find((link) => link.tenantId === tenant.id);
+    if (already) {
+      results.push({ tenantId: tenant.id, tenantName: tenant.name, xeroEmployeeId: already.xeroEmployeeId, action: 'already linked' });
+      continue;
+    }
+
+    // Look before creating. A duplicate in a live payroll is not undoable.
+    const list = await xeroGetJson<{ Employees?: XeroPayrollEmployeeSummary[] }>('/payroll.xro/1.0/Employees', {
+      connection,
+      tenantId: tenant.id
+    });
+    connection = list.connection;
+    const match = (list.data.Employees ?? []).find(
+      (employee: XeroPayrollEmployeeSummary) =>
+        normaliseMatchText(`${employee.FirstName ?? ''} ${employee.LastName ?? ''}`) ===
+        normaliseMatchText(`${staff.firstName} ${staff.lastName}`)
+    );
+
+    let xeroEmployeeId = match?.EmployeeID ?? null;
+    let action = 'linked existing';
+
+    if (!xeroEmployeeId) {
+      const created = await xeroPostJson<{ Employees?: XeroPayrollEmployeeSummary[] }>('/payroll.xro/1.0/Employees', {
+        connection,
+        tenantId: tenant.id,
+        body: [xeroEmployeeBody(staff)]
+      });
+      connection = created.connection;
+      xeroEmployeeId = created.data.Employees?.[0]?.EmployeeID ?? null;
+      action = 'created';
+      if (!xeroEmployeeId) throw new HttpError(502, `Xero did not return an employee id for ${tenant.name ?? tenant.id}.`);
+    }
+
+    await prisma.staffXeroEmployee.upsert({
+      where: { staffProfileId_tenantId: { staffProfileId: staff.id, tenantId: tenant.id } },
+      create: {
+        staffProfileId: staff.id,
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        xeroEmployeeId,
+        syncedAt: new Date()
+      },
+      update: { xeroEmployeeId, tenantName: tenant.name, syncedAt: new Date() }
+    });
+    results.push({ tenantId: tenant.id, tenantName: tenant.name, xeroEmployeeId, action });
+  }
+
+  // Keep the legacy single column pointing at SOMETHING valid — the timesheet
+  // push still reads it. First organisation wins; the links table is truth.
+  if (results[0] && staff.xeroEmployeeId !== results[0].xeroEmployeeId) {
+    await prisma.staffProfile.update({ where: { id: staff.id }, data: { xeroEmployeeId: results[0].xeroEmployeeId } });
+  }
+
+  return { staff: `${staff.firstName} ${staff.lastName}`, venue: staff.venue, organisations: results };
 }
 
 export const integrationService = {
