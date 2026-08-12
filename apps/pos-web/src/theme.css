@@ -1574,3 +1574,52 @@ body.pos-v2 .pos-shell, .pos-shell { overflow: hidden; }
   font-variant-numeric: lining-nums tabular-nums;
   color: var(--pos-text);
 }
+
+/* ── Two mobile faults, same cause: the register is built as a fixed console
+      that assumes a tablet, and a phone is not one. ──────────────────────── */
+
+/* 1. The bill was cream text on a cream ground — invisible.
+      The dark-bill palette (--bill-*) was written for the classic design,
+      where the bill is a dark green panel. It sets `color: var(--bill-fg)`
+      on .pos-cart at every width — but in the RAIL design
+      `body.pos-v2 .pos-cart` is transparent and the light card lives on the
+      lines instead. Result: cream type on a cream card.
+      The palette is the right seam, so give the rail design a light one and
+      every rule that reads from it comes out dark-on-light. */
+body.pos-v2 .pos-cart,
+body.pos-v2 .pos-cart-strip {
+  --bill-bg: var(--pos-card);
+  --bill-fg: var(--pos-text);
+  --bill-fg-soft: var(--pos-text2);
+  --bill-fg-faint: var(--pos-text3);
+  --bill-rule: var(--pos-border);
+  --bill-raise: var(--pos-chip);
+  --bill-accent: #8a5a1f;
+}
+/* The charge button was cream-on-green for the dark panel; on the light card
+   it has to invert or it's a cream button on a cream card. */
+body.pos-v2 .pos-cart .pos-charge {
+  background: var(--pos-accent-bg);
+  color: var(--pos-accent-fg);
+  border-color: transparent;
+}
+
+/* 2. A phone can't scroll, and everything below the fold was unreachable.
+      The no-scroll lock is right for a till: a fixed console, nothing moving
+      under your thumb mid-service. On a 400pt phone the header alone wraps to
+      four rows, so "nothing moves" means "you can't reach the menu". Phones
+      scroll; the iPad register (>700px) is untouched. */
+@media (max-width: 700px) {
+  html, body {
+    height: auto;
+    overflow: visible;
+  }
+  .pos-shell {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  /* The header stops being sticky here — sticky inside a scrolling document
+     would park four rows of chrome over the menu the whole way down. */
+  .pos-header { position: static; }
+}
