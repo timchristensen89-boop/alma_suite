@@ -61,7 +61,9 @@ if [ "$NEED_NODE" -eq 1 ]; then
     VER="$(curl -fsSL https://unofficial-builds.nodejs.org/download/release/index.json \
       | python3 -c "import json,sys;rows=json.load(sys.stdin);print(next(r['version'] for r in rows if 'linux-armv6l' in r['files'] and r.get('lts')))")"
     echo "   version: $VER"
-    TMP="$(mktemp -d)"
+    # Disk-backed, not /tmp: on a 512MB Pi /tmp is a ~214MB tmpfs and
+    # extracting Node fills it, with tar failing mid-write.
+    TMP="$(mktemp -d -p /var/tmp)"
     curl -fsSL "https://unofficial-builds.nodejs.org/download/release/$VER/node-$VER-linux-armv6l.tar.gz" \
       -o "$TMP/node.tar.gz"
     tar -xzf "$TMP/node.tar.gz" -C "$TMP"
@@ -96,13 +98,16 @@ chmod 644 "$INSTALL_DIR/bridge.mjs"
 cat > /etc/systemd/system/alma-print-bridge.service <<SERVICE
 [Unit]
 Description=ALMA print bridge ($VENUE)
+# The venue's wifi comes back before the printers do; just keep trying.
+# This is a [Unit] directive — in [Service] systemd ignores it silently.
+StartLimitIntervalSec=0
 Documentation=https://alma-pos.web.app
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=ALMA_VENUE=$VENUE
+Environment="ALMA_VENUE=$VENUE"
 # Uncomment to tune the paper: margins in dots (8/mm), line pitch, feed.
 #Environment=ALMA_MARGIN_DOTS=24
 #Environment=ALMA_LINE_DOTS=26
@@ -111,8 +116,6 @@ Environment=ALMA_VENUE=$VENUE
 ExecStart=$(command -v node) $INSTALL_DIR/bridge.mjs
 Restart=always
 RestartSec=5
-# The venue's wifi comes back before the printers do; just keep trying.
-StartLimitIntervalSec=0
 StandardOutput=journal
 StandardError=journal
 User=root
