@@ -1827,7 +1827,10 @@ export const giftCardLookupInputSchema = z.object({
 export const giftCardRedemptionInputSchema = z.object({
   code: z.string().min(4),
   amountCents: z.coerce.number().int().positive(),
-  venue: z.string().optional().or(z.literal('')),
+  // Required: every redemption is revenue for a specific venue, and the
+  // outstanding balance is a liability until it lands somewhere. The service
+  // normalises spellings to the canonical venue names.
+  venue: z.string().trim().min(2, 'Choose the venue taking this redemption.'),
   notes: z.string().optional().or(z.literal(''))
 });
 
@@ -4603,6 +4606,12 @@ export type GiftCardOverview = {
     activeBalanceCents: number;
     soldValueCents: number;
     redeemedValueCents: number;
+    /**
+     * Redemption revenue split by venue (lifetime + current month), computed
+     * server-side over every redemption. "Unallocated" collects rows that
+     * predate the venue requirement.
+     */
+    redeemedByVenue: Array<{ venue: string; lifetimeCents: number; monthCents: number }>;
   };
 };
 

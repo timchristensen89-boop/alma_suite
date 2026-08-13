@@ -1771,7 +1771,9 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   const [query, setQuery] = useState('');
   const [code, setCode] = useState('');
   const [amount, setAmount] = useState('');
-  const [venue, setVenue] = useState(VENUES[0]);
+  // Deliberately starts empty: every redemption is one venue's revenue, and a
+  // pre-selected default would let a busy shift silently misallocate it.
+  const [venue, setVenue] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedCard, setSelectedCard] = useState<GiftCard | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -1830,6 +1832,10 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     const amountCents = Math.round(Number(amount) * 100);
     if (!amountCents || amountCents <= 0) {
       setMessage('Enter an amount to redeem.');
+      return;
+    }
+    if (!venue) {
+      setMessage('Choose the venue taking this redemption — that is where the revenue lands.');
       return;
     }
     const newBalance = card ? card.balanceCents - amountCents : null;
@@ -2071,7 +2077,15 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                     <div className="giftcards-revenue-tile">
                       <span className="giftcards-revenue-eyebrow">Redeemed this month</span>
                       <strong className="giftcards-revenue-value">{formatCents(redeemedThisCents)}</strong>
-                      <span className="giftcards-revenue-meta">Across {giftCards.filter((c) => c.redemptions.some((r) => new Date(r.createdAt) >= monthStart)).length} cards</span>
+                      {/* Per-venue split, server-computed over every redemption —
+                          this is what tells each venue what gift card revenue
+                          actually landed with them. */}
+                      <span className="giftcards-revenue-meta">
+                        {(data?.totals.redeemedByVenue ?? [])
+                          .filter((row) => row.monthCents > 0)
+                          .map((row) => `${row.venue} ${formatCents(row.monthCents)}`)
+                          .join(' · ') || 'No redemptions yet this month'}
+                      </span>
                       {redeemedDelta !== null ? (
                         <span className={`giftcards-revenue-delta is-${redeemedDelta >= 0 ? 'positive' : 'warning'}`}>
                           {redeemedDelta >= 0 ? '▲' : '▼'} {Math.abs(redeemedDelta).toFixed(0)}% vs last month
@@ -2097,7 +2111,17 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 <StatCard label="Issued (lifetime)" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
               </button>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open redeemed gift cards">
-                <StatCard label="Redeemed (lifetime)" value={formatCents(data?.totals.redeemedValueCents ?? 0)} hint={`${data?.totals.redeemed ?? 0} fully used`} loading={loading} />
+                <StatCard
+                  label="Redeemed (lifetime)"
+                  value={formatCents(data?.totals.redeemedValueCents ?? 0)}
+                  hint={
+                    (data?.totals.redeemedByVenue ?? [])
+                      .filter((row) => row.lifetimeCents > 0)
+                      .map((row) => `${row.venue} ${formatCents(row.lifetimeCents)}`)
+                      .join(' · ') || `${data?.totals.redeemed ?? 0} fully used`
+                  }
+                  loading={loading}
+                />
               </button>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open gift card balance report">
                 <StatCard label="Outstanding" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Liability on the books" loading={loading} />
@@ -2213,7 +2237,16 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 </ActionPanel>
                 <div className="form-grid two">
                   <Input label="Redeem amount" required type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.currentTarget.value)} />
-                  <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={VENUES.map((item) => ({ label: item, value: item }))} />
+                  <Select
+                    label="Venue"
+                    required
+                    value={venue}
+                    onChange={(event) => setVenue(event.currentTarget.value)}
+                    options={[
+                      { label: 'Select venue…', value: '' },
+                      ...VENUES.map((item) => ({ label: item, value: item }))
+                    ]}
+                  />
                 </div>
                 <Textarea label="Notes" rows={2} value={notes} onChange={(event) => setNotes(event.currentTarget.value)} />
                 {(() => {

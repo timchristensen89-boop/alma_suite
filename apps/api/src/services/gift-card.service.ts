@@ -230,6 +230,23 @@ function sessionServiceFeeCents(session: Stripe.Checkout.Session) {
   return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 0;
 }
 
+/**
+ * Every redemption is revenue for one venue — the outstanding card balance is
+ * a liability until it lands somewhere, so a redemption with no venue (or a
+ * misspelt one) would silently drop money out of both venues' figures.
+ * Normalises spellings to the canonical names used across the suite and the
+ * POS, and refuses anything unrecognisable.
+ */
+export const REDEMPTION_VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'] as const;
+
+function normaliseRedemptionVenue(raw: string): string {
+  const value = raw.trim().toLowerCase();
+  if (value.includes('avalon')) return 'Alma Avalon';
+  if (value.includes('alma') || value.includes('freshwater') || value.includes('fresh water')) return 'St Alma';
+  if (value.includes('function') || value.includes('pop')) return 'Functions / Pop-up';
+  throw new HttpError(400, `Choose the venue taking this redemption: ${REDEMPTION_VENUES.join(', ')}.`);
+}
+
 function normalisePromoCode(code: string) {
   return code.trim().toUpperCase().replace(/\s+/g, '');
 }
@@ -878,6 +895,36 @@ export const giftCardService = {
       where: { status: { in: ['ACTIVE', 'REDEEMED'] }, testMode: false }
     });
     const test = await prisma.giftCard.count({ where: { testMode: true, status: { in: ['ACTIVE', 'REDEEMED'] } } });
+
+    // Redemption revenue split by venue — server-side over ALL redemptions
+    // (the card list above is capped at 100, so client-side sums undercount).
+    // Each redemption is that venue's revenue; the remaining balances above
+    // are the liability still owed. `venue: null` rows predate the venue
+    // requirement and surface as "Unallocated" rather than disappearing.
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const [venueLifetime, venueMonth] = await Promise.all([
+      prisma.giftCardRedemption.groupBy({
+        by: ['venue'],
+        _sum: { amountCents: true },
+        where: { status: 'COMPLETED', giftCard: { testMode: false } }
+      }),
+      prisma.giftCardRedemption.groupBy({
+        by: ['venue'],
+        _sum: { amountCents: true },
+        where: { status: 'COMPLETED', giftCard: { testMode: false }, redeemedAt: { gte: monthStart } }
+      })
+    ]);
+    const monthByVenue = new Map(venueMonth.map((row) => [row.venue ?? 'Unallocated', row._sum.amountCents ?? 0]));
+    const redeemedByVenue = venueLifetime
+      .map((row) => ({
+        venue: row.venue ?? 'Unallocated',
+        lifetimeCents: row._sum.amountCents ?? 0,
+        monthCents: monthByVenue.get(row.venue ?? 'Unallocated') ?? 0
+      }))
+      .sort((a, b) => b.lifetimeCents - a.lifetimeCents);
+
     return {
       giftCards: giftCards.map(toGiftCardPayload),
       totals: {
@@ -889,7 +936,8 @@ export const giftCardService = {
         // outstanding = remaining redeemable balance, redeemed = drawn down.
         activeBalanceCents: totals._sum.balanceCents ?? 0,
         soldValueCents: totals._sum.initialValueCents ?? 0,
-        redeemedValueCents: Math.max(0, (totals._sum.initialValueCents ?? 0) - (totals._sum.balanceCents ?? 0))
+        redeemedValueCents: Math.max(0, (totals._sum.initialValueCents ?? 0) - (totals._sum.balanceCents ?? 0)),
+        redeemedByVenue
       }
     };
   },
@@ -1040,6 +1088,7 @@ export const giftCardService = {
 
   async redeem(input: unknown, redeemedById?: string) {
     const data = giftCardRedemptionInputSchema.parse(input);
+    const venue = normaliseRedemptionVenue(data.venue);
     const card = await findCardByCode(data.code);
     // Friendly pre-checks (non-authoritative — the atomic update below is the
     // real guard against concurrent redemptions).
@@ -1062,7 +1111,7 @@ export const giftCardService = {
         data: {
           giftCardId: card.id,
           amountCents: data.amountCents,
-          venue: data.venue?.trim() || null,
+          venue,
           notes: data.notes?.trim() || null,
           redeemedById: redeemedById ?? null
         }
