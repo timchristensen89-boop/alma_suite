@@ -260,7 +260,7 @@ function useGiftCardAuth() {
 // ./giftCardArt. Picker swatches use design.swatchBg.
 
 const QUICK_MESSAGES = [
-  { short: 'Have the best night…', long: "Have the best night. Order the scallops. Don't drive." },
+  { short: 'Have the best night…', long: "Have the best night. Order the ribs. Don't drive." },
   { short: 'Happy birthday.', long: 'Happy birthday. Order the second margarita. Love you.' },
   { short: 'Thank you.', long: "Thank you — for everything this year. Dinner's on me." },
   { short: 'Congratulations.', long: 'Congratulations. Go celebrate properly. So proud of you.' },
@@ -331,7 +331,7 @@ function PublicGiftCardShop() {
   const [purchaserEmail, setPurchaserEmail] = useState('');
   const [recipientName, setRecipientName] = useState('Caro');
   const [recipientEmail, setRecipientEmail] = useState('');
-  const [message, setMessage] = useState("Have the best night. Order the scallops. Don't drive.");
+  const [message, setMessage] = useState("Have the best night. Order the ribs. Don't drive.");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [navSolid, setNavSolid] = useState(false);
@@ -862,14 +862,6 @@ function PublicGiftCardShop() {
                 <div className="alma-giftcards-preview__signoff">{senderSignature}</div>
               </div>
 
-              <p className="alma-giftcards-preview__note">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
-                  <circle cx="7" cy="7" r="6" />
-                  <line x1="7" y1="4.5" x2="7" y2="7.5" strokeLinecap="round" />
-                  <circle cx="7" cy="9.5" r="0.6" fill="currentColor" />
-                </svg>
-                <span>This is what lands in their inbox. They can show it on their phone or print the PDF — both work at the door.</span>
-              </p>
             </div>
 
             <form className="alma-giftcards-form" onSubmit={(event) => void checkout(event)}>
@@ -937,8 +929,10 @@ function PublicGiftCardShop() {
                         }}
                         aria-pressed={!customOn && design === d}
                       >
-                        <span className="alma-giftcards-design__swatch" style={{ background: meta.swatchBg, color: meta.swatchFg }}>
-                          <span className="alma-giftcards-design__mark">alma</span>
+                        {/* A real miniature of the card, not a colour swatch —
+                            AlmaCard scales itself to the tile's box. */}
+                        <span className="alma-giftcards-design__swatch">
+                          <GiftCardArt design={d} amount={100} chrome={false} />
                         </span>
                         <span className="alma-giftcards-design__name">{meta.label}</span>
                         <span className="alma-giftcards-design__who">{meta.tagline}</span>

@@ -2209,6 +2209,10 @@
   gap: 12px;
 }
 .alma-giftcards-design {
+  /* The tiles hold real card miniatures whose unscaled frame is 900px wide —
+     without this, that intrinsic width becomes the tile's min-content size and
+     the grid collapses to one giant column. */
+  min-width: 0;
   cursor: pointer;
   border: 1px solid var(--gc-hair);
   background: var(--gc-surface);

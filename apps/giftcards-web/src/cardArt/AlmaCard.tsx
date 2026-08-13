@@ -1,3 +1,5 @@
+
+
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Emblem, type GiftCardEmblem } from './emblems';
 import { Glyph, Group, Ink, Label, Salmon, Word } from './primitives';
@@ -24,7 +26,7 @@ import {
  */
 
 export const GIFT_CARD_LAYOUTS = [
-  'hero', 'greet', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'
+  'hero', 'greet', 'back', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'
 ] as const;
 export type GiftCardLayout = (typeof GIFT_CARD_LAYOUTS)[number];
 
@@ -43,6 +45,8 @@ export type AlmaCardProps = {
   emblem?: GiftCardEmblem;
   /** Drop the salmon for the ghosted glyph instead. */
   noFish?: boolean;
+  /** back layout — the card's reference, shown big for the till. */
+  code?: string;
   /** Rounded corners and a drop shadow — off for print, where it bleeds. */
   chrome?: boolean;
   /**
@@ -76,6 +80,7 @@ export function AlmaCard({
   greetEyebrow = 'with our thanks',
   emblem = 'none',
   noFish = false,
+  code = 'ALMA-••••••',
   chrome = true,
   width,
   className
@@ -144,7 +149,8 @@ export function AlmaCard({
         {layout === 'greet' ? (
           <Greet t={t} greeting={greeting} eyebrow={greetEyebrow} emblem={emblem} noFish={noFish} />
         ) : null}
-        {layout !== 'hero' && layout !== 'greet' ? (
+        {layout === 'back' ? <Back t={t} code={code} /> : null}
+        {layout !== 'hero' && layout !== 'greet' && layout !== 'back' ? (
           <Numbered n={layout} t={t} amount={amount} quote={quote} />
         ) : null}
 
@@ -235,6 +241,48 @@ function Greet({
         >
           {greeting}
         </Ink>
+      </div>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 50, textAlign: 'center' }}>
+        <Label t={t} size={10} tracking=".4em" faded>{REDEEM} · {EST}</Label>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The back of the card: the reference, big, for the till — everything else
+ * stays quiet. Same vocabulary as the fronts (frame, wordmark, ghost glyph,
+ * gradient-inked type) so flipping the card never feels like leaving it.
+ */
+function Back({ t, code }: { t: PaletteTokens; code: string }) {
+  return (
+    <>
+      <Glyph t={t} height={430} style={{ left: '50%', top: '54%', transform: 'translate(-50%,-50%)' }} />
+      <div style={{ position: 'absolute', inset: 22, border: `1px solid ${t.frame}`, borderRadius: 20, pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 56, display: 'flex', justifyContent: 'center' }}>
+        <Word t={t} width={150} />
+      </div>
+      <div style={{ position: 'absolute', left: 60, right: 60, top: '50%', transform: 'translateY(-50%)', textAlign: 'center' }}>
+        <Label t={t} size={11} tracking=".5em" style={{ display: 'block', marginBottom: 16 }}>
+          Gift card reference
+        </Label>
+        <Ink
+          ink={t.valueInk}
+          style={{
+            fontFamily: SERIF,
+            fontWeight: 600,
+            fontSize: code.length > 12 ? 58 : 72,
+            letterSpacing: '.08em',
+            lineHeight: 0.95,
+            display: 'block',
+            filter: 'drop-shadow(0 2px 6px rgba(0,0,0,.15))'
+          }}
+        >
+          {code}
+        </Ink>
+        <p style={{ margin: '22px 0 0', fontFamily: SERIF, fontStyle: 'italic', fontWeight: 400, fontSize: 21, lineHeight: 1.35, color: t.quote }}>
+          Show this reference at the till — any unspent balance stays on the card for next time.
+        </p>
       </div>
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 50, textAlign: 'center' }}>
         <Label t={t} size={10} tracking=".4em" faded>{REDEEM} · {EST}</Label>
