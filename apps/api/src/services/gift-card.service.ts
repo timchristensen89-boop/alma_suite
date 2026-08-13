@@ -208,6 +208,28 @@ function sessionAmountCents(session: Stripe.Checkout.Session) {
   return typeof session.amount_total === 'number' ? session.amount_total : null;
 }
 
+/**
+ * Purchaser service fee, charged on top of the card value at Stripe checkout.
+ * 350 bps = 3.5% — parity with what GiftUp charged purchasers (~3.5–4%), so
+ * moving in-house is not a price rise. The fee never touches the card's
+ * balance: a $100 card costs $103.50 and is still worth $100.
+ *
+ * The per-card fee is snapshotted into the Stripe session's metadata at
+ * checkout, and the webhook verifies against that snapshot — so changing this
+ * rate never strands a checkout that was already in flight.
+ */
+const GIFT_CARD_SERVICE_FEE_BPS = 350;
+
+function serviceFeeCents(baseCents: number) {
+  return Math.round((baseCents * GIFT_CARD_SERVICE_FEE_BPS) / 10000);
+}
+
+/** The fee this session was actually created with (0 for pre-fee sessions). */
+function sessionServiceFeeCents(session: Stripe.Checkout.Session) {
+  const raw = Number(session.metadata?.serviceFeeCents);
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 0;
+}
+
 function normalisePromoCode(code: string) {
   return code.trim().toUpperCase().replace(/\s+/g, '');
 }
@@ -443,6 +465,7 @@ export const giftCardService = {
         settings,
         checkoutMode: 'test',
         checkoutNotice: 'Test checkout is enabled. No real payment will be taken.',
+        serviceFeeBps: GIFT_CARD_SERVICE_FEE_BPS,
         wallet: walletConfigStatus()
       };
     }
@@ -452,6 +475,7 @@ export const giftCardService = {
         settings,
         checkoutMode: 'setup_required',
         checkoutNotice: 'Payment setup is required before gift card checkout can go live.',
+        serviceFeeBps: GIFT_CARD_SERVICE_FEE_BPS,
         wallet: walletConfigStatus()
       };
     }
@@ -460,6 +484,7 @@ export const giftCardService = {
       settings,
       checkoutMode: 'live',
       checkoutNotice: null,
+      serviceFeeBps: GIFT_CARD_SERVICE_FEE_BPS,
       wallet: walletConfigStatus()
     };
   },
@@ -639,6 +664,7 @@ export const giftCardService = {
         embedded: false,
         testMode: true,
         discountCents,
+        serviceFeeCents: 0,
         amountPaidCents: 0
       };
     }
@@ -677,6 +703,11 @@ export const giftCardService = {
       });
     }
 
+    // Service fee on what the purchaser actually owes (after any promo). A
+    // separate Stripe line item, so the receipt reads "$100 card + $3.50 fee"
+    // rather than a single opaque $103.50.
+    const feeCents = serviceFeeCents(amountDueCents);
+
     const commonSession: Stripe.Checkout.SessionCreateParams = {
       mode: 'payment',
       customer_email: data.purchaserEmail.trim().toLowerCase(),
@@ -685,7 +716,8 @@ export const giftCardService = {
         giftCardId: card.id,
         giftCardCode: card.code,
         promoCode: promoResult?.promo.code ?? '',
-        discountCents: String(discountCents)
+        discountCents: String(discountCents),
+        serviceFeeCents: String(feeCents)
       },
       line_items: [
         {
@@ -701,7 +733,22 @@ export const giftCardService = {
               ].filter(Boolean).join(' · ')
             }
           }
-        }
+        },
+        ...(feeCents > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: 'aud',
+                  unit_amount: feeCents,
+                  product_data: {
+                    name: 'Service fee',
+                    description: `${(GIFT_CARD_SERVICE_FEE_BPS / 100).toFixed(1)}% card processing — not deducted from the gift card`
+                  }
+                }
+              }
+            ]
+          : [])
       ]
     };
 
@@ -735,7 +782,8 @@ export const giftCardService = {
         checkoutClientSecret: session.client_secret,
         stripePublishableKey: env.stripe.publishableKey,
         discountCents,
-        amountPaidCents: amountDueCents
+        serviceFeeCents: feeCents,
+        amountPaidCents: amountDueCents + feeCents
       };
     }
 
@@ -746,7 +794,8 @@ export const giftCardService = {
       checkoutSessionId: session.id,
       embedded: false,
       discountCents,
-      amountPaidCents: amountDueCents
+      serviceFeeCents: feeCents,
+      amountPaidCents: amountDueCents + feeCents
     };
   },
 
@@ -1066,7 +1115,11 @@ export const giftCardService = {
       return null;
     }
     const paidAmountCents = sessionAmountCents(session);
-    const expectedAmountCents = existing.initialValueCents - existing.discountCents;
+    // Expected = card value − promo + the service fee this exact session was
+    // created with (from its metadata snapshot, so a rate change can't strand
+    // an in-flight checkout).
+    const expectedAmountCents =
+      existing.initialValueCents - existing.discountCents + sessionServiceFeeCents(session);
     if (paidAmountCents !== null && paidAmountCents !== expectedAmountCents) {
       await this.disregardUnconfirmedCheckout(session, 'Stripe payment amount did not match the gift card value.');
       throw new HttpError(400, 'Stripe payment amount did not match the gift card value.');

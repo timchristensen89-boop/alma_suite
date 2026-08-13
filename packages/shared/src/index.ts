@@ -1897,6 +1897,12 @@ export type GiftCardPublicConfig = {
   settings: GiftCardSettings;
   checkoutMode: 'live' | 'test' | 'setup_required';
   checkoutNotice: string | null;
+  /**
+   * Purchaser service fee in basis points (350 = 3.5%), charged on top of the
+   * card value at checkout. The card's balance is always its face value — the
+   * fee never touches it. Storefronts read this to show the fee before Stripe.
+   */
+  serviceFeeBps: number;
   wallet: {
     appleConfigured: boolean;
     googleConfigured: boolean;
