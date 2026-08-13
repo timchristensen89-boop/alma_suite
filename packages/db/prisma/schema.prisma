@@ -2945,6 +2945,14 @@ model Recipe {
   id                 String                    @id @default(cuid())
   legacyId           String?                   @unique
   title              String
+  /// Kitchen docket / KDS override name. NULL = dockets print `title`, same
+  /// as the register tile. Set this when the register-facing name and what
+  /// the kitchen needs to see should differ (e.g. a long menu name vs. a
+  /// short kitchen shorthand). Never read by the register tile or receipts —
+  /// only by docket/KDS building, and only as of the moment a line is added
+  /// to an order (PosOrderLine.printName is a snapshot, not a live join, so
+  /// editing this never rewrites a ticket already fired).
+  printTitle         String?
   kind               String?
   category           String?
   subcategory        String?
@@ -4816,6 +4824,11 @@ model PosOrderLine {
   orderId        String
   recipeId       String?
   name           String
+  // Docket/KDS name, captured from Recipe.printTitle (falling back to title)
+  // at the moment this line was added. NULL means "use name" — dockets and
+  // KDS tickets read this in preference to `name`; the register tile, bill
+  // and guest receipt always use `name`.
+  printName      String?
   unitPriceCents Int
   quantity       Int
   totalCents     Int

@@ -171,6 +171,7 @@ function toRecipePayload(row: RecipeRow): Recipe {
     id: row.id,
     legacyId: row.legacyId,
     title: row.title,
+    printTitle: row.printTitle,
     kind: row.kind,
     category: row.category,
     subcategory: row.subcategory,
@@ -217,6 +218,7 @@ function toRecipeWithLinesPayload(row: RecipeWithLinesRow): RecipeWithLines {
     id: row.id,
     legacyId: row.legacyId,
     title: row.title,
+    printTitle: row.printTitle,
     kind: row.kind,
     category: row.category,
     subcategory: row.subcategory,
@@ -1430,6 +1432,7 @@ export const recipesService = {
     const row = await prisma.recipe.create({
       data: {
         title: data.title.trim(),
+        printTitle: normaliseOptionalText(data.printTitle) ?? null,
         kind: normaliseOptionalText(data.kind) ?? null,
         category: normaliseOptionalText(data.category) ?? null,
         subcategory: normaliseOptionalText(data.subcategory) ?? null,
@@ -1519,6 +1522,7 @@ export const recipesService = {
       where: { id },
       data: {
         ...(data.title !== undefined && { title: data.title.trim() }),
+        ...(data.printTitle !== undefined && { printTitle: normaliseOptionalText(data.printTitle) }),
         ...(data.kind !== undefined && { kind: normaliseOptionalText(data.kind) }),
         ...(data.category !== undefined && {
           category: normaliseOptionalText(data.category)

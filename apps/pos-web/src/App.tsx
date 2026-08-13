@@ -42,6 +42,7 @@ type OrderLine = {
   id?: string;
   recipeId: string | null;
   name: string;
+  printName?: string | null;
   unitPriceCents: number;
   quantity: number;
   course?: string | null;
@@ -1452,6 +1453,7 @@ export function App() {
     const line: OrderLine = {
       recipeId: item.recipeId,
       name: item.title,
+      printName: item.printTitle || null,
       unitPriceCents: item.priceCents + delta,
       quantity: 1,
       course: targetCourse ?? defaultCourse(kindByRecipe.get(item.recipeId) ?? 'FOOD'),
@@ -1536,6 +1538,7 @@ export function App() {
           {
             recipeId: item.recipeId,
             name: item.title,
+            printName: item.printTitle || null,
             unitPriceCents: item.priceCents,
             quantity: 1,
             course: defaultCourse(kindByRecipe.get(item.recipeId) ?? 'FOOD')
@@ -2102,7 +2105,8 @@ export function App() {
         dietary: (order.dietary as Array<{ tag: string; seat: number | null }> | null) ?? [],
         lines: sorted.map((line) => ({
           id: line.id ?? line.recipeId ?? line.name,
-          name: line.name,
+          // The kitchen's own name for this dish, if it has one.
+          name: line.printName ?? line.name,
           quantity: line.quantity,
           course: line.course ?? 'NOW',
           seat: line.seat ?? null,

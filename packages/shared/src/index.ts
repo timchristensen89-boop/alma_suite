@@ -6298,6 +6298,9 @@ export type Recipe = {
   id: string;
   legacyId: string | null;
   title: string;
+  // Kitchen docket/KDS override name. NULL = dockets print `title`, same as
+  // the register tile and guest receipts.
+  printTitle: string | null;
   kind: string | null;
   category: string | null;
   subcategory: string | null;
@@ -6485,6 +6488,7 @@ export const recipeVenuePriceInputSchema = z.object({
 
 export const recipeCreateInputSchema = z.object({
   title: z.string().min(2, 'Title is required'),
+  printTitle: z.string().optional().or(z.literal('')),
   kind: z.string().optional().or(z.literal('')),
   category: z.string().optional().or(z.literal('')),
   subcategory: z.string().optional().or(z.literal('')),

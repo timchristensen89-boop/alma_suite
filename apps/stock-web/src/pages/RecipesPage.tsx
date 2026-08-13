@@ -41,6 +41,7 @@ type RecipeLineDraft = {
 
 type RecipeDraft = {
   title: string;
+  printTitle: string;
   kind: string;
   category: string;
   subcategory: string;
@@ -1112,6 +1113,7 @@ function RecipeCategorySection({
 function emptyRecipeDraft(): RecipeDraft {
   return {
     title: '',
+    printTitle: '',
     kind: 'FOOD',
     category: '',
     subcategory: '',
@@ -1144,6 +1146,7 @@ function emptyProductionRecipeDraft(): RecipeDraft {
 function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
   return {
     title: recipe.title,
+    printTitle: recipe.printTitle ?? '',
     kind: normaliseRecipeKindForForm(recipe),
     category: recipe.category ?? '',
     subcategory: recipe.subcategory ?? '',
@@ -1290,6 +1293,7 @@ function RecipeForm({
     const treatAsProduction = pageMode === 'production' || draft.isProduction;
     const payload: RecipeCreateInput = {
       title: draft.title.trim(),
+      printTitle: draft.printTitle.trim(),
       kind: draft.kind.trim(),
       // A recipe is a production (prep/batch) recipe when created in the
       // production view OR explicitly flagged via the toggle in the item editor.
@@ -1350,6 +1354,12 @@ function RecipeForm({
     >
       <div className="form-grid three">
         <Input label="Title" required value={draft.title} onChange={(event) => update('title', event.currentTarget.value)} />
+        <Input
+          label="Print name"
+          value={draft.printTitle}
+          onChange={(event) => update('printTitle', event.currentTarget.value)}
+          placeholder="Kitchen docket name — blank uses the title"
+        />
         <Select
           label="Food / beverage"
           value={draft.kind}

@@ -640,6 +640,9 @@ type LineInput = {
   id?: string | null;
   recipeId?: string | null;
   name: string;
+  // Kitchen docket/KDS override, snapshotted from the menu item's printTitle
+  // at add-to-cart time. Optional — most items have none.
+  printName?: string | null;
   unitPriceCents: number;
   quantity: number;
   course?: string | null;
@@ -659,6 +662,7 @@ function parseLines(raw: unknown): LineInput[] {
       id: str(row.id) || null,
       recipeId: str(row.recipeId) || null,
       name: name.slice(0, 120),
+      printName: str(row.printName) ? str(row.printName).slice(0, 120) : null,
       unitPriceCents: asInt(row.unitPriceCents, `Line ${index + 1} price`, { min: 0, max: 1_000_000 }),
       quantity: asInt(row.quantity, `Line ${index + 1} quantity`, { min: 1, max: 999 }),
       course: str(row.course) ? str(row.course).slice(0, 30) : null,
@@ -765,12 +769,13 @@ export const posService = {
     const hiddenCats = new Set(hides.filter((hide) => hide.kind === 'CATEGORY').map((hide) => hide.key.toLowerCase()));
     const recipes = await prisma.recipe.findMany({
       where: { status: 'ACTIVE', isPrepRecipe: false, salePriceCents: { gt: 0 } },
-      select: { id: true, title: true, kind: true, category: true, venue: true, salePriceCents: true },
+      select: { id: true, title: true, printTitle: true, kind: true, category: true, venue: true, salePriceCents: true },
       orderBy: [{ category: 'asc' }, { title: 'asc' }]
     });
     type RegisterItem = {
       recipeId: string;
       title: string;
+      printTitle?: string | null;
       priceCents: number;
       venue: string | null;
       variantOf?: string;
@@ -790,6 +795,7 @@ export const posService = {
       const item: RegisterItem = {
         recipeId: recipe.id,
         title: recipe.title,
+        printTitle: recipe.printTitle,
         priceCents: recipe.salePriceCents ?? 0,
         venue: recipe.venue
       };
@@ -1698,6 +1704,7 @@ export const posService = {
           orderId: id,
           recipeId: line.recipeId,
           name: line.name,
+          printName: line.printName ?? null,
           unitPriceCents: line.unitPriceCents,
           quantity: line.quantity,
           totalCents: line.unitPriceCents * line.quantity,
@@ -2252,7 +2259,9 @@ export const posService = {
           dietary: (order.dietary as Array<{ tag: string; seat: number | null }> | null) ?? [],
           lines: sorted.map((line) => ({
             id: line.id,
-            name: line.name,
+            // The kitchen's own name for this dish, if it has one — the
+            // register tile and the guest's receipt keep line.name.
+            name: line.printName ?? line.name,
             quantity: line.quantity,
             course: line.course,
             seat: line.seat,

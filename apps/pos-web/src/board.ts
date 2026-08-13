@@ -7,6 +7,10 @@ import type { CSSProperties } from 'react';
 export type MenuItem = {
   recipeId: string;
   title: string;
+  // Kitchen docket/KDS override name (Items → Print name in Stock). Register
+  // tile, bill and receipts always show `title` — only the cart line's
+  // snapshot for printing reads this.
+  printTitle?: string | null;
   priceCents: number;
   venue: string | null;
   variantOf?: string | null;
