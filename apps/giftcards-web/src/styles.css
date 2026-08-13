@@ -3657,3 +3657,67 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
 .alma-giftcards-cardstack {
   max-width: min(460px, 100%);
 }
+
+/* ── Orders: bills-style card register ─────────────────────────────────────
+   Every card as a small bubble, modelled on the POS Bills page grid
+   (pos-web theme.css .pos-bill-card) — a left status accent, tight type,
+   auto-fill columns. Smaller than the POS tiles because the register holds
+   hundreds of cards. */
+.giftcards-bubbles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px;
+}
+.giftcards-bubble {
+  background: var(--color-surface, #fff);
+  border: 1px solid rgba(20, 36, 26, 0.12);
+  border-left: 4px solid rgba(20, 36, 26, 0.12);
+  border-radius: 12px;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+.giftcards-bubble:hover { border-color: rgba(20, 36, 26, 0.3); }
+.giftcards-bubble.is-positive { border-left-color: #4f6b47; }
+.giftcards-bubble.is-warning { border-left-color: #b5772f; }
+.giftcards-bubble.is-danger { border-left-color: #b3402e; opacity: 0.75; }
+.giftcards-bubble.is-neutral { border-left-color: rgba(20, 36, 26, 0.25); opacity: 0.7; }
+.giftcards-bubble__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+.giftcards-bubble__head strong {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.giftcards-bubble__head b {
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.giftcards-bubble__who {
+  font-size: 12px;
+  color: inherit;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.giftcards-bubble__meta {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}

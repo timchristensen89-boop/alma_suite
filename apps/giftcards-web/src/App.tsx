@@ -2127,8 +2127,9 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 <StatCard label="Outstanding" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Liability on the books" loading={loading} />
               </button>
             </div>
-            {/* Order actions + recent cards — paired panels (ov-two). */}
-            <div className="ov-two">
+            {/* Order actions first — the follow-ups sit above the register so
+                they can't be missed, then every card as a bills-style bubble
+                grid (small tiles; the register holds hundreds of cards). */}
             <ActionPanel
               title="Order actions"
               description="Cards that need payment, email, expiry, or manager follow-up."
@@ -2160,25 +2161,36 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
               ))}
               {orderActionItems.length > 10 ? <p className="subtle">{orderActionItems.length - 10} more orders need review.</p> : null}
             </ActionPanel>
-            <Card title="Recent cards" subtitle="Latest sales and balances" padding="none">
+            <Card
+              title="Active gift cards"
+              subtitle={`Latest sales and balances — ${giftCards.length} card${giftCards.length === 1 ? '' : 's'} shown, newest first. Search above to find any card.`}
+            >
               {loading ? <Spinner label="Loading gift cards..." /> : null}
               {!loading && giftCards.length === 0 ? <EmptyState title="No gift cards yet" description="Paid checkouts will appear here." /> : null}
-              <div className="giftcards-list">
+              <div className="giftcards-bubbles">
                 {giftCards.map((item) => (
-                  <button key={item.id} type="button" onClick={() => window.location.assign(`/redeem?code=${encodeURIComponent(item.code)}`)}>
-                    <span>
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`giftcards-bubble is-${statusTone(item.status)}`}
+                    onClick={() => window.location.assign(`/redeem?code=${encodeURIComponent(item.code)}`)}
+                  >
+                    <span className="giftcards-bubble__head">
                       <strong>{item.code}</strong>
-                      <small>{item.recipientName || item.purchaserName} · {item.purchaserEmail}{item.promoCodeSnapshot ? ` · ${item.promoCodeSnapshot}` : ''}{item.testMode ? ' · TEST' : ''}</small>
+                      <b>{formatCents(item.balanceCents)}</b>
                     </span>
-                    <span>
-                      <strong>{formatCents(item.balanceCents)}</strong>
-                      <Badge tone={statusTone(item.status)}>{item.status.replace('_', ' ')}</Badge>
+                    <span className="giftcards-bubble__who">
+                      {item.recipientName || item.purchaserName}
+                    </span>
+                    <span className="giftcards-bubble__meta">
+                      {item.status.replace('_', ' ')}
+                      {item.testMode ? ' · TEST' : ''}
+                      {item.promoCodeSnapshot === 'GIFTUP_IMPORT' ? ' · GiftUp' : ''}
                     </span>
                   </button>
                 ))}
               </div>
             </Card>
-            </div>
           </>
         ) : null}
 
