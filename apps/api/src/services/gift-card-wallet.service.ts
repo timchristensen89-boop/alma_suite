@@ -56,7 +56,9 @@ function formatAmount(cents: number) {
 }
 
 function readableExpiry(card: WalletGiftCard) {
-  return card.expiresAt ? card.expiresAt.toLocaleDateString('en-AU') : 'No expiry set';
+  return card.expiresAt
+    ? card.expiresAt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+    : 'No expiry set';
 }
 
 function assetBuffer(fileName: string) {
@@ -65,6 +67,11 @@ function assetBuffer(fileName: string) {
     join(process.cwd(), 'apps/giftcards-web/dist/images', fileName)
   ];
   const found = candidates.find((candidate) => existsSync(candidate));
+  if (!found) {
+    // The blank fallback still signs, so a missing file would otherwise ship a
+    // pass with an invisible logo and nobody would know why.
+    console.warn('[wallet] Pass asset missing, falling back to a blank image', { fileName });
+  }
   return found ? readFileSync(found) : transparentPng;
 }
 
@@ -126,29 +133,31 @@ export const giftCardWalletService = {
       serialNumber: card.id,
       organizationName: config.organizationName,
       description: 'ALMA Group Gift Card',
-      logoText: 'ALMA Group',
-      foregroundColor: 'rgb(31, 53, 36)',
-      backgroundColor: 'rgb(250, 248, 243)',
-      labelColor: 'rgb(121, 96, 66)',
+      // Forest green card, cream ink — the dark treatment used on the gift card
+      // email panel. No logoText: the logo artwork already carries the wordmark.
+      foregroundColor: 'rgb(245, 220, 206)',
+      backgroundColor: 'rgb(31, 53, 36)',
+      labelColor: 'rgb(159, 153, 138)',
       sharingProhibited: false,
       expirationDate: card.expiresAt?.toISOString(),
       storeCard: {
+        // The balance carries the card; everything else earns its place. The
+        // code lives under the QR only, so it is never printed twice.
         primaryFields: [
           { key: 'balance', label: 'BALANCE', value: amount }
         ],
         secondaryFields: [
           { key: 'venue', label: 'VENUES', value: 'Alma Avalon + St Alma' },
-          { key: 'code', label: 'CODE', value: card.code }
-        ],
-        auxiliaryFields: [
-          { key: 'recipient', label: 'FOR', value: card.recipientName || 'Gift card' },
           { key: 'expires', label: 'EXPIRES', value: readableExpiry(card) }
         ],
+        auxiliaryFields: [],
         backFields: [
           { key: 'redeem', label: 'How to redeem', value: 'Show this card to staff at Alma Avalon or St Alma.' },
           { key: 'balanceBack', label: 'Current balance', value: amount },
+          { key: 'codeBack', label: 'Card code', value: card.code },
+          ...(card.recipientName ? [{ key: 'recipient', label: 'For', value: card.recipientName }] : []),
           { key: 'terms', label: 'Terms', value: 'Gift card balance is checked against the ALMA gift card register before redemption.' },
-          { key: 'message', label: 'Message', value: card.message || '' }
+          ...(card.message ? [{ key: 'message', label: 'Message', value: card.message }] : [])
         ]
       },
       barcodes: [
@@ -164,10 +173,15 @@ export const giftCardWalletService = {
     const pass = new PKPass(
       {
         'pass.json': Buffer.from(JSON.stringify(passJson)),
-        'icon.png': assetBuffer('fish.png'),
-        'icon@2x.png': assetBuffer('fish.png'),
-        'logo.png': assetBuffer('alma-group-logo.png'),
-        'logo@2x.png': assetBuffer('alma-group-logo.png')
+        // Cream-ink artwork sized to Apple's pass dimensions (logo 160x50pt,
+        // icon 29x29pt). The stock brand files are dark ink and would vanish
+        // against the forest green card.
+        'icon.png': assetBuffer('wallet/icon.png'),
+        'icon@2x.png': assetBuffer('wallet/icon@2x.png'),
+        'icon@3x.png': assetBuffer('wallet/icon@3x.png'),
+        'logo.png': assetBuffer('wallet/logo.png'),
+        'logo@2x.png': assetBuffer('wallet/logo@2x.png'),
+        'logo@3x.png': assetBuffer('wallet/logo@3x.png')
       },
       {
         wwdr: config.wwdr,
