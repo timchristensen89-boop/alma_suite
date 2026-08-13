@@ -326,7 +326,7 @@ export function App() {
   const [activeCategory, setActiveCategory] = useState('');
   const [search, setSearch] = useState('');
   const [newTable, setNewTable] = useState<null | { label: string; covers: string }>(null);
-  const [charge, setCharge] = useState<null | { stage: 'tip' | 'method' | 'cash' | 'split' | 'gift'; tipCents: number; amountCents: number | null }>(null);
+  const [charge, setCharge] = useState<null | { stage: 'pay' | 'tip' | 'method' | 'cash' | 'split' | 'gift'; tipCents: number; amountCents: number | null }>(null);
   // `external` = the code isn't ours (an old Gift Up card, say) — we can
   // still take it, recorded as an outside tender against the number.
   const [gift, setGift] = useState<{
@@ -1023,7 +1023,7 @@ export function App() {
         void refreshOpenOrders();
       } else {
         setOrder(result);
-        setCharge({ stage: 'split', tipCents: 0, amountCents: null });
+        setCharge({ stage: 'pay', tipCents: 0, amountCents: null });
       }
     } catch (err) {
       setError(messageForError(err, 'Reader payment failed.'));
@@ -1784,7 +1784,7 @@ export function App() {
             void refreshOpenOrders();
           } else {
             setOrder(poll.order);
-            setCharge({ stage: 'split', tipCents: 0, amountCents: null });
+            setCharge({ stage: 'pay', tipCents: 0, amountCents: null });
           }
           return;
         }
@@ -1865,7 +1865,7 @@ export function App() {
         void refreshOpenOrders();
       } else {
         setOrder(result);
-        setCharge({ stage: 'split', tipCents: 0, amountCents: null });
+        setCharge({ stage: 'pay', tipCents: 0, amountCents: null });
       }
     } catch (err) {
       setError(messageForError(err, 'Payment could not be recorded.'));
@@ -2492,7 +2492,11 @@ export function App() {
             setOrder(row);
             setView('register');
           }}
-          onPrint={(row) => void printTillReceipt(row.id)}
+          onMore={(row) => {
+            setOrder(row);
+            setView('register');
+            setBillActions(true);
+          }}
           onReinstate={(row) => {
             void api<Order>(`/api/pos/orders/${row.id}/reopen`, { method: 'POST' })
               .then((reopened) => {
@@ -2517,7 +2521,7 @@ export function App() {
           onSplit={(row) => {
             setOrder(row);
             setView('register');
-            setCharge({ stage: 'split', tipCents: 0, amountCents: null });
+            setCharge({ stage: 'pay', tipCents: 0, amountCents: null });
           }}
           onReceipt={(row) => setReceipt(row as Order & { changeCents?: number | null })}
           onNewOrder={() => {
@@ -3301,7 +3305,7 @@ export function App() {
                   type="button"
                   className="pos-charge"
                   disabled={!order || order.lines.length === 0 || busy || balance <= 0}
-                  onClick={() => setCharge({ stage: 'split', tipCents: 0, amountCents: null })}
+                  onClick={() => setCharge({ stage: 'pay', tipCents: 0, amountCents: null })}
                 >
                   Charge {money(balance)}
                 </button>
@@ -3391,6 +3395,31 @@ export function App() {
                     Tip {money(charge.tipCents)} — continue
                   </button>
                 ) : null}
+              </>
+            ) : null}
+            {charge.stage === 'pay' ? (
+              <>
+                <h2 className="pos-charge-total">{money(balance + charge.tipCents)}</h2>
+                {/* The plain payments screen: pay it all, or step into the
+                    split/part-payment screen on purpose. Filled buttons here
+                    — the choice-row's default transparent style disappears
+                    against the panel for the two decisions that matter most. */}
+                <div className="pos-choice-row">
+                  <button
+                    type="button"
+                    className="pos-charge"
+                    onClick={() => setCharge({ ...charge, stage: tipStage, amountCents: null })}
+                  >
+                    Pay in full
+                  </button>
+                  <button
+                    type="button"
+                    className="pos-charge pos-charge-secondary"
+                    onClick={() => setCharge({ ...charge, stage: 'split' })}
+                  >
+                    Split
+                  </button>
+                </div>
               </>
             ) : null}
             {charge.stage === 'split' ? (
@@ -6312,7 +6341,7 @@ function BillsPage({
   busy,
   onOpen,
   onSplit,
-  onPrint,
+  onMore,
   onReceipt,
   onNewOrder,
   onRefresh,
@@ -6324,7 +6353,7 @@ function BillsPage({
   busy: boolean;
   onOpen: (order: Order) => void;
   onSplit: (order: Order) => void;
-  onPrint: (order: Order) => void;
+  onMore: (order: Order) => void;
   onReceipt: (order: Order) => void;
   onNewOrder: () => void;
   onRefresh: () => void;
@@ -6400,8 +6429,8 @@ function BillsPage({
                 <button type="button" disabled={busy || row.lines.length === 0} onClick={() => onSplit(row)}>
                   Pay
                 </button>
-                <button type="button" disabled={busy || row.lines.length === 0} onClick={() => onPrint(row)}>
-                  Print
+                <button type="button" disabled={busy || row.lines.length === 0} onClick={() => onMore(row)}>
+                  More
                 </button>
               </div>
             </div>

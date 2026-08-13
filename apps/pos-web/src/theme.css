@@ -147,6 +147,11 @@ body.pos-dark .pos-pin-x { color: #1f1512; }
 .pos-charge:hover { opacity: 0.85; transform: translateY(-1px); }
 .pos-charge:active { opacity: 0.7; transform: translateY(0); }
 .pos-charge:disabled { opacity: 0.4; transform: none; }
+/* Secondary sibling of .pos-charge — same weight/shape so it doesn't read as
+   a disabled ghost button, but filled with the card surface + a visible
+   border so "Split" doesn't compete with the primary "Pay in full" action. */
+.pos-charge-secondary { background: var(--pos-chip); color: var(--pos-text); border: 1px solid var(--pos-border); }
+.pos-charge-secondary:hover { opacity: 1; background: var(--pos-hover); }
 .pos-cart-summary { color: var(--pos-text); }
 .pos-cart-summary b { color: var(--pos-text2); }
 
@@ -1663,3 +1668,18 @@ body.pos-v2 .pos-cart .pos-charge {
     padding-bottom: 0;
   }
 }
+
+/* The size control has to reach the left rail too. It scaled the board tiles
+   and the tab bar but not the sidebar, which is the one list a server reads
+   all night — so "make it bigger" made everything bigger except the thing
+   they were looking at. The editor's own rail preview scales with it, so the
+   effect is visible while you're choosing rather than after you close. */
+.pos-rail-item { font-size: calc(12.5px * var(--pos-text-scale, 1)); }
+.pos-rail-item em { font-size: calc(9.5px * var(--pos-text-scale, 1)); }
+.pos-rail-eyebrow { font-size: calc(9px * var(--pos-text-scale, 1)); }
+.pos-rail-venue select { font-size: calc(12.5px * var(--pos-text-scale, 1)); }
+.pos-be-railitem { font-size: calc(14px * var(--pos-text-scale, 1)); }
+
+/* The rail is a fixed 190px column; at the largest step the longer category
+   names would clip rather than wrap. Let it widen with the type. */
+body.pos-v2 .pos-rail { flex-basis: calc(190px * var(--pos-text-scale, 1)); }
