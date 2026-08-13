@@ -1,0 +1,35 @@
+# Root Dockerfile does `COPY . .` — anything here still ends up in every API
+# image layer regardless of how the build context got onto disk (rsync
+# excludes only protect the transfer, not a `COPY .` that already has the
+# files locally). Filled in 2026-08-13 after apps/pos-native's Xcode
+# simulator build artifacts (2.2GB, StripeTerminal.framework debug build)
+# had been sitting in the VPS build context from an earlier, non-excluding
+# rsync and filled the disk mid-deploy — same 2.2GB, same layer, copied into
+# both the suite-api and stock-api images every single build.
+
+node_modules
+**/node_modules
+dist
+**/dist
+build
+.vite
+*.tsbuildinfo
+.git
+.env
+.env.local
+*.log
+firepit-log.txt
+coverage
+.firebase
+.playwright-cli
+output
+tmp
+*.bak
+.pnpm-store
+packages/db/generated
+.prisma
+
+# Never needed by any backend container — an Expo/React Native iOS shell,
+# and its ios/build directory alone can run into gigabytes of simulator
+# framework artifacts.
+apps/pos-native
