@@ -4627,6 +4627,37 @@ export type GiftCardAdminSettingsResponse = {
   canManagePromoCodes: boolean;
 };
 
+// One redemption as the reporting page shows it: the card, the money, the
+// venue, and the person who rang it through (resolved to a name server-side).
+export type GiftCardReportRedemption = {
+  id: string;
+  redeemedAt: string;
+  amountCents: number;
+  venue: string | null;
+  notes: string | null;
+  code: string;
+  cardStatus: GiftCard['status'];
+  recipientName: string | null;
+  purchaserName: string;
+  redeemedByName: string | null;
+};
+
+export type GiftCardReport = {
+  range: { from: string | null; to: string };
+  summary: {
+    redemptionCount: number;
+    redeemedCents: number;
+    cardsSoldCount: number;
+    cardsSoldCents: number;
+    outstandingCents: number;
+    activeCards: number;
+  };
+  byVenue: Array<{ venue: string; redemptionCount: number; redeemedCents: number }>;
+  redemptions: GiftCardReportRedemption[];
+  /** True when the log hit its server-side cap and older rows in range were dropped. */
+  truncated: boolean;
+};
+
 export type Timesheet = {
   id: string;
   staffProfileId: string;

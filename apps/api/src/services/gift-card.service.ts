@@ -942,6 +942,102 @@ export const giftCardService = {
     };
   },
 
+  // View-only reporting: which cards were redeemed, for how much, at which
+  // venue, and by whom. Staff names are resolved server-side so the client
+  // never needs the staff directory. Sold/outstanding figures ride along so
+  // the page reads as one statement: money in, money drawn down, money owed.
+  async report(input: { from?: string; to?: string; venue?: string }) {
+    const to = input.to ? new Date(input.to) : new Date();
+    const from = input.from ? new Date(input.from) : null;
+    if (Number.isNaN(to.getTime()) || (from !== null && Number.isNaN(from.getTime()))) {
+      throw new HttpError(400, 'from and to must be ISO dates.');
+    }
+    const redeemedAt = { lte: to, ...(from ? { gte: from } : {}) };
+    const redemptionWhere = {
+      status: 'COMPLETED' as const,
+      giftCard: { testMode: false },
+      // "Unallocated" is the report's name for redemptions that predate the
+      // venue requirement — filtering by it must find those NULL rows.
+      ...(input.venue ? { venue: input.venue === 'Unallocated' ? null : input.venue } : {}),
+      redeemedAt
+    };
+    const LOG_CAP = 500;
+    const [rows, byVenueRaw, redeemedTotal, sold, liability] = await Promise.all([
+      prisma.giftCardRedemption.findMany({
+        where: redemptionWhere,
+        orderBy: [{ redeemedAt: 'desc' }],
+        take: LOG_CAP,
+        include: {
+          giftCard: { select: { code: true, status: true, purchaserName: true, recipientName: true } }
+        }
+      }),
+      prisma.giftCardRedemption.groupBy({
+        by: ['venue'],
+        _sum: { amountCents: true },
+        _count: { _all: true },
+        where: redemptionWhere
+      }),
+      prisma.giftCardRedemption.aggregate({
+        _sum: { amountCents: true },
+        _count: { _all: true },
+        where: redemptionWhere
+      }),
+      prisma.giftCard.aggregate({
+        _sum: { initialValueCents: true },
+        _count: { _all: true },
+        where: {
+          testMode: false,
+          status: { in: ['ACTIVE', 'REDEEMED'] },
+          paidAt: { lte: to, ...(from ? { gte: from } : {}) }
+        }
+      }),
+      prisma.giftCard.aggregate({
+        _sum: { balanceCents: true },
+        _count: { _all: true },
+        where: { testMode: false, status: 'ACTIVE' }
+      })
+    ]);
+    const staffIds = [...new Set(rows.map((row) => row.redeemedById).filter((id): id is string => Boolean(id)))];
+    const staff = staffIds.length
+      ? await prisma.staffProfile.findMany({
+          where: { id: { in: staffIds } },
+          select: { id: true, firstName: true, lastName: true }
+        })
+      : [];
+    const staffName = new Map(staff.map((member) => [member.id, `${member.firstName} ${member.lastName}`.trim()]));
+    return {
+      range: { from: from ? from.toISOString() : null, to: to.toISOString() },
+      summary: {
+        redemptionCount: redeemedTotal._count._all,
+        redeemedCents: redeemedTotal._sum.amountCents ?? 0,
+        cardsSoldCount: sold._count._all,
+        cardsSoldCents: sold._sum.initialValueCents ?? 0,
+        outstandingCents: liability._sum.balanceCents ?? 0,
+        activeCards: liability._count._all
+      },
+      byVenue: byVenueRaw
+        .map((row) => ({
+          venue: row.venue ?? 'Unallocated',
+          redemptionCount: row._count._all,
+          redeemedCents: row._sum.amountCents ?? 0
+        }))
+        .sort((a, b) => b.redeemedCents - a.redeemedCents),
+      redemptions: rows.map((row) => ({
+        id: row.id,
+        redeemedAt: row.redeemedAt.toISOString(),
+        amountCents: row.amountCents,
+        venue: row.venue,
+        notes: row.notes,
+        code: row.giftCard.code,
+        cardStatus: row.giftCard.status,
+        recipientName: row.giftCard.recipientName,
+        purchaserName: row.giftCard.purchaserName,
+        redeemedByName: row.redeemedById ? (staffName.get(row.redeemedById) ?? null) : null
+      })),
+      truncated: rows.length === LOG_CAP
+    };
+  },
+
   async listOrders(input: { query?: string }) {
     const query = input.query?.trim();
     const orders = await prisma.giftCard.findMany({

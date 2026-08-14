@@ -3733,3 +3733,99 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   text-transform: uppercase;
   opacity: 0.55;
 }
+
+/* ── Redemption reporting (view-only) ────────────────────────────────────
+   Rows, not a table: each redemption reads left-to-right on desktop and
+   stacks on a phone without any horizontal scrolling. */
+.giftcards-report-filters {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.giftcards-report-ranges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.giftcards-report-venues {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.giftcards-report-venue {
+  display: grid;
+  gap: 2px;
+  background: var(--color-surface, #fff);
+  border: 1px solid rgba(20, 36, 26, 0.12);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.giftcards-report-venue b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.giftcards-report-log {
+  display: flex;
+  flex-direction: column;
+}
+
+.giftcards-report-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid rgba(20, 36, 26, 0.08);
+}
+
+.giftcards-report-row:last-child {
+  border-bottom: 0;
+}
+
+.giftcards-report-row-main {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.giftcards-report-row-main strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.giftcards-report-row-main .subtle {
+  overflow-wrap: anywhere;
+}
+
+.giftcards-report-row-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  text-align: right;
+  font-size: 13px;
+}
+
+.giftcards-report-row-meta b {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 700px) {
+  .giftcards-report-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .giftcards-report-row-meta {
+    justify-content: flex-start;
+    text-align: left;
+  }
+}

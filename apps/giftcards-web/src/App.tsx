@@ -18,6 +18,7 @@ import {
   type GiftCardPromoQuote,
   type GiftCardPublicConfig,
   type GiftCardPublic,
+  type GiftCardReport,
   type GiftCardSettings
 } from '@alma/shared';
 import { DEFAULT_GIFT_CARD_DESIGN, GIFT_CARD_DESIGN_META, GiftCardArt, isGiftCardDesign, resolveGiftCardDesign } from './giftCardArt';
@@ -80,6 +81,12 @@ const GIFTCARD_NAV_ITEMS = [
     label: 'Orders',
     description: 'Recent cards and balances',
     icon: <IconReceipt />
+  },
+  {
+    href: '/reporting#report',
+    label: 'Reporting',
+    description: 'Who redeemed what, where',
+    icon: <ChartIcon />
   },
   {
     href: '/redeem#redeem',
@@ -1458,6 +1465,7 @@ function SidebarNav() {
   useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'giftcards-mobile-nav');
   const sectionFromLocation = useCallback(() => {
     if (window.location.pathname.startsWith('/orders')) return '/orders#recent';
+    if (window.location.pathname.startsWith('/reporting')) return '/reporting#report';
     if (window.location.pathname.startsWith('/admin')) return '/admin#settings';
     if (window.location.pathname.startsWith('/activate')) return '/activate#activate';
     return '/redeem#redeem';
@@ -1514,6 +1522,185 @@ function SidebarNav() {
         ))}
       </ul>
     </div>
+  );
+}
+
+// View-only redemption reporting: nothing on this page can change a card.
+// The data comes from /api/gift-cards/report in one round trip — summary,
+// per-venue split, and the redemption log with staff names already resolved.
+const REPORT_RANGES = [
+  { key: 'month', label: 'This month' },
+  { key: 'week', label: 'This week' },
+  { key: '30d', label: 'Last 30 days' },
+  { key: 'all', label: 'All time' }
+] as const;
+type ReportRangeKey = (typeof REPORT_RANGES)[number]['key'];
+
+function GiftCardReporting() {
+  const [rangeKey, setRangeKey] = useState<ReportRangeKey>('month');
+  const [venue, setVenue] = useState('all');
+  // Venue options come from the unfiltered response and then stay put, so
+  // picking a venue doesn't collapse the dropdown to a single entry.
+  const [venueOptions, setVenueOptions] = useState<string[]>([]);
+  const [report, setReport] = useState<GiftCardReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const range = useMemo(() => {
+    const now = new Date();
+    if (rangeKey === 'all') return { from: null as string | null, to: now.toISOString() };
+    const from = new Date(now);
+    if (rangeKey === 'month') from.setDate(1);
+    if (rangeKey === 'week') from.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    if (rangeKey === '30d') from.setDate(now.getDate() - 30);
+    from.setHours(0, 0, 0, 0);
+    return { from: from.toISOString(), to: now.toISOString() };
+  }, [rangeKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams({ to: range.to });
+    if (range.from) params.set('from', range.from);
+    if (venue !== 'all') params.set('venue', venue);
+    api<GiftCardReport>(`/api/gift-cards/report?${params.toString()}`)
+      .then((next) => {
+        if (cancelled) return;
+        setReport(next);
+        if (venue === 'all') {
+          setVenueOptions((current) => {
+            const merged = new Set([...current, ...next.byVenue.map((row) => row.venue)]);
+            return [...merged].sort();
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not load the report.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [range, venue]);
+
+  const rangeLabel = REPORT_RANGES.find((item) => item.key === rangeKey)?.label ?? '';
+  const summary = report?.summary;
+
+  return (
+    <>
+      <Card
+        title="Redemption reporting"
+        subtitle="Which card, how much, at which venue, and who rang it through. Pick the period and venue — everything on this page is view-only."
+      >
+        <div className="giftcards-report-filters">
+          <div className="giftcards-report-ranges" role="group" aria-label="Report period">
+            {REPORT_RANGES.map((item) => (
+              <Button
+                key={item.key}
+                type="button"
+                size="sm"
+                variant={rangeKey === item.key ? 'primary' : 'secondary'}
+                onClick={() => setRangeKey(item.key)}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+          <Select
+            label="Venue"
+            value={venue}
+            onChange={(event) => setVenue(event.currentTarget.value)}
+            options={[
+              { label: 'All venues', value: 'all' },
+              ...venueOptions.map((name) => ({ label: name, value: name }))
+            ]}
+          />
+        </div>
+      </Card>
+
+      {error ? <p className="error-text">{error}</p> : null}
+      {loading && !report ? <Spinner label="Loading report…" /> : null}
+
+      {summary ? (
+        <div className="stats-grid">
+          <StatCard
+            label={`Redeemed · ${rangeLabel}`}
+            value={formatCents(summary.redeemedCents)}
+            hint={`${summary.redemptionCount} redemption${summary.redemptionCount === 1 ? '' : 's'}`}
+            loading={loading}
+          />
+          <StatCard
+            label={`Sold · ${rangeLabel}`}
+            value={formatCents(summary.cardsSoldCents)}
+            hint={`${summary.cardsSoldCount} card${summary.cardsSoldCount === 1 ? '' : 's'} paid`}
+            loading={loading}
+          />
+          <StatCard
+            label="Outstanding balance"
+            value={formatCents(summary.outstandingCents)}
+            hint={`${summary.activeCards} active card${summary.activeCards === 1 ? '' : 's'} — all time`}
+            loading={loading}
+          />
+        </div>
+      ) : null}
+
+      {report && report.byVenue.length > 0 ? (
+        <Card title="By venue" subtitle={`Redemption revenue for ${rangeLabel.toLowerCase()} — this is what each venue actually took in gift card covers.`}>
+          <div className="giftcards-report-venues">
+            {report.byVenue.map((row) => (
+              <div key={row.venue} className="giftcards-report-venue">
+                <strong>{row.venue}</strong>
+                <b>{formatCents(row.redeemedCents)}</b>
+                <span className="subtle">
+                  {row.redemptionCount} redemption{row.redemptionCount === 1 ? '' : 's'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
+      <Card
+        title="Redemption log"
+        subtitle="Newest first. Each line is one tap of a card at a till — the card, the amount drawn, the venue, and who rang it through."
+      >
+        {report && report.redemptions.length === 0 && !loading ? (
+          <EmptyState title="No redemptions in this window" description="Change the period or venue above." />
+        ) : null}
+        <div className="giftcards-report-log">
+          {(report?.redemptions ?? []).map((row) => (
+            <div key={row.id} className="giftcards-report-row">
+              <div className="giftcards-report-row-main">
+                <strong>{row.code}</strong>
+                <span className="subtle">
+                  {row.recipientName || row.purchaserName}
+                  {row.notes ? ` · ${row.notes}` : ''}
+                </span>
+              </div>
+              <div className="giftcards-report-row-meta">
+                <b>{formatCents(row.amountCents)}</b>
+                <span>{row.venue ?? 'Unallocated'}</span>
+                <span>{row.redeemedByName ?? 'Unknown staff'}</span>
+                <span className="subtle">
+                  {new Date(row.redeemedAt).toLocaleString('en-AU', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: 'numeric',
+                    minute: '2-digit'
+                  })}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+        {report?.truncated ? (
+          <p className="subtle">Showing the latest 500 redemptions — narrow the period or venue to see older ones.</p>
+        ) : null}
+      </Card>
+    </>
   );
 }
 
@@ -1909,9 +2096,11 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     ? 'admin'
     : currentPath.startsWith('/orders')
       ? 'orders'
-      : currentPath.startsWith('/activate')
-        ? 'activate'
-        : 'redeem';
+      : currentPath.startsWith('/reporting')
+        ? 'reporting'
+        : currentPath.startsWith('/activate')
+          ? 'activate'
+          : 'redeem';
   const pageCopy = {
     redeem: {
       eyebrow: 'Daily workflow',
@@ -1922,6 +2111,11 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       eyebrow: 'Orders',
       title: 'Gift card orders',
       description: 'Review recent cards, active balances, and order status without changing setup.'
+    },
+    reporting: {
+      eyebrow: 'Reporting',
+      title: 'Redemption reporting',
+      description: 'Every redemption — which card, how much, at which venue, and who rang it through. View only.'
     },
     admin: {
       eyebrow: 'Setup',
@@ -2303,6 +2497,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           </Card>
         ) : null}
 
+        {activeGiftCardPage === 'reporting' ? <GiftCardReporting /> : null}
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
         {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
       </div>
@@ -2443,12 +2638,14 @@ export function App() {
   const isPrintPath = window.location.pathname.startsWith('/print');
   // /activate is in the staff nav and has its own page copy, but was missing
   // from this dispatch — so it fell through to the customer shop. A staff
-  // member following their own menu landed on the buy page.
+  // member following their own menu landed on the buy page. (/reporting
+  // nearly repeated that story — every staff route needs a line here.)
   const isActivatePath = window.location.pathname.startsWith('/activate');
+  const isReportingPath = window.location.pathname.startsWith('/reporting');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
   if (isArtPath) return <CardArtGallery />;
   if (isCounterPath) return <CounterApp />;
-  if (!isRedeemPath && !isOrdersPath && !isAdminPath && !isActivatePath) return <PublicGiftCardShop />;
+  if (!isRedeemPath && !isOrdersPath && !isAdminPath && !isActivatePath && !isReportingPath) return <PublicGiftCardShop />;
   return <GiftCardAdminApp />;
 }
