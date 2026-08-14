@@ -15,8 +15,13 @@ build
 .vite
 *.tsbuildinfo
 .git
+# Env files at ANY depth: these now carry wallet private keys and Stripe
+# secrets on dev machines, and `COPY . .` would bake them into every image
+# layer. The .example files are covered too — nothing reads them at runtime.
 .env
 .env.local
+**/.env
+**/.env.*
 *.log
 firepit-log.txt
 coverage
