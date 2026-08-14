@@ -69,6 +69,20 @@ type GuestProfile = OrderGuest & {
 };
 type ModifierOption = { id: string; name: string; priceCents: number };
 type ModifierGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: ModifierOption[] };
+
+/**
+ * The last good /api/pos/menu response, exactly as the menu effect wrote it.
+ * Read once per call — used by the state initialisers so the register paints
+ * a usable grid before the first network round trip completes.
+ */
+function readMenuCache(): { categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] } | null {
+  try {
+    const cached = localStorage.getItem('alma.pos.menuCache');
+    return cached ? (JSON.parse(cached) as { categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] }) : null;
+  } catch {
+    return null;
+  }
+}
 type Order = {
   orderType?: 'DINE_IN' | 'TAKEAWAY' | null;
   openedByName?: string | null;
@@ -295,7 +309,12 @@ export function App() {
   const [me, setMe] = useState<AuthShape>('loading');
   const [bill, setBill] = useState<Order | null>(null);
   const [venue, setVenue] = useState<string>(() => localStorage.getItem('alma.pos.venue') ?? VENUES[0]!);
-  const [rawMenu, setRawMenu] = useState<MenuCategory[]>([]);
+  // Hydrated synchronously from the last good /api/pos/menu response so the
+  // register paints a usable grid in zero round trips on open; the fetch in
+  // the menu effect then revalidates in the background. The cache was
+  // previously read only when the fetch FAILED, so a normal online open
+  // stared at an empty grid for the full auth+menu waterfall.
+  const [rawMenu, setRawMenu] = useState<MenuCategory[]>(() => readMenuCache()?.categories ?? []);
   // Each venue sells its own menu: St Alma items at St Alma, Avalon's at
   // Avalon. Unassigned items and Functions / Pop-up see everything.
   const menu = useMemo(() => {
@@ -304,11 +323,21 @@ export function App() {
       .map((category) => ({ ...category, items: category.items.filter((item) => !item.venue || item.venue === venue) }))
       .filter((category) => category.items.length > 0);
   }, [rawMenu, venue]);
-  const [kindByRecipe, setKindByRecipe] = useState<Map<string, string>>(new Map());
+  const [kindByRecipe, setKindByRecipe] = useState<Map<string, string>>(() => {
+    const kinds = new Map<string, string>();
+    for (const category of readMenuCache()?.categories ?? []) {
+      for (const item of category.items) kinds.set(item.recipeId, category.kind);
+    }
+    return kinds;
+  });
   const [openOrders, setOpenOrders] = useState<Order[]>([]);
   const [floorTables, setFloorTables] = useState<FloorTable[]>([]);
   const [floorArea, setFloorArea] = useState('');
   const [order, setOrder] = useState<Order | null>(null);
+  // Render-time mirror so async work (the optimistic order-creation loop)
+  // can read the LATEST order without stale closures.
+  const orderNow = useRef<Order | null>(null);
+  orderNow.current = order;
   // Register-first: the app opens on menu + bill; Tables is a secondary view.
   const [view, setView] = useState<'register' | 'tables' | 'bills' | 'board'>('register');
   // Bills page: everything trading right now plus what's already settled.
@@ -453,13 +482,7 @@ export function App() {
   const iconsOn = iconStyle !== 'off';
   // A mark for this name, or nothing. Rendered as inline SVG so it takes the
   // ink colour of whatever it sits in.
-  function Mark({ name, className }: { name: string; className?: string }) {
-    const key = iconsOn ? iconKeyFor(name, home.categories?.icons) : '';
-    if (!key) return null;
-    return (
-      <i className={className ?? 'pos-nav-icon'} dangerouslySetInnerHTML={{ __html: iconSvg(key, iconStyle) }} />
-    );
-  }
+  //
   const hasMark = (name: string) => Boolean(iconsOn && iconKeyFor(name, home.categories?.icons));
   // Column count is kept alongside the slot total so the board editor's
   // preview can lay tiles out on the same grid the register measured.
@@ -667,12 +690,28 @@ export function App() {
   const [serviceCalls, setServiceCalls] = useState<Array<{ id: string; tableLabel: string; kind: string; createdAt: string }>>([]);
   const [reasons, setReasons] = useState<Record<string, string[]>>({});
   const [home, setHome] = useState<HomeConfig>({ buttons: [], pins: [] });
+  // Memoised so the component's IDENTITY is stable across renders: declared
+  // inline, every App render made React treat <Mark> as a brand-new element
+  // type and remount every icon on the board and the nav — re-parsing its SVG
+  // string — on every keystroke and every cart update.
+  const iconOverridesForMark = home.categories?.icons;
+  const Mark = useMemo(() => {
+    function MarkStable({ name, className }: { name: string; className?: string }) {
+      const key = iconStyle !== 'off' ? iconKeyFor(name, iconOverridesForMark) : '';
+      if (!key) return null;
+      return (
+        <i className={className ?? 'pos-nav-icon'} dangerouslySetInnerHTML={{ __html: iconSvg(key, iconStyle) }} />
+      );
+    }
+    return MarkStable;
+  }, [iconStyle, iconOverridesForMark]);
+
   const [renaming, setRenaming] = useState<null | { kind: 'pin' | 'group'; key: number | string; value: string }>(null);
   const homeRef = useRef(home);
   homeRef.current = home;
   const orderIdRef = useRef<string | null>(null);
-  const [eightySix, setEightySix] = useState<Set<string>>(new Set());
-  const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);
+  const [eightySix, setEightySix] = useState<Set<string>>(() => new Set(readMenuCache()?.eightySix ?? []));
+  const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>(() => readMenuCache()?.modifierGroups ?? []);
   const [mode86, setMode86] = useState(false);
   const [modSheet, setModSheet] = useState<null | { item: MenuItem; category: string; groups: ModifierGroup[]; chosen: Record<string, string[]>; notes: string }>(null);
   const [variantSheet, setVariantSheet] = useState<MenuItem | null>(null);
@@ -776,28 +815,20 @@ export function App() {
   }, []);
 
   const refreshOpenOrders = useCallback(async () => {
-    try {
-      setOpenOrders(await api<Order[]>(`/api/pos/orders?venue=${encodeURIComponent(venue)}`));
-    } catch {
-      /* home refresh is best-effort */
-    }
-    try {
-      const tables = await api<FloorTable[]>(`/api/pos/tables?venue=${encodeURIComponent(venue)}`);
-      setFloorTables(tables);
-      setFloorArea((current) => current || tables[0]?.area || '');
-    } catch {
-      /* floor plan is optional */
-    }
-    try {
-      setReservations(await api<FloorReservation[]>(`/api/pos/floor-reservations?venue=${encodeURIComponent(venue)}`));
-    } catch {
-      /* overlay is optional */
-    }
-    try {
-      setServiceCalls(await api(`/api/pos/service-calls?venue=${encodeURIComponent(venue)}`));
-    } catch {
-      /* a table waiting is worth showing, but never blocks the floor view */
-    }
+    // All four in flight together — they were awaited one after another,
+    // which cost four VPS round trips where one would do. Each stays
+    // independently best-effort: one failing never blocks the others.
+    await Promise.allSettled([
+      api<Order[]>(`/api/pos/orders?venue=${encodeURIComponent(venue)}`).then(setOpenOrders),
+      api<FloorTable[]>(`/api/pos/tables?venue=${encodeURIComponent(venue)}`).then((tables) => {
+        setFloorTables(tables);
+        setFloorArea((current) => current || tables[0]?.area || '');
+      }),
+      api<FloorReservation[]>(`/api/pos/floor-reservations?venue=${encodeURIComponent(venue)}`).then(setReservations),
+      api<Array<{ id: string; tableLabel: string; kind: string; createdAt: string }>>(
+        `/api/pos/service-calls?venue=${encodeURIComponent(venue)}`
+      ).then(setServiceCalls)
+    ]);
   }, [venue]);
 
   // 30s idle → lock the register. Bills live on the server so nothing is
@@ -1367,7 +1398,10 @@ export function App() {
 
   async function pushLines(next: OrderLine[]) {
     if (!order) return;
-    if (order.id.startsWith('local-')) {
+    // local- = offline quick sale; pending- = a sale whose server order is
+    // still being created (optimistic first tap). Both stay local — pending-
+    // lines are re-PUT by the creation loop once the real order id exists.
+    if (order.id.startsWith('local-') || order.id.startsWith('pending-')) {
       const subtotal = next.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);
       const surcharge = offlineSurcharge(subtotal, cachedRules);
       setOrder({
@@ -1405,6 +1439,15 @@ export function App() {
     const map = new Map<string, string>();
     for (const category of menu) {
       for (const item of category.items) map.set(item.recipeId, category.name);
+    }
+    return map;
+  }, [menu]);
+  // recipeId → item, for the same reason: the board resolved every pin with
+  // a flatMap().find() over the whole menu, per tile, per render.
+  const itemByRecipe = useMemo(() => {
+    const map = new Map<string, MenuItem>();
+    for (const category of menu) {
+      for (const item of category.items) map.set(item.recipeId, item);
     }
     return map;
   }, [menu]);
@@ -1463,45 +1506,69 @@ export function App() {
     // The course the item lands in opens so you see it arrive.
     setCourseOpen((current) => ({ ...current, [line.course ?? 'NOW']: true }));
     if (!order) {
+      // Optimistic first tap. The old path awaited TWO round trips (create,
+      // then lines) with the board greyed out before anything appeared — the
+      // register's one visibly slow beep. Now the sale paints immediately as
+      // a pending- draft; tiles stay live and queue into it via pushLines'
+      // local branch, while `busy` still gates charge/management until the
+      // real order exists. Money stays server-authoritative: the draft is
+      // display-only and every line is re-PUT until the server has the lot.
+      const subtotal = line.unitPriceCents * line.quantity;
+      const surcharge = offlineSurcharge(subtotal, cachedRules);
+      const draftId = `pending-${Date.now()}`;
+      setOrder({
+        id: draftId,
+        orderNumber: 0,
+        venue,
+        status: 'OPEN',
+        tableLabel: null,
+        covers: null,
+        subtotalCents: subtotal,
+        discountCents: 0,
+        discountLabel: null,
+        surchargeCents: surcharge.cents,
+        surchargeLabel: surcharge.label,
+        totalCents: subtotal + surcharge.cents,
+        gstCents: Math.round((subtotal + surcharge.cents) / 11),
+        tipCents: 0,
+        createdAt: new Date().toISOString(),
+        lines: [line],
+        payments: []
+      });
       setBusy(true);
       try {
         const created = await api<Order>('/api/pos/orders', {
           method: 'POST',
           body: JSON.stringify({ venue, openedByName: operatorName || undefined, training: training || undefined })
         });
-        const updated = await api<Order>(`/api/pos/orders/${created.id}/lines`, {
+        // PUT whatever the draft holds, and keep re-PUTting until no taps
+        // landed while the previous PUT was in flight. Converges in one
+        // extra pass in practice; the identity check is what detects taps.
+        let sent = orderNow.current?.id === draftId ? orderNow.current.lines : [line];
+        let updated = await api<Order>(`/api/pos/orders/${created.id}/lines`, {
           method: 'PUT',
-          body: JSON.stringify({ lines: [line] })
+          body: JSON.stringify({ lines: sent })
         });
+        while (orderNow.current?.id === draftId && orderNow.current.lines !== sent) {
+          sent = orderNow.current.lines;
+          updated = await api<Order>(`/api/pos/orders/${created.id}/lines`, {
+            method: 'PUT',
+            body: JSON.stringify({ lines: sent })
+          });
+        }
         setOrder(updated);
         setOffline(false);
       } catch (err) {
         if (isNetworkError(err)) {
-          // Offline quick sale: build a LOCAL order the charge flow understands.
+          // Offline quick sale: the draft simply becomes a LOCAL order the
+          // charge flow understands, keeping every line tapped so far.
           setOffline(true);
-          const subtotal = line.unitPriceCents * line.quantity;
-          const surcharge = offlineSurcharge(subtotal, cachedRules);
-          setOrder({
-            id: `local-${Date.now()}`,
-            orderNumber: 0,
-            venue,
-            status: 'OPEN',
-            tableLabel: null,
-            covers: null,
-            subtotalCents: subtotal,
-            discountCents: 0,
-            discountLabel: null,
-            surchargeCents: surcharge.cents,
-            surchargeLabel: surcharge.label,
-            totalCents: subtotal + surcharge.cents,
-            gstCents: Math.round((subtotal + surcharge.cents) / 11),
-            tipCents: 0,
-            createdAt: new Date().toISOString(),
-            lines: [line],
-            payments: []
-          });
+          setOrder((current) =>
+            current && current.id === draftId ? { ...current, id: `local-${Date.now()}` } : current
+          );
         } else {
           setError(messageForError(err, 'Could not start the sale.'));
+          setOrder((current) => (current && current.id === draftId ? null : current));
         }
       } finally {
         setBusy(false);
@@ -2868,7 +2935,7 @@ export function App() {
                       </button>
                     );
                   }
-                  const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id);
+                  const item = itemByRecipe.get(pin.id);
                   if (!item) return null;
                   return (
                     <button
@@ -2877,8 +2944,7 @@ export function App() {
                       data-pin-index={index}
                       className={`pos-item pos-item-pin ${hueClass(pin.c)} ${sizeClass} ${boardEdit ? 'is-editing' : ''} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
                       style={hueStyle(pin.c)}
-                      disabled={busy && !boardEdit}
-                      {...editProps}
+                                            {...editProps}
                       onClick={() => (boardEdit ? cycleColour() : addItem(item))}
                     >
                       {badges}
@@ -2979,7 +3045,7 @@ export function App() {
                   const pin = home.pins[folderIndex];
                   if (!pin || pin.t !== 'f') return null;
                   return pin.items.map((recipeId, itemIndex) => {
-                    const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === recipeId);
+                    const item = itemByRecipe.get(recipeId);
                     if (!item) return null;
                     return (
                       <button
@@ -2988,8 +3054,7 @@ export function App() {
                         data-fitem-index={itemIndex}
                         className={`pos-item pos-item-pin ${hueClass(pin.c)} ${boardEdit ? 'is-editing' : ''} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
                         style={hueStyle(pin.c)}
-                        disabled={busy && !boardEdit}
-                        onPointerDown={boardEdit ? (event) => folderItemPointerDown(event, folderIndex, itemIndex) : undefined}
+                                                onPointerDown={boardEdit ? (event) => folderItemPointerDown(event, folderIndex, itemIndex) : undefined}
                         onClick={() => {
                           if (boardEdit) {
                             if (dragMoved.current) dragMoved.current = false;
@@ -3070,7 +3135,6 @@ export function App() {
                                   key={item.recipeId}
                                   type="button"
                                   className={`pos-list-row ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
-                                  disabled={busy}
                                   onClick={() => addItem(item)}
                                 >
                                   <i className={`pos-list-dot ${hueClass(hueForCategory(catName))}`} />
@@ -4392,7 +4456,7 @@ export function App() {
             <h2 style={openFolder.c ? { color: HUE_DOTS[openFolder.c] ?? openFolder.c } : undefined}>📁 {openFolder.name}</h2>
             <div className="pos-reason-list">
               {openFolder.items.map((recipeId) => {
-                const item = menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === recipeId);
+                const item = itemByRecipe.get(recipeId);
                 if (!item) return null;
                 return (
                   <button
@@ -5554,7 +5618,7 @@ export function App() {
                         ? `📁 ${pin.name}`
                         : pin.t === 'm'
                           ? `⚙ ${MGMT_LABELS[pin.key] ?? pin.key}`
-                          : menu.flatMap((category) => category.items).find((candidate) => candidate.recipeId === pin.id)?.title ?? '?';
+                          : itemByRecipe.get(pin.id)?.title ?? '?';
                     return (
                       <span key={index} className="pos-pin-edit">
                         <button type="button" style={pin.c && !HUE_NAMES.includes(pin.c) ? { borderColor: pin.c, color: pin.c } : pin.c ? { borderColor: HUE_DOTS[pin.c], color: HUE_DOTS[pin.c] } : undefined}>
