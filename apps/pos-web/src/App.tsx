@@ -1320,11 +1320,22 @@ export function App() {
     if (!el) return;
     const measure = () => {
       const width = el.clientWidth - 32;
+      const scale = textScaleValue(textScale);
+      // Phones don't page the board — they scroll it. The row maths below is
+      // circular there anyway: the pager's clientHeight is its own content
+      // height once the document is the scroller, so "how many rows fit"
+      // answered "however many are already there". One page, every pin, and
+      // theme.css lets the document scroll through it.
+      if (window.matchMedia('(max-width: 700px)').matches) {
+        const tileW = 104; // phone tiles don't scale their column (theme.css)
+        setBoardCols(Math.max(2, Math.floor((width + 10) / (tileW + 10))));
+        setBoardSlots(10000);
+        return;
+      }
       const height = el.clientHeight - 22;
       // Tiles grow with the text size, so the "how many fit" maths has to use
       // the same multiplier — otherwise turning the text up just pushes tiles
       // off the bottom of the page instead of onto the next one.
-      const scale = textScaleValue(textScale);
       const tileW = (el.clientWidth < 720 ? 104 : 145) * scale;
       const tileH = (el.clientWidth < 720 ? 80 : 98) * scale;
       const cols = Math.max(2, Math.floor((width + 10) / (tileW + 10)));

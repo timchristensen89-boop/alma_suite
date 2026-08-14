@@ -1683,3 +1683,37 @@ body.pos-v2 .pos-cart .pos-charge {
 /* The rail is a fixed 190px column; at the largest step the longer category
    names would clip rather than wrap. Let it widen with the type. */
 body.pos-v2 .pos-rail { flex-basis: calc(190px * var(--pos-text-scale, 1)); }
+
+/* ── 3. The Home board was the last thing still refusing to scroll ────────
+   The Aug 12 pass let a phone scroll the document — but the board pager
+   was built for the iPad's "pins flow onto pages left/right" design and
+   still carried `touch-action: none` + `overflow: hidden` over the whole
+   home screen. On a phone that meant every touch on the board was
+   swallowed: no scroll from anywhere except the header, and the bottom
+   rows (plus the page dots) sat unreachable below the fold. Worse, the
+   pager sizes its pages from its own clientHeight, which on a phone IS its
+   content height — a circular measurement that always overfills page one.
+
+   On phones the board is not paged: every pin flows onto one page (App.tsx
+   returns a single page below 700px) and the document scrolls through it.
+   The iPad register (>700px) keeps its fixed pages untouched. */
+@media (max-width: 700px) {
+  .pos-menu:has(.pos-home-wrap) { overflow: visible; }
+  .pos-home-wrap { height: auto; min-height: 0; }
+  .pos-board-pager {
+    overflow: visible;
+    /* pan-y hands vertical drags back to the browser as scrolling; the
+       left/right page-flip gesture keeps working via pointer events, and is
+       moot anyway with a single page. */
+    touch-action: pan-y;
+  }
+  .pos-board-page { height: auto; overflow: visible; }
+
+  /* The collapsed bill bar clamps at 60px, but its summary row pads itself
+     by the home-indicator inset — inside the ALMA POS app shell that inset
+     is 34px, so the tappable row was being clipped out of its own bar. */
+  .pos-cart:not(.is-open) { max-height: calc(60px + env(safe-area-inset-bottom)); }
+  /* Open, the sheet measures against the VISIBLE viewport: 82vh of iOS
+     Safari's large viewport reaches under the browser chrome. */
+  .pos-cart.is-open { max-height: 82dvh; }
+}
