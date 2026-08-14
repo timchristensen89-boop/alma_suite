@@ -1717,3 +1717,8 @@ body.pos-v2 .pos-rail { flex-basis: calc(190px * var(--pos-text-scale, 1)); }
      Safari's large viewport reaches under the browser chrome. */
   .pos-cart.is-open { max-height: 82dvh; }
 }
+
+/* ── Bills page: a dead control must LOOK dead ────────────────────────────
+   Pay on an empty sale rendered exactly like a live button and silently
+   ate the tap — which reads as "the controls don't work". */
+.pos-bill-actions button:disabled { opacity: 0.35; cursor: default; }

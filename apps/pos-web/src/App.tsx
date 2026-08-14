@@ -5210,10 +5210,16 @@ export function App() {
           <div className="pos-modal-panel">
             <h2>Void this bill?</h2>
             <p className="pos-muted">
-              {order.lines.reduce((sum, line) => sum + line.quantity, 0)} item
-              {order.lines.reduce((sum, line) => sum + line.quantity, 0) === 1 ? '' : 's'} · {money(order.totalCents)}
-              {order.tableLabel ? ` · Table ${order.tableLabel}` : ''} — the whole bill is cancelled and the kitchen is
-              not told automatically.
+              {order.lines.length === 0 ? (
+                <>Nothing on this bill — voiding just closes the sale.</>
+              ) : (
+                <>
+                  {order.lines.reduce((sum, line) => sum + line.quantity, 0)} item
+                  {order.lines.reduce((sum, line) => sum + line.quantity, 0) === 1 ? '' : 's'} · {money(order.totalCents)}
+                  {order.tableLabel ? ` · Table ${order.tableLabel}` : ''} — the whole bill is cancelled and the kitchen is
+                  not told automatically.
+                </>
+              )}
             </p>
             <button
               type="button"
@@ -5484,14 +5490,20 @@ export function App() {
               <button
                 type="button"
                 className="pos-action-danger"
-                disabled={busy || order.lines.length === 0 || paidCents(order) > 0}
+                disabled={busy || paidCents(order) > 0}
                 onClick={() => {
                   setBillActions(false);
                   setVoidConfirm(true);
                 }}
               >
                 <span>Void this bill</span>
-                <em>{paidCents(order) > 0 ? 'already part-paid — refund it instead' : 'needs a manager'}</em>
+                <em>
+                  {paidCents(order) > 0
+                    ? 'already part-paid — refund it instead'
+                    : order.lines.length === 0
+                      ? 'nothing on it — just closes the sale'
+                      : 'needs a manager'}
+                </em>
               </button>
             </div>
 
@@ -6573,7 +6585,10 @@ function BillsPage({
                 <button type="button" disabled={busy || row.lines.length === 0} onClick={() => onSplit(row)}>
                   Pay
                 </button>
-                <button type="button" disabled={busy || row.lines.length === 0} onClick={() => onMore(row)}>
+                {/* Never disabled for an empty bill: More is the only road to
+                    Void, and an EMPTY abandoned sale is exactly the one that
+                    needs voiding (the server voids empty bills freely). */}
+                <button type="button" disabled={busy} onClick={() => onMore(row)}>
                   More
                 </button>
               </div>
