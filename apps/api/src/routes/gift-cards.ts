@@ -87,6 +87,20 @@ giftCardsRouter.get('/admin/orders', requireManager, async (req, res, next) => {
   }
 });
 
+giftCardsRouter.get('/report', requireManager, async (req, res, next) => {
+  try {
+    res.json(
+      await giftCardService.report({
+        from: typeof req.query.from === 'string' ? req.query.from : undefined,
+        to: typeof req.query.to === 'string' ? req.query.to : undefined,
+        venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.post('/promo/quote', async (req, res, next) => {
   try {
     res.json(await giftCardService.quotePromo(req.body));
