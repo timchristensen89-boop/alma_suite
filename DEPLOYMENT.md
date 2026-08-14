@@ -248,11 +248,16 @@ Apple Wallet settings:
 
 Google Wallet settings:
 
-- `GOOGLE_WALLET_ISSUER_ID`
-- `GOOGLE_WALLET_CLASS_SUFFIX`
-- `GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL`
-- `GOOGLE_WALLET_PRIVATE_KEY`
-- `GOOGLE_WALLET_ORIGINS`
+- `GOOGLE_WALLET_ISSUER_ID` — the issuer id from the Google Pay & Wallet console
+- `GOOGLE_WALLET_SERVICE_ACCOUNT_JSON` — the service-account key file exactly as
+  Google Cloud downloads it, raw JSON or base64. This is the easy path: one
+  secret, nothing extracted by hand.
+- `GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_WALLET_PRIVATE_KEY` — the
+  alternative to the JSON var: the `client_email` and `private_key` fields
+  pulled out individually. When both forms are set, these win.
+- `GOOGLE_WALLET_CLASS_SUFFIX` — optional, defaults to `alma_gift_card`
+- `GOOGLE_WALLET_ORIGINS` — optional comma-separated origins allowed to open
+  the save link; defaults to the gift cards web URL
 
 Store PEM certificates/keys as Secret Manager values or base64 strings. Do not commit wallet certificates or service account keys.
 
