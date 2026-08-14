@@ -95,7 +95,7 @@ function googleConfig() {
   if (!config.issuerId || !config.serviceAccountEmail || !privateKey) {
     throw new HttpError(
       503,
-      'Google Wallet is not configured yet. Add GOOGLE_WALLET_ISSUER_ID, GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL, and GOOGLE_WALLET_PRIVATE_KEY.'
+      'Google Wallet is not configured yet. Add GOOGLE_WALLET_ISSUER_ID plus either GOOGLE_WALLET_SERVICE_ACCOUNT_JSON (the key file, raw or base64) or GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL and GOOGLE_WALLET_PRIVATE_KEY.'
     );
   }
   return { ...config, privateKey };

@@ -20,6 +20,39 @@ function parseCorsOrigins(value: string | undefined) {
     .filter(Boolean);
 }
 
+/**
+ * The Google Wallet credentials can arrive as ONE secret: the service-account
+ * key file exactly as Google Cloud hands it out (raw JSON, or base64 of it)
+ * in GOOGLE_WALLET_SERVICE_ACCOUNT_JSON. Hand-extracting client_email and the
+ * multiline private_key into separate vars is where wallet setups usually go
+ * wrong. The individual GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL / _PRIVATE_KEY
+ * vars still win when set.
+ */
+function googleWalletServiceAccount(): { email: string; privateKey: string } {
+  const raw = (process.env.GOOGLE_WALLET_SERVICE_ACCOUNT_JSON ?? '').trim();
+  if (!raw) return { email: '', privateKey: '' };
+  const candidates = [raw];
+  if (!raw.startsWith('{')) {
+    try {
+      candidates.unshift(Buffer.from(raw, 'base64').toString('utf8'));
+    } catch {
+      // not base64 — fall through to parsing the raw value
+    }
+  }
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as { client_email?: string; private_key?: string };
+      if (parsed.client_email && parsed.private_key) {
+        return { email: parsed.client_email, privateKey: parsed.private_key };
+      }
+    } catch {
+      // try the next candidate
+    }
+  }
+  console.warn('[env] GOOGLE_WALLET_SERVICE_ACCOUNT_JSON is set but could not be parsed as a service-account key file.');
+  return { email: '', privateKey: '' };
+}
+
 function unique(values: string[]) {
   return Array.from(new Set(values));
 }
@@ -220,8 +253,9 @@ export const env = {
     googleWallet: {
       issuerId: process.env.GOOGLE_WALLET_ISSUER_ID ?? '',
       classSuffix: process.env.GOOGLE_WALLET_CLASS_SUFFIX ?? 'alma_gift_card',
-      serviceAccountEmail: process.env.GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL ?? '',
-      privateKey: process.env.GOOGLE_WALLET_PRIVATE_KEY ?? '',
+      serviceAccountEmail:
+        process.env.GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL ?? googleWalletServiceAccount().email,
+      privateKey: process.env.GOOGLE_WALLET_PRIVATE_KEY ?? googleWalletServiceAccount().privateKey,
       origins: parseCorsOrigins(process.env.GOOGLE_WALLET_ORIGINS)
     }
   }

@@ -9016,3 +9016,199 @@ html[data-theme='dark'] .alma-taskbar-sheet { background: var(--color-elevated, 
   cursor: pointer;
 }
 .offline-banner button:disabled { opacity: 0.6; cursor: default; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PHONE PASS — Roster & pay on a handset. Four reported faults, in order:
+   the roster action row stacked seven controls down the screen, the
+   timesheet approval card overlapped its own text, the timesheet rail
+   listed every staff member full-width, and the week-review table was
+   unreadable at 390px. Desktop is untouched by everything below.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Roster actions: one line — Tools ▾ + Publish ─────────────────────── */
+/* Desktop: the wrapper dissolves so the buttons sit inline in the flex row
+   exactly as they always have, and the toggle doesn't exist. */
+.alma-roster-tools-wrap { display: contents; }
+.alma-roster-tools { display: contents; }
+.alma-roster-tools-toggle { display: none; }
+
+@media (max-width: 720px) {
+  .alma-roster-actions {
+    flex-wrap: nowrap;
+    justify-content: stretch;
+  }
+  .alma-roster-tools-wrap {
+    display: inline-flex;
+    position: relative;
+    flex: none;
+  }
+  .alma-roster-tools-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 0 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-surface-muted, #fff);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  /* Folded away until asked for. Open, it drops as a panel under the row
+     (same chrome as the Delete menu) with every tool full-width. */
+  .alma-roster-tools { display: none; }
+  .alma-roster-tools.is-open {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 41;
+    width: min(300px, calc(100vw - 48px));
+    padding: 10px;
+    background: var(--color-surface-muted, #fff);
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    box-shadow: 0 18px 44px rgba(20, 36, 26, 0.22);
+  }
+  .alma-roster-tools.is-open > * { width: 100%; }
+  /* The destructive cluster loses its inline divider inside the panel and
+     reads as the last group instead. */
+  .alma-roster-tools .alma-roster-delete-controls {
+    border-left: 0;
+    padding-left: 0;
+    margin-left: 0;
+    border-top: 1px solid var(--color-border);
+    padding-top: 8px;
+    display: flex;
+    gap: 8px;
+  }
+  .alma-roster-tools .alma-roster-delete-controls .alma-roster-delete-wrap { flex: 1; }
+  .alma-roster-tools .alma-roster-delete-controls button { width: 100%; }
+  .alma-roster-tools .roster-forecast-inline { justify-content: flex-start; }
+  /* Publish keeps the rest of the line. */
+  .alma-roster-actions .alma-roster-publish { flex: 1; min-width: 0; }
+}
+
+/* ── Timesheet approval card: the head stacks instead of colliding ────── */
+/* The head is a no-wrap flex row (avatar · meta · stats · Approve all ·
+   Reassign). At 390px the columns crushed into each other and the stats
+   painted over the role text. On phones it becomes three calm rows. */
+@media (max-width: 720px) {
+  .timesheet-group-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-auto-rows: auto;
+    align-items: center;
+    row-gap: 8px;
+  }
+  .timesheet-group-avatar { grid-row: 1; grid-column: 1; }
+  .timesheet-group-meta { grid-row: 1; grid-column: 2 / -1; min-width: 0; }
+  .timesheet-group-meta strong { overflow-wrap: anywhere; }
+  .timesheet-group-stats {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    margin-left: 0;
+    row-gap: 4px;
+  }
+  /* Approve all + Reassign share the third row. */
+  .timesheet-group-head > .btn,
+  .timesheet-group-head > button {
+    grid-row: 3;
+  }
+}
+
+/* ── Timesheet rail: staff collapse to initials on phones ─────────────── */
+/* Below 820px the rail already folds above the detail, but every staff
+   member kept a full-width row — a screen of names before any timesheet.
+   Now: All timesheets + locations stay compact chips, and the staff list
+   is a wrapped row of initial dots. A dot on the avatar marks anyone with
+   a submitted timesheet waiting; the full name stays in the title. */
+@media (max-width: 820px) {
+  .timesheet-explorer-rail { gap: 8px; }
+  .ts-rail-item { flex-direction: row; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: 9999px; }
+  .ts-rail-heading { width: 100%; padding: 4px 2px 0; }
+  .ts-rail-section { gap: 6px; }
+  .ts-rail-staff { padding: 3px; border-radius: 9999px; }
+  .ts-rail-staff .ts-rail-staff-meta { display: none; }
+  .ts-rail-staff .ts-rail-avatar { width: 38px; height: 38px; font-size: 12.5px; position: relative; }
+  .ts-rail-staff.has-pending .ts-rail-avatar::after {
+    content: '';
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background: #b5772f;
+    border: 2px solid var(--color-surface-muted, #fff);
+  }
+}
+
+/* ── Week review: the table becomes cards on phones ───────────────────── */
+/* Seven columns at 390px meant two-letter names and a variance column off
+   the screen. Each row is now a small card: who + approve on top, the
+   three labelled figures underneath, the flag last. */
+@media (max-width: 720px) {
+  /* The desktop table insists on min-width:640px; the cards fit the phone. */
+  .ts-review-table { min-width: 0; }
+  .ts-review-table, .ts-review-table tbody, .ts-review-table tfoot { display: block; }
+  .ts-review-table thead { display: none; }
+  .ts-review-table tbody tr,
+  .ts-review-table tfoot tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) max-content max-content;
+    grid-template-areas:
+      'pick staff staff  status'
+      'pick ros   worked var'
+      'pick flag  flag   flag';
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 6px;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(31, 53, 36, 0.1);
+  }
+  .ts-review-table td {
+    display: block;
+    padding: 0;
+    border: 0 !important;
+  }
+  .ts-review-table td.ts-review-pick { grid-area: pick; align-self: start; padding-top: 4px; width: auto; }
+  .ts-review-table td:has(.ts-review-staff),
+  .ts-review-table td.ts-review-total-label { grid-area: staff; min-width: 0; }
+  .ts-review-table td.ts-review-total-label { font-weight: 700; }
+  .ts-review-who strong { overflow-wrap: anywhere; }
+  .ts-review-table td.is-status { grid-area: status; text-align: right; }
+  .ts-review-table td.ts-review-rostered { grid-area: ros; }
+  .ts-review-table td.ts-review-worked { grid-area: worked; }
+  .ts-review-table td.ts-review-variance { grid-area: var; }
+  .ts-review-table td.ts-review-flagcell { grid-area: flag; }
+  /* The figures label themselves now the header row is gone. */
+  .ts-review-table td.ts-review-rostered,
+  .ts-review-table td.ts-review-worked,
+  .ts-review-table td.ts-review-variance {
+    text-align: left;
+    font-size: 13px;
+  }
+  .ts-review-table td.ts-review-rostered::before,
+  .ts-review-table td.ts-review-worked::before,
+  .ts-review-table td.ts-review-variance::before {
+    display: block;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-subtle, #94a3b8);
+  }
+  .ts-review-table td.ts-review-rostered::before { content: 'Rostered'; }
+  .ts-review-table td.ts-review-worked::before { content: 'Worked'; }
+  .ts-review-table td.ts-review-variance::before { content: 'Variance'; }
+  .ts-review-table td.ts-review-flagcell:has(.ts-review-noflag) { display: none; }
+  .ts-review-table tfoot tr { background: var(--color-surface, #f8f6f1); border-bottom: 0; }
+  .ts-review-table tfoot td:empty { display: none; }
+}
