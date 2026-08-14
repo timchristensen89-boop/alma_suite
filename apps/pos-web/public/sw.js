@@ -7,7 +7,7 @@
 //   refreshes the cache in the background. A just-deployed build reaches the
 //   register on the next open, or sooner via the app's own update check.
 // API calls are never intercepted — the app handles offline itself.
-const CACHE = 'alma-pos-shell-v2';
+const CACHE = 'alma-pos-shell-v3';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -50,7 +50,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navigations: cached shell immediately, network refresh in the background.
+  // ONLY real navigations get the cached shell. This clause previously
+  // caught every remaining same-origin GET — images included — and its
+  // background refresh wrote whatever came back into the '/' slot, so the
+  // register could boot to a cached PNG instead of the app. mode==='navigate'
+  // is the actual page load; everything else goes straight to the network.
+  if (event.request.mode !== 'navigate') return;
   event.respondWith(
     caches.open(CACHE).then((cache) =>
       cache.match('/').then((hit) => {

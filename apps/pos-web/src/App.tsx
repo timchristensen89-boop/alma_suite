@@ -3013,8 +3013,9 @@ export function App() {
                               {hasMark(pin.name) ? <Mark name={pin.name} className="pos-tile-icon" /> : <i className="pos-tile-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />}
                               {pinDisplay(pin, pin.name).main}
                             </span>
-                            {/* Count what this venue can actually open, not raw pin length. */}
-                            <small>{pin.items.filter((id) => resolvePinItem(id)).length} items</small>
+                            {/* Count what this venue can actually open — distinct
+                                dishes, since a folder may hold both venues' copies. */}
+                            <small>{new Set(pin.items.map((id) => resolvePinItem(id)?.recipeId).filter(Boolean)).size} items</small>
                           </>
                         )}
                       </button>
@@ -3129,9 +3130,18 @@ export function App() {
                   const folderIndex = Number(activeCategory.slice('__folder__'.length));
                   const pin = home.pins[folderIndex];
                   if (!pin || pin.t !== 'f') return null;
+                  // A folder often holds BOTH venues' ids for the same wine —
+                  // resolved to this venue's twin they'd render twice. Show
+                  // each dish once; edit mode stays raw so the stray copy can
+                  // still be seen and removed.
+                  const seenResolved = new Set<string>();
                   return pin.items.map((recipeId, itemIndex) => {
                     const item = resolvePinItem(recipeId);
                     if (!item) return null;
+                    if (!boardEdit) {
+                      if (seenResolved.has(item.recipeId)) return null;
+                      seenResolved.add(item.recipeId);
+                    }
                     return (
                       <button
                         key={recipeId}
