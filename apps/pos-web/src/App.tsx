@@ -1507,6 +1507,32 @@ export function App() {
     }
     return map;
   }, [menu]);
+  // A pin can name the OTHER venue's copy of a dish: the menu is duplicated
+  // per venue (Avalon and St Alma each carry their own "Catalina Sounds
+  // 750mL" with different recipeIds), so a folder built on one register held
+  // ids the other venue's menu never contains — those entries silently
+  // rendered nothing, and a "40 item" folder showed ten ("the bottom of the
+  // items is cut off"). Resolve such ids to this venue's twin by title.
+  const visibleByTitle = useMemo(() => {
+    const map = new Map<string, MenuItem>();
+    for (const category of menu) {
+      for (const item of category.items) if (!map.has(item.title)) map.set(item.title, item);
+    }
+    return map;
+  }, [menu]);
+  const titleByRecipeAllVenues = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const category of rawMenu) {
+      for (const item of category.items) map.set(item.recipeId, item.title);
+    }
+    return map;
+  }, [rawMenu]);
+  function resolvePinItem(recipeId: string): MenuItem | undefined {
+    const direct = itemByRecipe.get(recipeId);
+    if (direct) return direct;
+    const title = titleByRecipeAllVenues.get(recipeId);
+    return title ? visibleByTitle.get(title) : undefined;
+  }
   const categoryOfRef = useRef(categoryByRecipe);
   categoryOfRef.current = categoryByRecipe;
   function categoryOf(item: MenuItem): string {
@@ -2987,13 +3013,14 @@ export function App() {
                               {hasMark(pin.name) ? <Mark name={pin.name} className="pos-tile-icon" /> : <i className="pos-tile-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />}
                               {pinDisplay(pin, pin.name).main}
                             </span>
-                            <small>{pin.items.length} items</small>
+                            {/* Count what this venue can actually open, not raw pin length. */}
+                            <small>{pin.items.filter((id) => resolvePinItem(id)).length} items</small>
                           </>
                         )}
                       </button>
                     );
                   }
-                  const item = itemByRecipe.get(pin.id);
+                  const item = resolvePinItem(pin.id);
                   if (!item) return null;
                   return (
                     <button
@@ -3103,7 +3130,7 @@ export function App() {
                   const pin = home.pins[folderIndex];
                   if (!pin || pin.t !== 'f') return null;
                   return pin.items.map((recipeId, itemIndex) => {
-                    const item = itemByRecipe.get(recipeId);
+                    const item = resolvePinItem(recipeId);
                     if (!item) return null;
                     return (
                       <button
@@ -4514,7 +4541,7 @@ export function App() {
             <h2 style={openFolder.c ? { color: HUE_DOTS[openFolder.c] ?? openFolder.c } : undefined}>📁 {openFolder.name}</h2>
             <div className="pos-reason-list">
               {openFolder.items.map((recipeId) => {
-                const item = itemByRecipe.get(recipeId);
+                const item = resolvePinItem(recipeId);
                 if (!item) return null;
                 return (
                   <button
@@ -5706,7 +5733,7 @@ export function App() {
                         ? `📁 ${pin.name}`
                         : pin.t === 'm'
                           ? `⚙ ${MGMT_LABELS[pin.key] ?? pin.key}`
-                          : itemByRecipe.get(pin.id)?.title ?? '?';
+                          : resolvePinItem(pin.id)?.title ?? '?';
                     return (
                       <span key={index} className="pos-pin-edit">
                         <button type="button" style={pin.c && !HUE_NAMES.includes(pin.c) ? { borderColor: pin.c, color: pin.c } : pin.c ? { borderColor: HUE_DOTS[pin.c], color: HUE_DOTS[pin.c] } : undefined}>
