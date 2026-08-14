@@ -1,16 +1,31 @@
-// ALMA POS service worker — the register must LOAD during an outage.
+// ALMA POS service worker — the register must LOAD during an outage, and
+// reopen INSTANTLY the rest of the time.
 // Assets: cache-first (hashed filenames make staleness impossible).
-// index.html: network-first with cache fallback.
+// Fonts: cache-first (two variable fonts that effectively never change).
+// index.html: stale-while-revalidate — the cached shell paints immediately
+//   (no round trip to the VPS just to start parsing), and the network copy
+//   refreshes the cache in the background. A just-deployed build reaches the
+//   register on the next open, or sooner via the app's own update check.
 // API calls are never intercepted — the app handles offline itself.
-const CACHE = 'alma-pos-shell-v1';
+const CACHE = 'alma-pos-shell-v2';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.add('/')));
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((cache) => cache.addAll(['/', '/fonts/Manrope.woff2', '/fonts/CormorantGaramond.woff2']))
+      .catch(() => undefined)
+  );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+    ])
+  );
 });
 
 self.addEventListener('fetch', (event) => {
@@ -18,7 +33,8 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return; // API + external: untouched
   if (event.request.method !== 'GET') return;
 
-  if (url.pathname.startsWith('/assets/')) {
+  // Hashed assets + fonts: cache-first.
+  if (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/fonts/')) {
     event.respondWith(
       caches.open(CACHE).then((cache) =>
         cache.match(event.request).then(
@@ -34,13 +50,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navigations: try network, fall back to the cached shell.
+  // Navigations: cached shell immediately, network refresh in the background.
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response.ok) caches.open(CACHE).then((cache) => cache.put('/', response.clone()));
-        return response;
+    caches.open(CACHE).then((cache) =>
+      cache.match('/').then((hit) => {
+        const refresh = fetch(event.request)
+          .then((response) => {
+            if (response.ok) cache.put('/', response.clone());
+            return response;
+          })
+          .catch(() => hit);
+        return hit ?? refresh;
       })
-      .catch(() => caches.open(CACHE).then((cache) => cache.match('/')))
+    )
   );
 });

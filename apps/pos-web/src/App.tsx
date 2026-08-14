@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { loadStripeTerminal, type Terminal, type Reader } from '@stripe/terminal-js';
 import { api, clearApiTokens, consumeSuiteHandoffToken, messageForError, setApiAuthToken, setApiPinToken } from './api';
-import { BoardEditor } from './BoardEditor';
+// Lazy: the board editor is a management surface a till only opens to
+// rearrange tiles — it has no business in the register's startup chunk.
+const BoardEditor = lazy(() => import('./BoardEditor').then((m) => ({ default: m.BoardEditor })));
 // Board + nav vocabulary (pin shapes, tab tokens, page breaks) is shared with
 // the board editor so the two can never drift apart.
 import {
@@ -338,6 +340,8 @@ export function App() {
   // can read the LATEST order without stale closures.
   const orderNow = useRef<Order | null>(null);
   orderNow.current = order;
+  // Monotonic id per pushLines call — the stale-echo guard.
+  const pushSeqRef = useRef(0);
   // Register-first: the app opens on menu + bill; Tables is a secondary view.
   const [view, setView] = useState<'register' | 'tables' | 'bills' | 'board'>('register');
   // Bills page: everything trading right now plus what's already settled.
@@ -1415,17 +1419,30 @@ export function App() {
       });
       return;
     }
-    setOrder({ ...order, lines: next });
+    // Optimistic, functionally applied, and sequence-guarded: two quick taps
+    // used to race — the FIRST tap's server echo (carrying one line) landed
+    // after the second optimistic update and wholesale-replaced the cart, so
+    // the second item visibly vanished until its own echo arrived. Only the
+    // latest push's echo is allowed to settle now.
+    const seq = ++pushSeqRef.current;
+    setOrder((current) => (current && current.id === order.id ? { ...current, lines: next } : current));
     try {
       const updated = await api<Order>(`/api/pos/orders/${order.id}/lines`, {
         method: 'PUT',
         body: JSON.stringify({ lines: next })
       });
-      setOrder(updated);
+      setOrder((current) => {
+        if (!current || current.id !== updated.id) return current;
+        if (pushSeqRef.current !== seq) return current; // a newer push owns the cart
+        return updated;
+      });
     } catch (err) {
       setError(messageForError(err, 'Could not save the order.'));
       try {
-        setOrder(await api<Order>(`/api/pos/orders/${order.id}`));
+        const server = await api<Order>(`/api/pos/orders/${order.id}`);
+        setOrder((current) =>
+          current && current.id === server.id && pushSeqRef.current === seq ? server : current
+        );
       } catch {
         /* keep local state */
       }
@@ -2536,6 +2553,7 @@ export function App() {
       ) : null}
 
       {view === 'board' ? (
+        <Suspense fallback={null}>
         <BoardEditor
           home={home}
           menu={menu}
@@ -2553,6 +2571,7 @@ export function App() {
           onChange={queueBoardSave}
           onClose={closeBoardEditor}
         />
+        </Suspense>
       ) : null}
       {view === 'bills' ? (
         <BillsPage
@@ -4649,17 +4668,35 @@ export function App() {
               disabled={busy || !fireSheet.some((entry) => entry.picked)}
               onClick={() => {
                 const picked = fireSheet.filter((entry) => entry.picked).map((entry) => entry.course);
+                // Close the sheet and stamp the lines sent NOW — the sheet
+                // used to sit frozen for the send round trip, then a second
+                // redundant GET, before anything moved. Same optimistic
+                // stamp fireCourse() already uses; the send response's
+                // dockets still drive printing.
+                setFireSheet(null);
+                const stamp = new Date().toISOString();
+                setOrder((current) =>
+                  current
+                    ? {
+                        ...current,
+                        lines: current.lines.map((line) =>
+                          picked.includes(line.course ?? 'NOW') && !(line as { sentAt?: string | null }).sentAt
+                            ? { ...line, sentAt: stamp }
+                            : line
+                        )
+                      }
+                    : current
+                );
                 void api<{ dockets: Docket[]; sent: number }>(`/api/pos/orders/${order.id}/send`, {
                   method: 'POST',
                   body: JSON.stringify({ courses: picked, firedByName: operatorName })
                 })
-                  .then(async (result) => {
-                    setFireSheet(null);
+                  .then((result) => {
                     if (result.dockets.length > 0) {
                       setAutoPrint(true);
                       setDockets(stampDockets(result.dockets, order));
                     }
-                    setOrder(await api<Order>(`/api/pos/orders/${order.id}`));
+                    setInfo(`${picked.join(' + ')} fired to the kitchen.`);
                   })
                   .catch((err) => setError(messageForError(err, 'Could not fire the courses.')));
               }}

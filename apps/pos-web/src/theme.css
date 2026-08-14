@@ -3,7 +3,7 @@
    Warm paper light theme + forest dark theme. Loaded AFTER
    styles.css so single-class overrides win the cascade.
    ========================================================= */
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700&display=swap");
+@import './fonts.css'; /* self-hosted — see fonts.css for why */
 
 :root {
   --font-sans: "Avenir LT Std", "Manrope", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
