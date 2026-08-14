@@ -940,9 +940,13 @@
 
 .giftcards-print-card {
   width: min(720px, 100%);
-  aspect-ratio: 1.65;
+  /* No forced aspect ratio and no space-between: the panel used to be a
+     card-shaped box whose contents were stretched apart to fill it, with
+     some children left-aligned and some centred — off on screen, worse on
+     paper. Content sizes the panel, and everything centres. */
   display: grid;
-  align-content: space-between;
+  justify-items: center;
+  text-align: center;
   gap: 16px;
   padding: 42px;
   border: 1px solid #e2d3ad;
@@ -1014,6 +1018,7 @@
 .giftcards-print-card footer {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px 18px;
   color: #64748b;
   font-size: 13px;
@@ -2876,7 +2881,10 @@
     width: 100%;
     max-width: 178mm;
     aspect-ratio: auto;
-    padding: 24mm 18mm;
+    /* 24mm of vertical padding pushed the panel's bottom edge onto a blank
+       second page. Slimmer padding + gaps keep it to one sheet. */
+    padding: 10mm 16mm 12mm;
+    gap: 10px;
     border: 1px solid #d4d4d4;
     border-radius: 0;
     background: #FFFFFF;
@@ -2888,8 +2896,8 @@
   /* The chosen artwork sits at the top — give it a sane
      printed width so it doesn't dominate the page. */
   .giftcards-print-card > div[style*="aspect-ratio"] {
-    max-width: 120mm !important;
-    margin: 0 auto 14mm !important;
+    max-width: 110mm !important;
+    margin: 0 auto 6mm !important;
   }
 
   .giftcards-print-card h1 {
@@ -2903,21 +2911,21 @@
   }
 
   .giftcards-print-code {
-    margin: 8mm auto;
+    margin: 4mm auto;
     font-size: 18pt;
   }
 
   .giftcards-print-qr {
-    width: 36mm;
-    height: 36mm;
-    margin: 4mm auto;
+    width: 34mm;
+    height: 34mm;
+    margin: 2mm auto;
   }
 
   .giftcards-print-card footer {
     justify-content: center;
     border-top: 1px solid #d4d4d4;
-    padding-top: 6mm;
-    margin-top: 8mm;
+    padding-top: 4mm;
+    margin-top: 4mm;
     color: #4b5563;
   }
 
