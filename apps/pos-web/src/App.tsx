@@ -3050,25 +3050,53 @@ export function App() {
                 {(() => {
                   const group = tabsConfig.groups.find((candidate) => candidate.name === activeCategory.slice('__group__'.length));
                   if (!group) return null;
+                  // Editor-chosen look: square tiles (the Home-page look) or
+                  // full-menu list rows. Tiles unless the folder says list.
+                  const asList = group.look === 'list';
+                  const qtyOf = (recipeId: string) =>
+                    (order?.lines ?? []).filter((line) => line.recipeId === recipeId).reduce((sum, line) => sum + line.quantity, 0);
                   return group.cats.map((catName) => {
                     const category = menu.find((candidate) => candidate.name === catName);
                     if (!category) return null;
                     return (
                       <section key={catName}>
                         <h3 className="pos-group-head">{catName}</h3>
-                        <div className="pos-grid">
-                          {category.items.map((item) => (
-                            <button
-                              key={item.recipeId}
-                              type="button"
-                              className={`pos-item ${hueClass(hueForCategory(catName))} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
-                              onClick={() => addItem(item)}
-                            >
-                              <span>{item.title}</span>
-                              <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
-                            </button>
-                          ))}
-                        </div>
+                        {asList ? (
+                          <div className="pos-list-rows">
+                            {category.items.map((item) => {
+                              const quantity = qtyOf(item.recipeId);
+                              return (
+                                <button
+                                  key={item.recipeId}
+                                  type="button"
+                                  className={`pos-list-row ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                                  disabled={busy}
+                                  onClick={() => addItem(item)}
+                                >
+                                  <i className={`pos-list-dot ${hueClass(hueForCategory(catName))}`} />
+                                  <span>{item.title}</span>
+                                  {quantity > 0 ? <em>×{quantity}</em> : null}
+                                  <b>{eightySix.has(item.recipeId) ? "86'd" : money(item.priceCents)}</b>
+                                  <u>＋</u>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="pos-grid">
+                            {category.items.map((item) => (
+                              <button
+                                key={item.recipeId}
+                                type="button"
+                                className={`pos-item ${hueClass(hueForCategory(catName))} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                                onClick={() => addItem(item)}
+                              >
+                                <span>{item.title}</span>
+                                <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </section>
                     );
                   });

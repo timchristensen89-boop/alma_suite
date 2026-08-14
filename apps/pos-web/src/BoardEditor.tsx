@@ -851,6 +851,39 @@ export function BoardEditor({
                               if (event.key === 'Enter') renameNavFolder(groupName!, event.currentTarget.value);
                             }}
                           />
+                          <span className="pos-be-hint">Items look</span>
+                          <div className="pos-be-markpick">
+                            <button
+                              type="button"
+                              className={(group?.look ?? 'tiles') === 'tiles' ? 'is-on' : ''}
+                              title="Square tiles, like the Home page"
+                              onClick={() =>
+                                commitTabs({
+                                  ...tabsConfig,
+                                  groups: tabsConfig.groups.map((candidate) =>
+                                    candidate.name === groupName ? { ...candidate, look: undefined } : candidate
+                                  )
+                                })
+                              }
+                            >
+                              Tiles
+                            </button>
+                            <button
+                              type="button"
+                              className={group?.look === 'list' ? 'is-on' : ''}
+                              title="Rows with prices, like the Full menu"
+                              onClick={() =>
+                                commitTabs({
+                                  ...tabsConfig,
+                                  groups: tabsConfig.groups.map((candidate) =>
+                                    candidate.name === groupName ? { ...candidate, look: 'list' as const } : candidate
+                                  )
+                                })
+                              }
+                            >
+                              List
+                            </button>
+                          </div>
                           <ol>
                             {(group?.cats ?? []).map((cat, catIndex) => (
                               <li key={cat}>

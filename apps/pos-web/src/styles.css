@@ -513,7 +513,10 @@ input, select { font: inherit; }
 .pos-tabs button.is-tab-hidden { opacity: 0.4; text-decoration: line-through; }
 .pos-tabs button.is-drop-target { outline: 2px dashed var(--pos-accent, #58996f); outline-offset: 2px; }
 .pos-tab-rename { background: transparent; border: 0; border-bottom: 1px solid var(--pos-accent, #58996f); color: #e8ebee; font: inherit; width: 120px; outline: none; padding: 6px 4px; }
-.pos-grid-groups { display: flex; flex-direction: column; gap: 14px; }
+/* A tab folder opened from the nav: its categories stacked as sections.
+   flex+min-height+overflow make it a real screen — without them the stack
+   ran past the viewport with no way to scroll. */
+.pos-grid-groups { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0 20px; }
 .pos-group-head { margin: 0 0 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pos-muted, #8b939e); }
 @media (prefers-reduced-motion: reduce) { .pos-tabs button.is-tab-edit { animation: none; } }
 

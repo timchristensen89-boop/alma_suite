@@ -32,7 +32,9 @@ export type Pin =
 export type TabsConfig = {
   order: string[];
   hidden: string[];
-  groups: Array<{ name: string; cats: string[]; c?: string }>;
+  // look: how the folder's items render on the register — square tiles
+  // (the Home-page look) or full-menu list rows. Absent = tiles.
+  groups: Array<{ name: string; cats: string[]; c?: string; look?: 'tiles' | 'list' }>;
   icons?: Record<string, string>;
 };
 
