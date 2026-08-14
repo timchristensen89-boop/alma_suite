@@ -479,6 +479,34 @@ export function App() {
     };
   }, []);
 
+  // The banner alone never gets tapped on a till, so deploys sat unapplied
+  // for days ("the fix is live" while the register runs last week's bundle).
+  // Auto-apply when it cannot interrupt anyone: no open sale AND the register
+  // untouched for a few minutes, or the tab already hidden. Mid-order the
+  // banner remains the only path, as before.
+  const lastTouchAt = useRef(Date.now());
+  useEffect(() => {
+    const touch = () => {
+      lastTouchAt.current = Date.now();
+    };
+    window.addEventListener('pointerdown', touch, { passive: true });
+    return () => window.removeEventListener('pointerdown', touch);
+  }, []);
+  useEffect(() => {
+    if (!updateReady) return;
+    const tryReload = () => {
+      if (orderNow.current) return; // never mid-order
+      const idle = Date.now() - lastTouchAt.current > 3 * 60_000;
+      if (document.visibilityState === 'hidden' || idle) window.location.reload();
+    };
+    const timer = setInterval(tryReload, 30_000);
+    document.addEventListener('visibilitychange', tryReload);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', tryReload);
+    };
+  }, [updateReady]);
+
   const [boardPage, setBoardPage] = useState(0);
   const [boardSlots, setBoardSlots] = useState(24);
   // Drawn food-group marks on the nav and the board, per device.
