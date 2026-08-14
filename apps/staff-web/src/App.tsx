@@ -2356,7 +2356,7 @@ function StaffMemberHome({
               {activeSession
                 ? `${activeSession.venue || displayMember?.venue || 'No venue'} · ${activeSession.area || activeSession.roleTitle || 'Shift'} · ${activeSession.accumulatedBreakMinutes}m break logged`
                 : todayShift
-                  ? `${todayShift.venue || displayMember?.venue || 'No venue'} · ${roundHours(shiftHours(todayShift))}h rostered`
+                  ? `${todayShift.venue || displayMember?.venue || 'No venue'} · ${roundHours(shiftHours(todayShift))} rostered`
                   : 'Clock-in without a linked shift is available when needed.'}
             </span>
           </span>
@@ -11404,6 +11404,9 @@ function RosterPage({
   // Roster delete controls: one "Delete" dropdown + a section/area picker.
   const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
   const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
+  // Phones fold the roster tools behind one "Tools" button (see the
+  // .alma-roster-tools rules) — desktop renders the same children inline.
+  const [rosterToolsOpen, setRosterToolsOpen] = useState(false);
   const [sidePanelMode, setSidePanelMode] = useState<RosterSidePanelMode>('staff');
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
   const [collapsedRowIds, setCollapsedRowIds] = useState<Set<string>>(new Set());
@@ -13007,17 +13010,60 @@ function RosterPage({
           the actions and the filters they operate on read as one
           control block. */}
       <div className="alma-roster-actions">
-        <Button type="button" size="sm" variant="secondary" onClick={() => newShift()}>
+        {/* On phones every tool folds behind this one button so the action
+            row is a single line: Tools + Publish. Desktop hides the toggle
+            and the .alma-roster-tools wrapper renders display:contents, so
+            the buttons lay out inline exactly as before. */}
+        <div className="alma-roster-tools-wrap">
+          <button
+            type="button"
+            className="alma-roster-tools-toggle"
+            aria-haspopup="menu"
+            aria-expanded={rosterToolsOpen}
+            onClick={() => setRosterToolsOpen((open) => !open)}
+          >
+            Tools <span aria-hidden="true">▾</span>
+          </button>
+          {rosterToolsOpen ? (
+            <button
+              type="button"
+              className="alma-roster-delete-backdrop"
+              aria-label="Close roster tools"
+              onClick={() => setRosterToolsOpen(false)}
+            />
+          ) : null}
+          <div className={`alma-roster-tools ${rosterToolsOpen ? 'is-open' : ''}`}>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            setRosterToolsOpen(false);
+            newShift();
+          }}
+        >
           Add shift
         </Button>
-        <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void copyPreviousWeek()}>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={saving}
+          onClick={() => {
+            setRosterToolsOpen(false);
+            void copyPreviousWeek();
+          }}
+        >
           Copy last week
         </Button>
         <Button
           type="button"
           size="sm"
           variant="secondary"
-          onClick={() => setHistoricalOpen(true)}
+          onClick={() => {
+            setRosterToolsOpen(false);
+            setHistoricalOpen(true);
+          }}
           aria-label="Open historical forecast data"
         >
           Historical data{wageBudgetVariancePercent != null ? ` · ${formatVariance(wageBudgetVariancePercent)}` : ''}
@@ -13040,15 +13086,6 @@ function RosterPage({
           />
           <span className="roster-forecast-inline-suffix" aria-hidden="true">%</span>
         </label>
-        <button
-          type="button"
-          className="alma-roster-publish"
-          disabled={saving || draftCount === 0}
-          onClick={() => setPublishPreviewOpen(true)}
-        >
-          <span>Publish roster</span>
-          {draftCount > 0 ? <span className="alma-roster-publish-sub">{draftCount} {draftCount === 1 ? 'change' : 'changes'}</span> : null}
-        </button>
         <div className="alma-roster-delete-controls" aria-label="Delete roster shifts">
           {/* Small red section button — delete a single area/section */}
           <div className="alma-roster-delete-wrap">
@@ -13163,6 +13200,17 @@ function RosterPage({
             ) : null}
           </div>
         </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="alma-roster-publish"
+          disabled={saving || draftCount === 0}
+          onClick={() => setPublishPreviewOpen(true)}
+        >
+          <span>Publish roster</span>
+          {draftCount > 0 ? <span className="alma-roster-publish-sub">{draftCount} {draftCount === 1 ? 'change' : 'changes'}</span> : null}
+        </button>
       </div>
 
       {activeFilterChips.length > 0 ? (
@@ -13262,7 +13310,7 @@ function RosterPage({
               <div><span>Forecast</span><strong>{formatCents(forecastSalesCents)}</strong></div>
               <div><span>Wage budget</span><strong>{formatCents(wageBudgetCents)}</strong></div>
               <div><span>Roster cost</span><strong>{formatCents(rosterCostCents)}</strong></div>
-              <div><span>Gap</span><strong>{forecastHoursGap >= 0 ? `+${roundHours(forecastHoursGap)}h` : `${roundHours(forecastHoursGap)}h`}</strong></div>
+              <div><span>Gap</span><strong>{forecastHoursGap >= 0 ? `+${roundHours(forecastHoursGap)}` : roundHours(forecastHoursGap)}</strong></div>
             </div>
             <div className="roster-history-day-list roster-history-day-list-2col">
               {dailySummaries.map((summary) => (
@@ -13290,7 +13338,7 @@ function RosterPage({
               <div key={`${row.venue}:${row.area}`}>
                 <span>
                   <strong>{row.area}</strong>
-                  <small>{row.venue} · {row.gap >= 0 ? `+${roundHours(row.gap)}h` : `${roundHours(Math.abs(row.gap))}h`}</small>
+                  <small>{row.venue} · {row.gap >= 0 ? `+${roundHours(row.gap)}` : roundHours(Math.abs(row.gap))}</small>
                 </span>
                 <small>{row.day.toLocaleDateString(undefined, { weekday: 'short' })}</small>
                 <Button type="button" size="sm" variant="secondary" onClick={() => applyRosterRecommendation(row)}>
@@ -13379,7 +13427,7 @@ function RosterPage({
             <div className="roster-board-command-meta" aria-label="Roster board summary">
               <span><strong>{scheduleRows.filter((row) => !('isVenueHeader' in row && row.isVenueHeader)).length}</strong> rows</span>
               <span><strong>{visibleRoster.length}</strong> shifts</span>
-              <span><strong>{roundHours(totalHours)}</strong> hours</span>
+              <span><strong>{roundHours(totalHours)}</strong></span>
               <span><strong>{publishedCount}</strong> live</span>
               {draftCount ? <span className="is-warning"><strong>{draftCount}</strong> drafts</span> : null}
               {(() => {
@@ -13526,7 +13574,7 @@ function RosterPage({
                               <span className="deputy-venue-cell-closed">Closed</span>
                             ) : (
                               <>
-                                <span className="deputy-venue-cell-hours">{roundHours(dayHours)}h</span>
+                                <span className="deputy-venue-cell-hours">{roundHours(dayHours)}</span>
                                 {hasCost ? (
                                   <>
                                     <span className="deputy-venue-cell-cost">{formatCents(dayCostCents)}</span>
@@ -14219,7 +14267,7 @@ function RosterPage({
             {memberShifts.length > 0 ? (
               <>
                 <div className="roster-staff-card-row"><span>Shifts this week</span><span>{memberShifts.length}</span></div>
-                <div className="roster-staff-card-row"><span>Hours</span><span>{roundHours(memberHours)}h</span></div>
+                <div className="roster-staff-card-row"><span>Hours</span><span>{roundHours(memberHours)}</span></div>
                 {costLabel ? <div className="roster-staff-card-row"><span>Est. cost</span><span>{costLabel.replace(' · ', '')}</span></div> : null}
               </>
             ) : (
@@ -16355,11 +16403,11 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       {/* Roster & pay Turn 2: distribution overview — proportional bars in each
           staff member's role accent colour. Adjustments still happen below. */}
       {reviewedRows.length ? (
-        <TipsSection title="Distribution" summary={`By hours worked · ${roundHours(summary?.approvedHours ?? 0)}h pooled`}>
+        <TipsSection title="Distribution" summary={`By hours worked · ${roundHours(summary?.approvedHours ?? 0)} pooled`}>
           <div className="tips-distribution-card">
             <header className="tips-distribution-head">
               <h3>Distribution</h3>
-              <span>By hours worked · {roundHours(summary?.approvedHours ?? 0)}h pooled</span>
+              <span>By hours worked · {roundHours(summary?.approvedHours ?? 0)} pooled</span>
             </header>
             <div className="tips-distribution-rows">
               {(() => {
@@ -17515,7 +17563,7 @@ function ManagerDashboardPage({ staff, roster }: { staff: StaffProfile[]; roster
         <div className={`live-hero-metric ${wageTone}`}>
           <span className="live-hero-label">Wage cost</span>
           <span className="live-hero-value">{wagePercent == null ? '—' : `${wagePercent.toFixed(1)}%`}</span>
-          <span className="live-hero-hint">{formatCents(dashboard?.totals.actualWageCents ?? 0)} · {roundHours(dashboard?.totals.actualHours ?? 0)}h actual</span>
+          <span className="live-hero-hint">{formatCents(dashboard?.totals.actualWageCents ?? 0)} · {roundHours(dashboard?.totals.actualHours ?? 0)} actual</span>
         </div>
         <div className="live-hero-metric">
           <span className="live-hero-label">Covers today</span>
@@ -17680,7 +17728,7 @@ function ManagerDashboardPage({ staff, roster }: { staff: StaffProfile[]; roster
               <article key={entry.id} className="manager-mobile-row">
                 <span>
                   <strong>{entry.staffProfile ? `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}` : 'Staff'}</strong>
-                  <span className="subtle">{new Date(entry.workDate).toLocaleDateString()} · {timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)} · {roundHours(timesheetHours(entry))}h</span>
+                  <span className="subtle">{new Date(entry.workDate).toLocaleDateString()} · {timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)} · {roundHours(timesheetHours(entry))}</span>
                   <span className="subtle">{entry.venue ?? ''}{entry.area ?? entry.roleTitle ? ` · ${entry.area ?? entry.roleTitle}` : ''}</span>
                 </span>
                 <span className="manager-mobile-row-actions">
@@ -18426,7 +18474,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               <strong>{group.entries.length}</strong> shift{group.entries.length === 1 ? '' : 's'}
             </span>
             <span>
-              <strong>{roundHours(group.totalHours)}</strong>h
+              <strong>{roundHours(group.totalHours)}</strong>
             </span>
             {group.submittedIds.length ? (
               <Badge tone="info" dot>{group.submittedIds.length} to approve</Badge>
@@ -18496,7 +18544,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   <strong>{new Date(entry.workDate).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</strong>
                   <span>{timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)}</span>
                 </div>
-                <span className="timesheet-row-hours">{roundHours(timesheetHours(entry))}h</span>
+                <span className="timesheet-row-hours">{roundHours(timesheetHours(entry))}</span>
                 <span className="timesheet-row-area subtle">{entry.area || '—'}</span>
                 <div className="timesheet-row-badges">
                   <Badge tone={timesheetTone(entry.status)} dot>{entry.status}</Badge>
@@ -18702,7 +18750,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   ? `${overallCounts.submitted} shift${overallCounts.submitted === 1 ? ' needs' : 's need'} a look before pay runs Tuesday.`
                   : 'All clear.'}
                 {/* Collapsed, the totals are the only thing worth showing. */}
-                {reviewOpen ? null : ` · ${roundHours(allGroups.reduce((sum, group) => sum + group.totalHours, 0))}h worked across ${allGroups.length} staff.`}
+                {reviewOpen ? null : ` · ${roundHours(allGroups.reduce((sum, group) => sum + group.totalHours, 0))} worked across ${allGroups.length} staff.`}
               </p>
             </div>
             {isManagerView && overallCounts.submitted > 0 ? (
@@ -18799,8 +18847,8 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                           </span>
                         </span>
                       </td>
-                      <td className="is-num ts-review-rostered">{rostered === undefined ? '—' : `${roundHours(rostered)}h`}</td>
-                      <td className="is-num ts-review-worked">{roundHours(worked)}h</td>
+                      <td className="is-num ts-review-rostered">{rostered === undefined ? '—' : roundHours(rostered)}</td>
+                      <td className="is-num ts-review-worked">{roundHours(worked)}</td>
                       <td
                         className={`is-num ts-review-variance ${
                           variance === null || Math.abs(variance) < 0.05 ? 'is-zero' : variance > 0 ? 'is-pos' : 'is-neg'
@@ -18812,7 +18860,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                             ? '0.0'
                             : `${variance > 0 ? '+' : '-'}${Math.abs(variance).toFixed(1)}`}
                       </td>
-                      <td>
+                      <td className="ts-review-flagcell">
                         {flag ? (
                           <span className="ts-review-flag">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
@@ -18867,9 +18915,9 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   return (
                     <tr>
                       {isManagerView ? <td className="ts-review-pick" /> : null}
-                      <td>Week total</td>
-                      <td className="is-num">{totals.hasRostered ? `${roundHours(totals.rostered)}h` : '—'}</td>
-                      <td className="is-num ts-review-worked">{roundHours(totals.worked)}h</td>
+                      <td className="ts-review-total-label">Week total</td>
+                      <td className="is-num ts-review-rostered">{totals.hasRostered ? roundHours(totals.rostered) : '—'}</td>
+                      <td className="is-num ts-review-worked">{roundHours(totals.worked)}</td>
                       <td
                         className={`is-num ts-review-variance ${
                           !totals.hasRostered || Math.abs(totals.variance) < 0.05 ? 'is-zero' : totals.variance > 0 ? 'is-pos' : 'is-neg'
@@ -18985,7 +19033,8 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                     <button
                       key={group.id}
                       type="button"
-                      className={`ts-rail-item ts-rail-staff ${selection.type === 'staff' && selection.id === group.id ? 'is-active' : ''}`}
+                      className={`ts-rail-item ts-rail-staff ${selection.type === 'staff' && selection.id === group.id ? 'is-active' : ''} ${group.submittedIds.length ? 'has-pending' : ''}`}
+                      title={`${group.name} — ${group.approvedCount} approved, ${group.submittedIds.length} submitted`}
                       onClick={() => setSelection({ type: 'staff', id: group.id })}
                     >
                       <span className="ts-rail-avatar">
