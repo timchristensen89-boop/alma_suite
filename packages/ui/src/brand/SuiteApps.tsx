@@ -36,6 +36,7 @@ export type SuiteAppId =
   | 'giftcards'
   | 'learning'
   | 'reports'
+  | 'pos'
   | 'policies'
   | 'incidents'
   | 'audits'
@@ -87,6 +88,7 @@ const LIFECYCLE_BY_APP: Partial<Record<SuiteAppId, SuiteAppLifecycle>> = {
   stock: 'pilot',
   staff: 'pilot',
   reports: 'pilot',
+  pos: 'pilot',
   giftcards: 'pilot',
   reserve: 'pilot',      // promoted from preview — booking confirmation emails working
   marketing: 'pilot',    // promoted from preview — live campaign send shipped with safety net
@@ -123,6 +125,7 @@ const SUITE_APP_SEEDS: SuiteAppSeed[] = ALMA_APPS.map((app): SuiteAppSeed => ({
     app.id === 'marketing' ||
     app.id === 'giftcards' ||
     app.id === 'reports' ||
+    app.id === 'pos' ||
     app.id === 'training' ||
     app.id === 'settings'
       ? 'active'
@@ -145,6 +148,7 @@ const SUITE_APP_HOSTS: Partial<Record<SuiteAppId, string>> = {
   staff: 'https://alma-staff.web.app',
   reserve: 'https://alma-reserve.web.app',
   reports: 'https://alma-reports.web.app',
+  pos: 'https://alma-pos.web.app',
   marketing: 'https://alma-marketing.web.app',
   giftcards: 'https://alma-giftcards.web.app/redeem',
   settings: 'https://alma-suite-admin.web.app'
@@ -226,6 +230,8 @@ function descriptionFor(id: string) {
       return 'Inventory, suppliers, counts, orders, and wastage.';
     case 'reports':
       return 'Dashboards, exports, and operating insights.';
+    case 'pos':
+      return 'The register — tables, courses, payments, and dockets.';
     case 'staff':
       return 'Team records, onboarding, roles, roster access, and app access.';
     case 'reserve':
@@ -317,8 +323,11 @@ export function ProductLogo({
 }: ProductLogoProps) {
   const app = getSuiteApp(appId);
   const logoSize = PRODUCT_LOGO_SIZE[size];
-  const titleColor = 'var(--color-text, #111827)';
-  const moduleColor = app.id === 'stock' ? '#145f51' : app.fromColor;
+  // Both colours are CSS-variable pass-throughs so chrome that carries its
+  // own background (the full-colour sidebar rail) can lighten the lockup.
+  const titleColor = 'var(--brand-title-color, var(--color-text, #111827))';
+  const moduleBase = app.id === 'stock' ? '#145f51' : app.fromColor;
+  const moduleColor = `var(--brand-module-color, ${moduleBase})`;
 
   return (
     <a
@@ -403,6 +412,30 @@ type SuiteAppSwitcherProps = {
   switcherHref?: string;
 };
 
+// Per-user app visibility. Call once the signed-in user is known: admins see
+// every app; everyone else only the apps their access rows enable. The
+// switcher and app grids read this before rendering tiles.
+export function installSuiteAppAccess(
+  user: { isAdmin?: boolean; appAccess?: Array<{ appId: string; status: string }> } | null | undefined
+) {
+  const g = globalThis as typeof globalThis & { almaAllowedSuiteAppIds?: string[] };
+  if (!user || user.isAdmin) {
+    delete g.almaAllowedSuiteAppIds;
+    return;
+  }
+  g.almaAllowedSuiteAppIds = [
+    // The register isn't in the app-access vocabulary — it's gated by the
+    // staff PIN and per-staff POS permissions instead — so it stays visible.
+    'pos',
+    ...(user.appAccess ?? []).filter((access) => access.status === 'ENABLED').map((access) => access.appId.toLowerCase())
+  ];
+}
+
+export function suiteAppAllowed(id: string) {
+  const allowed = (globalThis as typeof globalThis & { almaAllowedSuiteAppIds?: string[] }).almaAllowedSuiteAppIds;
+  return !allowed || allowed.includes(id);
+}
+
 export function SuiteAppSwitcher({
   currentApp,
   apps = SUITE_APPS,
@@ -442,9 +475,11 @@ export function SuiteAppSwitcher({
     });
   }, []);
 
+  const allowedIds = (globalThis as typeof globalThis & { almaAllowedSuiteAppIds?: string[] }).almaAllowedSuiteAppIds;
+  const visibleApps = allowedIds ? apps.filter((app) => allowedIds.includes(app.id) || app.id === currentApp) : apps;
   const grid = (
     <div className="suite-app-grid">
-      {apps.map((app) => {
+      {visibleApps.map((app) => {
         const isCurrent = app.id === currentApp;
         const hasHref = Boolean(app.href);
         const isAvailable = app.status === 'active' && hasHref;
@@ -471,11 +506,6 @@ export function SuiteAppSwitcher({
               />
             </span>
             <span className="suite-app-label">{app.label}</span>
-            {app.lifecycle && app.lifecycle !== 'live' && app.lifecycle !== 'hidden' ? (
-              <span className={`suite-app-lifecycle is-${app.lifecycle}`} aria-label={`Status: ${app.lifecycle}`}>
-                {app.lifecycle === 'pilot' ? 'Pilot' : app.lifecycle === 'preview' ? 'Preview' : 'Setup'}
-              </span>
-            ) : null}
             <span className="suite-app-tooltip" role="tooltip">
               <strong>Alma {app.label}</strong>
               <span>{app.description}</span>

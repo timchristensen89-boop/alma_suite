@@ -504,6 +504,7 @@ function TipPaymentsTab({
     description: '',
     traceBsb: '',
     traceAccount: '',
+    selfBalancing: false,
     configured: false
   };
   const [financialInstitution, setFinancialInstitution] = useState(aba.financialInstitution ?? '');
@@ -515,6 +516,7 @@ function TipPaymentsTab({
   // Account comes back masked; we keep that masked value in the field and only
   // send it back if the admin types a new one (the server ignores masked echoes).
   const [traceAccount, setTraceAccount] = useState(aba.traceAccount ?? '');
+  const [selfBalancing, setSelfBalancing] = useState(Boolean(aba.selfBalancing));
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -527,7 +529,8 @@ function TipPaymentsTab({
           remitterName: remitterName.trim(),
           description: description.trim(),
           traceBsb: traceBsb.trim(),
-          traceAccount: traceAccount.trim()
+          traceAccount: traceAccount.trim(),
+          selfBalancing
         }
         // The update schema's tipsAbaSettings input differs from the payload
         // type (no `configured`, account masked), so cast for the patch.
@@ -603,6 +606,15 @@ function TipPaymentsTab({
               hint="Short description shown on the bank file (max ~12 chars)."
             />
           </div>
+          <label className="subtle" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={selfBalancing}
+              onChange={(e) => setSelfBalancing(e.currentTarget.checked)}
+            />
+            Include self-balancing total (adds a balancing debit record for the batch total — required by
+            Macquarie and some other banks before they will process the file)
+          </label>
           <div className="inline-actions">
             <Button type="submit">Save</Button>
             <ActionFeedback message={feedback?.message} tone={feedback?.tone} />

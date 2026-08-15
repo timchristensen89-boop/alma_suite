@@ -1584,7 +1584,7 @@ function abaRecord(parts: string[]) {
   return record;
 }
 
-async function tipsAbaConfig(venue?: string | null) {
+async function tipsAbaConfig(venue?: string | null, accountKey?: string | null) {
   // Prefer the in-app Settings value (AppSettings.tipsAbaSettings), falling back
   // to env vars so existing deployments keep working.
   const row = await prisma.appSettings.findUnique({
@@ -1602,9 +1602,21 @@ async function tipsAbaConfig(venue?: string | null) {
     venue && flat.venues && typeof flat.venues === 'object' && !Array.isArray(flat.venues)
       ? ((flat.venues as Record<string, unknown>)[venue] as Record<string, string> | undefined)
       : undefined;
+  // Named funding account ("pay from" choice at export): its non-empty fields
+  // win over both the venue override and the flat defaults.
+  const accountsList = Array.isArray(flat.accounts) ? (flat.accounts as Array<Record<string, string>>) : [];
+  let accountRecord: Record<string, string> | undefined;
+  if (accountKey) {
+    const found = accountsList.find((account) => String(account.key ?? '') === accountKey);
+    if (!found) throw new HttpError(400, 'The selected funding account no longer exists — refresh and pick again.');
+    accountRecord = Object.fromEntries(
+      Object.entries(found).filter(([field, value]) => field !== 'key' && field !== 'label' && String(value ?? '').trim())
+    ) as Record<string, string>;
+  }
   const stored: Record<string, string> = {
     ...(flat as Record<string, string>),
-    ...(venueRecord && typeof venueRecord === 'object' ? venueRecord : {})
+    ...(venueRecord && typeof venueRecord === 'object' ? venueRecord : {}),
+    ...(accountRecord ?? {})
   };
   const pick = (key: string, ...envValues: (string | undefined)[]) => {
     const fromStore = stored[key]?.trim();
@@ -1627,7 +1639,10 @@ async function tipsAbaConfig(venue?: string | null) {
     remitterName:
       pick('remitterName', process.env.TIPS_ABA_REMITTER_NAME, process.env.ABA_REMITTER_NAME) || userName,
     traceBsb: pick('traceBsb', process.env.TIPS_ABA_TRACE_BSB, process.env.ABA_TRACE_BSB),
-    traceAccount: pick('traceAccount', process.env.TIPS_ABA_TRACE_ACCOUNT, process.env.ABA_TRACE_ACCOUNT)
+    traceAccount: pick('traceAccount', process.env.TIPS_ABA_TRACE_ACCOUNT, process.env.ABA_TRACE_ACCOUNT),
+    // Balanced file: add a debit record for the batch total against the trace
+    // account (required by e.g. Macquarie before they will process the file).
+    selfBalancing: stored.selfBalancing === '1' || process.env.TIPS_ABA_SELF_BALANCING === '1'
   };
   const missing = [
     ['Financial institution', config.financialInstitution],
@@ -1669,15 +1684,41 @@ type TipEntitlementRow = {
 function applyTipAdjustments(rows: TipEntitlementRow[], input: unknown) {
   const { adjustments } = tipsPayoutInputSchema.parse(input);
   const byStaff = new Map(adjustments.map((adjustment) => [adjustment.staffProfileId, adjustment]));
+  // Excluding someone removes their hours from the divisor and redistributes
+  // the pool across everyone left — the excluded person's share doesn't sit
+  // stranded as negative variance. The redistribution reuses the same
+  // pro-rata + last-row-remainder rounding as the original allocation so the
+  // active rows always sum exactly to the pool.
+  const excludedIds = new Set(
+    rows.filter((row) => byStaff.get(row.staffProfileId)?.excluded).map((row) => row.staffProfileId)
+  );
+  const poolCents = rows.reduce((sum, row) => sum + row.amountCents, 0);
+  const activeRows = rows.filter((row) => !excludedIds.has(row.staffProfileId));
+  const activeHours = activeRows.reduce((sum, row) => sum + row.approvedHours, 0);
+  const redistributedBase = new Map<string, number>();
+  let allocated = 0;
+  activeRows.forEach((row, index) => {
+    const isLast = index === activeRows.length - 1;
+    const cents = activeHours > 0
+      ? isLast
+        ? poolCents - allocated
+        : Math.round((row.approvedHours / activeHours) * poolCents)
+      : 0;
+    allocated += cents;
+    redistributedBase.set(row.staffProfileId, cents);
+  });
   return rows.map((row) => {
     const adjustment = byStaff.get(row.staffProfileId);
-    const excluded = adjustment?.excluded ?? false;
-    const adjustmentCents = excluded ? -row.amountCents : adjustment?.adjustmentCents ?? 0;
+    const excluded = excludedIds.has(row.staffProfileId);
+    const baseAmountCents = excluded
+      ? row.amountCents
+      : redistributedBase.get(row.staffProfileId) ?? row.amountCents;
+    const adjustmentCents = excluded ? -baseAmountCents : adjustment?.adjustmentCents ?? 0;
     return {
       ...row,
-      baseAmountCents: row.amountCents,
+      baseAmountCents,
       adjustmentCents,
-      finalAmountCents: Math.max(0, row.amountCents + adjustmentCents),
+      finalAmountCents: Math.max(0, baseAmountCents + adjustmentCents),
       excluded,
       notes: adjustment?.notes?.trim() || null
     };
@@ -1754,8 +1795,8 @@ function tipRunFilenamePart(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'venue';
 }
 
-async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) {
-  const config = await tipsAbaConfig(run.venue);
+async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>, accountKey?: string | null) {
+  const config = await tipsAbaConfig(run.venue, accountKey);
   const payableLines = run.lines.filter((line) => !line.excluded && line.amountCents > 0);
   if (!payableLines.length) throw new HttpError(400, 'Approved tip run has no payable lines for ABA export.');
 
@@ -1788,7 +1829,7 @@ async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) 
     processingDate,
     ' '.repeat(40)
   ]);
-  const details = payableLines.map((line) => abaRecord([
+  const detailRecords = payableLines.map((line) => abaRecord([
     '1',
     abaBsb(line.staffProfile.bankBsb, `${line.staffProfile.firstName} ${line.staffProfile.lastName} BSB`),
     abaAccount(line.staffProfile.bankAccountNumber, `${line.staffProfile.firstName} ${line.staffProfile.lastName} account number`),
@@ -1802,15 +1843,38 @@ async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) 
     abaText(config.remitterName, 16),
     '00000000'
   ]));
+  // Self-balancing: one debit (tx code 13) against the trace account for the
+  // batch total, so credits and debits net to zero — required by banks that
+  // only process balanced files (e.g. Macquarie).
+  const details = config.selfBalancing
+    ? [
+        ...detailRecords,
+        abaRecord([
+          '1',
+          config.traceBsb,
+          config.traceAccount,
+          ' ',
+          '13',
+          abaNumeric(totalCents, 10),
+          abaText(config.userName, 32),
+          abaText(lodgementReference, 18),
+          config.traceBsb,
+          config.traceAccount,
+          abaText(config.remitterName, 16),
+          '00000000'
+        ])
+      ]
+    : detailRecords;
   const footer = abaRecord([
     '7',
     '999-999',
     ' '.repeat(12),
+    // Net total: zero when the file is balanced (credits == debits).
+    abaNumeric(config.selfBalancing ? 0 : totalCents, 10),
     abaNumeric(totalCents, 10),
-    abaNumeric(totalCents, 10),
-    abaNumeric(0, 10),
+    abaNumeric(config.selfBalancing ? totalCents : 0, 10),
     ' '.repeat(24),
-    abaNumeric(payableLines.length, 6),
+    abaNumeric(details.length, 6),
     ' '.repeat(40)
   ]);
 
@@ -1987,6 +2051,59 @@ export const staffService = {
     return profiles.map((profile) => redactStaffProfileFields(withoutStaffSecrets(attachDefaultPayProfile(profile, staffDefaults)), actor));
   },
 
+  /**
+   * Archived-but-unmerged human profiles that still own history.
+   *
+   * These are the phantoms: a duplicate identity someone archived to get it
+   * out of the register, whose timesheets and tip lines are still live and
+   * still surface in pay runs (and block ABA exports when the phantom has no
+   * bank details). They're invisible in the normal staff list — this gives
+   * the People page a way to see them and merge them into the real profile.
+   */
+  async listArchivedDuplicates(actor?: AuthUser) {
+    const where: Prisma.StaffProfileWhereInput = {
+      accountType: 'HUMAN',
+      mergedIntoStaffProfileId: null,
+      employmentStatus: 'ARCHIVED'
+    };
+    if (actor && !actor.isAdmin && actor.role !== 'ADMIN' && actor.role !== 'STAFF' && actor.venue) {
+      // Venue managers see phantoms in their venue plus the venue-less ones
+      // imports create.
+      where.OR = [{ venue: actor.venue }, { venue: null }];
+    }
+    const rows = await prisma.staffProfile.findMany({
+      where,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        roleTitle: true,
+        venue: true,
+        employmentStatus: true,
+        bankAccountNumber: true,
+        createdAt: true,
+        _count: { select: { timesheets: true, tipPaymentRunLines: true, rosterShifts: true, clockSessions: true } }
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      roleTitle: row.roleTitle,
+      venue: row.venue,
+      employmentStatus: row.employmentStatus,
+      hasBankDetails: Boolean(row.bankAccountNumber),
+      createdAt: row.createdAt.toISOString(),
+      counts: {
+        timesheets: row._count.timesheets,
+        tipPaymentRunLines: row._count.tipPaymentRunLines,
+        rosterShifts: row._count.rosterShifts,
+        clockSessions: row._count.clockSessions
+      }
+    }));
+  },
+
   async getById(id: string, actor?: AuthUser) {
     if (actor && actor.role !== 'STAFF') {
       await assertManagerCanAccessStaffProfile(id, actor);
@@ -2155,6 +2272,7 @@ export const staffService = {
           startDate: data.startDate ? new Date(data.startDate) : null
         }),
         ...onboardingDetailUpdateData(data),
+        ...(data.posPermissions !== undefined && { posPermissions: data.posPermissions }),
         ...(data.notes !== undefined && { notes: data.notes || null })
     };
 
@@ -3362,11 +3480,9 @@ export const staffService = {
         appAccess: true,
         trainingRecords: true,
         payProfile: true,
-        records: { select: { id: true } },
-        managerNotes: { select: { id: true } },
-        rosterShifts: { select: { id: true } },
-        timesheets: { select: { id: true } },
-        tipPaymentRunLines: { select: { id: true } }
+        shiftClaims: true,
+        shiftConfirmations: true,
+        tipManualHoursEntries: true
       }
     });
 
@@ -3378,6 +3494,9 @@ export const staffService = {
     if (!canonical) throw new HttpError(404, 'Profile to keep was not found.');
     if (canonical.employmentStatus === 'ARCHIVED') {
       throw new HttpError(400, 'Choose an active staff profile to keep.');
+    }
+    if (canonical.mergedIntoStaffProfileId) {
+      throw new HttpError(400, 'The profile to keep has itself been merged — pick the surviving profile.');
     }
 
     const duplicates = profiles.filter((profile) => data.duplicateStaffProfileIds.includes(profile.id));
@@ -3399,20 +3518,15 @@ export const staffService = {
       const targetTrainingModules = new Set(targetTraining.map((record) => record.moduleId));
       let targetHasPayProfile = Boolean(canonical.payProfile);
 
-      const moved = {
-        complianceRecords: 0,
-        managerNotes: 0,
-        appAccess: 0,
-        trainingRecords: 0,
-        payProfile: 0
+      const moved: Record<string, number> = {};
+      const bump = (key: string, count: number) => {
+        if (count) moved[key] = (moved[key] ?? 0) + count;
       };
       const preserved = {
         appAccessConflicts: 0,
         trainingConflicts: 0,
-        rosterShifts: 0,
-        timesheets: 0,
-        tipPaymentLines: 0,
-        staffInvites: 0
+        shiftClaimConflicts: 0,
+        shiftConfirmationConflicts: 0
       };
 
       // Carry the PIN / password forward. If the kept profile has none but a
@@ -3439,22 +3553,153 @@ export const staffService = {
         });
       }
 
-      for (const duplicate of duplicates) {
-        moved.complianceRecords += duplicate.records.length;
-        await tx.staffComplianceRecord.updateMany({
-          where: { staffProfileId: duplicate.id },
-          data: { staffProfileId: canonical.id }
+      // Backfill blanks on the kept profile from the duplicates (first
+      // duplicate with a value wins). Bank details are the ones that unblock
+      // ABA exports, but anything missing is worth carrying across.
+      const backfillKeys = [
+        'phone', 'bankAccountName', 'bankBsb', 'bankAccountNumber',
+        'taxFileNumber', 'taxResidencyStatus', 'superFundName', 'superFundAbn', 'superFundUsi', 'superMemberNumber',
+        'addressLine1', 'addressLine2', 'suburb', 'state', 'postcode',
+        'emergencyContactName', 'emergencyContactRelationship', 'emergencyContactPhone',
+        'employmentType', 'payType', 'payRateCents', 'payAward',
+        'dateOfBirth', 'startDate', 'visaStatus', 'visaSubclass', 'visaExpiryDate',
+        'xeroEmployeeId', 'xeroPayrollCalendarId', 'xeroEarningsRateId',
+        'venue', 'defaultArea'
+      ] as const;
+      const backfill: Record<string, unknown> = {};
+      for (const key of backfillKeys) {
+        const targetValue = canonical[key];
+        if (targetValue !== null && targetValue !== undefined && targetValue !== '') continue;
+        const donor = duplicates.find((duplicate) => {
+          const value = duplicate[key];
+          return value !== null && value !== undefined && value !== '';
         });
+        if (donor) backfill[key] = donor[key];
+      }
+      // Email is unique — free it from the duplicate before giving it to the
+      // kept profile.
+      if (!canonical.email) {
+        const emailDonor = duplicates.find((duplicate) => duplicate.email);
+        if (emailDonor) {
+          await tx.staffProfile.update({ where: { id: emailDonor.id }, data: { email: null } });
+          backfill.email = emailDonor.email;
+        }
+      }
+      if (Object.keys(backfill).length) {
+        await tx.staffProfile.update({ where: { id: canonical.id }, data: backfill });
+        bump('backfilledFields', Object.keys(backfill).length);
+      }
 
-        moved.managerNotes += duplicate.managerNotes.length;
-        await tx.staffManagerNote.updateMany({
-          where: { staffProfileId: duplicate.id },
-          data: { staffProfileId: canonical.id }
-        });
+      for (const duplicate of duplicates) {
+        // Work history moves WITH the person. Leaving timesheets, tip lines
+        // and shifts on the archived duplicate is what kept phantom names in
+        // pay runs and blocked ABA exports — the audit trail lives in the
+        // management events created below, not in stranded rows.
+        bump('timesheets', (await tx.timesheet.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('tipPaymentLines', (await tx.staffTipPaymentRunLine.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('rosterShifts', (await tx.rosterShift.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('rosterShiftsOffered', (await tx.rosterShift.updateMany({
+          where: { offeredByStaffProfileId: duplicate.id }, data: { offeredByStaffProfileId: canonical.id }
+        })).count);
+        bump('clockSessions', (await tx.staffClockSession.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('clockEvents', (await tx.staffClockEvent.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('complianceRecords', (await tx.staffComplianceRecord.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('hrRecords', (await tx.staffHrRecord.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('managerNotes', (await tx.staffManagerNote.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('leaveRequests', (await tx.staffLeaveRequest.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('availability', (await tx.staffAvailability.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('unavailability', (await tx.staffUnavailability.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('shiftTaskAssignments', (await tx.shiftTaskAssignment.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('staffInvites', (await tx.staffInvite.updateMany({
+          where: { staffProfileId: duplicate.id }, data: { staffProfileId: canonical.id }
+        })).count);
+        bump('supplierInvoicesTriaged', (await tx.supplierInvoice.updateMany({
+          where: { triagedByStaffProfileId: duplicate.id }, data: { triagedByStaffProfileId: canonical.id }
+        })).count);
+        bump('supplierInvoicesAssigned', (await tx.supplierInvoice.updateMany({
+          where: { assignedToStaffProfileId: duplicate.id }, data: { assignedToStaffProfileId: canonical.id }
+        })).count);
+        bump('almaTasks', (await tx.almaTask.updateMany({
+          where: { ownerStaffProfileId: duplicate.id }, data: { ownerStaffProfileId: canonical.id }
+        })).count);
+
+        // Shift claims / confirmations are unique per (shift, person): move
+        // what does not collide with a claim the kept profile already has.
+        for (const claim of duplicate.shiftClaims) {
+          const conflict = await tx.rosterShiftClaim.findUnique({
+            where: { rosterShiftId_staffProfileId: { rosterShiftId: claim.rosterShiftId, staffProfileId: canonical.id } }
+          });
+          if (conflict) {
+            preserved.shiftClaimConflicts += 1;
+            await tx.rosterShiftClaim.delete({ where: { id: claim.id } });
+          } else {
+            await tx.rosterShiftClaim.update({ where: { id: claim.id }, data: { staffProfileId: canonical.id } });
+            bump('shiftClaims', 1);
+          }
+        }
+        for (const confirmation of duplicate.shiftConfirmations) {
+          const conflict = await tx.staffShiftConfirmation.findUnique({
+            where: { rosterShiftId_staffProfileId: { rosterShiftId: confirmation.rosterShiftId, staffProfileId: canonical.id } }
+          });
+          if (conflict) {
+            preserved.shiftConfirmationConflicts += 1;
+            await tx.staffShiftConfirmation.delete({ where: { id: confirmation.id } });
+          } else {
+            await tx.staffShiftConfirmation.update({ where: { id: confirmation.id }, data: { staffProfileId: canonical.id } });
+            bump('shiftConfirmations', 1);
+          }
+        }
+
+        // Manual tip hours are unique per (person, venue, week): a collision
+        // means the same person's hours were split across the two identities,
+        // so the hours ADD rather than one row winning.
+        for (const entry of duplicate.tipManualHoursEntries) {
+          const existing = await tx.staffTipManualHoursEntry.findUnique({
+            where: { staffProfileId_venue_weekStart: { staffProfileId: canonical.id, venue: entry.venue, weekStart: entry.weekStart } }
+          });
+          if (existing) {
+            await tx.staffTipManualHoursEntry.update({
+              where: { id: existing.id },
+              data: {
+                hours: existing.hours + entry.hours,
+                notes: [existing.notes, entry.notes, `Includes hours merged from duplicate ${duplicate.firstName} ${duplicate.lastName}`].filter(Boolean).join(' | ')
+              }
+            });
+            await tx.staffTipManualHoursEntry.delete({ where: { id: entry.id } });
+          } else {
+            await tx.staffTipManualHoursEntry.update({ where: { id: entry.id }, data: { staffProfileId: canonical.id } });
+          }
+          bump('tipManualHours', 1);
+        }
 
         for (const access of duplicate.appAccess) {
           if (targetAccessApps.has(access.appId)) {
             preserved.appAccessConflicts += 1;
+            await tx.staffAppAccess.delete({ where: { id: access.id } });
             continue;
           }
           await tx.staffAppAccess.update({
@@ -3462,12 +3707,13 @@ export const staffService = {
             data: { staffProfileId: canonical.id }
           });
           targetAccessApps.add(access.appId);
-          moved.appAccess += 1;
+          bump('appAccess', 1);
         }
 
         for (const record of duplicate.trainingRecords) {
           if (targetTrainingModules.has(record.moduleId)) {
             preserved.trainingConflicts += 1;
+            await tx.staffTrainingRecord.delete({ where: { id: record.id } });
             continue;
           }
           await tx.staffTrainingRecord.update({
@@ -3475,7 +3721,7 @@ export const staffService = {
             data: { staffProfileId: canonical.id }
           });
           targetTrainingModules.add(record.moduleId);
-          moved.trainingRecords += 1;
+          bump('trainingRecords', 1);
         }
 
         if (!targetHasPayProfile && duplicate.payProfile) {
@@ -3484,15 +3730,12 @@ export const staffService = {
             data: { staffProfileId: canonical.id }
           });
           targetHasPayProfile = true;
-          moved.payProfile += 1;
+          bump('payProfile', 1);
+        } else if (duplicate.payProfile) {
+          await tx.staffPayProfile.delete({ where: { id: duplicate.payProfile.id } });
         }
 
-        preserved.rosterShifts += duplicate.rosterShifts.length;
-        preserved.timesheets += duplicate.timesheets.length;
-        preserved.tipPaymentLines += duplicate.tipPaymentRunLines.length;
-        preserved.staffInvites += await tx.staffInvite.count({
-          where: { staffProfileId: duplicate.id }
-        });
+        await tx.staffPasswordResetToken.deleteMany({ where: { staffProfileId: duplicate.id } });
 
         await tx.staffProfile.update({
           where: { id: duplicate.id },
@@ -3503,7 +3746,7 @@ export const staffService = {
             mergedByUserId: actor.id,
             notes: [
               duplicate.notes,
-              `Merged into ${canonical.firstName} ${canonical.lastName} (${canonical.id}) on ${new Date().toISOString()}. Roster, timesheet, tip payment and onboarding invite history remains attached to this archived duplicate for audit history.`
+              `Merged into ${canonical.firstName} ${canonical.lastName} (${canonical.id}) on ${new Date().toISOString()}. All roster, timesheet, tip and HR history was moved to the kept profile.`
             ].filter(Boolean).join('\n')
           }
         });
@@ -3512,7 +3755,7 @@ export const staffService = {
           data: {
             staffProfileId: duplicate.id,
             eventType: 'STAFF_DUPLICATE_ARCHIVED',
-            summary: `Duplicate staff profile archived and linked to ${canonical.firstName} ${canonical.lastName}.`,
+            summary: `Duplicate staff profile archived; history moved to ${canonical.firstName} ${canonical.lastName}.`,
             metadata: { canonicalStaffProfileId: canonical.id },
             createdById: actor.id,
             createdByName: actorName(actor),
@@ -3542,7 +3785,7 @@ export const staffService = {
         moved,
         preserved
       };
-    });
+    }, { timeout: 30000 });
 
     return {
       canonicalStaffProfile: await this.getById(canonical.id),
@@ -5570,10 +5813,26 @@ export const staffService = {
   async updateTimesheet(id: string, input: unknown, actor?: AuthUser) {
     const existing = actor ? await assertActorCanAccessTimesheet(id, actor) : await prisma.timesheet.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, 'Timesheet not found');
-    if (['APPROVED', 'EXPORTED'].includes(existing.status)) {
-      throw new HttpError(400, 'Approved or exported timesheets cannot be edited');
-    }
     const data = timesheetUpdateInputSchema.parse(input);
+    const isManagerActor = !actor || actor.role !== 'STAFF';
+    if (['APPROVED', 'EXPORTED'].includes(existing.status)) {
+      // Managers may correct approved timesheets — most importantly re-pointing
+      // a shift at the right staff profile when an import minted a duplicate
+      // identity. Staff themselves still can't touch approved hours. EXPORTED
+      // rows have already been sent to Xero, so only the staff assignment and
+      // notes may change (the hours that were paid stay as they were paid).
+      if (!isManagerActor) {
+        throw new HttpError(400, 'Approved or exported timesheets cannot be edited');
+      }
+      if (existing.status === 'EXPORTED') {
+        const touched = Object.entries(data).filter(([, value]) => value !== undefined).map(([key]) => key);
+        const allowed = new Set(['staffProfileId', 'notes']);
+        const blocked = touched.filter((key) => !allowed.has(key));
+        if (blocked.length) {
+          throw new HttpError(400, `Exported timesheets are locked except for staff reassignment and notes (blocked: ${blocked.join(', ')}).`);
+        }
+      }
+    }
     if (actor?.role === 'STAFF') {
       if (data.staffProfileId && data.staffProfileId !== actor.id) {
         throw new HttpError(403, 'You can only edit your own timesheets.');
@@ -5602,10 +5861,37 @@ export const staffService = {
       throw new HttpError(400, 'Clock-out time must be after clock-in time');
     }
 
+    // Audit trail for reassignment: record who the shift used to belong to,
+    // in the row's own notes, so a corrected week still explains itself.
+    let reassignmentNote: string | null = null;
+    if (data.staffProfileId && data.staffProfileId !== existing.staffProfileId) {
+      const [previousProfile, nextProfile] = await Promise.all([
+        prisma.staffProfile.findUnique({
+          where: { id: existing.staffProfileId },
+          select: { firstName: true, lastName: true }
+        }),
+        prisma.staffProfile.findUnique({
+          where: { id: data.staffProfileId },
+          select: { id: true, firstName: true, lastName: true, mergedIntoStaffProfileId: true }
+        })
+      ]);
+      if (!nextProfile) throw new HttpError(404, 'Target staff profile not found');
+      if (nextProfile.mergedIntoStaffProfileId) {
+        throw new HttpError(400, 'That profile has been merged into another — reassign to the surviving profile instead.');
+      }
+      const previousName = previousProfile ? `${previousProfile.firstName} ${previousProfile.lastName}`.trim() : existing.staffProfileId;
+      const when = new Date().toISOString().slice(0, 10);
+      reassignmentNote = `Reassigned from ${previousName} on ${when}`;
+    }
+    const mergedNotes = reassignmentNote
+      ? [data.notes !== undefined ? data.notes || null : existing.notes, reassignmentNote].filter(Boolean).join(' | ')
+      : undefined;
+
     return prisma.timesheet.update({
       where: { id },
       data: {
         ...(data.staffProfileId !== undefined && { staffProfileId: data.staffProfileId }),
+        ...(mergedNotes !== undefined && { notes: mergedNotes }),
         ...(data.rosterShiftId !== undefined && { rosterShiftId: data.rosterShiftId || null }),
         ...(data.venue !== undefined && { venue: data.venue || null }),
         ...(data.area !== undefined && { area: data.area || null }),
@@ -5614,7 +5900,7 @@ export const staffService = {
         ...(clockInAt !== undefined && { clockInAt }),
         ...(clockOutAt !== undefined && { clockOutAt }),
         ...(data.breakMinutes !== undefined && { breakMinutes: data.breakMinutes }),
-        ...(data.notes !== undefined && { notes: data.notes || null }),
+        ...(mergedNotes === undefined && data.notes !== undefined && { notes: data.notes || null }),
         ...(data.status !== undefined && {
           status: data.status,
           submittedAt: data.status === 'SUBMITTED' ? new Date() : existing.submittedAt
@@ -6220,7 +6506,36 @@ export const staffService = {
 
   async exportTipsAba(input: unknown) {
     const run = await getApprovedTipRun(input);
-    return buildTipsAba(run);
+    const accountKey =
+      input && typeof input === 'object' && typeof (input as { accountKey?: unknown }).accountKey === 'string'
+        ? ((input as { accountKey: string }).accountKey.trim() || null)
+        : null;
+    return buildTipsAba(run, accountKey);
+  },
+
+  // "Pay from" options for the tips ABA export: the named funding accounts in
+  // Settings, with masked numbers. Empty when only the base account exists.
+  async tipsAbaAccountOptions() {
+    const row = await prisma.appSettings.findUnique({
+      where: { id: 'singleton' },
+      select: { tipsAbaSettings: true }
+    });
+    const flat =
+      row?.tipsAbaSettings && typeof row.tipsAbaSettings === 'object' && !Array.isArray(row.tipsAbaSettings)
+        ? (row.tipsAbaSettings as Record<string, unknown>)
+        : {};
+    const accounts = Array.isArray(flat.accounts) ? (flat.accounts as Array<Record<string, string>>) : [];
+    const mask = (value: string) => {
+      const digits = String(value ?? '').replace(/\s+/g, '');
+      return digits.length <= 3 ? '•••' : `•••• ${digits.slice(-3)}`;
+    };
+    return accounts
+      .filter((account) => String(account.label ?? '').trim())
+      .map((account) => ({
+        key: String(account.key ?? ''),
+        label: String(account.label ?? ''),
+        maskedAccount: `${String(account.traceBsb ?? '')} ${mask(String(account.traceAccount ?? ''))}`.trim()
+      }));
   },
 
   async markTipsPaid(input: unknown, paidById?: string) {
@@ -7011,7 +7326,33 @@ export const staffService = {
       }
     }
 
-    return redactStaffProfileFields(withoutStaffSecrets(approvedProfile), actor);
+    // Approved → they exist as a person, so make them exist in payroll. Into
+    // BOTH companies when their venue is "Both": Alma Freshwater and Alma
+    // Avalon are separate entities with separate payrolls.
+    //
+    // Never fails the approval. A missing date of birth shouldn't stop someone
+    // starting on Friday — it's reported back so a manager can fix the profile
+    // and push again from their page.
+    let xeroPush: { ok: boolean; message: string; organisations?: unknown } | null = null;
+    if (approvedProfile.accountType === 'HUMAN') {
+      try {
+        const { pushStaffToXero } = await import('./integration.service.js');
+        const pushed = await pushStaffToXero(staffProfileId);
+        xeroPush = {
+          ok: true,
+          message: `Added to ${pushed.organisations.map((org) => org.tenantName ?? org.tenantId).join(' and ')}.`,
+          organisations: pushed.organisations
+        };
+      } catch (err) {
+        xeroPush = { ok: false, message: err instanceof Error ? err.message : 'Could not push to Xero.' };
+        console.error('[staff.approveOnboarding] Xero employee push failed', {
+          staffProfileId,
+          error: xeroPush.message
+        });
+      }
+    }
+
+    return { ...redactStaffProfileFields(withoutStaffSecrets(approvedProfile), actor), xeroPush };
   },
 
   async changeOwnPin(actor: AuthUser, input: unknown) {

@@ -61,15 +61,35 @@ import {
   staffApi,
   stockApi
 } from './lib/api';
-import { COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
+import { ADMIN_WEB_URL, COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForWeek, normaliseHistoricalVenue, isVenueOpenOnDate } from './data/historicalSales';
 import { Donut, HBars, TrendLine, CHART_COLORS } from './components/Charts';
+import {
+  IconAudit,
+  IconBadgeCheck,
+  IconCalendarCheck,
+  IconCalendarClock,
+  IconDashboard,
+  IconDownload,
+  IconEdit,
+  IconFiles,
+  IconGift,
+  IconHandbook,
+  IconImages,
+  IconLiquor,
+  IconMegaphone,
+  IconPieChart,
+  IconReceipt,
+  IconStaff,
+  IconStore
+} from '../../web/src/lib/icons';
 
 // The heavy report pages load on demand. They are whole reports in their own
 // right — the forecasting module alone is 581 lines plus its charts — and
 // most visits never open them.
 const StaffCostingReportPage = lazy(() => import('./pages/StaffCostingReportPage').then((m) => ({ default: m.StaffCostingReportPage })));
 const ForecastPage = lazy(() => import('./pages/ForecastPage').then((m) => ({ default: m.ForecastPage })));
+const RegisterAuditPage = lazy(() => import('./pages/RegisterAuditPage').then((m) => ({ default: m.RegisterAuditPage })));
 const SupplierSpendPage = lazy(() => import('./pages/SupplierSpendPage').then((m) => ({ default: m.SupplierSpendPage })));
 const ForecastModulePage = lazy(() => import('./pages/ForecastModulePage').then((m) => ({ default: m.ForecastModulePage })));
 const SalesEntryPage = lazy(() => import('./pages/SalesEntryPage').then((m) => ({ default: m.SalesEntryPage })));
@@ -218,6 +238,7 @@ type ReportSectionId =
   | 'marketing'
   | 'content'
   | 'gift-cards'
+  | 'register-audit'
   | 'exports';
 
 type ReportNavItem = {
@@ -248,7 +269,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'This Week',
     title: 'This Week',
     description: 'Your week at a glance: takings, the cost triangle, covers, and what needs attention.',
-    icon: <ChartIcon />,
+    icon: <IconDashboard />,
     group: 'core'
   },
   {
@@ -256,7 +277,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Sales',
     title: 'Sales',
     description: 'Takings by venue and day, plus forecast vs actual for Alma Avalon and St Alma.',
-    icon: <ChartIcon />,
+    icon: <IconReceipt />,
     group: 'core'
   },
   {
@@ -264,7 +285,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Forecast',
     title: 'Forecast',
     description: 'The weeks ahead: covers, sales, wages, COGS and the 13-week cash runway — predicted from your own trading history.',
-    icon: <ChartIcon />,
+    icon: <IconPieChart />,
     group: 'core'
   },
   {
@@ -272,7 +293,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Enter sales',
     title: 'Sales entry',
     description: 'Type takings by hand or upload a file. This is what feeds the forecast now the POS is not connected.',
-    icon: <ChartIcon />,
+    icon: <IconEdit />,
     group: 'core'
   },
   {
@@ -280,7 +301,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Forecasting',
     title: 'Forecasting module',
     description: 'Entity-separated cash, margin and creditor modelling for Two Cooked Chooks and Alma Freshwater.',
-    icon: <ChartIcon />,
+    icon: <IconCalendarClock />,
     group: 'core',
     // Unlinked on purpose: this is the creditor-facing model, not an operating
     // report. The route still resolves for anyone who has the link.
@@ -291,7 +312,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Supplier spend',
     title: 'Projected supplier spend',
     description: 'Projected spend per supplier per week: the COGS trend from Xero P&L totals applied to the sales forecast, split food and beverage, then by supplier share.',
-    icon: <ChartIcon />,
+    icon: <IconStore />,
     group: 'core'
   },
   {
@@ -299,7 +320,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Labour',
     title: 'Labour (wages)',
     description: 'Wage cost vs sales by venue, payroll readiness, tips, and staff attention.',
-    icon: <ChartIcon />,
+    icon: <IconStaff />,
     group: 'core'
   },
   {
@@ -307,7 +328,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Food & Bev Cost',
     title: 'Food & Bev Cost (COGS)',
     description: 'What you spent to sell — food cost %, purchases, wastage, and stock value.',
-    icon: <DocumentIcon />,
+    icon: <IconLiquor />,
     group: 'core'
   },
   {
@@ -315,7 +336,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Menu',
     title: 'Menu',
     description: 'Which dishes make money and which lose it — sales, cost, and margin per item.',
-    icon: <ChartIcon />,
+    icon: <IconHandbook />,
     group: 'core'
   },
   {
@@ -323,7 +344,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Monthly Recap',
     title: 'Monthly Recap',
     description: 'The month closed out: sales, labour, food cost and total cost vs target and last year.',
-    icon: <ChartIcon />,
+    icon: <IconFiles />,
     group: 'core'
   },
   // ── More: secondary reports, kept out of the daily flow ──
@@ -332,7 +353,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Compliance',
     title: 'Compliance Reports',
     description: 'Outstanding compliance records, expiring items, and venue attention signals.',
-    icon: <DocumentIcon />,
+    icon: <IconBadgeCheck />,
     group: 'more'
   },
   {
@@ -340,7 +361,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Reserve',
     title: 'Reserve Reports',
     description: 'Bookings, covers, cancellations, no-shows, and guest mix.',
-    icon: <ChartIcon />,
+    icon: <IconCalendarCheck />,
     group: 'more'
   },
   {
@@ -348,7 +369,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Marketing',
     title: 'Marketing Reports',
     description: 'Guest CRM reach, consent, campaigns, and simulated sends.',
-    icon: <DocumentIcon />,
+    icon: <IconMegaphone />,
     group: 'more'
   },
   {
@@ -356,7 +377,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Content',
     title: 'Content Reports',
     description: 'Scheduled posts, approvals, simulated publishing, and social setup readiness.',
-    icon: <DocumentIcon />,
+    icon: <IconImages />,
     group: 'more'
   },
   {
@@ -364,7 +385,15 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Gift Cards',
     title: 'Gift Card Reports',
     description: 'Pending gift card orders, value, fulfilment, and payment readiness.',
-    icon: <DocumentIcon />,
+    icon: <IconGift />,
+    group: 'more'
+  },
+  {
+    id: 'register-audit',
+    label: 'Register Audit',
+    title: 'Register Audit',
+    description: 'Every discount, comp, void, refund and wastage entry from the registers — who, what, and why.',
+    icon: <IconAudit />,
     group: 'more'
   },
   {
@@ -372,7 +401,7 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Exports',
     title: 'Exports',
     description: 'Read-only CSV downloads and weekly summary exports.',
-    icon: <DocumentIcon />,
+    icon: <IconDownload />,
     group: 'more'
   }
 ];
@@ -533,6 +562,42 @@ function periodFromPreset(key: PeriodPresetKey, now: Date = new Date()): { start
     default: {
       const start = startOfWeek(now);
       return { start, end: addDays(start, 7), label: 'This week' };
+    }
+  }
+}
+
+// Step a preset period backwards/forwards by its own granularity — the
+// chevrons either side of the period pill. offset 0 is the preset itself;
+// -1 is one span earlier, and the label names the actual span so the pill
+// never claims "This week" while showing some other range.
+function shiftPeriod(
+  base: { start: Date; end: Date; label: string },
+  key: PeriodPresetKey,
+  offset: number
+): { start: Date; end: Date; label: string } {
+  if (offset === 0) return base;
+  switch (key) {
+    case 'this-month':
+    case 'last-month': {
+      const start = new Date(base.start.getFullYear(), base.start.getMonth() + offset, 1);
+      const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+      return { start, end, label: start.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' }) };
+    }
+    case 'ytd-fy':
+    case 'last-fy': {
+      const start = new Date(base.start);
+      start.setFullYear(start.getFullYear() + offset);
+      const end = new Date(base.end);
+      end.setFullYear(end.getFullYear() + offset);
+      return { start, end, label: `FY ${start.getFullYear()}–${end.getFullYear()}` };
+    }
+    default: {
+      const start = addDays(base.start, offset * 7);
+      return {
+        start,
+        end: addDays(start, 7),
+        label: `Week of ${start.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}`
+      };
     }
   }
 }
@@ -1159,7 +1224,10 @@ function SidebarNav({
 
 function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const [activeSection, setActiveSection] = useState<ReportSectionId>(() => reportSectionFromHash(window.location.hash));
-  const [selectedWeekStart, setSelectedWeekStart] = useState(() => isoDate(startOfWeek(new Date())));
+  // localIsoDate, not isoDate: slicing UTC from a Sydney local-midnight Monday
+  // lands on Sunday's date, and startOfWeek then walks that back ANOTHER week —
+  // the compounding drift that had the week pill weeks behind reality.
+  const [selectedWeekStart, setSelectedWeekStart] = useState(() => localIsoDate(startOfWeek(new Date())));
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   // Recipe popup opened from a clickable menu-profitability row.
@@ -1175,14 +1243,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     });
   // Open a recipe in the Stock app (new tab) via the suite handoff so it stays
   // signed in — for editing the recipe behind a flagged/menu item.
-  function openRecipeInStock(recipeId: string) {
-    const href = `https://alma-stock-v18.web.app/recipes?recipe=${encodeURIComponent(recipeId)}`;
+  // Open any Stock app path in a new tab, staying signed in via the suite
+  // handoff (falls back to a plain open if the handoff helper isn't loaded).
+  function openStockPath(path: string) {
+    const href = `${STOCK_WEB_URL}${path}`;
     const handoff = (globalThis as typeof globalThis & { almaCreateSuiteHandoffUrl?: (h: string) => Promise<string> }).almaCreateSuiteHandoffUrl;
     if (handoff) {
       void handoff(href).then((url) => window.open(url, '_blank', 'noopener')).catch(() => window.open(href, '_blank', 'noopener'));
     } else {
       window.open(href, '_blank', 'noopener');
     }
+  }
+
+  function openRecipeInStock(recipeId: string) {
+    openStockPath(`/recipes?recipe=${encodeURIComponent(recipeId)}`);
   }
   // Top-of-report period preset — the single source of truth for every figure
   // on the page that is measured over a span of time.
@@ -1194,10 +1268,22 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // week of revenue beside ninety days of stock, under a heading saying "Last
   // financial year". Three controls, three different windows, one page.
   const [periodPreset, setPeriodPreset] = useState<PeriodPresetKey>('this-week');
-  const period = useMemo(() => periodFromPreset(periodPreset), [periodPreset]);
+  // How many preset-spans the chevrons have stepped away from the preset
+  // (0 = the preset itself, -1 = one week/month/FY earlier, …).
+  const [periodOffset, setPeriodOffset] = useState(0);
+  const period = useMemo(
+    () => shiftPeriod(periodFromPreset(periodPreset), periodPreset, periodOffset),
+    [periodPreset, periodOffset]
+  );
   const periodLabel = period.label;
-  const periodStartIso = period.start.toISOString();
-  const periodEndIso = period.end.toISOString();
+  // Send DATE-ONLY keys, not timestamps. period.start is local (Sydney)
+  // midnight, whose toISOString() is 14:00Z the PREVIOUS day — but serviceDate
+  // rows are stored at UTC midnight of the local date, so a timestamped window
+  // silently drops the first local day of every period (e.g. "this week" lost
+  // its Sunday, which hid the set-menu panel and understated weekly takings).
+  // The server parses a bare date as UTC midnight, matching storage exactly.
+  const periodStartIso = localIsoDate(period.start);
+  const periodEndIso = localIsoDate(period.end);
   // Menu Engineering filters persist across refreshes (like the forecast inputs)
   // so an analyst doesn't re-pick account/venue/category/mapping every visit.
   const storedMenuFilters = loadJsonDraft<{
@@ -1248,7 +1334,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // The heading now names the period being shown rather than a bucket that
   // may not have matched it.
   const overviewWindowLabel = periodLabel;
-  const weekWindowLabel = `${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}`;
+  const weekWindowLabel = `${localIsoDate(weekStart)} to ${localIsoDate(addDays(weekEnd, -1))}`;
+  // The range the period pill displays — the PERIOD's own dates, not the
+  // roster-week's (they are different clocks; the pill lied when it glued the
+  // preset label to the week range).
+  const periodWindowLabel = `${localIsoDate(period.start)} to ${localIsoDate(addDays(period.end, -1))}`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2090,11 +2180,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const stockCategoryCountLabel = stockCostUsesVenueRows ? 'Venue rows' : 'Items';
   const stockLowStockLabel = stockCostUsesVenueRows ? 'Low stock venue rows' : 'Low stock';
 
+  // Bottom-of-report week controls: move ONLY the week-shaped panels (roster,
+  // timesheets). The period pill no longer borrows this range, so stepping the
+  // roster week must not clobber the chosen period.
   function moveWeek(days: number) {
-    setSelectedWeekStart(isoDate(addDays(weekStart, days)));
-    // Manual week navigation no longer matches the chosen preset; reset the
-    // label so the period button doesn't show a stale value like "Last month".
-    setPeriodPreset('this-week');
+    setSelectedWeekStart(localIsoDate(addDays(weekStart, days)));
+  }
+
+  // Period pill chevrons: step the PERIOD itself by one preset-span, and bring
+  // the week-shaped panels along to the week the period starts in.
+  function movePeriod(direction: -1 | 1) {
+    const nextOffset = periodOffset + direction;
+    const next = shiftPeriod(periodFromPreset(periodPreset), periodPreset, nextOffset);
+    setPeriodOffset(nextOffset);
+    setSelectedWeekStart(localIsoDate(startOfWeek(next.start)));
   }
 
   // Apply a top-of-report period preset. Everything measured over a span now
@@ -2102,7 +2201,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // week-shaped panels (roster, timesheets) to the week the period starts in.
   function applyPeriodPreset(key: PeriodPresetKey) {
     setPeriodPreset(key);
-    setSelectedWeekStart(isoDate(startOfWeek(periodFromPreset(key).start)));
+    setPeriodOffset(0);
+    setSelectedWeekStart(localIsoDate(startOfWeek(periodFromPreset(key).start)));
   }
 
   function selectReportSection(section: ReportSectionId) {
@@ -2147,7 +2247,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           type="button"
           className="alma-roster-weeknav-btn"
           aria-label="Previous period"
-          onClick={() => moveWeek(-7)}
+          onClick={() => movePeriod(-1)}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
             <polyline points="15 6 9 12 15 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -2162,7 +2262,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             onClick={() => setMenuOpen((open) => !open)}
           >
             <strong>{periodLabel}</strong>
-            <span>{weekWindowLabel}</span>
+            <span>{periodWindowLabel}</span>
             <svg width="12" height="12" viewBox="0 0 20 20" aria-hidden="true">
               <path d="M5 7.5 10 12.5 15 7.5" />
             </svg>
@@ -2190,7 +2290,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           type="button"
           className="alma-roster-weeknav-btn"
           aria-label="Next period"
-          onClick={() => moveWeek(7)}
+          onClick={() => movePeriod(1)}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
             <polyline points="9 6 15 12 9 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -3921,6 +4021,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               <Card
                 title="Set menu margins"
                 subtitle="Theoretical margin for the priced set menus — revenue from the menu line vs the COGS of its $0 component courses (✷ tasting/grazing, BB bottomless). 'Costed' shows how many component units have a recipe cost; the rest are excluded until you cost them, so COGS is a floor."
+                action={appButton(ADMIN_WEB_URL, '/integrations/square/menu-mapping', 'Open menu mapping')}
               >
                 <div className="menu-cogs-grid">
                   {groups.map((g) => (
@@ -3939,14 +4040,32 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                         <div><span>Covers</span><strong>{g.covers.toLocaleString()}</strong></div>
                         <div><span>COGS / cover</span><strong>{g.perCoverCogsCents == null ? '—' : formatCurrency(g.perCoverCogsCents)}</strong></div>
                       </div>
+                      {g.revenueCents === 0 && g.componentUnits > 0 ? (
+                        <p className="menu-cogs-hint">
+                          Menu revenue reads $0 — no sold item name matched this menu's name pattern in the period. Components still count. If the menu was renamed on the POS, the pattern needs updating to the new name.
+                        </p>
+                      ) : null}
                       {g.missingUnits > 0 ? (
                         <details className="menu-cogs-missing">
                           <summary>{g.missingUnits.toLocaleString()} component units still need a cost recipe</summary>
                           <ul>
                             {g.topMissing.map((m) => (
-                              <li key={m.itemName}><span>{m.itemName}</span><span>{m.units.toLocaleString()}×</span></li>
+                              <li key={m.itemName}>
+                                <span>{m.itemName}</span>
+                                <span className="menu-cogs-missing-actions">
+                                  {m.units.toLocaleString()}×
+                                  <button
+                                    type="button"
+                                    className="menu-cogs-fix"
+                                    onClick={() => openStockPath(`/recipes?q=${encodeURIComponent(m.itemName)}`)}
+                                  >
+                                    Cost →
+                                  </button>
+                                </span>
+                              </li>
                             ))}
                           </ul>
+                          <p className="subtle">"Cost →" opens Stock → Recipes searched for the course — create or cost the recipe there and this panel picks it up.</p>
                         </details>
                       ) : null}
                     </div>
@@ -4559,6 +4678,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         return renderContentSection();
       case 'gift-cards':
         return renderGiftCardsSection();
+      case 'register-audit':
+        return <RegisterAuditPage />;
       case 'exports':
         return renderExportsSection();
       case 'overview':

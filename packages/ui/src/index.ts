@@ -78,8 +78,7 @@ export {
   SuiteApps,
   SuiteAppSwitcher,
   SuiteLogo,
-  suiteApp
-} from './brand/SuiteApps';
+  suiteApp, installSuiteAppAccess, suiteAppAllowed } from './brand/SuiteApps';
 export type { SuiteAppId, SuiteAppIdentity, SuiteAppStatus } from './brand/SuiteApps';
 export { canUseApp, accessibleSuiteApps, almaAppIdForSuiteApp } from './brand/appAccess';
 export { AppAccessGate } from './brand/AppAccessGate';

@@ -22,17 +22,51 @@ function getSuiteApp(appId: SuiteAppId) {
   return SUITE_APPS.find((app) => app.id === appId) ?? SUITE_APPS[0]!;
 }
 
+// A destination that lands back on this very page reloads forever. That is
+// exactly what /apps/pos/login did while POS had no URL of its own: the app
+// list handed us our own address, we assigned it, the page reloaded, and the
+// tab ping-ponged until someone closed it. Treat self as "no destination".
+function resolvesToThisPage(href: string) {
+  try {
+    const url = new URL(href, window.location.href);
+    return url.origin === window.location.origin && url.pathname === window.location.pathname;
+  } catch {
+    return false;
+  }
+}
+
 export function SuiteAppLoginPage() {
   const { appId } = useParams();
   const validAppId = isSuiteAppId(appId) ? appId : null;
   const app = validAppId ? getSuiteApp(validAppId) : null;
-  const linkedApp = validAppId ? suiteApps.find((item) => item.id === validAppId) : null;
+  const linked = validAppId ? suiteApps.find((item) => item.id === validAppId) : null;
+  const linkedApp = linked?.href && !resolvesToThisPage(linked.href) ? linked : null;
   useDocumentTitle(app ? `Alma ${app.label}` : 'Alma Suites');
 
   useEffect(() => {
-    if (validAppId && validAppId !== 'compliance' && linkedApp?.href) {
-      window.location.assign(linkedApp.href);
+    const href = linkedApp?.href;
+    if (!href || !validAppId || validAppId === 'compliance') return;
+    let cancelled = false;
+    // The API is on its own domain, so Safari drops the session cookie on a
+    // bare cross-app link and the target shows a login wall. Mint a handoff
+    // token like every other cross-app jump in the suite.
+    const mint = (globalThis as unknown as {
+      almaCreateSuiteHandoffUrl?: (target: string) => Promise<string>;
+    }).almaCreateSuiteHandoffUrl;
+    if (!mint) {
+      window.location.assign(href);
+      return;
     }
+    void mint(href)
+      .then((withToken) => {
+        if (!cancelled) window.location.assign(withToken);
+      })
+      .catch(() => {
+        if (!cancelled) window.location.assign(href);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [linkedApp?.href, validAppId]);
 
   if (!validAppId) {

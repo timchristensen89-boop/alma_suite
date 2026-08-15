@@ -1,0 +1,1 @@
+ALTER TABLE "PosOrder" ADD COLUMN "dietary" JSONB NOT NULL DEFAULT '[]';

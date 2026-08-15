@@ -495,6 +495,7 @@ export const sevenroomsService = {
       const notes = pick(row, ['notes', 'reservation_notes', 'special_requests', 'requests']);
       const area = pick(row, ['area', 'seating_area', 'seating_area_name', 'room']);
       const shift = pick(row, ['shift', 'shift_name']);
+      const tableLabels = pick(row, ['table_numbers', 'tables', 'table_number', 'table', 'table_no']);
 
       // Guest: match by SevenRooms client id, then email, then phone; else create.
       let guest = sevenRoomsGuestId
@@ -519,9 +520,25 @@ export const sevenroomsService = {
         guestsCreated += 1;
       }
 
+      // Resolve the first table label to the venue's floor table (labels match
+      // the SevenRooms floor plan one-to-one).
+      let resolvedTableId: string | null = null;
+      if (tableLabels) {
+        const firstLabel = tableLabels.split(/[,;/]/)[0]?.trim();
+        if (firstLabel) {
+          const floorTable = await prisma.reserveTable.findFirst({
+            where: { venue, label: { equals: firstLabel, mode: 'insensitive' } },
+            select: { id: true }
+          });
+          resolvedTableId = floorTable?.id ?? null;
+        }
+      }
+
       const reservationData = {
         venue,
         serviceDate,
+        tableLabels: tableLabels ?? null,
+        ...(resolvedTableId ? { tableId: resolvedTableId } : {}),
         servicePeriod: servicePeriodForShift(shift, Number(time.slice(0, 2))),
         startsAt,
         endsAt,

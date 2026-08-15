@@ -1,3 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  # The iOS shell is an Expo app with its own native toolchain. It shares no
+  # code with the server, and pulling its dependencies into the workspace
+  # breaks the API's --frozen-lockfile container build.
+  - "!apps/pos-native"

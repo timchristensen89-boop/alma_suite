@@ -2,7 +2,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Manrope:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --color-accent: #9A6B5A;
+  --color-accent: #B85874;
   --color-accent-hover: #6B473A;
   --color-accent-soft: #F5DCCE;
   --color-accent-text: #3D2418;
@@ -940,9 +940,13 @@
 
 .giftcards-print-card {
   width: min(720px, 100%);
-  aspect-ratio: 1.65;
+  /* No forced aspect ratio and no space-between: the panel used to be a
+     card-shaped box whose contents were stretched apart to fill it, with
+     some children left-aligned and some centred — off on screen, worse on
+     paper. Content sizes the panel, and everything centres. */
   display: grid;
-  align-content: space-between;
+  justify-items: center;
+  text-align: center;
   gap: 16px;
   padding: 42px;
   border: 1px solid #e2d3ad;
@@ -1014,6 +1018,7 @@
 .giftcards-print-card footer {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px 18px;
   color: #64748b;
   font-size: 13px;
@@ -1281,7 +1286,8 @@
 }
 .alma-giftcards-page * { box-sizing: border-box; }
 .alma-giftcards-page a { color: inherit; text-decoration: none; }
-.alma-giftcards-page button { font: inherit; }
+/* :where() keeps this at zero specificity so any component's own font rules win. */
+:where(.alma-giftcards-page) button { font: inherit; }
 
 .alma-giftcards-container {
   max-width: 1280px;
@@ -1425,9 +1431,13 @@
 }
 
 /* ── Buttons ── */
-.alma-giftcards-btn {
+/* .alma-giftcards-page button { font: inherit } outranks a lone class, so the
+   page prefix keeps this button's own typography from being inherited away. */
+.alma-giftcards-btn,
+.alma-giftcards-page .alma-giftcards-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 14px;
   padding: 15px 24px 14px;
   border-radius: 9999px;
@@ -2204,6 +2214,10 @@
   gap: 12px;
 }
 .alma-giftcards-design {
+  /* The tiles hold real card miniatures whose unscaled frame is 900px wide —
+     without this, that intrinsic width becomes the tile's min-content size and
+     the grid collapses to one giant column. */
+  min-width: 0;
   cursor: pointer;
   border: 1px solid var(--gc-hair);
   background: var(--gc-surface);
@@ -2867,7 +2881,10 @@
     width: 100%;
     max-width: 178mm;
     aspect-ratio: auto;
-    padding: 24mm 18mm;
+    /* 24mm of vertical padding pushed the panel's bottom edge onto a blank
+       second page. Slimmer padding + gaps keep it to one sheet. */
+    padding: 10mm 16mm 12mm;
+    gap: 10px;
     border: 1px solid #d4d4d4;
     border-radius: 0;
     background: #FFFFFF;
@@ -2879,8 +2896,8 @@
   /* The chosen artwork sits at the top — give it a sane
      printed width so it doesn't dominate the page. */
   .giftcards-print-card > div[style*="aspect-ratio"] {
-    max-width: 120mm !important;
-    margin: 0 auto 14mm !important;
+    max-width: 110mm !important;
+    margin: 0 auto 6mm !important;
   }
 
   .giftcards-print-card h1 {
@@ -2894,21 +2911,21 @@
   }
 
   .giftcards-print-code {
-    margin: 8mm auto;
+    margin: 4mm auto;
     font-size: 18pt;
   }
 
   .giftcards-print-qr {
-    width: 36mm;
-    height: 36mm;
-    margin: 4mm auto;
+    width: 34mm;
+    height: 34mm;
+    margin: 2mm auto;
   }
 
   .giftcards-print-card footer {
     justify-content: center;
     border-top: 1px solid #d4d4d4;
-    padding-top: 6mm;
-    margin-top: 8mm;
+    padding-top: 4mm;
+    margin-top: 4mm;
     color: #4b5563;
   }
 
@@ -2924,7 +2941,7 @@
 
 /* Dark-mode accent — brightened so the app's colour reads on dark. */
 html[data-theme='dark'] {
-  --color-accent: #D2A08C;
+  --color-accent: #E39CB2;
   --color-accent-hover: #E0B4A2;
   --color-accent-soft: #382520;
   --color-accent-text: #F6E5DC;
@@ -3512,4 +3529,303 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   .counter-bar { padding: 8px 16px; }
   .counter-body { padding: 14px 16px; }
   .counter-amounts button { min-height: 52px; }
+}
+
+/* ── "Create your own" card designer ─────────────────────────────────────── */
+.alma-custom-designer { display: grid; gap: 14px; }
+/* Desktop: card (smaller) on the left, every control in a right-hand rail. */
+@media (min-width: 821px) {
+  .alma-custom-designer { grid-template-columns: minmax(0, 1fr) 330px; gap: 24px; align-items: start; }
+  .alma-custom-designer__canvas-wrap { position: sticky; top: 0; max-width: 560px; }
+  .alma-custom-designer__row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .alma-custom-designer__label { min-width: 0; }
+  .alma-custom-designer__sliders { grid-template-columns: 1fr; }
+}
+.alma-custom-designer__canvas-wrap { position: relative; width: 100%; aspect-ratio: 1200 / 756; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 32px rgba(20, 36, 26, 0.18); }
+.alma-custom-designer__canvas { width: 100%; height: 100%; display: block; }
+.alma-custom-designer__controls { display: grid; gap: 10px; }
+.alma-custom-designer__row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.alma-custom-designer__label { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #64705f; min-width: 92px; }
+.alma-custom-designer__swatches { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.alma-custom-designer__swatch { width: 30px; height: 30px; border-radius: 999px; border: 2px solid rgba(20, 36, 26, 0.15); cursor: pointer; padding: 0; }
+.alma-custom-designer__swatch.is-on { border-color: #b98216; box-shadow: 0 0 0 2px rgba(185, 130, 22, 0.35); }
+.alma-custom-designer__chip { border: 1px solid rgba(20, 36, 26, 0.2); background: #fff; border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+.alma-custom-designer__chip.is-on { background: #14241a; color: #f5dcce; border-color: #14241a; }
+.alma-custom-designer__upload { border: 1px dashed rgba(20, 36, 26, 0.35); border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+.alma-custom-designer__upload input { display: none; }
+.alma-custom-designer__clear { border: none; background: none; font-size: 12.5px; color: #9a3a2e; cursor: pointer; text-decoration: underline; }
+.alma-custom-designer__error { margin: 0; font-size: 12.5px; color: #9a3a2e; }
+.alma-custom-designer__sliders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.alma-custom-designer__sliders label { display: grid; gap: 4px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #64705f; }
+.alma-custom-designer__sliders input { width: 100%; accent-color: #b98216; }
+.alma-custom-designer__texts { display: grid; gap: 8px; }
+.alma-custom-designer__texts label { display: grid; gap: 4px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #64705f; }
+.alma-custom-designer__texts input { border: 1px solid rgba(20, 36, 26, 0.2); border-radius: 10px; padding: 10px 12px; font-size: 15px; font-family: inherit; }
+.alma-giftcards-design__swatch--custom { background: repeating-linear-gradient(45deg, #f4ede1 0 10px, #ece2d0 10px 20px); color: #14241a; display: grid; place-items: center; font-size: 20px; }
+@media (max-width: 640px) { .alma-custom-designer__sliders { grid-template-columns: 1fr; } }
+
+/* ── Designer modal + preview snapshot ───────────────────────────────────── */
+.alma-designer-modal { position: fixed; inset: 0; z-index: 1200; display: none; }
+.alma-designer-modal.is-open { display: block; }
+.alma-designer-modal__overlay { position: absolute; inset: 0; background: rgba(20, 36, 26, 0.55); backdrop-filter: blur(2px); }
+.alma-designer-modal__panel {
+  position: relative; z-index: 1; max-width: 920px; margin: 4vh auto; max-height: 92vh;
+  overflow-y: auto; background: #faf8f3; border-radius: 20px; padding: 26px 28px 30px;
+  box-shadow: 0 30px 80px rgba(10, 20, 14, 0.4); width: calc(100% - 32px);
+  -webkit-overflow-scrolling: touch;
+}
+.alma-designer-modal__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.alma-designer-modal__close {
+  border: 1px solid rgba(20, 36, 26, 0.2); background: #fff; border-radius: 999px;
+  width: 40px; height: 40px; font-size: 22px; line-height: 1; cursor: pointer; color: #14241a; flex: 0 0 auto;
+}
+.alma-designer-modal__close:hover { border-color: #b98216; }
+.alma-designer-modal__foot { display: flex; justify-content: flex-end; margin-top: 20px; }
+.alma-custom-snapshot { display: grid; gap: 12px; }
+.alma-custom-snapshot img { width: 100%; border-radius: 16px; display: block; box-shadow: 0 10px 32px rgba(20, 36, 26, 0.18); }
+.alma-custom-snapshot__empty {
+  aspect-ratio: 1200 / 756; display: grid; place-items: center; border: 1px dashed rgba(20, 36, 26, 0.3);
+  border-radius: 16px; color: #64705f; font-size: 14px;
+}
+@media (max-width: 640px) {
+  .alma-designer-modal__panel { margin: 0; max-height: 100vh; height: 100vh; border-radius: 0; width: 100%; padding: 18px 16px 26px; }
+}
+
+/* Phone: the "25 — 2,000" range hint collides with the input's placeholder
+   (which already states the range) — drop the hint, give the input the room. */
+@media (max-width: 640px) {
+  .alma-giftcards-amount-custom__range { display: none; }
+  .alma-giftcards-amount-custom input { min-width: 0; }
+}
+
+/* ── Boxes must sit just off the section background, not vanish into it ──── */
+/* The configure section is --gc-surface and these boxes were ALSO surface —
+   only a hairline apart. Lift them to --gc-paper (the palette's lighter tone,
+   already used by the custom-amount row) so they read as cards. */
+.alma-giftcards-amount,
+.alma-giftcards-design,
+.alma-giftcards-toggle {
+  background: var(--gc-paper);
+}
+.alma-giftcards-quickmsg__btn {
+  background: var(--gc-paper);
+}
+
+/* ── The hero deck must never bleed off the right edge ───────────────────── */
+.alma-giftcards-hero {
+  overflow-x: clip;
+}
+.alma-giftcards-hero__cardwrap {
+  max-width: 100%;
+}
+@media (max-width: 640px) {
+  /* The stacked shadow-cards are offset rightward; on a phone that pushed the
+     deck past the screen. Tuck the offsets in and keep the whole stack inside
+     the padding. */
+  .alma-giftcards-cardstack {
+    max-width: calc(100% - 24px);
+  }
+  .alma-giftcards-cardstack__bg--back {
+    top: 26px;
+    left: 10px;
+    transform: rotate(-3deg);
+  }
+  .alma-giftcards-cardstack__bg--mid {
+    top: 12px;
+    left: 5px;
+    transform: rotate(-1deg);
+  }
+}
+
+/* The card art is an intrinsically 900px-wide DOM scaled by a ResizeObserver.
+   Grid items default to min-width:auto, so on phones the hero/configure tracks
+   ballooned to 900px (the whole right-edge bleed). min-width:0 lets the tracks
+   fit the viewport and the observer scales the card down to match. */
+.alma-giftcards-hero__grid > *,
+.alma-giftcards-grid > *,
+.alma-giftcards-row > *,
+.alma-giftcards-deliver > * {
+  min-width: 0;
+}
+/* On phones, no descendant of the single-column layout may demand more width
+   than the viewport — this is what stops the whole-page right-edge bleed. */
+@media (max-width: 900px) {
+  .alma-giftcards-form,
+  .alma-giftcards-form *,
+  .alma-giftcards-preview,
+  .alma-giftcards-preview * {
+    min-width: 0;
+  }
+  .alma-giftcards-container,
+  .alma-giftcards-grid,
+  .alma-giftcards-form,
+  .alma-giftcards-preview {
+    max-width: 100%;
+  }
+}
+.alma-giftcards-preview {
+  max-width: min(480px, 100%);
+}
+.alma-giftcards-cardstack {
+  max-width: min(460px, 100%);
+}
+
+/* ── Orders: bills-style card register ─────────────────────────────────────
+   Every card as a small bubble, modelled on the POS Bills page grid
+   (pos-web theme.css .pos-bill-card) — a left status accent, tight type,
+   auto-fill columns. Smaller than the POS tiles because the register holds
+   hundreds of cards. */
+.giftcards-bubbles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px;
+}
+.giftcards-bubble {
+  background: var(--color-surface, #fff);
+  border: 1px solid rgba(20, 36, 26, 0.12);
+  border-left: 4px solid rgba(20, 36, 26, 0.12);
+  border-radius: 12px;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+.giftcards-bubble:hover { border-color: rgba(20, 36, 26, 0.3); }
+.giftcards-bubble.is-positive { border-left-color: #4f6b47; }
+.giftcards-bubble.is-warning { border-left-color: #b5772f; }
+.giftcards-bubble.is-danger { border-left-color: #b3402e; opacity: 0.75; }
+.giftcards-bubble.is-neutral { border-left-color: rgba(20, 36, 26, 0.25); opacity: 0.7; }
+.giftcards-bubble__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+.giftcards-bubble__head strong {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.giftcards-bubble__head b {
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.giftcards-bubble__who {
+  font-size: 12px;
+  color: inherit;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.giftcards-bubble__meta {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+/* ── Redemption reporting (view-only) ────────────────────────────────────
+   Rows, not a table: each redemption reads left-to-right on desktop and
+   stacks on a phone without any horizontal scrolling. */
+.giftcards-report-filters {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.giftcards-report-ranges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.giftcards-report-venues {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.giftcards-report-venue {
+  display: grid;
+  gap: 2px;
+  background: var(--color-surface, #fff);
+  border: 1px solid rgba(20, 36, 26, 0.12);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.giftcards-report-venue b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.giftcards-report-log {
+  display: flex;
+  flex-direction: column;
+}
+
+.giftcards-report-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid rgba(20, 36, 26, 0.08);
+}
+
+.giftcards-report-row:last-child {
+  border-bottom: 0;
+}
+
+.giftcards-report-row-main {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.giftcards-report-row-main strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.giftcards-report-row-main .subtle {
+  overflow-wrap: anywhere;
+}
+
+.giftcards-report-row-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  text-align: right;
+  font-size: 13px;
+}
+
+.giftcards-report-row-meta b {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 700px) {
+  .giftcards-report-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .giftcards-report-row-meta {
+    justify-content: flex-start;
+    text-align: left;
+  }
 }

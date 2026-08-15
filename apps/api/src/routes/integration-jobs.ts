@@ -82,6 +82,20 @@ integrationJobsRouter.post('/checklists/auto-schedule', async (_req, res, next) 
   }
 });
 
+// Cron entrypoint: post yesterday's POS takings into each venue's own Xero
+// organisation as a daily sales invoice. Idempotent per venue+day — a repeat
+// run reports "Already posted" rather than double-billing the books.
+integrationJobsRouter.post('/pos/daily-sales-to-xero', async (req, res, next) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const dateText = typeof body.serviceDate === 'string' ? body.serviceDate : '';
+    const serviceDate = dateText ? new Date(`${dateText}T00:00:00.000Z`) : undefined;
+    res.json(await integrationService.pushPosDailySalesForAllVenues({ serviceDate }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationJobsRouter.post('/xero/import', async (req, res, next) => {
   try {
     res.json(await integrationService.runScheduledXeroImport(req.body ?? {}));

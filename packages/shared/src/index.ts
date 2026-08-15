@@ -14,6 +14,7 @@ export * from './invoice-paste.js';
 export * from './count-scale.js';
 export * from './loaded-stocktake.js';
 export * from './loaded-count-units.js';
+export * from './stock-units.js';
 export * from './clock-to-timesheet.js';
 import type { ParsedInvoiceLine } from './invoice-paste.js';
 import { CHECKLIST_CADENCES, type ChecklistCadence } from './checklist-cadence.js';
@@ -607,6 +608,7 @@ export const staffLeaveRequestUpdateSchema = z.object({
 }).superRefine(validateLeaveRange);
 
 export const staffProfileCreateInputSchema = z.object({
+  posPermissions: z.record(z.boolean()).optional(),
   firstName: z.string().min(2),
   lastName: z.string().min(2),
   roleTemplateId: z.string().optional().or(z.literal('')),
@@ -1799,6 +1801,15 @@ export const giftCardCheckoutInputSchema = z.object({
   recipientEmail: z.string().email().optional().or(z.literal('')),
   message: z.string().max(500).optional().or(z.literal('')),
   design: giftCardDesignSchema.optional(),
+  // "Create your own": the designer canvas exported as a data URL. Rendered
+  // once client-side; the API stores the decoded bytes and every later surface
+  // (email, print page, confirmation) serves that stored image. ~4MB of image
+  // → ~5.4M base64 chars; Express's 6MB body limit is the hard ceiling.
+  customArtwork: z
+    .string()
+    .regex(/^data:image\/(png|jpeg|webp);base64,/, 'Artwork must be a PNG, JPEG, or WebP data URL')
+    .max(5_500_000)
+    .optional(),
   // ISO date-time. When provided + in the future, the card is created
   // immediately on Stripe completion but the delivery email is deferred
   // until the /jobs/gift-cards/drain scheduler reaches it.
@@ -1816,7 +1827,10 @@ export const giftCardLookupInputSchema = z.object({
 export const giftCardRedemptionInputSchema = z.object({
   code: z.string().min(4),
   amountCents: z.coerce.number().int().positive(),
-  venue: z.string().optional().or(z.literal('')),
+  // Required: every redemption is revenue for a specific venue, and the
+  // outstanding balance is a liability until it lands somewhere. The service
+  // normalises spellings to the canonical venue names.
+  venue: z.string().trim().min(2, 'Choose the venue taking this redemption.'),
   notes: z.string().optional().or(z.literal(''))
 });
 
@@ -1886,6 +1900,12 @@ export type GiftCardPublicConfig = {
   settings: GiftCardSettings;
   checkoutMode: 'live' | 'test' | 'setup_required';
   checkoutNotice: string | null;
+  /**
+   * Purchaser service fee in basis points (350 = 3.5%), charged on top of the
+   * card value at checkout. The card's balance is always its face value — the
+   * fee never touches it. Storefronts read this to show the fee before Stripe.
+   */
+  serviceFeeBps: number;
   wallet: {
     appleConfigured: boolean;
     googleConfigured: boolean;
@@ -2025,7 +2045,23 @@ export const appSettingsUpdateSchema = z.object({
       remitterName: z.string().optional().or(z.literal('')),
       description: z.string().optional().or(z.literal('')),
       traceBsb: z.string().optional().or(z.literal('')),
-      traceAccount: z.string().optional().or(z.literal(''))
+      traceAccount: z.string().optional().or(z.literal('')),
+      selfBalancing: z.boolean().optional(),
+      accounts: z
+        .array(
+          z.object({
+            key: z.string().optional().or(z.literal('')),
+            label: z.string().min(1, 'Account label is required'),
+            traceBsb: z.string().optional().or(z.literal('')),
+            traceAccount: z.string().optional().or(z.literal('')),
+            financialInstitution: z.string().optional().or(z.literal('')),
+            userId: z.string().optional().or(z.literal('')),
+            userName: z.string().optional().or(z.literal('')),
+            remitterName: z.string().optional().or(z.literal('')),
+            description: z.string().optional().or(z.literal(''))
+          })
+        )
+        .optional()
     })
     .optional()
 });
@@ -2039,8 +2075,33 @@ export type TipsAbaSettings = {
   traceBsb: string;
   // Returned masked (e.g. "•••• 123"); never the full account number.
   traceAccount: string;
+  // Include a self-balancing debit record (some banks, e.g. Macquarie,
+  // only accept balanced files).
+  selfBalancing: boolean;
+  // Named funding accounts the tips can be paid from. The export UI offers a
+  // "pay from" choice; the chosen account's fields override the base ones.
+  accounts: TipsAbaAccount[];
   // True when every required field is present in storage.
   configured: boolean;
+};
+
+export type TipsAbaAccount = {
+  key: string;
+  label: string;
+  traceBsb: string;
+  // Masked on read, like the base traceAccount.
+  traceAccount: string;
+  financialInstitution?: string;
+  userId?: string;
+  userName?: string;
+  remitterName?: string;
+  description?: string;
+};
+
+export type TipsAbaAccountOption = {
+  key: string;
+  label: string;
+  maskedAccount: string;
 };
 
 export type AuthUser = {
@@ -4518,6 +4579,9 @@ export type GiftCardPublic = Pick<
   testMode: boolean;
   qrCodeUrl: string;
   redeemUrl: string;
+  // Hosted URL of the customer-designed artwork ("Create your own"), when the
+  // card has one — surfaces render this image instead of a stock design.
+  customArtworkUrl?: string | null;
 };
 
 export type GiftCardCheckoutResult = {
@@ -4542,6 +4606,12 @@ export type GiftCardOverview = {
     activeBalanceCents: number;
     soldValueCents: number;
     redeemedValueCents: number;
+    /**
+     * Redemption revenue split by venue (lifetime + current month), computed
+     * server-side over every redemption. "Unallocated" collects rows that
+     * predate the venue requirement.
+     */
+    redeemedByVenue: Array<{ venue: string; lifetimeCents: number; monthCents: number }>;
   };
 };
 
@@ -4555,6 +4625,37 @@ export type GiftCardPromoQuote = {
 export type GiftCardAdminSettingsResponse = {
   settings: GiftCardSettings;
   canManagePromoCodes: boolean;
+};
+
+// One redemption as the reporting page shows it: the card, the money, the
+// venue, and the person who rang it through (resolved to a name server-side).
+export type GiftCardReportRedemption = {
+  id: string;
+  redeemedAt: string;
+  amountCents: number;
+  venue: string | null;
+  notes: string | null;
+  code: string;
+  cardStatus: GiftCard['status'];
+  recipientName: string | null;
+  purchaserName: string;
+  redeemedByName: string | null;
+};
+
+export type GiftCardReport = {
+  range: { from: string | null; to: string };
+  summary: {
+    redemptionCount: number;
+    redeemedCents: number;
+    cardsSoldCount: number;
+    cardsSoldCents: number;
+    outstandingCents: number;
+    activeCards: number;
+  };
+  byVenue: Array<{ venue: string; redemptionCount: number; redeemedCents: number }>;
+  redemptions: GiftCardReportRedemption[];
+  /** True when the log hit its server-side cap and older rows in range were dropped. */
+  truncated: boolean;
 };
 
 export type Timesheet = {
@@ -6204,6 +6305,7 @@ export type RecipeLine = {
   unit: string | null;
   cost: number | null;
   wastePercent: number | null;
+  perGuests: number | null;
   itemId: string | null;
   item: { id: string; name: string; unit: string; countUnit: string | null; avgCostCents: number | null } | null;
   subRecipeId: string | null;
@@ -6242,6 +6344,9 @@ export type Recipe = {
   id: string;
   legacyId: string | null;
   title: string;
+  // Kitchen docket/KDS override name. NULL = dockets print `title`, same as
+  // the register tile and guest receipts.
+  printTitle: string | null;
   kind: string | null;
   category: string | null;
   subcategory: string | null;
@@ -6271,7 +6376,7 @@ export type RecipeCostLine = {
   quantity: number | null;
   unit: string | null;
   wastePercent: number | null;
-  source: 'STOCK_ITEM' | 'PREP_RECIPE' | 'MANUAL' | 'MISSING';
+  source: 'STOCK_ITEM' | 'PREP_RECIPE' | 'DISH_RECIPE' | 'MANUAL' | 'MISSING';
   unitCostCents: number | null;
   lineCostCents: number | null;
   warnings: string[];
@@ -6341,10 +6446,34 @@ export type RecipeCostLineTrace = {
   // Line quantity expressed in the item's cost unit, and how that conversion
   // was resolved (human label, e.g. "2 case → 24 bottle (pack ×12)").
   convertedQuantity: number | null;
-  conversionMethod: 'same-unit' | 'pack' | 'measure' | 'measure-pack' | 'prep-yield' | 'none' | 'unknown';
+  conversionMethod: 'same-unit' | 'pack' | 'measure' | 'measure-pack' | 'prep-yield' | 'dish-serve' | 'none' | 'unknown';
   conversionLabel: string | null;
   wasteMultiplier: number;
 };
+
+// ─── Set menus ───────────────────────────────────────────────────
+// Square catalog items whose name marks them as set-menu components ("*"
+// suffix / "BB " prefix). Surfaced in the set-menu builder so their mapped
+// recipe cost can be added to one or all menus.
+export type SetMenuComponentOption = {
+  mappingId: string;
+  squareItemName: string;
+  venue: string | null;
+  recipeId: string | null;
+  recipeTitle: string | null;
+  recipeEstimatedCost: number | null;
+  mapped: boolean;
+};
+
+export const setMenuAddComponentInputSchema = z.object({
+  /** Recipe to add as a component line (the * item's mapped recipe). */
+  subRecipeId: z.string().min(1),
+  quantity: z.coerce.number().positive().default(1),
+  perGuests: z.coerce.number().positive().optional(),
+  /** Target set-menu recipe ids; omit to add to ALL active set menus. */
+  menuIds: z.array(z.string().min(1)).optional()
+});
+export type SetMenuAddComponentInput = z.infer<typeof setMenuAddComponentInputSchema>;
 
 export type RecipeIngredientOption = {
   id: string;
@@ -6380,6 +6509,8 @@ export const recipeLineInputSchema = z.object({
   unit: z.string().optional().or(z.literal('')),
   cost: z.coerce.number().optional(),
   wastePercent: z.coerce.number().min(0).max(100).optional(),
+  // Set menus: component shared between N guests (its cost ÷ N per person).
+  perGuests: z.coerce.number().positive().optional(),
   itemId: z.string().optional().or(z.literal('')),
   subRecipeId: z.string().optional().or(z.literal(''))
 }).refine((line) => !(line.itemId && line.subRecipeId), {
@@ -6403,6 +6534,7 @@ export const recipeVenuePriceInputSchema = z.object({
 
 export const recipeCreateInputSchema = z.object({
   title: z.string().min(2, 'Title is required'),
+  printTitle: z.string().optional().or(z.literal('')),
   kind: z.string().optional().or(z.literal('')),
   category: z.string().optional().or(z.literal('')),
   subcategory: z.string().optional().or(z.literal('')),

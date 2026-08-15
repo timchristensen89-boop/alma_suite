@@ -87,6 +87,20 @@ giftCardsRouter.get('/admin/orders', requireManager, async (req, res, next) => {
   }
 });
 
+giftCardsRouter.get('/report', requireManager, async (req, res, next) => {
+  try {
+    res.json(
+      await giftCardService.report({
+        from: typeof req.query.from === 'string' ? req.query.from : undefined,
+        to: typeof req.query.to === 'string' ? req.query.to : undefined,
+        venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.post('/promo/quote', async (req, res, next) => {
   try {
     res.json(await giftCardService.quotePromo(req.body));
@@ -98,6 +112,19 @@ giftCardsRouter.post('/promo/quote', async (req, res, next) => {
 giftCardsRouter.get('/print/:code', async (req, res, next) => {
   try {
     res.json(await giftCardService.getPrintableByCode(String(req.params.code)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Customer-designed "Create your own" artwork. Public by card code — the code
+// itself is the secret, matching /qr/:code and /print/:code.
+giftCardsRouter.get('/artwork/:code', async (req, res, next) => {
+  try {
+    const artwork = await giftCardService.getArtworkByCode(String(req.params.code));
+    res.setHeader('Content-Type', artwork.mimeType);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(artwork.data);
   } catch (error) {
     next(error);
   }

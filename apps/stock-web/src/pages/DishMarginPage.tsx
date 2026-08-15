@@ -75,17 +75,20 @@ function popularityValue(r: EnrichedRecipe): number | null {
   return sales.quantitySold;
 }
 
-// Classify one dish against the median split lines. Needs both a popularity and
-// a margin reading, otherwise it stays unclassified (null).
+// Classify one dish. Popularity uses the Kasavana–Smith rule: popular means at
+// least 70% of the AVERAGE units sold — never a median split, because with a
+// long tail of zero-sellers the median collapses to 0 and "pop >= median" makes
+// every dish popular (the all-stars-and-plow-horses bug). A dish that sold
+// nothing in the window is never popular.
 function classifyQuadrant(
   r: EnrichedRecipe,
-  popMedian: number | null,
+  popThreshold: number | null,
   marginMedian: number | null
 ): Quadrant | null {
-  if (popMedian == null || marginMedian == null) return null;
+  if (popThreshold == null || marginMedian == null) return null;
   const pop = popularityValue(r);
   if (pop == null || r.marginPercent == null) return null;
-  const highPop = pop >= popMedian;
+  const highPop = pop > 0 && pop >= popThreshold;
   const highMargin = r.marginPercent >= marginMedian;
   if (highPop && highMargin) return 'star';
   if (highPop) return 'plow';
@@ -266,9 +269,9 @@ export function DishMarginPage() {
       .filter((r) => !term || r.title.toLowerCase().includes(term));
   }, [enriched, venueFilter, tone, search]);
 
-  // Median split lines across the shown dishes: popularity (units sold) and
-  // margin %. Computed client-side from the loaded rows — no extra API calls.
-  const { popMedian, marginMedian } = useMemo(() => {
+  // Split lines across the shown dishes: popularity threshold = 70% of the
+  // average units sold (Kasavana–Smith); margin % splits at the median.
+  const { popThreshold, marginMedian } = useMemo(() => {
     const pops: number[] = [];
     const margins: number[] = [];
     for (const r of searched) {
@@ -276,12 +279,13 @@ export function DishMarginPage() {
       if (pop != null) pops.push(pop);
       if (r.marginPercent != null) margins.push(r.marginPercent);
     }
-    return { popMedian: median(pops), marginMedian: median(margins) };
+    const avgPop = pops.length ? pops.reduce((sum, value) => sum + value, 0) / pops.length : null;
+    return { popThreshold: avgPop == null ? null : avgPop * 0.7, marginMedian: median(margins) };
   }, [searched]);
 
   const classified = useMemo<ClassifiedRecipe[]>(
-    () => searched.map((r) => ({ ...r, quadrant: classifyQuadrant(r, popMedian, marginMedian) })),
-    [searched, popMedian, marginMedian]
+    () => searched.map((r) => ({ ...r, quadrant: classifyQuadrant(r, popThreshold, marginMedian) })),
+    [searched, popThreshold, marginMedian]
   );
 
   const quadrantCounts = useMemo(() => {
@@ -378,7 +382,7 @@ export function DishMarginPage() {
                   {quadrantCounts.puzzle} Puzzles · {quadrantCounts.dog} Dogs
                 </span>
                 <small className="subtle">
-                  Split at the median of units sold and margin across the shown dishes
+                  Popular = at least 70% of the average units sold (zero sales is never popular); margin splits at the median
                 </small>
                 {quadrantFilter !== 'all' ? (
                   <button
@@ -519,6 +523,14 @@ export function DishMarginPage() {
                   <span className="dish-margin-title">
                     <strong>{r.title}</strong>
                     {r.category ? <small>{r.category}</small> : null}
+                    <a
+                      className="dish-margin-recipe-link"
+                      href={`/recipes?recipe=${r.id}`}
+                      onClick={(event) => event.stopPropagation()}
+                      title="Open the full recipe editor to compare and fix cost lines"
+                    >
+                      Open recipe →
+                    </a>
                   </span>
                   <span>{r.venue || '—'}</span>
                   <span>{formatMoney(r.costCents)}</span>

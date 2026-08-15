@@ -41,6 +41,23 @@ function toAbaPayload(raw: unknown): TipsAbaSettings {
     description,
     traceBsb,
     traceAccount: maskAbaAccount(traceAccount),
+    selfBalancing: String(o.selfBalancing ?? '') === '1',
+    accounts: (Array.isArray((raw as Record<string, unknown> | null)?.['accounts'])
+      ? ((raw as Record<string, unknown>).accounts as Array<Record<string, unknown>>)
+      : []
+    )
+      .filter((account) => account && typeof account === 'object')
+      .map((account) => ({
+        key: String(account.key ?? ''),
+        label: String(account.label ?? ''),
+        traceBsb: String(account.traceBsb ?? ''),
+        traceAccount: maskAbaAccount(String(account.traceAccount ?? '')),
+        financialInstitution: String(account.financialInstitution ?? '') || undefined,
+        userId: String(account.userId ?? '') || undefined,
+        userName: String(account.userName ?? '') || undefined,
+        remitterName: String(account.remitterName ?? '') || undefined,
+        description: String(account.description ?? '') || undefined
+      })),
     configured: Boolean(financialInstitution && userName && userId && remitterName && traceBsb && traceAccount)
   };
 }
@@ -72,7 +89,10 @@ function mergeVenues(
 // masked (contains •) so re-saving the form doesn't wipe the stored number.
 function mergeAbaSettings(
   existingRaw: unknown,
-  incoming: Partial<Record<keyof TipsAbaSettings, string>>
+  incoming: Partial<Record<Exclude<keyof TipsAbaSettings, 'selfBalancing' | 'configured' | 'accounts'>, string>> & {
+    selfBalancing?: boolean | string;
+    accounts?: Array<Record<string, string | undefined>>;
+  }
 ): Record<string, string> {
   const out: Record<string, string> = { ...abaRecord(existingRaw) };
   const set = (key: string, val: string | undefined, guardMasked = false) => {
@@ -87,6 +107,48 @@ function mergeAbaSettings(
   set('description', incoming.description);
   set('traceBsb', incoming.traceBsb);
   set('traceAccount', incoming.traceAccount, true);
+  // Checkbox: stored as '1'/'' strings like every other ABA field. Accepts the
+  // boolean it round-trips as from the payload type.
+  const selfBalancing = (incoming as Record<string, unknown>).selfBalancing;
+  if (selfBalancing !== undefined) out.selfBalancing = selfBalancing === true || selfBalancing === '1' ? '1' : '';
+  // Funding accounts: the incoming list replaces the stored one, but a masked
+  // account number keeps the stored value (matched by key), same as the base
+  // traceAccount guard. New accounts get a stable key derived from the label.
+  const incomingAccounts = (incoming as { accounts?: Array<Record<string, string | undefined>> }).accounts;
+  if (incomingAccounts !== undefined) {
+    const storedAccounts = Array.isArray((abaRecord(existingRaw) as Record<string, unknown>).accounts)
+      ? (((existingRaw as Record<string, unknown>).accounts as Array<Record<string, string>>) ?? [])
+      : [];
+    const storedByKey = new Map(storedAccounts.map((account) => [String(account.key ?? ''), account]));
+    const usedKeys = new Set<string>();
+    const merged = incomingAccounts
+      .filter((account) => (account.label ?? '').trim())
+      .map((account) => {
+        let key = (account.key ?? '').trim();
+        if (!key) {
+          key = (account.label ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'account';
+          while (usedKeys.has(key) || storedByKey.has(key)) key = `${key}-2`;
+        }
+        usedKeys.add(key);
+        const prior = storedByKey.get(key);
+        const traceAccount = (account.traceAccount ?? '').includes('•')
+          ? String(prior?.traceAccount ?? '')
+          : (account.traceAccount ?? '').trim();
+        const clean = (value: string | undefined) => (value ?? '').trim();
+        return {
+          key,
+          label: clean(account.label),
+          traceBsb: clean(account.traceBsb),
+          traceAccount,
+          financialInstitution: clean(account.financialInstitution),
+          userId: clean(account.userId),
+          userName: clean(account.userName),
+          remitterName: clean(account.remitterName),
+          description: clean(account.description)
+        };
+      });
+    (out as unknown as Record<string, unknown>).accounts = merged;
+  }
   return out;
 }
 

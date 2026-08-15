@@ -1436,15 +1436,17 @@ export const reportsService = {
     if (end <= start) throw new HttpError(400, 'Menu profitability end date must be after the start date');
     const venue = salesVenueScope(actor, data.venue);
     const accountKeys = data.accountKey === 'all' ? ['primary', 'secondary'] as const : [data.accountKey];
-    const sourceWhere = data.accountKey === 'all'
-      ? { startsWith: 'square-item:' }
-      : `square-item:${data.accountKey}`;
+    // 'all' includes every item-sales feed (Square accounts + the Lightspeed
+    // email feed); a specific accountKey stays Square-scoped.
+    const sourceWhere = data.accountKey === 'all' ? null : `square-item:${data.accountKey}`;
 
     const [entries, mappings] = await Promise.all([
       prisma.salesItemActualEntry.findMany({
         where: {
           serviceDate: { gte: start, lt: end },
-          source: typeof sourceWhere === 'string' ? sourceWhere : sourceWhere,
+          ...(sourceWhere
+            ? { source: sourceWhere }
+            : { OR: [{ source: { startsWith: 'square-item:' } }, { source: { startsWith: 'lightspeed-item:' } }] }),
           ...(venue ? { venue } : {}),
           ...(data.category ? { categoryName: data.category } : {})
         },
@@ -1717,7 +1719,7 @@ export const reportsService = {
       prisma.salesItemActualEntry.findMany({
         where: {
           serviceDate: { gte: start, lt: end },
-          source: { startsWith: 'square-item:' },
+          OR: [{ source: { startsWith: 'square-item:' } }, { source: { startsWith: 'lightspeed-item:' } }],
           ...(venueScope ? { venue: venueScope } : {})
         },
         select: { venue: true, itemName: true, quantity: true, netSalesCents: true, recipeId: true }
@@ -1746,8 +1748,10 @@ export const reportsService = {
 
     type MenuGroup = { key: string; label: string; venue: string; parent: RegExp; component: 'star' | 'bb' };
     const GROUPS: MenuGroup[] = [
-      { key: 'tasting', label: 'Trust Our Chef · tasting', venue: 'St Alma', parent: /trust our chef/i, component: 'star' },
-      { key: 'grazing', label: 'Grazing Menu', venue: 'Alma Avalon', parent: /grazing menu/i, component: 'star' },
+      // The POS renamed the tasting/grazing parents to "Feasting Menu" at both
+      // venues (Aug 2026) — match old and new names so revenue keeps counting.
+      { key: 'tasting', label: 'Feasting Menu · St Alma', venue: 'St Alma', parent: /trust our chef|feasting menu/i, component: 'star' },
+      { key: 'grazing', label: 'Feasting Menu · Alma Avalon', venue: 'Alma Avalon', parent: /grazing menu|feasting menu/i, component: 'star' },
       { key: 'bottomless-sta', label: 'Bottomless Lunch · St Alma', venue: 'St Alma', parent: /bottomless lunch (food|drinks)/i, component: 'bb' },
       { key: 'bottomless-ava', label: 'Bottomless Lunch · Alma Avalon', venue: 'Alma Avalon', parent: /bottomless lunch (food|drinks)/i, component: 'bb' }
     ];
@@ -1864,7 +1868,7 @@ export const reportsService = {
       _sum: { netSalesCents: true },
       where: {
         serviceDate: { gte: start, lt: end },
-        source: { startsWith: 'square-item:' },
+        OR: [{ source: { startsWith: 'square-item:' } }, { source: { startsWith: 'lightspeed-item:' } }],
         ...(venueScope ? { venue: venueScope } : {})
       }
     });

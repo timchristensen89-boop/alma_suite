@@ -15,6 +15,8 @@ export const RESERVE_WEB_URL = envUrl('VITE_RESERVE_WEB_URL', 'http://localhost:
 export const MARKETING_WEB_URL = envUrl('VITE_MARKETING_WEB_URL', 'http://localhost:5178');
 export const GIFTCARDS_WEB_URL = envUrl('VITE_GIFTCARDS_WEB_URL', 'http://localhost:5179');
 export const SETTINGS_WEB_URL = envUrl('VITE_SETTINGS_WEB_URL', '');
+export const ADMIN_WEB_URL = envUrl('VITE_ADMIN_WEB_URL', 'http://localhost:5172');
+export const POS_WEB_URL = envUrl('VITE_POS_WEB_URL', 'http://localhost:5199') || 'https://alma-pos.web.app';
 
 function safeProductionUrl(name: string, value: string) {
   if (import.meta.env.PROD && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(value)) {
@@ -25,6 +27,7 @@ function safeProductionUrl(name: string, value: string) {
 }
 
 const suiteUrls = {
+  pos: safeProductionUrl('VITE_POS_WEB_URL', POS_WEB_URL),
   compliance: safeProductionUrl('VITE_COMPLIANCE_WEB_URL', COMPLIANCE_WEB_URL),
   stock: safeProductionUrl('VITE_STOCK_WEB_URL', STOCK_WEB_URL),
   staff: safeProductionUrl('VITE_STAFF_WEB_URL', STAFF_WEB_URL),
@@ -57,13 +60,20 @@ export function suiteAppHref(app: SuiteAppIdentity) {
     if (suiteUrls.settings) return adminHref(suiteUrls.settings);
     return suiteUrls.compliance ? adminHref(suiteUrls.compliance) : undefined;
   }
+  // POS is its own hosted site, not a Compliance route. Without this case it
+  // fell through to `${compliance}/apps/pos/login` — a page whose only job is
+  // to forward you to POS, which resolved to that same URL, so the tab
+  // reloaded itself forever (the admin -> POS ping-pong, fixed 2026-08-11).
+  if (app.id === 'pos') return suiteUrls.pos ? `${trimTrailingSlash(suiteUrls.pos)}/` : undefined;
   return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/apps/${app.id}/login` : undefined;
 }
 
 export function withSuiteAppLinks(apps: SuiteAppIdentity[]) {
   return apps.map((app) => ({
     ...app,
-    href: suiteAppHref(app)
+    // @alma/ui already carries each app's real URL, so an app this file
+    // doesn't have a case for keeps working instead of losing its link.
+    href: suiteAppHref(app) ?? app.href
   }));
 }
 

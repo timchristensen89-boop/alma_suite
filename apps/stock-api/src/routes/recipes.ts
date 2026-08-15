@@ -135,6 +135,26 @@ recipesRouter.get('/:id/sanity', async (req, res, next) => {
   }
 });
 
+// Square catalog items flagged as set-menu components ("*" suffix / "BB "
+// prefix) with their mapped recipe, for the set-menu builder's quick-add.
+recipesRouter.get('/set-menu-components', async (_req, res, next) => {
+  try {
+    res.json(await recipesService.setMenuComponents());
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Add a component recipe as a line on one, several, or all set menus.
+recipesRouter.post('/set-menus/add-component', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await recipesService.addComponentToSetMenus(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 recipesRouter.get('/:id', async (req, res, next) => {
   try {
     res.json(await recipesService.get(String(req.params.id)));

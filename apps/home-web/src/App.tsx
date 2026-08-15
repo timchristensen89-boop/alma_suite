@@ -86,6 +86,33 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+// ── Cross-app session handoff ──────────────────────────────────────────────
+// Home is the front door: every other suite app mints a short-lived handoff
+// token so you land signed in. Home did NOT, so tapping a tile here was a
+// plain redirect with no token — and because the API is on its own domain,
+// Safari drops the session cookie, the destination sees no session and sends
+// you back to Home to "sign in", which sends you out again. That is the
+// bounce between Home and the POS: an infinite round trip with nothing
+// carrying the login across.
+export async function createSuiteHandoffUrl(href: string) {
+  const data = await api<{ token: string }>('/api/auth/handoff', { method: 'POST' });
+  const url = new URL(href, window.location.origin);
+  url.searchParams.set('suite_token', data.token);
+  url.searchParams.set('suite_from', window.location.origin);
+  return url.toString();
+}
+
+export function installSuiteHandoff() {
+  (globalThis as typeof globalThis & {
+    almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
+  }).almaCreateSuiteHandoffUrl = createSuiteHandoffUrl;
+  return () => {
+    delete (globalThis as typeof globalThis & {
+      almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
+    }).almaCreateSuiteHandoffUrl;
+  };
+}
+
 function initials(name: string): string {
   return name
     .split(/\s+/)
@@ -214,7 +241,22 @@ export function App() {
   const [setupMsg, setSetupMsg] = useState('');
   const [confirm, setConfirm] = useState<ConfirmInfo | null>(null);
 
-  const apps = useMemo(() => quickLaunchApps(), []);
+  // General staff only see the apps their access rows enable; admins and the
+  // venue kiosks keep the full set.
+  const apps = useMemo(() => {
+    const all = quickLaunchApps();
+    const account = user as
+      | (typeof user & { isAdmin?: boolean; appAccess?: Array<{ appId: string; status: string }> })
+      | null;
+    if (!account || account.isAdmin || isVenueDeviceUser(user)) return all;
+    const enabled = [
+      // POS has no app-access row to grant — the register checks the staff
+      // PIN itself — so it always shows.
+      'pos',
+      ...(account.appAccess ?? []).filter((access) => access.status === 'ENABLED').map((access) => access.appId.toLowerCase())
+    ];
+    return all.filter((app) => enabled.includes(app.id));
+  }, [user]);
   const pinSetupHref = useMemo(() => staffPinHref(), []);
   const deviceReady = isVenueDeviceRoute && isVenueDeviceUser(user);
 
@@ -333,6 +375,9 @@ export function App() {
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  // Make the tiles hand the session across instead of dropping it at the door.
+  useEffect(() => installSuiteHandoff(), []);
 
   useEffect(() => {
     void loadHomeState();

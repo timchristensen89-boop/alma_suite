@@ -165,10 +165,31 @@ staffRouter.post('/profiles', requireManager, async (req, res, next) => {
   }
 });
 
+// Push a staff member into Xero Payroll — into BOTH companies when their
+// venue is "Both", because Freshwater and Avalon are separate payrolls.
+staffRouter.post('/:id/push-to-xero', requireManager, async (req, res, next) => {
+  try {
+    const { pushStaffToXero } = await import('../services/integration.service.js');
+    res.json(await pushStaffToXero(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.post('/merge', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');
     res.json(await staffService.mergeDuplicateStaff(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Archived-but-unmerged profiles that still own timesheets/tip lines — the
+// duplicate identities the People page surfaces so they can be merged away.
+staffRouter.get('/archived-duplicates', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.listArchivedDuplicates(req.user));
   } catch (error) {
     next(error);
   }
@@ -1021,6 +1042,14 @@ staffRouter.post('/tips/export/csv', requireManager, async (req, res, next) => {
   try {
     const csv = await staffService.exportTipsCsv(req.body);
     res.json({ csv });
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/tips/aba-accounts', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await staffService.tipsAbaAccountOptions());
   } catch (error) {
     next(error);
   }

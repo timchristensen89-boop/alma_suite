@@ -78,7 +78,7 @@ deviceRouter.post('/pin-login', async (req, res, next) => {
     const user = await deviceService.pinLogin(deviceUser, req.body);
     const token = createDevicePinSessionToken(deviceUser.id, user.id);
     setDevicePinSessionCookie(res, token);
-    res.json({ user });
+    res.json({ user, pinToken: token });
   } catch (error) {
     next(error);
   }

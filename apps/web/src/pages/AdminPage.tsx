@@ -874,6 +874,10 @@ function TipPaymentsAbaCard() {
     traceBsb: '',
     traceAccount: ''
   });
+  const [selfBalancing, setSelfBalancing] = useState(false);
+  const [accounts, setAccounts] = useState<
+    Array<{ key: string; label: string; traceBsb: string; traceAccount: string; remitterName: string }>
+  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ text: string; tone: 'success' | 'error' } | null>(null);
@@ -894,6 +898,16 @@ function TipPaymentsAbaCard() {
             traceBsb: a.traceBsb ?? '',
             traceAccount: a.traceAccount ?? ''
           });
+          setSelfBalancing(Boolean(a.selfBalancing));
+          setAccounts(
+            (a.accounts ?? []).map((account) => ({
+              key: account.key,
+              label: account.label,
+              traceBsb: account.traceBsb ?? '',
+              traceAccount: account.traceAccount ?? '',
+              remitterName: account.remitterName ?? ''
+            }))
+          );
         }
       } catch {
         /* ignore — admin may not have settings access */
@@ -910,11 +924,34 @@ function TipPaymentsAbaCard() {
     try {
       const data = await api<AppSettingsPayload>('/api/settings', {
         method: 'PATCH',
-        body: JSON.stringify({ tipsAbaSettings: { ...form } })
+        body: JSON.stringify({
+          tipsAbaSettings: {
+            ...form,
+            selfBalancing,
+            accounts: accounts
+              .filter((account) => account.label.trim())
+              .map((account) => ({
+                key: account.key,
+                label: account.label.trim(),
+                traceBsb: account.traceBsb.trim(),
+                traceAccount: account.traceAccount.trim(),
+                remitterName: account.remitterName.trim()
+              }))
+          }
+        })
       });
       if (data.tipsAbaSettings) {
         setAba(data.tipsAbaSettings);
         setForm((f) => ({ ...f, traceAccount: data.tipsAbaSettings.traceAccount ?? f.traceAccount }));
+        setAccounts(
+          (data.tipsAbaSettings.accounts ?? []).map((account) => ({
+            key: account.key,
+            label: account.label,
+            traceBsb: account.traceBsb ?? '',
+            traceAccount: account.traceAccount ?? '',
+            remitterName: account.remitterName ?? ''
+          }))
+        );
       }
       setMsg({ text: 'Saved', tone: 'success' });
     } catch (err) {
@@ -946,6 +983,63 @@ function TipPaymentsAbaCard() {
             <Input label="Trace BSB" value={form.traceBsb} onChange={(e) => setForm((f) => ({ ...f, traceBsb: e.currentTarget.value }))} placeholder="000-000" hint="Your business account BSB." />
             <Input label="Trace account number" value={form.traceAccount} onChange={(e) => setForm((f) => ({ ...f, traceAccount: e.currentTarget.value }))} placeholder="Your business account" hint="Leave the masked value to keep it; type a new number to replace." />
             <Input label="Lodgement description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.currentTarget.value }))} placeholder="ALMA TIPS" hint="Max ~12 chars." />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+            <input type="checkbox" checked={selfBalancing} onChange={(e) => setSelfBalancing(e.currentTarget.checked)} />
+            Include self-balancing total — adds a balancing debit record for the batch total (required by Macquarie
+            and some other banks before they will process the file)
+          </label>
+          <div className="page-stack compact" style={{ marginTop: 8 }}>
+            <div>
+              <strong style={{ fontSize: 13 }}>Funding accounts</strong>
+              <p className="subtle" style={{ margin: '4px 0 0' }}>
+                Optional extra bank accounts tips can be paid from. When any are set up, the tips export asks which
+                account to pay from before creating the ABA file. Fields left blank fall back to the details above.
+              </p>
+            </div>
+            {accounts.map((account, index) => (
+              <div className="admin-grid two" key={account.key || `new-${index}`} style={{ alignItems: 'end' }}>
+                <Input
+                  label="Account label"
+                  value={account.label}
+                  onChange={(e) => setAccounts((list) => list.map((row, i) => (i === index ? { ...row, label: e.currentTarget.value } : row)))}
+                  placeholder="e.g. Alma Avalon operating, St Alma Macquarie"
+                />
+                <Input
+                  label="BSB"
+                  value={account.traceBsb}
+                  onChange={(e) => setAccounts((list) => list.map((row, i) => (i === index ? { ...row, traceBsb: e.currentTarget.value } : row)))}
+                  placeholder="000-000"
+                />
+                <Input
+                  label="Account number"
+                  value={account.traceAccount}
+                  onChange={(e) => setAccounts((list) => list.map((row, i) => (i === index ? { ...row, traceAccount: e.currentTarget.value } : row)))}
+                  placeholder="Account number"
+                  hint="Leave the masked value to keep it; type a new number to replace."
+                />
+                <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>
+                  <Input
+                    label="Remitter override (optional)"
+                    value={account.remitterName}
+                    onChange={(e) => setAccounts((list) => list.map((row, i) => (i === index ? { ...row, remitterName: e.currentTarget.value } : row)))}
+                    placeholder="Shows on staff statements"
+                  />
+                  <Button type="button" variant="ghost" onClick={() => setAccounts((list) => list.filter((_, i) => i !== index))}>
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setAccounts((list) => [...list, { key: '', label: '', traceBsb: '', traceAccount: '', remitterName: '' }])}
+              >
+                + Add funding account
+              </Button>
+            </div>
           </div>
           <div className="toolbar-right">
             <Button type="submit" disabled={saving}>

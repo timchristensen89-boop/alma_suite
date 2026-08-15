@@ -13,6 +13,7 @@ import { GIFT_CARD_PALETTES, PALETTES, type GiftCardPalette } from './palettes';
 const LAYOUT_NAMES: Record<GiftCardLayout, string> = {
   hero: 'Hero · the salmon lockup',
   greet: 'Greeting',
+  back: 'Back · the reference side',
   '1': '01 · Faithful original',
   '2': '02 · Watermark lockup',
   '3': '03 · Bottom bleed',

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { kindBucket, sydneyTodayUtcMidnight } from './pos.service.js';
 import type { Request } from 'express';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { Prisma, type IntegrationConnection } from '@prisma/client';
@@ -68,7 +69,18 @@ const SQUARE_SCOPES = [
   'PAYMENTS_READ',
   'ORDERS_READ',
   'ITEMS_READ',
-  'INVENTORY_READ'
+  'INVENTORY_READ',
+  // Driving a Square Terminal from our own register (Terminal API): pair the
+  // device, then push it a checkout. Square's in-person rate is well under
+  // Stripe's, and the venue already owns the hardware — but the existing
+  // token is read-only, so /v2/devices returns INSUFFICIENT_SCOPES until the
+  // merchant re-authorises with these.
+  'PAYMENTS_WRITE',
+  'DEVICE_CREDENTIAL_MANAGEMENT',
+  // Guest QR ordering pays through Square's hosted checkout, which creates an
+  // order behind the scenes — so a payment link is refused with
+  // INSUFFICIENT_SCOPES without this, however much PAYMENTS_WRITE we have.
+  'ORDERS_WRITE'
 ];
 
 const XERO_SCOPES = [
@@ -82,6 +94,11 @@ const XERO_SCOPES = [
   // invalid_scope page. The app's Configuration page lists exactly which
   // scopes it may request; check there before touching this list.
   'accounting.invoices.read',
+  // Write scope, for posting each venue's daily POS takings as an ACCREC
+  // invoice into that venue's own Xero organisation. Read alone gets a bare
+  // 403 on the POST, so the push checks the recorded grant first and asks
+  // for a reconnect by name (same pattern as payroll.timesheets).
+  'accounting.invoices',
   // Original supplier PDF attached to each accountant-entered bill — the
   // stock system's line extraction works from that PDF, so bill imports
   // fetch it into SupplierInvoiceDocument. Connections authorised before
@@ -591,7 +608,9 @@ async function safeResponseDetails(response: Response) {
   return {
     status: response.status,
     category: safeXeroErrorCategory(response.status),
-    detail: text ? text.slice(0, 300) : response.statusText
+    // Xero puts ValidationErrors at the END of the payload, so a 300-char
+    // cut reliably hides the only part that says what was actually wrong.
+    detail: text ? text.slice(0, 4000) : response.statusText
   };
 }
 
@@ -2436,6 +2455,152 @@ async function validXeroToken(connection: IntegrationConnection) {
   };
 }
 
+// ── Lightspeed daily sales via Xero ──────────────────────────────────────────
+// The Lightspeed (Kounta) API is a paid add-on, but its INCLUDED Xero
+// integration posts a daily sales invoice (ACCREC) per site. Read those out of
+// Xero on the existing scheduled import and land them as SalesActualEntry —
+// same table, same day-bucket semantics as the Square/Lightspeed-API writers.
+// salesCents is ex-GST by contract, so we read the invoice SubTotal, never
+// Total. Contact match is env-tunable (LIGHTSPEED_XERO_CONTACT_MATCH) because
+// the posting contact name depends on how the integration was set up.
+type XeroAccRecInvoice = {
+  InvoiceID: string;
+  Type?: string;
+  Status?: string;
+  Date?: string;
+  DateString?: string;
+  SubTotal?: number;
+  Total?: number;
+  Reference?: string;
+  InvoiceNumber?: string;
+  Contact?: { Name?: string };
+};
+
+async function importLightspeedDailySalesFromXero(input: {
+  connection: IntegrationConnection;
+  tenantId: string;
+  tenantName: string | null;
+  venueNames: string[];
+  lookbackDays: number;
+}): Promise<{
+  invoicesMatched: number;
+  daysUpserted: number;
+  salesCentsTotal: number;
+  warnings: string[];
+  unmatchedContacts: string[];
+}> {
+  const warnings: string[] = [];
+  const matcher = new RegExp(process.env.LIGHTSPEED_XERO_CONTACT_MATCH || 'lightspeed|kounta', 'i');
+  const startIso = isoDateOnly(new Date(Date.now() - input.lookbackDays * 24 * 60 * 60 * 1000)) ?? '1970-01-01';
+
+  // Pull recent ACCREC (sales) invoices — the supplier-bill flow only ever
+  // reads ACCPAY, so this is a new, cheap read on the same token.
+  const invoices: XeroAccRecInvoice[] = [];
+  const seenContacts = new Set<string>();
+  let connection = input.connection;
+  for (let page = 1; page <= 5; page += 1) {
+    const response = await xeroGetJson<{ Invoices?: XeroAccRecInvoice[] }>(
+      `/api.xro/2.0/Invoices?where=${encodeURIComponent('Type=="ACCREC"')}&order=${encodeURIComponent('Date DESC')}&page=${page}`,
+      { connection, tenantId: input.tenantId }
+    );
+    connection = response.connection;
+    const batch = response.data.Invoices ?? [];
+    if (batch.length === 0) break;
+    let pastWindow = false;
+    for (const invoice of batch) {
+      const dateIso = (() => {
+        const parsed = parseXeroDate(invoice.DateString ?? invoice.Date ?? null);
+        return parsed ? isoDateOnly(parsed) : null;
+      })();
+      if (!dateIso) continue;
+      if (dateIso < startIso) {
+        pastWindow = true;
+        continue;
+      }
+      const contact = invoice.Contact?.Name ?? '';
+      if (contact) seenContacts.add(contact);
+      if (!matcher.test(contact) && !matcher.test(invoice.Reference ?? '') && !matcher.test(invoice.InvoiceNumber ?? '')) continue;
+      if (invoice.Status && !['AUTHORISED', 'PAID'].includes(invoice.Status)) continue;
+      invoices.push(invoice);
+    }
+    if (pastWindow) break;
+  }
+
+  if (invoices.length === 0) {
+    return {
+      invoicesMatched: 0,
+      daysUpserted: 0,
+      salesCentsTotal: 0,
+      warnings,
+      // Surface what IS there so the operator can see the real posting
+      // contact name and set LIGHTSPEED_XERO_CONTACT_MATCH if it differs.
+      unmatchedContacts: Array.from(seenContacts).slice(0, 8)
+    };
+  }
+
+  const tenantVenue = resolveVenueFromTenantName(input.tenantName, input.venueNames);
+  const grouped = new Map<string, { venue: string; serviceDateKey: string; salesCents: number; docCount: number }>();
+  for (const invoice of invoices) {
+    const parsedDate = parseXeroDate(invoice.DateString ?? invoice.Date ?? null);
+    const serviceDateKey = parsedDate ? isoDateOnly(parsedDate) : null;
+    if (!serviceDateKey) continue;
+    // Venue: the tenant's mapped venue; else look for a configured venue name
+    // inside the invoice reference/number (per-site postings in a shared org).
+    const haystack = `${invoice.Reference ?? ''} ${invoice.InvoiceNumber ?? ''} ${invoice.Contact?.Name ?? ''}`.toLowerCase();
+    const venue = tenantVenue ?? input.venueNames.find((name) => haystack.includes(name.toLowerCase())) ?? null;
+    if (!venue) {
+      warnings.push(`Sales doc ${invoice.InvoiceNumber ?? invoice.InvoiceID} matched Lightspeed but no venue — skipped.`);
+      continue;
+    }
+    const amountCents = moneyToCents(invoice.SubTotal ?? 0);
+    const key = `${venue}|${serviceDateKey}`;
+    const existing = grouped.get(key) ?? { venue, serviceDateKey, salesCents: 0, docCount: 0 };
+    existing.salesCents += amountCents;
+    existing.docCount += 1;
+    grouped.set(key, existing);
+  }
+
+  let salesCentsTotal = 0;
+  const rows = Array.from(grouped.values());
+  for (const row of rows) {
+    const source = 'lightspeed-xero';
+    const externalId = `${source}:${input.tenantId}:${row.serviceDateKey}`;
+    salesCentsTotal += row.salesCents;
+    await prisma.salesActualEntry.upsert({
+      where: {
+        venue_serviceDate_source_externalId: {
+          venue: row.venue,
+          serviceDate: startOfUtcDate(row.serviceDateKey),
+          source,
+          externalId
+        }
+      },
+      create: {
+        venue: row.venue,
+        serviceDate: startOfUtcDate(row.serviceDateKey),
+        salesCents: row.salesCents,
+        source,
+        externalId,
+        notes: `Lightspeed daily sales via Xero (ex GST) · ${row.docCount} doc${row.docCount === 1 ? '' : 's'}.`,
+        importedById: integrationSchedulerActor.id
+      },
+      update: {
+        salesCents: row.salesCents,
+        notes: `Lightspeed daily sales via Xero (ex GST) · ${row.docCount} doc${row.docCount === 1 ? '' : 's'}.`,
+        importedById: integrationSchedulerActor.id
+      }
+    });
+    // Supersede the email-derived fallback total for the same venue+day: the
+    // Xero invoice is authoritative, and reports SUM across sources, so the
+    // fallback row must not survive alongside this one.
+    await prisma.salesActualEntry.deleteMany({
+      where: { venue: row.venue, serviceDate: startOfUtcDate(row.serviceDateKey), source: 'lightspeed-email' }
+    });
+  }
+
+  return { invoicesMatched: invoices.length, daysUpserted: rows.length, salesCentsTotal, warnings, unmatchedContacts: [] };
+}
+
 async function xeroGetJson<T>(
   path: string,
   input: {
@@ -3775,6 +3940,441 @@ async function recordWebhook(provider: Provider, rawBody: string, accountKey: Sq
     }
     throw error;
   }
+}
+
+// ── Square Terminal access ─────────────────────────────────────────────────
+// The register drives Square Terminals through these three. Everything about
+// OAuth tokens, refresh-on-401 and which of the two merchant accounts a venue
+// belongs to stays in this file — the POS service only ever deals in devices
+// and checkouts.
+
+export type SquareTerminalContext = {
+  connection: IntegrationConnection;
+  accountKey: SquareAccountKey;
+  locationId: string;
+  currency: string;
+};
+
+// Taking money needs scopes a read-only connection doesn't have, and Square
+// answers INSUFFICIENT_SCOPES with a 403 that reads like a bug. Check up
+// front so the register can say "reconnect Square" instead.
+const SQUARE_TERMINAL_SCOPES = ['PAYMENTS_WRITE', 'DEVICE_CREDENTIAL_MANAGEMENT'];
+
+export async function squareTerminalContext(venue: string): Promise<SquareTerminalContext> {
+  const accountKey = inferSquareAccountKeyFromVenue(venue);
+  const connection = await connectionSelect('SQUARE', accountKey);
+  if (!connection || connection.status !== 'CONNECTED') {
+    throw new HttpError(503, `Square isn't connected for ${venue}. Reconnect it in Admin → Integrations.`);
+  }
+  const scopes = Array.isArray(connection.scopes) ? connection.scopes.map((scope) => String(scope)) : [];
+  const missing = SQUARE_TERMINAL_SCOPES.filter((scope) => !scopes.includes(scope));
+  if (missing.length > 0) {
+    throw new HttpError(
+      503,
+      `The Square connection for ${venue} is read-only — reconnect it so it can take payments (missing ${missing.join(', ')}).`
+    );
+  }
+  const { locations } = squareMetadataStatus(connection);
+  const location = locations.find((candidate) => candidate.status !== 'INACTIVE') ?? locations[0];
+  if (!location) {
+    throw new HttpError(503, `The Square connection for ${venue} has no location on it.`);
+  }
+  return { connection, accountKey, locationId: location.id, currency: location.currency ?? 'AUD' };
+}
+
+export async function squareTerminalGet<T>(context: SquareTerminalContext, path: string): Promise<T> {
+  const { data } = await squareGetJson<T>(path, { connection: context.connection });
+  return data;
+}
+
+export async function squareTerminalPost<T>(
+  context: SquareTerminalContext,
+  path: string,
+  body: Record<string, unknown>
+): Promise<T> {
+  const { data } = await squarePostJson<T>(path, body as Prisma.InputJsonObject, { connection: context.connection });
+  return data;
+}
+
+// ── Staff → Xero Payroll ────────────────────────────────────────────────────
+//
+// St Alma trades as Alma Freshwater Pty Ltd; Alma Avalon is a separate
+// company. Separate ABNs, separate payrolls, separate employee records — so
+// somebody rostered across both is TWO employees in Xero, one per
+// organisation, and the link is kept in StaffXeroEmployee rather than a
+// single id on the profile that can't say which company it belongs to.
+
+type XeroPayrollEmployeeSummary = {
+  EmployeeID: string;
+  FirstName?: string;
+  LastName?: string;
+  Status?: string;
+};
+
+// Which organisations a person should exist in, from the venue on their
+// profile. "Both" is a real value in this data — four people carry it.
+function xeroTenantsForVenue(
+  venue: string | null | undefined,
+  tenants: Array<{ id: string; name: string | null }>
+): Array<{ id: string; name: string | null }> {
+  const wanted = normaliseMatchText(venue ?? '');
+  const freshwater = tenants.find((tenant) => normaliseMatchText(tenant.name ?? '').includes('freshwater'));
+  const avalon = tenants.find((tenant) => normaliseMatchText(tenant.name ?? '').includes('avalon'));
+  if (wanted === 'both') return [freshwater, avalon].filter(Boolean) as Array<{ id: string; name: string | null }>;
+  if (wanted.includes('avalon')) return avalon ? [avalon] : [];
+  // "St Alma" is the trading name of the Freshwater entity — the one mapping
+  // nobody guesses right from the names alone.
+  if (wanted.includes('st alma') || wanted.includes('freshwater')) return freshwater ? [freshwater] : [];
+  return [];
+}
+
+// Xero AU payroll wants the state as a code — "New South Wales" comes back
+// as "Invalid Region", which is not a phrase anyone would connect to a state
+// field. Staff type it however they like, so normalise on the way out.
+const AU_STATE_CODES: Record<string, string> = {
+  'new south wales': 'NSW', nsw: 'NSW',
+  victoria: 'VIC', vic: 'VIC',
+  queensland: 'QLD', qld: 'QLD',
+  'south australia': 'SA', sa: 'SA',
+  'western australia': 'WA', wa: 'WA',
+  tasmania: 'TAS', tas: 'TAS',
+  'northern territory': 'NT', nt: 'NT',
+  'australian capital territory': 'ACT', act: 'ACT'
+};
+
+function auStateCode(value: string | null | undefined): string | undefined {
+  const key = (value ?? '').trim().toLowerCase();
+  if (!key) return undefined;
+  return AU_STATE_CODES[key] ?? value?.trim().toUpperCase().slice(0, 3);
+}
+
+function xeroEmployeeBody(staff: {
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  dateOfBirth: Date | null;
+  startDate: Date | null;
+  addressLine1: string | null;
+  suburb: string | null;
+  state: string | null;
+  postcode: string | null;
+  taxFileNumber: string | null;
+  taxResidencyStatus: string | null;
+  taxFreeThreshold: boolean | null;
+  bankAccountName: string | null;
+  bankBsb: string | null;
+  bankAccountNumber: string | null;
+  superMemberNumber: string | null;
+}, extra?: { employeeId?: string; superFundId?: string | null }) {
+  const iso = (value: Date | null) => (value ? value.toISOString().slice(0, 10) : undefined);
+  const digits = (value: string | null) => (value ? value.replace(/\D/g, '') : '');
+  const bsb = digits(staff.bankBsb);
+  const account = digits(staff.bankAccountNumber);
+
+  return {
+    // Present on an update, absent on a create — Xero AU payroll treats POST
+    // with an EmployeeID as "update this one".
+    EmployeeID: extra?.employeeId,
+    FirstName: staff.firstName.slice(0, 35),
+    LastName: staff.lastName.slice(0, 35),
+    DateOfBirth: iso(staff.dateOfBirth),
+    Email: staff.email ?? undefined,
+    Mobile: staff.phone ?? undefined,
+    StartDate: iso(staff.startDate),
+    HomeAddress: staff.addressLine1
+      ? {
+          AddressLine1: staff.addressLine1,
+          City: staff.suburb ?? undefined,
+          Region: auStateCode(staff.state),
+          PostalCode: staff.postcode ?? undefined,
+          Country: 'AUSTRALIA'
+        }
+      : undefined,
+    // Where their pay goes. Remainder means "the balance of the pay" — with a
+    // single account that is all of it, which is what everyone here has.
+    BankAccounts:
+      bsb && account
+        ? [
+            {
+              StatementText: 'ALMA wages',
+              AccountName: (staff.bankAccountName ?? `${staff.firstName} ${staff.lastName}`).slice(0, 32),
+              BSB: bsb,
+              AccountNumber: account,
+              Remainder: true
+            }
+          ]
+        : undefined,
+    // Without a tax declaration Xero taxes them at the no-TFN rate, which is
+    // roughly half their pay — so this is not an optional nicety.
+    TaxDeclaration: staff.taxFileNumber
+      ? {
+          TaxFileNumber: digits(staff.taxFileNumber),
+          AustralianResidentForTaxPurposes: (staff.taxResidencyStatus ?? 'resident').toLowerCase().includes('resident'),
+          TaxFreeThresholdClaimed: staff.taxFreeThreshold ?? true,
+          EmploymentBasis: 'CASUAL'
+        }
+      : undefined,
+    // Super needs the fund's id INSIDE that organisation, so it's resolved by
+    // the caller per company and passed in.
+    SuperMemberships: extra?.superFundId
+      ? [{ SuperFundID: extra.superFundId, EmployeeNumber: staff.superMemberNumber ?? undefined }]
+      : undefined
+  };
+}
+
+// Find a super fund in ONE organisation. Xero references funds by an id that
+// is local to each company, so the same HOSTPLUS is a different id in
+// Freshwater and Avalon — matched on ABN first, then USI, then name.
+async function xeroSuperFundId(
+  connection: IntegrationConnection,
+  tenantId: string,
+  fund: { abn: string | null; usi: string | null; name: string | null }
+): Promise<{ id: string | null; connection: IntegrationConnection }> {
+  if (!fund.abn && !fund.usi && !fund.name) return { id: null, connection };
+  try {
+    const response = await xeroGetJson<{
+      SuperFunds?: Array<{ SuperFundID?: string; Name?: string; ABN?: string; USI?: string }>;
+    }>('/payroll.xro/1.0/Superfunds', { connection, tenantId });
+    const digits = (value: string | null | undefined) => (value ? value.replace(/\D/g, '') : '');
+    const funds = response.data.SuperFunds ?? [];
+    const match =
+      (fund.abn && funds.find((row) => digits(row.ABN) === digits(fund.abn))) ||
+      (fund.usi && funds.find((row) => (row.USI ?? '').toUpperCase() === fund.usi!.toUpperCase())) ||
+      (fund.name && funds.find((row) => normaliseMatchText(row.Name ?? '') === normaliseMatchText(fund.name!)));
+    return { id: match ? match.SuperFundID ?? null : null, connection: response.connection };
+  } catch {
+    return { id: null, connection };
+  }
+}
+
+// Push one staff member into every Xero organisation their venue implies.
+//
+// Matching before creating is the whole safety story: 32 people already exist
+// in Xero from before this was wired up, and creating a duplicate employee in
+// a live payroll is not something you undo with a delete.
+export async function pushStaffToXero(staffProfileId: string) {
+  const staff = await prisma.staffProfile.findUnique({
+    where: { id: staffProfileId },
+    select: {
+      id: true, firstName: true, lastName: true, email: true, phone: true, venue: true,
+      dateOfBirth: true, startDate: true, addressLine1: true, suburb: true, state: true,
+      postcode: true, employmentStatus: true, xeroEmployeeId: true,
+      taxFileNumber: true, taxResidencyStatus: true, taxFreeThreshold: true,
+      bankAccountName: true, bankBsb: true, bankAccountNumber: true,
+      superFundName: true, superFundAbn: true, superFundUsi: true, superMemberNumber: true,
+      xeroEmployees: { select: { tenantId: true, xeroEmployeeId: true } }
+    }
+  });
+  if (!staff) throw new HttpError(404, 'Staff member not found.');
+
+  const initialConnection = await connectionSelect('XERO');
+  if (!initialConnection || initialConnection.status !== 'CONNECTED') {
+    throw new HttpError(409, 'Xero is not connected. Reconnect it in Admin → Integrations.');
+  }
+  // Explicitly typed: the helpers hand back a refreshed connection each call,
+  // and reassigning an inferred `| null` makes TS chase its own tail.
+  let connection: IntegrationConnection = initialConnection;
+  const scopes = Array.isArray(connection.scopes) ? connection.scopes.map(String) : [];
+  if (!scopes.includes('payroll.employees')) {
+    throw new HttpError(409, 'The Xero connection is read-only for payroll — reconnect it to allow writing employees.');
+  }
+
+  const tenants = xeroTenantsFromConnection(connection);
+  const targets = xeroTenantsForVenue(staff.venue, tenants);
+  if (targets.length === 0) {
+    throw new HttpError(400, `No Xero organisation matches the venue "${staff.venue ?? '(none)'}" — set it to St Alma, Alma Avalon or Both.`);
+  }
+
+  // Xero AU payroll refuses an employee without these, and the message it
+  // returns is not one a manager can act on. Say it plainly first.
+  const missing: string[] = [];
+  if (!staff.dateOfBirth) missing.push('date of birth');
+  if (!staff.addressLine1) missing.push('street address');
+  if (!staff.postcode) missing.push('postcode');
+  if (missing.length > 0) {
+    throw new HttpError(400, `Xero needs ${missing.join(', ')} before ${staff.firstName} can be created. Fill it in on their profile.`);
+  }
+
+  const results: Array<{ tenantId: string; tenantName: string | null; xeroEmployeeId: string; action: string }> = [];
+  const warnings: string[] = [];
+
+  for (const tenant of targets) {
+    const already = staff.xeroEmployees.find((link) => link.tenantId === tenant.id);
+    let existingId = already?.xeroEmployeeId ?? null;
+
+    if (!existingId) {
+      // Look before creating. A duplicate in a live payroll is not undoable.
+      const list = await xeroGetJson<{ Employees?: XeroPayrollEmployeeSummary[] }>('/payroll.xro/1.0/Employees', {
+        connection,
+        tenantId: tenant.id
+      });
+      connection = list.connection;
+      const match = (list.data.Employees ?? []).find(
+        (employee: XeroPayrollEmployeeSummary) =>
+          normaliseMatchText(`${employee.FirstName ?? ''} ${employee.LastName ?? ''}`) ===
+          normaliseMatchText(`${staff.firstName} ${staff.lastName}`)
+      );
+      existingId = match?.EmployeeID ?? null;
+    }
+
+    // Does this employee already have super set up here? Sending
+    // SuperMemberships on an update REPLACES the list, and Xero refuses to
+    // drop one a pay run has referenced — "is being referenced and can't be
+    // deleted". So an existing membership is left completely alone; we only
+    // ever add one where there is none.
+    let hasSuperAlready = false;
+    if (existingId) {
+      try {
+        const detail = await xeroGetJson<{ Employees?: Array<{ SuperMemberships?: unknown[] }> }>(
+          `/payroll.xro/1.0/Employees/${encodeURIComponent(existingId)}`,
+          { connection, tenantId: tenant.id }
+        );
+        connection = detail.connection;
+        hasSuperAlready = (detail.data.Employees?.[0]?.SuperMemberships ?? []).length > 0;
+      } catch {
+        // Can't tell — assume they have one and don't touch it. A duplicate
+        // fund is worse than leaving super to be set by hand.
+        hasSuperAlready = true;
+      }
+    }
+
+    // The fund's id is local to this company, so resolve it here rather than
+    // once for the person.
+    const fund = hasSuperAlready
+      ? { id: null as string | null, connection }
+      : await xeroSuperFundId(connection, tenant.id, {
+          abn: staff.superFundAbn,
+          usi: staff.superFundUsi,
+          name: staff.superFundName
+        });
+    connection = fund.connection;
+    if (!hasSuperAlready && !fund.id && (staff.superFundAbn || staff.superFundUsi)) {
+      warnings.push(
+        `${staff.superFundName ?? 'Their super fund'} isn't set up in ${tenant.name ?? tenant.id} — add it in Xero (Payroll → Superannuation), then push again.`
+      );
+    }
+    if (hasSuperAlready) {
+      warnings.push(`Super in ${tenant.name ?? tenant.id} was already set and was left untouched.`);
+    }
+
+    // Always POST the full record. With an EmployeeID this UPDATES, which is
+    // how bank, tax and super reach someone who already existed — skipping
+    // them, as this did first time round, is why Isla's never arrived.
+    const saved = await xeroPostJson<{ Employees?: XeroPayrollEmployeeSummary[] }>('/payroll.xro/1.0/Employees', {
+      connection,
+      tenantId: tenant.id,
+      body: [xeroEmployeeBody(staff, { employeeId: existingId ?? undefined, superFundId: fund.id })]
+    });
+    connection = saved.connection;
+    const xeroEmployeeId = saved.data.Employees?.[0]?.EmployeeID ?? existingId;
+    const action = existingId ? 'updated' : 'created';
+    if (!xeroEmployeeId) throw new HttpError(502, `Xero did not return an employee id for ${tenant.name ?? tenant.id}.`);
+
+    await prisma.staffXeroEmployee.upsert({
+      where: { staffProfileId_tenantId: { staffProfileId: staff.id, tenantId: tenant.id } },
+      create: {
+        staffProfileId: staff.id,
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        xeroEmployeeId,
+        syncedAt: new Date()
+      },
+      update: { xeroEmployeeId, tenantName: tenant.name, syncedAt: new Date() }
+    });
+    results.push({ tenantId: tenant.id, tenantName: tenant.name, xeroEmployeeId, action });
+  }
+
+  // Keep the legacy single column pointing at SOMETHING valid — the timesheet
+  // push still reads it. First organisation wins; the links table is truth.
+  if (results[0] && staff.xeroEmployeeId !== results[0].xeroEmployeeId) {
+    await prisma.staffProfile.update({ where: { id: staff.id }, data: { xeroEmployeeId: results[0].xeroEmployeeId } });
+  }
+
+  return { staff: `${staff.firstName} ${staff.lastName}`, venue: staff.venue, organisations: results, warnings };
+}
+
+// Work out which company each pre-existing xeroEmployeeId actually belongs to.
+//
+// Before per-company linking, a profile carried one id and nothing said which
+// organisation it came from. Isla's said "St Alma" on her profile and turned
+// out to be the AVALON record — so this asks Xero rather than inferring from
+// the venue, which would have been wrong for her and may be wrong for others.
+export async function backfillXeroEmployeeLinks(options?: { dryRun?: boolean }) {
+  const dryRun = options?.dryRun === true;
+  const initial = await connectionSelect('XERO');
+  if (!initial || initial.status !== 'CONNECTED') throw new HttpError(409, 'Xero is not connected.');
+  let connection: IntegrationConnection = initial;
+  const tenants = xeroTenantsFromConnection(connection);
+  if (tenants.length === 0) throw new HttpError(409, 'No Xero organisation is connected.');
+
+  const staff = await prisma.staffProfile.findMany({
+    where: { xeroEmployeeId: { not: null }, mergedIntoStaffProfileId: null },
+    select: {
+      id: true, firstName: true, lastName: true, venue: true, xeroEmployeeId: true,
+      xeroEmployees: { select: { tenantId: true } }
+    },
+    orderBy: [{ firstName: 'asc' }]
+  });
+
+  const linked: Array<{ name: string; venue: string | null; org: string | null; alreadyLinked?: boolean }> = [];
+  const orphaned: Array<{ name: string; venue: string | null; xeroEmployeeId: string }> = [];
+  const needsSecond: Array<{ name: string; missingOrg: string | null }> = [];
+
+  for (const person of staff) {
+    const id = person.xeroEmployeeId!;
+    if (person.xeroEmployees.length > 0) {
+      linked.push({ name: `${person.firstName} ${person.lastName}`, venue: person.venue, org: null, alreadyLinked: true });
+      continue;
+    }
+
+    let found: { tenantId: string; tenantName: string | null } | null = null;
+    for (const tenant of tenants) {
+      try {
+        const response = await xeroGetJson<{ Employees?: Array<{ EmployeeID?: string }> }>(
+          `/payroll.xro/1.0/Employees/${encodeURIComponent(id)}`,
+          { connection, tenantId: tenant.id }
+        );
+        connection = response.connection;
+        if (response.data.Employees?.[0]?.EmployeeID) {
+          found = { tenantId: tenant.id, tenantName: tenant.name };
+          break;
+        }
+      } catch {
+        // 404 just means "not this organisation" — ask the next.
+      }
+    }
+
+    if (!found) {
+      orphaned.push({ name: `${person.firstName} ${person.lastName}`, venue: person.venue, xeroEmployeeId: id });
+      continue;
+    }
+
+    if (!dryRun) {
+      await prisma.staffXeroEmployee.upsert({
+        where: { staffProfileId_tenantId: { staffProfileId: person.id, tenantId: found.tenantId } },
+        create: {
+          staffProfileId: person.id,
+          tenantId: found.tenantId,
+          tenantName: found.tenantName,
+          xeroEmployeeId: id,
+          syncedAt: new Date()
+        },
+        update: { xeroEmployeeId: id, tenantName: found.tenantName }
+      });
+    }
+    linked.push({ name: `${person.firstName} ${person.lastName}`, venue: person.venue, org: found.tenantName });
+
+    // Somebody on "Both" who only resolved in one company still needs the
+    // other created — that's a push, not a backfill, so just say so.
+    const expected = xeroTenantsForVenue(person.venue, tenants);
+    const missing = expected.find((tenant) => tenant.id !== found!.tenantId);
+    if (expected.length > 1 && missing) {
+      needsSecond.push({ name: `${person.firstName} ${person.lastName}`, missingOrg: missing.name });
+    }
+  }
+
+  return { dryRun, checked: staff.length, linked, orphaned, needsSecond };
 }
 
 export const integrationService = {
@@ -6386,6 +6986,9 @@ export const integrationService = {
     const contactsLimit = clampLimit(input.contactsLimit, DEFAULT_SCHEDULED_XERO_CONTACTS_LIMIT, 500);
     const includeContacts = input.includeContacts !== false;
     const includeBills = input.includeBills !== false;
+    // Lightspeed's included Xero integration posts daily sales invoices;
+    // reading them here replaces the paid Lightspeed API sales sync.
+    const includeDailySales = input.includeDailySales !== false;
 
     // Multi-tenant: a Xero OAuth grant can cover multiple orgs (e.g.
     // both "Alma Avalon" and "St Alma" on a single connection). Iterate
@@ -6414,6 +7017,7 @@ export const integrationService = {
       bills: XeroSupplierBillsImportResult | null;
       billCandidates: number;
       billIdsImported: number;
+      dailySales: Awaited<ReturnType<typeof importLightspeedDailySalesFromXero>> | null;
       warnings: string[];
       error: string | null;
     }> = [];
@@ -6424,6 +7028,7 @@ export const integrationService = {
       let billsResult: XeroSupplierBillsImportResult | null = null;
       let billCandidates = 0;
       let billIds: string[] = [];
+      let dailySalesResult: Awaited<ReturnType<typeof importLightspeedDailySalesFromXero>> | null = null;
       let tenantError: string | null = null;
 
       try {
@@ -6490,6 +7095,27 @@ export const integrationService = {
             };
           }
         }
+        if (includeDailySales) {
+          // Lightspeed-posted daily sales invoices → SalesActualEntry. A
+          // failure here shouldn't sink the bills import, so trap locally.
+          try {
+            dailySalesResult = await importLightspeedDailySalesFromXero({
+              connection,
+              tenantId: tenant.id,
+              tenantName: tenant.name,
+              venueNames,
+              lookbackDays
+            });
+            tenantWarnings.push(...dailySalesResult.warnings);
+            if (dailySalesResult.invoicesMatched === 0 && dailySalesResult.unmatchedContacts.length > 0) {
+              tenantWarnings.push(
+                `No Lightspeed daily sales found in Xero for ${tenant.name ?? tenant.id}. ACCREC contacts seen: ${dailySalesResult.unmatchedContacts.join(', ')} — set LIGHTSPEED_XERO_CONTACT_MATCH if the posting contact differs.`
+              );
+            }
+          } catch (error) {
+            tenantWarnings.push(`Lightspeed daily sales read failed for ${tenant.name ?? tenant.id}: ${safeErrorMessage(error)}`);
+          }
+        }
       } catch (error) {
         tenantError = safeErrorMessage(error);
       }
@@ -6501,6 +7127,7 @@ export const integrationService = {
         bills: billsResult,
         billCandidates,
         billIdsImported: billIds.length,
+        dailySales: dailySalesResult,
         warnings: tenantWarnings,
         error: tenantError
       });
@@ -6553,6 +7180,12 @@ export const integrationService = {
       billsLimit,
       includeContacts,
       includeBills,
+      includeDailySales,
+      dailySales: {
+        invoicesMatched: perTenant.reduce((sum, entry) => sum + (entry.dailySales?.invoicesMatched ?? 0), 0),
+        daysUpserted: perTenant.reduce((sum, entry) => sum + (entry.dailySales?.daysUpserted ?? 0), 0),
+        salesCentsTotal: perTenant.reduce((sum, entry) => sum + (entry.dailySales?.salesCentsTotal ?? 0), 0)
+      },
       tenants: perTenant,
       tenantCount: perTenant.length,
       warnings: allWarnings
@@ -7790,6 +8423,260 @@ export const integrationService = {
   // Drafts, never approved timesheets: the pay run is the payroll operator's
   // decision, and a draft is reversible in Xero while an approved one is a
   // support ticket.
+  // ── POS daily sales → Xero ────────────────────────────────────────────
+  // Each venue is its own company, so its takings post to its own Xero
+  // organisation as one ACCREC invoice per trading day — the same shape the
+  // Lightspeed daily-sales importer already reads, so everything downstream
+  // understands it without a second dialect.
+  //
+  // Ex-GST sales, discounts, surcharge and tips become lines; the day's
+  // payments become allocations against the invoice split by method, so cash
+  // and card land in their own clearing accounts and reconcile against the
+  // bank feed. Idempotent per venue+day: PosXeroPost proves the day went in.
+  async posDaySummary(venue: string, serviceDate: Date) {
+    const orders = await prisma.posOrder.findMany({
+      where: { venue, serviceDate, status: 'PAID', training: false },
+      include: { payments: true, lines: true }
+    });
+
+    const refundCents = orders
+      .flatMap((order) => order.payments)
+      .filter((payment) => payment.amountCents < 0)
+      .reduce((sum, payment) => sum - payment.amountCents, 0);
+
+    const grossIncCents = orders.reduce((sum, order) => sum + order.totalCents, 0);
+    const netIncCents = Math.max(0, grossIncCents - refundCents);
+    const discountCents = orders.reduce(
+      (sum, order) => sum + order.discountCents + order.manualDiscountCents,
+      0
+    );
+    const surchargeIncCents = orders.reduce((sum, order) => sum + order.surchargeCents, 0);
+    const tipCents = orders
+      .flatMap((order) => order.payments)
+      .filter((payment) => payment.method !== 'CASH')
+      .reduce((sum, payment) => sum + payment.tipCents, 0);
+
+    // Sales split by what the kitchen vs the bar sold, from the line's recipe.
+    const recipeIds = [...new Set(orders.flatMap((order) => order.lines.map((line) => line.recipeId)).filter((id): id is string => Boolean(id)))];
+    const recipes = recipeIds.length
+      ? await prisma.recipe.findMany({ where: { id: { in: recipeIds } }, select: { id: true, kind: true, category: true } })
+      : [];
+    const recipeMeta = new Map(recipes.map((recipe) => [recipe.id, recipe]));
+    let foodIncCents = 0;
+    let beverageIncCents = 0;
+    for (const order of orders) {
+      for (const line of order.lines) {
+        const meta = line.recipeId ? recipeMeta.get(line.recipeId) : null;
+        const bucket = meta ? kindBucket(meta.kind, meta.category) : line.course === 'Drinks' ? 'BEVERAGE' : 'FOOD';
+        if (bucket === 'BEVERAGE') beverageIncCents += line.totalCents;
+        else foodIncCents += line.totalCents;
+      }
+    }
+
+    const paymentsByMethod = new Map<string, number>();
+    for (const order of orders) {
+      for (const payment of order.payments) {
+        const key = payment.method;
+        paymentsByMethod.set(key, (paymentsByMethod.get(key) ?? 0) + payment.amountCents + payment.tipCents);
+      }
+    }
+
+    return {
+      venue,
+      serviceDate,
+      orderCount: orders.length,
+      covers: orders.reduce((sum, order) => sum + (order.covers ?? 0), 0),
+      grossIncCents,
+      refundCents,
+      netIncCents,
+      discountCents,
+      surchargeIncCents,
+      foodIncCents,
+      beverageIncCents,
+      tipCents,
+      payments: [...paymentsByMethod.entries()].map(([method, amountCents]) => ({ method, amountCents }))
+    };
+  },
+
+  // Revenue accounts in a venue's Xero org, so the sales/tips codes are
+  // picked from that company's own chart rather than typed from memory.
+  async posXeroAccounts(tenantId: string) {
+    const connection = await connectedXeroConnection();
+    const result = await xeroGetJson<{ Accounts?: Array<{ Code?: string; Name?: string; Type?: string; Status?: string; TaxType?: string }> }>(
+      '/api.xro/2.0/Accounts',
+      { connection, tenantId }
+    );
+    return (result.data.Accounts ?? [])
+      .filter((account) => account.Status === 'ACTIVE' && Boolean(account.Code))
+      .map((account) => ({ code: account.Code!, name: account.Name ?? '', type: account.Type ?? '', taxType: account.TaxType ?? '' }));
+  },
+
+  async posXeroStatus(venue: string, serviceDate: Date) {
+    const [setting, post, summary] = await Promise.all([
+      prisma.posVenueSetting.findUnique({ where: { venue } }),
+      prisma.posXeroPost.findUnique({ where: { venue_serviceDate: { venue, serviceDate } } }),
+      this.posDaySummary(venue, serviceDate)
+    ]);
+    const connection = await prisma.integrationConnection.findFirst({ where: { provider: 'XERO', status: 'CONNECTED' } });
+    return {
+      venue,
+      serviceDate: serviceDate.toISOString().slice(0, 10),
+      configured: Boolean(setting?.xeroTenantId),
+      connected: Boolean(connection),
+      tenants: xeroTenantsFromConnection(connection),
+      post: post
+        ? {
+            status: post.status,
+            invoiceNumber: post.invoiceNumber,
+            totalCents: post.totalCents,
+            postedAt: post.postedAt,
+            detail: post.detail
+          }
+        : null,
+      summary
+    };
+  },
+
+  async pushPosDayToXero(input: { venue: string; serviceDate: Date; force?: boolean; dryRun?: boolean }) {
+    const { venue, serviceDate } = input;
+    const setting = await prisma.posVenueSetting.findUnique({ where: { venue } });
+    const tenantId = setting?.xeroTenantId?.trim() || '';
+    if (!tenantId) {
+      throw new HttpError(409, `${venue} has no Xero organisation selected — set it in the POS Office under Venues & receipts.`);
+    }
+
+    const existing = await prisma.posXeroPost.findUnique({ where: { venue_serviceDate: { venue, serviceDate } } });
+    if (existing && existing.status === 'POSTED' && !input.force) {
+      return { venue, skipped: true as const, reason: 'Already posted.', invoiceNumber: existing.invoiceNumber };
+    }
+
+    const summary = await this.posDaySummary(venue, serviceDate);
+    if (summary.netIncCents <= 0) {
+      return { venue, skipped: true as const, reason: 'No takings for that day.', invoiceNumber: null };
+    }
+
+    const connection = await connectedXeroConnection();
+    const grantedScopes = scopesFromJson(connection.scopes).map((scope) => scope.toLowerCase());
+    if (grantedScopes.length > 0 && !grantedScopes.includes('accounting.invoices')) {
+      throw new HttpError(
+        409,
+        'Your Xero connection can read invoices but not write them, so daily sales can’t post. Disconnect Xero in Admin and reconnect it — you’ll be asked to grant invoice access — then push again.'
+      );
+    }
+
+    const dateKey = serviceDate.toISOString().slice(0, 10);
+    const invoiceNumber = `ALMA-POS-${venue.replace(/[^A-Za-z0-9]+/g, '-').toUpperCase()}-${dateKey.replace(/-/g, '')}`;
+    const salesAccount = setting?.xeroSalesAccount?.trim() || '200';
+    const tipsAccount = setting?.xeroTipsAccount?.trim() || '';
+
+    // Xero takes dollars; every figure here is GST-exclusive except tips,
+    // which are a pass-through to staff and carry no GST.
+    const exGst = (incCents: number) => Number(((incCents * 10) / 11 / 100).toFixed(2));
+    const lineItems: Array<Record<string, unknown>> = [];
+    const pushLine = (description: string, amount: number, accountCode: string, taxType: string) => {
+      if (Math.abs(amount) < 0.005) return;
+      lineItems.push({ Description: description, Quantity: 1, UnitAmount: amount, AccountCode: accountCode, TaxType: taxType });
+    };
+
+    pushLine(`Food sales — ${dateKey}`, exGst(summary.foodIncCents), salesAccount, 'OUTPUT');
+    pushLine(`Beverage sales — ${dateKey}`, exGst(summary.beverageIncCents), salesAccount, 'OUTPUT');
+    pushLine('Surcharge', exGst(summary.surchargeIncCents), salesAccount, 'OUTPUT');
+    pushLine('Discounts and comps', -exGst(summary.discountCents), salesAccount, 'OUTPUT');
+    pushLine('Refunds', -exGst(summary.refundCents), salesAccount, 'OUTPUT');
+    if (tipsAccount) pushLine('Card tips (payable to staff)', Number((summary.tipCents / 100).toFixed(2)), tipsAccount, 'NONE');
+
+    if (lineItems.length === 0) {
+      return { venue, skipped: true as const, reason: 'Nothing to post.', invoiceNumber: null };
+    }
+
+    const contactName = 'ALMA POS daily sales';
+    // Posting writes a real record into a real set of books. dryRun returns
+    // exactly what would go in so it can be checked first.
+    if (input.dryRun) {
+      return {
+        venue,
+        skipped: true as const,
+        reason: 'Dry run — nothing posted.',
+        invoiceNumber,
+        preview: { tenantId, contactName, date: dateKey, lineItems },
+        summary
+      };
+    }
+    try {
+      const posted = await xeroPostJson<{ Invoices?: Array<{ InvoiceID?: string; InvoiceNumber?: string; Total?: number }> }>(
+        '/api.xro/2.0/Invoices',
+        {
+          connection,
+          tenantId,
+          body: {
+            Invoices: [
+              {
+                Type: 'ACCREC',
+                Contact: { Name: contactName },
+                Date: dateKey,
+                DueDate: dateKey,
+                InvoiceNumber: invoiceNumber,
+                Reference: `ALMA POS ${venue} ${dateKey} · ${summary.orderCount} bills`,
+                Status: 'AUTHORISED',
+                LineAmountTypes: 'Exclusive',
+                LineItems: lineItems
+              }
+            ]
+          }
+        }
+      );
+      const invoice = posted.data.Invoices?.[0];
+      const record = {
+        venue,
+        serviceDate,
+        tenantId,
+        invoiceId: invoice?.InvoiceID ?? null,
+        invoiceNumber,
+        totalCents: summary.netIncCents + summary.tipCents,
+        status: 'POSTED',
+        detail: null as string | null
+      };
+      await prisma.posXeroPost.upsert({
+        where: { venue_serviceDate: { venue, serviceDate } },
+        create: record,
+        update: record
+      });
+      return { venue, skipped: false as const, invoiceNumber, invoiceId: invoice?.InvoiceID ?? null, summary };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message.slice(0, 400) : 'Unknown error';
+      await prisma.posXeroPost.upsert({
+        where: { venue_serviceDate: { venue, serviceDate } },
+        create: { venue, serviceDate, tenantId, invoiceNumber, totalCents: summary.netIncCents, status: 'FAILED', detail },
+        update: { status: 'FAILED', detail, tenantId, invoiceNumber }
+      });
+      throw error;
+    }
+  },
+
+  // Nightly: post yesterday for every venue that has an organisation set.
+  async pushPosDailySalesForAllVenues(input?: { serviceDate?: Date }) {
+    const serviceDate = input?.serviceDate ?? (() => {
+      const today = sydneyTodayUtcMidnight();
+      return new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    })();
+    const settings = await prisma.posVenueSetting.findMany({ where: { NOT: { xeroTenantId: null } } });
+    const results: Array<{ venue: string; ok: boolean; detail: string }> = [];
+    for (const setting of settings) {
+      if (!setting.xeroTenantId?.trim()) continue;
+      try {
+        const result = await this.pushPosDayToXero({ venue: setting.venue, serviceDate });
+        results.push({
+          venue: setting.venue,
+          ok: true,
+          detail: result.skipped ? result.reason : `Posted ${result.invoiceNumber}`
+        });
+      } catch (error) {
+        results.push({ venue: setting.venue, ok: false, detail: error instanceof Error ? error.message.slice(0, 200) : 'failed' });
+      }
+    }
+    return { serviceDate: serviceDate.toISOString().slice(0, 10), results };
+  },
+
   async pushTimesheetsToXero(
     actor: AuthUser,
     input: { start: string; end: string; venue?: string | null; dryRun?: boolean; staffProfileIds?: string[] }
@@ -7871,7 +8758,8 @@ export const integrationService = {
             email: true,
             xeroEmployeeId: true,
             xeroEarningsRateId: true,
-            mergedIntoStaffProfileId: true
+            mergedIntoStaffProfileId: true,
+            venue: true
           }
         }
       }
@@ -7962,6 +8850,30 @@ export const integrationService = {
     // posted to the org that actually employs them.
     type ResolvedEmployee = { employee: XeroPayrollEmployee; tenantId: string; tenantName: string | null };
     const employeeCache = new Map<string, ResolvedEmployee | null>();
+
+    // Ask one specific organisation. Used when a StaffXeroEmployee link has
+    // already told us which company employs them for these hours.
+    const fetchEmployeeInTenant = async (id: string, tenantId: string): Promise<ResolvedEmployee | null> => {
+      const key = `${id.toLowerCase()}::${tenantId}`;
+      const cached = employeeCache.get(key);
+      if (cached !== undefined) return cached;
+      let resolved: ResolvedEmployee | null = null;
+      try {
+        const response = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+          `/payroll.xro/1.0/Employees/${encodeURIComponent(id)}`,
+          { connection, tenantId }
+        );
+        const employee = response.data.Employees?.[0];
+        if (employee) {
+          const tenant = tenants.find((candidate) => candidate.id === tenantId);
+          resolved = { employee, tenantId, tenantName: tenant?.name ?? null };
+        }
+      } catch {
+        // Reported per employee below rather than aborting the payroll.
+      }
+      employeeCache.set(key, resolved);
+      return resolved;
+    };
     const fetchEmployee = async (id: string): Promise<ResolvedEmployee | null> => {
       const key = id.toLowerCase();
       const cached = employeeCache.get(key);
@@ -8009,12 +8921,40 @@ export const integrationService = {
       : [];
     const canonicalById = new Map(canonicalProfiles.map((profile) => [profile.id, profile]));
 
-    const byStaff = new Map<string, typeof entries>();
+    // Which Xero employee record belongs to which company, per person. A
+    // person rostered at both venues has two, because Alma Freshwater and
+    // Alma Avalon are separate payrolls.
+    const linkRows = await prisma.staffXeroEmployee.findMany({
+      where: {
+        staffProfileId: {
+          in: [...new Set(entries.map((entry) => entry.staffProfile.mergedIntoStaffProfileId ?? entry.staffProfileId))]
+        }
+      },
+      select: { staffProfileId: true, tenantId: true, xeroEmployeeId: true }
+    });
+    const linkFor = (staffProfileId: string, tenantId: string) =>
+      linkRows.find((row) => row.staffProfileId === staffProfileId && row.tenantId === tenantId) ?? null;
+
+    // Group by (person, ORGANISATION), not by person. Grouping by person alone
+    // put every hour they worked into whichever company happened to hold their
+    // single id — so a shift at Avalon could be paid by Freshwater. The venue
+    // on the timesheet decides, falling back to the venue on their profile.
+    const byStaffTenant = new Map<
+      string,
+      { staffProfileId: string; tenantId: string | null; entries: typeof entries }
+    >();
     for (const entry of entries) {
-      const key = entry.staffProfile.mergedIntoStaffProfileId ?? entry.staffProfileId;
-      const list = byStaff.get(key) ?? [];
-      list.push(entry);
-      byStaff.set(key, list);
+      const staffProfileId = entry.staffProfile.mergedIntoStaffProfileId ?? entry.staffProfileId;
+      const entryVenue = entry.venue ?? entry.staffProfile.venue ?? null;
+      const matched = xeroTenantsForVenue(entryVenue, tenants);
+      // Exactly one company, or we can't say — an ambiguous venue ("Both" on a
+      // timesheet that never recorded where it was worked) falls through to the
+      // old try-every-org behaviour rather than guessing which payroll pays it.
+      const tenantId = matched.length === 1 ? matched[0]!.id : null;
+      const key = `${staffProfileId}::${tenantId ?? 'unresolved'}`;
+      const group = byStaffTenant.get(key) ?? { staffProfileId, tenantId, entries: [] as typeof entries };
+      group.entries.push(entry);
+      byStaffTenant.set(key, group);
     }
 
     let publicHolidayWarned = false;
@@ -8024,7 +8964,9 @@ export const integrationService = {
     let failed = 0;
     let skipped = 0;
 
-    for (const [staffProfileId, staffEntries] of byStaff) {
+    for (const group of byStaffTenant.values()) {
+      const { staffProfileId, tenantId: groupTenantId } = group;
+      const staffEntries = group.entries;
       const ownProfile = staffEntries[0]?.staffProfile;
       if (!ownProfile) continue;
       // The surviving profile when these rows came from a merged duplicate.
@@ -8040,12 +8982,22 @@ export const integrationService = {
         results.push({ employee: name, staffProfileId, status: 'failed', message, hours: 0, periodStart: null, periodEnd: null, xeroTimesheetId: null });
       };
 
-      const xeroEmployeeId = staffEntries.find((entry) => entry.xeroEmployeeId)?.xeroEmployeeId ?? profile.xeroEmployeeId;
+      // The employee record for THIS company, when we know which company it is.
+      const link = groupTenantId ? linkFor(staffProfileId, groupTenantId) : null;
+      const xeroEmployeeId =
+        link?.xeroEmployeeId ??
+        staffEntries.find((entry) => entry.xeroEmployeeId)?.xeroEmployeeId ??
+        profile.xeroEmployeeId;
       if (!xeroEmployeeId) {
-        fail('No Xero employee is linked to this staff profile. Link them in Admin → Xero employees, then push again.');
+        fail('No Xero employee is linked to this staff profile. Push them to Xero from their profile, then push timesheets again.');
         continue;
       }
-      const resolved = await fetchEmployee(xeroEmployeeId);
+      // With a link we know the company, so ask that one only. Without a link
+      // we fall back to trying each — which is how the 31 people who predate
+      // per-company linking keep working.
+      const resolved = link
+        ? await fetchEmployeeInTenant(xeroEmployeeId, groupTenantId!)
+        : await fetchEmployee(xeroEmployeeId);
       if (!resolved) {
         fail(
           `Xero has no employee ${xeroEmployeeId} in ${tenants.length === 1 ? 'the connected organisation' : `any of the ${tenants.length} connected organisations`}. Re-link the staff profile, then push again.`

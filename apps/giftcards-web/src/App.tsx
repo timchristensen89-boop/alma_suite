@@ -1,6 +1,7 @@
 import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CardArtGallery } from './cardArt/Gallery';
 import { CounterApp } from './CounterApp';
+import { CustomCardDesigner, type CustomCardDesignerHandle } from './CustomCardDesigner';
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
 import {
   DEFAULT_GIFT_CARD_SETTINGS,
@@ -17,10 +18,11 @@ import {
   type GiftCardPromoQuote,
   type GiftCardPublicConfig,
   type GiftCardPublic,
+  type GiftCardReport,
   type GiftCardSettings
 } from '@alma/shared';
 import { DEFAULT_GIFT_CARD_DESIGN, GIFT_CARD_DESIGN_META, GiftCardArt, isGiftCardDesign, resolveGiftCardDesign } from './giftCardArt';
-import {
+import { installSuiteAppAccess,
   AppShell,
   ActionFeedback,
   ActionPanel,
@@ -50,6 +52,14 @@ import {
 import { SuiteSignOutButton } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
+import {
+  IconKeyRound,
+  IconReceipt,
+  IconScan,
+  IconSettings,
+  IconStore,
+  IconWallet
+} from '../../web/src/lib/icons';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const AMOUNTS = [
@@ -64,37 +74,43 @@ const GIFTCARD_NAV_ITEMS = [
     href: '/',
     label: 'Shop',
     description: 'Public purchase page',
-    icon: <ChartIcon />
+    icon: <IconStore />
   },
   {
     href: '/orders#recent',
     label: 'Orders',
     description: 'Recent cards and balances',
-    icon: <DocumentIcon />
+    icon: <IconReceipt />
+  },
+  {
+    href: '/reporting#report',
+    label: 'Reporting',
+    description: 'Who redeemed what, where',
+    icon: <ChartIcon />
   },
   {
     href: '/redeem#redeem',
     label: 'Redeem',
     description: 'Check and redeem',
-    icon: <SearchIcon />
+    icon: <IconScan />
   },
   {
     href: '/counter',
     label: 'Sell at the counter',
     description: 'Take payment, issue a number, check a balance',
-    icon: <SearchIcon />
+    icon: <IconWallet />
   },
   {
     href: '/activate#activate',
     label: 'Activate pre-printed',
     description: 'A card that already has a number on it',
-    icon: <SearchIcon />
+    icon: <IconKeyRound />
   },
   {
     href: '/admin#settings',
     label: 'Admin setup',
     description: 'Checkout, promos, artwork',
-    icon: <ChartIcon />
+    icon: <IconSettings />
   }
 ];
 
@@ -206,12 +222,15 @@ function useGiftCardAuth() {
       const handoffUser = await consumeSuiteHandoffToken();
       if (handoffUser) {
         setUser(handoffUser);
+        installSuiteAppAccess(handoffUser as never);
         return;
       }
       const data = await api<{ user: AuthUser | null }>('/api/auth/me');
       setUser(data.user);
+        installSuiteAppAccess(data.user as never);
     } catch {
       setUser(null);
+        installSuiteAppAccess(null as never);
     } finally {
       setLoading(false);
     }
@@ -230,12 +249,14 @@ function useGiftCardAuth() {
     });
     setApiAuthToken(session.token);
     setUser(session.user);
+        installSuiteAppAccess(session.user as never);
   }, []);
 
   const logout = useCallback(async () => {
     await api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
     clearApiAuthToken();
     setUser(null);
+        installSuiteAppAccess(null as never);
   }, []);
 
   return { user, loading, login, logout };
@@ -246,7 +267,7 @@ function useGiftCardAuth() {
 // ./giftCardArt. Picker swatches use design.swatchBg.
 
 const QUICK_MESSAGES = [
-  { short: 'Have the best night…', long: "Have the best night. Order the scallops. Don't drive." },
+  { short: 'Have the best night…', long: "Have the best night. Order the ribs. Don't drive." },
   { short: 'Happy birthday.', long: 'Happy birthday. Order the second margarita. Love you.' },
   { short: 'Thank you.', long: "Thank you — for everything this year. Dinner's on me." },
   { short: 'Congratulations.', long: 'Congratulations. Go celebrate properly. So proud of you.' },
@@ -282,6 +303,26 @@ function PublicGiftCardShop() {
   const [amountCents, setAmountCents] = useState(12000);
   const [customAmount, setCustomAmount] = useState('');
   const [design, setDesign] = useState<GiftCardDesign>(DEFAULT_GIFT_CARD_DESIGN);
+  // "Create your own" designer. The editor lives in a modal (the preview
+  // column can't scroll, so inline controls were unreachable); the modal stays
+  // MOUNTED once opened and is only hidden, so the design survives reopening.
+  // customPreview holds the exported image — the preview column shows it and
+  // it ships with the order.
+  const [customOn, setCustomOn] = useState(false);
+  const [designerOpen, setDesignerOpen] = useState(false);
+  const [customPreview, setCustomPreview] = useState<string | null>(null);
+  const designerRef = useRef<CustomCardDesignerHandle>(null);
+  useEffect(() => {
+    document.body.style.overflow = designerOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [designerOpen]);
+  function closeDesigner() {
+    const exported = designerRef.current?.exportArtwork() ?? null;
+    if (exported) setCustomPreview(exported);
+    setDesignerOpen(false);
+  }
   // Scheduled delivery — when deliverMode='later', deliverDate (YYYY-MM-DD)
   // is resolved to 07:00 venue-local and posted as scheduledDeliveryAt.
   // Server defers the email until the /jobs/gift-cards/drain scheduler
@@ -297,7 +338,7 @@ function PublicGiftCardShop() {
   const [purchaserEmail, setPurchaserEmail] = useState('');
   const [recipientName, setRecipientName] = useState('Caro');
   const [recipientEmail, setRecipientEmail] = useState('');
-  const [message, setMessage] = useState("Have the best night. Order the scallops. Don't drive.");
+  const [message, setMessage] = useState("Have the best night. Order the ribs. Don't drive.");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [navSolid, setNavSolid] = useState(false);
@@ -447,7 +488,8 @@ function PublicGiftCardShop() {
           recipientName,
           recipientEmail,
           message,
-          design,
+          design: customOn ? undefined : design,
+          customArtwork: customOn ? designerRef.current?.exportArtwork() ?? customPreview ?? undefined : undefined,
           checkoutUiMode: 'embedded',
           scheduledDeliveryAt: deliverMode === 'later' && deliverDate
             ? new Date(`${deliverDate}T07:00`).toISOString()
@@ -599,12 +641,16 @@ function PublicGiftCardShop() {
             {checkoutOverlay === 'complete' && paidCard ? (
               <div className="alma-giftcards-checkout__complete">
                 <div className="alma-giftcards-checkout__art">
-                  <GiftCardArt
-                    design={resolveGiftCardDesign(paidCard.design)}
-                    amount={Math.round(paidCard.initialValueCents / 100)}
-                    code={paidCard.code}
-                    recipient={paidCard.recipientName ?? undefined}
-                  />
+                  {paidCard.customArtworkUrl ? (
+                    <img src={paidCard.customArtworkUrl} alt="Your custom gift card" style={{ width: '100%', borderRadius: 16, display: 'block' }} />
+                  ) : (
+                    <GiftCardArt
+                      design={resolveGiftCardDesign(paidCard.design)}
+                      amount={Math.round(paidCard.initialValueCents / 100)}
+                      code={paidCard.code}
+                      recipient={paidCard.recipientName ?? undefined}
+                    />
+                  )}
                 </div>
                 <div className="alma-giftcards-checkout__details">
                   <div>
@@ -641,12 +687,16 @@ function PublicGiftCardShop() {
               Your card <em>is ready.</em>
             </h2>
             <div style={{ maxWidth: 480, margin: '8px 0', position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
-              <GiftCardArt
-                design={resolveGiftCardDesign(paidCard.design)}
-                amount={Math.round(paidCard.initialValueCents / 100)}
-                code={paidCard.code}
-                recipient={paidCard.recipientName ?? undefined}
-              />
+              {paidCard.customArtworkUrl ? (
+                <img src={paidCard.customArtworkUrl} alt="Your custom gift card" style={{ width: '100%', borderRadius: 16, display: 'block' }} />
+              ) : (
+                <GiftCardArt
+                  design={resolveGiftCardDesign(paidCard.design)}
+                  amount={Math.round(paidCard.initialValueCents / 100)}
+                  code={paidCard.code}
+                  recipient={paidCard.recipientName ?? undefined}
+                />
+              )}
             </div>
             <div className="alma-giftcards-paid__details">
               <div>
@@ -786,15 +836,32 @@ function PublicGiftCardShop() {
                 </div>
               </div>
 
-              <div style={{ position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
-                <GiftCardArt
-                  design={design}
-                  amount={amountWhole}
-                  recipient={recipientDisplay !== '—' ? recipientDisplay : undefined}
-                  code="ALMA-7C92F0"
-                  side={previewSide}
-                />
-              </div>
+              {customOn ? (
+                <div className="alma-custom-snapshot">
+                  {customPreview ? (
+                    <img src={customPreview} alt="Your custom card design" />
+                  ) : (
+                    <div className="alma-custom-snapshot__empty">Your design will appear here.</div>
+                  )}
+                  <button
+                    type="button"
+                    className="alma-giftcards-btn alma-giftcards-btn--primary"
+                    onClick={() => setDesignerOpen(true)}
+                  >
+                    {customPreview ? 'Edit your design' : 'Open the designer'}
+                  </button>
+                </div>
+              ) : (
+                <div style={{ position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
+                  <GiftCardArt
+                    design={design}
+                    amount={amountWhole}
+                    recipient={recipientDisplay !== '—' ? recipientDisplay : undefined}
+                    code="ALMA-7C92F0"
+                    side={previewSide}
+                  />
+                </div>
+              )}
 
               <div className="alma-giftcards-preview__message">
                 <span className="alma-giftcards-preview__quote" aria-hidden="true">&ldquo;</span>
@@ -802,14 +869,6 @@ function PublicGiftCardShop() {
                 <div className="alma-giftcards-preview__signoff">{senderSignature}</div>
               </div>
 
-              <p className="alma-giftcards-preview__note">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
-                  <circle cx="7" cy="7" r="6" />
-                  <line x1="7" y1="4.5" x2="7" y2="7.5" strokeLinecap="round" />
-                  <circle cx="7" cy="9.5" r="0.6" fill="currentColor" />
-                </svg>
-                <span>This is what lands in their inbox. They can show it on their phone or print the PDF — both work at the door.</span>
-              </p>
             </div>
 
             <form className="alma-giftcards-form" onSubmit={(event) => void checkout(event)}>
@@ -870,19 +929,59 @@ function PublicGiftCardShop() {
                       <button
                         key={d}
                         type="button"
-                        className={`alma-giftcards-design ${design === d ? 'is-on' : ''}`}
-                        onClick={() => setDesign(d)}
-                        aria-pressed={design === d}
+                        className={`alma-giftcards-design ${!customOn && design === d ? 'is-on' : ''}`}
+                        onClick={() => {
+                          setCustomOn(false);
+                          setDesign(d);
+                        }}
+                        aria-pressed={!customOn && design === d}
                       >
-                        <span className="alma-giftcards-design__swatch" style={{ background: meta.swatchBg, color: meta.swatchFg }}>
-                          <span className="alma-giftcards-design__mark">alma</span>
+                        {/* A real miniature of the card, not a colour swatch —
+                            AlmaCard scales itself to the tile's box. */}
+                        <span className="alma-giftcards-design__swatch">
+                          <GiftCardArt design={d} amount={100} chrome={false} />
                         </span>
                         <span className="alma-giftcards-design__name">{meta.label}</span>
                         <span className="alma-giftcards-design__who">{meta.tagline}</span>
                       </button>
                     );
                   })}
+                  <button
+                    type="button"
+                    className={`alma-giftcards-design ${customOn ? 'is-on' : ''}`}
+                    onClick={() => {
+                      setCustomOn(true);
+                      setDesignerOpen(true);
+                    }}
+                    aria-pressed={customOn}
+                  >
+                    <span className="alma-giftcards-design__swatch alma-giftcards-design__swatch--custom">
+                      <span className="alma-giftcards-design__mark">✎</span>
+                    </span>
+                    <span className="alma-giftcards-design__name">Create your own</span>
+                    <span className="alma-giftcards-design__who">Your text, colours, fish — or your photo</span>
+                  </button>
                 </div>
+                {customOn ? (
+                  <div className={`alma-designer-modal ${designerOpen ? 'is-open' : ''}`} role="dialog" aria-modal="true" aria-label="Design your gift card">
+                    <div className="alma-designer-modal__overlay" onClick={closeDesigner} />
+                    <div className="alma-designer-modal__panel">
+                      <div className="alma-designer-modal__head">
+                        <div>
+                          <p className="alma-giftcards-eyebrow">Create your own</p>
+                          <h3 className="alma-giftcards-h3">Design <em>your card.</em></h3>
+                        </div>
+                        <button type="button" className="alma-designer-modal__close" onClick={closeDesigner} aria-label="Close designer">×</button>
+                      </div>
+                      <CustomCardDesigner ref={designerRef} recipientName={recipientName} />
+                      <div className="alma-designer-modal__foot">
+                        <button type="button" className="alma-giftcards-btn alma-giftcards-btn--primary" onClick={closeDesigner}>
+                          Done — use this design
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {/* 3 — DELIVERY */}
@@ -1295,12 +1394,16 @@ function PrintableGiftCardPage() {
         <section className="giftcards-print-card">
           <div className="giftcards-print-brand">ALMA Gift Cards</div>
           <div style={{ position: 'relative', width: '100%', maxWidth: 540, aspectRatio: '1.586 / 1', margin: '0 auto 18px' }}>
-            <GiftCardArt
-              design={resolveGiftCardDesign(card.design)}
-              amount={Math.round(card.balanceCents / 100)}
-              code={card.code}
-              recipient={card.recipientName ?? undefined}
-            />
+            {card.customArtworkUrl ? (
+              <img src={card.customArtworkUrl} alt="Custom gift card artwork" style={{ width: '100%', borderRadius: 16, display: 'block' }} />
+            ) : (
+              <GiftCardArt
+                design={resolveGiftCardDesign(card.design)}
+                amount={Math.round(card.balanceCents / 100)}
+                code={card.code}
+                recipient={card.recipientName ?? undefined}
+              />
+            )}
           </div>
           <div className="giftcards-print-code">{card.code}</div>
           <p className="giftcards-print-balance">{formatCents(card.balanceCents)} · redeemable at ALMA venues</p>
@@ -1362,6 +1465,7 @@ function SidebarNav() {
   useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'giftcards-mobile-nav');
   const sectionFromLocation = useCallback(() => {
     if (window.location.pathname.startsWith('/orders')) return '/orders#recent';
+    if (window.location.pathname.startsWith('/reporting')) return '/reporting#report';
     if (window.location.pathname.startsWith('/admin')) return '/admin#settings';
     if (window.location.pathname.startsWith('/activate')) return '/activate#activate';
     return '/redeem#redeem';
@@ -1418,6 +1522,185 @@ function SidebarNav() {
         ))}
       </ul>
     </div>
+  );
+}
+
+// View-only redemption reporting: nothing on this page can change a card.
+// The data comes from /api/gift-cards/report in one round trip — summary,
+// per-venue split, and the redemption log with staff names already resolved.
+const REPORT_RANGES = [
+  { key: 'month', label: 'This month' },
+  { key: 'week', label: 'This week' },
+  { key: '30d', label: 'Last 30 days' },
+  { key: 'all', label: 'All time' }
+] as const;
+type ReportRangeKey = (typeof REPORT_RANGES)[number]['key'];
+
+function GiftCardReporting() {
+  const [rangeKey, setRangeKey] = useState<ReportRangeKey>('month');
+  const [venue, setVenue] = useState('all');
+  // Venue options come from the unfiltered response and then stay put, so
+  // picking a venue doesn't collapse the dropdown to a single entry.
+  const [venueOptions, setVenueOptions] = useState<string[]>([]);
+  const [report, setReport] = useState<GiftCardReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const range = useMemo(() => {
+    const now = new Date();
+    if (rangeKey === 'all') return { from: null as string | null, to: now.toISOString() };
+    const from = new Date(now);
+    if (rangeKey === 'month') from.setDate(1);
+    if (rangeKey === 'week') from.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    if (rangeKey === '30d') from.setDate(now.getDate() - 30);
+    from.setHours(0, 0, 0, 0);
+    return { from: from.toISOString(), to: now.toISOString() };
+  }, [rangeKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams({ to: range.to });
+    if (range.from) params.set('from', range.from);
+    if (venue !== 'all') params.set('venue', venue);
+    api<GiftCardReport>(`/api/gift-cards/report?${params.toString()}`)
+      .then((next) => {
+        if (cancelled) return;
+        setReport(next);
+        if (venue === 'all') {
+          setVenueOptions((current) => {
+            const merged = new Set([...current, ...next.byVenue.map((row) => row.venue)]);
+            return [...merged].sort();
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not load the report.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [range, venue]);
+
+  const rangeLabel = REPORT_RANGES.find((item) => item.key === rangeKey)?.label ?? '';
+  const summary = report?.summary;
+
+  return (
+    <>
+      <Card
+        title="Redemption reporting"
+        subtitle="Which card, how much, at which venue, and who rang it through. Pick the period and venue — everything on this page is view-only."
+      >
+        <div className="giftcards-report-filters">
+          <div className="giftcards-report-ranges" role="group" aria-label="Report period">
+            {REPORT_RANGES.map((item) => (
+              <Button
+                key={item.key}
+                type="button"
+                size="sm"
+                variant={rangeKey === item.key ? 'primary' : 'secondary'}
+                onClick={() => setRangeKey(item.key)}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+          <Select
+            label="Venue"
+            value={venue}
+            onChange={(event) => setVenue(event.currentTarget.value)}
+            options={[
+              { label: 'All venues', value: 'all' },
+              ...venueOptions.map((name) => ({ label: name, value: name }))
+            ]}
+          />
+        </div>
+      </Card>
+
+      {error ? <p className="error-text">{error}</p> : null}
+      {loading && !report ? <Spinner label="Loading report…" /> : null}
+
+      {summary ? (
+        <div className="stats-grid">
+          <StatCard
+            label={`Redeemed · ${rangeLabel}`}
+            value={formatCents(summary.redeemedCents)}
+            hint={`${summary.redemptionCount} redemption${summary.redemptionCount === 1 ? '' : 's'}`}
+            loading={loading}
+          />
+          <StatCard
+            label={`Sold · ${rangeLabel}`}
+            value={formatCents(summary.cardsSoldCents)}
+            hint={`${summary.cardsSoldCount} card${summary.cardsSoldCount === 1 ? '' : 's'} paid`}
+            loading={loading}
+          />
+          <StatCard
+            label="Outstanding balance"
+            value={formatCents(summary.outstandingCents)}
+            hint={`${summary.activeCards} active card${summary.activeCards === 1 ? '' : 's'} — all time`}
+            loading={loading}
+          />
+        </div>
+      ) : null}
+
+      {report && report.byVenue.length > 0 ? (
+        <Card title="By venue" subtitle={`Redemption revenue for ${rangeLabel.toLowerCase()} — this is what each venue actually took in gift card covers.`}>
+          <div className="giftcards-report-venues">
+            {report.byVenue.map((row) => (
+              <div key={row.venue} className="giftcards-report-venue">
+                <strong>{row.venue}</strong>
+                <b>{formatCents(row.redeemedCents)}</b>
+                <span className="subtle">
+                  {row.redemptionCount} redemption{row.redemptionCount === 1 ? '' : 's'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
+      <Card
+        title="Redemption log"
+        subtitle="Newest first. Each line is one tap of a card at a till — the card, the amount drawn, the venue, and who rang it through."
+      >
+        {report && report.redemptions.length === 0 && !loading ? (
+          <EmptyState title="No redemptions in this window" description="Change the period or venue above." />
+        ) : null}
+        <div className="giftcards-report-log">
+          {(report?.redemptions ?? []).map((row) => (
+            <div key={row.id} className="giftcards-report-row">
+              <div className="giftcards-report-row-main">
+                <strong>{row.code}</strong>
+                <span className="subtle">
+                  {row.recipientName || row.purchaserName}
+                  {row.notes ? ` · ${row.notes}` : ''}
+                </span>
+              </div>
+              <div className="giftcards-report-row-meta">
+                <b>{formatCents(row.amountCents)}</b>
+                <span>{row.venue ?? 'Unallocated'}</span>
+                <span>{row.redeemedByName ?? 'Unknown staff'}</span>
+                <span className="subtle">
+                  {new Date(row.redeemedAt).toLocaleString('en-AU', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: 'numeric',
+                    minute: '2-digit'
+                  })}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+        {report?.truncated ? (
+          <p className="subtle">Showing the latest 500 redemptions — narrow the period or venue to see older ones.</p>
+        ) : null}
+      </Card>
+    </>
   );
 }
 
@@ -1669,7 +1952,9 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   const [query, setQuery] = useState('');
   const [code, setCode] = useState('');
   const [amount, setAmount] = useState('');
-  const [venue, setVenue] = useState(VENUES[0]);
+  // Deliberately starts empty: every redemption is one venue's revenue, and a
+  // pre-selected default would let a busy shift silently misallocate it.
+  const [venue, setVenue] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedCard, setSelectedCard] = useState<GiftCard | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -1728,6 +2013,10 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     const amountCents = Math.round(Number(amount) * 100);
     if (!amountCents || amountCents <= 0) {
       setMessage('Enter an amount to redeem.');
+      return;
+    }
+    if (!venue) {
+      setMessage('Choose the venue taking this redemption — that is where the revenue lands.');
       return;
     }
     const newBalance = card ? card.balanceCents - amountCents : null;
@@ -1807,9 +2096,11 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     ? 'admin'
     : currentPath.startsWith('/orders')
       ? 'orders'
-      : currentPath.startsWith('/activate')
-        ? 'activate'
-        : 'redeem';
+      : currentPath.startsWith('/reporting')
+        ? 'reporting'
+        : currentPath.startsWith('/activate')
+          ? 'activate'
+          : 'redeem';
   const pageCopy = {
     redeem: {
       eyebrow: 'Daily workflow',
@@ -1820,6 +2111,11 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       eyebrow: 'Orders',
       title: 'Gift card orders',
       description: 'Review recent cards, active balances, and order status without changing setup.'
+    },
+    reporting: {
+      eyebrow: 'Reporting',
+      title: 'Redemption reporting',
+      description: 'Every redemption — which card, how much, at which venue, and who rang it through. View only.'
     },
     admin: {
       eyebrow: 'Setup',
@@ -1969,7 +2265,15 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                     <div className="giftcards-revenue-tile">
                       <span className="giftcards-revenue-eyebrow">Redeemed this month</span>
                       <strong className="giftcards-revenue-value">{formatCents(redeemedThisCents)}</strong>
-                      <span className="giftcards-revenue-meta">Across {giftCards.filter((c) => c.redemptions.some((r) => new Date(r.createdAt) >= monthStart)).length} cards</span>
+                      {/* Per-venue split, server-computed over every redemption —
+                          this is what tells each venue what gift card revenue
+                          actually landed with them. */}
+                      <span className="giftcards-revenue-meta">
+                        {(data?.totals.redeemedByVenue ?? [])
+                          .filter((row) => row.monthCents > 0)
+                          .map((row) => `${row.venue} ${formatCents(row.monthCents)}`)
+                          .join(' · ') || 'No redemptions yet this month'}
+                      </span>
                       {redeemedDelta !== null ? (
                         <span className={`giftcards-revenue-delta is-${redeemedDelta >= 0 ? 'positive' : 'warning'}`}>
                           {redeemedDelta >= 0 ? '▲' : '▼'} {Math.abs(redeemedDelta).toFixed(0)}% vs last month
@@ -1995,14 +2299,25 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 <StatCard label="Issued (lifetime)" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
               </button>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open redeemed gift cards">
-                <StatCard label="Redeemed (lifetime)" value={formatCents(data?.totals.redeemedValueCents ?? 0)} hint={`${data?.totals.redeemed ?? 0} fully used`} loading={loading} />
+                <StatCard
+                  label="Redeemed (lifetime)"
+                  value={formatCents(data?.totals.redeemedValueCents ?? 0)}
+                  hint={
+                    (data?.totals.redeemedByVenue ?? [])
+                      .filter((row) => row.lifetimeCents > 0)
+                      .map((row) => `${row.venue} ${formatCents(row.lifetimeCents)}`)
+                      .join(' · ') || `${data?.totals.redeemed ?? 0} fully used`
+                  }
+                  loading={loading}
+                />
               </button>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open gift card balance report">
                 <StatCard label="Outstanding" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Liability on the books" loading={loading} />
               </button>
             </div>
-            {/* Order actions + recent cards — paired panels (ov-two). */}
-            <div className="ov-two">
+            {/* Order actions first — the follow-ups sit above the register so
+                they can't be missed, then every card as a bills-style bubble
+                grid (small tiles; the register holds hundreds of cards). */}
             <ActionPanel
               title="Order actions"
               description="Cards that need payment, email, expiry, or manager follow-up."
@@ -2034,25 +2349,36 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
               ))}
               {orderActionItems.length > 10 ? <p className="subtle">{orderActionItems.length - 10} more orders need review.</p> : null}
             </ActionPanel>
-            <Card title="Recent cards" subtitle="Latest sales and balances" padding="none">
+            <Card
+              title="Active gift cards"
+              subtitle={`Latest sales and balances — ${giftCards.length} card${giftCards.length === 1 ? '' : 's'} shown, newest first. Search above to find any card.`}
+            >
               {loading ? <Spinner label="Loading gift cards..." /> : null}
               {!loading && giftCards.length === 0 ? <EmptyState title="No gift cards yet" description="Paid checkouts will appear here." /> : null}
-              <div className="giftcards-list">
+              <div className="giftcards-bubbles">
                 {giftCards.map((item) => (
-                  <button key={item.id} type="button" onClick={() => window.location.assign(`/redeem?code=${encodeURIComponent(item.code)}`)}>
-                    <span>
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`giftcards-bubble is-${statusTone(item.status)}`}
+                    onClick={() => window.location.assign(`/redeem?code=${encodeURIComponent(item.code)}`)}
+                  >
+                    <span className="giftcards-bubble__head">
                       <strong>{item.code}</strong>
-                      <small>{item.recipientName || item.purchaserName} · {item.purchaserEmail}{item.promoCodeSnapshot ? ` · ${item.promoCodeSnapshot}` : ''}{item.testMode ? ' · TEST' : ''}</small>
+                      <b>{formatCents(item.balanceCents)}</b>
                     </span>
-                    <span>
-                      <strong>{formatCents(item.balanceCents)}</strong>
-                      <Badge tone={statusTone(item.status)}>{item.status.replace('_', ' ')}</Badge>
+                    <span className="giftcards-bubble__who">
+                      {item.recipientName || item.purchaserName}
+                    </span>
+                    <span className="giftcards-bubble__meta">
+                      {item.status.replace('_', ' ')}
+                      {item.testMode ? ' · TEST' : ''}
+                      {item.promoCodeSnapshot === 'GIFTUP_IMPORT' ? ' · GiftUp' : ''}
                     </span>
                   </button>
                 ))}
               </div>
             </Card>
-            </div>
           </>
         ) : null}
 
@@ -2111,7 +2437,16 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 </ActionPanel>
                 <div className="form-grid two">
                   <Input label="Redeem amount" required type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.currentTarget.value)} />
-                  <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={VENUES.map((item) => ({ label: item, value: item }))} />
+                  <Select
+                    label="Venue"
+                    required
+                    value={venue}
+                    onChange={(event) => setVenue(event.currentTarget.value)}
+                    options={[
+                      { label: 'Select venue…', value: '' },
+                      ...VENUES.map((item) => ({ label: item, value: item }))
+                    ]}
+                  />
                 </div>
                 <Textarea label="Notes" rows={2} value={notes} onChange={(event) => setNotes(event.currentTarget.value)} />
                 {(() => {
@@ -2162,6 +2497,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           </Card>
         ) : null}
 
+        {activeGiftCardPage === 'reporting' ? <GiftCardReporting /> : null}
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
         {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
       </div>
@@ -2302,12 +2638,14 @@ export function App() {
   const isPrintPath = window.location.pathname.startsWith('/print');
   // /activate is in the staff nav and has its own page copy, but was missing
   // from this dispatch — so it fell through to the customer shop. A staff
-  // member following their own menu landed on the buy page.
+  // member following their own menu landed on the buy page. (/reporting
+  // nearly repeated that story — every staff route needs a line here.)
   const isActivatePath = window.location.pathname.startsWith('/activate');
+  const isReportingPath = window.location.pathname.startsWith('/reporting');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
   if (isArtPath) return <CardArtGallery />;
   if (isCounterPath) return <CounterApp />;
-  if (!isRedeemPath && !isOrdersPath && !isAdminPath && !isActivatePath) return <PublicGiftCardShop />;
+  if (!isRedeemPath && !isOrdersPath && !isAdminPath && !isActivatePath && !isReportingPath) return <PublicGiftCardShop />;
   return <GiftCardAdminApp />;
 }

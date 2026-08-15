@@ -9,6 +9,7 @@ import type {
   RecipeWithLines,
   RecipesPayload,
   RecipesSummary,
+  SetMenuComponentOption,
   StockItem,
   StockItemsPayload
 } from '@alma/shared';
@@ -28,6 +29,7 @@ type FormState =
   | { mode: 'edit'; recipe: RecipeWithLines };
 
 type RecipeLineDraft = {
+  perGuests: string;
   ingredientName: string;
   quantity: string;
   unit: string;
@@ -39,6 +41,7 @@ type RecipeLineDraft = {
 
 type RecipeDraft = {
   title: string;
+  printTitle: string;
   kind: string;
   category: string;
   subcategory: string;
@@ -56,8 +59,8 @@ type RecipeDraft = {
   venuePrices: Array<{ venue: string; salePrice: string }>;
 };
 
-type RecipeKindFilter = '' | 'FOOD' | 'BEVERAGE';
-type RecipeKindBucket = 'FOOD' | 'BEVERAGE' | 'OTHER';
+type RecipeKindFilter = '' | 'FOOD' | 'BEVERAGE' | 'SET_MENU';
+type RecipeKindBucket = 'FOOD' | 'BEVERAGE' | 'SET_MENU' | 'OTHER';
 type RecipeViewMode = 'category' | 'table';
 type RecipesPageMode = 'item' | 'production';
 
@@ -66,15 +69,18 @@ const PRODUCTION_RECIPE_CATEGORY = 'Production Recipes';
 const RECIPE_KIND_FILTER_OPTIONS: Array<{ label: string; value: RecipeKindFilter }> = [
   { label: 'All recipes', value: '' },
   { label: 'Food', value: 'FOOD' },
-  { label: 'Beverage', value: 'BEVERAGE' }
+  { label: 'Beverage', value: 'BEVERAGE' },
+  { label: 'Set menus & functions', value: 'SET_MENU' }
 ];
 
 const RECIPE_KIND_OPTIONS: Array<{ label: string; value: RecipeKindFilter }> = [
   { label: 'Food', value: 'FOOD' },
-  { label: 'Beverage', value: 'BEVERAGE' }
+  { label: 'Beverage', value: 'BEVERAGE' },
+  { label: 'Set menu / function', value: 'SET_MENU' }
 ];
 
 function recipeKindBucket(recipe: Pick<Recipe, 'kind' | 'category' | 'subcategory'>): RecipeKindBucket {
+  if (recipe.kind === 'SET_MENU') return 'SET_MENU';
   const value = [recipe.kind ?? '', recipe.category ?? '', recipe.subcategory ?? '']
     .join(' ')
     .toLowerCase();
@@ -102,11 +108,13 @@ function recipeKindLabel(recipe: Pick<Recipe, 'kind' | 'category' | 'subcategory
   const bucket = recipeKindBucket(recipe);
   if (bucket === 'FOOD') return 'Food';
   if (bucket === 'BEVERAGE') return 'Beverage';
+  if (bucket === 'SET_MENU') return 'Set menu';
   return recipe.kind ?? 'Other';
 }
 
 function normaliseRecipeKindForForm(recipe: RecipeWithLines): RecipeKindFilter {
-  return recipeKindBucket(recipe) === 'BEVERAGE' ? 'BEVERAGE' : 'FOOD';
+  const bucket = recipeKindBucket(recipe);
+  return bucket === 'BEVERAGE' || bucket === 'SET_MENU' ? bucket : 'FOOD';
 }
 
 function recipeCategoryGroupKey(kind: RecipeKindBucket, categoryName: string) {
@@ -251,7 +259,12 @@ function lineUnitOptions(
     }
   } else if (subRecipeId) {
     const rec = recipes.find((r) => r.id === subRecipeId);
-    if (rec) base = isLiquidUnit(rec.yieldUnit) ? LIQUID_UNIT_OPTIONS : SOLID_UNIT_OPTIONS;
+    if (rec && !rec.isPrepRecipe) {
+      // Linked menu dish: quantity means SERVES (0.5 = half a serve).
+      base = [{ label: 'serve', value: 'serve' }];
+    } else if (rec) {
+      base = isLiquidUnit(rec.yieldUnit) ? LIQUID_UNIT_OPTIONS : SOLID_UNIT_OPTIONS;
+    }
   }
   // Keep an existing non-standard unit as an option so editing an old recipe
   // doesn't silently change it; the user can switch to a standard one.
@@ -379,14 +392,15 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
 
     for (const recipe of filtered) {
       const key = recipeKindBucket(recipe);
-      const label = key === 'FOOD' ? 'Food' : key === 'BEVERAGE' ? 'Beverage' : 'Other';
+      const label =
+        key === 'FOOD' ? 'Food' : key === 'BEVERAGE' ? 'Beverage' : key === 'SET_MENU' ? 'Set menus & functions' : 'Other';
       const group = groups.get(key) ?? { key, label, categories: new Map<string, Recipe[]>() };
       const categoryName = recipe.category ?? 'Uncategorised';
       group.categories.set(categoryName, [...(group.categories.get(categoryName) ?? []), recipe]);
       groups.set(key, group);
     }
 
-    const order: RecipeKindBucket[] = ['FOOD', 'BEVERAGE', 'OTHER'];
+    const order: RecipeKindBucket[] = ['SET_MENU', 'FOOD', 'BEVERAGE', 'OTHER'];
     return Array.from(groups.values())
       .sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
       .map((group) => ({
@@ -459,7 +473,17 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
   // (used by the "Edit recipe" links in Reports). The param is then stripped so
   // a refresh doesn't reopen it.
   useEffect(() => {
-    const deepId = new URLSearchParams(window.location.search).get('recipe');
+    const params = new URLSearchParams(window.location.search);
+    // ?q= pre-fills the search box — used by Reports' set-menu "Cost →" links
+    // so a course lands here already filtered.
+    const query = params.get('q');
+    if (query) {
+      setSearch(query);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('q');
+      window.history.replaceState({}, '', url.toString());
+    }
+    const deepId = params.get('recipe');
     if (!deepId) return;
     let active = true;
     void (async () => {
@@ -738,6 +762,25 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
                   <div className="card stock-portions-card">
                     <PortionsBuilder parentType="recipe" parentId={detail.id} canManage={canManage} />
                   </div>
+                ) : null}
+                {detail && detail.id === recipe.id && detail.kind === 'SET_MENU' ? (
+                  <SetMenuComponentsPanel
+                    menuId={detail.id}
+                    canManage={canManage}
+                    onAdded={async () => {
+                      try {
+                        const [full, refreshedCost] = await Promise.all([
+                          api<RecipeWithLines>(`/api/recipes/${recipe.id}`),
+                          api<RecipeCostPayload>(`/api/recipes/${recipe.id}/cost`)
+                        ]);
+                        setDetail(full);
+                        setCostDetail(refreshedCost);
+                      } catch {
+                        /* refresh failure is non-fatal */
+                      }
+                      void load();
+                    }}
+                  />
                 ) : null}
               </td>
             </tr>
@@ -1070,6 +1113,7 @@ function RecipeCategorySection({
 function emptyRecipeDraft(): RecipeDraft {
   return {
     title: '',
+    printTitle: '',
     kind: 'FOOD',
     category: '',
     subcategory: '',
@@ -1083,7 +1127,7 @@ function emptyRecipeDraft(): RecipeDraft {
     status: 'ACTIVE',
     estimatedCost: '0',
     notes: '',
-    lines: [{ ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', itemId: '', subRecipeId: '' }],
+    lines: [{ ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', perGuests: '', itemId: '', subRecipeId: '' }],
     venuePrices: []
   };
 }
@@ -1102,6 +1146,7 @@ function emptyProductionRecipeDraft(): RecipeDraft {
 function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
   return {
     title: recipe.title,
+    printTitle: recipe.printTitle ?? '',
     kind: normaliseRecipeKindForForm(recipe),
     category: recipe.category ?? '',
     subcategory: recipe.subcategory ?? '',
@@ -1122,6 +1167,7 @@ function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
       unit: line.unit ?? '',
       cost: line.cost === null ? '' : String(line.cost),
       wastePercent: line.wastePercent === null ? '' : String(line.wastePercent),
+      perGuests: line.perGuests === null ? '' : String(line.perGuests),
       itemId: line.itemId ?? '',
       subRecipeId: line.subRecipeId ?? ''
     }))
@@ -1240,16 +1286,22 @@ function RecipeForm({
         unit: line.unit.trim(),
         cost: line.cost === '' ? undefined : Number(line.cost),
         wastePercent: line.wastePercent === '' ? undefined : Number(line.wastePercent),
+        perGuests: line.perGuests === '' ? undefined : Number(line.perGuests),
         itemId: line.itemId,
         subRecipeId: line.subRecipeId
       }));
     const treatAsProduction = pageMode === 'production' || draft.isProduction;
     const payload: RecipeCreateInput = {
       title: draft.title.trim(),
+      printTitle: draft.printTitle.trim(),
       kind: draft.kind.trim(),
       // A recipe is a production (prep/batch) recipe when created in the
       // production view OR explicitly flagged via the toggle in the item editor.
-      category: treatAsProduction ? (draft.category.trim() || PRODUCTION_RECIPE_CATEGORY) : draft.category.trim(),
+      category: treatAsProduction
+        ? (draft.category.trim() || PRODUCTION_RECIPE_CATEGORY)
+        : draft.kind === 'SET_MENU'
+          ? (draft.category.trim() || 'Set Menus')
+          : draft.category.trim(),
       subcategory: treatAsProduction ? (draft.subcategory.trim() || 'Prep batch') : draft.subcategory.trim(),
       venue: draft.venue.trim(),
       salePriceCents: draft.salePrice === '' ? undefined : Math.round(Number(draft.salePrice) * 100),
@@ -1302,6 +1354,12 @@ function RecipeForm({
     >
       <div className="form-grid three">
         <Input label="Title" required value={draft.title} onChange={(event) => update('title', event.currentTarget.value)} />
+        <Input
+          label="Print name"
+          value={draft.printTitle}
+          onChange={(event) => update('printTitle', event.currentTarget.value)}
+          placeholder="Kitchen docket name — blank uses the title"
+        />
         <Select
           label="Food / beverage"
           value={draft.kind}
@@ -1427,7 +1485,7 @@ function RecipeForm({
           type="button"
           variant="secondary"
           size="sm"
-          onClick={() => update('lines', [...draft.lines, { ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', itemId: '', subRecipeId: '' }])}
+          onClick={() => update('lines', [...draft.lines, { ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', perGuests: '', itemId: '', subRecipeId: '' }])}
         >
           Add line
         </Button>
@@ -1499,6 +1557,7 @@ type EditableLineDraft = {
   quantity: string;
   unit: string;
   wastePercent: string;
+  perGuests: string;
 };
 
 function lineToDraft(line: RecipeWithLines['lines'][number]): EditableLineDraft {
@@ -1508,7 +1567,8 @@ function lineToDraft(line: RecipeWithLines['lines'][number]): EditableLineDraft 
     subRecipeId: line.subRecipeId ?? '',
     quantity: line.quantity != null ? String(line.quantity) : '',
     unit: line.unit ?? '',
-    wastePercent: line.wastePercent != null ? String(line.wastePercent) : ''
+    wastePercent: line.wastePercent != null ? String(line.wastePercent) : '',
+    perGuests: line.perGuests != null ? String(line.perGuests) : ''
   };
 }
 
@@ -1553,6 +1613,7 @@ function RecipeLinesTable({
         const preview = await api<RecipeCostPayload>('/api/recipes/cost-preview', {
           method: 'POST',
           body: JSON.stringify({
+            kind: detail.kind,
             yieldQuantity: detail.yieldQuantity,
             yieldUnit: detail.yieldUnit,
             portionSize: detail.portionSize,
@@ -1565,6 +1626,7 @@ function RecipeLinesTable({
               quantity: draft.quantity === '' ? null : Number(draft.quantity),
               unit: draft.unit,
               wastePercent: draft.wastePercent === '' ? null : Number(draft.wastePercent),
+              perGuests: draft.perGuests === '' ? null : Number(draft.perGuests),
               itemId: draft.itemId || null,
               subRecipeId: draft.subRecipeId || null
             }))
@@ -1576,7 +1638,7 @@ function RecipeLinesTable({
       }
     }, 400);
     return () => clearTimeout(handle);
-  }, [drafts, dirty, detail.id, detail.yieldQuantity, detail.yieldUnit, detail.portionSize, detail.portionUnit, detail.salePriceCents, detail.isPrepRecipe, detail.estimatedCost]);
+  }, [drafts, dirty, detail.id, detail.kind, detail.yieldQuantity, detail.yieldUnit, detail.portionSize, detail.portionUnit, detail.salePriceCents, detail.isPrepRecipe, detail.estimatedCost]);
 
   const effectiveCost = livePreview ?? cost;
   const usingLivePreview = livePreview !== null;
@@ -1592,14 +1654,29 @@ function RecipeLinesTable({
     [items]
   );
 
+  const isSetMenu = detail.kind === 'SET_MENU';
+  // Set menus compose whole menu dishes (and preps); normal recipes compose
+  // production recipes only.
+  // Any recipe can link a MENU DISH as a line ("Kingfish Ceviche (1pc)*" =
+  // 0.5 serves of the main): the component's cost derives from the dish and
+  // follows it automatically. Preps list first, dishes after.
   const subRecipeOptions = useMemo(
     () => [
       { label: 'None', value: '' },
       ...allRecipes
-        .filter((recipe) => recipe.isPrepRecipe && recipe.id !== detail.id)
-        .map((recipe) => ({ label: recipe.title, value: recipe.id }))
+        .filter((recipe) => recipe.id !== detail.id && recipe.isPrepRecipe && !isSetMenu)
+        .map((recipe) => ({ label: `Prep · ${recipe.title}`, value: recipe.id })),
+      ...allRecipes
+        .filter(
+          (recipe) =>
+            recipe.id !== detail.id && !recipe.isPrepRecipe && recipe.kind !== 'SET_MENU' && recipe.status === 'ACTIVE'
+        )
+        .map((recipe) => ({
+          label: `Dish · ${recipe.title}${recipe.venue ? ` (${recipe.venue})` : ''}`,
+          value: recipe.id
+        }))
     ],
-    [allRecipes, detail.id]
+    [allRecipes, detail.id, isSetMenu]
   );
 
   function updateDraft(index: number, patch: Partial<EditableLineDraft>) {
@@ -1642,7 +1719,8 @@ function RecipeLinesTable({
         subRecipeId: '',
         quantity: '',
         unit: '',
-        wastePercent: ''
+        wastePercent: '',
+        perGuests: ''
       }
     ]);
     setDirty(true);
@@ -1664,6 +1742,7 @@ function RecipeLinesTable({
           if (line.itemId) out.itemId = line.itemId;
           if (line.subRecipeId) out.subRecipeId = line.subRecipeId;
           if (line.wastePercent.trim()) out.wastePercent = Number(line.wastePercent);
+          if (line.perGuests.trim()) out.perGuests = Number(line.perGuests);
           return out;
         });
       const updated = await api<RecipeWithLines>(`/api/recipes/${detail.id}`, {
@@ -1715,7 +1794,12 @@ function RecipeLinesTable({
           {effectiveCost.warnings.length > 5 ? <Badge tone="muted">+{effectiveCost.warnings.length - 5} more</Badge> : null}
         </div>
       ) : null}
-      {drafts.some((draft) => draft.subRecipeId) ? (
+      {isSetMenu ? (
+        <p className="recipe-costing-note">
+          Every line is per guest: a dish's cost × qty, ÷ "shared between" for items that land once per 2 or 4 guests. The
+          total below is the menu's food cost per person against its per-person price.
+        </p>
+      ) : drafts.some((draft) => draft.subRecipeId) ? (
         <p className="recipe-costing-note">
           Prep recipes are reusable ingredient lines. Their batch cost is divided by yield to calculate line cost where possible.
         </p>
@@ -1724,11 +1808,12 @@ function RecipeLinesTable({
         <thead>
           <tr>
             <th>#</th>
-            <th>Ingredient</th>
+            <th>{isSetMenu ? 'Component' : 'Ingredient'}</th>
             <th>Linked item</th>
-            <th>Production recipe</th>
-            <th>Qty</th>
+            <th>{isSetMenu ? 'Dish / prep recipe' : 'Production recipe'}</th>
+            <th>{isSetMenu ? 'Qty pp' : 'Qty'}</th>
             <th>Unit</th>
+            {isSetMenu ? <th>Shared between</th> : null}
             <th>Line cost</th>
             <th>Source</th>
             <th aria-label="Delete" />
@@ -1806,6 +1891,21 @@ function RecipeLinesTable({
                     )}
                   </select>
                 </td>
+                {isSetMenu ? (
+                  <td>
+                    <select
+                      className="recipe-line-input recipe-line-input-narrow"
+                      value={draft.perGuests}
+                      onChange={(event) => updateDraft(index, { perGuests: event.currentTarget.value })}
+                    >
+                      <option value="">Each guest</option>
+                      <option value="2">2 guests</option>
+                      <option value="4">4 guests</option>
+                      <option value="6">6 guests</option>
+                      <option value="8">8 guests</option>
+                    </select>
+                  </td>
+                ) : null}
                 <td>{formatCurrencyCents(costLine?.lineCostCents ?? null)}</td>
                 <td>
                   <Badge tone={costLine?.source === 'MISSING' || !costLine ? 'warning' : 'positive'}>
@@ -1827,13 +1927,13 @@ function RecipeLinesTable({
               {lineWarnings.length ? (
                 <tr className="recipe-line-warning-detail">
                   <td />
-                  <td colSpan={8}>{lineWarnings.join(' ')}</td>
+                  <td colSpan={isSetMenu ? 9 : 8}>{lineWarnings.join(' ')}</td>
                 </tr>
               ) : null}
               {!lineWarnings.length && costTraceText(costLine) ? (
                 <tr className="recipe-line-trace-detail">
                   <td />
-                  <td colSpan={8}>{costTraceText(costLine)}</td>
+                  <td colSpan={isSetMenu ? 9 : 8}>{costTraceText(costLine)}</td>
                 </tr>
               ) : null}
               </Fragment>
@@ -1858,6 +1958,159 @@ function RecipeLinesTable({
           {saving ? 'Saving…' : dirty ? 'Save changes' : 'Saved'}
         </Button>
       </div>
+    </div>
+  );
+}
+
+
+// ── Square set-menu components ("*" items) ──────────────────────────────────
+// Zero-priced Square modifiers whose name ends in "*" (or starts "BB ") are
+// the POS-side components of set menus. This panel lists them with their
+// mapped recipe's cost so they can be dropped onto this menu — or every menu —
+// as costed lines, shared between 1/2/4 guests.
+function SetMenuComponentsPanel({
+  menuId,
+  canManage,
+  onAdded
+}: {
+  menuId: string;
+  canManage: boolean;
+  onAdded: () => Promise<void> | void;
+}) {
+  const [components, setComponents] = useState<SetMenuComponentOption[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [shareDefault, setShareDefault] = useState('');
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || components !== null) return;
+    void (async () => {
+      try {
+        setComponents(await api<SetMenuComponentOption[]>('/api/recipes/set-menu-components'));
+        setError(null);
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Could not load Square components');
+      }
+    })();
+  }, [open, components]);
+
+  async function add(component: SetMenuComponentOption, allMenus: boolean) {
+    if (!component.recipeId) return;
+    setBusyId(`${component.mappingId}:${allMenus ? 'all' : 'one'}`);
+    setNote(null);
+    try {
+      const result = await api<{ added: number; skipped: string[] }>('/api/recipes/set-menus/add-component', {
+        method: 'POST',
+        body: JSON.stringify({
+          subRecipeId: component.recipeId,
+          quantity: 1,
+          perGuests: shareDefault ? Number(shareDefault) : undefined,
+          ...(allMenus ? {} : { menuIds: [menuId] })
+        })
+      });
+      setNote(
+        `Added to ${result.added} menu${result.added === 1 ? '' : 's'}` +
+          (result.skipped.length ? ` · already on ${result.skipped.join(', ')}` : '')
+      );
+      await onAdded();
+    } catch (err) {
+      setNote(err instanceof ApiError ? err.message : 'Could not add component');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="card stock-portions-card">
+      <div className="recipe-lines-toolbar" style={{ marginBottom: open ? 12 : 0 }}>
+        <strong>Square set-menu components (* items)</strong>
+        <span style={{ flex: 1 }} />
+        {open ? (
+          <label className="subtle" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            Add as shared between
+            <select
+              className="recipe-line-input recipe-line-input-narrow"
+              value={shareDefault}
+              onChange={(event) => setShareDefault(event.currentTarget.value)}
+            >
+              <option value="">Each guest</option>
+              <option value="2">2 guests</option>
+              <option value="4">4 guests</option>
+              <option value="6">6 guests</option>
+              <option value="8">8 guests</option>
+            </select>
+          </label>
+        ) : null}
+        <Button type="button" size="sm" variant="secondary" onClick={() => setOpen((v) => !v)}>
+          {open ? 'Hide' : 'Show * items'}
+        </Button>
+      </div>
+      {open ? (
+        error ? (
+          <p className="error-text">{error}</p>
+        ) : components === null ? (
+          <Spinner label="Loading Square components" />
+        ) : components.length === 0 ? (
+          <p className="subtle">No * or BB-prefixed items found in the Square menu mapping.</p>
+        ) : (
+          <>
+            {note ? <p className="subtle">{note}</p> : null}
+            <table className="recipe-lines-table">
+              <thead>
+                <tr>
+                  <th>Square item</th>
+                  <th>Venue</th>
+                  <th>Mapped recipe</th>
+                  <th>Cost</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {components.map((component) => (
+                  <tr key={component.mappingId}>
+                    <td>{component.squareItemName}</td>
+                    <td>{component.venue ?? '—'}</td>
+                    <td>
+                      {component.mapped ? (
+                        component.recipeTitle
+                      ) : (
+                        <Badge tone="warning">Not mapped — map it on the menu mapping page first</Badge>
+                      )}
+                    </td>
+                    <td>
+                      {component.recipeEstimatedCost !== null && component.recipeEstimatedCost > 0
+                        ? formatCurrency(component.recipeEstimatedCost)
+                        : '—'}
+                    </td>
+                    <td className="cell-actions">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={!canManage || !component.mapped || busyId !== null}
+                        onClick={() => void add(component, false)}
+                      >
+                        {busyId === `${component.mappingId}:one` ? 'Adding…' : 'Add to this menu'}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={!canManage || !component.mapped || busyId !== null}
+                        onClick={() => void add(component, true)}
+                      >
+                        {busyId === `${component.mappingId}:all` ? 'Adding…' : 'All menus'}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )
+      ) : null}
     </div>
   );
 }

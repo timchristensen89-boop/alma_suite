@@ -94,11 +94,7 @@ export const GIFT_CARD_DESIGN_META = Object.fromEntries(
 
 export type GiftCardArtProps = {
   design: GiftCardDesign | string;
-  /**
-   * The old artwork printed a separate back carrying the code. The new cards
-   * put the redeem line on the front, so no back is drawn — the prop stays so
-   * existing callers need not change, and 'back' renders the same card.
-   */
+  /** 'back' renders the reference side — the code big, for the till. */
   side?: 'front' | 'back';
   amount: number | string;
   code?: string;
@@ -109,11 +105,12 @@ export type GiftCardArtProps = {
   chrome?: boolean;
 };
 
-export function GiftCardArt({ design, amount, recipient, width, chrome = true }: GiftCardArtProps) {
+export function GiftCardArt({ design, amount, recipient, width, chrome = true, side = 'front', code }: GiftCardArtProps) {
   const spec = SPECS[resolveGiftCardDesign(design)];
   return (
     <AlmaCard
-      layout={spec.layout}
+      layout={side === 'back' ? 'back' : spec.layout}
+      code={code}
       palette={spec.palette}
       amount={amount}
       greeting={spec.greeting}

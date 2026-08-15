@@ -428,19 +428,19 @@ enum SuiteChatChannelType {
 
 // @domain: compliance | home: suite
 model Issue {
-  id              String           @id @default(cuid())
-  legacyId        String?          @unique
-  title           String
-  description     String
-  severity        IssueSeverity
-  category        String
-  area            String?
-  status          IssueStatus      @default(OPEN)
-  assignee        String?
-  dueDate         DateTime?
-  notes           String?
-  resolutionNotes String?
-    // Who raised it. The activity log has carried the reporter's NAME since the
+  id                String           @id @default(cuid())
+  legacyId          String?          @unique
+  title             String
+  description       String
+  severity          IssueSeverity
+  category          String
+  area              String?
+  status            IssueStatus      @default(OPEN)
+  assignee          String?
+  dueDate           DateTime?
+  notes             String?
+  resolutionNotes   String?
+  // Who raised it. The activity log has carried the reporter's NAME since the
   // beginning, but a name is not an identity — they collide, they change, and
   // a person can hold two staff profiles. The id is what makes "issues I
   // reported" answerable.
@@ -450,13 +450,13 @@ model Issue {
   assigneeStaffId   String?
   reportedByStaffId String?
   reportedByName    String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  evidence        IssueEvidence[]
-  activities      IssueActivity[]
-  checklistLinks  ChecklistItem[]
-  auditLinks      AuditFinding[]
-  incidentLinks   IncidentReport[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  evidence          IssueEvidence[]
+  activities        IssueActivity[]
+  checklistLinks    ChecklistItem[]
+  auditLinks        AuditFinding[]
+  incidentLinks     IncidentReport[]
 }
 
 // @domain: compliance | home: suite
@@ -660,6 +660,7 @@ model StaffProfile {
   visaExpiryDate               DateTime?
   workRightsNotes              String?
   xeroEmployeeId               String?
+  xeroEmployees                StaffXeroEmployee[]
   xeroPayrollCalendarId        String?
   xeroEarningsRateId           String?
   defaultArea                  String?
@@ -674,6 +675,8 @@ model StaffProfile {
   pinUpdatedAt                 DateTime?
   pinFailedAttempts            Int                        @default(0)
   pinLockedUntil               DateTime?
+  // POS abilities for non-managers: {refunds, voids, discounts, till, office}.
+  posPermissions               Json                       @default("{}")
   pinLastFailedAt              DateTime?
   isAdmin                      Boolean                    @default(false)
   lastLoginAt                  DateTime?
@@ -693,7 +696,7 @@ model StaffProfile {
   roleTemplateId               String?
   roleTemplate                 StaffRoleTemplate?         @relation(fields: [roleTemplateId], references: [id], onDelete: SetNull)
   rosterShifts                 RosterShift[]
-  offeredRosterShifts          RosterShift[]                @relation("RosterShiftOfferedBy")
+  offeredRosterShifts          RosterShift[]              @relation("RosterShiftOfferedBy")
   shiftTaskAssignments         ShiftTaskAssignment[]
   shiftConfirmations           StaffShiftConfirmation[]
   clockSessions                StaffClockSession[]
@@ -867,7 +870,7 @@ model StaffHrDocumentTemplate {
 /// outside stated availability warns, it does not block — a manager who has
 /// spoken to someone must still be able to place the shift.
 model StaffAvailability {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   staffProfileId String
   /// 0 = Sunday .. 6 = Saturday, matching JS getDay().
   weekday        Int
@@ -875,13 +878,13 @@ model StaffAvailability {
   startMinute    Int?
   endMinute      Int?
   /// False records a recurring UNavailability (e.g. every Monday, at uni).
-  available      Boolean  @default(true)
+  available      Boolean   @default(true)
   note           String?
   /// Optional bounds, for "from the start of term" style changes.
   effectiveFrom  DateTime?
   effectiveTo    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   staffProfile StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
 
@@ -1099,38 +1102,38 @@ model StaffTrainingRecord {
 
 // @domain: workforce | home: workforce
 model RosterShift {
-  id                   String                   @id @default(cuid())
+  id                      String                   @id @default(cuid())
   /// NULL means the shift is OPEN — nobody is on it yet. Open shifts are how
   /// a manager publishes work that needs filling, and what staff can claim.
   /// Before this was nullable, "open" was faked with placeholder staff
   /// profiles named Unallocated, which put fake people in the team list.
-  staffProfileId       String?
-  venue                String?
-  area                 String?
-  roleTitle            String?
-  startsAt             DateTime
-  endsAt               DateTime
-  breakMinutes         Int                      @default(0)
-  status               RosterShiftStatus        @default(DRAFT)
-  notes                String?
+  staffProfileId          String?
+  venue                   String?
+  area                    String?
+  roleTitle               String?
+  startsAt                DateTime
+  endsAt                  DateTime
+  breakMinutes            Int                      @default(0)
+  status                  RosterShiftStatus        @default(DRAFT)
+  notes                   String?
   /// A shift whose holder has offered to swap it away. offeredAt being set is
   /// what makes it visible to the rest of the team; offeredByStaffProfileId
   /// records WHO offered it, so a manager reassigning the shift while an offer
   /// is live cannot make it read as though the new holder offered it.
-  offeredAt            DateTime?
+  offeredAt               DateTime?
   offeredByStaffProfileId String?
-  offerNote            String?
-  createdAt            DateTime                 @default(now())
-  updatedAt            DateTime                 @updatedAt
-  staffProfile         StaffProfile?            @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
-  offeredBy            StaffProfile?            @relation("RosterShiftOfferedBy", fields: [offeredByStaffProfileId], references: [id], onDelete: SetNull)
-  shiftConfirmations   StaffShiftConfirmation[]
-  shiftTaskAssignments ShiftTaskAssignment[]
-  clockSessions        StaffClockSession[]
+  offerNote               String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  staffProfile            StaffProfile?            @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  offeredBy               StaffProfile?            @relation("RosterShiftOfferedBy", fields: [offeredByStaffProfileId], references: [id], onDelete: SetNull)
+  shiftConfirmations      StaffShiftConfirmation[]
+  shiftTaskAssignments    ShiftTaskAssignment[]
+  clockSessions           StaffClockSession[]
+  claims                  RosterShiftClaim[]
 
   @@index([staffProfileId, startsAt])
   @@index([startsAt, endsAt])
-  claims               RosterShiftClaim[]
 }
 
 // @domain: bridge | home: suite
@@ -1205,15 +1208,15 @@ model ShiftTaskAssignment {
 /// whoever taps first rewards whoever happens to be holding their phone,
 /// and hides the choice from the person accountable for the roster.
 model RosterShiftClaim {
-  id             String    @id @default(cuid())
-  rosterShiftId  String
-  staffProfileId String
-  status         String    @default("PENDING") /// PENDING|APPROVED|DECLINED|WITHDRAWN
-  note           String?
-  decidedAt      DateTime?
+  id              String    @id @default(cuid())
+  rosterShiftId   String
+  staffProfileId  String
+  status          String    @default("PENDING") /// PENDING|APPROVED|DECLINED|WITHDRAWN
+  note            String?
+  decidedAt       DateTime?
   decidedByUserId String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   rosterShift  RosterShift  @relation(fields: [rosterShiftId], references: [id], onDelete: Cascade)
   staffProfile StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
@@ -1365,6 +1368,9 @@ model SalesActualEntry {
   venue        String
   serviceDate  DateTime
   salesCents   Int
+  // Actual total guests served that day (walk-ins included) where the POS
+  // reports it — the covers-forecast ground truth.
+  coversCount  Int?
   source       String   @default("manual")
   externalId   String?
   notes        String?
@@ -1440,6 +1446,7 @@ model ReserveGuest {
   createdAt           DateTime                     @default(now())
   updatedAt           DateTime                     @updatedAt
   reservations        ReserveReservation[]
+  posOrders           PosOrder[]
   marketingContact    MarketingContact?
   tagAssignments      GuestTagAssignment[]
   automationRuns      MarketingAutomationRun[]
@@ -1568,6 +1575,9 @@ model ReserveReservation {
   // re-imports update the same row instead of duplicating it.
   externalRef              String?                  @unique
   tableId                  String?
+  // Raw table label(s) from the booking feed (e.g. "31" or "31,32") — matched
+  // against ReserveTable labels for the floor overlay.
+  tableLabels              String?
   area                     String?
   guestId                  String
   availabilityRuleId       String?
@@ -2053,6 +2063,7 @@ model GiftCard {
   updatedAt               DateTime             @updatedAt
   promoCode               GiftCardPromoCode?   @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   redemptions             GiftCardRedemption[]
+  customArtwork           GiftCardArtwork?
 
   @@index([status])
   @@index([purchaserEmail])
@@ -2060,6 +2071,21 @@ model GiftCard {
   @@index([createdAt])
   @@index([promoCodeId])
   @@index([testMode])
+}
+
+// Customer-designed card artwork from the public "Create your own" designer.
+// The client renders the design ONCE to a PNG/JPEG at checkout and we persist
+// the bytes here — the email, the printable page, and the confirmation all
+// serve this same image, so the card never has to be re-rendered server-side.
+// Bytes-in-Postgres per the house pattern (no object store is wired); its own
+// table so the blob never rides along on GiftCard list queries.
+model GiftCardArtwork {
+  id         String   @id @default(cuid())
+  giftCardId String   @unique
+  mimeType   String
+  data       Bytes
+  createdAt  DateTime @default(now())
+  giftCard   GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
 }
 
 // @domain: giftcards | home: suite
@@ -2919,6 +2945,14 @@ model Recipe {
   id                 String                    @id @default(cuid())
   legacyId           String?                   @unique
   title              String
+  /// Kitchen docket / KDS override name. NULL = dockets print `title`, same
+  /// as the register tile. Set this when the register-facing name and what
+  /// the kitchen needs to see should differ (e.g. a long menu name vs. a
+  /// short kitchen shorthand). Never read by the register tile or receipts —
+  /// only by docket/KDS building, and only as of the moment a line is added
+  /// to an order (PosOrderLine.printName is a snapshot, not a live join, so
+  /// editing this never rewrites a ticket already fired).
+  printTitle         String?
   kind               String?
   category           String?
   subcategory        String?
@@ -2935,6 +2969,7 @@ model Recipe {
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
   lines              RecipeLine[]              @relation("RecipeLines")
+  posOrderLines      PosOrderLine[]
   usedByLines        RecipeLine[]              @relation("SubRecipeLines")
   itemSales          SalesItemActualEntry[]
   squareMenuMappings SquareMenuRecipeMapping[]
@@ -2944,6 +2979,58 @@ model Recipe {
   @@index([category])
   @@index([isPrepRecipe])
   @@index([status])
+}
+
+// @domain: pos | home: suite
+// A table asking for a person: raised from the QR page, cleared at the
+// register. Kept as rows (not a flag on the table) so the floor can see how
+// long a call has been waiting.
+model PosServiceCall {
+  id         String    @id @default(cuid())
+  venue      String
+  tableLabel String
+  kind       String    @default("WAITER") // WAITER | BILL
+  note       String?
+  createdAt  DateTime  @default(now())
+  clearedAt  DateTime?
+  clearedBy  String?
+
+  @@index([venue, clearedAt])
+}
+
+// @domain: pos | home: suite
+// One posted day per venue: proves the journal exists so a re-run never
+// double-posts, and gives Reports something to reconcile against.
+model PosXeroPost {
+  id            String   @id @default(cuid())
+  venue         String
+  serviceDate   DateTime
+  tenantId      String
+  invoiceId     String?
+  invoiceNumber String
+  totalCents    Int
+  status        String   @default("POSTED") // POSTED | FAILED
+  detail        String?
+  postedAt      DateTime @default(now())
+
+  @@unique([venue, serviceDate])
+  @@index([serviceDate])
+}
+
+// @domain: pos | home: suite
+// One product, several pours: each variant is a real Recipe (a glass is a
+// fractional sub-recipe of the bottle), grouped under one parent tile on the
+// register. A self-row (childRecipeId == parentRecipeId) labels the parent.
+model PosVariantLink {
+  id             String   @id @default(cuid())
+  parentRecipeId String
+  childRecipeId  String   @unique
+  label          String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([parentRecipeId])
 }
 
 // @domain: stock | home: suite
@@ -3042,6 +3129,8 @@ model RecipeLine {
   unit           String?
   cost           Float?
   wastePercent   Float?
+  // Set-menu lines: this component is shared between N guests (cost ÷ N per person).
+  perGuests      Float?
   itemId         String?
   subRecipeId    String?
   createdAt      DateTime   @default(now())
@@ -3243,24 +3332,45 @@ model SupplierInvoiceDocument {
 /// human's answer once removes that work permanently.
 // @domain: stock | home: stock
 model StockItemAlias {
-  id           String    @id @default(cuid())
+  id          String   @id @default(cuid())
   /// Normalised supplier description. See aliasKey() in @alma/shared.
-  aliasKey     String
+  aliasKey    String
   /// NULL means "this wording applies whoever sends it".
-  supplierId   String?
-  stockItemId  String
+  supplierId  String?
+  stockItemId String
   /// The description exactly as it arrived, for a human reviewing the alias.
-  sourceText   String
-  createdById  String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  sourceText  String
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  supplier  Supplier?  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  stockItem StockItem  @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  supplier  Supplier? @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  stockItem StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
 
   @@unique([aliasKey, supplierId])
   @@index([stockItemId])
   @@map("stock_item_aliases")
+}
+
+/// A spelling of a UNIT (not a product): "KILO" means kg, "Unit" means each,
+/// "Btl" means bottle. Consulted by the shared unit conversion in
+/// @alma/shared stock-units.ts so Loaded counts, invoices and recipe lines
+/// all read units the same way. Seeded with the defaults from
+/// DEFAULT_UNIT_ALIASES and editable in Stock → Setup → Units; once rows
+/// exist they replace the built-in list entirely, so deleting a seeded row
+/// really turns it off.
+// @domain: stock | home: stock
+model StockUnitAlias {
+  id          String   @id @default(cuid())
+  /// The label as people write it, normalised (lowercase, trimmed).
+  alias       String   @unique
+  /// The canonical unit token it means ("kg", "each", "bottle").
+  canonical   String
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("stock_unit_aliases")
 }
 
 model SupplierInvoiceLine {
@@ -4330,40 +4440,40 @@ model FcCreditorClaim {
 }
 
 model FcCreditorProposal {
-  id                      String       @id @default(cuid())
-  companyId               String
-  name                    String
+  id                         String       @id @default(cuid())
+  companyId                  String
+  name                       String
   /// Fixed contribution, contractual. A SNAPSHOT of the rate applied to the
   /// pool estimate below — recompute it when the admitted pool changes.
-  fixedTotalCents         Int
+  fixedTotalCents            Int
   /// The v5 proposal commits a RATE, not a dollar total, so the distribution
   /// recalculates as proofs of debt are admitted with no renegotiation.
   /// Cents per dollar of admitted external claim, 0-100.
-  baseCentsInDollar       Decimal?     @db.Decimal(6, 3)
+  baseCentsInDollar          Decimal?     @db.Decimal(6, 3)
   /// Contingent performance increment, also expressed as cents in the dollar.
-  performanceCentsInDollar Decimal?    @db.Decimal(6, 3)
+  performanceCentsInDollar   Decimal?     @db.Decimal(6, 3)
   /// Working estimate of the admitted external pool the rate is applied to.
   estimatedExternalPoolCents Int?
   /// Share of the distribution paid in each proposal year, e.g. [0, 0.35, 0.65].
-  yearShares              Json         @default("[]")
+  yearShares                 Json         @default("[]")
   /// Share of each year's amount falling in December; the rest in January.
-  decemberShare           Decimal?     @db.Decimal(6, 3)
-  termMonths              Int          @default(36)
+  decemberShare              Decimal?     @db.Decimal(6, 3)
+  termMonths                 Int          @default(36)
   /// Performance contribution: share of free cash above the agreed base.
-  performanceSharePercent Decimal      @default(25) @db.Decimal(6, 3)
-  performanceCapCents     Int
+  performanceSharePercent    Decimal      @default(25) @db.Decimal(6, 3)
+  performanceCapCents        Int
   /// Deed costs funded from the proposal (reduce what reaches creditors).
-  deedCostsCents          Int          @default(0)
+  deedCostsCents             Int          @default(0)
   /// Participation switches. Director loans and intercompany default OFF.
-  includeDirectorLoans    Boolean      @default(false)
-  includeIntercompany     Boolean      @default(false)
-  includeSecuredShortfall Boolean      @default(false)
-  includePriorityClaims   Boolean      @default(false)
-  includeContingentClaims Boolean      @default(false)
-  status                  String       @default("DRAFT")
-  provenance              FcProvenance @default(PROPOSAL_TERM)
-  createdAt               DateTime     @default(now())
-  updatedAt               DateTime     @updatedAt
+  includeDirectorLoans       Boolean      @default(false)
+  includeIntercompany        Boolean      @default(false)
+  includeSecuredShortfall    Boolean      @default(false)
+  includePriorityClaims      Boolean      @default(false)
+  includeContingentClaims    Boolean      @default(false)
+  status                     String       @default("DRAFT")
+  provenance                 FcProvenance @default(PROPOSAL_TERM)
+  createdAt                  DateTime     @default(now())
+  updatedAt                  DateTime     @updatedAt
 
   company   FcCompany                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
   schedules FcCreditorPaymentSchedule[]
@@ -4651,4 +4761,528 @@ model FcSyncRun {
 
   @@index([companyId, sourceSystem, startedAt])
   @@map("fc_sync_runs")
+}
+
+// ── Alma POS (counter-mode register MVP) ─────────────────────────────────────
+// @domain: pos | home: suite
+model PosOrder {
+  id                  String                @id @default(cuid())
+  orderNumber         Int                   @unique @default(autoincrement())
+  venue               String
+  // Client-generated key for offline-queued sales: replaying a sync request
+  // (double flush, retry after a timed-out-but-committed create) can never
+  // duplicate the order.
+  idempotencyKey      String?               @unique
+  // Training-mode orders exercise the full register flow but are excluded
+  // from actuals, drawers, day close, shift reports and guest CRM.
+  training            Boolean               @default(false)
+  // UTC midnight of the Sydney trading day the order was PAID on (null while open).
+  serviceDate         DateTime?
+  status              String                @default("OPEN") // OPEN | PAID | VOID
+  subtotalCents       Int                   @default(0) // inc GST, before discount/surcharge
+  discountCents       Int                   @default(0)
+  discountLabel       String?
+  // Manual (staff-applied, reason-audited) discount on top of rule discounts.
+  manualDiscountCents Int                   @default(0)
+  manualDiscountLabel String?
+  surchargeCents      Int                   @default(0)
+  surchargeLabel      String?
+  totalCents          Int                   @default(0) // inc GST, after discount + surcharge
+  gstCents            Int                   @default(0) // 1/11 of total (GST-inclusive pricing)
+  tipCents            Int                   @default(0)
+  tableLabel          String?
+  covers              Int?
+  // Matched guest (via tonight's reservation on this table) — feeds the CRM:
+  // spend, visits and favourite items update when the order settles.
+  guestId             String?
+  reservationId       String?
+  notes               String?
+  // Dietary flags: [{tag, seat|null}] — seat null applies to the whole table.
+  dietary             Json                  @default("[]")
+  // DINE_IN | TAKEAWAY — the kitchen plates and packs differently, so it
+  // prints at the top of every docket.
+  orderType           String                @default("DINE_IN")
+  openedByName        String?
+  guest               ReserveGuest?         @relation(fields: [guestId], references: [id], onDelete: SetNull)
+  paidAt              DateTime?
+  voidedAt            DateTime?
+  voidReason          String?
+  giftCardSales       PosGiftCardSale[]
+  terminalCheckouts   PosTerminalCheckout[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  lines               PosOrderLine[]
+  payments            PosPayment[]
+  terminalRefunds     PosTerminalRefund[]
+
+  @@index([venue, serviceDate])
+  @@index([status])
+}
+
+model PosOrderLine {
+  id             String    @id @default(cuid())
+  orderId        String
+  recipeId       String?
+  name           String
+  // Docket/KDS name, captured from Recipe.printTitle (falling back to title)
+  // at the moment this line was added. NULL means "use name" — dockets and
+  // KDS tickets read this in preference to `name`; the register tile, bill
+  // and guest receipt always use `name`.
+  printName      String?
+  unitPriceCents Int
+  quantity       Int
+  totalCents     Int
+  course         String?
+  seat           Int?
+  // Chosen modifiers: [{name, priceCents}] — unitPriceCents already includes
+  // their deltas; dockets print them under the item.
+  modifiers      Json?
+  notes          String?
+  // A face-value voucher, not food: no GST at sale, no surcharge, no
+  // discount, never sent to the kitchen. Rebuilt from PosGiftCardSale, so
+  // a client line edit can never lose or duplicate it.
+  isGiftCard     Boolean   @default(false)
+  // Set when the line's course has been FIRED to its printer profile.
+  sentAt         DateTime?
+  // Who called it away. With sentAt this is the kitchen-performance trail:
+  // ordered at (createdAt) → fired at (sentAt) → by whom.
+  sentByName     String?
+  createdAt      DateTime  @default(now())
+  order          PosOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  recipe         Recipe?   @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([recipeId])
+}
+
+// A gift card being SOLD on a bill. The card itself is only issued when the
+// bill settles — an unpaid or voided bill must never put a live card in
+// someone's hand. Linked to the order, not the line: setLines deletes and
+// recreates every line, so line ids are not stable.
+// Every employmentStatus transition, with a stack so a silent deactivation
+// is traceable to its caller instead of being guessed at. Written by the
+// Prisma guard in packages/db/src/prisma.ts.
+model StaffStatusChange {
+  id             String   @id @default(cuid())
+  staffProfileId String
+  fromStatus     String
+  toStatus       String
+  source         String   @default("unknown")
+  stack          String?
+  createdAt      DateTime @default(now())
+
+  @@index([staffProfileId])
+  @@index([createdAt])
+}
+
+model PosGiftCardSale {
+  id             String    @id @default(cuid())
+  orderId        String
+  amountCents    Int
+  // A pre-printed card the guest is buying, if the venue has stock.
+  requestedCode  String?
+  recipientName  String?
+  recipientEmail String?
+  // Filled in at settle.
+  issuedCode     String?
+  issuedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  order          PosOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model PosPayment {
+  id            String   @id @default(cuid())
+  orderId       String
+  method        String // CASH | CARD_EXTERNAL | STRIPE_TERMINAL
+  amountCents   Int
+  tipCents      Int      @default(0)
+  tenderedCents Int?
+  changeCents   Int?
+  reference     String?
+  createdAt     DateTime @default(now())
+  order         PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+// Automatic pricing rules: weekend/public-holiday surcharges and timed
+// discounts (happy hour). Applied server-side on every order recompute.
+// Cash drawer sessions: float in, denomination count out, variance recorded.
+model PosDrawer {
+  id                String    @id @default(cuid())
+  venue             String
+  status            String    @default("OPEN") // OPEN | CLOSED
+  openingFloatCents Int       @default(0)
+  countedCents      Int?
+  expectedCents     Int?
+  varianceCents     Int?
+  // {"10000": 3, "5000": 5, ...} — cents denomination → quantity counted.
+  denominations     Json?
+  openedByName      String?
+  closedByName      String?
+  notes             String?
+  openedAt          DateTime  @default(now())
+  closedAt          DateTime?
+
+  @@index([venue, status])
+}
+
+// One close-of-day per venue per trading day — the audit record.
+model PosDayClose {
+  id           String   @id @default(cuid())
+  venue        String
+  serviceDate  DateTime
+  report       Json
+  closedByName String?
+  createdAt    DateTime @default(now())
+
+  @@unique([venue, serviceDate])
+}
+
+// Ordered course list shown on the register (tap-to-cycle + docket grouping).
+model PosCourse {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+}
+
+// Docket routing: which kinds/categories print where (kitchen vs bar).
+// Server Direct Print queue: the PRINTER polls our API over HTTPS for
+// jobs, so browsers never need LAN access and iPads just work.
+model PosPrintJob {
+  id        String    @id @default(cuid())
+  profileId String
+  status    String    @default("QUEUED") // QUEUED | SENT | PRINTED | FAILED
+  payload   Json
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+  doneAt    DateTime?
+
+  @@index([profileId, status, createdAt])
+}
+
+model PosPrinterProfile {
+  id            String  @id @default(cuid())
+  name          String
+  // Which venue's stations these are. NULL = every venue (how it behaved
+  // before there was a second venue). Two venues sharing a station would
+  // print St Alma's dockets in Avalon's kitchen.
+  venue         String?
+  // FOOD or BEVERAGE — the default router; categoriesCsv narrows/overrides.
+  matchKind     String
+  categoriesCsv String  @default("")
+  printerIp     String?
+  active        Boolean @default(true)
+  sortOrder     Int     @default(0)
+}
+
+// Audited register actions: every discount, comp, price change and wastage
+// records WHO did it, the ITEM, and a mandatory reason from the fixed list.
+model PosAdjustment {
+  id          String   @id @default(cuid())
+  venue       String
+  orderId     String?
+  kind        String // DISCOUNT | COMP | PRICE_CHANGE | WASTAGE
+  reason      String
+  staffName   String
+  itemName    String?
+  amountCents Int      @default(0)
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  @@index([venue, createdAt])
+  @@index([kind])
+}
+
+// Per-operator POS homescreen: which management buttons show + pinned items.
+model PosHomescreen {
+  id              String   @id @default(cuid())
+  userKey         String   @unique
+  buttons         Json
+  pins            Json
+  // Per-user category tab bar: {order: string[], hidden: string[],
+  // groups: [{name, cats: string[], c?}]}. Null = the menu's natural order.
+  categories      Json?
+  // Management tile sizes: { 'open-till': 'w' | 'b' } — same vocabulary as pins.
+  buttonSizes     Json?
+  landingCategory String?
+  updatedBy       String?
+  updatedAt       DateTime @updatedAt
+}
+
+// Modifier groups attach to menu CATEGORIES (low-config): "Taco mods" applies
+// to every item in Tacos. Options can carry a price delta.
+model PosModifierGroup {
+  id            String        @id @default(cuid())
+  name          String
+  categoriesCsv String        @default("")
+  required      Boolean       @default(false)
+  maxSelect     Int           @default(3)
+  sortOrder     Int           @default(0)
+  active        Boolean       @default(true)
+  options       PosModifier[]
+}
+
+model PosModifier {
+  id         String           @id @default(cuid())
+  groupId    String
+  name       String
+  priceCents Int              @default(0)
+  sortOrder  Int              @default(0)
+  active     Boolean          @default(true)
+  group      PosModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+// The 86 list: sold-out items, greyed on every register instantly.
+// Menu curation: entries hidden from every register + the QR menu (86 is
+// "sold out today"; a hide is "we don't sell this here"). kind ITEM keys by
+// recipeId, kind CATEGORY keys by category name.
+model PosMenuHide {
+  id        String   @id @default(cuid())
+  kind      String
+  key       String
+  hiddenBy  String?
+  createdAt DateTime @default(now())
+
+  @@unique([kind, key])
+}
+
+model Pos86 {
+  id        String   @id @default(cuid())
+  recipeId  String   @unique
+  staffName String?
+  createdAt DateTime @default(now())
+}
+
+// A fired docket, persisted for the kitchen display: one ticket per station
+// per fire. Bumped tickets drop off the rail (recallable).
+model PosTicket {
+  id           String    @id @default(cuid())
+  venue        String
+  station      String
+  orderId      String
+  orderNumber  Int
+  tableLabel   String?
+  covers       Int?
+  openedByName String?
+  lines        Json
+  firedAt      DateTime  @default(now())
+  bumpedAt     DateTime?
+
+  @@index([venue, station, bumpedAt])
+}
+
+// Per-venue register behaviour: when the POS is the venue's till, settled
+// sales/covers/tips post into the suite's actuals tables.
+// A Square Terminal (handheld or Stand) paired to a venue. We hold the pairing
+// only — the card data and the money never touch us, which is the whole point
+// of driving the hardware through Square's Terminal API rather than reading a
+// card ourselves.
+model PosTerminalDevice {
+  id             String                @id @default(cuid())
+  venue          String
+  name           String
+  // Square's device-code record. The 8-character `code` is what staff type
+  // into the terminal once; `deviceCodeId` is how we poll Square to find out
+  // whether they've done it yet.
+  deviceCodeId   String                @unique
+  code           String
+  // Square fills this in when the code is redeemed on the hardware. Until
+  // then there is nothing to send a checkout to.
+  squareDeviceId String?
+  status         String                @default("PAIRING") // PAIRING | PAIRED | EXPIRED
+  locationId     String
+  accountKey     String // primary (St Alma) | secondary (Alma Avalon)
+  pairedAt       DateTime?
+  lastUsedAt     DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  checkouts      PosTerminalCheckout[]
+  refunds        PosTerminalRefund[]
+
+  @@index([venue, status])
+}
+
+// One attempt to charge a card on a terminal.
+//
+// This row exists so polling is idempotent. The register asks "done yet?"
+// every second or two, and a slow network can deliver the same COMPLETED
+// twice — `paymentId` is the latch that makes sure the bill is only ever
+// tendered once, no matter how many times we ask.
+model PosTerminalCheckout {
+  id              String            @id // Square's checkout id
+  orderId         String
+  deviceId        String
+  venue           String
+  amountCents     Int
+  tipCents        Int               @default(0)
+  status          String            @default("PENDING") // PENDING | IN_PROGRESS | CANCEL_REQUESTED | COMPLETED | CANCELED
+  squarePaymentId String?
+  paymentId       String?
+  failureReason   String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  order           PosOrder          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  device          PosTerminalDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+}
+
+// One attempt to push a refund back to a Square Terminal — the mirror of
+// PosTerminalCheckout, latch and all. `refundPaymentId` is set exactly once,
+// when Square first reports the refund COMPLETED, so a repeated poll cannot
+// credit the bill twice.
+//
+// The manager who approved it is recorded here at START, before the card is
+// touched. The PIN itself is never stored.
+model PosTerminalRefund {
+  id              String            @id // Square's terminal refund id
+  orderId         String
+  deviceId        String
+  venue           String
+  amountCents     Int
+  status          String            @default("PENDING") // PENDING | IN_PROGRESS | COMPLETED | CANCELED
+  squarePaymentId String // the original payment being refunded
+  approvedBy      String
+  staffName       String
+  reason          String
+  refundPaymentId String?
+  failureReason   String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  order           PosOrder          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  device          PosTerminalDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+// A bug reported from the register by whoever hit it, while they still
+// remember what they were doing. The point is that a problem at 7pm on a
+// Friday costs a server fifteen seconds, not a phone call to someone who
+// wasn't there — so the form asks almost nothing and the register attaches
+// the context itself.
+model PosBugReport {
+  id          String    @id @default(cuid())
+  venue       String
+  // What they were doing and what happened. One box, their words.
+  body        String
+  // Auto-attached by the register: which screen, which bill, which build,
+  // which device. This is what makes a one-line report actionable.
+  screen      String?
+  orderId     String?
+  appVersion  String?
+  userAgent   String?
+  reportedBy  String?
+  // Recent console errors, if the browser had any.
+  clientError String?
+  severity    String    @default("NORMAL") // NORMAL | BLOCKING
+  status      String    @default("NEW") // NEW | TRIAGED | FIXED | WONTFIX | NEEDS_INFO
+  // Filled in when it's worked: what was wrong and what changed.
+  resolution  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, createdAt])
+}
+
+// A guest's QR round, held here until Square says it's paid.
+//
+// The whole point is that NOTHING touches the table's bill or the kitchen
+// until the money is in. An abandoned checkout leaves a dead row here rather
+// than phantom items a server has to notice and strip out mid-service.
+//
+// `lines` is the SERVER's priced copy, not the client's — the basket is
+// repriced at submit and never re-read from the browser afterwards.
+model PosQrPendingOrder {
+  id                  String    @id @default(cuid())
+  venue               String
+  tableLabel          String
+  guestName           String?
+  notes               String?
+  dietary             Json      @default("[]")
+  lines               Json
+  totalCents          Int
+  squarePaymentLinkId String?
+  squareOrderId       String?
+  checkoutUrl         String?
+  status              String    @default("PENDING") // PENDING | PAID | EXPIRED
+  // Set exactly once, when the paid basket becomes real lines on a bill.
+  // This is the latch that stops a refreshed success page ordering twice.
+  posOrderId          String?
+  paidAt              DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([venue, tableLabel])
+}
+
+model PosVenueSetting {
+  id                  String  @id @default(cuid())
+  venue               String  @unique
+  // Each venue is its own company — receipts and payments carry its identity.
+  businessName        String?
+  abn                 String?
+  address             String?
+  phone               String?
+  email               String?
+  website             String?
+  // Receipt logo as a data URL (downscaled on upload in the Office).
+  receiptLogo         String?
+  postToReports       Boolean @default(false)
+  // Xero: which organisation this venue's takings post to, and the account
+  // codes the daily sales invoice uses. Blank tenant = never posts.
+  xeroTenantId        String?
+  xeroSalesAccount    String? // default 200 (Sales)
+  xeroTipsAccount     String? // blank = tips stay out of the invoice
+  xeroCashAccount     String? // clearing account cash lands in
+  xeroCardAccount     String? // clearing account card settlements land in
+  xeroGiftCardAccount String? // gift-card redemptions (liability drawdown)
+}
+
+model PosRule {
+  id          String   @id @default(cuid())
+  kind        String // SURCHARGE | DISCOUNT
+  label       String
+  percent     Float
+  weekdays    String // csv of JS weekday numbers 0-6, '' = none
+  holidays    Boolean  @default(false)
+  startMinute Int?
+  endMinute   Int?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// One row per (staff member, Xero organisation).
+//
+// St Alma trades as Alma Freshwater Pty Ltd and Alma Avalon is a separate
+// company: separate ABNs, separate payrolls, separate employee records. So
+// somebody rostered across both is TWO employees in Xero, and a single
+// StaffProfile.xeroEmployeeId cannot say which company the id belongs to —
+// which is exactly why Isla could not be pushed to both.
+model StaffXeroEmployee {
+  id             String       @id @default(cuid())
+  staffProfileId String
+  // Xero tenant (organisation) id, and its name kept alongside so the UI can
+  // say "Alma Freshwater Pty Ltd" without another API call.
+  tenantId       String
+  tenantName     String?
+  xeroEmployeeId String
+  // Null until we have actually pushed/matched; set on every successful sync.
+  syncedAt       DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([staffProfileId, tenantId])
+  @@index([tenantId])
+  @@index([xeroEmployeeId])
 }

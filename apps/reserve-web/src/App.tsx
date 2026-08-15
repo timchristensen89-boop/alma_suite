@@ -27,7 +27,7 @@ import type {
   ReserveWaitlistEntry,
   ReserveWaitlistStatus
 } from '@alma/shared';
-import {
+import { installSuiteAppAccess,
   ActionFeedback,
   AlmaHomeBubble,
   AlmaPill,
@@ -60,6 +60,15 @@ import { SuiteSignOutButton } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import { DrinksPaymentPanel } from './DrinksPaymentPanel';
+import {
+  IconClock,
+  IconDashboard,
+  IconGlobe,
+  IconMap,
+  IconPlug,
+  IconSettings,
+  IconUsers
+} from '../../web/src/lib/icons';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const ALL_VENUES = 'All venues';
@@ -97,13 +106,13 @@ const servicePeriodLabels: Record<ReserveServicePeriod, string> = {
   EVENT: 'Event'
 };
 const MANAGER_NAV_ITEMS = [
-  { href: '#dashboard', label: 'Dashboard', description: 'Bookings and covers', icon: <DocumentIcon /> },
-  { href: '#service', label: 'Service', description: 'Live floor — seat, courses, bill', icon: <DocumentIcon /> },
-  { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <SearchIcon /> },
-  { href: '#waitlist', label: 'Waitlist', description: 'Walk-in queue for peak periods', icon: <SearchIcon /> },
-  { href: '#settings', label: 'Settings', description: 'Rules, packages, tables, floor plan', icon: <GearIcon /> },
-  { href: '#widget-preview', label: 'Widget', description: 'Safe public booking preview', icon: <DocumentIcon /> },
-  { href: '#google-reserve', label: 'Google Reserve', description: 'Setup-required integration', icon: <GearIcon /> }
+  { href: '#dashboard', label: 'Dashboard', description: 'Bookings and covers', icon: <IconDashboard /> },
+  { href: '#service', label: 'Service', description: 'Live floor — seat, courses, bill', icon: <IconMap /> },
+  { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <IconUsers /> },
+  { href: '#waitlist', label: 'Waitlist', description: 'Walk-in queue for peak periods', icon: <IconClock /> },
+  { href: '#settings', label: 'Settings', description: 'Rules, packages, tables, floor plan', icon: <IconSettings /> },
+  { href: '#widget-preview', label: 'Widget', description: 'Safe public booking preview', icon: <IconGlobe /> },
+  { href: '#google-reserve', label: 'Google Reserve', description: 'Setup-required integration', icon: <IconPlug /> }
 ];
 
 // Config surfaces (booking rules, drink packages, tables, floor plan) live under
@@ -590,12 +599,15 @@ function useReserveAuth() {
       const handoffUser = await consumeSuiteHandoffToken();
       if (handoffUser) {
         setUser(handoffUser);
+        installSuiteAppAccess(handoffUser as never);
         return;
       }
       const data = await api<{ user: AuthUser | null }>('/api/auth/me');
       setUser(data.user);
+        installSuiteAppAccess(data.user as never);
     } catch {
       setUser(null);
+        installSuiteAppAccess(null as never);
     } finally {
       setLoading(false);
     }
@@ -614,12 +626,14 @@ function useReserveAuth() {
     });
     setApiAuthToken(session.token);
     setUser(session.user);
+        installSuiteAppAccess(session.user as never);
   }, []);
 
   const logout = useCallback(async () => {
     await api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
     clearApiAuthToken();
     setUser(null);
+        installSuiteAppAccess(null as never);
   }, []);
 
   return { user, loading, login, logout };
@@ -3611,7 +3625,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
         {showDashboard && (() => {
           // Editorial Bookings · tonight header — only on the dashboard tab.
-          const isToday = selectedDate === new Date().toISOString().slice(0, 10);
+          const isToday = selectedDate === todayInput();
           const venueLabel = venueFilter === ALL_VENUES ? 'All venues' : venueFilter;
           const dateObj = new Date(`${selectedDate}T12:00:00`);
           const dateLabel = dateObj.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -3634,10 +3648,10 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
             r.occasion
           ).length;
           const periodLabel = (() => {
+            // Alma runs lunch + dinner — mornings the floor is being set for
+            // lunch, from late afternoon it's dinner. No breakfast service.
             const h = new Date().getHours();
-            if (h < 12) return 'BREAKFAST';
-            if (h < 17) return 'LUNCH';
-            return 'DINNER';
+            return h < 16 ? 'LUNCH' : 'DINNER';
           })();
           return (
             <>
@@ -4042,10 +4056,12 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
             {showFloorPlan ? (
             <section id="floor-plan">
+              {(venueFilter === ALL_VENUES ? KNOWN_VENUES : [venueFilter]).map((floorVenue) => (
               <FloorPlanSection
-                venue={venueFilter === ALL_VENUES ? KNOWN_VENUES[0]! : venueFilter}
-                tables={tables.filter((t) => t.isActive && (venueFilter === ALL_VENUES || t.venue === venueFilter))}
-                reservations={dashboard?.todayReservations ?? []}
+                key={floorVenue}
+                venue={floorVenue}
+                tables={tables.filter((t) => t.isActive && t.venue === floorVenue)}
+                reservations={(dashboard?.todayReservations ?? []).filter((r) => ((r as { venue?: string }).venue ?? floorVenue) === floorVenue)}
                 onAssignTable={async (reservationId, tableId) => {
                   try {
                     await api(`/api/reserve/reservations/${reservationId}`, {
@@ -4063,7 +4079,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     await api('/api/reserve/tables/layout', {
                       method: 'PATCH',
                       body: JSON.stringify({
-                        venue: venueFilter === ALL_VENUES ? KNOWN_VENUES[0]! : venueFilter,
+                        venue: floorVenue,
                         tables: updates
                       })
                     });
@@ -4076,10 +4092,10 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 onAutoAssign={async () => {
                   // Greedy: seat the largest parties first into the smallest free
                   // table that fits (min/max covers), so big tables aren't wasted.
-                  const venueTables = tables.filter(
-                    (t) => t.isActive && (venueFilter === ALL_VENUES || t.venue === venueFilter)
+                  const venueTables = tables.filter((t) => t.isActive && t.venue === floorVenue);
+                  const todays = (dashboard?.todayReservations ?? []).filter(
+                    (r) => ((r as { venue?: string }).venue ?? floorVenue) === floorVenue
                   );
-                  const todays = dashboard?.todayReservations ?? [];
                   const taken = new Set(todays.filter((r) => r.tableId).map((r) => r.tableId));
                   const free = venueTables
                     .filter((t) => !taken.has(t.id))
@@ -4123,6 +4139,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   }
                 }}
               />
+              ))}
             </section>
             ) : null}
 

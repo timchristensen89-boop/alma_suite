@@ -3,6 +3,7 @@ import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { integrationService } from '../services/integration.service.js';
 import { deputyService } from '../services/deputy.service.js';
 import { sevenroomsService } from '../services/sevenrooms.service.js';
+import { lightspeedInboundService } from '../services/lightspeed-inbound.service.js';
 
 export const integrationsRouter = Router();
 
@@ -487,6 +488,17 @@ export async function deputyWebhookReceiver(req: Request, res: Response, next: N
 export async function sevenroomsInboundEmailReceiver(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await sevenroomsService.handleInboundEmail(req));
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Inbound item-sales email from Lightspeed (scheduled Insights CSV, forwarded
+// by the VPS mailbox poller). Token-guarded in the service; lands
+// SalesItemActualEntry rows so menu engineering keeps seeing what sold.
+export async function lightspeedInboundEmailReceiver(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await lightspeedInboundService.handleInboundEmail(req));
   } catch (error) {
     next(error);
   }

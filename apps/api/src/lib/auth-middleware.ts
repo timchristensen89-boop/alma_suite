@@ -40,9 +40,17 @@ const PUBLIC_PATHS = new Set<string>([
 ]);
 
 const PUBLIC_PREFIXES = [
+  // Guest QR table ordering — anonymous by design; the signed table token in
+  // the query/body is the auth, and the service throttles per IP.
+  '/api/qr/',
+  '/api/pos/print-poll/',
+  '/api/pos/print-stations',
   '/api/gift-cards/session/',
   '/api/gift-cards/print/',
   '/api/gift-cards/qr/',
+  // Customer-designed card artwork, addressed by the (secret) card code —
+  // same trust model as /qr/ and /print/ above.
+  '/api/gift-cards/artwork/',
   '/api/gift-cards/wallet/apple/',
   '/api/gift-cards/wallet/google/',
   '/api/staff/invites/by-token/',
@@ -184,7 +192,10 @@ export async function authMiddleware(
     if (sessionUser) {
       req.user = sessionUser;
       if (sessionUser.accountType === 'VENUE_DEVICE') {
-        const pinPayload = parseDevicePinSessionToken(req.cookies?.[DEVICE_PIN_SESSION_COOKIE] as string | undefined);
+        const pinPayload = parseDevicePinSessionToken(
+          (req.cookies?.[DEVICE_PIN_SESSION_COOKIE] as string | undefined) ??
+            (req.headers['x-device-pin-session'] as string | undefined)
+        );
         if (pinPayload?.deviceUserId === sessionUser.id) {
           const pinUser = await authService.getActiveHumanById(pinPayload.pinUserId);
           if (

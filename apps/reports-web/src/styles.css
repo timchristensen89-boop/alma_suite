@@ -10,9 +10,10 @@
      cards/panels read as soft cream tiles that lift off the background; nested
      insets use a slightly deeper warm so they recede inside a card. Overrides
      the shared tokens for reports-web only. */
-  --color-bg: #FFFFFF;
-  --color-surface: #F1ECE2;
-  --color-surface-muted: #E9E2D3;
+  /* Warm canvas so white stat tiles and cream cards both read against the page. */
+  --color-bg: #F8F5EF;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #F3EEE5;
 }
 
 .reports-section {
@@ -911,6 +912,37 @@
   min-width: 2px;
 }
 
+/* Set-menu panel: the fix affordances (parent-mapping hint + per-course
+   Cost → links into Stock recipes). */
+.menu-cogs-hint {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(201, 154, 63, 0.12);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--color-text, #2C2A26);
+}
+.menu-cogs-missing-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.menu-cogs-fix {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-accent, #684A4A);
+  cursor: pointer;
+}
+.menu-cogs-fix:hover {
+  text-decoration: underline;
+}
+
 /* Plain-English lead line at the top of a report — the one-sentence "what this
    tells you / where you stand" read before the numbers. */
 .report-lead {
@@ -1377,6 +1409,65 @@ html[data-theme='dark'] .cost-tile { background: rgba(255, 255, 255, 0.03); }
 }
 .report-active-section > .card > .card-header > .card-action {
   flex: 0 1 auto;
+}
+/* Under the shared 760px breakpoint .card-header flips to a COLUMN, where the
+   280px flex-basis above becomes a 280px-tall block (a huge dead gap on
+   phones). Reset the basis in column mode. */
+@media (max-width: 760px) {
+  .report-active-section > .card > .card-header > .card-header-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .report-active-section > .card > .card-header > .card-action {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+  /* Week-nav cluster: let the date pill shrink instead of overflowing the
+     card edge; buttons already wrap below it. */
+  .reports-section-actions {
+    width: 100%;
+  }
+  .reports-section-actions > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .alma-roster-weeknav.reports-weeknav {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .reports-weeknav-preset {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .reports-weeknav-label-btn {
+    max-width: 100%;
+    overflow: hidden;
+  }
+}
+
+/* Long staff-costing warnings arrive as badges; badges don't wrap by default
+   and shoot past the phone viewport. Stack and wrap them. */
+.staff-cost-warnings {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.staff-cost-warnings .badge {
+  white-space: normal;
+  text-align: left;
+  line-height: 1.35;
+  height: auto;
+}
+
+/* Monthly Recap bars: the bar width is a % of the track, and the nowrap value
+   label beside it pushed the pair past the card edge on phones. Reserve room
+   for the label. */
+.recap-bar-track {
+  min-width: 0;
+}
+.recap-bar {
+  max-width: calc(100% - 72px);
 }
 
 /* Prev/next period steppers (roster-style round icon buttons). */
@@ -2707,3 +2798,17 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
     min-width: 0;
   }
 }
+
+
+/* Register audit */
+.audit-venues { display: flex; gap: 8px; margin: 14px 0; }
+.audit-venues button { border: 1px solid rgba(31, 53, 36, 0.25); background: #fff; border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; color: var(--color-text); }
+.audit-venues button.is-on { border-color: var(--color-accent); color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, #fff); }
+.audit-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.audit-tile { background: var(--color-surface, #fff); border: 1px solid rgba(31, 53, 36, 0.1); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow-sm); }
+.audit-tile small { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-subtle); }
+.audit-tile strong { font-size: 19px; }
+.audit-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.audit-table th { text-align: left; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-subtle); padding: 6px 8px; border-bottom: 1px solid rgba(31, 53, 36, 0.12); }
+.audit-table td { padding: 7px 8px; border-bottom: 1px solid rgba(31, 53, 36, 0.06); }
+.report-panel h3 { margin: 0 0 8px; font-size: 14px; }

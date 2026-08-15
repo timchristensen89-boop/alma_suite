@@ -756,7 +756,14 @@ function canApprovePayChange(user: ReturnType<typeof useAuth>['user']) {
 
 function navItemsForUser(user: ReturnType<typeof useAuth>['user']) {
   if (user?.accountType === 'VENUE_DEVICE') return DEVICE_NAV_ITEMS;
-  if (user?.role === 'STAFF') return STAFF_MEMBER_NAV_ITEMS;
+  if (user?.role === 'STAFF') {
+    const hasStock =
+      Boolean((user as { isAdmin?: boolean }).isAdmin) ||
+      ((user as { appAccess?: Array<{ appId: string; status: string }> }).appAccess ?? []).some(
+        (access) => access.appId === 'STOCK' && access.status === 'ENABLED'
+      );
+    return hasStock ? STAFF_MEMBER_NAV_ITEMS : STAFF_MEMBER_NAV_ITEMS.filter((item) => item.to !== '/stocktake');
+  }
   const items = canAccessSettings(user)
     ? NAV_ITEMS
     : NAV_ITEMS.filter((item) => item.to !== '/settings' && item.to !== '/admin');
@@ -1598,6 +1605,68 @@ function StaffProfilesPage({
   const [reonboardMessage, setReonboardMessage] = useState<string | null>(null);
   const [reonboardError, setReonboardError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StaffProfileStatusFilter>('current');
+  // Merge-duplicate flow: the profile being merged AWAY, the profile that
+  // keeps everything, and the round-trip state. The source can be a normal
+  // register profile OR a hidden (archived) duplicate that no longer shows in
+  // the register but still owns timesheets and tip lines.
+  const [mergeSource, setMergeSource] = useState<{ id: string; firstName: string; lastName: string } | null>(null);
+  const [mergeTargetId, setMergeTargetId] = useState('');
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [hiddenDuplicates, setHiddenDuplicates] = useState<Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    roleTitle: string | null;
+    venue: string | null;
+    hasBankDetails: boolean;
+    counts: { timesheets: number; tipPaymentRunLines: number; rosterShifts: number; clockSessions: number };
+  }>>([]);
+
+  const loadHiddenDuplicates = useCallback(async () => {
+    try {
+      setHiddenDuplicates(await api<typeof hiddenDuplicates>('/api/staff/archived-duplicates'));
+    } catch {
+      // Non-manager or older API — the section just stays hidden.
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadHiddenDuplicates();
+  }, [loadHiddenDuplicates]);
+
+  async function runMerge() {
+    if (!mergeSource || !mergeTargetId) return;
+    setMergeBusy(true);
+    setMergeError(null);
+    try {
+      const result = await api<{
+        canonicalStaffProfile: StaffProfile;
+        moved: Record<string, number>;
+      }>('/api/staff/merge', {
+        method: 'POST',
+        body: JSON.stringify({
+          canonicalStaffProfileId: mergeTargetId,
+          duplicateStaffProfileIds: [mergeSource.id],
+          confirmation: 'MERGE STAFF'
+        })
+      });
+      const movedSummary = Object.entries(result.moved ?? {})
+        .filter(([, count]) => count > 0)
+        .map(([key, count]) => `${count} ${key.replace(/([A-Z])/g, ' $1').toLowerCase()}`)
+        .join(', ');
+      setReonboardMessage(
+        `Merged ${mergeSource.firstName} ${mergeSource.lastName} into ${result.canonicalStaffProfile.firstName} ${result.canonicalStaffProfile.lastName}.${movedSummary ? ` Moved: ${movedSummary}.` : ''}`
+      );
+      setMergeSource(null);
+      setMergeTargetId('');
+      await Promise.all([reload(), loadHiddenDuplicates()]);
+    } catch (err) {
+      setMergeError(err instanceof Error ? err.message : 'Merge failed.');
+    } finally {
+      setMergeBusy(false);
+    }
+  }
 
   const statusCounts = useMemo(() => {
     const active = staff.filter((member) => normaliseEmploymentStatus(member) === 'ACTIVE').length;
@@ -1673,6 +1742,21 @@ function StaffProfilesPage({
     }
   }
 
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
+  async function reactivateProfile(member: StaffProfile) {
+    setReactivatingId(member.id);
+    setReonboardError(null);
+    try {
+      await api(`/api/staff/${member.id}`, { method: 'PATCH', body: JSON.stringify({ employmentStatus: 'ACTIVE' }) });
+      setReonboardMessage(`${member.firstName} ${member.lastName} is active again — records, PIN and history intact.`);
+      await reload();
+    } catch (err) {
+      setReonboardError(err instanceof Error ? err.message : 'Could not reactivate.');
+    } finally {
+      setReactivatingId(null);
+    }
+  }
+
   const renderStaffRow = (member: StaffProfile) => {
     const soon = member.records.filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate)).length;
     const uploadedDocuments = member.records.filter((record) => Boolean(record.documentUrl)).length;
@@ -1696,6 +1780,20 @@ function StaffProfilesPage({
           {isDeputyImportedProfile(member) ? <Badge tone="info">Roster import</Badge> : null}
           {isUnallocatedProfile(member) ? <Badge tone="warning">Unallocated</Badge> : null}
           <Badge tone={member.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>{member.employmentStatus}</Badge>
+          {isTerminatedStaffProfile(member) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={reactivatingId === member.id}
+              onClick={(event) => {
+                event.stopPropagation();
+                void reactivateProfile(member);
+              }}
+            >
+              {reactivatingId === member.id ? 'Reactivating…' : 'Reactivate'}
+            </Button>
+          ) : null}
           {isDeputyImportedProfile(member) ? (
             <Button
               type="button"
@@ -1742,6 +1840,19 @@ function StaffProfilesPage({
             }}
           >
             Payroll
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              setMergeTargetId('');
+              setMergeError(null);
+              setMergeSource(member);
+            }}
+          >
+            Merge
           </Button>
         </span>
       </div>
@@ -1829,6 +1940,50 @@ function StaffProfilesPage({
         </div>
       </Card>
 
+      {hiddenDuplicates.length ? (
+        <Card
+          title="Hidden duplicate profiles"
+          subtitle="Archived identities that still own timesheets, tips or shifts. They keep surfacing in pay runs (and block ABA exports when they have no bank details) until they're merged into the real profile."
+          padding="none"
+        >
+          <div className="staff-list" style={{ padding: 12 }}>
+            {hiddenDuplicates.map((duplicate) => (
+              <div key={duplicate.id} className="staff-list-button">
+                <span className="staff-list-main" style={{ cursor: 'default' }}>
+                  <span>
+                    <strong>{duplicate.firstName} {duplicate.lastName}</strong>
+                    <span className="subtle" style={{ display: 'block' }}>
+                      {[duplicate.roleTitle, duplicate.venue || 'No venue'].filter(Boolean).join(' · ')}
+                      {' · '}
+                      {duplicate.counts.timesheets} timesheet{duplicate.counts.timesheets === 1 ? '' : 's'}
+                      {' · '}
+                      {duplicate.counts.tipPaymentRunLines} tip line{duplicate.counts.tipPaymentRunLines === 1 ? '' : 's'}
+                      {' · '}
+                      {duplicate.counts.rosterShifts} shift{duplicate.counts.rosterShifts === 1 ? '' : 's'}
+                    </span>
+                  </span>
+                </span>
+                <span className="staff-row-actions">
+                  {!duplicate.hasBankDetails ? <Badge tone="warning">No bank details</Badge> : null}
+                  <Badge tone="muted">Archived</Badge>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      setMergeTargetId('');
+                      setMergeError(null);
+                      setMergeSource(duplicate);
+                    }}
+                  >
+                    Merge into…
+                  </Button>
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
       <StaffModal
         open={form.mode !== 'closed'}
         title={form.mode === 'edit' ? `Edit ${form.member.firstName} ${form.member.lastName}` : 'New staff profile'}
@@ -1843,6 +1998,69 @@ function StaffProfilesPage({
             onSaved={(member) => void handleSaved(member)}
             onCancel={() => setForm({ mode: 'closed' })}
           />
+        ) : null}
+      </StaffModal>
+
+      <StaffModal
+        open={mergeSource !== null}
+        title={mergeSource ? `Merge ${mergeSource.firstName} ${mergeSource.lastName} into another profile` : 'Merge profiles'}
+        subtitle="For duplicate identities — everything moves to the profile you keep."
+        onClose={() => {
+          if (!mergeBusy) {
+            setMergeSource(null);
+            setMergeTargetId('');
+            setMergeError(null);
+          }
+        }}
+        width="standard"
+      >
+        {mergeSource ? (
+          <div className="page-stack" style={{ gap: 12 }}>
+            <p className="subtle">
+              Every timesheet, tip payment, roster shift, clock record, leave request, HR and compliance record on{' '}
+              <strong>{mergeSource.firstName} {mergeSource.lastName}</strong> moves to the profile you keep. Missing details
+              on the kept profile (bank account, TFN, super, contact info) are filled in from the duplicate, then the
+              duplicate is archived. Future roster imports that use the old name resolve to the kept profile automatically.
+              This cannot be undone.
+            </p>
+            <label className="field">
+              <span>Profile to keep</span>
+              <select
+                aria-label="Profile to keep"
+                value={mergeTargetId}
+                onChange={(event) => setMergeTargetId(event.currentTarget.value)}
+              >
+                <option value="">Choose the profile to keep…</option>
+                {staff
+                  .filter((member) => member.id !== mergeSource.id)
+                  .slice()
+                  .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
+                  .map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.firstName} {member.lastName}{member.venue ? ` · ${member.venue}` : ''}{member.roleTitle ? ` · ${member.roleTitle}` : ''}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {mergeError ? <p className="error-text">{mergeError}</p> : null}
+            <div className="toolbar-right">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={mergeBusy}
+                onClick={() => {
+                  setMergeSource(null);
+                  setMergeTargetId('');
+                  setMergeError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="button" disabled={mergeBusy || !mergeTargetId} onClick={() => void runMerge()}>
+                {mergeBusy ? 'Merging…' : 'Merge profiles'}
+              </Button>
+            </div>
+          </div>
         ) : null}
       </StaffModal>
     </div>
@@ -2138,7 +2356,7 @@ function StaffMemberHome({
               {activeSession
                 ? `${activeSession.venue || displayMember?.venue || 'No venue'} · ${activeSession.area || activeSession.roleTitle || 'Shift'} · ${activeSession.accumulatedBreakMinutes}m break logged`
                 : todayShift
-                  ? `${todayShift.venue || displayMember?.venue || 'No venue'} · ${roundHours(shiftHours(todayShift))}h rostered`
+                  ? `${todayShift.venue || displayMember?.venue || 'No venue'} · ${roundHours(shiftHours(todayShift))} rostered`
                   : 'Clock-in without a linked shift is available when needed.'}
             </span>
           </span>
@@ -3617,10 +3835,17 @@ type FridgeAsset = {
  * inside the same app and the seam disappears entirely.
  */
 function StocktakeHandoffPage() {
+  const { user } = useAuth();
   const [failed, setFailed] = useState(false);
   const target = `${STOCK_WEB_URL.replace(/\/+$/, '')}/`;
+  const stockAllowed =
+    Boolean((user as { isAdmin?: boolean } | null)?.isAdmin) ||
+    ((user as { appAccess?: Array<{ appId: string; status: string }> } | null)?.appAccess ?? []).some(
+      (access) => access.appId === 'STOCK' && access.status === 'ENABLED'
+    );
 
   useEffect(() => {
+    if (!stockAllowed) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -3635,7 +3860,19 @@ function StocktakeHandoffPage() {
     return () => {
       cancelled = true;
     };
-  }, [target]);
+  }, [stockAllowed, target]);
+
+  if (!stockAllowed) {
+    return (
+      <div style={{ padding: 24, maxWidth: 480 }}>
+        <h2>Stocktake needs Stock access</h2>
+        <p style={{ opacity: 0.75 }}>
+          Counting runs in the Stock app, and this account doesn't have it enabled. Ask a manager to switch on Stock
+          access for you in Staff, then this button lands straight on the count.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="page-stack">
@@ -5011,7 +5248,7 @@ function StaffProfileForm({
           label="Status"
           value={draft.employmentStatus}
           onChange={(event) => update('employmentStatus', event.currentTarget.value)}
-          options={['ACTIVE', 'PENDING', 'ARCHIVED'].map((status) => ({ label: status, value: status }))}
+          options={['ACTIVE', 'PENDING', 'ARCHIVED', 'TERMINATED'].map((status) => ({ label: status, value: status }))}
         />
       </div>
       <Input label="Start date" type="date" value={draft.startDate} onChange={(event) => update('startDate', event.currentTarget.value)} />
@@ -7314,7 +7551,31 @@ function AccessPage({
                     <Input label="Email" type="email" value={profileDraft.email} onChange={(event) => updateProfile('email', event.currentTarget.value)} />
                     <Input label="Phone" value={profileDraft.phone} onChange={(event) => updateProfile('phone', event.currentTarget.value)} />
                     <Select label="Venue" value={profileDraft.venue} onChange={(event) => updateProfile('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
-                    <Select label="Status" value={profileDraft.employmentStatus} onChange={(event) => updateProfile('employmentStatus', event.currentTarget.value)} options={['ACTIVE', 'PENDING', 'ARCHIVED'].map((status) => ({ label: status, value: status }))} />
+                    <Select label="Status" value={profileDraft.employmentStatus} onChange={(event) => updateProfile('employmentStatus', event.currentTarget.value)} options={['ACTIVE', 'PENDING', 'ARCHIVED', 'TERMINATED'].map((status) => ({ label: status, value: status }))} />
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <span className="subtle" style={{ display: 'block', marginBottom: 6 }}>
+                        POS permissions — this person's code can approve these on the register (managers approve everything):
+                      </span>
+                      {(['refunds', 'voids', 'discounts', 'till', 'office'] as const).map((permissionKey) => {
+                        const current = ((selected as unknown as { posPermissions?: Record<string, boolean> })?.posPermissions) ?? {};
+                        return (
+                          <label key={permissionKey} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 16, fontSize: 13 }}>
+                            <input
+                              type="checkbox"
+                              defaultChecked={Boolean(current[permissionKey])}
+                              onChange={(event) => {
+                                if (!selected) return;
+                                const next = { ...current, [permissionKey]: event.currentTarget.checked };
+                                void api(`/api/staff/${selected.id}`, { method: 'PATCH', body: JSON.stringify({ posPermissions: next }) })
+                                  .then(() => reload())
+                                  .catch(() => setMessage('Could not save POS permissions.'));
+                              }}
+                            />
+                            {permissionKey}
+                          </label>
+                        );
+                      })}
+                    </div>
                     <Input label="Start date" type="date" value={profileDraft.startDate} onChange={(event) => updateProfile('startDate', event.currentTarget.value)} />
                     <Input label="Date of birth" type="date" value={profileDraft.dateOfBirth} onChange={(event) => updateProfile('dateOfBirth', event.currentTarget.value)} />
                   </div>
@@ -11143,6 +11404,9 @@ function RosterPage({
   // Roster delete controls: one "Delete" dropdown + a section/area picker.
   const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
   const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
+  // Phones fold the roster tools behind one "Tools" button (see the
+  // .alma-roster-tools rules) — desktop renders the same children inline.
+  const [rosterToolsOpen, setRosterToolsOpen] = useState(false);
   const [sidePanelMode, setSidePanelMode] = useState<RosterSidePanelMode>('staff');
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
   const [collapsedRowIds, setCollapsedRowIds] = useState<Set<string>>(new Set());
@@ -12746,17 +13010,60 @@ function RosterPage({
           the actions and the filters they operate on read as one
           control block. */}
       <div className="alma-roster-actions">
-        <Button type="button" size="sm" variant="secondary" onClick={() => newShift()}>
+        {/* On phones every tool folds behind this one button so the action
+            row is a single line: Tools + Publish. Desktop hides the toggle
+            and the .alma-roster-tools wrapper renders display:contents, so
+            the buttons lay out inline exactly as before. */}
+        <div className="alma-roster-tools-wrap">
+          <button
+            type="button"
+            className="alma-roster-tools-toggle"
+            aria-haspopup="menu"
+            aria-expanded={rosterToolsOpen}
+            onClick={() => setRosterToolsOpen((open) => !open)}
+          >
+            Tools <span aria-hidden="true">▾</span>
+          </button>
+          {rosterToolsOpen ? (
+            <button
+              type="button"
+              className="alma-roster-delete-backdrop"
+              aria-label="Close roster tools"
+              onClick={() => setRosterToolsOpen(false)}
+            />
+          ) : null}
+          <div className={`alma-roster-tools ${rosterToolsOpen ? 'is-open' : ''}`}>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            setRosterToolsOpen(false);
+            newShift();
+          }}
+        >
           Add shift
         </Button>
-        <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void copyPreviousWeek()}>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={saving}
+          onClick={() => {
+            setRosterToolsOpen(false);
+            void copyPreviousWeek();
+          }}
+        >
           Copy last week
         </Button>
         <Button
           type="button"
           size="sm"
           variant="secondary"
-          onClick={() => setHistoricalOpen(true)}
+          onClick={() => {
+            setRosterToolsOpen(false);
+            setHistoricalOpen(true);
+          }}
           aria-label="Open historical forecast data"
         >
           Historical data{wageBudgetVariancePercent != null ? ` · ${formatVariance(wageBudgetVariancePercent)}` : ''}
@@ -12779,15 +13086,6 @@ function RosterPage({
           />
           <span className="roster-forecast-inline-suffix" aria-hidden="true">%</span>
         </label>
-        <button
-          type="button"
-          className="alma-roster-publish"
-          disabled={saving || draftCount === 0}
-          onClick={() => setPublishPreviewOpen(true)}
-        >
-          <span>Publish roster</span>
-          {draftCount > 0 ? <span className="alma-roster-publish-sub">{draftCount} {draftCount === 1 ? 'change' : 'changes'}</span> : null}
-        </button>
         <div className="alma-roster-delete-controls" aria-label="Delete roster shifts">
           {/* Small red section button — delete a single area/section */}
           <div className="alma-roster-delete-wrap">
@@ -12902,6 +13200,17 @@ function RosterPage({
             ) : null}
           </div>
         </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="alma-roster-publish"
+          disabled={saving || draftCount === 0}
+          onClick={() => setPublishPreviewOpen(true)}
+        >
+          <span>Publish roster</span>
+          {draftCount > 0 ? <span className="alma-roster-publish-sub">{draftCount} {draftCount === 1 ? 'change' : 'changes'}</span> : null}
+        </button>
       </div>
 
       {activeFilterChips.length > 0 ? (
@@ -13001,7 +13310,7 @@ function RosterPage({
               <div><span>Forecast</span><strong>{formatCents(forecastSalesCents)}</strong></div>
               <div><span>Wage budget</span><strong>{formatCents(wageBudgetCents)}</strong></div>
               <div><span>Roster cost</span><strong>{formatCents(rosterCostCents)}</strong></div>
-              <div><span>Gap</span><strong>{forecastHoursGap >= 0 ? `+${roundHours(forecastHoursGap)}h` : `${roundHours(forecastHoursGap)}h`}</strong></div>
+              <div><span>Gap</span><strong>{forecastHoursGap >= 0 ? `+${roundHours(forecastHoursGap)}` : roundHours(forecastHoursGap)}</strong></div>
             </div>
             <div className="roster-history-day-list roster-history-day-list-2col">
               {dailySummaries.map((summary) => (
@@ -13029,7 +13338,7 @@ function RosterPage({
               <div key={`${row.venue}:${row.area}`}>
                 <span>
                   <strong>{row.area}</strong>
-                  <small>{row.venue} · {row.gap >= 0 ? `+${roundHours(row.gap)}h` : `${roundHours(Math.abs(row.gap))}h`}</small>
+                  <small>{row.venue} · {row.gap >= 0 ? `+${roundHours(row.gap)}` : roundHours(Math.abs(row.gap))}</small>
                 </span>
                 <small>{row.day.toLocaleDateString(undefined, { weekday: 'short' })}</small>
                 <Button type="button" size="sm" variant="secondary" onClick={() => applyRosterRecommendation(row)}>
@@ -13118,7 +13427,7 @@ function RosterPage({
             <div className="roster-board-command-meta" aria-label="Roster board summary">
               <span><strong>{scheduleRows.filter((row) => !('isVenueHeader' in row && row.isVenueHeader)).length}</strong> rows</span>
               <span><strong>{visibleRoster.length}</strong> shifts</span>
-              <span><strong>{roundHours(totalHours)}</strong> hours</span>
+              <span><strong>{roundHours(totalHours)}</strong></span>
               <span><strong>{publishedCount}</strong> live</span>
               {draftCount ? <span className="is-warning"><strong>{draftCount}</strong> drafts</span> : null}
               {(() => {
@@ -13265,7 +13574,7 @@ function RosterPage({
                               <span className="deputy-venue-cell-closed">Closed</span>
                             ) : (
                               <>
-                                <span className="deputy-venue-cell-hours">{roundHours(dayHours)}h</span>
+                                <span className="deputy-venue-cell-hours">{roundHours(dayHours)}</span>
                                 {hasCost ? (
                                   <>
                                     <span className="deputy-venue-cell-cost">{formatCents(dayCostCents)}</span>
@@ -13958,7 +14267,7 @@ function RosterPage({
             {memberShifts.length > 0 ? (
               <>
                 <div className="roster-staff-card-row"><span>Shifts this week</span><span>{memberShifts.length}</span></div>
-                <div className="roster-staff-card-row"><span>Hours</span><span>{roundHours(memberHours)}h</span></div>
+                <div className="roster-staff-card-row"><span>Hours</span><span>{roundHours(memberHours)}</span></div>
                 {costLabel ? <div className="roster-staff-card-row"><span>Est. cost</span><span>{costLabel.replace(' · ', '')}</span></div> : null}
               </>
             ) : (
@@ -14934,20 +15243,52 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
    * does need them on Saturday's roster can still say so — they're asked for a
    * reason, which is written onto the profile where payroll will see it.
    */
+  // Push (or re-push) someone into Xero Payroll by hand. Needed when the
+  // automatic push on approval failed for a missing field, and whenever their
+  // bank, tax or super details change afterwards.
+  async function pushToXero(memberId: string) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`profile:${memberId}`);
+    try {
+      const result = await api<{
+        organisations: Array<{ tenantName: string | null; action: string }>;
+        warnings?: string[];
+      }>(`/api/staff/${memberId}/push-to-xero`, { method: 'POST' });
+      const where = result.organisations
+        .map((org) => `${org.tenantName ?? 'Xero'} (${org.action})`)
+        .join(', ');
+      const warn = result.warnings?.length ? ` — ${result.warnings.join(' ')}` : '';
+      setMessage(`Sent to ${where}.${warn}`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not push to Xero.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function approveProfile(memberId: string, options: { force?: boolean; reason?: string } = {}) {
     setSaving(true);
     setMessage(null);
     setMessageTarget(`profile:${memberId}`);
     try {
-      await api<StaffProfile>(`/api/staff/${memberId}/onboarding/approve`, {
-        method: 'POST',
-        body: JSON.stringify(options)
-      });
+      const approved = await api<StaffProfile & { xeroPush?: { ok: boolean; message: string } | null }>(
+        `/api/staff/${memberId}/onboarding/approve`,
+        { method: 'POST', body: JSON.stringify(options) }
+      );
       await reload();
+      // Approval also pushes them into Xero Payroll. It never blocks the
+      // approval, so say plainly whether payroll got them — a manager who
+      // isn't told will assume it worked.
+      const xero = approved.xeroPush
+        ? approved.xeroPush.ok
+          ? ` Xero: ${approved.xeroPush.message}`
+          : ` Xero did NOT get them — ${approved.xeroPush.message}`
+        : '';
       setMessage(
-        options.force
+        (options.force
           ? 'Activated with onboarding gaps. Noted on their profile for payroll.'
-          : 'Onboarding approved and profile activated.'
+          : 'Onboarding approved and profile activated.') + xero
       );
     } catch (err) {
       const text = err instanceof Error ? err.message : 'Could not approve onboarding.';
@@ -15058,6 +15399,16 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
                     <Badge tone="warning">Pending onboarding</Badge>
                     <Button type="button" size="sm" disabled={saving || !readyToApprove} onClick={() => void approveProfile(member.id)}>
                       {readyToApprove ? 'Approve onboarding' : 'Approve documents first'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={saving}
+                      title="Send their details to Xero Payroll — both companies if they work at both"
+                      onClick={() => void pushToXero(member.id)}
+                    >
+                      Push to Xero
                     </Button>
                     <ActionFeedback
                       message={messageTarget === `profile:${member.id}` ? message : null}
@@ -15207,6 +15558,20 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  // "Pay from" funding accounts (Settings → Tip payments). Empty = only the
+  // base business account exists, so no selector is shown.
+  const [abaAccounts, setAbaAccounts] = useState<Array<{ key: string; label: string; maskedAccount: string }>>([]);
+  const [abaAccountKey, setAbaAccountKey] = useState('');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setAbaAccounts(await api<Array<{ key: string; label: string; maskedAccount: string }>>('/api/staff/tips/aba-accounts'));
+      } catch {
+        /* manager may lack settings access — selector just stays hidden */
+      }
+    })();
+  }, []);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const breakageCentsPerDay = useMemo(() => Math.round((Number(breakagePerDay) || 0) * 100), [breakagePerDay]);
   const venueOptions = useMemo(
@@ -15253,18 +15618,46 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     }))
     .filter((adjustment) => adjustment.adjustmentCents !== 0 || adjustment.excluded || adjustment.notes.trim().length > 0), [adjustments]);
 
-  const reviewedRows = useMemo(() => (summary?.entitlements ?? []).map((row) => {
-    const adjustment = adjustments[row.staffProfileId];
-    const excluded = adjustment?.excluded ?? false;
-    const adjustmentCents = excluded ? -row.amountCents : Math.round((Number(adjustment?.adjustment) || 0) * 100);
-    return {
-      ...row,
-      adjustmentCents,
-      finalAmountCents: Math.max(0, row.amountCents + adjustmentCents),
-      excluded,
-      reviewNotes: adjustment?.notes ?? ''
-    };
-  }), [adjustments, summary?.entitlements]);
+  // Excluding someone hands their share back to the pool: their hours leave
+  // the divisor and everyone left is re-cut over the same pool, so the final
+  // payout still balances (variance $0) instead of stranding the excluded
+  // share. Mirrors the server-side calculation in applyTipAdjustments exactly
+  // (same pro-rata + last-row-remainder rounding).
+  const reviewedRows = useMemo(() => {
+    const rows = summary?.entitlements ?? [];
+    const excludedIds = new Set(
+      rows.filter((row) => adjustments[row.staffProfileId]?.excluded).map((row) => row.staffProfileId)
+    );
+    const poolCents = rows.reduce((sum, row) => sum + row.amountCents, 0);
+    const activeRows = rows.filter((row) => !excludedIds.has(row.staffProfileId));
+    const activeHours = activeRows.reduce((sum, row) => sum + row.approvedHours, 0);
+    const redistributedBase = new Map<string, number>();
+    let allocated = 0;
+    activeRows.forEach((row, index) => {
+      const isLast = index === activeRows.length - 1;
+      const cents = activeHours > 0
+        ? isLast
+          ? poolCents - allocated
+          : Math.round((row.approvedHours / activeHours) * poolCents)
+        : 0;
+      allocated += cents;
+      redistributedBase.set(row.staffProfileId, cents);
+    });
+    return rows.map((row) => {
+      const adjustment = adjustments[row.staffProfileId];
+      const excluded = excludedIds.has(row.staffProfileId);
+      const baseCents = excluded ? row.amountCents : redistributedBase.get(row.staffProfileId) ?? row.amountCents;
+      const adjustmentCents = excluded ? -baseCents : Math.round((Number(adjustment?.adjustment) || 0) * 100);
+      return {
+        ...row,
+        amountCents: baseCents,
+        adjustmentCents,
+        finalAmountCents: Math.max(0, baseCents + adjustmentCents),
+        excluded,
+        reviewNotes: adjustment?.notes ?? ''
+      };
+    });
+  }, [adjustments, summary?.entitlements]);
 
   const totalPayoutCents = reviewedRows.reduce((sum, row) => sum + row.finalAmountCents, 0);
   const payoutVarianceCents = totalPayoutCents - (summary?.allocatablePoolCents ?? 0);
@@ -15514,12 +15907,22 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       setMessage('Approve and pay this tip run before exporting an ABA file.');
       return;
     }
+    if (abaAccounts.length > 0 && !abaAccountKey) {
+      setMessage('Choose which bank account to pay from before exporting.');
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
       const result = await api<{ aba: string; filename: string; count: number; totalCents: number }>('/api/staff/tips/export/aba', {
         method: 'POST',
-        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay })
+        body: JSON.stringify({
+          start: weekStart.toISOString(),
+          end: weekEnd.toISOString(),
+          venue,
+          breakageCentsPerDay,
+          ...(abaAccountKey ? { accountKey: abaAccountKey } : {})
+        })
       });
       downloadTextFile(result.filename || `alma-tips-${venue}-${toDateInput(weekStart)}.aba`, result.aba, 'text/plain');
       setMessage(`ABA exported for ${result.count} staff · ${formatCents(result.totalCents)}.`);
@@ -16000,11 +16403,11 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       {/* Roster & pay Turn 2: distribution overview — proportional bars in each
           staff member's role accent colour. Adjustments still happen below. */}
       {reviewedRows.length ? (
-        <TipsSection title="Distribution" summary={`By hours worked · ${roundHours(summary?.approvedHours ?? 0)}h pooled`}>
+        <TipsSection title="Distribution" summary={`By hours worked · ${roundHours(summary?.approvedHours ?? 0)} pooled`}>
           <div className="tips-distribution-card">
             <header className="tips-distribution-head">
               <h3>Distribution</h3>
-              <span>By hours worked · {roundHours(summary?.approvedHours ?? 0)}h pooled</span>
+              <span>By hours worked · {roundHours(summary?.approvedHours ?? 0)} pooled</span>
             </header>
             <div className="tips-distribution-rows">
               {(() => {
@@ -16102,7 +16505,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
                     <td>
                       <div className="tips-review-actions">
                         <Badge tone={row.excluded ? 'muted' : 'warning'}>{row.excluded ? 'Excluded' : row.paymentMethod}</Badge>
-                        <label className="inline-checkbox">
+                        <label className="inline-checkbox" title="Removes their hours from the split — the pool redistributes across everyone else and the payout still balances.">
                           <input
                             type="checkbox"
                             checked={row.excluded}
@@ -16182,6 +16585,23 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
               </Button>
             ) : (
               <div className="toolbar">
+                {abaAccounts.length > 0 ? (
+                  <label className="subtle" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    Pay from
+                    <select
+                      value={abaAccountKey}
+                      onChange={(event) => setAbaAccountKey(event.currentTarget.value)}
+                      style={{ minWidth: 200 }}
+                    >
+                      <option value="">Choose bank account…</option>
+                      {abaAccounts.map((account) => (
+                        <option key={account.key} value={account.key}>
+                          {account.label} ({account.maskedAccount})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <Button type="button" onClick={() => void exportTipsAba()} disabled={saving || !lockedRows.length}>
                   {saving && messageTarget === 'aba' ? 'Exporting…' : 'Export ABA'}
                 </Button>
@@ -17143,7 +17563,7 @@ function ManagerDashboardPage({ staff, roster }: { staff: StaffProfile[]; roster
         <div className={`live-hero-metric ${wageTone}`}>
           <span className="live-hero-label">Wage cost</span>
           <span className="live-hero-value">{wagePercent == null ? '—' : `${wagePercent.toFixed(1)}%`}</span>
-          <span className="live-hero-hint">{formatCents(dashboard?.totals.actualWageCents ?? 0)} · {roundHours(dashboard?.totals.actualHours ?? 0)}h actual</span>
+          <span className="live-hero-hint">{formatCents(dashboard?.totals.actualWageCents ?? 0)} · {roundHours(dashboard?.totals.actualHours ?? 0)} actual</span>
         </div>
         <div className="live-hero-metric">
           <span className="live-hero-label">Covers today</span>
@@ -17308,7 +17728,7 @@ function ManagerDashboardPage({ staff, roster }: { staff: StaffProfile[]; roster
               <article key={entry.id} className="manager-mobile-row">
                 <span>
                   <strong>{entry.staffProfile ? `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}` : 'Staff'}</strong>
-                  <span className="subtle">{new Date(entry.workDate).toLocaleDateString()} · {timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)} · {roundHours(timesheetHours(entry))}h</span>
+                  <span className="subtle">{new Date(entry.workDate).toLocaleDateString()} · {timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)} · {roundHours(timesheetHours(entry))}</span>
                   <span className="subtle">{entry.venue ?? ''}{entry.area ?? entry.roleTitle ? ` · ${entry.area ?? entry.roleTitle}` : ''}</span>
                 </span>
                 <span className="manager-mobile-row-actions">
@@ -17448,6 +17868,10 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
       }
     | null
   >(null);
+  // Reassign-shifts control: which staff group has the picker open, and who
+  // the shifts are being moved to.
+  const [reassignGroupKey, setReassignGroupKey] = useState<string | null>(null);
+  const [reassignTargetId, setReassignTargetId] = useState('');
   const [reviewOpen, setReviewOpen] = useState(() => {
     if (typeof window === 'undefined') return true;
     return window.localStorage.getItem('alma.timesheets.reviewOpen') !== 'closed';
@@ -17754,6 +18178,48 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     }
   }
 
+  /**
+   * Move shifts to a different staff profile — approved ones included.
+   *
+   * This exists for the phantom identities imports create ("Andres Felipe
+   * valdes" holding a week of real shifts while "Andres Felipe Gallo" holds
+   * the bank details): pick the right person, move the shifts, and the pay
+   * run and tips allocation follow without any reject/re-approve dance. The
+   * server stamps an audit note on each moved row.
+   */
+  async function reassignEntries(entryIds: string[], targetId: string) {
+    if (!targetId || entryIds.length === 0) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('reassign');
+    try {
+      const results = await Promise.allSettled(
+        entryIds.map((id) => api(`/api/staff/timesheets/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ staffProfileId: targetId })
+        }))
+      );
+      const failed = results.filter((result) => result.status === 'rejected');
+      const movedCount = entryIds.length - failed.length;
+      const targetName = staff.find((member) => member.id === targetId);
+      const targetLabel = targetName ? `${targetName.firstName} ${targetName.lastName}` : 'the selected profile';
+      if (failed.length === 0) {
+        setMessage(`Moved ${movedCount} shift${movedCount === 1 ? '' : 's'} to ${targetLabel}.`);
+      } else {
+        const firstError = failed[0];
+        const reason = firstError && firstError.status === 'rejected' && firstError.reason instanceof Error
+          ? ` First error: ${firstError.reason.message}`
+          : '';
+        setMessage(`Moved ${movedCount} of ${entryIds.length} shifts to ${targetLabel} — ${failed.length} failed.${reason}`);
+      }
+      setReassignGroupKey(null);
+      setReassignTargetId('');
+      await loadTimesheets();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function reject(id: string) {
     const reason = window.prompt('Reason for rejection?') ?? '';
     setSaving(true);
@@ -18008,7 +18474,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               <strong>{group.entries.length}</strong> shift{group.entries.length === 1 ? '' : 's'}
             </span>
             <span>
-              <strong>{roundHours(group.totalHours)}</strong>h
+              <strong>{roundHours(group.totalHours)}</strong>
             </span>
             {group.submittedIds.length ? (
               <Badge tone="info" dot>{group.submittedIds.length} to approve</Badge>
@@ -18020,7 +18486,53 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               Approve all
             </Button>
           ) : null}
+          {isManagerView ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={saving}
+              onClick={() => {
+                setReassignTargetId('');
+                setReassignGroupKey((current) => (current === group.id ? null : group.id));
+              }}
+            >
+              Reassign
+            </Button>
+          ) : null}
         </header>
+        {isManagerView && reassignGroupKey === group.id ? (
+          <div className="timesheet-reassign-bar" style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', flexWrap: 'wrap' }}>
+            <span className="subtle">
+              Move {group.entries.length === 1 ? 'this shift' : `all ${group.entries.length} shifts`} from <strong>{group.name}</strong> to
+            </span>
+            <select
+              aria-label={`Reassign shifts for ${group.name}`}
+              value={reassignTargetId}
+              onChange={(event) => setReassignTargetId(event.currentTarget.value)}
+            >
+              <option value="">Choose staff…</option>
+              {staff
+                .filter((member) => member.id !== group.member?.id)
+                .slice()
+                .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
+                .map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.firstName} {member.lastName}{member.venue ? ` · ${member.venue}` : ''}
+                  </option>
+                ))}
+            </select>
+            <Button
+              type="button"
+              size="sm"
+              disabled={saving || !reassignTargetId}
+              onClick={() => void reassignEntries(group.entries.map((entry) => entry.id), reassignTargetId)}
+            >
+              Move shifts
+            </Button>
+            <span className="subtle">Works on approved shifts too — each moved row keeps an audit note. Exported rows keep their paid hours; only the person changes.</span>
+          </div>
+        ) : null}
         <div className="timesheet-group-rows">
           {group.entries.map((entry) => {
             const member = group.member;
@@ -18032,7 +18544,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   <strong>{new Date(entry.workDate).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</strong>
                   <span>{timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)}</span>
                 </div>
-                <span className="timesheet-row-hours">{roundHours(timesheetHours(entry))}h</span>
+                <span className="timesheet-row-hours">{roundHours(timesheetHours(entry))}</span>
                 <span className="timesheet-row-area subtle">{entry.area || '—'}</span>
                 <div className="timesheet-row-badges">
                   <Badge tone={timesheetTone(entry.status)} dot>{entry.status}</Badge>
@@ -18238,7 +18750,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   ? `${overallCounts.submitted} shift${overallCounts.submitted === 1 ? ' needs' : 's need'} a look before pay runs Tuesday.`
                   : 'All clear.'}
                 {/* Collapsed, the totals are the only thing worth showing. */}
-                {reviewOpen ? null : ` · ${roundHours(allGroups.reduce((sum, group) => sum + group.totalHours, 0))}h worked across ${allGroups.length} staff.`}
+                {reviewOpen ? null : ` · ${roundHours(allGroups.reduce((sum, group) => sum + group.totalHours, 0))} worked across ${allGroups.length} staff.`}
               </p>
             </div>
             {isManagerView && overallCounts.submitted > 0 ? (
@@ -18335,8 +18847,8 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                           </span>
                         </span>
                       </td>
-                      <td className="is-num ts-review-rostered">{rostered === undefined ? '—' : `${roundHours(rostered)}h`}</td>
-                      <td className="is-num ts-review-worked">{roundHours(worked)}h</td>
+                      <td className="is-num ts-review-rostered">{rostered === undefined ? '—' : roundHours(rostered)}</td>
+                      <td className="is-num ts-review-worked">{roundHours(worked)}</td>
                       <td
                         className={`is-num ts-review-variance ${
                           variance === null || Math.abs(variance) < 0.05 ? 'is-zero' : variance > 0 ? 'is-pos' : 'is-neg'
@@ -18348,7 +18860,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                             ? '0.0'
                             : `${variance > 0 ? '+' : '-'}${Math.abs(variance).toFixed(1)}`}
                       </td>
-                      <td>
+                      <td className="ts-review-flagcell">
                         {flag ? (
                           <span className="ts-review-flag">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
@@ -18403,9 +18915,9 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   return (
                     <tr>
                       {isManagerView ? <td className="ts-review-pick" /> : null}
-                      <td>Week total</td>
-                      <td className="is-num">{totals.hasRostered ? `${roundHours(totals.rostered)}h` : '—'}</td>
-                      <td className="is-num ts-review-worked">{roundHours(totals.worked)}h</td>
+                      <td className="ts-review-total-label">Week total</td>
+                      <td className="is-num ts-review-rostered">{totals.hasRostered ? roundHours(totals.rostered) : '—'}</td>
+                      <td className="is-num ts-review-worked">{roundHours(totals.worked)}</td>
                       <td
                         className={`is-num ts-review-variance ${
                           !totals.hasRostered || Math.abs(totals.variance) < 0.05 ? 'is-zero' : totals.variance > 0 ? 'is-pos' : 'is-neg'
@@ -18521,7 +19033,8 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                     <button
                       key={group.id}
                       type="button"
-                      className={`ts-rail-item ts-rail-staff ${selection.type === 'staff' && selection.id === group.id ? 'is-active' : ''}`}
+                      className={`ts-rail-item ts-rail-staff ${selection.type === 'staff' && selection.id === group.id ? 'is-active' : ''} ${group.submittedIds.length ? 'has-pending' : ''}`}
+                      title={`${group.name} — ${group.approvedCount} approved, ${group.submittedIds.length} submitted`}
                       onClick={() => setSelection({ type: 'staff', id: group.id })}
                     >
                       <span className="ts-rail-avatar">

@@ -110,7 +110,10 @@ function publicGiftCard(card: ReturnType<typeof toGiftCardPayload>) {
     paidAt: card.paidAt,
     expiresAt: card.expiresAt,
     qrCodeUrl: qrCodeUrl(card.code),
-    redeemUrl: redeemUrl(card.code)
+    redeemUrl: redeemUrl(card.code),
+    // design === 'custom' is set exactly when a GiftCardArtwork row was stored,
+    // so it doubles as the marker without an extra query per card.
+    customArtworkUrl: card.design === 'custom' ? artworkUrl(card.code) : null
   };
 }
 
@@ -155,6 +158,25 @@ function qrCodeUrl(code: string) {
   return apiUrl(`/api/gift-cards/qr/${encodeURIComponent(code)}.svg`);
 }
 
+function artworkUrl(code: string) {
+  return apiUrl(`/api/gift-cards/artwork/${encodeURIComponent(code)}`);
+}
+
+// "Create your own" artwork arrives as a data URL the checkout schema has
+// already shape-checked; decode and enforce the real byte cap here (base64
+// inflates ~4/3, so the string cap alone can't guarantee the decoded size).
+const CUSTOM_ARTWORK_MAX_BYTES = 4 * 1024 * 1024;
+function decodeCustomArtwork(dataUrl: string): { mimeType: string; data: Buffer } {
+  const match = dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/s);
+  if (!match) throw new HttpError(400, 'Custom artwork must be a PNG, JPEG, or WebP image.');
+  const data = Buffer.from(match[2]!, 'base64');
+  if (data.length === 0) throw new HttpError(400, 'Custom artwork is empty.');
+  if (data.length > CUSTOM_ARTWORK_MAX_BYTES) {
+    throw new HttpError(400, 'Custom artwork is too large — keep it under 4 MB.');
+  }
+  return { mimeType: match[1]!, data };
+}
+
 function walletConfigStatus() {
   return {
     appleConfigured: Boolean(
@@ -184,6 +206,45 @@ function paymentIntentId(session: Stripe.Checkout.Session) {
 
 function sessionAmountCents(session: Stripe.Checkout.Session) {
   return typeof session.amount_total === 'number' ? session.amount_total : null;
+}
+
+/**
+ * Purchaser service fee, charged on top of the card value at Stripe checkout.
+ * 350 bps = 3.5% — parity with what GiftUp charged purchasers (~3.5–4%), so
+ * moving in-house is not a price rise. The fee never touches the card's
+ * balance: a $100 card costs $103.50 and is still worth $100.
+ *
+ * The per-card fee is snapshotted into the Stripe session's metadata at
+ * checkout, and the webhook verifies against that snapshot — so changing this
+ * rate never strands a checkout that was already in flight.
+ */
+const GIFT_CARD_SERVICE_FEE_BPS = 350;
+
+function serviceFeeCents(baseCents: number) {
+  return Math.round((baseCents * GIFT_CARD_SERVICE_FEE_BPS) / 10000);
+}
+
+/** The fee this session was actually created with (0 for pre-fee sessions). */
+function sessionServiceFeeCents(session: Stripe.Checkout.Session) {
+  const raw = Number(session.metadata?.serviceFeeCents);
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 0;
+}
+
+/**
+ * Every redemption is revenue for one venue — the outstanding card balance is
+ * a liability until it lands somewhere, so a redemption with no venue (or a
+ * misspelt one) would silently drop money out of both venues' figures.
+ * Normalises spellings to the canonical names used across the suite and the
+ * POS, and refuses anything unrecognisable.
+ */
+export const REDEMPTION_VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'] as const;
+
+function normaliseRedemptionVenue(raw: string): string {
+  const value = raw.trim().toLowerCase();
+  if (value.includes('avalon')) return 'Alma Avalon';
+  if (value.includes('alma') || value.includes('freshwater') || value.includes('fresh water')) return 'St Alma';
+  if (value.includes('function') || value.includes('pop')) return 'Functions / Pop-up';
+  throw new HttpError(400, `Choose the venue taking this redemption: ${REDEMPTION_VENUES.join(', ')}.`);
 }
 
 function normalisePromoCode(code: string) {
@@ -421,6 +482,7 @@ export const giftCardService = {
         settings,
         checkoutMode: 'test',
         checkoutNotice: 'Test checkout is enabled. No real payment will be taken.',
+        serviceFeeBps: GIFT_CARD_SERVICE_FEE_BPS,
         wallet: walletConfigStatus()
       };
     }
@@ -430,6 +492,7 @@ export const giftCardService = {
         settings,
         checkoutMode: 'setup_required',
         checkoutNotice: 'Payment setup is required before gift card checkout can go live.',
+        serviceFeeBps: GIFT_CARD_SERVICE_FEE_BPS,
         wallet: walletConfigStatus()
       };
     }
@@ -438,6 +501,7 @@ export const giftCardService = {
       settings,
       checkoutMode: 'live',
       checkoutNotice: null,
+      serviceFeeBps: GIFT_CARD_SERVICE_FEE_BPS,
       wallet: walletConfigStatus()
     };
   },
@@ -571,6 +635,10 @@ export const giftCardService = {
       }
     }
 
+    // Decode "Create your own" artwork up front so a bad upload fails the
+    // request before any card row exists.
+    const customArtwork = data.customArtwork ? decodeCustomArtwork(data.customArtwork) : null;
+
     if (settings.testCheckoutEnabled) {
       const testSessionId = `TEST-${randomBytes(8).toString('hex').toUpperCase()}`;
       const card = await createGiftCardReservingPromo(
@@ -587,7 +655,7 @@ export const giftCardService = {
           recipientName: data.recipientName?.trim() || null,
           recipientEmail: data.recipientEmail?.trim().toLowerCase() || null,
           message: data.message?.trim() || null,
-          design: data.design ?? null,
+          design: customArtwork ? 'custom' : data.design ?? null,
           promoCodeId: promoResult?.promo.id ?? null,
           promoCodeSnapshot: promoResult?.promo.code ?? null,
           testMode: true,
@@ -598,6 +666,11 @@ export const giftCardService = {
         },
         promoResult?.promo
       );
+      if (customArtwork) {
+        await prisma.giftCardArtwork.create({
+          data: { giftCardId: card.id, mimeType: customArtwork.mimeType, data: new Uint8Array(customArtwork.data) }
+        });
+      }
       if (!scheduledDeliveryAt) {
         await this.sendGiftCardEmail(card, settings);
       }
@@ -608,6 +681,7 @@ export const giftCardService = {
         embedded: false,
         testMode: true,
         discountCents,
+        serviceFeeCents: 0,
         amountPaidCents: 0
       };
     }
@@ -627,7 +701,7 @@ export const giftCardService = {
         recipientName: data.recipientName?.trim() || null,
         recipientEmail: data.recipientEmail?.trim().toLowerCase() || null,
         message: data.message?.trim() || null,
-        design: data.design ?? null,
+        design: customArtwork ? 'custom' : data.design ?? null,
         promoCodeId: promoResult?.promo.id ?? null,
         promoCodeSnapshot: promoResult?.promo.code ?? null,
         saleChannel: options.counter ? 'COUNTER' : 'ONLINE',
@@ -638,6 +712,18 @@ export const giftCardService = {
       },
       promoResult?.promo
     );
+    // Persist the artwork BEFORE the Stripe session: Stripe metadata can't
+    // carry it (500-char values), and the webhook path only knows the card id.
+    if (customArtwork) {
+      await prisma.giftCardArtwork.create({
+        data: { giftCardId: card.id, mimeType: customArtwork.mimeType, data: new Uint8Array(customArtwork.data) }
+      });
+    }
+
+    // Service fee on what the purchaser actually owes (after any promo). A
+    // separate Stripe line item, so the receipt reads "$100 card + $3.50 fee"
+    // rather than a single opaque $103.50.
+    const feeCents = serviceFeeCents(amountDueCents);
 
     const commonSession: Stripe.Checkout.SessionCreateParams = {
       mode: 'payment',
@@ -647,7 +733,8 @@ export const giftCardService = {
         giftCardId: card.id,
         giftCardCode: card.code,
         promoCode: promoResult?.promo.code ?? '',
-        discountCents: String(discountCents)
+        discountCents: String(discountCents),
+        serviceFeeCents: String(feeCents)
       },
       line_items: [
         {
@@ -663,7 +750,22 @@ export const giftCardService = {
               ].filter(Boolean).join(' · ')
             }
           }
-        }
+        },
+        ...(feeCents > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: 'aud',
+                  unit_amount: feeCents,
+                  product_data: {
+                    name: 'Service fee',
+                    description: `${(GIFT_CARD_SERVICE_FEE_BPS / 100).toFixed(1)}% card processing — not deducted from the gift card`
+                  }
+                }
+              }
+            ]
+          : [])
       ]
     };
 
@@ -697,7 +799,8 @@ export const giftCardService = {
         checkoutClientSecret: session.client_secret,
         stripePublishableKey: env.stripe.publishableKey,
         discountCents,
-        amountPaidCents: amountDueCents
+        serviceFeeCents: feeCents,
+        amountPaidCents: amountDueCents + feeCents
       };
     }
 
@@ -708,7 +811,8 @@ export const giftCardService = {
       checkoutSessionId: session.id,
       embedded: false,
       discountCents,
-      amountPaidCents: amountDueCents
+      serviceFeeCents: feeCents,
+      amountPaidCents: amountDueCents + feeCents
     };
   },
 
@@ -791,6 +895,36 @@ export const giftCardService = {
       where: { status: { in: ['ACTIVE', 'REDEEMED'] }, testMode: false }
     });
     const test = await prisma.giftCard.count({ where: { testMode: true, status: { in: ['ACTIVE', 'REDEEMED'] } } });
+
+    // Redemption revenue split by venue — server-side over ALL redemptions
+    // (the card list above is capped at 100, so client-side sums undercount).
+    // Each redemption is that venue's revenue; the remaining balances above
+    // are the liability still owed. `venue: null` rows predate the venue
+    // requirement and surface as "Unallocated" rather than disappearing.
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const [venueLifetime, venueMonth] = await Promise.all([
+      prisma.giftCardRedemption.groupBy({
+        by: ['venue'],
+        _sum: { amountCents: true },
+        where: { status: 'COMPLETED', giftCard: { testMode: false } }
+      }),
+      prisma.giftCardRedemption.groupBy({
+        by: ['venue'],
+        _sum: { amountCents: true },
+        where: { status: 'COMPLETED', giftCard: { testMode: false }, redeemedAt: { gte: monthStart } }
+      })
+    ]);
+    const monthByVenue = new Map(venueMonth.map((row) => [row.venue ?? 'Unallocated', row._sum.amountCents ?? 0]));
+    const redeemedByVenue = venueLifetime
+      .map((row) => ({
+        venue: row.venue ?? 'Unallocated',
+        lifetimeCents: row._sum.amountCents ?? 0,
+        monthCents: monthByVenue.get(row.venue ?? 'Unallocated') ?? 0
+      }))
+      .sort((a, b) => b.lifetimeCents - a.lifetimeCents);
+
     return {
       giftCards: giftCards.map(toGiftCardPayload),
       totals: {
@@ -802,8 +936,105 @@ export const giftCardService = {
         // outstanding = remaining redeemable balance, redeemed = drawn down.
         activeBalanceCents: totals._sum.balanceCents ?? 0,
         soldValueCents: totals._sum.initialValueCents ?? 0,
-        redeemedValueCents: Math.max(0, (totals._sum.initialValueCents ?? 0) - (totals._sum.balanceCents ?? 0))
+        redeemedValueCents: Math.max(0, (totals._sum.initialValueCents ?? 0) - (totals._sum.balanceCents ?? 0)),
+        redeemedByVenue
       }
+    };
+  },
+
+  // View-only reporting: which cards were redeemed, for how much, at which
+  // venue, and by whom. Staff names are resolved server-side so the client
+  // never needs the staff directory. Sold/outstanding figures ride along so
+  // the page reads as one statement: money in, money drawn down, money owed.
+  async report(input: { from?: string; to?: string; venue?: string }) {
+    const to = input.to ? new Date(input.to) : new Date();
+    const from = input.from ? new Date(input.from) : null;
+    if (Number.isNaN(to.getTime()) || (from !== null && Number.isNaN(from.getTime()))) {
+      throw new HttpError(400, 'from and to must be ISO dates.');
+    }
+    const redeemedAt = { lte: to, ...(from ? { gte: from } : {}) };
+    const redemptionWhere = {
+      status: 'COMPLETED' as const,
+      giftCard: { testMode: false },
+      // "Unallocated" is the report's name for redemptions that predate the
+      // venue requirement — filtering by it must find those NULL rows.
+      ...(input.venue ? { venue: input.venue === 'Unallocated' ? null : input.venue } : {}),
+      redeemedAt
+    };
+    const LOG_CAP = 500;
+    const [rows, byVenueRaw, redeemedTotal, sold, liability] = await Promise.all([
+      prisma.giftCardRedemption.findMany({
+        where: redemptionWhere,
+        orderBy: [{ redeemedAt: 'desc' }],
+        take: LOG_CAP,
+        include: {
+          giftCard: { select: { code: true, status: true, purchaserName: true, recipientName: true } }
+        }
+      }),
+      prisma.giftCardRedemption.groupBy({
+        by: ['venue'],
+        _sum: { amountCents: true },
+        _count: { _all: true },
+        where: redemptionWhere
+      }),
+      prisma.giftCardRedemption.aggregate({
+        _sum: { amountCents: true },
+        _count: { _all: true },
+        where: redemptionWhere
+      }),
+      prisma.giftCard.aggregate({
+        _sum: { initialValueCents: true },
+        _count: { _all: true },
+        where: {
+          testMode: false,
+          status: { in: ['ACTIVE', 'REDEEMED'] },
+          paidAt: { lte: to, ...(from ? { gte: from } : {}) }
+        }
+      }),
+      prisma.giftCard.aggregate({
+        _sum: { balanceCents: true },
+        _count: { _all: true },
+        where: { testMode: false, status: 'ACTIVE' }
+      })
+    ]);
+    const staffIds = [...new Set(rows.map((row) => row.redeemedById).filter((id): id is string => Boolean(id)))];
+    const staff = staffIds.length
+      ? await prisma.staffProfile.findMany({
+          where: { id: { in: staffIds } },
+          select: { id: true, firstName: true, lastName: true }
+        })
+      : [];
+    const staffName = new Map(staff.map((member) => [member.id, `${member.firstName} ${member.lastName}`.trim()]));
+    return {
+      range: { from: from ? from.toISOString() : null, to: to.toISOString() },
+      summary: {
+        redemptionCount: redeemedTotal._count._all,
+        redeemedCents: redeemedTotal._sum.amountCents ?? 0,
+        cardsSoldCount: sold._count._all,
+        cardsSoldCents: sold._sum.initialValueCents ?? 0,
+        outstandingCents: liability._sum.balanceCents ?? 0,
+        activeCards: liability._count._all
+      },
+      byVenue: byVenueRaw
+        .map((row) => ({
+          venue: row.venue ?? 'Unallocated',
+          redemptionCount: row._count._all,
+          redeemedCents: row._sum.amountCents ?? 0
+        }))
+        .sort((a, b) => b.redeemedCents - a.redeemedCents),
+      redemptions: rows.map((row) => ({
+        id: row.id,
+        redeemedAt: row.redeemedAt.toISOString(),
+        amountCents: row.amountCents,
+        venue: row.venue,
+        notes: row.notes,
+        code: row.giftCard.code,
+        cardStatus: row.giftCard.status,
+        recipientName: row.giftCard.recipientName,
+        purchaserName: row.giftCard.purchaserName,
+        redeemedByName: row.redeemedById ? (staffName.get(row.redeemedById) ?? null) : null
+      })),
+      truncated: rows.length === LOG_CAP
     };
   },
 
@@ -953,6 +1184,7 @@ export const giftCardService = {
 
   async redeem(input: unknown, redeemedById?: string) {
     const data = giftCardRedemptionInputSchema.parse(input);
+    const venue = normaliseRedemptionVenue(data.venue);
     const card = await findCardByCode(data.code);
     // Friendly pre-checks (non-authoritative — the atomic update below is the
     // real guard against concurrent redemptions).
@@ -975,7 +1207,7 @@ export const giftCardService = {
         data: {
           giftCardId: card.id,
           amountCents: data.amountCents,
-          venue: data.venue?.trim() || null,
+          venue,
           notes: data.notes?.trim() || null,
           redeemedById: redeemedById ?? null
         }
@@ -1028,7 +1260,11 @@ export const giftCardService = {
       return null;
     }
     const paidAmountCents = sessionAmountCents(session);
-    const expectedAmountCents = existing.initialValueCents - existing.discountCents;
+    // Expected = card value − promo + the service fee this exact session was
+    // created with (from its metadata snapshot, so a rate change can't strand
+    // an in-flight checkout).
+    const expectedAmountCents =
+      existing.initialValueCents - existing.discountCents + sessionServiceFeeCents(session);
     if (paidAmountCents !== null && paidAmountCents !== expectedAmountCents) {
       await this.disregardUnconfirmedCheckout(session, 'Stripe payment amount did not match the gift card value.');
       throw new HttpError(400, 'Stripe payment amount did not match the gift card value.');
@@ -1186,10 +1422,26 @@ export const giftCardService = {
     return { eligible: due.length, sent, failed, generatedAt: new Date().toISOString() };
   },
 
+  // Serve the customer-designed artwork by card code (public — the code is the
+  // secret, same trust model as /qr/:code and /print/:code).
+  async getArtworkByCode(code: string): Promise<{ mimeType: string; data: Buffer }> {
+    const card = await prisma.giftCard.findUnique({ where: { code }, select: { id: true } });
+    if (!card) throw new HttpError(404, 'Gift card not found.');
+    const artwork = await prisma.giftCardArtwork.findUnique({ where: { giftCardId: card.id } });
+    if (!artwork) throw new HttpError(404, 'This gift card has no custom artwork.');
+    return { mimeType: artwork.mimeType, data: Buffer.from(artwork.data) };
+  },
+
   async sendGiftCardEmail(card: Parameters<typeof toGiftCardPayload>[0], settings: GiftCardSettings) {
     if (card.emailedAt) return toGiftCardPayload(card);
     const recipients = Array.from(new Set([card.purchaserEmail, card.recipientEmail].filter(Boolean)));
     if (recipients.length === 0) return toGiftCardPayload(card);
+
+    // "Create your own" cards carry the customer's rendered artwork — the
+    // email attaches it and shows it inline via the hosted URL.
+    const artworkRow = card.design === 'custom'
+      ? await prisma.giftCardArtwork.findUnique({ where: { giftCardId: card.id } })
+      : null;
 
     const results = await Promise.all(
       recipients.map((to) =>
@@ -1208,7 +1460,16 @@ export const giftCardService = {
           googleWalletUrl: googleWalletUrl(card.code),
           design: card.design,
           expiresAt: card.expiresAt,
-          settings
+          settings,
+          ...(artworkRow
+            ? {
+                customArtwork: {
+                  data: Buffer.from(artworkRow.data),
+                  mimeType: artworkRow.mimeType,
+                  url: artworkUrl(card.code)
+                }
+              }
+            : {})
         })
       )
     );

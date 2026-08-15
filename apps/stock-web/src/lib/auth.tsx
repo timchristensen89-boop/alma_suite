@@ -1,3 +1,4 @@
+import { installSuiteAppAccess } from '@alma/ui';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AuthUser } from '@alma/shared';
@@ -24,13 +25,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const handoffUser = await consumeSuiteHandoffToken();
       if (handoffUser) {
         setUser(handoffUser);
+      installSuiteAppAccess(handoffUser as never);
         return;
       }
       const data = await api<{ user: AuthUser | null }>('/api/auth/me');
       setUser(data.user);
+      installSuiteAppAccess(data.user as never);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setUser(null);
+      installSuiteAppAccess(null as never);
       } else {
         console.error(err);
       }
@@ -54,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       setApiAuthToken(data.token);
       setUser(data.user);
+      installSuiteAppAccess(data.user as never);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed';
       setError(message);
@@ -67,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       clearApiAuthToken();
       setUser(null);
+      installSuiteAppAccess(null as never);
     }
   }, []);
 

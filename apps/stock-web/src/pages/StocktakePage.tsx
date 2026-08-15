@@ -17,7 +17,13 @@ import type {
   StocktakesPayload,
   StocktakesSummary
 } from '@alma/shared';
-import { IMPLAUSIBLE_COUNT_SHARE, IMPLAUSIBLE_COUNT_FLOOR_CENTS } from '@alma/shared';
+import {
+  IMPLAUSIBLE_COUNT_SHARE,
+  IMPLAUSIBLE_COUNT_FLOOR_CENTS,
+  convertQuantityToCostUnit,
+  normaliseUnitLabel,
+  setActiveUnitAliases
+} from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { LoadedStocktakeImportCard } from '../components/LoadedStocktakeImportCard';
 import { StockItemPicker } from '../components/StockItemPicker';
@@ -132,44 +138,23 @@ function stockUnitCostCents(item: StockItem) {
   return item.avgCostCents;
 }
 
-// Client mirror of the API's convertQuantityToCostUnit. Enough to estimate a
-// line's dollar value live while counting, so a wrong unit (mL vs bottle, g vs
-// each) shows up as a wildly off figure before the count is ever submitted. The
-// server recomputes the authoritative value on save; this is display-only.
-function normUnit(value: string | null | undefined): string {
-  const s = (value ?? '').trim().toLowerCase();
-  if (['each', 'ea', 'unit', 'units', 'portion', 'portions'].includes(s)) return 'each';
-  if (['litre', 'litres', 'liter', 'liters', 'l'].includes(s)) return 'l';
-  if (['millilitre', 'millilitres', 'milliliter', 'ml'].includes(s)) return 'ml';
-  if (['kilogram', 'kilograms', 'kg'].includes(s)) return 'kg';
-  if (['gram', 'grams', 'g'].includes(s)) return 'g';
-  return s;
-}
-function metricFactor(from: string, to: string): number | null {
-  if (from === to) return 1;
-  if (from === 'l' && to === 'ml') return 1000;
-  if (from === 'ml' && to === 'l') return 1 / 1000;
-  if (from === 'kg' && to === 'g') return 1000;
-  if (from === 'g' && to === 'kg') return 1 / 1000;
-  return null;
-}
-function convertToCountUnitClient(qty: number, fromUnit: string | null | undefined, item: StockItem): { qty: number; via: string } {
-  const cost = normUnit(item.countUnit ?? item.unit);
-  const from = normUnit(fromUnit);
-  const purchase = normUnit(item.unit);
-  if (!from || from === cost) return { qty, via: 'same' };
-  if (from === 'each') return { qty, via: 'each' };
-  if (item.countUnit && cost === normUnit(item.countUnit) && from === purchase && item.conversionFactor > 0) {
-    return { qty: qty * item.conversionFactor, via: 'pack' };
+// Live value estimates use the SAME conversion the API uses —
+// convertQuantityToCostUnit from @alma/shared — so a value shown while
+// counting matches the authoritative one computed on save. The shared module
+// also understands unit aliases ("KILO" = kg, "Unit" = each; editable in
+// Items → Units) and pack-size labels ("700ml" counted against an item
+// counted in bottles is a bottle count) once loadUnitAliases below has run.
+async function loadUnitAliases(): Promise<void> {
+  try {
+    const rows = await api<Array<{ alias: string; canonical: string }>>('/api/items/unit-aliases');
+    if (rows.length > 0) {
+      setActiveUnitAliases(Object.fromEntries(rows.map((row) => [row.alias, row.canonical])));
+    }
+  } catch {
+    // Defaults still apply; live estimates just miss any custom aliases.
   }
-  const mf = metricFactor(from, cost);
-  if (mf !== null) return { qty: qty * mf, via: 'measure' };
-  if (item.measurePerCountUnit && item.measurePerCountUnit > 0 && item.measureUnit) {
-    const toMeasure = metricFactor(from, normUnit(item.measureUnit));
-    if (toMeasure !== null) return { qty: (qty * toMeasure) / item.measurePerCountUnit, via: 'measure-pack' };
-  }
-  return { qty, via: 'unknown' };
 }
+
 // Live value estimate for a count line. unitMismatch = the entered unit can't be
 // resolved to the item's cost unit (the classic mL/g-vs-parent setup error).
 function estimateLineValueCents(
@@ -183,10 +168,11 @@ function estimateLineValueCents(
   if (countedQty === null || unitCostCents === null) {
     return { cents: null, unitMismatch: false, countUnit, unitCostCents };
   }
-  const conv = convertToCountUnitClient(countedQty, unit, item);
-  const unitMismatch = conv.via === 'unknown' && !!unit && normUnit(unit) !== normUnit(countUnit);
+  const conv = convertQuantityToCostUnit(countedQty, unit, item);
+  const unitMismatch =
+    conv.via === 'unknown' && !!unit && normaliseUnitLabel(unit) !== normaliseUnitLabel(countUnit);
   return {
-    cents: unitMismatch ? null : Math.round(unitCostCents * conv.qty),
+    cents: unitMismatch ? null : Math.round(unitCostCents * conv.quantity),
     unitMismatch,
     countUnit,
     unitCostCents
@@ -374,6 +360,9 @@ export function StocktakePage() {
 
   useEffect(() => {
     void load();
+    // Custom unit aliases feed the live value estimates; fire-and-forget so a
+    // slow settings read never blocks the count list.
+    void loadUnitAliases();
   }, []);
 
   const filtered = useMemo(() => {

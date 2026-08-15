@@ -1,5 +1,25 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import nodemailer from 'nodemailer';
 import QRCode from 'qrcode';
+
+/**
+ * The ALMA wordmark, in the ink that suits the surface behind it. Always the
+ * real artwork — never a font-and-letter-spacing recreation of it.
+ */
+function brandLogo(variant: 'cream' | 'ink') {
+  const fileName = `alma-group-logo-${variant}.png`;
+  const candidates = [
+    join(process.cwd(), 'apps/giftcards-web/public/images/brand', fileName),
+    join(process.cwd(), 'apps/giftcards-web/dist/images/brand', fileName)
+  ];
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (!found) {
+    console.warn('[mail] Brand logo missing, falling back to the type lockup', { fileName });
+    return null;
+  }
+  return readFileSync(found);
+}
 
 type InviteEmailInput = {
   to: string;
@@ -41,6 +61,10 @@ type GiftCardEmailInput = {
     primaryColor?: string;
     accentColor?: string;
   };
+  // "Create your own": the customer's rendered card image. When present it
+  // replaces the generated SVG attachment and appears inline via the hosted
+  // URL (data-URI images get stripped by Gmail/Outlook; hosted URLs don't).
+  customArtwork?: { data: Buffer; mimeType: string; url: string };
 };
 
 type PasswordResetEmailInput = {
@@ -69,6 +93,12 @@ type EmailAttachment = {
   filename: string;
   content: Buffer | string;
   contentType: string;
+  /**
+   * Set to embed the attachment in the body as `cid:<contentId>` rather than
+   * listing it as a download. Inline images render without the recipient
+   * having to click "load remote images", which a hosted URL would need.
+   */
+  contentId?: string;
 };
 
 const resendApiKey = process.env.RESEND_API_KEY;
@@ -144,6 +174,14 @@ function normaliseGiftCardDesign(value: string | null | undefined) {
  *
  * Retired designs still map, because an old row can still name one.
  */
+/** Relative luminance test, so ink colour follows whatever sits behind it. */
+function isDarkHex(hex: string) {
+  const value = hex.replace('#', '');
+  if (value.length !== 6) return true;
+  const [r = 0, g = 0, b = 0] = [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16));
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.55;
+}
+
 function giftCardPalette(design: string | null | undefined, primaryColor: string, accentColor: string) {
   const heritage = { background: '#1a2717', foreground: '#efe0cf', accent: '#e7cd8b', label: 'Heritage' };
   const bold = { background: '#f5dcce', foreground: '#22301f', accent: '#4a5c40', label: 'Bold' };
@@ -186,14 +224,20 @@ function giftCardArtworkSvg(input: GiftCardEmailInput, amount: string, balance: 
   const safeBalance = escapeHtml(balance);
   const safeExpiry = expiry ? escapeHtml(expiry) : '3 years from issue';
   const safeLabel = escapeHtml(palette.label);
+  // Cream ink on the dark heritage card, dark ink on the light designs. Read
+  // from the background itself so a custom brand colour picks correctly too.
+  const logo = brandLogo(isDarkHex(palette.background) ? 'cream' : 'ink');
+  const wordmark = logo
+    ? `<image x="94" y="188" width="340" height="175" href="data:image/png;base64,${logo.toString('base64')}"/>`
+    : `<text x="94" y="272" fill="${palette.foreground}" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="118" font-weight="900" letter-spacing="-5">alma</text>
+  <text x="104" y="330" fill="${palette.foreground}" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" letter-spacing="26">GROUP</text>`;
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="756" viewBox="0 0 1200 756">
   <rect width="1200" height="756" rx="34" fill="${palette.background}"/>
   <rect x="30" y="30" width="1140" height="696" rx="22" fill="none" stroke="${palette.accent}" stroke-opacity="0.35" stroke-width="2"/>
   <circle cx="1020" cy="620" r="280" fill="${palette.accent}" opacity="0.08"/>
-  <text x="94" y="110" fill="${palette.foreground}" opacity="0.7" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" letter-spacing="9">ALMA GROUP GIFT CARD</text>
-  <text x="94" y="272" fill="${palette.foreground}" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="118" font-weight="900" letter-spacing="-5">alma</text>
-  <text x="104" y="330" fill="${palette.foreground}" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" letter-spacing="26">GROUP</text>
+  <text x="94" y="110" fill="${palette.foreground}" opacity="0.7" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" letter-spacing="9">GIFT CARD</text>
+  ${wordmark}
   <text x="94" y="438" fill="${palette.foreground}" opacity="0.8" font-family="Georgia, serif" font-size="34" font-style="italic">For ${safeRecipient}</text>
   <text x="94" y="510" fill="${palette.foreground}" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" letter-spacing="8">${safeLabel}</text>
   <rect x="812" y="84" width="260" height="88" rx="44" fill="${palette.foreground}" opacity="0.14"/>
@@ -229,7 +273,10 @@ async function deliverEmail(input: {
         content: Buffer.isBuffer(attachment.content)
           ? attachment.content.toString('base64')
           : Buffer.from(attachment.content).toString('base64'),
-        content_type: attachment.contentType
+        content_type: attachment.contentType,
+        ...(attachment.contentId
+          ? { content_id: attachment.contentId, disposition: 'inline' as const }
+          : {})
       }));
       const response = await fetch(resendApiUrl, {
         method: 'POST',
@@ -290,7 +337,8 @@ async function deliverEmail(input: {
       attachments: input.attachments?.map((attachment) => ({
         filename: attachment.filename,
         content: attachment.content,
-        contentType: attachment.contentType
+        contentType: attachment.contentType,
+        ...(attachment.contentId ? { cid: attachment.contentId, contentDisposition: 'inline' as const } : {})
       }))
     });
 
@@ -664,13 +712,23 @@ export const mailService = {
       .filter(Boolean)
       .join('\n');
 
-    const attachments: EmailAttachment[] = [
-      {
-        filename: `alma-gift-card-${input.code}.svg`,
-        content: giftCardArtworkSvg(input, amount, balance, expiry),
-        contentType: 'image/svg+xml'
-      }
-    ];
+    // Custom-designed cards attach the customer's own rendered image; stock
+    // designs keep the generated SVG artwork.
+    const attachments: EmailAttachment[] = input.customArtwork
+      ? [
+          {
+            filename: `alma-gift-card-${input.code}.${input.customArtwork.mimeType === 'image/jpeg' ? 'jpg' : input.customArtwork.mimeType === 'image/webp' ? 'webp' : 'png'}`,
+            content: input.customArtwork.data,
+            contentType: input.customArtwork.mimeType
+          }
+        ]
+      : [
+          {
+            filename: `alma-gift-card-${input.code}.svg`,
+            content: giftCardArtworkSvg(input, amount, balance, expiry),
+            contentType: 'image/svg+xml'
+          }
+        ];
     if (input.redeemUrl) {
       try {
         attachments.push({
@@ -694,20 +752,53 @@ export const mailService = {
       }
     }
 
+    // Cream wordmark on the green header, attached inline. The type lockup is
+    // only a fallback for a deployment that is missing the asset.
+    const headerLogo = brandLogo('cream');
+    if (headerLogo) {
+      attachments.push({
+        filename: 'alma-group.png',
+        content: headerLogo,
+        contentType: 'image/png',
+        contentId: 'almagrouplogo'
+      });
+    }
+    const headerMark = headerLogo
+      ? '<img src="cid:almagrouplogo" alt="ALMA Group" width="150" style="display:block;width:150px;max-width:60%;height:auto;border:0" />'
+      : `<div style="font-size:34px;font-weight:900;letter-spacing:-0.04em;line-height:0.95">alma</div>
+         <div style="font-size:13px;font-weight:800;letter-spacing:0.52em;margin-left:3px;margin-top:8px">GROUP</div>`;
+
+    // Centred with a table scaffold, not `margin:0 auto` — Outlook and several
+    // webmail clients drop auto margins on a div, which drifts the whole card
+    // to one side. The align="center" attribute is honoured everywhere.
     const html = `
-      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#1f3524;max-width:680px;margin:0 auto;padding:0;background:#faf8f3">
-        <div style="background:${primaryColor};color:#fff1e6;padding:28px 30px 24px;border-radius:18px 18px 0 0">
-          <div style="font-size:11px;letter-spacing:0.28em;text-transform:uppercase;opacity:0.72;margin-bottom:18px">ALMA GROUP</div>
-          <div style="font-size:34px;font-weight:900;letter-spacing:-0.04em;line-height:0.95">alma</div>
-          <div style="font-size:13px;font-weight:800;letter-spacing:0.52em;margin-left:3px;margin-top:8px">GROUP</div>
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta name="color-scheme" content="light only">
+        <meta name="supported-color-schemes" content="light only">
+        <title>${escapeHtml(subject)}</title>
+      </head>
+      <body style="margin:0;padding:0;width:100%;background:#faf8f3">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#faf8f3">
+        <tr>
+          <td align="center" style="padding:24px 12px">
+      <table role="presentation" width="680" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:680px;border-collapse:collapse">
+        <tr>
+          <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#1f3524;text-align:left;background:#faf8f3">
+        <div style="background:${primaryColor};color:#fff1e6;padding:32px 30px 30px;border-radius:18px 18px 0 0">
+          ${headerMark}
         </div>
         <div style="padding:30px;background:#faf8f3;border:1px solid #e6ded0;border-top:0;border-radius:0 0 18px 18px">
           <p style="font-size:17px;margin:0 0 10px">Hi ${safeRecipient},</p>
           <p style="font-size:15px;margin:0 0 22px;color:#4c5d4d">${escapeHtml(intro)}</p>
+          ${input.customArtwork ? `<img src="${escapeHtml(input.customArtwork.url)}" alt="Your gift card" width="620" style="display:block;width:100%;max-width:620px;height:auto;border-radius:16px;margin:0 0 22px" />` : ''}
           <div style="background:${primaryColor};background-image:linear-gradient(160deg,#233628 0%,#14241A 100%);border-radius:16px;padding:26px 28px;margin:0 0 22px;color:#F5DCCE">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
               <tr>
-                <td style="font-size:10px;text-transform:uppercase;letter-spacing:0.22em;color:rgba(245,220,206,0.6)">Alma Group · Gift Card</td>
+                <td style="font-size:10px;text-transform:uppercase;letter-spacing:0.22em;color:rgba(245,220,206,0.6)">Gift Card</td>
                 <td align="right">
                   <span style="display:inline-block;border:1px solid rgba(245,220,206,0.4);border-radius:999px;padding:5px 14px;font-size:14px;font-weight:700;color:#F5DCCE">${escapeHtml(amount)}</span>
                 </td>
@@ -733,7 +824,14 @@ export const mailService = {
             <span style="word-break:break-all;color:#64705f">${safePrintableUrl}</span>
           </p>
         </div>
-      </div>
+          </td>
+        </tr>
+      </table>
+          </td>
+        </tr>
+      </table>
+      </body>
+      </html>
     `;
 
     // A gift card is the one email here a customer receives, so it goes out
