@@ -2557,9 +2557,17 @@ export function App() {
               Day
             </button>
             {me.kind === 'staff' ? (
-              <a className="pos-ghost" href="#office" style={{ textDecoration: 'none' }}>
+              // A button, not an anchor: the lone <a> in this row missed the
+              // button font/centering reset and its label sat high in the pill.
+              <button
+                type="button"
+                className="pos-ghost"
+                onClick={() => {
+                  window.location.hash = 'office';
+                }}
+              >
                 Office
-              </a>
+              </button>
             ) : null}
             <button
               type="button"
