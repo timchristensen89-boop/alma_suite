@@ -26,11 +26,77 @@ export type MenuCategory = { name: string; kind: string; items: MenuItem[] };
 // s = tile size, d = label style. Every pin kind carries the same extras.
 // look: folder pins only — square tiles (default) or full-menu list rows.
 export type PinExtras = { c?: string; label?: string; s?: 'w' | 'b'; d?: 'sh' | 'hs' | 'big'; look?: 'tiles' | 'list' };
+// Folders nest: Wine → Red → By the glass. `folders` is optional so every
+// board saved before nesting existed still parses; absent means none.
+export type FolderPin = { t: 'f'; name: string; items: string[]; folders?: FolderPin[] } & PinExtras;
 export type Pin =
   | ({ t: 'i'; id: string } & PinExtras)
-  | ({ t: 'f'; name: string; items: string[] } & PinExtras)
+  | FolderPin
   // 'm' = a management action (open till, wastage…). Same tile, same board.
   | ({ t: 'm'; key: string } & PinExtras);
+
+// ── Folder paths ────────────────────────────────────────────────────────
+// The register's activeCategory token for "inside a folder" encodes the
+// route from the home board: `__folder__3` is root pin 3, `__folder__3.0.1`
+// is that folder's first subfolder's second subfolder. Old saved tokens
+// (single index) are the one-segment case of the same format.
+export const MAX_FOLDER_DEPTH = 3;
+
+export function folderPathToken(path: number[]): string {
+  return `__folder__${path.join('.')}`;
+}
+
+export function parseFolderPath(token: string): number[] | null {
+  if (!token.startsWith('__folder__')) return null;
+  const path = token.slice('__folder__'.length).split('.').map(Number);
+  return path.length > 0 && path.every((n) => Number.isInteger(n) && n >= 0) ? path : null;
+}
+
+export function folderAtPath(pins: Pin[], path: number[]): FolderPin | null {
+  const [head, ...rest] = path;
+  if (head === undefined) return null;
+  const root = pins[head];
+  if (!root || root.t !== 'f') return null;
+  let folder: FolderPin = root;
+  for (const index of rest) {
+    const child = folder.folders?.[index];
+    if (!child) return null;
+    folder = child;
+  }
+  return folder;
+}
+
+// Rebuild the pin list with the folder at `path` replaced by update(folder);
+// update returning null deletes it from its parent. Everything off the path
+// keeps its identity, so this is safe to hand straight to setState.
+export function updateFolderAtPath(pins: Pin[], path: number[], update: (folder: FolderPin) => FolderPin | null): Pin[] {
+  const [head, ...rest] = path;
+  if (head === undefined) return pins;
+  const target = pins[head];
+  if (!target || target.t !== 'f') return pins;
+  const walk = (folder: FolderPin, at: number[]): FolderPin | null => {
+    if (at.length === 0) return update(folder);
+    const [next, ...tail] = at as [number, ...number[]];
+    const child = folder.folders?.[next];
+    if (!child) return folder;
+    const replaced = walk(child, tail);
+    const folders = (folder.folders ?? []).flatMap((entry, i) => (i === next ? (replaced ? [replaced] : []) : [entry]));
+    const rebuilt: FolderPin = { ...folder, folders };
+    if (!folders.length) delete rebuilt.folders;
+    return rebuilt;
+  };
+  const replaced = walk(target, rest);
+  return replaced ? pins.map((pin, i) => (i === head ? replaced : pin)) : pins.filter((_, i) => i !== head);
+}
+
+// Everything a folder holds, subfolders included — the count its tile shows.
+export function folderItemCount(folder: FolderPin): number {
+  return folder.items.length + (folder.folders ?? []).reduce((sum, child) => sum + folderItemCount(child), 0);
+}
+
+export function folderDepth(folder: FolderPin): number {
+  return 1 + Math.max(0, ...(folder.folders ?? []).map(folderDepth));
+}
 
 // icons: per-category mark overrides, name -> IconKey ('' = deliberately
 // none). Absent means "use the automatic match".

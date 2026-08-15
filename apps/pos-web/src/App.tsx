@@ -23,9 +23,15 @@ import {
   textScaleValue,
   TEXT_SCALE_KEY,
   type TextScale,
+  MAX_FOLDER_DEPTH,
+  folderAtPath,
+  folderPathToken,
   paginatePins,
+  parseFolderPath,
   pinDisplay,
+  updateFolderAtPath,
   visibleTabTokens,
+  type FolderPin,
   type HomeConfig,
   type MenuCategory,
   type MenuItem,
@@ -675,11 +681,16 @@ export function App() {
     document.addEventListener('pointercancel', onUp);
   }
 
-  function folderItemPointerDown(event: React.PointerEvent, folderIndex: number, itemIndex: number) {
+  function folderItemPointerDown(event: React.PointerEvent, path: number[], itemIndex: number) {
     if (!boardEdit) return;
     event.preventDefault();
     let from = itemIndex;
     let moved = false;
+    // The id, not the index: reorders shuffle indices mid-drag, and a drop
+    // into a subfolder must move THIS dish wherever it ended up.
+    const draggedId = folderAtPath(homeRef.current.pins, path)?.items[itemIndex] ?? null;
+    // Hovering a subfolder tile: computer-style — drop moves the item INSIDE.
+    const dropSub = { index: null as number | null };
     const held = event.currentTarget as HTMLElement;
     held.classList.add('is-dragging');
     const box = held.getBoundingClientRect();
@@ -695,9 +706,21 @@ export function App() {
     };
     placeGhost(event.clientX, event.clientY);
     document.body.appendChild(ghost);
+    const clearDropTargets = () =>
+      document.querySelectorAll('.pos-item-pin.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
     const onMove = (nativeEvent: PointerEvent) => {
       placeGhost(nativeEvent.clientX, nativeEvent.clientY);
-      const target = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY)?.closest('[data-fitem-index]');
+      const under = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY);
+      const sub = under?.closest('[data-fsub-index]');
+      if (draggedId && sub) {
+        dropSub.index = Number(sub.getAttribute('data-fsub-index'));
+        clearDropTargets();
+        sub.classList.add('is-drop-target');
+        return;
+      }
+      dropSub.index = null;
+      clearDropTargets();
+      const target = under?.closest('[data-fitem-index]');
       if (!target) return;
       const over = Number(target.getAttribute('data-fitem-index'));
       if (Number.isNaN(over) || over === from) return;
@@ -706,16 +729,15 @@ export function App() {
       // updater runs later — so freeze it before calling setHome.
       const start = from;
       from = over;
-      setHome((current) => {
-        const pins = current.pins.map((pin, i) => {
-          if (i !== folderIndex || pin.t !== 'f') return pin;
-          const items = [...pin.items];
+      setHome((current) => ({
+        ...current,
+        pins: updateFolderAtPath(current.pins, path, (folder) => {
+          const items = [...folder.items];
           const [dragged] = items.splice(start, 1);
           items.splice(over, 0, dragged!);
-          return { ...pin, items };
-        });
-        return { ...current, pins };
-      });
+          return { ...folder, items };
+        })
+      }));
     };
     const onUp = () => {
       document.removeEventListener('pointermove', onMove);
@@ -723,6 +745,30 @@ export function App() {
       document.removeEventListener('pointercancel', onUp);
       ghost.remove();
       held.classList.remove('is-dragging');
+      clearDropTargets();
+      if (draggedId && dropSub.index !== null) {
+        const subIndex = dropSub.index;
+        dragMoved.current = true;
+        setHome((current) => {
+          const pins = updateFolderAtPath(current.pins, path, (folder) => {
+            const child = folder.folders?.[subIndex];
+            if (!child) return folder;
+            return {
+              ...folder,
+              items: folder.items.filter((id) => id !== draggedId),
+              folders: (folder.folders ?? []).map((candidate, i) =>
+                i === subIndex && !candidate.items.includes(draggedId)
+                  ? { ...candidate, items: [...candidate.items, draggedId] }
+                  : candidate
+              )
+            };
+          });
+          const next = { ...current, pins };
+          setTimeout(() => saveBoard(next), 0);
+          return next;
+        });
+        return;
+      }
       if (moved) {
         dragMoved.current = true;
         saveBoard(homeRef.current);
@@ -765,7 +811,8 @@ export function App() {
     return MarkStable;
   }, [iconStyle, iconOverridesForMark]);
 
-  const [renaming, setRenaming] = useState<null | { kind: 'pin' | 'group'; key: number | string; value: string }>(null);
+  // 'sub' renames a nested folder; its key is the folder-path token.
+  const [renaming, setRenaming] = useState<null | { kind: 'pin' | 'group' | 'sub'; key: number | string; value: string }>(null);
   const homeRef = useRef(home);
   homeRef.current = home;
   const orderIdRef = useRef<string | null>(null);
@@ -797,7 +844,10 @@ export function App() {
   const [coversEdit, setCoversEdit] = useState<string>('');
   const [coversOpen, setCoversOpen] = useState(false);
   const [openFolder, setOpenFolder] = useState<Pin | null>(null);
-  const [folderDraft, setFolderDraft] = useState<null | { name: string; c: string; items: string[]; search: string }>(null);
+  // One sheet, three jobs: no `at`/`into` = new folder on the home board;
+  // `at` = new subfolder inside the folder at that path; `into` = add items
+  // to the existing folder at that path (name/colour hidden).
+  const [folderDraft, setFolderDraft] = useState<null | { name: string; c: string; items: string[]; search: string; at?: number[]; into?: number[] }>(null);
   const [customise, setCustomise] = useState(false);
   const [wastage, setWastage] = useState<null | { search: string; recipeId: string; itemName: string; quantity: string; reason: string }>(null);
   const [lineAction, setLineAction] = useState<null | { lineId: string; name: string; kind: 'COMP' | 'PRICE_CHANGE'; reason: string; price: string }>(null);
@@ -1324,6 +1374,17 @@ export function App() {
     });
   }
 
+  function commitSubRename(path: number[], rawValue: string) {
+    const value = rawValue.trim().slice(0, 40);
+    setRenaming(null);
+    if (!value) return;
+    setHome((current) => {
+      const next = { ...current, pins: updateFolderAtPath(current.pins, path, (folder) => ({ ...folder, name: value })) };
+      setTimeout(() => saveBoard(next), 0);
+      return next;
+    });
+  }
+
   const visibleTabsRef = useRef(visibleTabs);
   visibleTabsRef.current = visibleTabs;
 
@@ -1357,8 +1418,8 @@ export function App() {
         return homeRef.current.categories?.groups.some((group) => group.name === name) ? current : HOME_TAB;
       }
       if (current.startsWith('__folder__')) {
-        const at = Number(current.slice('__folder__'.length));
-        return homeRef.current.pins[at]?.t === 'f' ? current : HOME_TAB;
+        const path = parseFolderPath(current);
+        return path && folderAtPath(homeRef.current.pins, path) ? current : HOME_TAB;
       }
       return current;
     });
@@ -1581,6 +1642,13 @@ export function App() {
   categoryOfRef.current = categoryByRecipe;
   function categoryOf(item: MenuItem): string {
     return categoryOfRef.current.get(item.recipeId) ?? '';
+  }
+
+  // What a folder tile's count means: distinct dishes THIS venue can open,
+  // subfolders included — a folder may hold both venues' copies of a wine.
+  function folderDishCount(folder: FolderPin): number {
+    const gather = (f: FolderPin): string[] => [...f.items, ...(f.folders ?? []).flatMap(gather)];
+    return new Set(gather(folder).map((id) => resolvePinItem(id)?.recipeId).filter(Boolean)).size;
   }
 
   function addItem(item: MenuItem) {
@@ -3087,9 +3155,10 @@ export function App() {
                               {hasMark(pin.name) ? <Mark name={pin.name} className="pos-tile-icon" /> : <i className="pos-tile-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />}
                               {pinDisplay(pin, pin.name).main}
                             </span>
-                            {/* Count what this venue can actually open — distinct
-                                dishes, since a folder may hold both venues' copies. */}
-                            <small>{new Set(pin.items.map((id) => resolvePinItem(id)?.recipeId).filter(Boolean)).size} items</small>
+                            <small>
+                              {pin.folders?.length ? `${pin.folders.length} folder${pin.folders.length === 1 ? '' : 's'} · ` : ''}
+                              {folderDishCount(pin)} items
+                            </small>
                           </>
                         )}
                       </button>
@@ -3196,21 +3265,117 @@ export function App() {
               </div>
             ) : !searchTerm && activeCategory.startsWith('__folder__') ? (
               <div className="pos-grid pos-grid-home">
-                <button type="button" className="pos-item pos-item-edit" onClick={() => setActiveCategory(HOME_TAB)}>
-                  <span>← Back</span>
-                  <small>home</small>
-                </button>
                 {(() => {
-                  const folderIndex = Number(activeCategory.slice('__folder__'.length));
-                  const pin = home.pins[folderIndex];
-                  if (!pin || pin.t !== 'f') return null;
+                  // Path token: `__folder__3` = root pin 3, `__folder__3.0`
+                  // = its first subfolder — Back walks up one level at a time.
+                  const path = parseFolderPath(activeCategory) ?? [];
+                  const pin = folderAtPath(home.pins, path);
+                  const parentToken = path.length > 1 ? folderPathToken(path.slice(0, -1)) : HOME_TAB;
+                  const parentName = path.length > 1 ? folderAtPath(home.pins, path.slice(0, -1))?.name ?? 'back' : 'home';
+                  const back = (
+                    <button key="back" type="button" className="pos-item pos-item-edit" onClick={() => setActiveCategory(parentToken)}>
+                      <span>← Back</span>
+                      <small>{parentName}</small>
+                    </button>
+                  );
+                  if (!pin) return back;
+                  const patchFolder = (update: (folder: FolderPin) => FolderPin | null) => {
+                    const board = { ...home, pins: updateFolderAtPath(home.pins, path, update) };
+                    setHome(board);
+                    saveBoard(board);
+                    return board;
+                  };
+                  const subTiles = (pin.folders ?? []).map((sub, subIndex) => {
+                    const subToken = folderPathToken([...path, subIndex]);
+                    const subRenaming = renaming?.kind === 'sub' && renaming.key === subToken;
+                    return (
+                      <button
+                        key={`sub-${subIndex}`}
+                        type="button"
+                        data-fsub-index={subIndex}
+                        className={`pos-item pos-item-pin ${hueClass(sub.c ?? pin.c)} ${boardEdit ? 'is-editing' : ''}`}
+                        style={hueStyle(sub.c ?? pin.c)}
+                        onClick={() => {
+                          if (dragMoved.current) {
+                            dragMoved.current = false;
+                            return;
+                          }
+                          if (subRenaming) return;
+                          setActiveCategory(subToken);
+                        }}
+                      >
+                        {boardEdit ? (
+                          <>
+                            <i
+                              className="pos-pin-x pos-pin-act"
+                              title="Dissolve — its items move up into this folder"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                patchFolder((folder) => {
+                                  const child = folder.folders?.[subIndex];
+                                  if (!child) return folder;
+                                  const folders = [
+                                    ...(folder.folders ?? []).filter((_, i) => i !== subIndex),
+                                    ...(child.folders ?? [])
+                                  ];
+                                  const rebuilt: FolderPin = {
+                                    ...folder,
+                                    items: [...folder.items, ...child.items.filter((id) => !folder.items.includes(id))],
+                                    folders
+                                  };
+                                  if (!folders.length) delete rebuilt.folders;
+                                  return rebuilt;
+                                });
+                              }}
+                            >
+                              ✕
+                            </i>
+                            <i
+                              className="pos-pin-rename pos-pin-act"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setRenaming({ kind: 'sub', key: subToken, value: sub.name });
+                              }}
+                            >
+                              ✎
+                            </i>
+                          </>
+                        ) : null}
+                        {subRenaming ? (
+                          <input
+                            className="pos-pin-rename-input"
+                            autoFocus
+                            defaultValue={renaming.value}
+                            onClick={(event) => event.stopPropagation()}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onBlur={(event) => commitSubRename([...path, subIndex], event.currentTarget.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') commitSubRename([...path, subIndex], event.currentTarget.value);
+                              if (event.key === 'Escape') setRenaming(null);
+                            }}
+                          />
+                        ) : (
+                          <>
+                            <span className={pinDisplay(sub, sub.name).cls}>
+                              {hasMark(sub.name) ? <Mark name={sub.name} className="pos-tile-icon" /> : <i className="pos-tile-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />}
+                              {pinDisplay(sub, sub.name).main}
+                            </span>
+                            <small>
+                              {sub.folders?.length ? `${sub.folders.length} folder${sub.folders.length === 1 ? '' : 's'} · ` : ''}
+                              {folderDishCount(sub)} items
+                            </small>
+                          </>
+                        )}
+                      </button>
+                    );
+                  });
                   // A folder often holds BOTH venues' ids for the same wine —
                   // resolved to this venue's twin they'd render twice. Show
                   // each dish once; edit mode stays raw so the stray copy can
                   // still be seen and removed.
                   const seenResolved = new Set<string>();
                   const asList = pin.look === 'list' && !boardEdit;
-                  return pin.items.map((recipeId, itemIndex) => {
+                  const itemTiles = pin.items.map((recipeId, itemIndex) => {
                     const item = resolvePinItem(recipeId);
                     if (!item) return null;
                     if (!boardEdit) {
@@ -3240,7 +3405,7 @@ export function App() {
                         data-fitem-index={itemIndex}
                         className={`pos-item pos-item-pin ${hueClass(pin.c)} ${boardEdit ? 'is-editing' : ''} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
                         style={hueStyle(pin.c)}
-                                                onPointerDown={boardEdit ? (event) => folderItemPointerDown(event, folderIndex, itemIndex) : undefined}
+                        onPointerDown={boardEdit ? (event) => folderItemPointerDown(event, path, itemIndex) : undefined}
                         onClick={() => {
                           if (boardEdit) {
                             if (dragMoved.current) dragMoved.current = false;
@@ -3273,16 +3438,7 @@ export function App() {
                               title="Remove from this folder"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                const board = {
-                                  ...home,
-                                  pins: home.pins.map((candidate, i) =>
-                                    i === folderIndex && candidate.t === 'f'
-                                      ? { ...candidate, items: candidate.items.filter((candidateId) => candidateId !== recipeId) }
-                                      : candidate
-                                  )
-                                };
-                                setHome(board);
-                                saveBoard(board);
+                                patchFolder((folder) => ({ ...folder, items: folder.items.filter((candidateId) => candidateId !== recipeId) }));
                               }}
                             >
                               ✕
@@ -3294,6 +3450,38 @@ export function App() {
                       </button>
                     );
                   });
+                  const editTiles = boardEdit ? (
+                    <>
+                      {path.length < MAX_FOLDER_DEPTH ? (
+                        <button
+                          key="new-sub"
+                          type="button"
+                          className="pos-item pos-item-edit"
+                          onClick={() => setFolderDraft({ name: '', c: '#4f8f6b', items: [], search: '', at: [...path] })}
+                        >
+                          <span>📁 New folder</span>
+                          <small>inside {pin.name}</small>
+                        </button>
+                      ) : null}
+                      <button
+                        key="add-items"
+                        type="button"
+                        className="pos-item pos-item-edit"
+                        onClick={() => setFolderDraft({ name: pin.name, c: pin.c ?? '#4f8f6b', items: [], search: '', into: [...path] })}
+                      >
+                        <span>＋ Add items</span>
+                        <small>search the menu</small>
+                      </button>
+                    </>
+                  ) : null;
+                  return (
+                    <>
+                      {back}
+                      {subTiles}
+                      {itemTiles}
+                      {editTiles}
+                    </>
+                  );
                 })()}
               </div>
             ) : !searchTerm && activeCategory.startsWith('__group__') ? (
@@ -4669,25 +4857,35 @@ export function App() {
       {folderDraft ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
-            <h2>New folder</h2>
-            <input
-              className="pos-tender"
-              placeholder="Folder name (e.g. Happy hour, Kids)"
-              value={folderDraft.name}
-              onChange={(event) => setFolderDraft({ ...folderDraft, name: event.currentTarget.value })}
-            />
-            <span className="pos-swatches pos-swatches-row">
-              {['#4f8f6b', '#7f9ac4', '#d9a05a', '#c4655a', '#a98ac4', '#9aa4ab'].map((colour) => (
-                <button
-                  key={colour}
-                  type="button"
-                  className={`pos-swatch ${folderDraft.c === colour ? 'is-on' : ''}`}
-                  style={{ background: colour }}
-                  title={colour}
-                  onClick={() => setFolderDraft({ ...folderDraft, c: colour })}
+            <h2>
+              {folderDraft.into
+                ? `Add items to ${folderAtPath(home.pins, folderDraft.into)?.name ?? 'folder'}`
+                : folderDraft.at
+                  ? `New folder in ${folderAtPath(home.pins, folderDraft.at)?.name ?? 'folder'}`
+                  : 'New folder'}
+            </h2>
+            {folderDraft.into ? null : (
+              <>
+                <input
+                  className="pos-tender"
+                  placeholder="Folder name (e.g. Happy hour, Kids)"
+                  value={folderDraft.name}
+                  onChange={(event) => setFolderDraft({ ...folderDraft, name: event.currentTarget.value })}
                 />
-              ))}
-            </span>
+                <span className="pos-swatches pos-swatches-row">
+                  {['#4f8f6b', '#7f9ac4', '#d9a05a', '#c4655a', '#a98ac4', '#9aa4ab'].map((colour) => (
+                    <button
+                      key={colour}
+                      type="button"
+                      className={`pos-swatch ${folderDraft.c === colour ? 'is-on' : ''}`}
+                      style={{ background: colour }}
+                      title={colour}
+                      onClick={() => setFolderDraft({ ...folderDraft, c: colour })}
+                    />
+                  ))}
+                </span>
+              </>
+            )}
             <input
               className="pos-tender"
               placeholder="Search items to add…"
@@ -4721,21 +4919,44 @@ export function App() {
             <button
               type="button"
               className="pos-charge"
-              disabled={!folderDraft.name.trim() || folderDraft.items.length === 0}
+              disabled={
+                folderDraft.into
+                  ? folderDraft.items.length === 0
+                  : // A subfolder may start empty (drag items in from its
+                    // parent later); a root folder still needs at least one.
+                    !folderDraft.name.trim() || (!folderDraft.at && folderDraft.items.length === 0)
+              }
               onClick={() => {
-                const next = {
-                  ...home,
-                  pins: [...home.pins, { t: 'f' as const, name: folderDraft.name.trim(), c: folderDraft.c, items: folderDraft.items }]
-                };
+                const draft = folderDraft;
+                let next: HomeConfig;
+                if (draft.into) {
+                  next = {
+                    ...home,
+                    pins: updateFolderAtPath(home.pins, draft.into, (folder) => ({
+                      ...folder,
+                      items: [...folder.items, ...draft.items.filter((id) => !folder.items.includes(id))]
+                    }))
+                  };
+                } else if (draft.at) {
+                  const child: FolderPin = { t: 'f', name: draft.name.trim(), c: draft.c, items: draft.items };
+                  next = {
+                    ...home,
+                    pins: updateFolderAtPath(home.pins, draft.at, (folder) => ({ ...folder, folders: [...(folder.folders ?? []), child] }))
+                  };
+                } else {
+                  next = {
+                    ...home,
+                    pins: [...home.pins, { t: 'f' as const, name: draft.name.trim(), c: draft.c, items: draft.items }]
+                  };
+                }
                 setHome(next);
                 setFolderDraft(null);
-                void api('/api/pos/homescreen', {
-                  method: 'PUT',
-                  body: JSON.stringify({ userKey, buttons: next.buttons, pins: next.pins, updatedBy: operatorName })
-                }).catch(() => undefined);
+                saveBoard(next);
               }}
             >
-              Create folder ({folderDraft.items.length} items)
+              {folderDraft.into
+                ? `Add ${folderDraft.items.length} item${folderDraft.items.length === 1 ? '' : 's'}`
+                : `Create folder (${folderDraft.items.length} items)`}
             </button>
             <button type="button" className="pos-ghost pos-modal-close" onClick={() => setFolderDraft(null)}>
               Cancel
