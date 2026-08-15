@@ -272,7 +272,15 @@ giftCardsRouter.post('/physical/activate', requireManager, async (req, res, next
 
 giftCardsRouter.post('/redeem', requireGiftCardRedeemer, async (req, res, next) => {
   try {
-    res.json(await giftCardService.redeem(req.body, req.user?.id));
+    const card = await giftCardService.redeem(req.body, req.user?.id);
+    // The successful counterpart of the error handler's failure line, so a
+    // day's redemptions can be reconstructed from the log alone.
+    const body = (req.body ?? {}) as { amountCents?: unknown; venue?: unknown };
+    console.info(
+      `[gift-cards] redeemed code=${card.code} amountCents=${String(body.amountCents)} venue=${String(body.venue)} ` +
+        `balanceCents=${card.balanceCents} by ${req.user?.accountType ?? 'user'}:${req.user?.email ?? req.user?.firstName ?? req.user?.id}`
+    );
+    res.json(card);
   } catch (error) {
     next(error);
   }

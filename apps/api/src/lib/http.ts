@@ -15,7 +15,49 @@ export function notFoundHandler(_req: Request, _res: Response, next: NextFunctio
   next(new HttpError(404, 'Route not found'));
 }
 
-export function errorHandler(error: unknown, _req: Request, res: Response, _next: NextFunction) {
+/**
+ * Every failed request leaves one structured line in the container log —
+ * method, path, status, message, who — plus, for the money-touching gift
+ * card routes, the card code and amount from the body. Bodies are otherwise
+ * never logged (PINs, passwords, card data). Discovered the hard way: on
+ * launch day the venues' redemptions 403'd for a full shift and left no
+ * trace anywhere, so the codes staff had tried were unrecoverable.
+ */
+function actor(req: Request): string {
+  const user = req.user;
+  if (user) return `${user.accountType ?? 'user'}:${user.email ?? user.firstName ?? user.id}`;
+  if (req.deviceUser) return `device:${req.deviceUser.venue ?? req.deviceUser.firstName ?? req.deviceUser.id}`;
+  return 'anon';
+}
+
+function safeContext(req: Request): string {
+  if (!/^\/api\/gift-cards\//.test(req.path)) return '';
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof body.code === 'string') parts.push(`code=${body.code}`);
+  if (typeof body.amountCents === 'number') parts.push(`amountCents=${body.amountCents}`);
+  if (typeof body.venue === 'string') parts.push(`venue=${body.venue}`);
+  return parts.length ? ` ${parts.join(' ')}` : '';
+}
+
+function logFailure(req: Request, status: number, message: string) {
+  // 404s on lookups are routine (typos at the counter); everything else is a
+  // real failure someone will ask about.
+  const line = `[api] ${req.method} ${req.originalUrl.split('?')[0]} -> ${status} "${message}" by ${actor(req)}${safeContext(req)}`;
+  if (status >= 500) console.error(line);
+  else console.warn(line);
+}
+
+export function errorHandler(error: unknown, req: Request, res: Response, _next: NextFunction) {
+  const status = error instanceof ZodError ? 400 : error instanceof HttpError ? error.statusCode : 500;
+  const message =
+    error instanceof ZodError
+      ? error.issues[0]?.message ?? 'Validation failed'
+      : error instanceof Error
+        ? error.message
+        : 'Unknown server error';
+  logFailure(req, status, message);
+
   if (error instanceof ZodError) {
     return res.status(400).json({
       message: error.issues[0]?.message ?? 'Validation failed',
