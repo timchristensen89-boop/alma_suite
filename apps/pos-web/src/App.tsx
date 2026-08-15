@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { loadStripeTerminal, type Terminal, type Reader } from '@stripe/terminal-js';
 import { api, clearApiTokens, consumeSuiteHandoffToken, messageForError, setApiAuthToken, setApiPinToken } from './api';
 // Lazy: the board editor is a management surface a till only opens to
@@ -173,6 +173,27 @@ type DaySummary = {
   methods: Record<string, { count: number; amountCents: number; tipCents: number }>;
   topItems: Array<{ name: string; quantity: number; totalCents: number }>;
 };
+
+/**
+ * Owns the raw keystrokes so typing re-renders THIS input alone — the
+ * register only hears the 120ms-debounced term it actually filters by.
+ * Before this, every character re-evaluated the whole ~3,300-line render.
+ */
+const PosSearchBox = memo(function PosSearchBox({ onTerm }: { onTerm: (term: string) => void }) {
+  const [value, setValue] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => onTerm(value), 120);
+    return () => clearTimeout(timer);
+  }, [value, onTerm]);
+  return (
+    <input
+      className="pos-search"
+      placeholder="Search menu…"
+      value={value}
+      onChange={(event) => setValue(event.currentTarget.value)}
+    />
+  );
+});
 
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
 // Set when we send someone to Alma Home to sign in. If they come back still
@@ -358,7 +379,6 @@ export function App() {
   const [merging, setMerging] = useState<Order[] | null>(null);
   const [editLayout, setEditLayout] = useState(false);
   const [activeCategory, setActiveCategory] = useState('');
-  const [search, setSearch] = useState('');
   const [newTable, setNewTable] = useState<null | { label: string; covers: string }>(null);
   const [charge, setCharge] = useState<null | { stage: 'pay' | 'tip' | 'method' | 'cash' | 'split' | 'gift'; tipCents: number; amountCents: number | null }>(null);
   // `external` = the code isn't ours (an old Gift Up card, say) — we can
@@ -1343,6 +1363,7 @@ export function App() {
   // Measure how many standard tiles fit without scrolling; big/wide tiles
   // count as 4/2 slots. Under-estimating is safe (a roomier page), scrolling
   // away is not.
+  const [searchTerm, setSearchTerm] = useState('');
   useEffect(() => {
     const el = boardPagerRef.current;
     if (!el) return;
@@ -1375,7 +1396,7 @@ export function App() {
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [activeCategory, design, view, search, textScale]);
+  }, [activeCategory, design, view, searchTerm, textScale]);
 
   const pinPages = useMemo(
     // Trailing action tiles (Edit this page / the edit-mode set) render on
@@ -1392,11 +1413,6 @@ export function App() {
 
   // The grid reads a debounced term so a fast typist isn't re-filtering and
   // re-rendering hundreds of tiles on every character.
-  const [searchTerm, setSearchTerm] = useState('');
-  useEffect(() => {
-    const timer = setTimeout(() => setSearchTerm(search), 120);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   const visibleItems = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -2488,7 +2504,7 @@ export function App() {
           </select>
         )}
         {view === 'register' ? (
-          <input className="pos-search" placeholder="Search menu…" value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
+          <PosSearchBox onTerm={setSearchTerm} />
         ) : null}
         <span style={{ flex: 1 }} />
         <button
@@ -2730,7 +2746,7 @@ export function App() {
       ) : view === 'bills' || view === 'board' ? null : (
         <div className="pos-body">
           <div className="pos-menu">
-            {!search ? (
+            {!searchTerm ? (
               <nav className="pos-tabs">
                 <button
                   type="button"
@@ -2778,8 +2794,8 @@ export function App() {
                 ) : null}
               </nav>
             ) : null}
-            {(activeCategory === '__all__' && !search) ||
-            (tabsConfig.looks?.[activeCategory] === 'list' && menu.some((category) => category.name === activeCategory) && !search) ? (
+            {(activeCategory === '__all__' && !searchTerm) ||
+            (tabsConfig.looks?.[activeCategory] === 'list' && menu.some((category) => category.name === activeCategory) && !searchTerm) ? (
               <div className="pos-list">
                 {(activeCategory === '__all__'
                   ? visibleTabs
@@ -2802,7 +2818,7 @@ export function App() {
                 ).map(({ token, folderName, cats }) => {
                   const qtyOf = (recipeId: string) =>
                     (order?.lines ?? []).filter((line) => line.recipeId === recipeId).reduce((sum, line) => sum + line.quantity, 0);
-                  const collapsible = activeCategory === '__all__' && !search;
+                  const collapsible = activeCategory === '__all__' && !searchTerm;
                   const total = cats.reduce((sum, category) => sum + category.items.filter((item) => !item.variantOf).length, 0);
                   if (total === 0 && !boardEdit) return null;
                   return (
@@ -2868,7 +2884,7 @@ export function App() {
                   </button>
                 ) : null}
               </div>
-            ) : !search && activeCategory === HOME_TAB ? (
+            ) : !searchTerm && activeCategory === HOME_TAB ? (
               <div className="pos-home-wrap">
               <div
                 className="pos-board-pager"
@@ -3150,7 +3166,7 @@ export function App() {
                 </div>
               ) : null}
               </div>
-            ) : !search && activeCategory.startsWith('__folder__') ? (
+            ) : !searchTerm && activeCategory.startsWith('__folder__') ? (
               <div className="pos-grid pos-grid-home">
                 <button type="button" className="pos-item pos-item-edit" onClick={() => setActiveCategory(HOME_TAB)}>
                   <span>← Back</span>
@@ -3252,7 +3268,7 @@ export function App() {
                   });
                 })()}
               </div>
-            ) : !search && activeCategory.startsWith('__group__') ? (
+            ) : !searchTerm && activeCategory.startsWith('__group__') ? (
               <div className="pos-grid-groups">
                 {(() => {
                   const group = tabsConfig.groups.find((candidate) => candidate.name === activeCategory.slice('__group__'.length));
@@ -3338,7 +3354,7 @@ export function App() {
                     <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
                   </button>
                 ))}
-                {visibleItems.length === 0 ? <p className="pos-muted">No items{search ? ' match' : ''}.</p> : null}
+                {visibleItems.length === 0 ? <p className="pos-muted">No items{searchTerm ? ' match' : ''}.</p> : null}
               </div>
             )}
           </div>
