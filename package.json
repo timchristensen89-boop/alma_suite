@@ -48,7 +48,8 @@
     "build": "pnpm -r --if-present build",
     "start": "pnpm --filter @alma/api start",
     "typecheck": "pnpm -r --if-present typecheck",
-    "lint": "pnpm -r --if-present lint"
+    "lint": "pnpm -r --if-present lint",
+    "deploy:check": "node scripts/frontends-deploy-check.mjs"
   },
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.10",
