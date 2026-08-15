@@ -2770,7 +2770,8 @@ export function App() {
                 ) : null}
               </nav>
             ) : null}
-            {(activeCategory === '__all__' && !search) || (design === 'rail' && menu.some((category) => category.name === activeCategory) && !search) ? (
+            {(activeCategory === '__all__' && !search) ||
+            (tabsConfig.looks?.[activeCategory] === 'list' && menu.some((category) => category.name === activeCategory) && !search) ? (
               <div className="pos-list">
                 {(activeCategory === '__all__'
                   ? visibleTabs
@@ -2945,6 +2946,27 @@ export function App() {
                       <i className="pos-pin-x pos-pin-act" onClick={removePin}>✕</i>
                       <i className="pos-pin-size pos-pin-act" onClick={cycleSize}>⤢</i>
                       <i className="pos-pin-rename pos-pin-act" onClick={startRename}>✎</i>
+                      {pin.t === 'f' ? (
+                        <i
+                          className="pos-pin-look pos-pin-act"
+                          title={pin.look === 'list' ? 'Showing as list — tap for tiles' : 'Showing as tiles — tap for list'}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            const board = {
+                              ...home,
+                              pins: home.pins.map((candidate, i) =>
+                                i === index && candidate.t === 'f'
+                                  ? { ...candidate, look: candidate.look === 'list' ? undefined : ('list' as const) }
+                                  : candidate
+                              )
+                            };
+                            setHome(board);
+                            saveBoard(board);
+                          }}
+                        >
+                          {pin.look === 'list' ? '≣' : '▦'}
+                        </i>
+                      ) : null}
                     </>
                   ) : null;
                   const renameInput =
@@ -3135,12 +3157,29 @@ export function App() {
                   // each dish once; edit mode stays raw so the stray copy can
                   // still be seen and removed.
                   const seenResolved = new Set<string>();
+                  const asList = pin.look === 'list' && !boardEdit;
                   return pin.items.map((recipeId, itemIndex) => {
                     const item = resolvePinItem(recipeId);
                     if (!item) return null;
                     if (!boardEdit) {
                       if (seenResolved.has(item.recipeId)) return null;
                       seenResolved.add(item.recipeId);
+                    }
+                    if (asList) {
+                      return (
+                        <button
+                          key={recipeId}
+                          type="button"
+                          className={`pos-list-row pos-list-row--fill ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
+                          disabled={busy}
+                          onClick={() => addItem(item)}
+                        >
+                          <i className={`pos-list-dot ${hueClass(pin.c)}`} />
+                          <span>{item.title}</span>
+                          <b>{eightySix.has(item.recipeId) ? "86'd" : money(item.priceCents)}</b>
+                          <u>＋</u>
+                        </button>
+                      );
                     }
                     return (
                       <button

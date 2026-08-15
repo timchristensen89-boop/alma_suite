@@ -529,3 +529,9 @@ input, select { font: inherit; }
 .qr-call { flex: 1; background: #fff; border: 1px solid rgba(31,53,36,0.22); border-radius: 12px; color: #1F2A1E; font: inherit; font-size: 13.5px; font-weight: 600; padding: 12px 10px; cursor: pointer; }
 .qr-call:active { background: rgba(31,53,36,0.06); }
 .qr-called { background: rgba(79,107,71,0.12); border-radius: 10px; color: #3F5738; font-size: 13px; font-weight: 600; margin: 8px 0 0; padding: 9px 12px; text-align: center; }
+
+/* Folder look toggle (edit mode) — bottom-left, opposite the size badge. */
+.pos-pin-look { position: absolute; bottom: -7px; left: -7px; width: 22px; height: 22px; border-radius: 50%; background: #4c5560; color: #fff; font-style: normal; font-size: 11px; display: grid; place-items: center; cursor: pointer; z-index: 2; }
+/* A folder shown as a list keeps the folder view's grid container — each row
+   claims the full row and paints like the Full menu's list. */
+.pos-list-row--fill { grid-column: 1 / -1; min-height: 0; background: var(--pos-card); border: 1px solid var(--pos-border-soft); border-radius: 12px; }

@@ -913,6 +913,33 @@ export function BoardEditor({
                           </ol>
                         </li>
                       ) : null}
+                      {!isGroup && navSelected === token ? (
+                        <li className="pos-be-subrows">
+                          <span className="pos-be-hint">Items look</span>
+                          <div className="pos-be-markpick">
+                            <button
+                              type="button"
+                              className={(tabsConfig.looks?.[token] ?? 'tiles') === 'tiles' ? 'is-on' : ''}
+                              title="Square tiles, like the Home page"
+                              onClick={() => {
+                                const looks = { ...(tabsConfig.looks ?? {}) };
+                                delete looks[token];
+                                commitTabs({ ...tabsConfig, looks });
+                              }}
+                            >
+                              Tiles
+                            </button>
+                            <button
+                              type="button"
+                              className={tabsConfig.looks?.[token] === 'list' ? 'is-on' : ''}
+                              title="Rows with prices, like the Full menu"
+                              onClick={() => commitTabs({ ...tabsConfig, looks: { ...(tabsConfig.looks ?? {}), [token]: 'list' as const } })}
+                            >
+                              List
+                            </button>
+                          </div>
+                        </li>
+                      ) : null}
                       {navSelected === token ? (
                         <li className="pos-be-subrows">
                           <span className="pos-be-hint">Mark</span>

@@ -20,7 +20,8 @@ export type MenuCategory = { name: string; kind: string; items: MenuItem[] };
 
 // c = colour (hue name, or a legacy hex), label = display-only rename,
 // s = tile size, d = label style. Every pin kind carries the same extras.
-export type PinExtras = { c?: string; label?: string; s?: 'w' | 'b'; d?: 'sh' | 'hs' | 'big' };
+// look: folder pins only — square tiles (default) or full-menu list rows.
+export type PinExtras = { c?: string; label?: string; s?: 'w' | 'b'; d?: 'sh' | 'hs' | 'big'; look?: 'tiles' | 'list' };
 export type Pin =
   | ({ t: 'i'; id: string } & PinExtras)
   | ({ t: 'f'; name: string; items: string[] } & PinExtras)
@@ -32,6 +33,9 @@ export type Pin =
 export type TabsConfig = {
   order: string[];
   hidden: string[];
+  // Per-category item rendering, keyed by category name. Absent = tiles —
+  // folders and categories share one default look, overridable per entity.
+  looks?: Record<string, 'tiles' | 'list'>;
   // look: how the folder's items render on the register — square tiles
   // (the Home-page look) or full-menu list rows. Absent = tiles.
   groups: Array<{ name: string; cats: string[]; c?: string; look?: 'tiles' | 'list' }>;
