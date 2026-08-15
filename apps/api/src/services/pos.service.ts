@@ -760,6 +760,66 @@ async function applyRefund(input: {
 
 export { applyRefund, requireReason, verifyManagerPin };
 
+// ── Homescreen pin sanitizing ────────────────────────────────────────────
+// Pins are rich objects ({t:'i',id} items / {t:'f',name,items} folders) —
+// pass through with a shallow shape check; legacy string pins upgrade.
+// label = display-only rename (dockets/KDS keep the recipe title);
+// s = tile size ('w' wide, 'b' big; absent = standard); look = how a
+// folder shows its items (square tiles or full-menu list rows).
+// Exported pure so the shape rules can be exercised without a database.
+export type SavedPinExtras = { c?: string; label?: string; s?: 'w' | 'b'; d?: 'sh' | 'hs' | 'big'; look?: 'tiles' | 'list' };
+export type SavedFolder = SavedPinExtras & { t: 'f'; name: string; items: string[]; folders?: SavedFolder[] };
+export type SavedPin = ({ t: 'i'; id: string } & SavedPinExtras) | ({ t: 'm'; key: string } & SavedPinExtras) | SavedFolder;
+
+export function sanitizeHomescreenPins(raw: unknown): SavedPin[] {
+  const pinExtrasOf = (row: Record<string, unknown>): SavedPinExtras => ({
+    ...(typeof row.c === 'string' ? { c: row.c } : {}),
+    ...(typeof row.label === 'string' && row.label.trim() ? { label: row.label.trim().slice(0, 40) } : {}),
+    ...(row.s === 'w' || row.s === 'b' ? { s: row.s } : {}),
+    ...(row.d === 'sh' || row.d === 'hs' || row.d === 'big' ? { d: row.d } : {}),
+    ...(row.look === 'tiles' || row.look === 'list' ? { look: row.look } : {})
+  });
+  // Folders nest (Wine → Red → By the glass): the same shape at every
+  // level, three levels deep at most so a hostile payload can't recurse.
+  const sanitizeFolder = (row: Record<string, unknown>, depth: number): SavedFolder | null => {
+    if (typeof row.name !== 'string' || !Array.isArray(row.items)) return null;
+    const folders =
+      depth < 3 && Array.isArray(row.folders)
+        ? (row.folders as unknown[])
+            .map((child) =>
+              child && typeof child === 'object' ? sanitizeFolder(child as Record<string, unknown>, depth + 1) : null
+            )
+            .filter((child): child is SavedFolder => child !== null)
+            .slice(0, 12)
+        : [];
+    return {
+      t: 'f',
+      name: row.name.slice(0, 40),
+      items: (row.items as unknown[]).map(String).slice(0, 40),
+      ...(folders.length ? { folders } : {}),
+      ...pinExtrasOf(row)
+    };
+  };
+  return (Array.isArray(raw) ? (raw as unknown[]) : [])
+    .map((pin): SavedPin | null => {
+      if (typeof pin === 'string') return { t: 'i', id: pin };
+      if (pin && typeof pin === 'object') {
+        const row = pin as Record<string, unknown>;
+        if (row.t === 'i' && typeof row.id === 'string') {
+          return { t: 'i', id: row.id, ...pinExtrasOf(row) };
+        }
+        // Management actions are pins too, so they move and size like the rest.
+        if (row.t === 'm' && typeof row.key === 'string') {
+          return { t: 'm', key: row.key.slice(0, 40), ...pinExtrasOf(row) };
+        }
+        if (row.t === 'f') return sanitizeFolder(row, 1);
+      }
+      return null;
+    })
+    .filter((pin): pin is SavedPin => pin !== null)
+    .slice(0, 24);
+}
+
 export const posService = {
   // The sellable menu, grouped for the register grid: active non-prep recipes
   // with a price, plus set menus. Categories keep the recipe's own category.
@@ -2634,41 +2694,7 @@ export const posService = {
         if (value === 'w' || value === 'b') buttonSizes[key.slice(0, 40)] = value;
       }
     }
-    // Pins are rich objects ({t:'i',id} items / {t:'f',name,items} folders) —
-    // pass through with a shallow shape check; legacy string pins upgrade.
-    const pins = (Array.isArray(body.pins) ? (body.pins as unknown[]) : [])
-      .map((pin) => {
-        if (typeof pin === 'string') return { t: 'i', id: pin };
-        if (pin && typeof pin === 'object') {
-          const row = pin as Record<string, unknown>;
-          // label = display-only rename (dockets/KDS keep the recipe title);
-          // s = tile size ('w' wide, 'b' big; absent = standard).
-          const pinExtras = {
-            ...(typeof row.c === 'string' ? { c: row.c } : {}),
-            ...(typeof row.label === 'string' && row.label.trim() ? { label: row.label.trim().slice(0, 40) } : {}),
-            ...(row.s === 'w' || row.s === 'b' ? { s: row.s } : {}),
-            ...(row.d === 'sh' || row.d === 'hs' || row.d === 'big' ? { d: row.d } : {})
-          };
-          if (row.t === 'i' && typeof row.id === 'string') {
-            return { t: 'i', id: row.id, ...pinExtras };
-          }
-          // Management actions are pins too, so they move and size like the rest.
-          if (row.t === 'm' && typeof row.key === 'string') {
-            return { t: 'm', key: row.key.slice(0, 40), ...pinExtras };
-          }
-          if (row.t === 'f' && typeof row.name === 'string' && Array.isArray(row.items)) {
-            return {
-              t: 'f',
-              name: row.name.slice(0, 40),
-              items: (row.items as unknown[]).map(String).slice(0, 40),
-              ...pinExtras
-            };
-          }
-        }
-        return null;
-      })
-      .filter((pin): pin is NonNullable<typeof pin> => pin !== null)
-      .slice(0, 24);
+    const pins = sanitizeHomescreenPins(body.pins);
     const landingCategory = str(body.landingCategory) || null;
     // Category tab customisation: order + hidden + grouped tabs.
     let categories: object | null = null;
@@ -2693,7 +2719,8 @@ export const posService = {
             return {
               name: row.name.trim().slice(0, 30),
               cats: (row.cats as unknown[]).map(String).slice(0, 20),
-              ...(typeof row.c === 'string' ? { c: row.c } : {})
+              ...(typeof row.c === 'string' ? { c: row.c } : {}),
+              ...(row.look === 'tiles' || row.look === 'list' ? { look: row.look } : {})
             };
           })
           .filter((group): group is NonNullable<typeof group> => group !== null)

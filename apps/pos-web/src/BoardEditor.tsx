@@ -9,6 +9,7 @@ import {
   ICON_STYLES,
   TEXT_SCALES,
   type TextScale,
+  folderItemCount,
   hueClass,
   hueStyle,
   iconKeyFor,
@@ -155,7 +156,7 @@ export function BoardEditor({
     return itemById.get(pin.id)?.title ?? 'Item no longer on the menu';
   }
   function pinKind(pin: Pin): string {
-    return pin.t === 'f' ? `Folder · ${pin.items.length} items` : pin.t === 'm' ? 'Management' : money(itemById.get(pin.id)?.priceCents);
+    return pin.t === 'f' ? `Folder · ${folderItemCount(pin)} items` : pin.t === 'm' ? 'Management' : money(itemById.get(pin.id)?.priceCents);
   }
   function pageOf(index: number) {
     return pages.findIndex((entries) => entries.some((entry) => entry.index === index));
@@ -578,7 +579,7 @@ export function BoardEditor({
                           />
                           {display.main}
                         </span>
-                        {pin.d === 'big' ? null : <small>{pin.t === 'f' ? `${pin.items.length} items` : pinKind(pin)}</small>}
+                        {pin.d === 'big' ? null : <small>{pin.t === 'f' ? `${folderItemCount(pin)} items` : pinKind(pin)}</small>}
                       </button>
                     );
                   })}
