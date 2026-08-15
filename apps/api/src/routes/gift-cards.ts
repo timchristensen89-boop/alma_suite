@@ -9,6 +9,26 @@ import {
 
 export const giftCardsRouter = Router();
 
+/**
+ * Redeeming at the counter is a floor action, not a management one. The venue
+ * iPads sign in as VENUE_DEVICE accounts, which are granted GIFTCARDS
+ * redeem permission at creation (device.service DEVICE_APP_ACCESS) — but the
+ * route demanded requireManager, and isManager() refuses every device account
+ * outright. So a balance check worked and the redeem itself 403'd with
+ * "manager-only action" on the day staff first tried it. Managers pass as
+ * before; devices (and any staff explicitly given the redeem permission) pass
+ * too. Cancel/void stay manager-only.
+ */
+function requireGiftCardRedeemer(req: Request, _res: Response, next: NextFunction) {
+  const user = req.user;
+  if (!user) return next(new HttpError(401, 'You’re not signed in. Sign in with your Alma account or the venue device.'));
+  const isManagerLike = user.accountType !== 'VENUE_DEVICE' && (user.role === 'ADMIN' || user.role === 'MANAGER' || user.isAdmin);
+  const giftAccess = user.appAccess.find((access) => access.appId === 'GIFTCARDS' && access.status === 'ENABLED');
+  const canRedeem = Boolean(giftAccess?.permissions?.redeem) || giftAccess?.role === 'ADMIN' || giftAccess?.role === 'MANAGER';
+  if (isManagerLike || canRedeem) return next();
+  return next(new HttpError(403, 'This account can’t redeem gift cards. Ask a manager, or use the venue iPad.'));
+}
+
 function requireGiftCardOwner(req: Request, res: Response, next: NextFunction) {
   requireManager(req, res, (error?: unknown) => {
     if (error) return next(error);
@@ -218,7 +238,7 @@ giftCardsRouter.get('/cards', requireManager, async (req, res, next) => {
   }
 });
 
-giftCardsRouter.get('/cards/:code', requireManager, async (req, res, next) => {
+giftCardsRouter.get('/cards/:code', requireGiftCardRedeemer, async (req, res, next) => {
   try {
     res.json(await giftCardService.lookup(String(req.params.code)));
   } catch (error) {
@@ -250,7 +270,7 @@ giftCardsRouter.post('/physical/activate', requireManager, async (req, res, next
   }
 });
 
-giftCardsRouter.post('/redeem', requireManager, async (req, res, next) => {
+giftCardsRouter.post('/redeem', requireGiftCardRedeemer, async (req, res, next) => {
   try {
     res.json(await giftCardService.redeem(req.body, req.user?.id));
   } catch (error) {
