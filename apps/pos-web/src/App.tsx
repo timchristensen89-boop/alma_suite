@@ -343,7 +343,14 @@ export function App() {
   const menu = useMemo(() => {
     if (venue !== 'St Alma' && venue !== 'Alma Avalon') return rawMenu;
     return rawMenu
-      .map((category) => ({ ...category, items: category.items.filter((item) => !item.venue || item.venue === venue) }))
+      .map((category) => ({
+        ...category,
+        items: category.items
+          .filter((item) => !item.venue || item.venue === venue)
+          // Shared (venue-null) recipes price per register via the override
+          // map; venue-tagged ones arrive with it already applied.
+          .map((item) => (item.venuePrices?.[venue] != null ? { ...item, priceCents: item.venuePrices[venue] } : item))
+      }))
       .filter((category) => category.items.length > 0);
   }, [rawMenu, venue]);
   const [kindByRecipe, setKindByRecipe] = useState<Map<string, string>>(() => {
@@ -1543,9 +1550,30 @@ export function App() {
     }
     return map;
   }, [rawMenu]);
+  // The explicit twin link, when the backfill has run: canonical group id →
+  // this venue's member. Falls back to title matching for unlinked recipes.
+  const visibleByCanonical = useMemo(() => {
+    const map = new Map<string, MenuItem>();
+    for (const category of menu) {
+      for (const item of category.items) {
+        map.set(item.canonicalId ?? item.recipeId, item);
+      }
+    }
+    return map;
+  }, [menu]);
+  const canonicalByRecipeAllVenues = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const category of rawMenu) {
+      for (const item of category.items) map.set(item.recipeId, item.canonicalId ?? item.recipeId);
+    }
+    return map;
+  }, [rawMenu]);
   function resolvePinItem(recipeId: string): MenuItem | undefined {
     const direct = itemByRecipe.get(recipeId);
     if (direct) return direct;
+    const canonical = canonicalByRecipeAllVenues.get(recipeId);
+    const viaLink = canonical ? visibleByCanonical.get(canonical) : undefined;
+    if (viaLink) return viaLink;
     const title = titleByRecipeAllVenues.get(recipeId);
     return title ? visibleByTitle.get(title) : undefined;
   }

@@ -769,15 +769,32 @@ export const posService = {
     const hiddenCats = new Set(hides.filter((hide) => hide.kind === 'CATEGORY').map((hide) => hide.key.toLowerCase()));
     const recipes = await prisma.recipe.findMany({
       where: { status: 'ACTIVE', isPrepRecipe: false, salePriceCents: { gt: 0 } },
-      select: { id: true, title: true, printTitle: true, kind: true, category: true, venue: true, salePriceCents: true },
+      select: { id: true, title: true, printTitle: true, kind: true, category: true, venue: true, salePriceCents: true, canonicalId: true },
       orderBy: [{ category: 'asc' }, { title: 'asc' }]
     });
+    // Per-venue price overrides. RecipeVenuePrice is maintained by the Square
+    // sync and editable in Stock, but the register never read it — venue
+    // prices could drift from what Square was actually charging. A recipe
+    // that is venue-tagged gets its own venue's override applied directly;
+    // the full map still ships so a shared (venue-null) recipe can price per
+    // register at the client.
+    const venuePriceRows = await prisma.recipeVenuePrice.findMany({
+      select: { recipeId: true, venue: true, salePriceCents: true }
+    });
+    const venuePriceMap = new Map<string, Record<string, number>>();
+    for (const row of venuePriceRows) {
+      const entry = venuePriceMap.get(row.recipeId) ?? {};
+      entry[row.venue] = row.salePriceCents;
+      venuePriceMap.set(row.recipeId, entry);
+    }
     type RegisterItem = {
       recipeId: string;
       title: string;
       printTitle?: string | null;
       priceCents: number;
       venue: string | null;
+      canonicalId?: string | null;
+      venuePrices?: Record<string, number>;
       variantOf?: string;
       variants?: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null; label: string }>;
     };
@@ -792,12 +809,16 @@ export const posService = {
         kind: recipe.kind === 'SET_MENU' ? 'SET_MENU' : kindBucket(recipe.kind, recipe.category),
         items: []
       };
+      const overrides = venuePriceMap.get(recipe.id);
       const item: RegisterItem = {
         recipeId: recipe.id,
         title: recipe.title,
         printTitle: recipe.printTitle,
-        priceCents: recipe.salePriceCents ?? 0,
-        venue: recipe.venue
+        priceCents:
+          (recipe.venue ? overrides?.[recipe.venue] : undefined) ?? recipe.salePriceCents ?? 0,
+        venue: recipe.venue,
+        canonicalId: recipe.canonicalId ?? null,
+        ...(overrides ? { venuePrices: overrides } : {})
       };
       group.items.push(item);
       itemRefs.set(recipe.id, item);

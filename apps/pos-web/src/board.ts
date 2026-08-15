@@ -7,6 +7,10 @@ import type { CSSProperties } from 'react';
 export type MenuItem = {
   recipeId: string;
   title: string;
+  /** Venue-twin link — twins point at one canonical recipe of their group. */
+  canonicalId?: string | null;
+  /** Per-venue price overrides (RecipeVenuePrice), keyed by venue name. */
+  venuePrices?: Record<string, number> | null;
   // Kitchen docket/KDS override name (Items → Print name in Stock). Register
   // tile, bill and receipts always show `title` — only the cart line's
   // snapshot for printing reads this.

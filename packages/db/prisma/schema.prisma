@@ -2966,6 +2966,13 @@ model Recipe {
   status             String                    @default("ACTIVE")
   estimatedCost      Float                     @default(0)
   notes              String?
+  /// The venue-twin link. The catalogue is duplicated per venue (each venue
+  /// carries its own copy of the same dish under a different id); twins point
+  /// at ONE canonical member of their group (which keeps this null). Nothing
+  /// merges — sales history, costing and per-venue prices stay put — but the
+  /// POS and mappings resolve cross-venue references through this instead of
+  /// fragile title matching. Backfilled by scripts/link-recipe-twins.ts.
+  canonicalId        String?
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
   lines              RecipeLine[]              @relation("RecipeLines")
@@ -2978,6 +2985,7 @@ model Recipe {
   @@index([title])
   @@index([category])
   @@index([isPrepRecipe])
+  @@index([canonicalId])
   @@index([status])
 }
 
