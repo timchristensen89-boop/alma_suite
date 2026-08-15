@@ -125,7 +125,18 @@ async function main() {
       const rt = tokens(recipe.title);
       const digitsMatch = itemTokens.digits === rt.digits;
       const nameMatch = wordsAgree(itemTokens.words, rt.words);
-      if (digitsMatch && nameMatch) {
+      // Tier 2: the Square item names no pour size at all ("Geoff Merrill
+      // Reserve Cab Sauv") and exactly ONE recipe in this venue agrees on the
+      // name — the sized recipe is the only thing it could be.
+      const tier2 =
+        !digitsMatch &&
+        nameMatch &&
+        itemTokens.digits === '' &&
+        recipeTokens.filter(
+          ({ recipe: candidate, t }) =>
+            (!candidate.venue || !row.venue || candidate.venue === row.venue) && wordsAgree(itemTokens.words, t.words)
+        ).length === 1;
+      if ((digitsMatch && nameMatch) || tier2) {
         confirmed.push({ row, recipeTitle: recipe.title });
       } else {
         review.push({
