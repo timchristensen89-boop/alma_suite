@@ -209,7 +209,14 @@ export const giftCardWalletService = {
       aud: 'google',
       typ: 'savetowallet',
       iat: Math.floor(Date.now() / 1000),
-      origins: config.origins.length ? config.origins : [webUrl()],
+      // `origins` restricts which WEB PAGES may use this JWT — and Google
+      // rejects link saves from anywhere else with the generic "Something
+      // went wrong. Try again or contact the pass issuer." Our save flows
+      // are links (the email button and the balance page), and an email tap
+      // arrives from Gmail's origin, not ours — so the claim is omitted
+      // unless GOOGLE_WALLET_ORIGINS is explicitly set (for a future
+      // embedded JS button, which does require it).
+      ...(config.origins.length ? { origins: config.origins } : {}),
       payload: {
         genericClasses: [
           {
