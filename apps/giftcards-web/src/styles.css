@@ -3829,3 +3829,15 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
     text-align: left;
   }
 }
+
+/* Purchases report — expandable rows */
+.giftcards-purchase-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; background: transparent; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.giftcards-report-row.is-open { background: rgba(20, 36, 26, 0.03); }
+.giftcards-purchase-detail { display: grid; grid-template-columns: 120px 1fr; gap: 6px 14px; margin: 12px 0 4px; padding-top: 12px; border-top: 1px solid rgba(20, 36, 26, 0.1); font-size: 13px; }
+.giftcards-purchase-detail dt { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: #64705f; padding-top: 2px; }
+.giftcards-purchase-detail dd { margin: 0; overflow-wrap: anywhere; }
+/* The row is a flex container for the redemption log; a purchase row that
+   expands needs to stack its detail below the header, full width. */
+.giftcards-report-row.is-open,
+.giftcards-report-row:has(.giftcards-purchase-row) { flex-wrap: wrap; }
+.giftcards-purchase-detail { flex-basis: 100%; }

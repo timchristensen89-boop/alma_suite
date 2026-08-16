@@ -1038,6 +1038,141 @@ export const giftCardService = {
     };
   },
 
+  /**
+   * One row per card sold: when, how, by whom, for whom, and what has
+   * happened to it since. The companion to report() (redemption-centric).
+   * Range filters on paidAt — the moment the card became real money — which
+   * for imported GiftUp cards is the original GiftUp purchase date.
+   */
+  async purchaseReport(input: { from?: string; to?: string; source?: string; query?: string }) {
+    const to = input.to ? new Date(input.to) : new Date();
+    const from = input.from ? new Date(input.from) : null;
+    if (Number.isNaN(to.getTime()) || (from !== null && Number.isNaN(from.getTime()))) {
+      throw new HttpError(400, 'from and to must be ISO dates.');
+    }
+    const query = input.query?.trim();
+    const source = input.source?.trim().toUpperCase();
+    // How a card was sold, derived from the row: GiftUp import → GIFTUP;
+    // physical/counter activation → PHYSICAL; POS/counter Stripe → COUNTER;
+    // storefront → ONLINE; test checkouts → TEST.
+    const sourceWhere =
+      source === 'GIFTUP'
+        ? { promoCodeSnapshot: 'GIFTUP_IMPORT' }
+        : source === 'PHYSICAL'
+          ? { promoCodeSnapshot: 'PHYSICAL_COUNTER' }
+          : source === 'COUNTER'
+            ? { saleChannel: 'COUNTER', promoCodeSnapshot: { not: 'PHYSICAL_COUNTER' } }
+            : source === 'ONLINE'
+              ? { saleChannel: 'ONLINE', testMode: false, NOT: { promoCodeSnapshot: 'GIFTUP_IMPORT' } }
+              : source === 'TEST'
+                ? { testMode: true }
+                : {};
+    const where = {
+      paidAt: { lte: to, ...(from ? { gte: from } : {}) },
+      ...(source && source !== 'TEST' ? { testMode: false } : {}),
+      ...sourceWhere,
+      ...(query
+        ? {
+            OR: [
+              { code: { contains: query, mode: 'insensitive' as const } },
+              { purchaserEmail: { contains: query, mode: 'insensitive' as const } },
+              { purchaserName: { contains: query, mode: 'insensitive' as const } },
+              { recipientEmail: { contains: query, mode: 'insensitive' as const } },
+              { recipientName: { contains: query, mode: 'insensitive' as const } }
+            ]
+          }
+        : {})
+    };
+    const CAP = 1000;
+    const [cards, totals] = await Promise.all([
+      prisma.giftCard.findMany({
+        where,
+        orderBy: [{ paidAt: 'desc' }],
+        take: CAP,
+        include: { redemptions: { where: { status: 'COMPLETED' }, orderBy: [{ redeemedAt: 'desc' }] } }
+      }),
+      prisma.giftCard.aggregate({
+        _sum: { initialValueCents: true, amountPaidCents: true, balanceCents: true },
+        _count: { _all: true },
+        where
+      })
+    ]);
+    const staffIds = [...new Set(cards.map((card) => card.soldByStaffId).filter((id): id is string => Boolean(id)))];
+    const staff = staffIds.length
+      ? await prisma.staffProfile.findMany({ where: { id: { in: staffIds } }, select: { id: true, firstName: true, lastName: true } })
+      : [];
+    const staffName = new Map(staff.map((member) => [member.id, `${member.firstName} ${member.lastName}`.trim()]));
+
+    const sourceOf = (card: (typeof cards)[number]): 'ONLINE' | 'COUNTER' | 'GIFTUP' | 'PHYSICAL' | 'TEST' =>
+      card.testMode
+        ? 'TEST'
+        : card.promoCodeSnapshot === 'GIFTUP_IMPORT'
+          ? 'GIFTUP'
+          : card.promoCodeSnapshot === 'PHYSICAL_COUNTER'
+            ? 'PHYSICAL'
+            : card.saleChannel === 'COUNTER'
+              ? 'COUNTER'
+              : 'ONLINE';
+
+    const bySource = new Map<string, { cardCount: number; soldCents: number }>();
+    for (const card of cards) {
+      const key = sourceOf(card);
+      const entry = bySource.get(key) ?? { cardCount: 0, soldCents: 0 };
+      entry.cardCount += 1;
+      entry.soldCents += card.initialValueCents;
+      bySource.set(key, entry);
+    }
+
+    const soldCents = totals._sum.initialValueCents ?? 0;
+    const outstandingCents = totals._sum.balanceCents ?? 0;
+    return {
+      range: { from: from ? from.toISOString() : null, to: to.toISOString() },
+      summary: {
+        cardCount: totals._count._all,
+        soldCents,
+        paidCents: totals._sum.amountPaidCents ?? 0,
+        outstandingCents,
+        redeemedCents: Math.max(0, soldCents - outstandingCents)
+      },
+      bySource: [...bySource.entries()]
+        .map(([source, entry]) => ({ source, ...entry }))
+        .sort((a, b) => b.soldCents - a.soldCents),
+      purchases: cards.map((card) => ({
+        code: card.code,
+        status: card.status,
+        purchasedAt: (card.paidAt ?? card.createdAt).toISOString(),
+        source: sourceOf(card),
+        tender: card.tender,
+        soldByName: card.soldByStaffId ? (staffName.get(card.soldByStaffId) ?? null) : null,
+        initialValueCents: card.initialValueCents,
+        discountCents: card.discountCents,
+        amountPaidCents: card.amountPaidCents,
+        balanceCents: card.balanceCents,
+        redeemedCents: card.redemptions.reduce((sum, redemption) => sum + redemption.amountCents, 0),
+        purchaserName: card.purchaserName,
+        purchaserEmail: card.purchaserEmail,
+        recipientName: card.recipientName,
+        recipientEmail: card.recipientEmail,
+        message: card.message,
+        design: card.design,
+        promoCode:
+          card.promoCodeSnapshot && !['GIFTUP_IMPORT', 'PHYSICAL_COUNTER'].includes(card.promoCodeSnapshot)
+            ? card.promoCodeSnapshot
+            : null,
+        scheduledDeliveryAt: card.scheduledDeliveryAt?.toISOString() ?? null,
+        emailedAt: card.emailedAt?.toISOString() ?? null,
+        emailError: card.emailError,
+        lastRedeemedAt: card.redemptions[0]?.redeemedAt.toISOString() ?? null,
+        redemptionCount: card.redemptions.length,
+        cancelledAt: card.cancelledAt?.toISOString() ?? null,
+        cancelReason: card.cancelReason,
+        expiresAt: card.expiresAt?.toISOString() ?? null,
+        stripePaymentIntentId: card.stripePaymentIntentId
+      })),
+      truncated: cards.length === CAP
+    };
+  },
+
   async listOrders(input: { query?: string }) {
     const query = input.query?.trim();
     const orders = await prisma.giftCard.findMany({

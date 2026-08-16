@@ -19,6 +19,8 @@ import {
   type GiftCardPublicConfig,
   type GiftCardPublic,
   type GiftCardReport,
+  type GiftCardPurchaseReport,
+  type GiftCardPurchaseRow,
   type GiftCardSettings
 } from '@alma/shared';
 import { DEFAULT_GIFT_CARD_DESIGN, GIFT_CARD_DESIGN_META, GiftCardArt, isGiftCardDesign, resolveGiftCardDesign } from './giftCardArt';
@@ -1704,6 +1706,223 @@ function GiftCardReporting() {
   );
 }
 
+const PURCHASE_SOURCES: Array<{ key: string; label: string }> = [
+  { key: 'all', label: 'All sources' },
+  { key: 'ONLINE', label: 'Website' },
+  { key: 'COUNTER', label: 'Counter (POS)' },
+  { key: 'PHYSICAL', label: 'Physical card' },
+  { key: 'GIFTUP', label: 'GiftUp import' },
+  { key: 'TEST', label: 'Test cards' }
+];
+const SOURCE_LABEL: Record<string, string> = {
+  ONLINE: 'Website',
+  COUNTER: 'Counter',
+  PHYSICAL: 'Physical',
+  GIFTUP: 'GiftUp',
+  TEST: 'Test'
+};
+
+function purchasesCsv(rows: GiftCardPurchaseRow[]): string {
+  const head = [
+    'Code', 'Status', 'Purchased', 'Source', 'Tender', 'Sold by', 'Value', 'Discount', 'Paid', 'Balance', 'Redeemed',
+    'Purchaser', 'Purchaser email', 'Recipient', 'Recipient email', 'Message', 'Design', 'Promo', 'Scheduled delivery',
+    'Emailed', 'Email error', 'Last redeemed', 'Redemptions', 'Cancelled', 'Cancel reason', 'Expires', 'Stripe payment'
+  ];
+  const cents = (value: number | null) => (value == null ? '' : (value / 100).toFixed(2));
+  const cell = (value: string | number | null | undefined) => {
+    const text = value == null ? '' : String(value);
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const lines = rows.map((row) =>
+    [
+      row.code, row.status, row.purchasedAt, SOURCE_LABEL[row.source] ?? row.source, row.tender, row.soldByName,
+      cents(row.initialValueCents), cents(row.discountCents), cents(row.amountPaidCents), cents(row.balanceCents), cents(row.redeemedCents),
+      row.purchaserName, row.purchaserEmail, row.recipientName, row.recipientEmail, row.message, row.design, row.promoCode, row.scheduledDeliveryAt,
+      row.emailedAt, row.emailError, row.lastRedeemedAt, row.redemptionCount, row.cancelledAt, row.cancelReason, row.expiresAt, row.stripePaymentIntentId
+    ]
+      .map(cell)
+      .join(',')
+  );
+  return [head.join(','), ...lines].join('\n');
+}
+
+function GiftCardPurchases() {
+  const [rangeKey, setRangeKey] = useState<ReportRangeKey>('all');
+  const [source, setSource] = useState('all');
+  const [query, setQuery] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [report, setReport] = useState<GiftCardPurchaseReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(query.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const range = useMemo(() => {
+    const now = new Date();
+    if (rangeKey === 'all') return { from: null as string | null, to: now.toISOString() };
+    const from = new Date(now);
+    if (rangeKey === 'month') from.setDate(1);
+    if (rangeKey === 'week') from.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    if (rangeKey === '30d') from.setDate(now.getDate() - 30);
+    from.setHours(0, 0, 0, 0);
+    return { from: from.toISOString(), to: now.toISOString() };
+  }, [rangeKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams({ to: range.to });
+    if (range.from) params.set('from', range.from);
+    if (source !== 'all') params.set('source', source);
+    if (debounced) params.set('query', debounced);
+    api<GiftCardPurchaseReport>(`/api/gift-cards/report/purchases?${params.toString()}`)
+      .then((next) => {
+        if (!cancelled) setReport(next);
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not load the purchases report.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [range, source, debounced]);
+
+  const rangeLabel = REPORT_RANGES.find((item) => item.key === rangeKey)?.label ?? '';
+  const summary = report?.summary;
+  const when = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+
+  function exportCsv() {
+    if (!report) return;
+    const blob = new Blob([purchasesCsv(report.purchases)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `alma-gift-card-purchases-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <>
+      <Card
+        title="Purchases"
+        subtitle="Every card sold — when, how, by whom, for whom, and what has happened to it since. Tap a row for the full record. Imported GiftUp cards show their original GiftUp purchase date."
+        action={
+          <Button type="button" size="sm" variant="secondary" disabled={!report || report.purchases.length === 0} onClick={exportCsv}>
+            Export CSV
+          </Button>
+        }
+      >
+        <div className="giftcards-report-filters">
+          <div className="giftcards-report-ranges" role="group" aria-label="Purchase period">
+            {REPORT_RANGES.map((item) => (
+              <Button
+                key={item.key}
+                type="button"
+                size="sm"
+                variant={rangeKey === item.key ? 'primary' : 'secondary'}
+                onClick={() => setRangeKey(item.key)}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+          <Select
+            label="Source"
+            value={source}
+            onChange={(event) => setSource(event.currentTarget.value)}
+            options={PURCHASE_SOURCES.map((item) => ({ label: item.label, value: item.key }))}
+          />
+          <Input label="Search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Code, name, email" />
+        </div>
+      </Card>
+
+      {error ? <p className="error-text">{error}</p> : null}
+      {loading && !report ? <Spinner label="Loading purchases…" /> : null}
+
+      {summary ? (
+        <div className="stats-grid">
+          <StatCard label={`Cards sold · ${rangeLabel}`} value={String(summary.cardCount)} hint={`${formatCents(summary.soldCents)} face value`} loading={loading} />
+          <StatCard label="Paid" value={formatCents(summary.paidCents)} hint="what buyers actually paid (after promos)" loading={loading} />
+          <StatCard label="Redeemed so far" value={formatCents(summary.redeemedCents)} hint="drawn down from these cards" loading={loading} />
+          <StatCard label="Still outstanding" value={formatCents(summary.outstandingCents)} hint="liability from these cards" loading={loading} />
+        </div>
+      ) : null}
+
+      {report && report.bySource.length > 1 ? (
+        <Card title="By source" subtitle={`How the cards in ${rangeLabel.toLowerCase()} were sold.`}>
+          <div className="giftcards-report-venues">
+            {report.bySource.map((row) => (
+              <div key={row.source} className="giftcards-report-venue">
+                <strong>{SOURCE_LABEL[row.source] ?? row.source}</strong>
+                <b>{formatCents(row.soldCents)}</b>
+                <span className="subtle">{row.cardCount} card{row.cardCount === 1 ? '' : 's'}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
+      <Card title="Purchase log" subtitle="Newest first.">
+        {report && report.purchases.length === 0 && !loading ? (
+          <EmptyState title="No cards in this window" description="Change the period, source or search above." />
+        ) : null}
+        <div className="giftcards-report-log">
+          {(report?.purchases ?? []).map((row) => {
+            const isOpen = open === row.code;
+            return (
+              <div key={row.code} className={`giftcards-report-row ${isOpen ? 'is-open' : ''}`}>
+                <button type="button" className="giftcards-purchase-row" onClick={() => setOpen(isOpen ? null : row.code)}>
+                  <div className="giftcards-report-row-main">
+                    <strong>{row.code}</strong>
+                    <span className="subtle">
+                      {row.purchaserName}
+                      {row.recipientName ? ` → ${row.recipientName}` : ''}
+                    </span>
+                  </div>
+                  <div className="giftcards-report-row-meta">
+                    <b>{formatCents(row.initialValueCents)}</b>
+                    <span>{formatCents(row.balanceCents)} left</span>
+                    <span>{SOURCE_LABEL[row.source] ?? row.source}{row.tender && row.source !== 'ONLINE' ? ` · ${row.tender}` : ''}</span>
+                    <Badge tone={statusTone(row.status)}>{row.status.replace('_', ' ')}</Badge>
+                    <span className="subtle">{when(row.purchasedAt)}</span>
+                  </div>
+                </button>
+                {isOpen ? (
+                  <dl className="giftcards-purchase-detail">
+                    <dt>Purchased</dt><dd>{when(row.purchasedAt)}</dd>
+                    <dt>Source</dt><dd>{SOURCE_LABEL[row.source] ?? row.source}{row.tender ? ` · ${row.tender}` : ''}{row.soldByName ? ` · sold by ${row.soldByName}` : ''}</dd>
+                    <dt>Purchaser</dt><dd>{row.purchaserName} · {row.purchaserEmail}</dd>
+                    <dt>Recipient</dt><dd>{row.recipientName || '—'}{row.recipientEmail ? ` · ${row.recipientEmail}` : ''}</dd>
+                    <dt>Message</dt><dd>{row.message || '—'}</dd>
+                    <dt>Value</dt><dd>{formatCents(row.initialValueCents)}{row.discountCents ? ` (${formatCents(row.discountCents)} promo${row.promoCode ? ` ${row.promoCode}` : ''})` : ''} · paid {row.amountPaidCents == null ? '—' : formatCents(row.amountPaidCents)}</dd>
+                    <dt>Balance</dt><dd>{formatCents(row.balanceCents)} left · {formatCents(row.redeemedCents)} redeemed across {row.redemptionCount} redemption{row.redemptionCount === 1 ? '' : 's'}{row.lastRedeemedAt ? ` · last ${when(row.lastRedeemedAt)}` : ''}</dd>
+                    <dt>Design</dt><dd>{row.design || '—'}</dd>
+                    <dt>Delivery</dt><dd>{row.scheduledDeliveryAt ? `scheduled ${when(row.scheduledDeliveryAt)}` : 'immediate'} · {row.emailedAt ? `emailed ${when(row.emailedAt)}` : 'not emailed'}{row.emailError ? ` · error: ${row.emailError}` : ''}</dd>
+                    <dt>Expires</dt><dd>{row.expiresAt ? when(row.expiresAt) : 'never'}</dd>
+                    {row.cancelledAt ? <><dt>Cancelled</dt><dd>{when(row.cancelledAt)}{row.cancelReason ? ` · ${row.cancelReason}` : ''}</dd></> : null}
+                    {row.stripePaymentIntentId ? <><dt>Stripe</dt><dd>{row.stripePaymentIntentId}</dd></> : null}
+                  </dl>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+        {report?.truncated ? <p className="subtle">Showing the latest 1,000 cards — narrow the period, source or search to see older ones.</p> : null}
+      </Card>
+    </>
+  );
+}
+
 function GiftCardAdminSettings({ user }: { user: AuthUser }) {
   type PromoDraft = {
     code: string;
@@ -2497,7 +2716,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           </Card>
         ) : null}
 
-        {activeGiftCardPage === 'reporting' ? <GiftCardReporting /> : null}
+        {activeGiftCardPage === 'reporting' ? <><GiftCardReporting /><GiftCardPurchases /></> : null}
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
         {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
       </div>

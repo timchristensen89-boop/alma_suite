@@ -4658,6 +4658,52 @@ export type GiftCardReport = {
   truncated: boolean;
 };
 
+/** One row per card sold: everything the ledger knows about the purchase. */
+export type GiftCardPurchaseRow = {
+  code: string;
+  status: GiftCard['status'];
+  purchasedAt: string;
+  /** ONLINE (storefront), COUNTER (POS/physical), or GIFTUP (imported). */
+  source: 'ONLINE' | 'COUNTER' | 'GIFTUP' | 'PHYSICAL' | 'TEST';
+  tender: string | null;
+  soldByName: string | null;
+  initialValueCents: number;
+  discountCents: number;
+  amountPaidCents: number | null;
+  balanceCents: number;
+  redeemedCents: number;
+  purchaserName: string;
+  purchaserEmail: string;
+  recipientName: string | null;
+  recipientEmail: string | null;
+  message: string | null;
+  design: string | null;
+  promoCode: string | null;
+  scheduledDeliveryAt: string | null;
+  emailedAt: string | null;
+  emailError: string | null;
+  lastRedeemedAt: string | null;
+  redemptionCount: number;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  expiresAt: string | null;
+  stripePaymentIntentId: string | null;
+};
+
+export type GiftCardPurchaseReport = {
+  range: { from: string | null; to: string };
+  summary: {
+    cardCount: number;
+    soldCents: number;
+    paidCents: number;
+    outstandingCents: number;
+    redeemedCents: number;
+  };
+  bySource: Array<{ source: string; cardCount: number; soldCents: number }>;
+  purchases: GiftCardPurchaseRow[];
+  truncated: boolean;
+};
+
 export type Timesheet = {
   id: string;
   staffProfileId: string;

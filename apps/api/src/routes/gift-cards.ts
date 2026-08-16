@@ -107,6 +107,15 @@ giftCardsRouter.get('/admin/orders', requireManager, async (req, res, next) => {
   }
 });
 
+giftCardsRouter.get('/report/purchases', requireManager, async (req, res, next) => {
+  try {
+    const q = (key: string) => (typeof req.query[key] === 'string' ? (req.query[key] as string) : undefined);
+    res.json(await giftCardService.purchaseReport({ from: q('from'), to: q('to'), source: q('source'), query: q('query') }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.get('/report', requireManager, async (req, res, next) => {
   try {
     res.json(
