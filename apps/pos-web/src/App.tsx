@@ -2498,7 +2498,7 @@ export function App() {
                     setActiveCategory(target);
                   }}
                 >
-                  {isGroup ? <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} /> : <Mark name={token} />}
+                  {isGroup ? (hasMark(groupName ?? '') ? <Mark name={groupName ?? ''} /> : <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />) : <Mark name={token} />}
                   {isGroup ? groupName : token}
                 </button>
               );
@@ -2878,7 +2878,7 @@ export function App() {
                       className={`${active ? 'is-active' : ''} ${isGroup ? 'is-group' : ''}`}
                       onClick={() => setActiveCategory(isGroup ? `__group__${groupName}` : token)}
                     >
-                      {isGroup ? <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} /> : <Mark name={token} />}
+                      {isGroup ? (hasMark(groupName ?? '') ? <Mark name={groupName ?? ''} /> : <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />) : <Mark name={token} />}
                       {isGroup ? groupName : token}
                     </button>
                   );
@@ -2925,7 +2925,9 @@ export function App() {
                           if (!collapsible) event.preventDefault();
                         }}
                       >
-                        {folderName ? (
+                        {folderName && hasMark(folderName) ? (
+                          <Mark name={folderName} className="pos-nav-icon pos-list-icon" />
+                        ) : folderName ? (
                           <i className="pos-nav-icon pos-list-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />
                         ) : hasMark(token) ? (
                           <Mark name={token} className="pos-nav-icon pos-list-icon" />
