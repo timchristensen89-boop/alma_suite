@@ -4148,12 +4148,15 @@ async function xeroSuperFundId(
   }
 }
 
-// Push one staff member into every Xero organisation their venue implies.
+// Push one staff member into every Xero organisation their venue implies —
+// or into exactly the one asked for, when the caller names a tenant (the
+// profile page lets a manager push someone to either company regardless of
+// what the venue field says).
 //
 // Matching before creating is the whole safety story: 32 people already exist
 // in Xero from before this was wired up, and creating a duplicate employee in
 // a live payroll is not something you undo with a delete.
-export async function pushStaffToXero(staffProfileId: string) {
+export async function pushStaffToXero(staffProfileId: string, options?: { tenantId?: string }) {
   const staff = await prisma.staffProfile.findUnique({
     where: { id: staffProfileId },
     select: {
@@ -4181,9 +4184,16 @@ export async function pushStaffToXero(staffProfileId: string) {
   }
 
   const tenants = xeroTenantsFromConnection(connection);
-  const targets = xeroTenantsForVenue(staff.venue, tenants);
+  const targets = options?.tenantId
+    ? tenants.filter((tenant) => tenant.id === options.tenantId)
+    : xeroTenantsForVenue(staff.venue, tenants);
   if (targets.length === 0) {
-    throw new HttpError(400, `No Xero organisation matches the venue "${staff.venue ?? '(none)'}" — set it to St Alma, Alma Avalon or Both.`);
+    throw new HttpError(
+      400,
+      options?.tenantId
+        ? 'That Xero organisation is no longer connected — reload and try again.'
+        : `No Xero organisation matches the venue "${staff.venue ?? '(none)'}" — set it to St Alma, Alma Avalon or Both.`
+    );
   }
 
   // Xero AU payroll refuses an employee without these, and the message it
@@ -4286,12 +4296,149 @@ export async function pushStaffToXero(staffProfileId: string) {
   }
 
   // Keep the legacy single column pointing at SOMETHING valid — the timesheet
-  // push still reads it. First organisation wins; the links table is truth.
-  if (results[0] && staff.xeroEmployeeId !== results[0].xeroEmployeeId) {
-    await prisma.staffProfile.update({ where: { id: staff.id }, data: { xeroEmployeeId: results[0].xeroEmployeeId } });
+  // export still reads it as a fallback. A venue-implied push keeps the old
+  // first-organisation-wins rule; a targeted push only writes it when it's
+  // empty or already belonged to that organisation, because repointing it at
+  // the OTHER company would misdirect the payroll export for dual-venue staff.
+  const legacyFrom = results[0];
+  if (legacyFrom) {
+    const legacyTenant = staff.xeroEmployees.find((link) => link.xeroEmployeeId === staff.xeroEmployeeId)?.tenantId ?? null;
+    const mayUpdate = !options?.tenantId || !staff.xeroEmployeeId || legacyTenant === legacyFrom.tenantId;
+    if (mayUpdate && staff.xeroEmployeeId !== legacyFrom.xeroEmployeeId) {
+      await prisma.staffProfile.update({ where: { id: staff.id }, data: { xeroEmployeeId: legacyFrom.xeroEmployeeId } });
+    }
   }
 
   return { staff: `${staff.firstName} ${staff.lastName}`, venue: staff.venue, organisations: results, warnings };
+}
+
+// What the profile page's Xero panel needs in one call: every connected
+// organisation, whether it matches this person's venue, the employee they're
+// currently linked to there, and the full employee list to link from.
+export async function xeroEmployeeLinkOptions(staffProfileId: string) {
+  const staff = await prisma.staffProfile.findUnique({
+    where: { id: staffProfileId },
+    select: {
+      id: true, firstName: true, lastName: true, venue: true, xeroEmployeeId: true,
+      xeroEmployees: { select: { tenantId: true, tenantName: true, xeroEmployeeId: true, syncedAt: true } }
+    }
+  });
+  if (!staff) throw new HttpError(404, 'Staff member not found.');
+  const initial = await connectionSelect('XERO');
+  if (!initial || initial.status !== 'CONNECTED') {
+    throw new HttpError(409, 'Xero is not connected. Reconnect it in Admin → Integrations.');
+  }
+  let connection: IntegrationConnection = initial;
+  const tenants = xeroTenantsFromConnection(connection);
+  if (tenants.length === 0) throw new HttpError(409, 'No Xero organisation is connected.');
+  const suggested = new Set(xeroTenantsForVenue(staff.venue, tenants).map((tenant) => tenant.id));
+
+  const organisations: Array<{
+    tenantId: string;
+    tenantName: string | null;
+    suggested: boolean;
+    linkedXeroEmployeeId: string | null;
+    linkedSyncedAt: string | null;
+    employees: Array<{ id: string; name: string; status: string | null }>;
+  }> = [];
+  for (const tenant of tenants) {
+    const list = await xeroGetJson<{ Employees?: XeroPayrollEmployeeSummary[] }>('/payroll.xro/1.0/Employees', {
+      connection,
+      tenantId: tenant.id
+    });
+    connection = list.connection;
+    const linked = staff.xeroEmployees.find((link) => link.tenantId === tenant.id) ?? null;
+    organisations.push({
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      suggested: suggested.has(tenant.id),
+      linkedXeroEmployeeId: linked?.xeroEmployeeId ?? null,
+      linkedSyncedAt: linked?.syncedAt ? linked.syncedAt.toISOString() : null,
+      employees: (list.data.Employees ?? [])
+        .filter((employee) => Boolean(employee.EmployeeID))
+        .map((employee) => ({
+          id: employee.EmployeeID as string,
+          name: `${employee.FirstName ?? ''} ${employee.LastName ?? ''}`.trim() || (employee.EmployeeID as string),
+          status: employee.Status ?? null
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name))
+    });
+  }
+  return { staff: `${staff.firstName} ${staff.lastName}`, venue: staff.venue, organisations };
+}
+
+// Link (or unlink, with a null id) a profile to the employee record it
+// already has in one organisation — the by-hand alternative to a push, for
+// people who exist in Xero under a slightly different name and would
+// otherwise end up duplicated.
+export async function linkStaffToXeroEmployee(staffProfileId: string, input: unknown) {
+  const body = (input ?? {}) as Record<string, unknown>;
+  const tenantId = typeof body.tenantId === 'string' ? body.tenantId : '';
+  const wanted = typeof body.xeroEmployeeId === 'string' && body.xeroEmployeeId.trim() ? body.xeroEmployeeId.trim() : null;
+  if (!tenantId) throw new HttpError(400, 'tenantId is required.');
+
+  const staff = await prisma.staffProfile.findUnique({
+    where: { id: staffProfileId },
+    select: {
+      id: true, firstName: true, lastName: true, xeroEmployeeId: true,
+      xeroEmployees: { select: { tenantId: true, xeroEmployeeId: true } }
+    }
+  });
+  if (!staff) throw new HttpError(404, 'Staff member not found.');
+  const initial = await connectionSelect('XERO');
+  if (!initial || initial.status !== 'CONNECTED') {
+    throw new HttpError(409, 'Xero is not connected. Reconnect it in Admin → Integrations.');
+  }
+  const tenant = xeroTenantsFromConnection(initial).find((candidate) => candidate.id === tenantId);
+  if (!tenant) throw new HttpError(400, 'That Xero organisation is no longer connected — reload and try again.');
+
+  if (!wanted) {
+    await prisma.staffXeroEmployee.deleteMany({ where: { staffProfileId: staff.id, tenantId } });
+    // If the legacy column pointed at the link being removed, move it to a
+    // surviving link (or clear it) so the payroll export never carries a
+    // dangling id.
+    const removed = staff.xeroEmployees.find((link) => link.tenantId === tenantId)?.xeroEmployeeId ?? null;
+    if (removed && staff.xeroEmployeeId === removed) {
+      const survivor = staff.xeroEmployees.find((link) => link.tenantId !== tenantId)?.xeroEmployeeId ?? null;
+      await prisma.staffProfile.update({ where: { id: staff.id }, data: { xeroEmployeeId: survivor } });
+    }
+    return { staff: `${staff.firstName} ${staff.lastName}`, tenantId, tenantName: tenant.name, linked: false as const };
+  }
+
+  // Confirm the employee really exists in THAT organisation before storing —
+  // a mislinked id is exactly the mistake this screen replaces.
+  let employee: XeroPayrollEmployeeSummary | undefined;
+  try {
+    const detail = await xeroGetJson<{ Employees?: XeroPayrollEmployeeSummary[] }>(
+      `/payroll.xro/1.0/Employees/${encodeURIComponent(wanted)}`,
+      { connection: initial, tenantId }
+    );
+    employee = detail.data.Employees?.[0];
+  } catch {
+    employee = undefined;
+  }
+  if (!employee?.EmployeeID) {
+    throw new HttpError(404, `That employee doesn't exist in ${tenant.name ?? 'that organisation'} — refresh the list and pick again.`);
+  }
+
+  await prisma.staffXeroEmployee.upsert({
+    where: { staffProfileId_tenantId: { staffProfileId: staff.id, tenantId } },
+    create: { staffProfileId: staff.id, tenantId, tenantName: tenant.name, xeroEmployeeId: wanted, syncedAt: new Date() },
+    update: { xeroEmployeeId: wanted, tenantName: tenant.name, syncedAt: new Date() }
+  });
+  // Same legacy-column care as the push: fill it when empty, follow it when
+  // this organisation already owned it, never steal it across companies.
+  const previous = staff.xeroEmployees.find((link) => link.tenantId === tenantId)?.xeroEmployeeId ?? null;
+  if (!staff.xeroEmployeeId || staff.xeroEmployeeId === previous) {
+    await prisma.staffProfile.update({ where: { id: staff.id }, data: { xeroEmployeeId: wanted } });
+  }
+  return {
+    staff: `${staff.firstName} ${staff.lastName}`,
+    tenantId,
+    tenantName: tenant.name,
+    linked: true as const,
+    employeeName: `${employee.FirstName ?? ''} ${employee.LastName ?? ''}`.trim()
+  };
 }
 
 // Work out which company each pre-existing xeroEmployeeId actually belongs to.

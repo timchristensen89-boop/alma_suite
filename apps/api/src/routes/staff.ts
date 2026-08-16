@@ -165,12 +165,38 @@ staffRouter.post('/profiles', requireManager, async (req, res, next) => {
   }
 });
 
-// Push a staff member into Xero Payroll — into BOTH companies when their
-// venue is "Both", because Freshwater and Avalon are separate payrolls.
+// Push a staff member into Xero Payroll. No body: into every company their
+// venue implies (BOTH when the venue says so — Freshwater and Avalon are
+// separate payrolls). With a tenantId in the body: exactly that company,
+// whatever the venue field says.
 staffRouter.post('/:id/push-to-xero', requireManager, async (req, res, next) => {
   try {
     const { pushStaffToXero } = await import('../services/integration.service.js');
-    res.json(await pushStaffToXero(String(req.params.id)));
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const tenantId = typeof body.tenantId === 'string' && body.tenantId ? body.tenantId : undefined;
+    res.json(await pushStaffToXero(String(req.params.id), { tenantId }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// The employees in every connected Xero organisation, plus this profile's
+// current links — what the profile page's Xero panel renders.
+staffRouter.get('/:id/xero-link-options', requireManager, async (req, res, next) => {
+  try {
+    const { xeroEmployeeLinkOptions } = await import('../services/integration.service.js');
+    res.json(await xeroEmployeeLinkOptions(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Link (xeroEmployeeId set) or unlink (null) this profile to an employee
+// record in one organisation, without pushing anything into Xero.
+staffRouter.post('/:id/xero-link', requireManager, async (req, res, next) => {
+  try {
+    const { linkStaffToXeroEmployee } = await import('../services/integration.service.js');
+    res.json(await linkStaffToXeroEmployee(String(req.params.id), req.body));
   } catch (error) {
     next(error);
   }
