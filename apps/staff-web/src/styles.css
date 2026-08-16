@@ -9212,3 +9212,22 @@ html[data-theme='dark'] .alma-taskbar-sheet { background: var(--color-elevated, 
   .ts-review-table tfoot tr { background: var(--color-surface, #f8f6f1); border-bottom: 0; }
   .ts-review-table tfoot td:empty { display: none; }
 }
+
+/* ── Staff profile · Xero panel ─────────────────────────────────────────
+   One card per connected organisation: link picker + push button. */
+.xero-panel { display: grid; gap: 14px; }
+.xero-org {
+  display: grid; gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+}
+.xero-org-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.xero-org-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.xero-org-actions { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.xero-org-actions .field { flex: 1 1 240px; min-width: 0; }
+@media (max-width: 700px) {
+  .xero-org-actions { align-items: stretch; flex-direction: column; }
+  .xero-org-actions button { width: 100%; }
+}

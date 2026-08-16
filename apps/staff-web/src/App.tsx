@@ -5046,6 +5046,169 @@ function staffPayloadFromDraft(draft: StaffDraft) {
   };
 }
 
+type XeroLinkOptions = {
+  staff: string;
+  venue: string | null;
+  organisations: Array<{
+    tenantId: string;
+    tenantName: string | null;
+    suggested: boolean;
+    linkedXeroEmployeeId: string | null;
+    linkedSyncedAt: string | null;
+    employees: Array<{ id: string; name: string; status: string | null }>;
+  }>;
+};
+
+// The profile page's Xero panel: one card per connected organisation, each
+// with "push this profile there" and "link to the employee already there".
+// Both companies are always shown — a manager can push someone to either,
+// whatever the venue field says.
+function StaffXeroPanel({ staffId }: { staffId: string }) {
+  const [options, setOptions] = useState<XeroLinkOptions | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTone, setMessageTone] = useState<'success' | 'error'>('success');
+  const [picks, setPicks] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const data = await api<XeroLinkOptions>(`/api/staff/${staffId}/xero-link-options`);
+      setOptions(data);
+      setPicks(Object.fromEntries(data.organisations.map((org) => [org.tenantId, org.linkedXeroEmployeeId ?? ''])));
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not reach Xero.');
+    }
+  }, [staffId]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  function report(text: string, tone: 'success' | 'error') {
+    setMessage(text);
+    setMessageTone(tone);
+  }
+
+  async function push(tenantId: string) {
+    setBusy(`push:${tenantId}`);
+    setMessage(null);
+    try {
+      const result = await api<{
+        organisations: Array<{ tenantName: string | null; action: string }>;
+        warnings: string[];
+      }>(`/api/staff/${staffId}/push-to-xero`, { method: 'POST', body: JSON.stringify({ tenantId }) });
+      const done = result.organisations.map((org) => `${org.tenantName ?? 'Xero'}: ${org.action}`).join(' · ');
+      report([done, ...result.warnings].join(' — '), 'success');
+      await load();
+    } catch (err) {
+      report(err instanceof Error ? err.message : 'Could not push to Xero.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function link(tenantId: string, xeroEmployeeId: string | null) {
+    setBusy(`link:${tenantId}`);
+    setMessage(null);
+    try {
+      const result = await api<{ tenantName: string | null; linked: boolean; employeeName?: string }>(
+        `/api/staff/${staffId}/xero-link`,
+        { method: 'POST', body: JSON.stringify({ tenantId, xeroEmployeeId }) }
+      );
+      report(
+        result.linked
+          ? `Linked to ${result.employeeName || 'the selected employee'} in ${result.tenantName ?? 'Xero'}.`
+          : `Unlinked from ${result.tenantName ?? 'Xero'}.`,
+        'success'
+      );
+      await load();
+    } catch (err) {
+      report(err instanceof Error ? err.message : 'Could not update the Xero link.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (loadError) {
+    return (
+      <div className="xero-panel">
+        <ActionFeedback message={loadError} tone="error" />
+        <div>
+          <Button type="button" variant="secondary" onClick={() => void load()}>Try again</Button>
+        </div>
+      </div>
+    );
+  }
+  if (!options) return <Spinner label="Asking Xero for its employee lists..." />;
+
+  return (
+    <div className="xero-panel">
+      {options.organisations.map((org) => {
+        const linkedEmployee = org.employees.find((employee) => employee.id === org.linkedXeroEmployeeId) ?? null;
+        const pick = picks[org.tenantId] ?? '';
+        const pickChanged = pick !== (org.linkedXeroEmployeeId ?? '');
+        return (
+          <section key={org.tenantId} className="xero-org">
+            <div className="xero-org-head">
+              <span className="xero-org-title">
+                {org.tenantName ?? 'Xero organisation'}
+                {org.suggested ? <Badge tone="info">their venue</Badge> : null}
+              </span>
+              {org.linkedXeroEmployeeId ? (
+                <Badge tone="positive">Linked{linkedEmployee ? ` · ${linkedEmployee.name}` : ''}</Badge>
+              ) : (
+                <Badge tone="warning">Not linked</Badge>
+              )}
+            </div>
+            <div className="xero-org-actions">
+              <Select
+                label="Link to Xero employee"
+                value={pick}
+                onChange={(event) => setPicks((current) => ({ ...current, [org.tenantId]: event.currentTarget.value }))}
+                options={[
+                  { label: org.employees.length ? 'Pick an employee…' : 'No employees in this organisation', value: '' },
+                  ...org.employees.map((employee) => ({
+                    label: employee.status && employee.status !== 'ACTIVE' ? `${employee.name} (${employee.status.toLowerCase()})` : employee.name,
+                    value: employee.id
+                  }))
+                ]}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy !== null || !pickChanged || !pick}
+                onClick={() => void link(org.tenantId, pick)}
+              >
+                {busy === `link:${org.tenantId}` ? 'Linking…' : 'Link'}
+              </Button>
+              {org.linkedXeroEmployeeId ? (
+                <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void link(org.tenantId, null)}>
+                  Unlink
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                disabled={busy !== null}
+                title={`Create or update their employee record in ${org.tenantName ?? 'this organisation'} from this profile`}
+                onClick={() => void push(org.tenantId)}
+              >
+                {busy === `push:${org.tenantId}` ? 'Pushing…' : `Push to ${org.tenantName ?? 'Xero'}`}
+              </Button>
+            </div>
+          </section>
+        );
+      })}
+      <p className="subtle">
+        Push sends their profile (contact, bank, tax, super) into that company's payroll — it matches an existing
+        employee by name before ever creating one. Link just points this profile at an employee record that already
+        exists, without changing anything in Xero.
+      </p>
+      <ActionFeedback message={message} tone={messageTone} />
+    </div>
+  );
+}
+
 function StaffModal({
   open,
   title,
@@ -5569,6 +5732,7 @@ function StaffProfileWorkspacePage({
   const selected = staff.find((item) => item.id === staffId) ?? null;
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [payrollModalOpen, setPayrollModalOpen] = useState(false);
+  const [xeroModalOpen, setXeroModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
@@ -6542,6 +6706,9 @@ function StaffProfileWorkspacePage({
                 ) : (
                   <Button type="button" onClick={() => setProfileModalOpen(true)}>Edit profile</Button>
                 )}
+                {canManageProfileAccess ? (
+                  <Button type="button" variant="secondary" onClick={() => setXeroModalOpen(true)}>Xero</Button>
+                ) : null}
                 {canManageProfileAccess && !member.isAdmin ? (
                   <Button type="button" variant="danger" disabled={saving} onClick={() => void archiveStaff()}>Archive staff</Button>
                 ) : null}
@@ -6559,6 +6726,14 @@ function StaffProfileWorkspacePage({
       </div>
       <StaffModal open={profileModalOpen} title={`Edit ${staffFullName(member)}`} subtitle="Profile edits stay in a modal so the staff workspace remains in place." onClose={() => setProfileModalOpen(false)}>
         <StaffProfileForm mode="edit" initial={member} roleTemplates={roleTemplates} onSaved={(saved) => void handleProfileSaved(saved)} onCancel={() => setProfileModalOpen(false)} />
+      </StaffModal>
+      <StaffModal
+        open={xeroModalOpen}
+        title={`Xero — ${staffFullName(member)}`}
+        subtitle="Push this profile into either company's payroll, or link it to the employee record already there."
+        onClose={() => setXeroModalOpen(false)}
+      >
+        {xeroModalOpen ? <StaffXeroPanel staffId={member.id} /> : null}
       </StaffModal>
     </div>
   );
