@@ -141,8 +141,10 @@ input, select { font: inherit; }
 
 @media print {
   body * { visibility: hidden; }
-  #pos-receipt, #pos-receipt *, #pos-bill, #pos-bill *, #pos-docket, #pos-docket *, #pos-close, #pos-close * { visibility: visible; }
-  #pos-receipt, #pos-bill, #pos-docket, #pos-close { position: absolute; inset: 0; background: #fff; color: #000; border: 0; }
+  /* #qr-print is the table-QR sheet — it predates this whitelist and was
+     printing blank pages until it joined the list. */
+  #pos-receipt, #pos-receipt *, #pos-bill, #pos-bill *, #pos-docket, #pos-docket *, #pos-close, #pos-close *, #qr-print, #qr-print * { visibility: visible; }
+  #pos-receipt, #pos-bill, #pos-docket, #pos-close, #qr-print { position: absolute; inset: 0; background: #fff; color: #000; border: 0; }
   #pos-bill .pos-muted { color: #333; }
   .pos-choice-row, .pos-modal-close { display: none !important; }
 }
