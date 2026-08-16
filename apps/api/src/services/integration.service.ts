@@ -1093,6 +1093,14 @@ type LightspeedOrder = {
   // provides one at all (used to store ex-GST sales exactly; otherwise we
   // back out 10% AU GST from the inclusive total).
   total_tax?: number | string;
+  // VERIFY: tips field naming. The docs are silent, so the reader below
+  // tries every plausible spelling at order level and on payments; the sync
+  // reports loudly when a window's orders carry none at all.
+  tips?: number | string;
+  tip?: number | string;
+  total_tips?: number | string;
+  gratuity?: number | string;
+  payments?: Array<{ amount?: number | string; tip?: number | string; tips?: number | string; method?: string }>;
   created_at?: string;
   updated_at?: string;
   site_id?: number | string;
@@ -1346,6 +1354,32 @@ function lightspeedOrderNetCents(order: LightspeedOrder) {
   const taxCents = moneyToCents(order.total_tax);
   if (taxCents > 0 && taxCents < totalCents) return totalCents - taxCents;
   return Math.max(0, Math.round(totalCents / AU_GST_DIVISOR));
+}
+
+// Tips on a Lightspeed order, wherever the payload put them: an order-level
+// field under any plausible name, else summed off the payments. `sawField`
+// separates "no tips recorded" (fields present, zero) from "the API doesn't
+// expose tips at all" (no field anywhere) — the sync warns on the latter.
+export function lightspeedOrderTipCents(order: { tips?: number | string; tip?: number | string; total_tips?: number | string; gratuity?: number | string; payments?: Array<{ amount?: number | string; tip?: number | string; tips?: number | string; method?: string }> }): { cents: number; sawField: boolean } {
+  const candidates = [order.tips, order.tip, order.total_tips, order.gratuity];
+  for (const candidate of candidates) {
+    if (candidate !== undefined && candidate !== null) {
+      return { cents: Math.max(0, moneyToCents(candidate)), sawField: true };
+    }
+  }
+  if (Array.isArray(order.payments)) {
+    let sawField = false;
+    let cents = 0;
+    for (const payment of order.payments) {
+      const value = payment?.tip ?? payment?.tips;
+      if (value !== undefined && value !== null) {
+        sawField = true;
+        cents += Math.max(0, moneyToCents(value));
+      }
+    }
+    if (sawField) return { cents, sawField };
+  }
+  return { cents: 0, sawField: false };
 }
 
 async function exchangeSquareToken(code: string, accountKey: SquareAccountKey) {
@@ -7550,12 +7584,14 @@ export const integrationService = {
         source: string;
         externalId: string;
         salesCents: number;
+        tipCents: number;
         orderCount: number;
         siteId: string;
         siteName: string;
       }>();
       let ordersRead = 0;
       let skippedOrderCount = 0;
+      let ordersWithTipField = 0;
 
       for (const site of sites) {
         const siteId = String(site.id);
@@ -7611,17 +7647,35 @@ export const integrationService = {
             source,
             externalId,
             salesCents: 0,
+            tipCents: 0,
             orderCount: 0,
             siteId,
             siteName
           };
           existing.salesCents += amountCents;
+          const tip = lightspeedOrderTipCents(order);
+          if (tip.sawField) ordersWithTipField += 1;
+          existing.tipCents += tip.cents;
           existing.orderCount += 1;
           grouped.set(key, existing);
         }
       }
 
       const rows = Array.from(grouped.values());
+      if (ordersRead > skippedOrderCount && ordersWithTipField === 0) {
+        warnings.push(
+          'No Lightspeed order in this window carried a tips field — if staff record card tips in Lightspeed, its API may not expose them; tell Tim to check one order in Back Office against this sync.'
+        );
+      }
+      const tipRows = rows.map((row) => ({
+        venue: row.venue,
+        serviceDate: row.serviceDate,
+        amountCents: row.tipCents,
+        source: 'lightspeed',
+        externalId: row.externalId,
+        importKey: `lightspeed:${row.venue}:${row.externalId}`,
+        notes: `Lightspeed ${row.siteName}: card tips from ${row.orderCount} orders.`
+      }));
       const connectionId = conn.id;
       await prisma.$transaction(async (tx) => {
         for (const row of rows) {
@@ -7651,6 +7705,24 @@ export const integrationService = {
           });
         }
 
+        for (const tipRow of tipRows) {
+          if (tipRow.amountCents > 0) {
+            await tx.staffTipCardEntry.upsert({
+              where: { importKey: tipRow.importKey },
+              create: tipRow,
+              update: {
+                venue: tipRow.venue,
+                serviceDate: tipRow.serviceDate,
+                amountCents: tipRow.amountCents,
+                externalId: tipRow.externalId,
+                notes: tipRow.notes
+              }
+            });
+          } else {
+            await tx.staffTipCardEntry.deleteMany({ where: { importKey: tipRow.importKey } });
+          }
+        }
+
         await tx.integrationConnection.update({
           where: { id: connectionId },
           data: {
@@ -7677,14 +7749,17 @@ export const integrationService = {
         provider: 'LIGHTSPEED',
         connectionId,
         eventType: 'SCHEDULED_LIGHTSPEED_SALES_IMPORTED',
-        summary: `Lightspeed sales sync finished: ${rows.length} day-rows from ${ordersRead} orders across ${sites.length} sites.`,
+        summary: `Lightspeed sales sync finished: ${rows.length} day-rows from ${ordersRead} orders across ${sites.length} sites; card tips ${rows.reduce((sum, row) => sum + row.tipCents, 0)}c across ${ordersWithTipField} tipped orders.`,
         actor: integrationSchedulerActor,
         metadata: {
           lookbackDays,
           sitesRead: sites.length,
           ordersRead,
           skippedOrderCount,
-          salesRowsUpserted: rows.length
+          salesRowsUpserted: rows.length,
+          ordersWithTipField,
+          tipRowsUpserted: tipRows.filter((row) => row.amountCents > 0).length,
+          totalTipsCents: rows.reduce((sum, row) => sum + row.tipCents, 0)
         }
       });
 
@@ -7697,12 +7772,16 @@ export const integrationService = {
         skippedOrderCount,
         salesRowsUpserted: rows.length,
         totalSalesCents: rows.reduce((sum, row) => sum + row.salesCents, 0),
+        ordersWithTipField,
+        tipRowsUpserted: tipRows.filter((row) => row.amountCents > 0).length,
+        totalTipsCents: rows.reduce((sum, row) => sum + row.tipCents, 0),
         rows: rows.map((row) => ({
           venue: row.venue,
           serviceDate: row.serviceDateKey,
           source: row.source,
           externalId: row.externalId,
           salesCents: row.salesCents,
+          tipCents: row.tipCents,
           orderCount: row.orderCount,
           siteId: row.siteId,
           siteName: row.siteName
