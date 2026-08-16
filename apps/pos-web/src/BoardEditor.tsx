@@ -91,12 +91,22 @@ export function BoardEditor({
   const pins = home.pins;
   const tabsConfig: TabsConfig = home.categories ?? { order: [], hidden: [], groups: [] };
   const iconOverrides = tabsConfig.icons ?? {};
-  function setIcon(name: string, key: string | null) {
+  function setIcon(token: string, key: string | null) {
+    // Overrides are keyed by PLAIN name — a group's mark is looked up by its
+    // name everywhere, so the 'g:' token must never be the storage key. The
+    // token key is also deleted to clean up boards saved before this fix.
+    const name = token.startsWith('g:') ? token.slice(2) : token;
     const icons = { ...iconOverrides };
+    delete icons[token];
     // null = back to the automatic match; '' = deliberately no mark.
     if (key === null) delete icons[name];
     else icons[name] = key;
     commitTabs({ ...tabsConfig, icons });
+  }
+
+  function iconOverrideFor(token: string): string | undefined {
+    const name = token.startsWith('g:') ? token.slice(2) : token;
+    return iconOverrides[name] ?? iconOverrides[token];
   }
 
   const allItems = useMemo(() => menu.flatMap((category) => category.items), [menu]);
@@ -947,7 +957,7 @@ export function BoardEditor({
                           <div className="pos-be-markpick">
                             <button
                               type="button"
-                              className={!(token in iconOverrides) ? 'is-on' : ''}
+                              className={iconOverrideFor(token) === undefined ? 'is-on' : ''}
                               title="Match it automatically"
                               onClick={() => setIcon(token, null)}
                             >
@@ -955,7 +965,7 @@ export function BoardEditor({
                             </button>
                             <button
                               type="button"
-                              className={iconOverrides[token] === '' ? 'is-on' : ''}
+                              className={iconOverrideFor(token) === '' ? 'is-on' : ''}
                               title="No mark on this one"
                               onClick={() => setIcon(token, '')}
                             >
@@ -965,7 +975,7 @@ export function BoardEditor({
                               <button
                                 key={key}
                                 type="button"
-                                className={iconOverrides[token] === key ? 'is-on' : ''}
+                                className={iconOverrideFor(token) === key ? 'is-on' : ''}
                                 title={key}
                                 onClick={() => setIcon(token, key)}
                                 dangerouslySetInnerHTML={{ __html: iconSvg(key, iconStyle === 'off' ? 'line' : iconStyle) }}
