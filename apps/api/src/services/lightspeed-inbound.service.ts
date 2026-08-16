@@ -175,6 +175,40 @@ function parseDaySummaries(csv: string): DaySummaryRow[] {
   return Array.from(out.values());
 }
 
+// ── Tips columns, wherever they appear ──────────────────────────────────────
+// Plan B for tip pooling while the Lightspeed API stays a paid add-on: any
+// scheduled report whose CSV carries a tips/gratuity column feeds the same
+// StaffTipCardEntry rows the Square import writes. Column names are matched
+// loosely (Looker prefixes view names), the date carries forward across
+// Looker's split date/value rows, and rate/percentage columns are ignored.
+type EmailTipsRow = { venueRaw: string | null; dateKey: string | null; tipCents: number };
+
+export function parseTipsFromCsv(csv: string): { rows: EmailTipsRow[]; sawTipsColumn: boolean } {
+  const objects = csvObjects(csv);
+  if (objects.length === 0) return { rows: [], sawTipsColumn: false };
+  const keys = Object.keys(objects[0] ?? {});
+  const tipKeys = keys.filter((key) => /(^|_)tips?($|_)|gratuity/.test(key) && !/rate|percent/.test(key));
+  if (tipKeys.length === 0) return { rows: [], sawTipsColumn: false };
+  // One column only — summing "total_tips" and "card_tips" together would
+  // double-count, so the most total-looking column wins.
+  const tipKey = tipKeys.find((key) => /total/.test(key)) ?? tipKeys[0]!;
+  let carriedDate: string | null = null;
+  const rows: EmailTipsRow[] = [];
+  for (const row of objects) {
+    const dateRaw = pick(row, ['sales_data_sale_closed_date', 'sale_closed_date', 'business_date', 'trading_date', 'service_date', 'date', 'day']);
+    const dateKey = dateRaw ? parseDateToken(dateRaw) : null;
+    if (dateKey) carriedDate = dateKey;
+    const cents = moneyCents(row[tipKey] ?? null);
+    if (cents === null) continue;
+    rows.push({
+      venueRaw: pick(row, ['site', 'site_name', 'venue', 'venue_name', 'location', 'location_name']),
+      dateKey: dateKey ?? carriedDate,
+      tipCents: Math.max(0, cents)
+    });
+  }
+  return { rows, sawTipsColumn: true };
+}
+
 // Yesterday's date key in Sydney — a scheduled daily report covers the prior
 // trading day, so rows without their own date column land there.
 function yesterdaySydneyKey(): string {
@@ -225,6 +259,8 @@ export type LightspeedInboundResult = {
   itemRowsUpserted?: number;
   dayTotalsUpserted?: number;
   dayTotalsSkipped?: number;
+  tipDaysUpserted?: number;
+  tipCents?: number;
   warnings?: string[];
 };
 
@@ -438,6 +474,64 @@ export const lightspeedInboundService = {
       }
     }
 
+    // ── Tips → StaffTipCardEntry ───────────────────────────────────────────
+    // Summed per venue per day; today is skipped (the day isn't over), $0
+    // days are skipped, and a day the API sync (source 'lightspeed') already
+    // wrote is left alone so the two feeds can never double-count.
+    let tipDaysUpserted = 0;
+    let tipCentsImported = 0;
+    let sawTipsColumn = false;
+    const tipDays = new Map<string, { venue: string; dateKey: string; cents: number; rows: number }>();
+    for (const csv of csvTexts) {
+      const parsedTips = parseTipsFromCsv(csv);
+      if (!parsedTips.sawTipsColumn) continue;
+      sawTipsColumn = true;
+      for (const tipRow of parsedTips.rows) {
+        const venue = mapVenue(tipRow.venueRaw) ?? fallbackVenue;
+        const dateKey = tipRow.dateKey ?? fallbackDateKey;
+        if (dateKey >= todayKey) {
+          warnings.push(`Tips row for ${dateKey} skipped — the day isn't over yet. Set the report's date filter to "Yesterday".`);
+          continue;
+        }
+        const key = `${venue}|${dateKey}`;
+        const existing = tipDays.get(key) ?? { venue, dateKey, cents: 0, rows: 0 };
+        existing.cents += tipRow.tipCents;
+        existing.rows += 1;
+        tipDays.set(key, existing);
+      }
+    }
+    for (const tipDay of tipDays.values()) {
+      if (tipDay.cents <= 0) continue;
+      const serviceDate = new Date(`${tipDay.dateKey}T00:00:00Z`);
+      const apiRow = await prisma.staffTipCardEntry.findFirst({
+        where: { venue: tipDay.venue, serviceDate, source: 'lightspeed' },
+        select: { id: true }
+      });
+      if (apiRow) continue;
+      const importKey = `lightspeed-email:${tipDay.venue}:${tipDay.dateKey}`;
+      await prisma.staffTipCardEntry.upsert({
+        where: { importKey },
+        create: {
+          venue: tipDay.venue,
+          serviceDate,
+          amountCents: tipDay.cents,
+          source: 'lightspeed-email',
+          externalId: importKey,
+          importKey,
+          notes: `Card tips from emailed Lightspeed report (${tipDay.rows} rows).`
+        },
+        update: {
+          amountCents: tipDay.cents,
+          notes: `Card tips from emailed Lightspeed report (${tipDay.rows} rows).`
+        }
+      });
+      tipDaysUpserted += 1;
+      tipCentsImported += tipDay.cents;
+    }
+    if (sawTipsColumn && tipDays.size > 0 && tipCentsImported === 0 && tipDaysUpserted === 0) {
+      warnings.push('A tips column was found but every usable day summed to zero.');
+    }
+
     const source = 'lightspeed-item:email';
     const rows = Array.from(grouped.values());
     const UPSERT_BATCH_SIZE = 50;
@@ -529,6 +623,8 @@ export const lightspeedInboundService = {
           itemRowsUpserted: rows.length,
           dayTotalsUpserted,
           dayTotalsSkipped,
+          tipDaysUpserted,
+          tipCents: tipCentsImported,
           warnings: warnings.slice(0, 25)
         } as Prisma.InputJsonObject
       }
@@ -542,6 +638,8 @@ export const lightspeedInboundService = {
       itemRowsUpserted: rows.length,
       dayTotalsUpserted,
       dayTotalsSkipped,
+      tipDaysUpserted,
+      tipCents: tipCentsImported,
       warnings
     };
   }
