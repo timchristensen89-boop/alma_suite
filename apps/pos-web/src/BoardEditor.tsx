@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  BRIGHT_PALETTE,
+  HUE_NAMES,
   HOME_TAB,
   HUE_DOTS,
   MGMT_KEYS,
@@ -53,6 +53,15 @@ const SIZES: Array<{ key: undefined | 'w' | 'b'; label: string; hint: string }> 
   { key: 'b', label: 'Big', hint: '4 slots' }
 ];
 
+const HUE_LABELS: Record<string, string> = {
+  terra: 'Terracotta',
+  amber: 'Amber',
+  moss: 'Moss green',
+  slate: 'Slate blue',
+  shell: 'Shell pink',
+  cocoa: 'Cocoa'
+};
+
 const LABEL_STYLES: Array<{ key: undefined | 'sh' | 'hs' | 'big'; tag: string; label: string }> = [
   { key: undefined, tag: 'Aa', label: 'Standard' },
   { key: 'sh', tag: 'AB', label: 'Short' },
@@ -77,7 +86,7 @@ export function BoardEditor({
   const [tab, setTab] = useState<'board' | 'nav'>('board');
   const [selected, setSelected] = useState<number | null>(null);
   const [page, setPage] = useState(0);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(true);
   const [addSearch, setAddSearch] = useState('');
   const [folderSearch, setFolderSearch] = useState('');
   const [navSelected, setNavSelected] = useState<string | null>(null);
@@ -377,75 +386,106 @@ export function BoardEditor({
                 <div className="pos-be-addpanel">
                   <input
                     className="pos-be-search"
-                    placeholder="Search the menu…"
+                    placeholder="Search categories and dishes…"
                     value={addSearch}
                     onChange={(event) => setAddSearch(event.currentTarget.value)}
                   />
-                  {addSearch.trim() ? (
-                    <div className="pos-be-chips">
-                      {allItems
-                        .filter((item) => !item.variantOf)
-                        .filter((item) => item.title.toLowerCase().includes(addSearch.trim().toLowerCase()))
-                        .filter((item) => !pinnedIds.has(item.recipeId))
-                        .slice(0, 30)
-                        .map((item) => (
-                          <button key={item.recipeId} type="button" onClick={() => addPin({ t: 'i', id: item.recipeId })}>
-                            ＋ {item.title}
-                          </button>
-                        ))}
-                    </div>
-                  ) : (
-                    <>
-                      <p className="pos-be-hint">Best sellers here</p>
-                      <div className="pos-be-chips">
-                        {topSellers
-                          .filter((recipeId) => !pinnedIds.has(recipeId))
+                  {(() => {
+                    const term = addSearch.trim().toLowerCase();
+                    // Every category, always — one already on the board says
+                    // so and jumps to its tile, instead of silently vanishing
+                    // from the list (which read as "you can't add Tacos").
+                    const categories = menu.filter((category) => !term || category.name.toLowerCase().includes(term));
+                    const dishes = (term
+                      ? allItems
+                          .filter((item) => !item.variantOf)
+                          .filter((item) => item.title.toLowerCase().includes(term))
+                          .slice(0, 20)
+                      : topSellers
                           .map((recipeId) => itemById.get(recipeId))
                           .filter((item): item is MenuItem => Boolean(item))
-                          .slice(0, 12)
-                          .map((item) => (
-                            <button key={item.recipeId} type="button" onClick={() => addPin({ t: 'i', id: item.recipeId })}>
-                              ＋ {item.title}
-                            </button>
+                          .slice(0, 8)
+                    ).filter((item) => !pinnedIds.has(item.recipeId));
+                    return (
+                      <>
+                        <p className="pos-be-hint">Whole categories — one tap puts it on Home as a folder</p>
+                        <ul className="pos-be-addrows">
+                          {categories.map((category) => {
+                            const existingAt = pins.findIndex((pin) => pin.t === 'f' && pin.name === category.name);
+                            return (
+                              <li key={category.name}>
+                                <Mark name={category.name} folder />
+                                <span className="pos-be-addname">
+                                  {category.name}
+                                  <em>{category.items.length} items</em>
+                                </span>
+                                {existingAt >= 0 ? (
+                                  <button type="button" className="pos-be-onboard" onClick={() => setSelected(existingAt)}>
+                                    On the board ✓
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="pos-be-addbtn"
+                                    onClick={() =>
+                                      addPin({
+                                        t: 'f',
+                                        name: category.name,
+                                        items: category.items.filter((item) => !item.variantOf).map((item) => item.recipeId).slice(0, 40)
+                                      })
+                                    }
+                                  >
+                                    ＋ Add
+                                  </button>
+                                )}
+                              </li>
+                            );
+                          })}
+                          {categories.length === 0 ? <li className="pos-be-empty">No category matches that.</li> : null}
+                        </ul>
+                        <p className="pos-be-hint">{term ? 'Single dishes' : 'Best sellers — single dish tiles'}</p>
+                        <ul className="pos-be-addrows">
+                          {dishes.map((item) => (
+                            <li key={item.recipeId}>
+                              <span className="pos-be-addname">
+                                {item.title}
+                                <em>{money(item.priceCents)}</em>
+                              </span>
+                              <button type="button" className="pos-be-addbtn" onClick={() => addPin({ t: 'i', id: item.recipeId })}>
+                                ＋ Add
+                              </button>
+                            </li>
                           ))}
-                        {topSellers.length === 0 ? <span className="pos-be-hint">No sales history yet.</span> : null}
-                      </div>
-                    </>
-                  )}
-                  <p className="pos-be-hint">Folders</p>
-                  <div className="pos-be-chips">
-                    <button type="button" onClick={() => addPin({ t: 'f', name: 'New folder', items: [] })}>
-                      ＋ Empty folder
-                    </button>
-                    {menu
-                      .filter((category) => !pins.some((pin) => pin.t === 'f' && pin.name === category.name))
-                      .map((category) => (
-                        <button
-                          key={category.name}
-                          type="button"
-                          onClick={() =>
-                            addPin({
-                              t: 'f',
-                              name: category.name,
-                              items: category.items.filter((item) => !item.variantOf).map((item) => item.recipeId).slice(0, 40)
-                            })
-                          }
-                        >
-                          📁 {category.name} ({category.items.length})
-                        </button>
-                      ))}
-                  </div>
-                  <p className="pos-be-hint">Management</p>
-                  <div className="pos-be-chips">
-                    {MGMT_KEYS.filter((key) => !pins.some((pin) => pin.t === 'm' && pin.key === key)).map((key) => (
-                      <button key={key} type="button" onClick={() => addPin({ t: 'm', key })}>
-                        ⚙ {MGMT_LABELS[key]}
-                      </button>
-                    ))}
-                    {MGMT_KEYS.every((key) => pins.some((pin) => pin.t === 'm' && pin.key === key)) ? (
-                      <span className="pos-be-hint">All on the board.</span>
-                    ) : null}
-                  </div>
+                          {dishes.length === 0 ? (
+                            <li className="pos-be-empty">{term ? 'No dish matches that.' : 'No sales history yet — search to add dishes.'}</li>
+                          ) : null}
+                        </ul>
+                        <p className="pos-be-hint">More</p>
+                        <ul className="pos-be-addrows">
+                          <li>
+                            <span className="pos-be-addname">
+                              Empty folder
+                              <em>name it, then drag dishes in</em>
+                            </span>
+                            <button type="button" className="pos-be-addbtn" onClick={() => addPin({ t: 'f', name: 'New folder', items: [] })}>
+                              ＋ Add
+                            </button>
+                          </li>
+                          {MGMT_KEYS.filter((key) => !pins.some((pin) => pin.t === 'm' && pin.key === key)).map((key) => (
+                            <li key={key}>
+                              <span className="pos-be-addname">
+                                {MGMT_LABELS[key]}
+                                <em>management tile</em>
+                              </span>
+                              <button type="button" className="pos-be-addbtn" onClick={() => addPin({ t: 'm', key })}>
+                                ＋ Add
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    );
+                  })()}
                 </div>
               ) : null}
 
@@ -654,19 +694,27 @@ export function BoardEditor({
 
                     <div className="pos-be-field">
                       <span>Colour</span>
-                      <div className="pos-be-swatches">
-                        {BRIGHT_PALETTE.map((colour) => (
-                          <button
-                            key={colour || 'none'}
-                            type="button"
-                            className={(selectedPin.c ?? '') === colour ? 'is-on' : ''}
-                            style={colour ? { background: HUE_DOTS[colour] ?? colour } : undefined}
-                            title={colour || 'No colour'}
-                            onClick={() => patchPin(selected!, { c: colour || undefined })}
-                          >
-                            {colour ? '' : '∅'}
-                          </button>
-                        ))}
+                      <div className="pos-be-colour">
+                        <i
+                          className="pos-be-colourdot"
+                          style={selectedPin.c ? { background: HUE_DOTS[selectedPin.c] ?? selectedPin.c } : undefined}
+                        />
+                        <select
+                          className="pos-be-select"
+                          value={HUE_NAMES.includes(selectedPin.c ?? '') ? selectedPin.c! : selectedPin.c ? '__custom' : ''}
+                          onChange={(event) => {
+                            const value = event.currentTarget.value;
+                            if (value !== '__custom') patchPin(selected!, { c: value || undefined });
+                          }}
+                        >
+                          <option value="">No colour</option>
+                          {HUE_NAMES.map((hue) => (
+                            <option key={hue} value={hue}>
+                              {HUE_LABELS[hue] ?? hue}
+                            </option>
+                          ))}
+                          {selectedPin.c && !HUE_NAMES.includes(selectedPin.c) ? <option value="__custom">Custom colour</option> : null}
+                        </select>
                       </div>
                     </div>
 

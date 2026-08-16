@@ -1,6 +1,7 @@
 import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { loadStripeTerminal, type Terminal, type Reader } from '@stripe/terminal-js';
-import { api, clearApiTokens, consumeSuiteHandoffToken, messageForError, setApiAuthToken, setApiPinToken } from './api';
+import { api, clearApiTokens, consumeSuiteHandoffToken, messageForError, openSuiteApp, setApiAuthToken, setApiPinToken } from './api';
+import { POS_SURFACES, SUITE_APP_LINKS } from './suiteApps';
 // Lazy: the board editor is a management surface a till only opens to
 // rearrange tiles — it has no business in the register's startup chunk.
 const BoardEditor = lazy(() => import('./BoardEditor').then((m) => ({ default: m.BoardEditor })));
@@ -834,6 +835,10 @@ export function App() {
     return () => window.removeEventListener('alma-native-ready', onReady);
   }, []);
   const [lockScreen, setLockScreen] = useState(false);
+  // The suite app switcher: which apps a till can hop to, session carried
+  // across by a one-time handoff token.
+  const [appsOpen, setAppsOpen] = useState(false);
+  const [appsBusy, setAppsBusy] = useState<string | null>(null);
   const [lockPin, setLockPin] = useState('');
   const [switchSheet, setSwitchSheet] = useState<null | { pin: string }>(null);
   const [noteSheet, setNoteSheet] = useState<null | { value: string }>(null);
@@ -2603,6 +2608,16 @@ export function App() {
           <PosSearchBox onTerm={setSearchTerm} />
         ) : null}
         <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          className="pos-theme-btn"
+          title="Other ALMA apps"
+          onClick={() => setAppsOpen(true)}
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+            {[5, 12, 19].flatMap((y) => [5, 12, 19].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="2.1" />))}
+          </svg>
+        </button>
         <button
           type="button"
           className="pos-theme-btn"
@@ -4850,6 +4865,50 @@ export function App() {
               })}
             </div>
             <button type="button" className="pos-ghost pos-modal-close" onClick={() => setOpenFolder(null)}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {appsOpen ? (
+        <div className="pos-modal" role="dialog" onClick={() => setAppsOpen(false)}>
+          <div className="pos-modal-panel" onClick={(event) => event.stopPropagation()}>
+            <h2>ALMA apps</h2>
+            <p className="pos-apps-group">This register</p>
+            <div className="pos-apps-list">
+              {POS_SURFACES.map((surface) => (
+                <button
+                  key={surface.id}
+                  type="button"
+                  onClick={() => {
+                    // main.tsx reloads on hashchange, so this IS the navigation.
+                    window.location.hash = surface.hash;
+                  }}
+                >
+                  <strong>{surface.label}</strong>
+                  <small>{surface.hint}</small>
+                </button>
+              ))}
+            </div>
+            <p className="pos-apps-group">The suite</p>
+            <div className="pos-apps-list">
+              {SUITE_APP_LINKS.map((app) => (
+                <button
+                  key={app.id}
+                  type="button"
+                  disabled={appsBusy !== null}
+                  onClick={() => {
+                    setAppsBusy(app.id);
+                    void openSuiteApp(app.href).finally(() => setAppsBusy(null));
+                  }}
+                >
+                  <strong>{app.label}{appsBusy === app.id ? ' …' : ''}</strong>
+                  <small>{app.hint}</small>
+                </button>
+              ))}
+            </div>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setAppsOpen(false)}>
               Close
             </button>
           </div>
