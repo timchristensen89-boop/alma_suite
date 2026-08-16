@@ -179,41 +179,83 @@ export type IconKey =
   // Bar
   | 'cocktail' | 'spirit' | 'shot' | 'saltlime' | 'wine' | 'wineLarge' | 'wineSmall'
   | 'beer' | 'soft' | 'coffee'
+  | 'flute' | 'rocks' | 'highball' | 'pitcher' | 'tiki' | 'bottle' | 'can'
+  | 'teapot' | 'blender' | 'frozen'
   // Kitchen
   | 'taco' | 'burrito' | 'plate' | 'fish' | 'meat' | 'salad' | 'dessert'
   | 'side' | 'setmenu' | 'dip' | 'bread' | 'cheese' | 'pizza' | 'pasta'
   | 'burger' | 'egg' | 'snack'
+  | 'soup' | 'noodles' | 'sandwich' | 'skewer' | 'prawn' | 'oyster'
+  | 'empanada' | 'nachos' | 'molcajete' | 'churros' | 'icecream' | 'cakeslice'
+  | 'pancakes' | 'donut'
+  // Fresh
+  | 'watermelon' | 'pineapple' | 'coconut' | 'leaf'
   // Mexico
   | 'sombrero' | 'cactus' | 'chilli' | 'agave' | 'lime' | 'avocado' | 'corn'
   | 'skull' | 'maracas' | 'bunting'
-  // Structure
-  | 'kids' | 'star' | 'folder' | 'folderOpen';
+  | 'guitar' | 'luchador' | 'pyramid' | 'sun' | 'wave' | 'palm' | 'surfboard'
+  // Structure + service
+  | 'kids' | 'star' | 'folder' | 'folderOpen'
+  | 'gift' | 'takeaway' | 'clock' | 'flame' | 'crown' | 'heart' | 'sparkles' | 'tag';
 
 const ICON_RULES: Array<[RegExp, IconKey]> = [
-  [/margarita|cocktail|martini|negroni|spritz|aperol|daiquiri|mojito|paloma/i, 'cocktail'],
+  // The specific mark always outranks the family that would swallow it:
+  // "Frozen Margarita" is a frozen thing first and a margarita second,
+  // "Sparkling Rosé" pours into a flute, not a wine glass. Order is the
+  // whole game.
+  [/frozen|slush|blended/i, 'frozen'],
+  [/smoothie|milkshake|thickshake/i, 'blender'],
+  [/tiki|colada|mai tai|zombie|painkiller/i, 'tiki'],
+  [/spritz|highball|collins|\bmule\b|\bfizz\b/i, 'highball'],
+  [/old fashioned|on the rocks|\bneat\b/i, 'rocks'],
+  [/sangria|pitcher|\bjug\b|carafe/i, 'pitcher'],
+  [/margarita|cocktail|martini|negroni|aperol|daiquiri|mojito|paloma/i, 'cocktail'],
   [/\bshot\b|shooter|slammer/i, 'shot'],
   [/salt.*lime|lime.*salt|tequila set/i, 'saltlime'],
   [/whisk|gin\b|vodka|rum\b|tequila|mezcal|spirit|liqueur|amaro|brandy/i, 'spirit'],
-  [/wine|rosé|rose\b|chardonnay|pinot|riesling|sauv|shiraz|merlot|prosecco|champagne|sparkling|by the glass/i, 'wine'],
-  [/beer|lager|ale\b|xpa|ipa\b|pilsner|cider|tinnie|schooner/i, 'beer'],
+  [/sparkling|prosecco|champagne|bubbles|cava|p[eé]t.?nat/i, 'flute'],
+  [/bottle ?shop|full bottles|\bbottles?\b/i, 'bottle'],
+  [/wine|rosé|rose\b|chardonnay|pinot|riesling|sauv|shiraz|merlot|by the glass/i, 'wine'],
+  [/seltzer|\brtd\b|tinnies?|\bcans?\b/i, 'can'],
+  [/beer|lager|ale\b|xpa|ipa\b|pilsner|cider|schooner/i, 'beer'],
+  [/coconut/i, 'coconut'],
+  [/watermelon|sand[ií]a/i, 'watermelon'],
+  [/pineapple|pi[nñ]a\b/i, 'pineapple'],
   [/non.?alcohol|soft drink|juice|soda|mocktail|lemonade|water/i, 'soft'],
-  [/coffee|espresso|latte|cappucc|flat white|tea\b/i, 'coffee'],
+  [/\btea\b|chai|matcha/i, 'teapot'],
+  [/coffee|espresso|latte|cappucc|flat white/i, 'coffee'],
   [/burrito|chimichanga/i, 'burrito'],
-  [/taco|tostada|quesadilla|nacho|tortilla/i, 'taco'],
-  [/oyster|fish|seafood|prawn|kingfish|ceviche|squid|octopus|scallop/i, 'fish'],
+  [/empanada|pastie|pasty/i, 'empanada'],
+  [/nachos?|totopos|corn chips/i, 'nachos'],
+  [/taco|tostada|quesadilla|tortilla/i, 'taco'],
+  [/oysters?\b/i, 'oyster'],
+  [/prawns?|shrimp/i, 'prawn'],
+  [/fish|seafood|kingfish|ceviche|squid|octopus|scallop/i, 'fish'],
+  [/skewer|kebab|satay|anticucho|espetada/i, 'skewer'],
   [/steak|beef|lamb|pork|chicken|carnitas|birria|barbacoa|meat|brisket|rib\b/i, 'meat'],
   [/guac|avocado/i, 'avocado'],
   [/elote|corn|esquites/i, 'corn'],
+  [/spicy|picante|diablo|fuego|inferno/i, 'flame'],
   [/chilli|chili|jalapeno|jalapeño|habanero|chipotle|hot sauce/i, 'chilli'],
   [/lime|citrus|lemon/i, 'lime'],
   [/agave/i, 'agave'],
   [/cactus|nopal/i, 'cactus'],
+  [/vegan|vegetarian|plant.?based|veggie/i, 'leaf'],
   [/salad|veg|greens|slaw|cauliflower/i, 'salad'],
-  [/dessert|churro|flan|ice cream|gelato|sweet|cake|pudding/i, 'dessert'],
+  [/soup|broth|pozole|caldo|laksa/i, 'soup'],
+  [/noodle|ramen|udon|soba|chow mein/i, 'noodles'],
+  [/ice ?cream|gelato|soft serve|sundae/i, 'icecream'],
+  [/churros?/i, 'churros'],
+  [/pancake|hotcake|waffle|french toast/i, 'pancakes'],
+  [/donut|doughnut|bu[nñ]uelo/i, 'donut'],
+  [/cakes?\b|cheesecake|tres leches/i, 'cakeslice'],
+  [/dessert|flan|sweet|pudding/i, 'dessert'],
   [/kids?\b|child/i, 'kids'],
   [/side|fries|chips|beans|rice/i, 'side'],
   [/set menu|banquet|feed me|share|degustation/i, 'setmenu'],
+  [/molcajete/i, 'molcajete'],
   [/dip|hummus|salsa/i, 'dip'],
+  [/sandwich|toastie|panini|baguette|sanga/i, 'sandwich'],
   [/bread|bakery|sourdough|bun\b/i, 'bread'],
   [/cheese|burrata|halloumi|queso/i, 'cheese'],
   [/pizza/i, 'pizza'],
@@ -222,18 +264,38 @@ const ICON_RULES: Array<[RegExp, IconKey]> = [
   [/breakfast|brunch|egg/i, 'egg'],
   [/snack|nuts|olives|bar snack/i, 'snack'],
   [/plate|main|dish|banquet plate/i, 'plate'],
-  [/fiesta|party|celebration/i, 'bunting'],
+  [/pi[nñ]ata|fiesta|party|celebration/i, 'bunting'],
   [/day of the dead|calavera|muerto/i, 'skull'],
+  [/mariachi|guitar|live music|\bband\b/i, 'guitar'],
+  [/lucha|wrestl/i, 'luchador'],
+  [/pyramid|aztec|mayan?\b/i, 'pyramid'],
+  [/\bsun\b|sunshine|sunset/i, 'sun'],
+  [/surfboards?\b/i, 'surfboard'],
+  [/waves?\b|swell\b/i, 'wave'],
+  [/palm|tropical|beach|island/i, 'palm'],
+  [/gift|voucher/i, 'gift'],
+  [/take.?away|to.?go\b/i, 'takeaway'],
+  [/happy hour|aperitivo/i, 'clock'],
+  [/premium|top shelf|reserva|reserve/i, 'crown'],
+  [/favourite|favorite|popular|best.?seller/i, 'heart'],
+  [/\bnew\b|just in|limited/i, 'sparkles'],
+  [/deals?\b|promos?\b|discounts?\b|offers?\b/i, 'tag'],
   [/special/i, 'star']
 ];
 
 const iconCache = new Map<string, IconKey | ''>();
 export const ICON_KEYS: IconKey[] = [
   'cocktail', 'spirit', 'shot', 'saltlime', 'wine', 'wineLarge', 'wineSmall', 'beer', 'soft', 'coffee',
+  'flute', 'rocks', 'highball', 'pitcher', 'tiki', 'bottle', 'can', 'teapot', 'blender', 'frozen',
   'taco', 'burrito', 'plate', 'fish', 'meat', 'salad', 'dessert', 'side', 'setmenu', 'dip',
   'bread', 'cheese', 'pizza', 'pasta', 'burger', 'egg', 'snack',
+  'soup', 'noodles', 'sandwich', 'skewer', 'prawn', 'oyster', 'empanada', 'nachos',
+  'molcajete', 'churros', 'icecream', 'cakeslice', 'pancakes', 'donut',
+  'watermelon', 'pineapple', 'coconut', 'leaf',
   'sombrero', 'cactus', 'chilli', 'agave', 'lime', 'avocado', 'corn', 'skull', 'maracas', 'bunting',
-  'kids', 'star', 'folder', 'folderOpen'
+  'guitar', 'luchador', 'pyramid', 'sun', 'wave', 'palm', 'surfboard',
+  'kids', 'star', 'folder', 'folderOpen',
+  'gift', 'takeaway', 'clock', 'flame', 'crown', 'heart', 'sparkles', 'tag'
 ];
 export function isIconKey(value: unknown): value is IconKey {
   return typeof value === 'string' && (ICON_KEYS as string[]).includes(value);
@@ -505,6 +567,263 @@ const ICON_ART: Record<IconKey, IconArt> = {
   folderOpen: {
     d: 'M3.4 18.4V7.2a1.6 1.6 0 0 1 1.6-1.6h4.2l2 2.4h7.4a1.6 1.6 0 0 1 1.6 1.6v1.2M3.4 18.4l2.6-6.4h15.4l-2.6 6.4a1.6 1.6 0 0 1-1.5 1H5a1.6 1.6 0 0 1-1.6-1Z',
     fill: 'M3.4 18.4l2.6-6.4h15.4l-2.6 6.4a1.6 1.6 0 0 1-1.5 1H5a1.6 1.6 0 0 1-1.6-1Z', c: SHELL
+  },
+
+  // ── Bar II ─────────────────────────────────────────────────────────────
+  // Tall narrow bowl on a stem — sparkling, prosecco, bubbles.
+  flute: {
+    d: 'M10 3.8h4v5.4a2 2 0 0 1-4 0ZM12 11.2v6.9M9.3 19.6c1.2-.6 4.2-.6 5.4 0',
+    detail: 'M11 5.6h.01M13 6.4h.01M12 7.8h.01',
+    fill: 'M10 3.8h4v5.4a2 2 0 0 1-4 0Z', c: AMBER
+  },
+  // Short tumbler, heavy base line, one big cube — the old fashioned pour.
+  rocks: {
+    d: 'M6.8 7h10.4l-.7 11.2a1.6 1.6 0 0 1-1.6 1.5H9.1a1.6 1.6 0 0 1-1.6-1.5ZM7.2 15h9.6',
+    detail: 'M9.9 11.2l2.1-1.8 2.1 1.8-2.1 1.8Z',
+    fill: 'M7.2 15h9.6l-.2 3.2a1.6 1.6 0 0 1-1.6 1.5H9.1a1.6 1.6 0 0 1-1.6-1.5Z', c: AMBER
+  },
+  // Tall slim glass with a straw — spritzes, mules, anything long.
+  highball: {
+    d: 'M8.6 5h6.8l-.5 13.6a1.5 1.5 0 0 1-1.5 1.4h-2.8a1.5 1.5 0 0 1-1.5-1.4ZM13.6 5.4 15.8 2.8',
+    detail: 'M9.1 8.6h5.8M10.8 11.6h.01M12.6 13.8h.01M11.4 16h.01',
+    fill: 'M9.1 8.6h5.8l-.4 10a1.5 1.5 0 0 1-1.5 1.4h-2.8a1.5 1.5 0 0 1-1.5-1.4Z', c: AMBER
+  },
+  // A carafe with a handle — sangria by the jug.
+  pitcher: {
+    d: 'M9.4 3.8h4.6v3.5a5.5 5.5 0 1 1-4.6.1ZM14 5.7h1.3a1.7 1.7 0 0 1 1.2 2.9',
+    detail: 'M7.4 13.3c2.8 1.4 6.4 1.4 9.2 0',
+    fill: 'M7.4 13.3c2.8 1.4 6.4 1.4 9.2 0a5.5 5.5 0 0 1-9.2 0Z', c: TERRA
+  },
+  // Carved mug with a face — coladas and the tropical list.
+  tiki: {
+    d: 'M8 4.6h8c.7 4.9.7 9.9 0 14.8H8c-.7-4.9-.7-9.9 0-14.8ZM9.6 10.6c.6-.8 1.6-.8 2.2 0M13 10.6c.6-.8 1.6-.8 2.2 0M9.4 14l1.3 1.1 1.3-1.1 1.3 1.1 1.3-1.1',
+    detail: 'M8.4 7.2h7.2M8.6 17.4h6.8',
+    fill: 'M8 4.6h8c.7 4.9.7 9.9 0 14.8H8c-.7-4.9-.7-9.9 0-14.8Z', c: COCOA
+  },
+  // Shouldered bottle with a label band — full bottles, the bottle shop.
+  bottle: {
+    d: 'M10.6 3.6h2.8v3.3c1.7.9 2.8 2.7 2.8 4.6v6.7a1.6 1.6 0 0 1-1.6 1.6H9.4a1.6 1.6 0 0 1-1.6-1.6v-6.7c0-1.9 1.1-3.7 2.8-4.6Z',
+    detail: 'M8.6 12.6h6.8M8.6 15.4h6.8',
+    fill: 'M8.6 12.6h6.8v2.8H8.6Z', c: DEEP
+  },
+  // The tinnie.
+  can: {
+    d: 'M8.2 6.6c2.5-.9 5.1-.9 7.6 0v11.6c-2.5.9-5.1.9-7.6 0ZM8.2 6.6c2.5.9 5.1.9 7.6 0',
+    detail: 'M10.5 4.8l3-.8M10.4 10.2v5.2M13.6 10.2v5.2',
+    fill: 'M8.2 6.6c2.5.9 5.1.9 7.6 0v11.6c-2.5.9-5.1.9-7.6 0Z', c: SLATE
+  },
+  // Pot, spout, lid knob — tea and chai.
+  teapot: {
+    d: 'M7 13a5 5 0 0 1 10 0v1.6A4.4 4.4 0 0 1 12.6 19h-1.2A4.4 4.4 0 0 1 7 14.6ZM7 13.8 4.4 11.4M17 13.2h.9a1.9 1.9 0 0 1 0 3.8h-1M12 8V6.2M10.4 6.2h3.2',
+    detail: 'M9.3 11.6c.6-1.3 2-2 3.4-1.7',
+    fill: 'M7 13a5 5 0 0 1 10 0v1.6A4.4 4.4 0 0 1 12.6 19h-1.2A4.4 4.4 0 0 1 7 14.6Z', c: MOSS
+  },
+  // Jar with a handle on a motor base — smoothies and shakes.
+  blender: {
+    d: 'M8.6 4.2h6l-.8 8.4H9.4ZM14.4 5.6h1.2a1.5 1.5 0 0 1 1.4 2l-.8 2.2M9.9 12.6h3.4l.3 2.5H9.6ZM7.7 15.1h7.8a1.3 1.3 0 0 1 1.3 1.3v1.7a1.3 1.3 0 0 1-1.3 1.3H7.7a1.3 1.3 0 0 1-1.3-1.3v-1.7a1.3 1.3 0 0 1 1.3-1.3Z',
+    detail: 'M9.1 7.2h5M9.5 17.5h.01M11.6 17.5h.01M13.7 17.5h.01',
+    fill: 'M9.1 7.2h5l-.5 5.4H9.6Z', c: TERRA
+  },
+  // Snowflake — the frozen margarita machine.
+  frozen: {
+    d: 'M12 4.2v15.6M5.3 8.1l13.4 7.8M18.7 8.1 5.3 15.9',
+    detail: 'M9.9 5.7 12 7.1l2.1-1.4M9.9 18.3 12 16.9l2.1 1.4M4.9 11l2.4.3.3-2.4M19.1 13l-2.4-.3-.3 2.4',
+    fill: '', c: SLATE
+  },
+
+  // ── Kitchen II ─────────────────────────────────────────────────────────
+  // Bowl with steam — the coffee curls, reused where they belong.
+  soup: {
+    d: 'M4.6 12.8h14.8a7.4 7.4 0 0 1-14.8 0ZM9.6 9.8c1-.9-.6-1.8.4-2.8M13.2 9.8c1-.9-.6-1.8.4-2.8',
+    detail: 'M7.5 15.2c2.7 1.3 6.3 1.3 9 0',
+    fill: 'M4.6 12.8h14.8a7.4 7.4 0 0 1-14.8 0Z', c: AMBER
+  },
+  // Bowl, chopsticks, strands mid-lift.
+  noodles: {
+    d: 'M4.6 13.2h14.8a7.4 7.4 0 0 1-14.8 0ZM9 10.6l7.4-7M11.3 11l6.5-7.6',
+    detail: 'M9.6 8.9v4.3M12 7.7v5.5M14.3 9.3v3.9',
+    fill: 'M4.6 13.2h14.8a7.4 7.4 0 0 1-14.8 0Z', c: AMBER
+  },
+  // Side view: bread slab, lettuce frill, bread slab.
+  sandwich: {
+    d: 'M4.6 10.6V9.2a1.5 1.5 0 0 1 1.5-1.5h11.8a1.5 1.5 0 0 1 1.5 1.5v1.4ZM4.4 12.9c1.3-1.2 2.5-1.2 3.8 0s2.5 1.2 3.8 0 2.5-1.2 3.8 0 2.5 1.2 3.8 0M4.6 15h14.8v1.2a1.5 1.5 0 0 1-1.5 1.5H6.1a1.5 1.5 0 0 1-1.5-1.5Z',
+    detail: 'M7.4 9.2h.01M10.6 9.2h.01M13.8 9.2h.01',
+    fill: 'M4.6 10.6V9.2a1.5 1.5 0 0 1 1.5-1.5h11.8a1.5 1.5 0 0 1 1.5 1.5v1.4ZM4.6 15h14.8v1.2a1.5 1.5 0 0 1-1.5 1.5H6.1a1.5 1.5 0 0 1-1.5-1.5Z', c: SHELL
+  },
+  // Two cubes on a stick.
+  skewer: {
+    d: 'M4.6 19.4 19.4 4.6M9.5 11.7l2.9 2.9-2.9 2.9-2.9-2.9ZM14.2 7l2.9 2.9-2.9 2.9-2.9-2.9Z',
+    detail: 'M8.4 14.6h2.2M13.1 9.9h2.2',
+    fill: 'M9.5 11.7l2.9 2.9-2.9 2.9-2.9-2.9ZM14.2 7l2.9 2.9-2.9 2.9-2.9-2.9Z', c: CLAY
+  },
+  // Curled body with its back segments, fan tail, antenna, eye.
+  prawn: {
+    d: 'M8 5.6A7.6 7.6 0 1 1 9.4 19 6.9 6.9 0 0 0 8 5.6ZM9.4 19l-3.4 1.3M9.4 19l-.9-3.4M8 5.6C6.5 4.9 5 4.8 3.6 5.2M14.6 6.7l.6 2.5M17.5 9.6l-1.7 1.9M18.3 13.4l-2.5-.1M10.6 7.6h.01',
+    detail: 'M16.6 16.4l1.9 1.1',
+    fill: 'M8 5.6A7.6 7.6 0 1 1 9.4 19 6.9 6.9 0 0 0 8 5.6Z', c: TERRA
+  },
+  // Fan shell, ridges to the hinge.
+  oyster: {
+    d: 'M12 19.6 4.9 12.5a8.3 8.3 0 0 1 14.2 0Z',
+    detail: 'M12 19.4 8.2 9.6M12 19.4V8.1M12 19.4l3.8-9.8',
+    fill: 'M12 19.6 4.9 12.5a8.3 8.3 0 0 1 14.2 0Z', c: SHELL
+  },
+  // Half-moon pastry, crimped edge.
+  empanada: {
+    d: 'M4.6 15.6a7.4 7.4 0 0 1 14.8 0ZM4.6 15.6h14.8M7.2 10.7l1.3 1.4M9.8 8.9l.9 1.7M12.8 8.3l.3 1.9M15.7 9.5l-.7 1.8M17.7 11.8l-1.5 1.2',
+    detail: 'M9.7 13.9h.01M12.3 12.9h.01M14.6 14.1h.01',
+    fill: 'M4.6 15.6a7.4 7.4 0 0 1 14.8 0Z', c: SHELL
+  },
+  // Chips poking out of the basket.
+  nachos: {
+    d: 'M5 13.6h14l-1 4.9a1.6 1.6 0 0 1-1.6 1.3H7.6A1.6 1.6 0 0 1 6 18.5ZM8 13.4l2.5-4.9 2 4.7M12.1 13.4l2.7-5.1 2.5 5',
+    detail: 'M6.3 15.9h11.4M10.4 10.9h.01M14.7 10.7h.01',
+    fill: 'M5 13.6h14l-1 4.9a1.6 1.6 0 0 1-1.6 1.3H7.6A1.6 1.6 0 0 1 6 18.5Z', c: AMBER
+  },
+  // Stone bowl on stub legs, pestle resting in — salsa central.
+  molcajete: {
+    d: 'M5.4 11.4h13.2a6.6 6.6 0 0 1-13.2 0ZM8.8 17.5l-.7 2.1M15.2 17.5l.7 2.1M13.8 10.9l2.7-4.8a1.35 1.35 0 0 1 2.35 1.35L16.6 11',
+    detail: 'M9.2 13.4h.01M11.8 14.4h.01M14.2 13.2h.01',
+    fill: 'M5.4 11.4h13.2a6.6 6.6 0 0 1-13.2 0Z', c: DEEP
+  },
+  // Three sticks standing in the cup, sugar ticks.
+  churros: {
+    d: 'M7 13.8h10l-.8 4.8a1.5 1.5 0 0 1-1.5 1.2H9.3a1.5 1.5 0 0 1-1.5-1.2ZM9.4 13.4 7.8 5.6M12 13.4V4.8M14.6 13.4l1.6-7.4',
+    detail: 'M7.3 8.4h2M11 7.2h2M14.6 8.8h2M7.5 16.2h9',
+    fill: 'M7 13.8h10l-.8 4.8a1.5 1.5 0 0 1-1.5 1.2H9.3a1.5 1.5 0 0 1-1.5-1.2Z', c: COCOA
+  },
+  // Scoop on a crosshatched cone.
+  icecream: {
+    d: 'M7.5 11.4a4.5 4.5 0 1 1 9 0ZM7.5 11.4h9L12 20.2Z',
+    detail: 'M9.6 13.6h4.8M10.8 16.2h2.4M10.2 6.9c.5-.5 1.2-.8 1.8-.8',
+    fill: 'M7.5 11.4a4.5 4.5 0 1 1 9 0Z', c: CREAM
+  },
+  // Wedge on its side, layers showing, cherry up top.
+  cakeslice: {
+    d: 'M4.8 17.4 18.6 6.9v9.1a1.4 1.4 0 0 1-1.4 1.4H4.8ZM15 4.6a1.1 1.1 0 1 1 2.2 0 1.1 1.1 0 0 1-2.2 0Z',
+    detail: 'M9.5 13.8h9.1M12.6 11.4h6',
+    fill: 'M4.8 17.4 18.6 6.9v9.1a1.4 1.4 0 0 1-1.4 1.4H4.8Z', c: SHELL
+  },
+  // The stack, butter on top.
+  pancakes: {
+    d: 'M5.6 8.8c0-1.5 2.9-2.7 6.4-2.7s6.4 1.2 6.4 2.7-2.9 2.7-6.4 2.7-6.4-1.2-6.4-2.7ZM5.6 8.8v3.4c0 1.5 2.9 2.7 6.4 2.7s6.4-1.2 6.4-2.7V8.8M5.6 12.2v3.4c0 1.5 2.9 2.7 6.4 2.7s6.4-1.2 6.4-2.7v-3.4',
+    detail: 'M10.6 7.7h2.8v1.5h-2.8Z',
+    fill: 'M5.6 8.8c0-1.5 2.9-2.7 6.4-2.7s6.4 1.2 6.4 2.7-2.9 2.7-6.4 2.7-6.4-1.2-6.4-2.7Z', c: AMBER
+  },
+  // Ring with sprinkles.
+  donut: {
+    d: 'M12 4.9a7.1 7.1 0 1 1 0 14.2 7.1 7.1 0 0 1 0-14.2ZM12 9.7a2.3 2.3 0 1 1 0 4.6 2.3 2.3 0 0 1 0-4.6Z',
+    detail: 'M8.3 8l1 1M15.7 8l-1 1M16.9 12h-1.5M8.6 12H7.1M9.3 15.6l1-1M14.7 15.6l-1-1',
+    fill: 'M12 4.9a7.1 7.1 0 1 1 0 14.2 7.1 7.1 0 0 1 0-14.2Z', c: SHELL
+  },
+
+  // ── Fresh ──────────────────────────────────────────────────────────────
+  // A slice, seeds in the flesh.
+  watermelon: {
+    d: 'M4.6 10.2h14.8a7.4 7.4 0 0 1-14.8 0ZM10.1 13h.01M13.9 13h.01',
+    detail: 'M6.5 10.2a5.5 5.5 0 0 0 11 0M12 14.9h.01',
+    fill: 'M6.5 10.2a5.5 5.5 0 0 0 11 0Z', c: TERRA
+  },
+  pineapple: {
+    d: 'M12 8.4c2.8 0 4.7 2.5 4.7 5.7S14.8 20 12 20s-4.7-2.7-4.7-5.9 1.9-5.7 4.7-5.7ZM12 8.2 9.8 4.4M12 8.2l.3-4.2M12 8.2l2.4-3.4',
+    detail: 'M8.5 10.8l6.6 6.6M15.5 10.8l-6.6 6.6M7.6 13.9l5 5M16.4 13.9l-5 5',
+    fill: 'M12 8.4c2.8 0 4.7 2.5 4.7 5.7S14.8 20 12 20s-4.7-2.7-4.7-5.9 1.9-5.7 4.7-5.7Z', c: AMBER
+  },
+  // The drinking kind: straw in, pores showing.
+  coconut: {
+    d: 'M12 5.4a7.2 7.2 0 1 1 0 14.4 7.2 7.2 0 0 1 0-14.4ZM13.8 7 15.9 3.2M15.9 3.2h1.9',
+    detail: 'M10 11h.01M14 11h.01M12 13.4h.01',
+    fill: 'M12 5.4a7.2 7.2 0 1 1 0 14.4 7.2 7.2 0 0 1 0-14.4Z', c: COCOA
+  },
+  // One leaf, midrib swept — vegan and vegetarian.
+  leaf: {
+    d: 'M6 18c0-7.4 4.6-12 12-12 0 7.4-4.6 12-12 12ZM6 18c2.2-4.8 5.4-8 9.6-9.6',
+    detail: 'M8.1 14.5c1.3.2 2.6.1 3.8-.4M10.7 11c1.1.3 2.2.3 3.3-.1',
+    fill: 'M6 18c0-7.4 4.6-12 12-12 0 7.4-4.6 12-12 12Z', c: MOSS
+  },
+
+  // ── Coast + fiesta II ──────────────────────────────────────────────────
+  // Two-lobe body, neck up to the right, sound hole.
+  guitar: {
+    d: 'M13.2 10.8 17.8 6.2M17 4.6l2.4 2.4M13.2 10.8a2.7 2.7 0 0 0-3.8.2c-.5.5-.8 1.2-.8 1.9-1.5.1-2.9.7-3.9 1.8a4.3 4.3 0 0 0 6.1 6.1c1.1-1 1.7-2.4 1.8-3.9.7 0 1.4-.3 1.9-.8a2.7 2.7 0 0 0 .2-3.8Z',
+    detail: 'M9.2 14.7a1.5 1.5 0 1 0 2.2 2.2 1.5 1.5 0 0 0-2.2-2.2Z',
+    fill: 'M13.2 10.8a2.7 2.7 0 0 0-3.8.2c-.5.5-.8 1.2-.8 1.9-1.5.1-2.9.7-3.9 1.8a4.3 4.3 0 0 0 6.1 6.1c1.1-1 1.7-2.4 1.8-3.9.7 0 1.4-.3 1.9-.8a2.7 2.7 0 0 0 .2-3.8Z', c: COCOA
+  },
+  // The mask: lens eyes, open mouth, a bolt down the forehead.
+  luchador: {
+    d: 'M12 4.4c3.5 0 5.9 2.7 5.9 6.2 0 3.7-2.3 8.6-5.9 8.6s-5.9-4.9-5.9-8.6c0-3.5 2.4-6.2 5.9-6.2ZM8.6 10.6c.7-.9 2.1-.9 2.8 0-.7.9-2.1.9-2.8 0ZM12.6 10.6c.7-.9 2.1-.9 2.8 0-.7.9-2.1.9-2.8 0ZM10.5 14.6h3v.6a1.5 1.5 0 0 1-3 0Z',
+    detail: 'M12.4 5l-1.1 2.2h1.6L11.6 9.6',
+    fill: 'M12 4.4c3.5 0 5.9 2.7 5.9 6.2 0 3.7-2.3 8.6-5.9 8.6s-5.9-4.9-5.9-8.6c0-3.5 2.4-6.2 5.9-6.2Z', c: CLAY
+  },
+  // Stepped temple, Chichén Itzá in six lines.
+  pyramid: {
+    d: 'M4.4 19.4h15.2M6.6 19.4 10.1 8.6h3.8l3.5 10.8M10.1 8.6V6.2h3.8v2.4',
+    detail: 'M8.1 15h7.8M9.1 11.9h5.8',
+    fill: 'M6.6 19.4 10.1 8.6h3.8l3.5 10.8Z', c: COCOA
+  },
+  sun: {
+    d: 'M12 8.3a3.7 3.7 0 1 1 0 7.4 3.7 3.7 0 0 1 0-7.4ZM12 3.8v1.9M12 18.3v1.9M3.8 12h1.9M18.3 12h1.9M6.2 6.2l1.3 1.3M16.5 16.5l1.3 1.3M17.8 6.2l-1.3 1.3M7.5 16.5l-1.3 1.3',
+    fill: 'M12 8.3a3.7 3.7 0 1 1 0 7.4 3.7 3.7 0 0 1 0-7.4Z', c: AMBER
+  },
+  wave: {
+    d: 'M4.2 8.4c2.6-1.8 5.2-1.8 7.8 0s5.2 1.8 7.8 0M4.2 12.9c2.6-1.8 5.2-1.8 7.8 0s5.2 1.8 7.8 0M4.2 17.4c2.6-1.8 5.2-1.8 7.8 0s5.2 1.8 7.8 0',
+    fill: '', c: SLATE
+  },
+  // Trunk off a little island, fronds drooping from the crown.
+  palm: {
+    d: 'M4.2 20.1c1.5-1.4 3.8-1.4 5.3 0M8.7 19.7c.9-4 2.5-7.2 4.6-10.3M13.3 9.4c-2.7-.9-5.6-.4-8 1.4M13.3 9.4c-2.6.4-4.8 1.8-6.3 4M13.3 9.4c-.2-2.8.9-5.2 3.1-6.9M13.3 9.4c2.8-.6 5.5 0 7.8 1.8M13.3 9.4c2.2.7 4 2.2 5.2 4.4',
+    detail: 'M12.1 11.2h.01M14.3 11.7h.01',
+    fill: '', c: MOSS
+  },
+  // Board on its tail, stringer down the middle — Avalon, after all.
+  surfboard: {
+    d: 'M12 3.6c2.9 2.4 4.5 5.9 4.5 9.4 0 2.9-1.6 5.6-4.5 7.4-2.9-1.8-4.5-4.5-4.5-7.4 0-3.5 1.6-7 4.5-9.4ZM12 7v10',
+    fill: 'M12 3.6c2.9 2.4 4.5 5.9 4.5 9.4 0 2.9-1.6 5.6-4.5 7.4-2.9-1.8-4.5-4.5-4.5-7.4 0-3.5 1.6-7 4.5-9.4Z', c: TERRA
+  },
+
+  // ── Service ────────────────────────────────────────────────────────────
+  // Box, lid, bow — the gift card tile.
+  gift: {
+    d: 'M5.4 11.2h13.2v7.2a1.7 1.7 0 0 1-1.7 1.7H7.1a1.7 1.7 0 0 1-1.7-1.7ZM4.6 7.9h14.8v3.3H4.6ZM12 7.9V20M12 7.9C10.4 6.7 8.7 5 9.5 3.9s2.5.1 2.5 4c0-3.9 1.7-5.1 2.5-4S13.6 6.7 12 7.9',
+    fill: 'M4.6 7.9h14.8v3.3H4.6ZM5.4 11.2h13.2v7.2a1.7 1.7 0 0 1-1.7 1.7H7.1a1.7 1.7 0 0 1-1.7-1.7Z', c: TERRA
+  },
+  // Paper bag, rope handle.
+  takeaway: {
+    d: 'M6.6 8.6h10.8l-.9 10a1.7 1.7 0 0 1-1.7 1.6H9.2a1.7 1.7 0 0 1-1.7-1.6ZM9.4 8.4V6.8a2.6 2.6 0 0 1 5.2 0v1.6',
+    detail: 'M7.1 11.4h9.8',
+    fill: 'M6.6 8.6h10.8l-.9 10a1.7 1.7 0 0 1-1.7 1.6H9.2a1.7 1.7 0 0 1-1.7-1.6Z', c: COCOA
+  },
+  // Five past five — happy hour.
+  clock: {
+    d: 'M12 4.8a7.2 7.2 0 1 1 0 14.4 7.2 7.2 0 0 1 0-14.4ZM12 8.2v4.2l2.9 1.7',
+    fill: 'M12 4.8a7.2 7.2 0 1 1 0 14.4 7.2 7.2 0 0 1 0-14.4Z', c: SLATE
+  },
+  // Fire, inner tongue on the fancier styles — the spicy list.
+  flame: {
+    d: 'M12 3.8c.4 2.3 1.5 4 3.2 5.7a7.5 7.5 0 0 1 2 5.1c0 3.2-2.3 5.6-5.2 5.6s-5.2-2.4-5.2-5.6c0-1.5.5-2.9 1.4-4 .5.9 1.1 1.5 1.9 1.9-.5-2.9.3-6 1.9-8.7Z',
+    detail: 'M12 12.2c1.2 1 1.8 2.1 1.8 3.3 0 1.3-.8 2.3-1.8 2.3s-1.8-1-1.8-2.3c0-1.2.6-2.3 1.8-3.3Z',
+    fill: 'M12 3.8c.4 2.3 1.5 4 3.2 5.7a7.5 7.5 0 0 1 2 5.1c0 3.2-2.3 5.6-5.2 5.6s-5.2-2.4-5.2-5.6c0-1.5.5-2.9 1.4-4 .5.9 1.1 1.5 1.9 1.9-.5-2.9.3-6 1.9-8.7Z', c: CLAY
+  },
+  // Top shelf.
+  crown: {
+    d: 'M5 8.2l3.3 3L12 6.4l3.7 4.8 3.3-3-1.3 8.3H6.3ZM6.3 16.5h11.4v2.1H6.3Z',
+    detail: 'M12 13.2h.01M8.9 13.9h.01M15.1 13.9h.01',
+    fill: 'M5 8.2l3.3 3L12 6.4l3.7 4.8 3.3-3-1.3 8.3H6.3Z', c: AMBER
+  },
+  // Favourites.
+  heart: {
+    d: 'M12 19.2c-5-3.6-7.8-6.6-7.8-9.8a4.2 4.2 0 0 1 7.8-2.1 4.2 4.2 0 0 1 7.8 2.1c0 3.2-2.8 6.2-7.8 9.8Z',
+    fill: 'M12 19.2c-5-3.6-7.8-6.6-7.8-9.8a4.2 4.2 0 0 1 7.8-2.1 4.2 4.2 0 0 1 7.8 2.1c0 3.2-2.8 6.2-7.8 9.8Z', c: TERRA
+  },
+  // New on the list.
+  sparkles: {
+    d: 'M10.4 4.6l1.5 4.1 4.1 1.5-4.1 1.5-1.5 4.1-1.5-4.1-4.1-1.5 4.1-1.5ZM17.2 13.6l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9Z',
+    fill: 'M10.4 4.6l1.5 4.1 4.1 1.5-4.1 1.5-1.5 4.1-1.5-4.1-4.1-1.5 4.1-1.5ZM17.2 13.6l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9Z', c: AMBER
+  },
+  // Deals and happy-hour prices.
+  tag: {
+    d: 'M4.8 6.5a1.7 1.7 0 0 1 1.7-1.7h5.2a1.9 1.9 0 0 1 1.3.6l6.4 6.4a1.9 1.9 0 0 1 0 2.7l-5.2 5.2a1.9 1.9 0 0 1-2.7 0L5.4 13.3a1.9 1.9 0 0 1-.6-1.3ZM7.8 8.6a1.2 1.2 0 1 1 2.4 0 1.2 1.2 0 0 1-2.4 0Z',
+    fill: 'M4.8 6.5a1.7 1.7 0 0 1 1.7-1.7h5.2a1.9 1.9 0 0 1 1.3.6l6.4 6.4a1.9 1.9 0 0 1 0 2.7l-5.2 5.2a1.9 1.9 0 0 1-2.7 0L5.4 13.3a1.9 1.9 0 0 1-.6-1.3Z', c: MOSS
   }
 };
 
