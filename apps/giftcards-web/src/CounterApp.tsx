@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, api } from './lib/api';
+import { ScanSheet } from './ScanSheet';
 
 /**
  * The counter screen — an iPad standing on the pass, used by whoever is on.
@@ -343,9 +344,10 @@ function BalancePanel() {
   const [card, setCard] = useState<Card | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
-  async function look() {
-    const value = code.trim().toUpperCase();
+  async function look(raw?: string) {
+    const value = (raw ?? code).trim().toUpperCase();
     if (!value) return;
     setBusy(true);
     setError(null);
@@ -363,7 +365,20 @@ function BalancePanel() {
 
   return (
     <main className="counter-body">
-      <p className="counter-kicker">Card number</p>
+      <button type="button" className="counter-primary counter-scanbtn" onClick={() => setScanning(true)}>
+        ▣ Scan the card
+      </button>
+      {scanning ? (
+        <ScanSheet
+          onCode={(scanned) => {
+            setScanning(false);
+            setCode(scanned);
+            void look(scanned);
+          }}
+          onClose={() => setScanning(false)}
+        />
+      ) : null}
+      <p className="counter-kicker">Or type the number</p>
       <label className="counter-field">
         <span className="sr-only">Card number</span>
         <input
@@ -418,12 +433,13 @@ function RedeemPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ took: number; left: number } | null>(null);
+  const [scanning, setScanning] = useState(false);
   const codeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { codeRef.current?.focus(); }, []);
 
-  async function lookup() {
-    const value = code.trim().toUpperCase();
+  async function lookup(raw?: string) {
+    const value = (raw ?? code).trim().toUpperCase();
     if (!value) return;
     setBusy(true);
     setError(null);
@@ -482,7 +498,12 @@ function RedeemPanel() {
 
   return (
     <main className="counter-body">
-      <p className="counter-kicker">Card number</p>
+      {/* Scanning is the fast path — the guest holds up their pass and the
+          code never gets typed. The keyboard stays for worn printed cards. */}
+      <button type="button" className="counter-primary counter-scanbtn" onClick={() => setScanning(true)}>
+        ▣ Scan the card
+      </button>
+      <p className="counter-kicker">Or type the number</p>
       <form
         className="counter-lookup"
         onSubmit={(event) => { event.preventDefault(); void lookup(); }}
@@ -499,6 +520,16 @@ function RedeemPanel() {
         />
         <button type="submit" disabled={busy || !code.trim()}>{busy ? '…' : 'Find'}</button>
       </form>
+      {scanning ? (
+        <ScanSheet
+          onCode={(scanned) => {
+            setScanning(false);
+            setCode(scanned);
+            void lookup(scanned);
+          }}
+          onClose={() => setScanning(false)}
+        />
+      ) : null}
 
       {error ? <p className="counter-error">{error}</p> : null}
 

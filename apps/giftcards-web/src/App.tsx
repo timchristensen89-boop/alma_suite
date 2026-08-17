@@ -1,6 +1,7 @@
 import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CardArtGallery } from './cardArt/Gallery';
 import { CounterApp } from './CounterApp';
+import { ScanSheet } from './ScanSheet';
 import { CustomCardDesigner, type CustomCardDesignerHandle } from './CustomCardDesigner';
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
 import {
@@ -2180,6 +2181,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [refundNote, setRefundNote] = useState('');
+  const [scanOpen, setScanOpen] = useState(false);
 
   const giftCards = data?.giftCards ?? [];
   const selectedFromList = useMemo(
@@ -2212,17 +2214,21 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     setCode(scannedCode.toUpperCase());
   }, []);
 
-  async function lookup(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function lookupCode(value: string) {
     setMessage(null);
     setMessageTarget('lookup');
     try {
-      setSelectedCard(await api<GiftCard>(`/api/gift-cards/cards/${encodeURIComponent(code.trim())}`));
+      setSelectedCard(await api<GiftCard>(`/api/gift-cards/cards/${encodeURIComponent(value.trim())}`));
       setMessage('Balance loaded.');
     } catch (error) {
       setSelectedCard(null);
       setMessage(error instanceof Error ? error.message : 'Gift card not found.');
     }
+  }
+
+  async function lookup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await lookupCode(code);
   }
 
   async function redeem(event: FormEvent<HTMLFormElement>) {
@@ -2620,9 +2626,20 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                   message={messageTarget === 'lookup' ? message : null}
                   tone={message?.includes('not') || message?.includes('Could') ? 'error' : 'success'}
                 />
+                <Button type="button" variant="secondary" onClick={() => setScanOpen(true)}>▣ Scan card</Button>
                 <Button type="submit">Check balance</Button>
               </div>
             </form>
+            {scanOpen ? (
+              <ScanSheet
+                onCode={(scanned) => {
+                  setScanOpen(false);
+                  setCode(scanned);
+                  void lookupCode(scanned);
+                }}
+                onClose={() => setScanOpen(false)}
+              />
+            ) : null}
             {card ? (
               <form className="giftcards-form" onSubmit={(event) => void redeem(event)}>
                 <div className="giftcards-balance-card">
