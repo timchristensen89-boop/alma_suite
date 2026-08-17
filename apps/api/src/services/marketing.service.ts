@@ -694,7 +694,7 @@ function renderMergeFields(template: string, guest: GuestRow, venueName: string)
   // inject markup into the rendered email/preview.
   const firstName = escapeHtml(guest.firstName || 'guest');
   const bookingLink = `${process.env.RESERVE_WEB_URL ?? 'http://localhost:5177'}/widget?venue=${encodeURIComponent(venueName)}`;
-  const unsubscribeLink = `${process.env.MARKETING_WEB_URL ?? 'http://localhost:5178'}/preferences?guest=${guest.id}`;
+  const unsubscribeLink = `${process.env.MARKETING_WEB_URL ?? 'http://localhost:5178'}/unsubscribe?token=${guest.id}`;
   return template
     .replace(/\{\{\s*firstName\s*\}\}/gi, firstName)
     .replace(/\{\{\s*venueName\s*\}\}/gi, venueName)
@@ -1463,7 +1463,61 @@ async function buildContentPublishPreview(actor: AuthUser, postId: string) {
   };
 }
 
+// The unsubscribe token in a campaign email is either a MarketingContact id
+// (the compliance footer) or a ReserveGuest id (older {{unsubscribeLink}}
+// merge fields) — resolve both to the guest row the sends actually key off.
+async function resolveUnsubscribeGuest(rawToken: string) {
+  const token = rawToken.trim();
+  if (!token || token.length > 64) return null;
+  const contact = await prisma.marketingContact.findUnique({
+    where: { id: token },
+    select: { reserveGuestId: true }
+  });
+  const guestId = contact?.reserveGuestId ?? token;
+  return prisma.reserveGuest.findUnique({
+    where: { id: guestId },
+    select: { id: true, firstName: true, email: true, marketingOptIn: true, emailUnsubscribedAt: true }
+  });
+}
+
+// Enough of the address for "yes, that's me", never the whole thing — the
+// page is reachable by anyone holding the link.
+function maskEmail(email: string | null) {
+  if (!email) return null;
+  const [local = '', domain] = email.split('@');
+  if (!domain) return null;
+  return `${local.slice(0, 2)}${'•'.repeat(Math.max(1, Math.min(6, local.length - 2)))}@${domain}`;
+}
+
 export const marketingService = {
+  async publicUnsubscribeState(token: string) {
+    const guest = await resolveUnsubscribeGuest(token);
+    if (!guest) throw new HttpError(404, 'That link is not valid any more.');
+    return {
+      firstName: guest.firstName || null,
+      maskedEmail: maskEmail(guest.email),
+      unsubscribed: Boolean(guest.emailUnsubscribedAt)
+    };
+  },
+
+  async publicUnsubscribe(token: string, input: { resubscribe?: boolean }) {
+    const guest = await resolveUnsubscribeGuest(token);
+    if (!guest) throw new HttpError(404, 'That link is not valid any more.');
+    const resubscribe = Boolean(input?.resubscribe);
+    const updated = await prisma.reserveGuest.update({
+      where: { id: guest.id },
+      data: { emailUnsubscribedAt: resubscribe ? null : (guest.emailUnsubscribedAt ?? new Date()) },
+      select: { marketingOptIn: true, email: true, emailUnsubscribedAt: true }
+    });
+    // Mirror onto the contact the same way ensureMarketingContact derives it,
+    // so a resubscribe never overstates consent the guest hasn't given.
+    await prisma.marketingContact.updateMany({
+      where: { reserveGuestId: guest.id },
+      data: { consentEmail: Boolean(updated.marketingOptIn && updated.email && !updated.emailUnsubscribedAt) }
+    });
+    return { unsubscribed: Boolean(updated.emailUnsubscribedAt) };
+  },
+
   async overview(actor: AuthUser, input: { venue?: string }) {
     const venue = actorVenueScope(actor, input.venue, 'Marketing');
     const guestWhere = guestScope(actor, venue);

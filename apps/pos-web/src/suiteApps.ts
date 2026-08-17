@@ -14,6 +14,7 @@ export const SUITE_APP_LINKS: SuiteAppLink[] = [
   { id: 'reserve', label: 'Reserve', hint: 'Bookings and the floor', href: url('VITE_RESERVE_WEB_URL', 'https://alma-reserve.web.app') },
   { id: 'compliance', label: 'Compliance', hint: 'Food safety and audits', href: url('VITE_COMPLIANCE_WEB_URL', 'https://alma-compliance.web.app') },
   { id: 'reports', label: 'Reports', hint: 'Dashboards and exports', href: url('VITE_REPORTS_WEB_URL', 'https://alma-reports.web.app') },
+  { id: 'marketing', label: 'Marketing', hint: 'Guests, campaigns, socials', href: url('VITE_MARKETING_WEB_URL', 'https://alma-marketing.web.app') },
   { id: 'admin', label: 'Admin', hint: 'Suite settings and integrations', href: url('VITE_SETTINGS_WEB_URL', 'https://alma-suite-admin.web.app') }
 ];
 
