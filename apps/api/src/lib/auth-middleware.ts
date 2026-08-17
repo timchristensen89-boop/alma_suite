@@ -61,7 +61,11 @@ const PUBLIC_PREFIXES = [
   // whole point is that a stranger can use it. The service only ever serves
   // the two known settings image fields, never an arbitrary key.
   '/api/gift-cards/assets/',
-  '/api/public/venue-snapshot'
+  '/api/public/venue-snapshot',
+  // The unsubscribe link in marketing emails — a guest holding the link must
+  // be able to opt out with no account. The contact/guest cuid in the URL is
+  // the secret, matching the gift card code trust model above.
+  '/api/marketing/public/'
 ];
 
 function isPublic(path: string) {

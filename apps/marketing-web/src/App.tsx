@@ -519,6 +519,91 @@ function useMarketingAuth() {
   return { user, loading, login, logout };
 }
 
+// The page a guest lands on from the unsubscribe link in a campaign email.
+// Deliberately outside the auth gate — the person holding the link has no
+// ALMA account, and the token in the URL is all the identification needed.
+function UnsubscribePage() {
+  const token =
+    new URLSearchParams(window.location.search).get('token') ??
+    new URLSearchParams(window.location.search).get('guest') ??
+    '';
+  const [state, setState] = useState<'loading' | 'invalid' | 'ready'>('loading');
+  const [firstName, setFirstName] = useState<string | null>(null);
+  const [maskedEmail, setMaskedEmail] = useState<string | null>(null);
+  const [unsubscribed, setUnsubscribed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!token) {
+      setState('invalid');
+      return;
+    }
+    api<{ firstName: string | null; maskedEmail: string | null; unsubscribed: boolean }>(
+      `/api/marketing/public/unsubscribe/${encodeURIComponent(token)}`
+    )
+      .then((data) => {
+        setFirstName(data.firstName);
+        setMaskedEmail(data.maskedEmail);
+        setUnsubscribed(data.unsubscribed);
+        setState('ready');
+      })
+      .catch(() => setState('invalid'));
+  }, [token]);
+
+  async function setOptOut(resubscribe: boolean) {
+    setBusy(true);
+    try {
+      const result = await api<{ unsubscribed: boolean }>(
+        `/api/marketing/public/unsubscribe/${encodeURIComponent(token)}`,
+        { method: 'POST', body: JSON.stringify({ resubscribe }) }
+      );
+      setUnsubscribed(result.unsubscribed);
+    } catch {
+      // Leave the page as-is; the guest can simply tap again.
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="login-page">
+      <div className="login-shell">
+        <ProductLogo appId="marketing" size="lg" />
+        {state === 'loading' ? <Spinner label="One moment" /> : null}
+        {state === 'invalid' ? (
+          <Card
+            title="This link isn't valid any more"
+            subtitle="If you were trying to unsubscribe, just reply to the email and we'll sort it by hand."
+          >
+            <p className="subtle">Nothing else to do here.</p>
+          </Card>
+        ) : null}
+        {state === 'ready' ? (
+          unsubscribed ? (
+            <Card
+              title="You're unsubscribed"
+              subtitle={`${firstName ? `${firstName}, you` : 'You'} won't get marketing emails from Alma Avalon or St Alma again. Booking and receipt emails still arrive as normal.`}
+            >
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => void setOptOut(true)}>
+                {busy ? 'One moment…' : 'Changed your mind? Resubscribe'}
+              </Button>
+            </Card>
+          ) : (
+            <Card
+              title={firstName ? `Sorry to see you go, ${firstName}` : 'Unsubscribe from our emails'}
+              subtitle={`One tap and ${maskedEmail ?? 'your address'} stops getting marketing emails from Alma Avalon and St Alma. Booking and receipt emails aren't affected.`}
+            >
+              <Button type="button" disabled={busy} onClick={() => void setOptOut(false)}>
+                {busy ? 'One moment…' : 'Unsubscribe me'}
+              </Button>
+            </Card>
+          )
+        ) : null}
+      </div>
+    </main>
+  );
+}
+
 function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) => Promise<void> }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -2553,6 +2638,17 @@ function MarketingEngagementSection({ venue }: { venue: string }) {
 }
 
 export function App() {
+  // The public unsubscribe landing must render before any auth question is
+  // asked — the guest clicking it has no account and never will.
+  const publicPath = window.location.pathname.replace(/\/+$/, '');
+  if (publicPath === '/unsubscribe' || publicPath === '/preferences') {
+    return <UnsubscribePage />;
+  }
+
+  return <AuthedApp />;
+}
+
+function AuthedApp() {
   const auth = useMarketingAuth();
 
   if (auth.loading) {
