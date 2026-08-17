@@ -1766,3 +1766,15 @@ body.pos-v2 .pos-rail { flex-basis: calc(190px * var(--pos-text-scale, 1)); }
 .pos-apps-list button strong { font-size: 14.5px; }
 .pos-apps-list button small { color: var(--pos-muted); font-size: 11.5px; }
 @media (max-width: 700px) { .pos-apps-list { grid-template-columns: 1fr; } }
+
+/* ── The "?" tour — first-run welcome, reopenable from the top bar ── */
+.pos-help-btn { font-weight: 800; font-size: 14px; }
+.pos-help-panel { width: min(560px, 100%); }
+.pos-help-lead { margin: 0; color: var(--pos-text2); font-size: 13.5px; line-height: 1.5; }
+.pos-help-list { display: flex; flex-direction: column; gap: 8px; }
+.pos-help-item { display: flex; flex-direction: column; gap: 2px; padding: 11px 14px; border: 1px solid var(--pos-border); border-radius: 12px; background: var(--pos-card); }
+.pos-help-item strong { font-size: 14.5px; }
+.pos-help-item span { color: var(--pos-text2); font-size: 12.5px; line-height: 1.5; }
+.pos-help-foot { margin: 2px 0 0; color: var(--pos-text3); font-size: 11.5px; }
+.pos-help-go { border: 0; border-radius: 9999px; padding: 12px 18px; background: var(--pos-accent-bg); color: var(--pos-accent-fg); font: inherit; font-weight: 800; font-size: 14px; cursor: pointer; }
+.pos-help-go:hover { filter: brightness(1.08); }
