@@ -15,7 +15,7 @@ export const ADJUST_REASONS: Record<string, string[]> = {
   DISCOUNT: ['Service recovery', 'Regular guest', 'Staff meal', 'Marketing promo', 'Manager goodwill'],
   COMP: ['Service recovery', 'Kitchen error', 'Long wait', 'Spillage / return', 'Manager comp'],
   PRICE_CHANGE: ['Menu price wrong', 'Happy hour manual', 'Damaged item', 'Manager override'],
-  WASTAGE: ['Spillage', 'Kitchen error', 'Expired', 'Customer return', 'Training']
+  WASTAGE: ['Dropped / spilled', 'Kitchen error', 'Wrong order', 'Expired / off', 'Customer return', 'Over-prepped', 'Training']
 };
 
 function requireReason(kind: string, reason: string) {
