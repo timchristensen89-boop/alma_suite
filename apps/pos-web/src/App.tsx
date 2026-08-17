@@ -839,6 +839,20 @@ export function App() {
   // across by a one-time handoff token.
   const [appsOpen, setAppsOpen] = useState(false);
   const [appsBusy, setAppsBusy] = useState<string | null>(null);
+  // The "?" tour. Auto-opens the first time each operator lands on a signed-in
+  // register (flagged per name in localStorage, so it shows once per person
+  // per device) — that the home board follows you is the one thing nobody
+  // guesses on their own.
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpOperator = me === 'loading' || !me ? '' : me.kind === 'staff' ? me.name : me.staffName ?? '';
+  const helpSeenKey = helpOperator ? `alma.pos.helpSeen.${helpOperator.toLowerCase()}` : null;
+  useEffect(() => {
+    if (helpSeenKey && localStorage.getItem(helpSeenKey) !== '1') setHelpOpen(true);
+  }, [helpSeenKey]);
+  function closeHelp() {
+    if (helpSeenKey) localStorage.setItem(helpSeenKey, '1');
+    setHelpOpen(false);
+  }
   const [lockPin, setLockPin] = useState('');
   const [switchSheet, setSwitchSheet] = useState<null | { pin: string }>(null);
   const [noteSheet, setNoteSheet] = useState<null | { value: string }>(null);
@@ -2608,6 +2622,14 @@ export function App() {
           <PosSearchBox onTerm={setSearchTerm} />
         ) : null}
         <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          className="pos-theme-btn pos-help-btn"
+          title="How this register works"
+          onClick={() => setHelpOpen(true)}
+        >
+          ?
+        </button>
         <button
           type="button"
           className="pos-theme-btn"
@@ -4866,6 +4888,53 @@ export function App() {
             </div>
             <button type="button" className="pos-ghost pos-modal-close" onClick={() => setOpenFolder(null)}>
               Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {helpOpen ? (
+        <div className="pos-modal" role="dialog" onClick={closeHelp}>
+          <div className="pos-modal-panel pos-help-panel" onClick={(event) => event.stopPropagation()}>
+            <h2>Welcome to ALMA POS</h2>
+            <p className="pos-help-lead">
+              {helpOperator ? `Hi ${helpOperator.split(' ')[0]} — here` : 'Here'}&apos;s the 30-second tour. Everything is
+              already set up; this is just how it works.
+            </p>
+            <div className="pos-help-list">
+              <div className="pos-help-item">
+                <strong>★ Home is YOUR board</strong>
+                <span>
+                  It&apos;s saved to your name, not to this till. Sign into any register at either venue and your board
+                  comes with you — and changes you make only ever change yours.
+                </span>
+              </div>
+              <div className="pos-help-item">
+                <strong>✎ Make it yours</strong>
+                <span>
+                  The last tile on Home is “✎ Edit this page”: drag tiles around, recolour them, remove them. “＋ Add
+                  pins” searches the whole menu, and 📁 folders keep it tidy — folders can even live inside folders.
+                </span>
+              </div>
+              <div className="pos-help-item">
+                <strong>Search beats browsing</strong>
+                <span>Mid-rush, type a few letters into “Search menu…” up top and tap the dish — no tab-hunting.</span>
+              </div>
+              <div className="pos-help-item">
+                <strong>Sale · Tables · Bills</strong>
+                <span>
+                  Sale is the register. Tables is every open bill on the floor — yours and everyone else&apos;s. Bills is
+                  the history: reprints, refunds, finding that table from earlier.
+                </span>
+              </div>
+              <div className="pos-help-item">
+                <strong>The rest of ALMA</strong>
+                <span>The nine dots up top hop to Staff, Stock, Gift cards and the other apps — already signed in.</span>
+              </div>
+            </div>
+            <p className="pos-help-foot">Tap ? in the top bar any time to read this again.</p>
+            <button type="button" className="pos-help-go" onClick={closeHelp}>
+              Got it — let&apos;s go
             </button>
           </div>
         </div>
