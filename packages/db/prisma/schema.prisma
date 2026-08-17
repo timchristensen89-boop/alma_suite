@@ -641,6 +641,9 @@ model StaffProfile {
   emergencyContactRelationship String?
   emergencyContactPhone        String?
   employmentType               String?
+  // Agreed weekly hours for FT/PT (e.g. 38, 24). The labour view measures
+  // rostered hours against this; NULL means not set (casuals never set it).
+  contractedWeeklyHours        Int?
   payType                      String?
   payRateCents                 Int?
   payAward                     String?
