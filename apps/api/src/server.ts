@@ -20,7 +20,7 @@ import { qrRouter } from './routes/qr.js';
 import { healthRouter } from './routes/health.js';
 import { incidentsRouter } from './routes/incidents.js';
 import { integrationJobsRouter } from './routes/integration-jobs.js';
-import { deputyWebhookReceiver, integrationsRouter, lightspeedInboundEmailReceiver, sevenroomsInboundEmailReceiver, squareWebhookReceiver, xeroWebhookReceiver } from './routes/integrations.js';
+import { deputyWebhookReceiver, enquiryForwardReceiver, enquiryInboundEmailReceiver, integrationsRouter, lightspeedInboundEmailReceiver, sevenroomsInboundEmailReceiver, squareWebhookReceiver, xeroWebhookReceiver } from './routes/integrations.js';
 import { issuesRouter } from './routes/issues.js';
 import { liquorRouter } from './routes/liquor.js';
 import { marketingRouter } from './routes/marketing.js';
@@ -59,6 +59,10 @@ app.post('/webhooks/sevenrooms/email', express.raw({ type: '*/*', limit: '25mb' 
 // Inbound item-sales email (Lightspeed scheduled Insights CSV via the VPS
 // mailbox poller). Same transport contract as the SevenRooms feed.
 app.post('/webhooks/lightspeed/email', express.raw({ type: '*/*', limit: '25mb' }), lightspeedInboundEmailReceiver);
+// A guest replying to an enquiry, forwarded by the mailbox poller — same
+// transport contract again — and the website handing over a new enquiry.
+app.post('/webhooks/enquiries/email', express.raw({ type: '*/*', limit: '25mb' }), enquiryInboundEmailReceiver);
+app.post('/webhooks/enquiries/forward', express.raw({ type: '*/*', limit: '2mb' }), enquiryForwardReceiver);
 app.use(express.json({ limit: '6mb' }));
 app.use(cookieParser());
 app.use('/api/integration-jobs', integrationJobsRouter);

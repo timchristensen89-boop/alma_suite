@@ -64,6 +64,7 @@ import {
   IconClock,
   IconDashboard,
   IconGlobe,
+  IconMail,
   IconMap,
   IconPlug,
   IconSettings,
@@ -110,6 +111,7 @@ const MANAGER_NAV_ITEMS = [
   { href: '#service', label: 'Service', description: 'Live floor — seat, courses, bill', icon: <IconMap /> },
   { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <IconUsers /> },
   { href: '#waitlist', label: 'Waitlist', description: 'Walk-in queue for peak periods', icon: <IconClock /> },
+  { href: '#enquiries', label: 'Enquiries', description: 'Functions and catering, with replies', icon: <IconMail /> },
   { href: '#settings', label: 'Settings', description: 'Rules, packages, tables, floor plan', icon: <IconSettings /> },
   { href: '#widget-preview', label: 'Widget', description: 'Safe public booking preview', icon: <IconGlobe /> },
   { href: '#google-reserve', label: 'Google Reserve', description: 'Setup-required integration', icon: <IconPlug /> }
@@ -1904,6 +1906,321 @@ function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () =>
   );
 }
 
+// ── Enquiries ────────────────────────────────────────────────────────────
+// Function and catering enquiries, and the conversation with each guest.
+// Before this they were an email and nothing else, so the whole point is that
+// a reply happens here — on the record, with the same-day clash in view.
+
+type EnquiryListRow = {
+  id: string;
+  source: string;
+  enquiryType: string;
+  contactName: string;
+  email: string | null;
+  phone: string | null;
+  venue: string;
+  eventType: string | null;
+  eventDate: string | null;
+  partySize: number | null;
+  notes: string | null;
+  status: string;
+  messageCount: number;
+  lastGuestReplyAt: string | null;
+  lastStaffReplyAt: string | null;
+  createdAt: string;
+};
+
+type EnquiryThread = {
+  id: string;
+  contactName: string;
+  email: string | null;
+  phone: string | null;
+  venue: string;
+  eventType: string | null;
+  eventDate: string | null;
+  eventDateLabel: string;
+  partySize: number | null;
+  notes: string | null;
+  status: string;
+  createdAt: string;
+  messages: Array<{
+    id: string;
+    direction: 'INBOUND' | 'OUTBOUND';
+    body: string;
+    authorName: string | null;
+    deliveryStatus: string | null;
+    deliveryError: string | null;
+    createdAt: string;
+  }>;
+  clashes: Array<{
+    id: string;
+    contactName: string;
+    partySize: number | null;
+    status: string;
+    eventType: string | null;
+  }>;
+};
+
+const ENQUIRY_STATUS_LABEL: Record<string, string> = {
+  NEW: 'New',
+  REPLIED: 'Replied',
+  GUEST_REPLIED: 'Guest replied',
+  BOOKED: 'Booked',
+  CLOSED: 'Closed'
+};
+// The two that want a human, and so lead the list.
+const ENQUIRY_NEEDS_REPLY = ['NEW', 'GUEST_REPLIED'];
+
+function enquiryWhen(value: string) {
+  return new Date(value).toLocaleString('en-AU', {
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+function EnquiriesSection() {
+  const [rows, setRows] = useState<EnquiryListRow[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [statusFilter, setStatusFilter] = useState('');
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [thread, setThread] = useState<EnquiryThread | null>(null);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [reply, setReply] = useState('');
+  const [sending, setSending] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter) params.set('status', statusFilter);
+      if (query.trim()) params.set('query', query.trim());
+      const data = await api<{ enquiries: EnquiryListRow[]; counts: Record<string, number> }>(
+        `/api/reserve/enquiries${params.toString() ? `?${params}` : ''}`
+      );
+      setRows(data.enquiries ?? []);
+      setCounts(data.counts ?? {});
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load enquiries.');
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, query]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const openThread = useCallback(async (id: string) => {
+    setOpenId(id);
+    setThreadLoading(true);
+    setReply('');
+    setNotice(null);
+    try {
+      setThread(await api<EnquiryThread>(`/api/reserve/enquiries/${id}`));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open that enquiry.');
+    } finally {
+      setThreadLoading(false);
+    }
+  }, []);
+
+  async function sendReply() {
+    if (!thread || !reply.trim() || sending) return;
+    setSending(true);
+    setNotice(null);
+    try {
+      const result = await api<{ delivery: { status: string; reason?: string } }>(
+        `/api/reserve/enquiries/${thread.id}/reply`,
+        { method: 'POST', body: JSON.stringify({ body: reply.trim() }) }
+      );
+      if (result.delivery.status === 'sent') {
+        setReply('');
+        setNotice('Reply sent.');
+      } else {
+        setNotice(`Not sent: ${result.delivery.reason ?? result.delivery.status}`);
+      }
+      await openThread(thread.id);
+      await reload();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not send that reply.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function changeStatus(status: string) {
+    if (!thread) return;
+    try {
+      await api(`/api/reserve/enquiries/${thread.id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status })
+      });
+      await openThread(thread.id);
+      await reload();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not update the status.');
+    }
+  }
+
+  const needsReply = rows.filter((row) => ENQUIRY_NEEDS_REPLY.includes(row.status)).length;
+
+  return (
+    <div className="enquiries">
+      <div className="stats-grid">
+        <StatCard label="Waiting on us" value={String(needsReply)} hint="new, or the guest has come back" />
+        <StatCard label="Replied" value={String(counts.REPLIED ?? 0)} hint="ball in their court" />
+        <StatCard label="Booked" value={String(counts.BOOKED ?? 0)} hint="turned into a booking" />
+      </div>
+
+      <Card
+        title="Enquiries"
+        subtitle="Functions and catering. Replies go from the enquiries mailbox, so answers come back here."
+      >
+        <div className="enquiries-filters">
+          <Select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.currentTarget.value)}
+            options={[
+              { value: '', label: 'All statuses' },
+              ...Object.entries(ENQUIRY_STATUS_LABEL).map(([value, label]) => ({ value, label }))
+            ]}
+          />
+          <Input
+            placeholder="Search name, email or message"
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+          />
+        </div>
+
+        {error ? <p className="error-text">{error}</p> : null}
+        {loading && rows.length === 0 ? <Spinner label="Loading enquiries…" /> : null}
+        {!loading && rows.length === 0 ? (
+          <EmptyState title="No enquiries yet" description="Website and booking-widget enquiries land here." />
+        ) : null}
+
+        <div className="enquiries-list">
+          {rows.map((row) => (
+            <button
+              type="button"
+              key={row.id}
+              className={`enquiries-row${openId === row.id ? ' is-open' : ''}${
+                ENQUIRY_NEEDS_REPLY.includes(row.status) ? ' is-waiting' : ''
+              }`}
+              onClick={() => void openThread(row.id)}
+            >
+              <div className="enquiries-row-main">
+                <strong>{row.contactName}</strong>
+                <span>
+                  {row.venue}
+                  {row.eventType ? ` · ${row.eventType}` : ''}
+                  {row.partySize ? ` · ${row.partySize} guests` : ''}
+                </span>
+              </div>
+              <div className="enquiries-row-side">
+                <Badge>{ENQUIRY_STATUS_LABEL[row.status] ?? row.status}</Badge>
+                <small>
+                  {row.eventDate
+                    ? new Date(row.eventDate).toLocaleDateString('en-AU', {
+                        weekday: 'short',
+                        day: 'numeric',
+                        month: 'short'
+                      })
+                    : 'no date'}
+                </small>
+              </div>
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {openId ? (
+        <Card
+          title={thread ? `${thread.contactName} · ${thread.venue}` : 'Enquiry'}
+          subtitle={thread ? `${thread.eventDateLabel}${thread.partySize ? ` · ${thread.partySize} guests` : ''}` : undefined}
+        >
+          {threadLoading && !thread ? <Spinner label="Opening…" /> : null}
+          {thread ? (
+            <>
+              {thread.clashes.length > 0 ? (
+                <p className="enquiries-clash">
+                  Also on this date at {thread.venue}:{' '}
+                  {thread.clashes
+                    .map(
+                      (clash) =>
+                        `${clash.contactName}${clash.partySize ? ` (${clash.partySize})` : ''}`
+                    )
+                    .join(', ')}
+                  . Check the venue can hold both before you promise anything.
+                </p>
+              ) : null}
+
+              <dl className="enquiries-facts">
+                <div>
+                  <dt>Email</dt>
+                  <dd>{thread.email ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Phone</dt>
+                  <dd>{thread.phone ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Received</dt>
+                  <dd>{enquiryWhen(thread.createdAt)}</dd>
+                </div>
+              </dl>
+
+              <div className="enquiries-thread">
+                {thread.messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`enquiries-message is-${message.direction === 'INBOUND' ? 'in' : 'out'}`}
+                  >
+                    <header>
+                      <strong>{message.authorName ?? (message.direction === 'INBOUND' ? 'Guest' : 'ALMA')}</strong>
+                      <small>{enquiryWhen(message.createdAt)}</small>
+                    </header>
+                    <p>{message.body}</p>
+                    {message.deliveryStatus && message.deliveryStatus !== 'sent' ? (
+                      <small className="enquiries-failed">
+                        Not delivered{message.deliveryError ? `: ${message.deliveryError}` : ''}
+                      </small>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+
+              <Textarea
+                rows={5}
+                placeholder="Write your reply…"
+                value={reply}
+                onChange={(event) => setReply(event.currentTarget.value)}
+              />
+              {notice ? <ActionFeedback message={notice} /> : null}
+              <div className="enquiries-actions">
+                <Button type="button" onClick={() => void sendReply()} disabled={sending || !reply.trim()}>
+                  {sending ? 'Sending…' : 'Send reply'}
+                </Button>
+                <Select
+                  value={thread.status}
+                  onChange={(event) => void changeStatus(event.currentTarget.value)}
+                  options={Object.entries(ENQUIRY_STATUS_LABEL).map(([value, label]) => ({ value, label }))}
+                />
+              </div>
+            </>
+          ) : null}
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
 function WaitlistSection({
   defaultVenue,
   venueOptions
@@ -2982,6 +3299,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const showService = activeHash === '#service';
   const showGuests = activeHash === '#guests';
   const showWaitlist = activeHash === '#waitlist';
+  const showEnquiries = activeHash === '#enquiries';
   const showWidget = activeHash === '#widget-preview';
   const showGoogleReserve = activeHash === '#google-reserve';
   const showSettings = SETTINGS_HASHES.includes(activeHash);
@@ -4051,6 +4369,12 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
             {showWaitlist ? (
             <section id="waitlist">
               <WaitlistSection defaultVenue={venueFilter === ALL_VENUES ? KNOWN_VENUES[0]! : venueFilter} venueOptions={venueOptions} />
+            </section>
+            ) : null}
+
+            {showEnquiries ? (
+            <section id="enquiries">
+              <EnquiriesSection />
             </section>
             ) : null}
 

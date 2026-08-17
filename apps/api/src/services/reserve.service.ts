@@ -53,6 +53,7 @@ import {
 import Stripe from 'stripe';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
+import { enquiryService } from './enquiry.service.js';
 import { createReservationManageToken, reservationManageUrl, verifyReservationManageToken } from '../lib/reservation-manage-token.js';
 import { mailService } from './mail.service.js';
 import { integrationService } from './integration.service.js';
@@ -1532,56 +1533,23 @@ export const reserveService = {
     };
   },
 
-  // Function / event enquiry — emails the venue team without creating a
-  // reservation. No new DB table for v1; we just send the enquiry through.
+  // Function / event enquiry from the public booking widget. The enquiry is
+  // persisted and the venue still gets its email; enquiryService owns both,
+  // so the website's catering form lands in the same inbox by the same path.
   async recordFunctionEnquiry(input: unknown) {
     if (!input || typeof input !== 'object') {
       throw new HttpError(400, 'Function enquiry payload required');
     }
-    const data = input as Record<string, unknown>;
-    const venue = typeof data.venue === 'string' ? data.venue.trim() : '';
-    const contactName = typeof data.contactName === 'string' ? data.contactName.trim() : '';
-    const email = typeof data.email === 'string' ? data.email.trim() : '';
-    const phone = typeof data.phone === 'string' ? data.phone.trim() : '';
-    const eventType = typeof data.eventType === 'string' ? data.eventType.trim() : '';
-    const eventDate = typeof data.eventDate === 'string' ? data.eventDate.trim() : '';
-    const partySize = typeof data.partySize === 'string' ? Number(data.partySize) : Number(data.partySize ?? 0);
-    const notes = typeof data.notes === 'string' ? data.notes.trim() : '';
-
-    if (!venue || !contactName || !email) {
-      throw new HttpError(400, 'Venue, contact name, and email are required');
-    }
-
-    if (mailService.isConfigured()) {
-      try {
-        const settings = await prisma.appSettings.findUnique({ where: { id: 'singleton' } });
-        const recipient = settings?.notifyEmail?.trim();
-        if (recipient) {
-          await mailService.sendAlert({
-            to: recipient,
-            subject: `[Function enquiry] ${venue} — ${eventType || 'enquiry'} for ${partySize || '?'} guests`,
-            title: `New function enquiry: ${eventType || 'event'} at ${venue}`,
-            body: [
-              `${contactName} (${email}${phone ? ` · ${phone}` : ''}) is asking about a function at ${venue}.`,
-              '',
-              eventDate ? `Preferred date: ${new Date(eventDate).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}` : 'No date specified.',
-              `Party size: ${partySize || 'not specified'}`,
-              eventType ? `Event type: ${eventType}` : '',
-              '',
-              notes ? `Notes:\n${notes}` : 'No additional notes.'
-            ].filter(Boolean).join('\n'),
-            venue,
-            severity: 'info',
-            ctaUrl: email ? `mailto:${email}` : undefined,
-            ctaLabel: 'Reply to enquiry'
-          });
-        }
-      } catch (err) {
-        console.error('[reserve] Failed to send function enquiry email', err);
-      }
-    }
-
-    return { received: true, venue, contactName, partySize };
+    const { enquiry } = await enquiryService.capture(input as Record<string, unknown>, {
+      source: 'public-widget',
+      enquiryType: 'function'
+    });
+    return {
+      received: true,
+      venue: enquiry.venue,
+      contactName: enquiry.contactName,
+      partySize: enquiry.partySize ?? 0
+    };
   },
 
   async publicBook(input: unknown) {
