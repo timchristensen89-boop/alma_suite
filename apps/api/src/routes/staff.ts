@@ -1210,6 +1210,29 @@ staffRouter.patch('/:id/role-template', requireManager, async (req, res, next) =
   }
 });
 
+// Agreed weekly hours for the labour view — 38, 24, or NULL for casuals.
+staffRouter.put('/:id/contracted-hours', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.setContractedHours(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// One week of roster against one week of actual takings — contract deltas,
+// the salary-headroom band, overtime past 45, and labour % per venue-day.
+staffRouter.get('/labour-week', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.labourWeek({
+      weekStart: typeof req.query.weekStart === 'string' ? req.query.weekStart : undefined
+    }, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.put('/:id/pay-profile', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');
