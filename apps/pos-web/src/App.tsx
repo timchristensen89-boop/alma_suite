@@ -4932,6 +4932,13 @@ export function App() {
                 <span>The nine dots up top hop to Staff, Stock, Gift cards and the other apps — already signed in.</span>
               </div>
             </div>
+            <a
+              className="pos-help-support"
+              href={`mailto:timchristensen89+almapos@gmail.com?subject=${encodeURIComponent(`ALMA POS support — ${venue}`)}&body=${encodeURIComponent(`Hi — I need a hand with ALMA POS.\n\nWhat happened:\n\n\nWhat I expected:\n\n\n— ${operatorName || 'someone'} on the ${venue} till`)}`}
+            >
+              <strong>✉ Stuck? Email support</strong>
+              <span>Opens an email straight to ALMA&apos;s developer — just say what happened.</span>
+            </a>
             <p className="pos-help-foot">Tap ? in the top bar any time to read this again.</p>
             <button type="button" className="pos-help-go" onClick={closeHelp}>
               Got it — let&apos;s go
