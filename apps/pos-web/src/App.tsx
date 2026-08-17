@@ -2526,6 +2526,15 @@ export function App() {
           >
             Bills
           </button>
+          {/* An action, not a view — dropped glasses don't wait for someone
+              to remember which board the wastage pin lives on. */}
+          <button
+            type="button"
+            className="pos-rail-item"
+            onClick={() => setWastage({ search: '', recipeId: '', itemName: '', quantity: '1', reason: '' })}
+          >
+            Wastage
+          </button>
           {/* The nav is READ-ONLY here — it is arranged in the board editor,
               so a busy service can't reorder it by accident. */}
           <div className="pos-rail-eyebrow">
@@ -5956,6 +5965,16 @@ export function App() {
               >
                 <span>Change an item price</span>
                 <em>override one line's price</em>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBillActions(false);
+                  setWastage({ search: '', recipeId: '', itemName: '', quantity: '1', reason: '' });
+                }}
+              >
+                <span>Record wastage</span>
+                <em>dropped, spilled or binned — comes off stock, not this bill</em>
               </button>
             </div>
 
