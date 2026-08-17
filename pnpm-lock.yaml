@@ -321,6 +321,9 @@ importers:
       '@stripe/terminal-js':
         specifier: ^0.26.0
         version: 0.26.0
+      jsqr:
+        specifier: ^1.4.0
+        version: 1.4.0
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
