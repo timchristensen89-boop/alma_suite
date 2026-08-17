@@ -2,6 +2,10 @@ import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState
 import { loadStripeTerminal, type Terminal, type Reader } from '@stripe/terminal-js';
 import { api, clearApiTokens, consumeSuiteHandoffToken, messageForError, openSuiteApp, setApiAuthToken, setApiPinToken } from './api';
 import { POS_SURFACES, SUITE_APP_LINKS } from './suiteApps';
+
+// Lazy: jsQR is ~130KB the till never needs until somebody actually taps
+// "Scan the card" — the register's first paint shouldn't carry it.
+const ScanSheet = lazy(() => import('./ScanSheet').then((module) => ({ default: module.ScanSheet })));
 // Lazy: the board editor is a management surface a till only opens to
 // rearrange tiles — it has no business in the register's startup chunk.
 const BoardEditor = lazy(() => import('./BoardEditor').then((m) => ({ default: m.BoardEditor })));
@@ -409,6 +413,9 @@ export function App() {
   }>({ code: '', balanceCents: null, checking: false, take: '' });
   // Cards already put against this bill, so staff can see what's been taken.
   const [giftApplied, setGiftApplied] = useState<Array<{ code: string; amountCents: number; remainingCents: number | null }>>([]);
+  // The camera sheet on the gift tender — scan the wallet pass or printed
+  // card instead of typing the code mid-service.
+  const [giftScan, setGiftScan] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [tendered, setTendered] = useState('');
   const [receipt, setReceipt] = useState<Order | null>(null);
@@ -2453,6 +2460,37 @@ export function App() {
   const userKey = operatorName.toLowerCase();
   const balance = order ? order.totalCents - paidCents(order) : 0;
 
+  // One balance check for both roads into the gift tender: the typed code
+  // and the camera scan. A miss keeps the outside-card path open — old
+  // Gift Up cards are still out there.
+  function checkGiftCard(raw?: string) {
+    const codeValue = (raw ?? gift.code).trim().toUpperCase();
+    if (!codeValue) return;
+    setGift({ code: codeValue, balanceCents: null, checking: true, take: '' });
+    void api<{ code: string; balanceCents: number; recipientName?: string | null }>(
+      `/api/pos/gift-card?code=${encodeURIComponent(codeValue)}`
+    )
+      .then((card) => {
+        const outstanding = (charge?.amountCents ?? balance) + (charge?.tipCents ?? 0);
+        // Default to whichever runs out first, then let staff type over it.
+        const suggested = Math.min(card.balanceCents, Math.max(0, outstanding));
+        setGift({
+          code: card.code,
+          balanceCents: card.balanceCents,
+          checking: false,
+          take: (suggested / 100).toFixed(2),
+          holder: card.recipientName ?? null
+        });
+      })
+      .catch((err) => {
+        // Not an ALMA card. Old Gift Up cards are still out there, so offer
+        // to take it as an outside card with the number recorded against the
+        // payment rather than turning the guest away.
+        setGift({ code: codeValue, balanceCents: null, checking: false, external: true, take: '' });
+        setError(messageForError(err, 'Could not find that gift card.'));
+      });
+  }
+
   return (
     <div className="pos-shell">
       {design === 'rail' ? (
@@ -4057,6 +4095,7 @@ export function App() {
                       disabled={busy}
                       onClick={() => {
                         setGift({ code: '', balanceCents: null, checking: false, take: '' });
+                        setGiftScan(false);
                         setCharge({ ...charge, stage: 'gift' });
                       }}
                     >
@@ -4069,10 +4108,25 @@ export function App() {
             {charge.stage === 'gift' && order ? (
               <>
                 <h2>Gift card — {money((charge.amountCents ?? balance) + charge.tipCents)}</h2>
+                {gift.balanceCents === null && !gift.checking ? (
+                  <button type="button" className="pos-charge" disabled={busy} onClick={() => setGiftScan(true)}>
+                    ▣ Scan the card
+                  </button>
+                ) : null}
+                {giftScan ? (
+                  <Suspense fallback={null}>
+                    <ScanSheet
+                      onCode={(scanned) => {
+                        setGiftScan(false);
+                        checkGiftCard(scanned);
+                      }}
+                      onClose={() => setGiftScan(false)}
+                    />
+                  </Suspense>
+                ) : null}
                 <input
                   className="pos-tender"
-                  autoFocus
-                  placeholder="Card code (e.g. ALMA-XXXX-XXXX)"
+                  placeholder="Or type the code (e.g. ALMA-XXXX-XXXX)"
                   value={gift.code}
                   onChange={(event) => setGift({ code: event.currentTarget.value.toUpperCase(), balanceCents: null, checking: false, take: '' })}
                 />
@@ -4082,32 +4136,7 @@ export function App() {
                     type="button"
                     className="pos-charge"
                     disabled={busy || gift.checking || gift.code.trim().length < 4}
-                    onClick={() => {
-                      setGift({ ...gift, checking: true });
-                      void api<{ code: string; balanceCents: number; recipientName?: string | null }>(
-                        `/api/pos/gift-card?code=${encodeURIComponent(gift.code.trim())}`
-                      )
-                        .then((card) => {
-                          const outstanding = (charge?.amountCents ?? balance) + (charge?.tipCents ?? 0);
-                          // Default to whichever runs out first, then let staff type over it.
-                          const suggested = Math.min(card.balanceCents, Math.max(0, outstanding));
-                          setGift({
-                            code: card.code,
-                            balanceCents: card.balanceCents,
-                            checking: false,
-                            take: (suggested / 100).toFixed(2),
-                            holder: card.recipientName ?? null
-                          });
-                        })
-                        .catch((err) => {
-                          // Not an ALMA card. Old Gift Up cards are still out
-                          // there, so offer to take it as an outside card with
-                          // the number recorded against the payment rather than
-                          // turning the guest away.
-                          setGift({ ...gift, checking: false, external: true, take: '' });
-                          setError(messageForError(err, 'Could not find that gift card.'));
-                        });
-                    }}
+                    onClick={() => checkGiftCard()}
                   >
                     {gift.checking ? 'Checking…' : 'Check balance'}
                   </button>
