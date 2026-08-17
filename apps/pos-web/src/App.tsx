@@ -875,6 +875,14 @@ export function App() {
   // to the existing folder at that path (name/colour hidden).
   const [folderDraft, setFolderDraft] = useState<null | { name: string; c: string; items: string[]; search: string; at?: number[]; into?: number[] }>(null);
   const [customise, setCustomise] = useState(false);
+  // Package mode: while ON, every item tapped lands at $0 with an
+  // "Included in package" note — the set-menu line carries the money, the
+  // kitchen still gets real dishes on real courses. Turns itself off when
+  // the sale closes so it can't bleed into the next bill.
+  const [pkgMode, setPkgMode] = useState(false);
+  useEffect(() => {
+    if (!order) setPkgMode(false);
+  }, [order]);
   const [wastage, setWastage] = useState<null | { search: string; recipeId: string; itemName: string; quantity: string; reason: string }>(null);
   const [lineAction, setLineAction] = useState<null | { lineId: string; name: string; kind: 'COMP' | 'PRICE_CHANGE'; reason: string; price: string }>(null);
   const [discounting, setDiscounting] = useState<null | { mode: 'percent' | 'amount'; value: string; reason: string }>(null);
@@ -1717,11 +1725,11 @@ export function App() {
       recipeId: item.recipeId,
       name: item.title,
       printName: item.printTitle || null,
-      unitPriceCents: item.priceCents + delta,
+      unitPriceCents: pkgMode ? 0 : item.priceCents + delta,
       quantity: 1,
       course: targetCourse ?? defaultCourse(kindByRecipe.get(item.recipeId) ?? 'FOOD'),
       modifiers: modifiers.length ? modifiers : null,
-      notes: notes || null
+      notes: pkgMode ? [notes, 'Included in package'].filter(Boolean).join(' · ') : notes || null
     };
     // The course the item lands in opens so you see it arrive.
     setCourseOpen((current) => ({ ...current, [line.course ?? 'NOW']: true }));
@@ -1796,12 +1804,15 @@ export function App() {
       return;
     }
     // Modifier'd lines never merge — each configuration is its own line.
-    const existing = modifiers.length === 0 && !notes
+    // Package lines DO stack (same dish, same auto-note): a banquet's four
+    // barramundi should read 4× on the docket, not four lines of one.
+    const existing = modifiers.length === 0 && (!notes || pkgMode)
       ? order.lines.find(
           (candidate) =>
             candidate.recipeId === item.recipeId &&
             !candidate.modifiers &&
-            !candidate.notes &&
+            (candidate.notes ?? null) === (line.notes ?? null) &&
+            candidate.unitPriceCents === line.unitPriceCents &&
             !(candidate as { sentAt?: string | null }).sentAt &&
             (candidate.course ?? null) === (line.course ?? null)
         )
@@ -2641,6 +2652,17 @@ export function App() {
               }}
             >
               {orderTypeOf(order) === 'TAKEAWAY' ? '🥡 Takeaway' : '🍽 Dine in'}
+            </button>
+            {/* While ON, tapped items land at $0 with an "Included in
+                package" note — ring the set menu first, then the dishes. */}
+            <button
+              type="button"
+              className={`pos-covers-chip pos-pkg-chip${pkgMode ? ' is-on' : ''}`}
+              title="Items added while this is on go on the bill at $0 — for dishes and drinks included in a set menu or package"
+              disabled={busy}
+              onClick={() => setPkgMode(!pkgMode)}
+            >
+              {pkgMode ? '◉ Package items · $0' : '○ Package items'}
             </button>
             {order.guest ? (
               <button
@@ -3797,7 +3819,7 @@ export function App() {
                     <b>{line.quantity}</b>
                     <button type="button" onClick={() => bumpQty(index, 1)}>+</button>
                   </span>
-                  <span className="pos-line-total">{money(line.unitPriceCents * line.quantity)}</span>
+                  <span className="pos-line-total">{line.unitPriceCents === 0 && line.notes?.includes('Included in package') ? 'incl.' : money(line.unitPriceCents * line.quantity)}</span>
                 </div>
               )) : null}
                 </div>
