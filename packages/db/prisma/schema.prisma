@@ -1454,6 +1454,7 @@ model ReserveGuest {
   tagAssignments      GuestTagAssignment[]
   automationRuns      MarketingAutomationRun[]
   campaignRecipients  MarketingCampaignRecipient[]
+  enquiries           ReserveEnquiry[]
 
   @@index([venue])
   @@index([lastName, firstName])
@@ -1703,6 +1704,105 @@ model ReserveWaitlistEntry {
 
   @@index([venue, status, windowStartsAt])
   @@index([status, createdAt])
+}
+
+/// NEW and GUEST_REPLIED are the two that want a human: nobody has answered
+/// yet, or the guest has come back and is waiting on us.
+enum ReserveEnquiryStatus {
+  NEW
+  REPLIED
+  GUEST_REPLIED
+  BOOKED
+  CLOSED
+}
+
+enum ReserveEnquiryMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+/// A function, catering or event enquiry, and everything said about it since.
+///
+/// Enquiries used to be an email and nothing else: recordFunctionEnquiry sent
+/// the venue an alert with a mailto: link, so the conversation lived in
+/// somebody's mail client and no other part of the suite knew the enquiry
+/// existed. Two large groups could be promised the same Saturday with nothing
+/// noticing. This is the record that stops that.
+///
+/// It arrives from the booking widget's function panel or the website's
+/// catering form (`source` says which), and ends as a ReserveReservation.
+// @domain: reserve | home: suite
+model ReserveEnquiry {
+  id String @id @default(cuid())
+
+  // Where it came from. externalRef is the sending system's own id (the
+  // website keeps its own enquiry row), so a retried forward lands once.
+  source      String  @default("public-widget")
+  enquiryType String  @default("function")
+  externalRef String? @unique
+
+  contactName String
+  email       String?
+  phone       String?
+
+  // What they are asking for. The website's catering form already collects
+  // event type, date and party size; its email only carried them buried in
+  // the message body, where nothing could read them.
+  venue     String
+  eventType String?
+  eventDate DateTime?
+  partySize Int?
+  notes     String?
+
+  status           ReserveEnquiryStatus @default(NEW)
+  lastGuestReplyAt DateTime?
+  lastStaffReplyAt DateTime?
+  closedAt         DateTime?
+  // The subject the conversation runs under, so every reply stays in one
+  // thread in the guest's mail client.
+  emailSubject     String?
+
+  // Filled in as the enquiry turns into a real booking.
+  guestId       String?
+  reservationId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guest    ReserveGuest?           @relation(fields: [guestId], references: [id], onDelete: SetNull)
+  messages ReserveEnquiryMessage[]
+
+  // The inbox lists by status and age; the clash check asks "what else is on
+  // this date at this venue"; staff look people up by email.
+  @@index([status, createdAt])
+  @@index([venue, eventDate])
+  @@index([email])
+}
+
+/// One message in an enquiry conversation, in either direction.
+// @domain: reserve | home: suite
+model ReserveEnquiryMessage {
+  id            String                         @id @default(cuid())
+  enquiryId     String
+  direction     ReserveEnquiryMessageDirection
+  body          String
+  // The guest's name inbound, the staff member's name outbound.
+  authorName    String?
+  authorStaffId String?
+
+  // Email plumbing. messageId is this message's RFC 5322 Message-ID (the
+  // provider's id for messages we sent); inReplyTo is what it answered.
+  // Together they are how an inbound reply finds the enquiry it belongs to.
+  messageId      String? @unique
+  inReplyTo      String?
+  deliveryStatus String?
+  deliveryError  String?
+
+  createdAt DateTime @default(now())
+
+  enquiry ReserveEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+
+  @@index([enquiryId, createdAt])
 }
 
 // @domain: reserve | home: suite

@@ -85,7 +85,7 @@ type WelcomeEmailInput = {
 };
 
 type EmailDeliveryResult =
-  | { status: 'sent'; to: string; provider: 'resend' | 'smtp' }
+  | { status: 'sent'; to: string; provider: 'resend' | 'smtp'; providerMessageId?: string }
   | { status: 'skipped'; reason: string }
   | { status: 'failed'; reason: string };
 
@@ -264,6 +264,18 @@ async function deliverEmail(input: {
    * gift card — they should hear from the venue, not from onboarding@.
    */
   from?: string;
+  /**
+   * Overrides the house reply-to for this message. A guest answering an
+   * enquiry has to land back in the enquiries mailbox the poller reads, not
+   * in whatever address staff mail replies to.
+   */
+  replyTo?: string;
+  /**
+   * Extra RFC 5322 headers. `In-Reply-To` and `References` are what make a
+   * reply attach to the guest's existing conversation instead of starting a
+   * fresh one in their client.
+   */
+  headers?: Record<string, string>;
 }): Promise<EmailDeliveryResult> {
   const sender = input.from?.trim() || resendFrom;
   if (resendApiKey && sender) {
@@ -287,10 +299,11 @@ async function deliverEmail(input: {
         body: JSON.stringify({
           from: sender,
           to: [input.to],
-          reply_to: replyTo || undefined,
+          reply_to: input.replyTo?.trim() || replyTo || undefined,
           subject: input.subject,
           text: input.text,
           html: input.html,
+          headers: input.headers && Object.keys(input.headers).length > 0 ? input.headers : undefined,
           attachments
         })
       });
@@ -312,8 +325,16 @@ async function deliverEmail(input: {
         return { status: 'failed', reason: message };
       }
 
+      // The provider's id becomes our Message-ID once Resend sends it, so a
+      // threaded conversation can point later replies back at this message.
+      const sentBody = (await response.json().catch(() => null)) as { id?: string } | null;
       console.info('[mail] Resend email sent', { to: input.to, subject: input.subject });
-      return { status: 'sent', to: input.to, provider: 'resend' };
+      return {
+        status: 'sent',
+        to: input.to,
+        provider: 'resend',
+        ...(typeof sentBody?.id === 'string' ? { providerMessageId: sentBody.id } : {})
+      };
     } catch (err) {
       const reason = err instanceof Error ? err.message : 'Unknown Resend error';
       console.error('[mail] Resend request threw', { to: input.to, subject: input.subject, reason });
@@ -327,13 +348,14 @@ async function deliverEmail(input: {
   }
 
   try {
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: input.from?.trim() || mailFrom,
-      replyTo,
+      replyTo: input.replyTo?.trim() || replyTo,
       to: input.to,
       subject: input.subject,
       text: input.text,
       html: input.html,
+      headers: input.headers,
       attachments: input.attachments?.map((attachment) => ({
         filename: attachment.filename,
         content: attachment.content,
@@ -342,7 +364,12 @@ async function deliverEmail(input: {
       }))
     });
 
-    return { status: 'sent', to: input.to, provider: 'smtp' };
+    return {
+      status: 'sent',
+      to: input.to,
+      provider: 'smtp',
+      ...(typeof info?.messageId === 'string' ? { providerMessageId: info.messageId } : {})
+    };
   } catch (err) {
     // Don't 500 the parent request — the source record is already persisted,
     // and the UI can surface the delivery failure for manual follow-up.
@@ -359,6 +386,49 @@ export const mailService = {
   // Generic HTML email — used for sending report documents (e.g. Monthly Recap).
   async sendDocument(input: { to: string; subject: string; text: string; html: string }): Promise<EmailDeliveryResult> {
     return deliverEmail(input);
+  },
+
+  /**
+   * A staff reply to a guest enquiry, sent from the enquiries mailbox so the
+   * guest's answer comes back to the address the inbound poller reads.
+   *
+   * The body is what the person typed — plain prose, wrapped in the lightest
+   * possible HTML. An enquiry reply reads as a person writing back, so it
+   * deliberately skips the campaign chrome (logos, buttons, footers).
+   *
+   * `inReplyTo`/`references` are the guest's own Message-IDs: passing them
+   * makes the reply land inside their existing thread instead of opening a
+   * new one in their client.
+   */
+  async sendEnquiryReply(input: {
+    to: string;
+    subject: string;
+    body: string;
+    from?: string;
+    replyTo?: string;
+    inReplyTo?: string | null;
+    references?: string[];
+  }): Promise<EmailDeliveryResult> {
+    const paragraphs = input.body
+      .split(/\n{2,}/)
+      .map((block) => block.trim())
+      .filter(Boolean)
+      .map((block) => `<p style="margin:0 0 16px;">${escapeHtml(block).replace(/\n/g, '<br />')}</p>`)
+      .join('');
+    const headers: Record<string, string> = {};
+    if (input.inReplyTo) headers['In-Reply-To'] = input.inReplyTo;
+    const references = (input.references ?? []).filter(Boolean);
+    if (references.length > 0) headers.References = references.join(' ');
+
+    return deliverEmail({
+      to: input.to,
+      subject: input.subject,
+      text: input.body,
+      html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1c1c1c;">${paragraphs}</div>`,
+      from: input.from,
+      replyTo: input.replyTo,
+      headers
+    });
   },
 
   async sendStaffInvite(input: InviteEmailInput): Promise<EmailDeliveryResult> {
