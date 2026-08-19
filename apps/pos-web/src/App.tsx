@@ -1780,6 +1780,16 @@ export function App() {
   // course by course, how many of each. Everything below is derived from
   // `picks` — how many are spoken for, what's left, whether we can move on.
 
+  // Courses worth a screen. A course offering exactly one dish is not a
+  // question — it gets filled for the whole table at commit. (Unless that one
+  // dish is 86'd, in which case service needs to see it rather than have the
+  // register quietly ring something the kitchen cannot cook.)
+  function askableCourses(plan: SetMenuPlan): SetMenuCourse[] {
+    return plan.courses.filter(
+      (course) => course.options.length !== 1 || eightySix.has(course.options[0]!.recipeId)
+    );
+  }
+
   function openBanquet(plan: SetMenuPlan) {
     setBanquet({
       // The table's covers if service has already set them: the common case is
@@ -1873,9 +1883,13 @@ export function App() {
         packagedBy: plan.recipeId
       });
     }
+    const asked = new Set(askableCourses(plan).map((course) => course.id));
     for (const course of plan.courses) {
       for (const option of course.options) {
-        const heads = picks[course.id]?.[option.recipeId] ?? 0;
+        // One dish, no question asked: everyone is having it.
+        const heads = asked.has(course.id)
+          ? picks[course.id]?.[option.recipeId] ?? 0
+          : covers * course.pick;
         if (heads <= 0) continue;
         lines.push({
           recipeId: option.recipeId,
@@ -5398,11 +5412,12 @@ export function App() {
       {banquet ? (
         (() => {
           const { plan, covers, step, picks } = banquet;
-          const course = step >= 0 ? plan.courses[step] : null;
+          const asking = askableCourses(plan);
+          const course = step >= 0 ? asking[step] ?? null : null;
           const owed = course ? banquetOwed(course, covers) : 0;
           const chosen = course ? banquetChosen(course.id) : 0;
           const left = owed - chosen;
-          const last = step === plan.courses.length - 1;
+          const last = step === asking.length - 1;
           return (
             <div className="pos-modal" role="dialog">
               <div className="pos-modal-panel pos-banquet">
@@ -5513,7 +5528,9 @@ export function App() {
                 <p className={`pos-banquet-progress${course && left === 0 ? ' is-done' : ''}`}>
                   {course === null
                     ? covers > 0
-                      ? `${plan.courses.length} ${plan.courses.length === 1 ? 'course' : 'courses'} to choose`
+                      ? asking.length === 0
+                        ? 'Nothing to choose — ring it and go'
+                        : `${asking.length} ${asking.length === 1 ? 'course' : 'courses'} to choose`
                       : 'Set the number of covers to start'
                     : left === 0
                       ? `All ${owed} chosen`
@@ -5536,9 +5553,9 @@ export function App() {
                     disabled={busy || (course === null ? covers <= 0 : left !== 0)}
                     onClick={() => {
                       if (course === null) {
-                        // A menu with fixed components and no questions is
-                        // just an order — ring it and be done.
-                        if (plan.courses.length === 0) commitBanquet();
+                        // A menu with nothing to choose is just an order —
+                        // ring it and be done.
+                        if (asking.length === 0) commitBanquet();
                         else setBanquet({ ...banquet, step: 0 });
                         return;
                       }
@@ -5546,7 +5563,13 @@ export function App() {
                       else setBanquet({ ...banquet, step: step + 1 });
                     }}
                   >
-                    {course === null ? 'Start' : last ? 'Add to bill' : `Next: ${plan.courses[step + 1]?.name ?? ''}`}
+                    {course === null
+                      ? asking.length === 0
+                        ? 'Add to bill'
+                        : 'Start'
+                      : last
+                        ? 'Add to bill'
+                        : `Next: ${asking[step + 1]?.name ?? ''}`}
                   </button>
                 </div>
               </div>
