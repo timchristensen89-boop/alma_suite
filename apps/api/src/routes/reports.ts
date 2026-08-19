@@ -147,6 +147,20 @@ reportsRouter.get('/menu-cogs', requireManager, async (req, res, next) => {
   }
 });
 
+// What a set menu is actually worth per dish: package revenue shared across
+// the dishes each table was served, against per-portion cost.
+reportsRouter.get('/banquets', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reportsService.banquets({
+      start: typeof req.query.start === 'string' ? req.query.start : '',
+      end: typeof req.query.end === 'string' ? req.query.end : '',
+      venue: typeof req.query.venue === 'string' ? req.query.venue : ''
+    }, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reportsRouter.post('/sales/import', requireManager, async (req, res, next) => {
   try {
     res.json(await reportsService.importActualSales(req.body, req.user!));

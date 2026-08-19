@@ -3084,6 +3084,8 @@ model Recipe {
   itemSales          SalesItemActualEntry[]
   squareMenuMappings SquareMenuRecipeMapping[]
   venuePrices        RecipeVenuePrice[]
+  setMenuCourses     SetMenuCourse[]
+  offeredOn          SetMenuOption[]
 
   @@index([title])
   @@index([category])
@@ -3253,6 +3255,59 @@ model RecipeLine {
   @@index([recipeId])
   @@index([itemId])
   @@index([subRecipeId])
+}
+
+// @domain: stock | home: suite
+// A course inside a set menu that somebody has to CHOOSE from — "one entrée
+// each, from these three". The parts nobody chooses (bread for the table,
+// the greens between four) stay as RecipeLine rows on the set menu itself;
+// only the decisions live here.
+//
+// Deliberately not RecipeLine rows: a pick-one-of-three has no single cost to
+// fold into estimatedCost, because what a banquet costs depends on what the
+// tables actually picked. That's recorded per sale on PosOrderLine, and the
+// banquet report reads it back from there.
+model SetMenuCourse {
+  id              String          @id @default(cuid())
+  setMenuRecipeId String
+  name            String
+  /// Which POS course these dishes fire on — matches PosOrderLine.course, so
+  /// banquet dishes group with everything else on the fire screen and the
+  /// dockets. NULL = the register's default for the dish's kind.
+  posCourse       String?
+  /// How many each guest picks from this course. 1 = one each (the normal
+  /// case); 2 = two entrées each. covers x pick = what the table owes before
+  /// the picker will let service move on.
+  pick            Int             @default(1)
+  sortOrder       Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  setMenu         Recipe          @relation(fields: [setMenuRecipeId], references: [id], onDelete: Cascade)
+  options         SetMenuOption[]
+
+  @@index([setMenuRecipeId, sortOrder])
+}
+
+// @domain: stock | home: suite
+// One dish offered under a course. `available` is tonight's menu — the kitchen
+// turns options on and off as the week changes, and the register only offers
+// what is on. Editing this never rewrites history: what a table was served is
+// on their PosOrderLine rows, not here.
+model SetMenuOption {
+  id              String        @id @default(cuid())
+  courseId        String
+  recipeId        String
+  /// Charged on top of the package price, per guest who picks it — the eye
+  /// fillet upgrade. 0 (the normal case) rings at $0 and prints "incl.".
+  supplementCents Int           @default(0)
+  available       Boolean       @default(true)
+  sortOrder       Int           @default(0)
+  createdAt       DateTime      @default(now())
+  course          SetMenuCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  recipe          Recipe        @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, recipeId])
+  @@index([recipeId])
 }
 
 // @domain: stock | home: suite
@@ -4953,6 +5008,12 @@ model PosOrderLine {
   // discount, never sent to the kitchen. Rebuilt from PosGiftCardSale, so
   // a client line edit can never lose or duplicate it.
   isGiftCard     Boolean   @default(false)
+  // The set menu this line was included in — the recipeId of the package that
+  // paid for it. Set on the $0 dish lines a banquet rings, NULL on everything
+  // sold on its own. Stamped here rather than inferred from a $0 price or a
+  // note, so the banquet report can tell an included dish from a comp, and so
+  // it survives the line rewrite every bill edit does.
+  packagedBy     String?
   // Set when the line's course has been FIRED to its printer profile.
   sentAt         DateTime?
   // Who called it away. With sentAt this is the kitchen-performance trail:
@@ -4964,6 +5025,7 @@ model PosOrderLine {
 
   @@index([orderId])
   @@index([recipeId])
+  @@index([packagedBy])
 }
 
 // A gift card being SOLD on a bill. The card itself is only issued when the

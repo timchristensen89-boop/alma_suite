@@ -3428,3 +3428,21 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 @media (max-width: 860px) {
   .dish-margin-recipe-link { opacity: 1; }
 }
+
+/* ── Set menu courses ────────────────────────────────────────────────────
+   Tonight's menu is a wall of dish pills: lit = on offer, dim = off. It is the
+   only part of this page anyone touches during service, so it reads at a
+   glance and every pill saves itself on the tap. */
+.setmenu-tonight { display: flex; flex-direction: column; gap: 14px; }
+.setmenu-tonight-course { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.setmenu-tonight-name { min-width: 130px; font-weight: 700; display: flex; flex-direction: column; }
+.setmenu-tonight-name small { font-weight: 500; opacity: 0.6; }
+.setmenu-tonight-dishes { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; }
+.setmenu-tonight-dishes button {
+  background: transparent; border: 1px dashed currentColor; border-radius: 9999px; opacity: 0.45;
+  color: inherit; font: inherit; font-size: 13px; padding: 8px 14px; cursor: pointer;
+}
+.setmenu-tonight-dishes button.is-on { background: #1F3524; border: 1px solid #1F3524; color: #F3EFE6; opacity: 1; font-weight: 600; }
+.setmenu-tonight-dishes button:disabled { cursor: default; }
+.setmenu-course-edit { border-top: 1px solid rgba(31,53,36,0.12); padding-top: 14px; margin-top: 14px; }
+.setmenu-course-head { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }

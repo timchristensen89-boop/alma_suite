@@ -62,7 +62,35 @@ type OrderLine = {
   seat?: number | null;
   modifiers?: Array<{ name: string; priceCents: number }> | null;
   notes?: string | null;
+  // The set menu that paid for this line — set on the $0 dishes a banquet
+  // rings, so the bill can group them and the report can tell them from comps.
+  packagedBy?: string | null;
   sentAt?: string | null;
+};
+// What the register needs to run a banquet, shipped with the menu.
+type SetMenuOption = {
+  id: string;
+  recipeId: string;
+  title: string;
+  /** Charged on top of the package price, per guest. 0 = included. */
+  supplementCents: number;
+  salePriceCents: number | null;
+};
+type SetMenuCourse = {
+  id: string;
+  name: string;
+  posCourse: string | null;
+  /** Choices each guest makes here. covers x pick = what the table owes. */
+  pick: number;
+  options: SetMenuOption[];
+};
+type SetMenuPlan = {
+  recipeId: string;
+  title: string;
+  salePriceCents: number | null;
+  /** Nobody chooses these — bread for the table, greens between four. */
+  fixed: Array<{ name: string; printName: string | null; recipeId: string | null; quantity: number; perGuests: number | null }>;
+  courses: SetMenuCourse[];
 };
 type Payment = { method: string; amountCents: number; tipCents: number; createdAt?: string };
 type OrderGuest = {
@@ -88,10 +116,16 @@ type ModifierGroup = { id: string; name: string; required: boolean; maxSelect: n
  * Read once per call — used by the state initialisers so the register paints
  * a usable grid before the first network round trip completes.
  */
-function readMenuCache(): { categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] } | null {
+type MenuPayload = {
+  categories: MenuCategory[];
+  eightySix?: string[];
+  modifierGroups?: ModifierGroup[];
+  setMenus?: SetMenuPlan[];
+};
+function readMenuCache(): MenuPayload | null {
   try {
     const cached = localStorage.getItem('alma.pos.menuCache');
-    return cached ? (JSON.parse(cached) as { categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] }) : null;
+    return cached ? (JSON.parse(cached) as MenuPayload) : null;
   } catch {
     return null;
   }
@@ -349,6 +383,11 @@ export function App() {
   // previously read only when the fetch FAILED, so a normal online open
   // stared at an empty grid for the full auth+menu waterfall.
   const [rawMenu, setRawMenu] = useState<MenuCategory[]>(() => readMenuCache()?.categories ?? []);
+  // Set menus that ask a question, keyed by the tile's recipeId. A menu with
+  // no courses isn't here, so its tile keeps ringing as a plain priced item.
+  const [setMenuPlans, setSetMenuPlans] = useState<Map<string, SetMenuPlan>>(
+    () => new Map((readMenuCache()?.setMenus ?? []).map((plan) => [plan.recipeId, plan]))
+  );
   // Each venue sells its own menu: St Alma items at St Alma, Avalon's at
   // Avalon. Unassigned items and Functions / Pop-up see everything.
   const menu = useMemo(() => {
@@ -883,6 +922,15 @@ export function App() {
   useEffect(() => {
     if (!order) setPkgMode(false);
   }, [order]);
+  // The banquet picker. `step` counts through the plan's courses; -1 is the
+  // covers question that opens it. `picks` is courseId -> recipeId -> heads,
+  // which is the whole state of the sheet — everything else is derived.
+  const [banquet, setBanquet] = useState<null | {
+    plan: SetMenuPlan;
+    covers: number;
+    step: number;
+    picks: Record<string, Record<string, number>>;
+  }>(null);
   const [wastage, setWastage] = useState<null | { search: string; recipeId: string; itemName: string; quantity: string; reason: string }>(null);
   const [lineAction, setLineAction] = useState<null | { lineId: string; name: string; kind: 'COMP' | 'PRICE_CHANGE'; reason: string; price: string }>(null);
   const [discounting, setDiscounting] = useState<null | { mode: 'percent' | 'amount'; value: string; reason: string }>(null);
@@ -1069,10 +1117,11 @@ export function App() {
           .then((rows) => setCourses(rows.map((row) => row.name)))
           .catch(() => undefined);
         void api<Record<string, string[]>>('/api/pos/adjust-reasons').then(setReasons).catch(() => undefined);
-        const res = await api<{ categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] }>('/api/pos/menu');
+        const res = await api<MenuPayload>('/api/pos/menu');
         setRawMenu(res.categories);
         setEightySix(new Set(res.eightySix ?? []));
         setModifierGroups(res.modifierGroups ?? []);
+        setSetMenuPlans(new Map((res.setMenus ?? []).map((plan) => [plan.recipeId, plan])));
         setOffline(false);
         localStorage.setItem('alma.pos.menuCache', JSON.stringify(res));
         void api<Array<{ kind: string; percent: number; weekdays: string }>>('/api/pos/rules')
@@ -1089,10 +1138,11 @@ export function App() {
         // Offline: run on the cached menu so quick sales keep flowing.
         const cached = localStorage.getItem('alma.pos.menuCache');
         if (cached && isNetworkError(err)) {
-          const res = JSON.parse(cached) as { categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] };
+          const res = JSON.parse(cached) as MenuPayload;
           setRawMenu(res.categories);
           setEightySix(new Set(res.eightySix ?? []));
           setModifierGroups(res.modifierGroups ?? []);
+          setSetMenuPlans(new Map((res.setMenus ?? []).map((plan) => [plan.recipeId, plan])));
           setOffline(true);
         } else {
           setError(messageForError(err, 'Could not load the menu.'));
@@ -1710,6 +1760,11 @@ export function App() {
       setError(`${item.title} is 86'd (sold out).`);
       return;
     }
+    const plan = setMenuPlans.get(item.recipeId);
+    if (plan && plan.courses.length > 0) {
+      openBanquet(plan);
+      return;
+    }
     const category = categoryOf(item).toLowerCase();
     const groups = modifierGroups.filter((group) => group.categories.includes(category));
     if (groups.length > 0) {
@@ -1717,6 +1772,180 @@ export function App() {
       return;
     }
     void addItemDirect(item, [], '');
+  }
+
+  // ── Banquet picker ────────────────────────────────────────────────────
+  // A set menu is one price for a table, but the kitchen needs the dishes and
+  // the reporting needs the mix. So the register asks: how many covers, then
+  // course by course, how many of each. Everything below is derived from
+  // `picks` — how many are spoken for, what's left, whether we can move on.
+
+  function openBanquet(plan: SetMenuPlan) {
+    setBanquet({
+      // The table's covers if service has already set them: the common case is
+      // a booked function where the number is known before anyone orders.
+      covers: order?.covers && order.covers > 0 ? order.covers : 0,
+      plan,
+      step: -1,
+      picks: {}
+    });
+  }
+
+  // Heads spoken for in a course, and how many that course still owes.
+  function banquetChosen(courseId: string): number {
+    return Object.values(banquet?.picks[courseId] ?? {}).reduce((sum, count) => sum + count, 0);
+  }
+  function banquetOwed(course: SetMenuCourse, covers: number): number {
+    return covers * course.pick;
+  }
+
+  function banquetPick(course: SetMenuCourse, recipeId: string, delta: number) {
+    setBanquet((current) => {
+      if (!current) return current;
+      const forCourse = current.picks[course.id] ?? {};
+      const owed = banquetOwed(course, current.covers);
+      const spoken = Object.values(forCourse).reduce((sum, count) => sum + count, 0);
+      // Never past what the table owes — a miscount here is a wrong docket.
+      const room = delta > 0 ? Math.min(delta, owed - spoken) : delta;
+      const next = Math.max(0, (forCourse[recipeId] ?? 0) + room);
+      return {
+        ...current,
+        picks: { ...current.picks, [course.id]: { ...forCourse, [recipeId]: next } }
+      };
+    });
+  }
+
+  // "Rest get this" — the one tap that finishes a course. Eleven of the
+  // eighteen are spoken for, everyone else is having the chicken.
+  function banquetFill(course: SetMenuCourse, recipeId: string) {
+    setBanquet((current) => {
+      if (!current) return current;
+      const forCourse = current.picks[course.id] ?? {};
+      const spoken = Object.values(forCourse).reduce((sum, count) => sum + count, 0);
+      const left = banquetOwed(course, current.covers) - spoken;
+      if (left <= 0) return current;
+      return {
+        ...current,
+        picks: { ...current.picks, [course.id]: { ...forCourse, [recipeId]: (forCourse[recipeId] ?? 0) + left } }
+      };
+    });
+  }
+
+  // The package line carries the money; every dish under it rings at $0 (or
+  // at its supplement) with `packagedBy` pointing back at the menu. That stamp
+  // is what lets the bill group them and the banquet report tell an included
+  // dish from a comped one.
+  function commitBanquet() {
+    if (!banquet) return;
+    const { plan, covers, picks } = banquet;
+    const lines: OrderLine[] = [
+      {
+        recipeId: plan.recipeId,
+        name: plan.title,
+        printName: null,
+        unitPriceCents: plan.salePriceCents ?? 0,
+        quantity: covers,
+        // Explicitly NOW rather than null: the cart groups a course-less line
+        // under NOW but labels its chip "Mains", and a bill that disagrees
+        // with itself is the kind of small wrongness staff stop trusting.
+        course: 'NOW',
+        modifiers: null,
+        notes: null
+      }
+    ];
+    // Fixed components: nobody chose them, but the kitchen still plates them.
+    // perGuests = shared between N, so eighteen covers want five boards of
+    // bread between four, not eighteen.
+    for (const component of plan.fixed) {
+      const quantity = component.perGuests && component.perGuests > 0
+        ? Math.ceil(covers / component.perGuests)
+        : Math.max(1, Math.round(component.quantity * covers));
+      if (quantity <= 0) continue;
+      lines.push({
+        recipeId: component.recipeId,
+        name: component.name,
+        printName: component.printName,
+        unitPriceCents: 0,
+        quantity,
+        course: targetCourse ?? defaultCourse('FOOD'),
+        modifiers: null,
+        notes: null,
+        packagedBy: plan.recipeId
+      });
+    }
+    for (const course of plan.courses) {
+      for (const option of course.options) {
+        const heads = picks[course.id]?.[option.recipeId] ?? 0;
+        if (heads <= 0) continue;
+        lines.push({
+          recipeId: option.recipeId,
+          name: option.title,
+          printName: null,
+          // A supplement is real money on the bill — the eye fillet upgrade
+          // is charged per guest who took it, on top of the package.
+          unitPriceCents: option.supplementCents,
+          quantity: heads,
+          course: course.posCourse || course.name,
+          modifiers: null,
+          notes: null,
+          packagedBy: plan.recipeId
+        });
+      }
+    }
+    setBanquet(null);
+    // Everything the banquet touches opens, so service sees it land.
+    setCourseOpen((current) => {
+      const next = { ...current };
+      for (const line of lines) next[line.course ?? 'NOW'] = true;
+      return next;
+    });
+    void addLines(lines, covers);
+  }
+
+  // Add several lines in one go — what the banquet picker commits. No
+  // optimistic path here on purpose: the picker has already taken a few
+  // seconds, and a table this size wants its covers on the order as well.
+  async function addLines(lines: OrderLine[], covers?: number) {
+    if (lines.length === 0) return;
+    if (order && (order.id.startsWith('local-') || order.id.startsWith('pending-'))) {
+      // A sale whose server order doesn't exist yet: merge locally and let the
+      // creation loop re-PUT the lot, exactly as a tile tap would.
+      void pushLines([...order.lines, ...lines]);
+      return;
+    }
+    setBusy(true);
+    try {
+      let target = order;
+      if (!target) {
+        target = await api<Order>('/api/pos/orders', {
+          method: 'POST',
+          body: JSON.stringify({
+            venue,
+            openedByName: operatorName || undefined,
+            training: training || undefined,
+            ...(covers ? { covers } : {})
+          })
+        });
+      } else if (covers && !target.covers) {
+        // The picker just asked how many are eating; the docket header and
+        // every covers-based report want that same number.
+        target = await api<Order>(`/api/pos/orders/${target.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ covers })
+        });
+      }
+      const updated = await api<Order>(`/api/pos/orders/${target.id}/lines`, {
+        method: 'PUT',
+        body: JSON.stringify({ lines: [...target.lines, ...lines] })
+      });
+      setOrder(updated);
+      setOpenFolder(null);
+      setOffline(false);
+    } catch (err) {
+      setError(messageForError(err, 'Could not add the set menu.'));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function addItemDirect(item: MenuItem, modifiers: Array<{ name: string; priceCents: number }>, notes: string) {
@@ -3819,7 +4048,11 @@ export function App() {
                     <b>{line.quantity}</b>
                     <button type="button" onClick={() => bumpQty(index, 1)}>+</button>
                   </span>
-                  <span className="pos-line-total">{line.unitPriceCents === 0 && line.notes?.includes('Included in package') ? 'incl.' : money(line.unitPriceCents * line.quantity)}</span>
+                  <span className="pos-line-total">
+                    {line.unitPriceCents === 0 && (line.packagedBy || line.notes?.includes('Included in package'))
+                      ? 'incl.'
+                      : money(line.unitPriceCents * line.quantity)}
+                  </span>
                 </div>
               )) : null}
                 </div>
@@ -5162,6 +5395,165 @@ export function App() {
         </div>
       ) : null}
 
+      {banquet ? (
+        (() => {
+          const { plan, covers, step, picks } = banquet;
+          const course = step >= 0 ? plan.courses[step] : null;
+          const owed = course ? banquetOwed(course, covers) : 0;
+          const chosen = course ? banquetChosen(course.id) : 0;
+          const left = owed - chosen;
+          const last = step === plan.courses.length - 1;
+          return (
+            <div className="pos-modal" role="dialog">
+              <div className="pos-modal-panel pos-banquet">
+                <div className="pos-banquet-head">
+                  <h2>{plan.title}</h2>
+                  {covers > 0 ? (
+                    <span className="pos-banquet-covers">
+                      {covers} {covers === 1 ? 'cover' : 'covers'}
+                      {plan.salePriceCents ? ` · ${money(plan.salePriceCents)} each` : ''}
+                    </span>
+                  ) : null}
+                </div>
+
+                {course === null ? (
+                  // How many are eating. Everything after this counts against
+                  // it, so it is the one thing worth a screen of its own.
+                  <div className="pos-banquet-covers-step">
+                    <p className="pos-muted">How many are eating?</p>
+                    <div className="pos-banquet-quick">
+                      {[2, 4, 6, 8, 10, 12, 15, 18, 20, 25, 30, 40].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          className={covers === n ? 'is-on' : ''}
+                          onClick={() => setBanquet({ ...banquet, covers: n })}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="pos-banquet-stepper">
+                      <button type="button" onClick={() => setBanquet({ ...banquet, covers: Math.max(0, covers - 1) })}>
+                        −
+                      </button>
+                      <input
+                        className="pos-tender"
+                        inputMode="numeric"
+                        value={covers > 0 ? String(covers) : ''}
+                        placeholder="0"
+                        onChange={(event) => {
+                          const value = Number(event.currentTarget.value.replace(/\D/g, ''));
+                          setBanquet({ ...banquet, covers: Number.isFinite(value) ? Math.min(200, value) : 0 });
+                        }}
+                      />
+                      <button type="button" onClick={() => setBanquet({ ...banquet, covers: Math.min(200, covers + 1) })}>
+                        +
+                      </button>
+                    </div>
+                    {plan.fixed.length > 0 ? (
+                      <p className="pos-banquet-fixed">
+                        Everyone gets: {plan.fixed.map((component) => component.name).join(' · ')}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <>
+                    <p className="pos-muted pos-banquet-ask">
+                      {course.name} — {course.pick === 1 ? 'one each' : `${course.pick} each`}
+                    </p>
+                    <div className="pos-banquet-options">
+                      {course.options.map((option) => {
+                        const heads = picks[course.id]?.[option.recipeId] ?? 0;
+                        const off = eightySix.has(option.recipeId);
+                        return (
+                          <div key={option.id} className={`pos-banquet-option${heads > 0 ? ' is-on' : ''}${off ? ' is-86' : ''}`}>
+                            <button
+                              type="button"
+                              className="pos-banquet-option-main"
+                              disabled={off || left <= 0}
+                              onClick={() => banquetPick(course, option.recipeId, 1)}
+                            >
+                              <span className="pos-banquet-option-name">{option.title}</span>
+                              <span className="pos-banquet-option-meta">
+                                {off
+                                  ? "86'd"
+                                  : option.supplementCents > 0
+                                    ? `+${money(option.supplementCents)}`
+                                    : option.salePriceCents
+                                      ? `${money(option.salePriceCents)} à la carte`
+                                      : ''}
+                              </span>
+                              {heads > 0 ? <span className="pos-banquet-count">{heads}</span> : null}
+                            </button>
+                            <button
+                              type="button"
+                              className="pos-banquet-less"
+                              aria-label={`One fewer ${option.title}`}
+                              disabled={heads <= 0}
+                              onClick={() => banquetPick(course, option.recipeId, -1)}
+                            >
+                              −
+                            </button>
+                            <button
+                              type="button"
+                              className="pos-banquet-rest"
+                              disabled={off || left <= 0}
+                              onClick={() => banquetFill(course, option.recipeId)}
+                            >
+                              Rest get this
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                <p className={`pos-banquet-progress${course && left === 0 ? ' is-done' : ''}`}>
+                  {course === null
+                    ? covers > 0
+                      ? `${plan.courses.length} ${plan.courses.length === 1 ? 'course' : 'courses'} to choose`
+                      : 'Set the number of covers to start'
+                    : left === 0
+                      ? `All ${owed} chosen`
+                      : `${chosen} of ${owed} chosen · ${left} to go`}
+                </p>
+
+                <div className="pos-banquet-actions">
+                  <button
+                    type="button"
+                    className="pos-ghost"
+                    onClick={() => (step <= -1 ? setBanquet(null) : setBanquet({ ...banquet, step: step - 1 }))}
+                  >
+                    {step <= -1 ? 'Cancel' : 'Back'}
+                  </button>
+                  <button
+                    type="button"
+                    className="pos-charge"
+                    // The guard that stops half-counted tables reaching the
+                    // kitchen: you cannot move on until the heads add up.
+                    disabled={busy || (course === null ? covers <= 0 : left !== 0)}
+                    onClick={() => {
+                      if (course === null) {
+                        // A menu with fixed components and no questions is
+                        // just an order — ring it and be done.
+                        if (plan.courses.length === 0) commitBanquet();
+                        else setBanquet({ ...banquet, step: 0 });
+                        return;
+                      }
+                      if (last) commitBanquet();
+                      else setBanquet({ ...banquet, step: step + 1 });
+                    }}
+                  >
+                    {course === null ? 'Start' : last ? 'Add to bill' : `Next: ${plan.courses[step + 1]?.name ?? ''}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()
+      ) : null}
       {modSheet ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">

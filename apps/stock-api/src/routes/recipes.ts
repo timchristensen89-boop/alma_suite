@@ -155,6 +155,34 @@ recipesRouter.post('/set-menus/add-component', async (req, res, next) => {
   }
 });
 
+// The courses a guest chooses from. Registered above '/:id' so the literal
+// path wins — '/set-menu-options/x' would otherwise match ':id'.
+recipesRouter.patch('/set-menu-options/:id/availability', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await recipesService.setSetMenuOptionAvailability(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+recipesRouter.get('/:id/courses', async (req, res, next) => {
+  try {
+    res.json(await recipesService.setMenuCourses(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+recipesRouter.put('/:id/courses', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await recipesService.saveSetMenuCourses(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 recipesRouter.get('/:id', async (req, res, next) => {
   try {
     res.json(await recipesService.get(String(req.params.id)));
