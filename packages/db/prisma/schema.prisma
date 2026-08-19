@@ -3086,6 +3086,7 @@ model Recipe {
   venuePrices        RecipeVenuePrice[]
   setMenuCourses     SetMenuCourse[]
   offeredOn          SetMenuOption[]
+  winePour           WinePour?
 
   @@index([title])
   @@index([category])
@@ -3255,6 +3256,79 @@ model RecipeLine {
   @@index([recipeId])
   @@index([itemId])
   @@index([subRecipeId])
+}
+
+// @domain: stock | home: suite
+// What a wine is, past a name and a price.
+//
+// A wine in the catalogue is a Recipe like anything else, and a Recipe has a
+// title and a price and nothing else — so "a Riesling under $90 from the Clare"
+// is a question the register cannot answer, and the same wine appears as three
+// separate items because each pour size is its own row ("BenMarco Malbec
+// 150mL", "…250mL", "…750mL").
+//
+// This is the wine as the list in the guest's hand describes it: one bottle,
+// its grape and where it comes from, what it tastes like, what it goes with —
+// with the pour sizes hanging off it as WinePour rows. Money stays entirely on
+// the Recipe each pour points at; nothing here prices anything.
+model Wine {
+  id            String     @id @default(cuid())
+  venue         String
+  producer      String
+  /// The bit in quotes on the list — 'Polish Hill', 'Valle de Uco'. Often none.
+  cuvee         String?
+  /// As printed: one grape, or the blend spelled out ("Grenache Shiraz Mourvedre").
+  grape         String?
+  region        String?
+  /// The list writes a state for Australian wine and a country for imports —
+  /// SA, VIC, FRA, ITA. Kept exactly as printed, because that is how the floor
+  /// says it.
+  origin        String?
+  /// NULL = non-vintage.
+  vintage       Int?
+  /// The menu's own heading: Riesling, Chardonnay, Other reds, Bubbles.
+  section       String?
+  /// The menu's sub-heading: "Crisp & refreshing", "Full-bodied & bold".
+  styleBand     String?
+  /// The printed pairing marks: 's' seafood & ceviche, 'r' rich & grilled,
+  /// 'v' vegetables & cheese.
+  pairsWith     String[]
+  tastingNote   String?
+  /// The premium by-the-glass tier the list sets apart.
+  sommelierPour Boolean    @default(false)
+  /// The list's "**": on hand now, not reliably re-orderable.
+  limitedStock  Boolean    @default(false)
+  serveChilled  Boolean    @default(false)
+  /// Running order inside the section, so the register lists it the way the
+  /// printed menu does.
+  sortOrder     Int        @default(0)
+  status        String     @default("ACTIVE")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  pours         WinePour[]
+
+  @@index([venue, section, sortOrder])
+  @@index([grape])
+  @@index([region])
+}
+
+// @domain: stock | home: suite
+// One pour size of a wine, pointing at the POS item that carries its price.
+// 150 and 250 for a glass, 750 for the bottle; 60 and 375 for the fortified.
+// The price is NOT here on purpose — it lives on the Recipe, where the till,
+// the reports and the venue overrides already read it.
+model WinePour {
+  id        String @id @default(cuid())
+  wineId    String
+  /// Unique: a POS item is one pour of one wine, never shared.
+  recipeId  String @unique
+  ml        Int
+  sortOrder Int    @default(0)
+  wine      Wine   @relation(fields: [wineId], references: [id], onDelete: Cascade)
+  recipe    Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([wineId, ml])
+  @@index([wineId])
 }
 
 // @domain: stock | home: suite
