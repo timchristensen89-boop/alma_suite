@@ -84,6 +84,29 @@ type SetMenuCourse = {
   pick: number;
   options: SetMenuOption[];
 };
+// What the register needs to sell a wine. Price comes off the recipe each pour
+// points at, so a pour is a sellable item in its own right.
+type RegisterWinePour = { recipeId: string; ml: number; priceCents: number; title: string; printName: string | null };
+type RegisterWine = {
+  id: string;
+  venue: string;
+  name: string;
+  producer: string;
+  cuvee: string | null;
+  grape: string | null;
+  region: string | null;
+  origin: string | null;
+  vintage: number | null;
+  section: string | null;
+  styleBand: string | null;
+  /** 's' seafood & ceviche, 'r' rich & grilled, 'v' vegetables & cheese. */
+  pairsWith: string[];
+  tastingNote: string | null;
+  sommelierPour: boolean;
+  limitedStock: boolean;
+  serveChilled: boolean;
+  pours: RegisterWinePour[];
+};
 type SetMenuPlan = {
   recipeId: string;
   title: string;
@@ -121,6 +144,7 @@ type MenuPayload = {
   eightySix?: string[];
   modifierGroups?: ModifierGroup[];
   setMenus?: SetMenuPlan[];
+  wines?: RegisterWine[];
 };
 function readMenuCache(): MenuPayload | null {
   try {
@@ -362,6 +386,10 @@ function paidCents(order: Order) {
   return order.payments.reduce((sum, payment) => sum + payment.amountCents, 0);
 }
 
+// The wine list is its own view rather than a category of tiles, so it needs a
+// token the board will never produce.
+const WINE_TAB = '__wine__';
+
 function defaultCourse(_kind: string) {
   return 'NOW';
 }
@@ -388,6 +416,7 @@ export function App() {
   const [setMenuPlans, setSetMenuPlans] = useState<Map<string, SetMenuPlan>>(
     () => new Map((readMenuCache()?.setMenus ?? []).map((plan) => [plan.recipeId, plan]))
   );
+  const [allWines, setAllWines] = useState<RegisterWine[]>(() => readMenuCache()?.wines ?? []);
   // Each venue sells its own menu: St Alma items at St Alma, Avalon's at
   // Avalon. Unassigned items and Functions / Pop-up see everything.
   const menu = useMemo(() => {
@@ -1122,6 +1151,7 @@ export function App() {
         setEightySix(new Set(res.eightySix ?? []));
         setModifierGroups(res.modifierGroups ?? []);
         setSetMenuPlans(new Map((res.setMenus ?? []).map((plan) => [plan.recipeId, plan])));
+        setAllWines(res.wines ?? []);
         setOffline(false);
         localStorage.setItem('alma.pos.menuCache', JSON.stringify(res));
         void api<Array<{ kind: string; percent: number; weekdays: string }>>('/api/pos/rules')
@@ -1143,6 +1173,7 @@ export function App() {
           setEightySix(new Set(res.eightySix ?? []));
           setModifierGroups(res.modifierGroups ?? []);
           setSetMenuPlans(new Map((res.setMenus ?? []).map((plan) => [plan.recipeId, plan])));
+          setAllWines(res.wines ?? []);
           setOffline(true);
         } else {
           setError(messageForError(err, 'Could not load the menu.'));
@@ -1772,6 +1803,138 @@ export function App() {
       return;
     }
     void addItemDirect(item, [], '');
+  }
+
+  // ── The wine list ─────────────────────────────────────────────────────
+  // Food is a grid because a grid works: forty dishes, tapped by sight. Wine
+  // is not like that — the guest asks for a grape, a region or a number, never
+  // for a tile. So wine gets a list with the pour prices on the row, and the
+  // filters that answer the three questions actually asked at the table.
+  const wines = useMemo(
+    () => allWines.filter((wine) => wine.venue === venue),
+    [allWines, venue]
+  );
+
+  // Colour comes off the menu's own section headings, because the printed list
+  // is already organised by grape — "Riesling" says white without being told.
+  const wineColour = (wine: RegisterWine): string => {
+    const section = (wine.section ?? '').toLowerCase();
+    if (/skin|orange/.test(section)) return 'orange';
+    if (/bubbl|sparkling|champagne/.test(section)) return 'sparkling';
+    if (/ros/.test(section)) return 'rose';
+    if (/sweet|fortified|muscat/.test(section)) return 'fortified';
+    if (/riesling|chardonnay|sauvignon|semillon|white/.test(section)) return 'white';
+    return 'red';
+  };
+  const WINE_COLOURS = [
+    { id: 'white', label: 'White' },
+    { id: 'red', label: 'Red' },
+    { id: 'rose', label: 'Rosé' },
+    { id: 'sparkling', label: 'Sparkling' },
+    { id: 'orange', label: 'Skin contact' },
+    { id: 'fortified', label: 'Fortified' }
+  ];
+  // Bands as a guest says them, not in even steps.
+  const WINE_BANDS = [
+    { id: 'u80', label: 'Under $80', test: (cents: number) => cents < 8000 },
+    { id: '80-120', label: '$80–120', test: (cents: number) => cents >= 8000 && cents < 12000 },
+    { id: '120-200', label: '$120–200', test: (cents: number) => cents >= 12000 && cents < 20000 },
+    { id: '200+', label: '$200+', test: (cents: number) => cents >= 20000 }
+  ];
+  const WINE_PAIRS = [
+    { id: 's', label: '○ Seafood' },
+    { id: 'r', label: '△ Rich & grilled' },
+    { id: 'v', label: '◇ Veg & cheese' }
+  ];
+  const WINE_MARK: Record<string, string> = { s: '○', r: '△', v: '◇' };
+  // The printed list's running order, so the register and the list in the
+  // guest's hand are organised the same way.
+  const WINE_SECTIONS = [
+    'Bubbles', 'White', 'Riesling', 'Sauvignon Blanc & Semillon', 'Chardonnay', 'Other whites',
+    'Skin contact & orange', 'Rosé', 'Red', 'Pinot Noir', 'Shiraz', 'Cabernet & Bordeaux blends',
+    'Other reds', 'Mexican wine', 'Sweet & fortified'
+  ];
+  const WINE_BANDS_ORDER = [
+    'Crisp & refreshing', 'Aromatic & textural', 'Mineral & complex',
+    'Light & juicy', 'Medium-bodied & versatile', 'Full-bodied & bold'
+  ];
+  const rankIn = (list: string[], value: string | null) => {
+    const index = list.indexOf(value ?? '');
+    return index === -1 ? list.length : index;
+  };
+
+  const [wineFilters, setWineFilters] = useState<{
+    q: string;
+    pour: 'any' | 'glass' | 'bottle';
+    colours: string[];
+    band: string | null;
+    pairs: string[];
+    open: string | null;
+  }>({ q: '', pour: 'any', colours: [], band: null, pairs: [], open: null });
+
+  /** Cheapest way to buy the whole bottle, or the dearest pour if there is none. */
+  const wineFrom = (wine: RegisterWine) =>
+    wine.pours.find((pour) => pour.ml >= 700)?.priceCents ?? Math.max(...wine.pours.map((pour) => pour.priceCents));
+  const winePoured = (wine: RegisterWine) => wine.pours.some((pour) => pour.ml < 700);
+  const wineOff = (wine: RegisterWine) => wine.pours.every((pour) => eightySix.has(pour.recipeId));
+
+  const sortedWines = useMemo(
+    () =>
+      wines.slice().sort(
+        (a, b) =>
+          rankIn(WINE_SECTIONS, a.section) - rankIn(WINE_SECTIONS, b.section) ||
+          rankIn(WINE_BANDS_ORDER, a.styleBand) - rankIn(WINE_BANDS_ORDER, b.styleBand) ||
+          wineFrom(a) - wineFrom(b)
+      ),
+    [wines]
+  );
+
+  const shownWines = useMemo(() => {
+    const band = WINE_BANDS.find((entry) => entry.id === wineFilters.band);
+    const terms = wineFilters.q.toLowerCase().split(/\s+/).filter(Boolean);
+    return sortedWines.filter((wine) => {
+      // Search covers everything a guest might say — the grape and the region
+      // as readily as the label, and the tasting note for "something chalky".
+      if (terms.length > 0) {
+        const hay = `${wine.name} ${wine.grape ?? ''} ${wine.region ?? ''} ${wine.origin ?? ''} ${wine.section ?? ''} ${wine.styleBand ?? ''} ${wine.tastingNote ?? ''} ${wine.vintage ?? 'NV'}`.toLowerCase();
+        if (!terms.every((term) => hay.includes(term))) return false;
+      }
+      if (wineFilters.pour === 'glass' && !winePoured(wine)) return false;
+      if (wineFilters.pour === 'bottle' && winePoured(wine)) return false;
+      if (wineFilters.colours.length > 0 && !wineFilters.colours.includes(wineColour(wine))) return false;
+      if (band && !band.test(wineFrom(wine))) return false;
+      if (wineFilters.pairs.length > 0 && !wine.pairsWith.some((mark) => wineFilters.pairs.includes(mark))) return false;
+      return true;
+    });
+  }, [sortedWines, wineFilters, eightySix]);
+
+  // What a sommelier does in their head, for when the bottle is gone or it is
+  // over their number: same grape first, then same region, then same country,
+  // nearest by price — and never something that has run out.
+  function similarWines(wine: RegisterWine) {
+    return wines
+      .filter((other) => other.id !== wine.id && !wineOff(other) && (other.grape === wine.grape || other.region === wine.region || other.origin === wine.origin))
+      .map((other) => ({
+        wine: other,
+        why: other.grape === wine.grape ? 'Same grape' : other.region === wine.region ? 'Same region' : `Also ${other.origin ?? ''}`,
+        rank: (other.grape === wine.grape ? 0 : other.region === wine.region ? 1 : 2) * 1e7 + Math.abs(wineFrom(other) - wineFrom(wine))
+      }))
+      .sort((a, b) => a.rank - b.rank)
+      .slice(0, 3);
+  }
+
+  // A pour is an ordinary catalogue item, so selling one goes through the same
+  // path as any tile: modifiers, course defaults, the optimistic first tap.
+  function addWinePour(wine: RegisterWine, pour: RegisterWinePour) {
+    if (eightySix.has(pour.recipeId)) {
+      setError(`${wine.name} is 86'd (sold out).`);
+      return;
+    }
+    void addItemDirect(
+      { recipeId: pour.recipeId, title: pour.title, printTitle: pour.printName, priceCents: pour.priceCents, venue: wine.venue },
+      [],
+      ''
+    );
   }
 
   // ── Banquet picker ────────────────────────────────────────────────────
@@ -2804,6 +2967,15 @@ export function App() {
             <button type="button" className={activeCategory === '__all__' && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'} onClick={() => { setView('register'); setActiveCategory('__all__'); }}>
               Full menu
             </button>
+            {wines.length > 0 ? (
+              <button
+                type="button"
+                className={activeCategory === WINE_TAB && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'}
+                onClick={() => { setView('register'); setActiveCategory(WINE_TAB); }}
+              >
+                Wine <span className="pos-rail-count">{wines.length}</span>
+              </button>
+            ) : null}
             {visibleTabs.map((token) => {
               const isGroup = token.startsWith('g:');
               const groupName = isGroup ? token.slice(2) : null;
@@ -3215,6 +3387,15 @@ export function App() {
                 >
                   Full menu
                 </button>
+                {wines.length > 0 ? (
+                  <button
+                    type="button"
+                    className={activeCategory === WINE_TAB ? 'is-active' : ''}
+                    onClick={() => setActiveCategory(WINE_TAB)}
+                  >
+                    Wine
+                  </button>
+                ) : null}
                 {/* Read-only: the tab bar is arranged in the board editor. */}
                 {visibleTabs.map((token) => {
                   const isGroup = token.startsWith('g:');
@@ -3239,7 +3420,200 @@ export function App() {
                 ) : null}
               </nav>
             ) : null}
-            {(activeCategory === '__all__' && !searchTerm) ||
+            {activeCategory === WINE_TAB ? (
+              (() => {
+                const chip = (
+                  key: string,
+                  label: string,
+                  on: boolean,
+                  count: number,
+                  toggle: () => void
+                ) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className="pos-wine-chip"
+                    aria-pressed={on}
+                    disabled={count === 0}
+                    onClick={toggle}
+                  >
+                    {label}
+                    <span className="pos-wine-n">{count}</span>
+                  </button>
+                );
+                const countIf = (test: (wine: RegisterWine) => boolean) => wines.filter(test).length;
+                let section: string | null = null;
+                let styleBand: string | null = null;
+                return (
+                  <div className="pos-wine">
+                    <div className="pos-wine-filters">
+                      <input
+                        className="pos-wine-search"
+                        type="search"
+                        value={wineFilters.q}
+                        placeholder="Grape, region, producer, or a word from the note"
+                        onChange={(event) => setWineFilters({ ...wineFilters, q: event.currentTarget.value, open: null })}
+                      />
+                      <div className="pos-wine-chips">
+                        <span className="pos-wine-label">Pour</span>
+                        {chip('any', 'Everything', wineFilters.pour === 'any', wines.length, () =>
+                          setWineFilters({ ...wineFilters, pour: 'any', open: null })
+                        )}
+                        {chip('glass', 'By the glass', wineFilters.pour === 'glass', countIf(winePoured), () =>
+                          setWineFilters({ ...wineFilters, pour: 'glass', open: null })
+                        )}
+                        {chip('bottle', 'Bottle only', wineFilters.pour === 'bottle', countIf((wine) => !winePoured(wine)), () =>
+                          setWineFilters({ ...wineFilters, pour: 'bottle', open: null })
+                        )}
+                      </div>
+                      <div className="pos-wine-chips">
+                        <span className="pos-wine-label">Colour</span>
+                        {WINE_COLOURS.map((colour) =>
+                          chip(
+                            colour.id,
+                            colour.label,
+                            wineFilters.colours.includes(colour.id),
+                            countIf((wine) => wineColour(wine) === colour.id),
+                            () =>
+                              setWineFilters({
+                                ...wineFilters,
+                                colours: wineFilters.colours.includes(colour.id)
+                                  ? wineFilters.colours.filter((id) => id !== colour.id)
+                                  : [...wineFilters.colours, colour.id],
+                                open: null
+                              })
+                          )
+                        )}
+                      </div>
+                      <div className="pos-wine-chips">
+                        <span className="pos-wine-label">Price</span>
+                        {WINE_BANDS.map((band) =>
+                          chip(
+                            band.id,
+                            band.label,
+                            wineFilters.band === band.id,
+                            countIf((wine) => band.test(wineFrom(wine))),
+                            () => setWineFilters({ ...wineFilters, band: wineFilters.band === band.id ? null : band.id, open: null })
+                          )
+                        )}
+                        {WINE_PAIRS.map((pair) =>
+                          chip(
+                            pair.id,
+                            pair.label,
+                            wineFilters.pairs.includes(pair.id),
+                            countIf((wine) => wine.pairsWith.includes(pair.id)),
+                            () =>
+                              setWineFilters({
+                                ...wineFilters,
+                                pairs: wineFilters.pairs.includes(pair.id)
+                                  ? wineFilters.pairs.filter((id) => id !== pair.id)
+                                  : [...wineFilters.pairs, pair.id],
+                                open: null
+                              })
+                          )
+                        )}
+                        <button
+                          type="button"
+                          className="pos-wine-clear"
+                          onClick={() => setWineFilters({ q: '', pour: 'any', colours: [], band: null, pairs: [], open: null })}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <span className="pos-wine-count">
+                        {shownWines.length === wines.length
+                          ? `${wines.length} wines`
+                          : `${shownWines.length} of ${wines.length} wines`}
+                      </span>
+                    </div>
+                    <div className="pos-wine-rows">
+                      {shownWines.length === 0 ? (
+                        <p className="pos-wine-empty">Nothing on the list matches that. Clear a filter and try again.</p>
+                      ) : null}
+                      {shownWines.map((wine) => {
+                        const rows = [];
+                        if (wine.section !== section || wine.styleBand !== styleBand) {
+                          section = wine.section;
+                          styleBand = wine.styleBand;
+                          rows.push(
+                            <div key={`h-${wine.id}`} className="pos-wine-group">
+                              {section ?? 'Wine'}
+                              {styleBand ? <span className="pos-wine-band">{styleBand}</span> : null}
+                            </div>
+                          );
+                        }
+                        const off = wineOff(wine);
+                        rows.push(
+                          <div key={wine.id} className={`pos-wine-row${off ? ' is-86' : ''}`}>
+                            <span className="pos-wine-main">
+                              <span className="pos-wine-name">
+                                <span className="pos-wine-vintage">{wine.vintage ?? 'NV'}</span>
+                                {wine.name}
+                                {off ? <span className="pos-wine-tag is-out">86'd</span> : null}
+                                {wine.sommelierPour ? <span className="pos-wine-tag is-som">Sommelier</span> : null}
+                                {wine.limitedStock ? <span className="pos-wine-tag is-ltd">Limited</span> : null}
+                                {wine.serveChilled ? <span className="pos-wine-tag">Serve chilled</span> : null}
+                              </span>
+                              <span className="pos-wine-meta">
+                                {[wine.grape, [wine.region, wine.origin].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
+                                {wine.pairsWith.length > 0 ? (
+                                  <span className="pos-wine-marks"> {wine.pairsWith.map((mark) => WINE_MARK[mark]).join(' ')}</span>
+                                ) : null}
+                              </span>
+                              {wine.tastingNote ? <span className="pos-wine-note">{wine.tastingNote}</span> : null}
+                            </span>
+                            <span className="pos-wine-pours">
+                              {wine.pours.map((pour) => (
+                                <button
+                                  key={pour.recipeId}
+                                  type="button"
+                                  className="pos-wine-pour"
+                                  disabled={eightySix.has(pour.recipeId)}
+                                  onClick={() => addWinePour(wine, pour)}
+                                >
+                                  <span className="pos-wine-size">{pour.ml >= 700 ? 'Bottle' : `${pour.ml} mL`}</span>
+                                  <span className="pos-wine-price">{money(pour.priceCents)}</span>
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                className="pos-wine-like"
+                                onClick={() =>
+                                  setWineFilters({ ...wineFilters, open: wineFilters.open === wine.id ? null : wine.id })
+                                }
+                              >
+                                Like<br />this
+                              </button>
+                            </span>
+                          </div>
+                        );
+                        if (wineFilters.open === wine.id) {
+                          const near = similarWines(wine);
+                          rows.push(
+                            <div key={`s-${wine.id}`} className="pos-wine-similar">
+                              <span className="pos-wine-similar-head">Instead of {wine.name}</span>
+                              {near.length === 0 ? (
+                                <span className="pos-wine-meta">Nothing else on the list is close to it.</span>
+                              ) : null}
+                              {near.map(({ wine: other, why }) => (
+                                <span key={other.id} className="pos-wine-similar-row">
+                                  <span className="pos-wine-similar-name">
+                                    {other.name} — {other.grape ?? other.section}, {other.region}
+                                  </span>
+                                  <span className="pos-wine-meta">{why}</span>
+                                  <span className="pos-wine-meta">{money(wineFrom(other))}</span>
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        }
+                        return rows;
+                      })}
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (activeCategory === '__all__' && !searchTerm) ||
             (tabsConfig.looks?.[activeCategory] === 'list' && menu.some((category) => category.name === activeCategory) && !searchTerm) ? (
               <div className="pos-list">
                 {(activeCategory === '__all__'
