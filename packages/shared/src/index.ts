@@ -6521,6 +6521,140 @@ export const setMenuAddComponentInputSchema = z.object({
 });
 export type SetMenuAddComponentInput = z.infer<typeof setMenuAddComponentInputSchema>;
 
+// ─── Set menu courses (the picker) ───────────────────────────────
+// A set menu's fixed components are RecipeLine rows on the menu itself. These
+// are the parts a guest chooses: "one entree each, from these three", where
+// the three change through the week. The register asks the question; what was
+// picked lands on PosOrderLine, which is what the banquet report reads back.
+
+export type SetMenuCourseOption = {
+  id: string;
+  recipeId: string;
+  title: string;
+  /** Charged on top of the package price, per guest. 0 = included. */
+  supplementCents: number;
+  /** Tonight's menu: off = not offered at the register. */
+  available: boolean;
+  /** A la carte price, which is how package revenue gets shared out. */
+  salePriceCents: number | null;
+  estimatedCost: number | null;
+  sortOrder: number;
+};
+
+export type SetMenuCourse = {
+  id: string;
+  name: string;
+  /** Matches PosOrderLine.course. NULL = the register's default. */
+  posCourse: string | null;
+  /** Choices each guest makes here. covers x pick = what the table owes. */
+  pick: number;
+  sortOrder: number;
+  options: SetMenuCourseOption[];
+};
+
+// Everything the register needs to run a banquet without a second request.
+export type SetMenuPlan = {
+  recipeId: string;
+  title: string;
+  salePriceCents: number | null;
+  /** Nobody chooses these — bread for the table, greens between four. */
+  fixed: Array<{
+    name: string;
+    printName: string | null;
+    recipeId: string | null;
+    /** Per person, before perGuests is applied. */
+    quantity: number;
+    /** Shared between N guests: qty = ceil(covers / perGuests). */
+    perGuests: number | null;
+  }>;
+  courses: SetMenuCourse[];
+};
+
+export const setMenuCoursesSaveInputSchema = z.object({
+  courses: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(60),
+        posCourse: z.string().max(40).nullish(),
+        /** 1 = one each (the normal case); 2 = two entrees each. */
+        pick: z.coerce.number().int().min(1).max(9).default(1),
+        options: z
+          .array(
+            z.object({
+              recipeId: z.string().min(1),
+              supplementCents: z.coerce.number().int().min(0).max(100_000).default(0),
+              available: z.coerce.boolean().default(true)
+            })
+          )
+          .max(40)
+          .default([])
+      })
+    )
+    .max(12)
+});
+export type SetMenuCoursesSaveInput = z.infer<typeof setMenuCoursesSaveInputSchema>;
+
+// Tonight's menu changes more often than the menu does, so flipping one dish
+// on or off is its own one-tap call rather than a full save.
+export const setMenuOptionAvailabilityInputSchema = z.object({
+  available: z.coerce.boolean()
+});
+
+// What the banquet report answers: a set menu sells for one price and its
+// dishes ring at $0, so each table's package revenue is shared across the
+// dishes that table was served, in proportion to their a la carte value.
+export type BanquetDishRow = {
+  recipeId: string | null;
+  name: string;
+  /** Plates served across the range. */
+  servings: number;
+  /** Share of covers that chose this dish. */
+  sharePercent: number | null;
+  alaCarteCents: number | null;
+  allocatedRevenueCents: number;
+  /** Upgrades charged on top of the package. */
+  supplementRevenueCents: number;
+  revenueCents: number;
+  costCents: number;
+  marginCents: number;
+  marginPercent: number | null;
+  /** False when the dish has no recipe cost, so its margin reads high. */
+  costed: boolean;
+  menus: string[];
+};
+
+export type BanquetReportPayload = {
+  range: { start: string; end: string };
+  venue: string | null;
+  totals: {
+    tables: number;
+    covers: number;
+    packageRevenueCents: number;
+    supplementRevenueCents: number;
+    revenueCents: number;
+    costCents: number;
+    marginCents: number;
+    marginPercent: number | null;
+    revenuePerCoverCents: number;
+    costPerCoverCents: number;
+  };
+  /** Named plainly so the page can say which numbers are soft, and why. */
+  gaps: { unpricedDishes: string[]; uncostedDishes: string[] };
+  dishes: BanquetDishRow[];
+  menus: Array<{
+    recipeId: string | null;
+    name: string;
+    tables: number;
+    covers: number;
+    revenueCents: number;
+    costCents: number;
+    marginCents: number;
+    marginPercent: number | null;
+    costPerCoverCents: number;
+  }>;
+  nights: Array<{ date: string; tables: number; covers: number; revenueCents: number; costCents: number; marginCents: number }>;
+};
+
 export type RecipeIngredientOption = {
   id: string;
   type: 'STOCK_ITEM' | 'PREP_RECIPE';

@@ -10,6 +10,7 @@ import type {
   RecipesPayload,
   RecipesSummary,
   SetMenuComponentOption,
+  SetMenuCourse,
   StockItem,
   StockItemsPayload
 } from '@alma/shared';
@@ -762,6 +763,13 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
                   <div className="card stock-portions-card">
                     <PortionsBuilder parentType="recipe" parentId={detail.id} canManage={canManage} />
                   </div>
+                ) : null}
+                {detail && detail.id === recipe.id && detail.kind === 'SET_MENU' ? (
+                  <SetMenuCoursesPanel
+                    menuId={detail.id}
+                    canManage={canManage}
+                    allRecipes={data?.recipes ?? []}
+                  />
                 ) : null}
                 {detail && detail.id === recipe.id && detail.kind === 'SET_MENU' ? (
                   <SetMenuComponentsPanel
@@ -1968,6 +1976,356 @@ function RecipeLinesTable({
 // the POS-side components of set menus. This panel lists them with their
 // mapped recipe's cost so they can be dropped onto this menu — or every menu —
 // as costed lines, shared between 1/2/4 guests.
+// The choosing part of a set menu: which courses a guest picks from, and what
+// is on offer tonight. Two jobs, deliberately separated — flipping a dish on
+// or off happens most services and saves itself on the tap; changing the shape
+// of the menu is rarer and saves as a whole.
+type CourseDraft = {
+  id: string | null;
+  name: string;
+  posCourse: string;
+  pick: string;
+  options: Array<{ id: string | null; recipeId: string; title: string; supplement: string; available: boolean }>;
+};
+
+function toDrafts(courses: SetMenuCourse[]): CourseDraft[] {
+  return courses.map((course) => ({
+    id: course.id,
+    name: course.name,
+    posCourse: course.posCourse ?? '',
+    pick: String(course.pick),
+    options: course.options.map((option) => ({
+      id: option.id,
+      recipeId: option.recipeId,
+      title: option.title,
+      supplement: option.supplementCents ? (option.supplementCents / 100).toFixed(2) : '',
+      available: option.available
+    }))
+  }));
+}
+
+function SetMenuCoursesPanel({
+  menuId,
+  canManage,
+  allRecipes
+}: {
+  menuId: string;
+  canManage: boolean;
+  allRecipes: Recipe[];
+}) {
+  const [courses, setCourses] = useState<SetMenuCourse[] | null>(null);
+  const [drafts, setDrafts] = useState<CourseDraft[]>([]);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const rows = await api<SetMenuCourse[]>(`/api/recipes/${menuId}/courses`);
+        if (!live) return;
+        setCourses(rows);
+        setDrafts(toDrafts(rows));
+        setDirty(false);
+        setError(null);
+      } catch (err) {
+        if (live) setError(err instanceof ApiError ? err.message : 'Could not load the courses');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [menuId]);
+
+  const dishOptions = useMemo(
+    () => [
+      { label: 'Choose a dish…', value: '' },
+      ...allRecipes
+        .filter((recipe) => recipe.id !== menuId && !recipe.isPrepRecipe && recipe.kind !== 'SET_MENU' && recipe.status === 'ACTIVE')
+        .map((recipe) => ({
+          label: `${recipe.title}${recipe.venue ? ` (${recipe.venue})` : ''}`,
+          value: recipe.id
+        }))
+    ],
+    [allRecipes, menuId]
+  );
+
+  function patchCourse(index: number, patch: Partial<CourseDraft>) {
+    setDrafts((current) => current.map((draft, i) => (i === index ? { ...draft, ...patch } : draft)));
+    setDirty(true);
+  }
+
+  function addOption(index: number, recipeId: string) {
+    if (!recipeId) return;
+    const dish = allRecipes.find((recipe) => recipe.id === recipeId);
+    setDrafts((current) =>
+      current.map((draft, i) =>
+        i !== index || draft.options.some((option) => option.recipeId === recipeId)
+          ? draft
+          : {
+              ...draft,
+              options: [
+                ...draft.options,
+                { id: null, recipeId, title: dish?.title ?? 'Dish', supplement: '', available: true }
+              ]
+            }
+      )
+    );
+    setDirty(true);
+  }
+
+  // Tonight's menu. A saved option saves itself the moment it is tapped —
+  // this is the thing that changes most services, and nobody should have to
+  // find a Save button to take a sold-out dish off the register.
+  async function toggleTonight(optionId: string, available: boolean) {
+    setNote(null);
+    // Paint first: the register picks this up on its next menu poll either way.
+    setCourses((current) =>
+      current
+        ? current.map((course) => ({
+            ...course,
+            options: course.options.map((option) => (option.id === optionId ? { ...option, available } : option))
+          }))
+        : current
+    );
+    try {
+      await api(`/api/recipes/set-menu-options/${optionId}/availability`, {
+        method: 'PATCH',
+        body: JSON.stringify({ available })
+      });
+    } catch (err) {
+      setNote(err instanceof ApiError ? err.message : 'Could not update tonight\u2019s menu');
+      const rows = await api<SetMenuCourse[]>(`/api/recipes/${menuId}/courses`).catch(() => null);
+      if (rows) setCourses(rows);
+    }
+  }
+
+  async function save() {
+    setSaving(true);
+    setNote(null);
+    try {
+      const rows = await api<SetMenuCourse[]>(`/api/recipes/${menuId}/courses`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          courses: drafts
+            .filter((draft) => draft.name.trim())
+            .map((draft) => ({
+              name: draft.name.trim(),
+              posCourse: draft.posCourse.trim() || null,
+              pick: Number(draft.pick) || 1,
+              options: draft.options.map((option) => ({
+                recipeId: option.recipeId,
+                supplementCents: option.supplement.trim() ? Math.round(Number(option.supplement) * 100) : 0,
+                available: option.available
+              }))
+            }))
+        })
+      });
+      setCourses(rows);
+      setDrafts(toDrafts(rows));
+      setDirty(false);
+      setNote('Saved — the register picks this up on its next menu refresh.');
+    } catch (err) {
+      setNote(err instanceof ApiError ? err.message : 'Could not save the courses');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const tonightRows = (courses ?? []).filter((course) => course.options.length > 0);
+
+  return (
+    <div className="card stock-portions-card">
+      <div className="recipe-lines-toolbar" style={{ marginBottom: 12 }}>
+        <strong>Courses the guest chooses</strong>
+        <span style={{ flex: 1 }} />
+        <Button type="button" size="sm" variant="secondary" onClick={() => setEditing((value) => !value)}>
+          {editing ? 'Done editing' : 'Edit courses'}
+        </Button>
+      </div>
+
+      {error ? <p className="error-text">{error}</p> : null}
+      {note ? <p className="subtle">{note}</p> : null}
+      {courses === null ? <Spinner label="Loading courses" /> : null}
+
+      {courses !== null && tonightRows.length === 0 && !editing ? (
+        <p className="subtle">
+          No courses yet. Add one and the register will ask the table who is having what — until then this menu rings as a
+          plain price.
+        </p>
+      ) : null}
+
+      {/* Tonight's menu: one tap per dish, saved immediately. */}
+      {!editing && tonightRows.length > 0 ? (
+        <div className="setmenu-tonight">
+          {tonightRows.map((course) => (
+            <div key={course.id} className="setmenu-tonight-course">
+              <span className="setmenu-tonight-name">
+                {course.name}
+                <small>{course.pick === 1 ? 'one each' : `${course.pick} each`}</small>
+              </span>
+              <div className="setmenu-tonight-dishes">
+                {course.options.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={option.available ? 'is-on' : ''}
+                    disabled={!canManage}
+                    onClick={() => void toggleTonight(option.id, !option.available)}
+                  >
+                    {option.title}
+                    {option.supplementCents > 0 ? ` +${formatCurrency(option.supplementCents / 100)}` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          <p className="subtle">Tap a dish to take it off tonight, tap again to put it back.</p>
+        </div>
+      ) : null}
+
+      {editing ? (
+        <>
+          {drafts.map((draft, index) => (
+            <div key={index} className="setmenu-course-edit">
+              <div className="setmenu-course-head">
+                <Input
+                  label="Course"
+                  value={draft.name}
+                  placeholder="Entrée"
+                  onChange={(event) => patchCourse(index, { name: event.currentTarget.value })}
+                />
+                <Input
+                  label="Each guest picks"
+                  type="number"
+                  min={1}
+                  max={9}
+                  value={draft.pick}
+                  onChange={(event) => patchCourse(index, { pick: event.currentTarget.value })}
+                />
+                <Input
+                  label="Fires as (POS course)"
+                  value={draft.posCourse}
+                  placeholder="Leave blank to use the course name"
+                  onChange={(event) => patchCourse(index, { posCourse: event.currentTarget.value })}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={!canManage}
+                  onClick={() => {
+                    setDrafts((current) => current.filter((_, i) => i !== index));
+                    setDirty(true);
+                  }}
+                >
+                  Remove course
+                </Button>
+              </div>
+              <table className="recipe-lines-table">
+                <thead>
+                  <tr>
+                    <th>Dish</th>
+                    <th>Supplement</th>
+                    <th>On the menu</th>
+                    <th aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {draft.options.map((option, optionIndex) => (
+                    <tr key={`${option.recipeId}-${optionIndex}`}>
+                      <td>{option.title}</td>
+                      <td>
+                        <input
+                          className="recipe-line-input recipe-line-input-narrow"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={option.supplement}
+                          onChange={(event) =>
+                            patchCourse(index, {
+                              options: draft.options.map((row, i) =>
+                                i === optionIndex ? { ...row, supplement: event.currentTarget.value } : row
+                              )
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={option.available}
+                          onChange={(event) =>
+                            patchCourse(index, {
+                              options: draft.options.map((row, i) =>
+                                i === optionIndex ? { ...row, available: event.currentTarget.checked } : row
+                              )
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="cell-actions">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={!canManage}
+                          onClick={() =>
+                            patchCourse(index, { options: draft.options.filter((_, i) => i !== optionIndex) })
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                  {draft.options.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="subtle">
+                        Nothing to choose from yet.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+              <Select
+                label="Add a dish to this course"
+                value=""
+                options={dishOptions}
+                disabled={!canManage}
+                onChange={(event) => addOption(index, event.currentTarget.value)}
+              />
+            </div>
+          ))}
+          <div className="recipe-lines-toolbar">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={!canManage}
+              onClick={() => {
+                setDrafts((current) => [
+                  ...current,
+                  { id: null, name: '', posCourse: '', pick: '1', options: [] }
+                ]);
+                setDirty(true);
+              }}
+            >
+              Add course
+            </Button>
+            <span style={{ flex: 1 }} />
+            <Button type="button" size="sm" disabled={!canManage || !dirty || saving} onClick={() => void save()}>
+              {saving ? 'Saving…' : 'Save courses'}
+            </Button>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function SetMenuComponentsPanel({
   menuId,
   canManage,

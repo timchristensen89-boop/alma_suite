@@ -25,6 +25,9 @@ import {
   type RecipesPayload,
   type RecipesSummary,
   type SetMenuComponentOption,
+  setMenuCoursesSaveInputSchema,
+  setMenuOptionAvailabilityInputSchema,
+  type SetMenuCourse,
   type StockCostOfGoodsPayload
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
@@ -1273,6 +1276,95 @@ export const recipesService = {
       added += 1;
     }
     return { added, skipped, menus: menus.map((menu) => ({ id: menu.id, title: menu.title })) };
+  },
+
+  // ── The choosing part of a set menu ──────────────────────────────────
+  // Fixed components stay as RecipeLine rows; these are the courses a guest
+  // picks from, which is what the register asks and the banquet report reads.
+  async setMenuCourses(recipeId: string): Promise<SetMenuCourse[]> {
+    const rows = await prisma.setMenuCourse.findMany({
+      where: { setMenuRecipeId: recipeId },
+      orderBy: { sortOrder: 'asc' },
+      include: {
+        options: {
+          orderBy: { sortOrder: 'asc' },
+          include: { recipe: { select: { title: true, salePriceCents: true, estimatedCost: true } } }
+        }
+      }
+    });
+    return rows.map((course) => ({
+      id: course.id,
+      name: course.name,
+      posCourse: course.posCourse,
+      pick: course.pick,
+      sortOrder: course.sortOrder,
+      options: course.options.map((option) => ({
+        id: option.id,
+        recipeId: option.recipeId,
+        title: option.recipe.title,
+        supplementCents: option.supplementCents,
+        available: option.available,
+        salePriceCents: option.recipe.salePriceCents,
+        estimatedCost: option.recipe.estimatedCost,
+        sortOrder: option.sortOrder
+      }))
+    }));
+  },
+
+  // Replace the whole course structure in one save, the same way the line
+  // editor works. Courses are recreated rather than diffed — nothing hangs off
+  // a course id (what a table was served lives on PosOrderLine), so there is
+  // no history to preserve here.
+  async saveSetMenuCourses(recipeId: string, input: unknown): Promise<SetMenuCourse[]> {
+    const data = setMenuCoursesSaveInputSchema.parse(input);
+    const menu = await prisma.recipe.findUnique({ where: { id: recipeId }, select: { id: true, kind: true } });
+    if (!menu) throw new HttpError(404, 'Set menu not found');
+    if (menu.kind !== 'SET_MENU') throw new HttpError(400, 'Courses can only be added to a set menu');
+    // A course that offers the menu itself would have the register recursing.
+    const optionIds = [...new Set(data.courses.flatMap((course) => course.options.map((option) => option.recipeId)))];
+    if (optionIds.includes(recipeId)) throw new HttpError(400, 'A set menu cannot be one of its own choices');
+    if (optionIds.length > 0) {
+      const found = await prisma.recipe.findMany({ where: { id: { in: optionIds } }, select: { id: true } });
+      const known = new Set(found.map((row) => row.id));
+      const missing = optionIds.filter((id) => !known.has(id));
+      if (missing.length > 0) throw new HttpError(400, 'One of the chosen dishes no longer exists');
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.setMenuCourse.deleteMany({ where: { setMenuRecipeId: recipeId } });
+      for (const [index, course] of data.courses.entries()) {
+        await tx.setMenuCourse.create({
+          data: {
+            setMenuRecipeId: recipeId,
+            name: course.name.trim(),
+            posCourse: course.posCourse?.trim() || null,
+            pick: course.pick,
+            sortOrder: index,
+            options: {
+              create: course.options.map((option, optionIndex) => ({
+                recipeId: option.recipeId,
+                supplementCents: option.supplementCents,
+                available: option.available,
+                sortOrder: optionIndex
+              }))
+            }
+          }
+        });
+      }
+    });
+    return this.setMenuCourses(recipeId);
+  },
+
+  // Tonight's menu changes far more often than the menu does, so turning one
+  // dish on or off is a single call and never a full save.
+  async setSetMenuOptionAvailability(optionId: string, input: unknown) {
+    const data = setMenuOptionAvailabilityInputSchema.parse(input);
+    const option = await prisma.setMenuOption.findUnique({
+      where: { id: optionId },
+      select: { id: true, course: { select: { setMenuRecipeId: true } } }
+    });
+    if (!option) throw new HttpError(404, 'That choice is no longer on the menu');
+    await prisma.setMenuOption.update({ where: { id: optionId }, data: { available: data.available } });
+    return { id: optionId, available: data.available, setMenuRecipeId: option.course.setMenuRecipeId };
   },
 
   // The parent → child "serves" tree: child recipes that draw a portion from this

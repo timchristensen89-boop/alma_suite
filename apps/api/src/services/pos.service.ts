@@ -649,6 +649,9 @@ type LineInput = {
   seat?: number | null;
   modifiers?: Array<{ name: string; priceCents: number }> | null;
   notes?: string | null;
+  // The set menu that paid for this line — set on the $0 dishes a banquet
+  // rings, NULL on anything sold on its own.
+  packagedBy?: string | null;
   isGiftCard?: boolean;
 };
 
@@ -674,6 +677,7 @@ function parseLines(raw: unknown): LineInput[] {
             .slice(0, 12)
         : null,
       notes: str(row.notes) ? str(row.notes).slice(0, 200) : null,
+      packagedBy: str(row.packagedBy) || null,
       isGiftCard: row.isGiftCard === true
     };
   });
@@ -889,14 +893,46 @@ export const posService = {
       if (b.name === 'Set Menus') return 1;
       return a.name.localeCompare(b.name);
     });
-    const [eightySix, modifierGroups, variantLinks] = await Promise.all([
+    // Everything the banquet picker needs, shipped with the menu so tapping a
+    // set menu opens instantly instead of waiting on a second request.
+    const setMenuIds = recipes.filter((recipe) => recipe.kind === 'SET_MENU').map((recipe) => recipe.id);
+    const [eightySix, modifierGroups, variantLinks, setMenuLines, setMenuCourses] = await Promise.all([
       prisma.pos86.findMany({ select: { recipeId: true } }),
       prisma.posModifierGroup.findMany({
         where: { active: true },
         include: { options: { where: { active: true }, orderBy: { sortOrder: 'asc' } } },
         orderBy: { sortOrder: 'asc' }
       }),
-      prisma.posVariantLink.findMany({ orderBy: [{ parentRecipeId: 'asc' }, { sortOrder: 'asc' }] })
+      prisma.posVariantLink.findMany({ orderBy: [{ parentRecipeId: 'asc' }, { sortOrder: 'asc' }] }),
+      setMenuIds.length
+        ? prisma.recipeLine.findMany({
+            where: { recipeId: { in: setMenuIds } },
+            orderBy: { position: 'asc' },
+            select: {
+              recipeId: true,
+              ingredientName: true,
+              quantity: true,
+              perGuests: true,
+              subRecipeId: true,
+              subRecipe: { select: { title: true, printTitle: true } }
+            }
+          })
+        : Promise.resolve([]),
+      setMenuIds.length
+        ? prisma.setMenuCourse.findMany({
+            where: { setMenuRecipeId: { in: setMenuIds } },
+            orderBy: { sortOrder: 'asc' },
+            include: {
+              options: {
+                // Tonight's menu only — an option that is switched off should
+                // not be a tile someone can tap by mistake.
+                where: { available: true },
+                orderBy: { sortOrder: 'asc' },
+                include: { recipe: { select: { title: true, salePriceCents: true, estimatedCost: true } } }
+              }
+            }
+          })
+        : Promise.resolve([])
     ]);
     // Variants: children fold under their parent's tile on the register (the
     // QR menu keeps the flat rows). A self-row labels the parent option.
@@ -917,8 +953,51 @@ export const posService = {
       }
       parent.variants = options;
     }
+    // A set menu with no courses is just a priced tile — the picker only opens
+    // for menus that actually ask a question, so the existing $0 package flow
+    // keeps working untouched for the ones nobody has set up yet.
+    const setMenus = setMenuIds
+      .map((recipeId) => {
+        const recipe = itemRefs.get(recipeId);
+        const courses = setMenuCourses
+          .filter((course) => course.setMenuRecipeId === recipeId)
+          .map((course) => ({
+            id: course.id,
+            name: course.name,
+            posCourse: course.posCourse,
+            pick: course.pick,
+            sortOrder: course.sortOrder,
+            options: course.options.map((option) => ({
+              id: option.id,
+              recipeId: option.recipeId,
+              title: option.recipe.title,
+              supplementCents: option.supplementCents,
+              available: option.available,
+              salePriceCents: option.recipe.salePriceCents,
+              estimatedCost: option.recipe.estimatedCost,
+              sortOrder: option.sortOrder
+            }))
+          }));
+        return {
+          recipeId,
+          title: recipe?.title ?? '',
+          salePriceCents: recipe?.priceCents ?? null,
+          fixed: setMenuLines
+            .filter((line) => line.recipeId === recipeId)
+            .map((line) => ({
+              name: line.subRecipe?.title ?? line.ingredientName,
+              printName: line.subRecipe?.printTitle ?? null,
+              recipeId: line.subRecipeId,
+              quantity: line.quantity ?? 1,
+              perGuests: line.perGuests
+            })),
+          courses
+        };
+      })
+      .filter((plan) => plan.courses.length > 0 || plan.fixed.length > 0);
     return {
       categories,
+      setMenus,
       itemCount: recipes.length,
       eightySix: eightySix.map((row) => row.recipeId),
       modifierGroups: modifierGroups.map((group) => ({
@@ -1793,6 +1872,7 @@ export const posService = {
           seat: line.seat,
           modifiers: (line.modifiers ?? undefined) as object[] | undefined,
           notes: line.notes,
+          packagedBy: line.packagedBy ?? null,
           sentAt: line.id ? sentById.get(line.id) ?? null : null
         }))
       })
@@ -2305,6 +2385,11 @@ export const posService = {
     ]);
     const recipeMeta = new Map(recipeRows.map((recipe) => [recipe.id, recipe]));
     const courseRank = new Map(courses.map((course, index) => [course.name, index]));
+    // A set menu line is the money, not a dish — what the kitchen cooks is the
+    // $0 lines underneath it. Printing it too would put "Sunday Banquet x18"
+    // on the pass above the same eighteen plates. It is still stamped as sent
+    // below, so it leaves the fire list with the course it belongs to.
+    const cookable = order.lines.filter((line) => recipeMeta.get(line.recipeId ?? '')?.kind !== 'SET_MENU');
 
     const dockets = profiles
       // A station belongs to its venue: St Alma's dockets must never come out
@@ -2312,7 +2397,7 @@ export const posService = {
       .filter((profile) => !profile.venue || profile.venue === order.venue)
       .map((profile) => {
         const categories = profile.categoriesCsv.split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
-        const lines = order.lines.filter((line) => {
+        const lines = cookable.filter((line) => {
           const meta = line.recipeId ? recipeMeta.get(line.recipeId) : null;
           // No recipe link: route by the line's course (Drinks → bar).
           const kind = meta ? kindBucket(meta.kind, meta.category) : line.course === 'Drinks' ? 'BEVERAGE' : 'FOOD';
