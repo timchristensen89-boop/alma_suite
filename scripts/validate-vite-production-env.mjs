@@ -24,6 +24,11 @@ const APP_CONFIG = {
   'admin-web': { apiBase: API_URL },
   web: { apiBase: API_URL },
   'staff-web': { apiBase: API_URL },
+  // The register talks to the same API as everything else. It was the one
+  // frontend missing from this list, and a build without VITE_API_URL sends
+  // every request to the Firebase origin — which is how the POS once shipped
+  // unable to sign anyone in while every other app was fine.
+  'pos-web': { apiBase: API_URL },
   'stock-web': { apiBase: API_URL, stockApiBase: STOCK_API_URL },
   'reports-web': { apiBase: API_URL, stockApiBase: STOCK_API_URL },
   'giftcards-web': { apiBase: API_URL },
