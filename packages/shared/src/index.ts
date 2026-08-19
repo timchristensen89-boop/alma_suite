@@ -6600,6 +6600,78 @@ export const setMenuOptionAvailabilityInputSchema = z.object({
   available: z.coerce.boolean()
 });
 
+// ─── Wine ────────────────────────────────────────────────────────
+// A wine as the printed list describes it, with its pour sizes pointing at the
+// POS items that carry the prices. Nothing here prices anything: `priceCents`
+// on a pour is read straight off the recipe, and is never written back.
+
+export type WinePourRow = {
+  id: string;
+  recipeId: string;
+  /** 150 and 250 for a glass, 750 for the bottle; 60 and 375 for fortified. */
+  ml: number;
+  recipeTitle: string;
+  /** The recipe's price, shown for context. Read-only here. */
+  priceCents: number | null;
+};
+
+export type WineRow = {
+  id: string;
+  venue: string;
+  producer: string;
+  cuvee: string | null;
+  grape: string | null;
+  region: string | null;
+  /** A state for Australian wine, a country for imports — as printed. */
+  origin: string | null;
+  vintage: number | null;
+  section: string | null;
+  styleBand: string | null;
+  /** 's' seafood & ceviche, 'r' rich & grilled, 'v' vegetables & cheese. */
+  pairsWith: string[];
+  tastingNote: string | null;
+  sommelierPour: boolean;
+  limitedStock: boolean;
+  serveChilled: boolean;
+  sortOrder: number;
+  status: string;
+  pours: WinePourRow[];
+};
+
+export type WineListPayload = {
+  wines: WineRow[];
+  venues: string[];
+  sections: string[];
+  grapes: string[];
+  /** Wine items in the register that no Wine claims — the ones still to link. */
+  unlinked: Array<{ recipeId: string; title: string; venue: string | null; priceCents: number | null }>;
+};
+
+export const wineUpdateInputSchema = z.object({
+  producer: z.string().min(1).max(120).optional(),
+  cuvee: z.string().max(120).nullish(),
+  grape: z.string().max(120).nullish(),
+  region: z.string().max(120).nullish(),
+  origin: z.string().max(40).nullish(),
+  vintage: z.coerce.number().int().min(1900).max(2100).nullish(),
+  section: z.string().max(60).nullish(),
+  styleBand: z.string().max(60).nullish(),
+  pairsWith: z.array(z.enum(['s', 'r', 'v'])).max(3).optional(),
+  tastingNote: z.string().max(600).nullish(),
+  sommelierPour: z.coerce.boolean().optional(),
+  limitedStock: z.coerce.boolean().optional(),
+  serveChilled: z.coerce.boolean().optional(),
+  status: z.enum(['ACTIVE', 'ARCHIVED']).optional()
+});
+export type WineUpdateInput = z.infer<typeof wineUpdateInputSchema>;
+
+// Linking a register item to a wine as one of its pour sizes. The size is the
+// only thing being decided — the price comes with the recipe.
+export const winePourLinkInputSchema = z.object({
+  recipeId: z.string().min(1),
+  ml: z.coerce.number().int().min(15).max(3000)
+});
+
 // What the banquet report answers: a set menu sells for one price and its
 // dishes ring at $0, so each table's package revenue is shared across the
 // dishes that table was served, in proportion to their a la carte value.
