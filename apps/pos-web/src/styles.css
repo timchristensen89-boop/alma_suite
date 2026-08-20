@@ -670,6 +670,20 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
   border-bottom: 1px solid var(--pos-border-soft, rgba(31,53,36,0.08));
   position: sticky; top: 0; background: var(--pos-bg, #faf8f3); z-index: 3;
 }
+/* The full menu wears the wine bar's layout on purpose: same sticky header,
+   same swipe-don't-wrap chip rows. It is the same job — a long list you narrow
+   — and two bars that behaved differently would be worse than one that does
+   not. Only the filters differ, because a menu gets asked different questions
+   than a wine list. */
+.pos-menu-filters { /* shares every rule above with .pos-wine-filters */ }
+.pos-menu-none {
+  margin: 24px auto; text-align: center; opacity: 0.7; font-size: 15px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.pos-menu-none button {
+  font: inherit; font-size: 14px; font-weight: 700; padding: 8px 16px; border-radius: 9999px;
+  border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); background: var(--pos-card, #fff); color: inherit; cursor: pointer;
+}
 .pos-wine-search {
   font: inherit; font-size: 15px; padding: 11px 14px; border-radius: 11px;
   border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); background: var(--pos-card, #fff); color: inherit;

@@ -1880,6 +1880,60 @@ export function App() {
     open: string | null;
   }>({ q: '', pour: 'any', colours: [], band: null, pairs: [], open: null });
 
+  /**
+   * Filters for the full menu, which is the same idea as the wine list applied
+   * to everything else: the tiles stay the fast way to ring a dish somebody
+   * already knows, and this is the page you open to answer "what have we got".
+   *
+   * Deliberately NOT the wine filters. Grape and price band are what you ask a
+   * wine list; a food menu gets asked what section it is in, whether it comes
+   * out of the kitchen or the bar, and whether it is still on. The API already
+   * labels every category FOOD, BEVERAGE or SET_MENU (pos.service kindBucket),
+   * so the kitchen/bar split is read rather than guessed.
+   *
+   * There is no dietary filter, because no dietary data exists to filter on —
+   * Recipe has no allergen or dietary field, and the `dietary` column in the
+   * schema belongs to PosOrder: it is the GUEST's requirement on a booking,
+   * not a property of a dish. Inventing one here would put a confident-looking
+   * "GF" on a plate nobody had checked.
+   */
+  const [menuFilters, setMenuFilters] = useState<{
+    q: string;
+    kind: 'any' | 'FOOD' | 'BEVERAGE' | 'SET_MENU';
+    avail: 'any' | 'on' | 'off';
+  }>({ q: '', kind: 'any', avail: 'any' });
+
+  /**
+   * Does this dish survive the full-menu filters? Every term must appear
+   * somewhere in the title, so "fish taco" narrows rather than widening the
+   * way an OR would.
+   */
+  const menuMatch = (item: MenuItem, categoryKind: string) => {
+    if (menuFilters.kind !== 'any' && categoryKind !== menuFilters.kind) return false;
+    const off = eightySix.has(item.recipeId);
+    if (menuFilters.avail === 'on' && off) return false;
+    if (menuFilters.avail === 'off' && !off) return false;
+    const terms = menuFilters.q.toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return true;
+    const hay = `${item.title} ${item.printTitle ?? ''}`.toLowerCase();
+    return terms.every((term) => hay.includes(term));
+  };
+
+  const menuFiltersOn = menuFilters.q.trim() !== '' || menuFilters.kind !== 'any' || menuFilters.avail !== 'any';
+
+  /** How many dishes survive the filters — the bar's count and the empty state
+      read the same number rather than each working it out. */
+  const menuShownCount = useMemo(
+    () =>
+      menu.reduce(
+        (sum, category) =>
+          sum + category.items.filter((item) => !item.variantOf && menuMatch(item, category.kind)).length,
+        0
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [menu, menuFilters, eightySix]
+  );
+
   /** Cheapest way to buy the whole bottle, or the dearest pour if there is none. */
   const wineFrom = (wine: RegisterWine) =>
     wine.pours.find((pour) => pour.ml >= 700)?.priceCents ?? Math.max(...wine.pours.map((pour) => pour.priceCents));
@@ -3669,6 +3723,77 @@ export function App() {
             ) : (activeCategory === '__all__' && !searchTerm) ||
             (tabsConfig.looks?.[activeCategory] === 'list' && menu.some((category) => category.name === activeCategory) && !searchTerm) ? (
               <div className="pos-list">
+                {activeCategory === '__all__' ? (() => {
+                  // Counts come from the same rows the list will render, so a
+                  // chip never offers a filter that finds nothing.
+                  const all = menu.flatMap((category) =>
+                    category.items.filter((item) => !item.variantOf).map((item) => ({ item, kind: category.kind }))
+                  );
+                  const countIf = (test: (entry: { item: MenuItem; kind: string }) => boolean) => all.filter(test).length;
+                  const shown = menuShownCount;
+                  const chip = (key: string, label: string, on: boolean, count: number, toggle: () => void) => (
+                    <button key={key} type="button" className="pos-wine-chip" aria-pressed={on} disabled={count === 0 && !on} onClick={toggle}>
+                      {label}
+                      <span className="pos-wine-n">{count}</span>
+                    </button>
+                  );
+                  return (
+                    <div className="pos-wine-filters pos-menu-filters">
+                      <div className="pos-wine-find">
+                        <input
+                          className="pos-wine-search"
+                          placeholder="Search the menu…"
+                          value={menuFilters.q}
+                          onChange={(event) => setMenuFilters({ ...menuFilters, q: event.currentTarget.value })}
+                        />
+                        <span className="pos-wine-count">
+                          {shown} item{shown === 1 ? '' : 's'}
+                        </span>
+                        {menuFiltersOn ? (
+                          <button
+                            type="button"
+                            className="pos-wine-clear"
+                            onClick={() => setMenuFilters({ q: '', kind: 'any', avail: 'any' })}
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="pos-wine-chips">
+                        <span className="pos-wine-label">Where</span>
+                        {chip('k-any', 'Everything', menuFilters.kind === 'any', all.length, () =>
+                          setMenuFilters({ ...menuFilters, kind: 'any' })
+                        )}
+                        {chip('k-food', 'Kitchen', menuFilters.kind === 'FOOD', countIf((entry) => entry.kind === 'FOOD'), () =>
+                          setMenuFilters({ ...menuFilters, kind: 'FOOD' })
+                        )}
+                        {chip('k-bev', 'Bar', menuFilters.kind === 'BEVERAGE', countIf((entry) => entry.kind === 'BEVERAGE'), () =>
+                          setMenuFilters({ ...menuFilters, kind: 'BEVERAGE' })
+                        )}
+                        {countIf((entry) => entry.kind === 'SET_MENU') > 0
+                          ? chip('k-set', 'Set menus', menuFilters.kind === 'SET_MENU', countIf((entry) => entry.kind === 'SET_MENU'), () =>
+                              setMenuFilters({ ...menuFilters, kind: 'SET_MENU' })
+                            )
+                          : null}
+                      </div>
+                      {/* Only worth showing once something is actually 86'd. */}
+                      {countIf((entry) => eightySix.has(entry.item.recipeId)) > 0 ? (
+                        <div className="pos-wine-chips">
+                          <span className="pos-wine-label">On now</span>
+                          {chip('a-any', 'Everything', menuFilters.avail === 'any', all.length, () =>
+                            setMenuFilters({ ...menuFilters, avail: 'any' })
+                          )}
+                          {chip('a-on', 'Available', menuFilters.avail === 'on', countIf((entry) => !eightySix.has(entry.item.recipeId)), () =>
+                            setMenuFilters({ ...menuFilters, avail: 'on' })
+                          )}
+                          {chip('a-off', "86'd", menuFilters.avail === 'off', countIf((entry) => eightySix.has(entry.item.recipeId)), () =>
+                            setMenuFilters({ ...menuFilters, avail: 'off' })
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })() : null}
                 {(activeCategory === '__all__'
                   ? visibleTabs
                       .map((token) => {
@@ -3690,9 +3815,20 @@ export function App() {
                 ).map(({ token, folderName, cats }) => {
                   const qtyOf = (recipeId: string) =>
                     (order?.lines ?? []).filter((line) => line.recipeId === recipeId).reduce((sum, line) => sum + line.quantity, 0);
-                  const collapsible = activeCategory === '__all__' && !searchTerm;
-                  const total = cats.reduce((sum, category) => sum + category.items.filter((item) => !item.variantOf).length, 0);
-                  if (total === 0 && !boardEdit) return null;
+                  // A filtered section stays open: matches hidden inside a
+                  // collapsed <details> are matches nobody finds.
+                  const collapsible = activeCategory === '__all__' && !searchTerm && !menuFiltersOn;
+                  const total = cats.reduce(
+                    (sum, category) =>
+                      sum +
+                      category.items.filter(
+                        (item) => !item.variantOf && (activeCategory !== '__all__' || menuMatch(item, category.kind))
+                      ).length,
+                    0
+                  );
+                  // Nothing left after filtering is not an empty section, it is
+                  // a section this search does not concern.
+                  if (total === 0 && (menuFiltersOn || !boardEdit)) return null;
                   return (
                     <details key={token} className="pos-list-section" {...(collapsible ? {} : { open: true })}>
                       <summary
@@ -3717,7 +3853,9 @@ export function App() {
                       </summary>
                       <div className="pos-list-card">
                         {cats.map((category) => {
-                          const rows = category.items.filter((item) => !item.variantOf);
+                          const rows = category.items.filter(
+                            (item) => !item.variantOf && (activeCategory !== '__all__' || menuMatch(item, category.kind))
+                          );
                           if (rows.length === 0) return null;
                           return (
                             <div key={category.name} className="pos-list-subgroup">
@@ -3747,6 +3885,14 @@ export function App() {
                     </details>
                   );
                 })}
+                {activeCategory === '__all__' && menuFiltersOn && menuShownCount === 0 ? (
+                  <p className="pos-menu-none">
+                    Nothing on the menu matches that.
+                    <button type="button" onClick={() => setMenuFilters({ q: '', kind: 'any', avail: 'any' })}>
+                      Clear the filters
+                    </button>
+                  </p>
+                ) : null}
                 {activeCategory === '__all__' ? (
                   <button
                     type="button"
