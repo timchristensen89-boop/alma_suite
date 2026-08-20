@@ -94,6 +94,7 @@ const SupplierSpendPage = lazy(() => import('./pages/SupplierSpendPage').then((m
 const ForecastModulePage = lazy(() => import('./pages/ForecastModulePage').then((m) => ({ default: m.ForecastModulePage })));
 const SalesEntryPage = lazy(() => import('./pages/SalesEntryPage').then((m) => ({ default: m.SalesEntryPage })));
 const BanquetReportPage = lazy(() => import('./pages/BanquetReportPage').then((m) => ({ default: m.BanquetReportPage })));
+const WineReportPage = lazy(() => import('./pages/WineReportPage').then((m) => ({ default: m.WineReportPage })));
 
 
 type SuiteSummary = {
@@ -241,6 +242,7 @@ type ReportSectionId =
   | 'gift-cards'
   | 'register-audit'
   | 'banquets'
+  | 'wines'
   | 'exports';
 
 type ReportNavItem = {
@@ -388,6 +390,14 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     title: 'Gift Card Reports',
     description: 'Pending gift card orders, value, fulfilment, and payment readiness.',
     icon: <IconGift />,
+    group: 'more'
+  },
+  {
+    id: 'wines',
+    label: 'Wine',
+    title: 'Wine',
+    description: 'What the list actually sells — by grape, region, price band and pour size — at what margin, and what has gone quiet.',
+    icon: <IconReceipt />,
     group: 'more'
   },
   {
@@ -4690,6 +4700,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         return renderGiftCardsSection();
       case 'banquets':
         return <BanquetReportPage />;
+      case 'wines':
+        return <WineReportPage />;
       case 'register-audit':
         return <RegisterAuditPage />;
       case 'exports':
