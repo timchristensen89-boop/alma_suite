@@ -29,60 +29,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { prisma } from '@alma/db';
 import { poursizeOf, scoreCandidate, tokens } from '../src/lib/wine-match.js';
-
-type Row = {
-  venue: string;
-  vintage: number | null;
-  producer: string;
-  cuvee: string | null;
-  grape: string | null;
-  region: string | null;
-  origin: string | null;
-  section: string | null;
-  band: string | null;
-  pours: Array<{ ml: number; priceCents: number }>;
-  pairs: string[];
-  flags: string[];
-  note: string | null;
-};
+import { parseWineList, type WineListRow } from '../src/lib/wine-list.js';
 
 const FILE = resolve(import.meta.dirname, '../../../docs/wine-list.tsv');
-
-function readList(): Row[] {
-  const [header, ...lines] = readFileSync(FILE, 'utf8').trim().split('\n');
-  const cols = header.split('\t');
-  const want = ['venue','vintage','producer','cuvee','grape','region','origin','section','band','pours','pairs','flags','note'];
-  if (cols.join(',') !== want.join(',')) throw new Error(`Unexpected columns in ${FILE}: ${cols.join(',')}`);
-  return lines.map((line, index) => {
-    const f = line.split('\t');
-    // Trailing empty columns vanish through most editors and any spreadsheet
-    // round trip, so pad them back. Too MANY columns is real corruption.
-    while (f.length < want.length) f.push('');
-    if (f.length !== want.length) throw new Error(`Row ${index + 2} has ${f.length} columns, expected ${want.length}`);
-    const [venue, vintage, producer, cuvee, grape, region, origin, section, band, pours, pairs, flags, note] = f;
-    return {
-      venue,
-      vintage: vintage === 'NV' || !vintage ? null : Number(vintage),
-      producer,
-      cuvee: cuvee || null,
-      grape: grape || null,
-      region: region || null,
-      origin: origin || null,
-      section: section || null,
-      band: band || null,
-      pours: pours
-        .split('|')
-        .filter(Boolean)
-        .map((part) => {
-          const [ml, price] = part.split(':');
-          return { ml: Number(ml), priceCents: Number(price) * 100 };
-        }),
-      pairs: pairs.split(',').filter(Boolean),
-      flags: flags.split(',').filter(Boolean),
-      note: note || null
-    };
-  });
-}
+const readList = (): WineListRow[] => parseWineList(readFileSync(FILE, 'utf8'));
 
 const CONFIDENT = 0.62;
 /** How far clear of the runner-up a match has to be to count as unambiguous. */
@@ -109,7 +59,7 @@ async function main() {
   });
   const pool = recipes.map((recipe) => ({ ...recipe, ml: poursizeOf(recipe.title), tokens: tokens(recipe.title) }));
 
-  const linked: Array<{ row: Row; pours: Array<{ ml: number; recipe: (typeof pool)[number]; score: number }> }> = [];
+  const linked: Array<{ row: WineListRow; pours: Array<{ ml: number; recipe: (typeof pool)[number]; score: number }> }> = [];
   const ambiguous: string[] = [];
   const missing: string[] = [];
   const priceGaps: string[] = [];
