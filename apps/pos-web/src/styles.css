@@ -623,8 +623,26 @@ input, select { font: inherit; }
   font: inherit; font-size: 15px; padding: 11px 14px; border-radius: 11px;
   border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); background: var(--pos-card, #fff); color: inherit;
 }
-.pos-wine-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.pos-wine-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; opacity: 0.45; min-width: 42px; }
+/* One line per group, swiped rather than wrapped.
+   Wrapping was what actually ate the screen: six colours and four price bands
+   in a 270px column became three lines each, so the filter bar ran to 402px of
+   an iPad's 1180px before a single wine was visible. Nothing is hidden — a
+   half-cut chip at the right edge is the cue that the row keeps going. */
+.pos-wine-chips {
+  display: flex; gap: 6px; align-items: center;
+  flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.pos-wine-chips::-webkit-scrollbar { display: none; }
+.pos-wine-chip, .pos-wine-chips > * { flex: none; }
+/* Pinned so you can always see which row you are swiping. It needs the bar's
+   own background or the chips scroll under the word. */
+.pos-wine-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700;
+  opacity: 0.45; min-width: 42px;
+  position: sticky; left: 0; z-index: 1; padding-right: 2px;
+  background: var(--pos-bg, #faf8f3);
+}
 /* Raised off the page rather than drawn on it. Transparent with a hairline
    border, these read as labels on the warm background instead of things to
    press — the same reason the pour buttons sit on --pos-card. */
@@ -664,8 +682,15 @@ input, select { font: inherit; }
 [data-colour="orange"] { --wine-bg: var(--wine-orange-bg); --wine-fg: var(--wine-orange-fg); --wine-bd: var(--wine-orange-bd); }
 [data-colour="fortified"] { --wine-bg: var(--wine-fortified-bg); --wine-fg: var(--wine-fortified-fg); --wine-bd: var(--wine-fortified-bd); }
 .pos-wine-n { font-weight: 500; opacity: 0.5; margin-left: 4px; font-variant-numeric: tabular-nums; }
-.pos-wine-clear { font: inherit; font-size: 12px; font-weight: 700; background: none; border: 0; color: var(--pos-accent, #4f6b47); cursor: pointer; padding: 6px 4px; }
-.pos-wine-count { font-size: 11.5px; opacity: 0.45; }
+/* Search, tally and Clear on one line. The search takes what is left after
+   the other two, which are both as wide as their own text and no wider. */
+.pos-wine-find { display: flex; align-items: center; gap: 8px; }
+.pos-wine-find .pos-wine-search { flex: 1 1 auto; min-width: 0; }
+.pos-wine-clear {
+  font: inherit; font-size: 12px; font-weight: 700; background: none; border: 0;
+  color: var(--pos-accent, #4f6b47); cursor: pointer; padding: 6px 4px; flex: none; white-space: nowrap;
+}
+.pos-wine-count { font-size: 11.5px; opacity: 0.45; flex: none; white-space: nowrap; }
 
 .pos-wine-rows { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
 .pos-wine-group {
