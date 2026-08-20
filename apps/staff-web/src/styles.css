@@ -9232,6 +9232,43 @@ html[data-theme='dark'] .alma-taskbar-sheet { background: var(--color-elevated, 
   .xero-org-actions button { width: 100%; }
 }
 
+/* The pull review: what Xero holds beside what the profile holds. Rows that
+   already agree stay visible but recede — seeing that a field matches is
+   worth as much as seeing that it doesn't. */
+.xero-pull {
+  display: grid; gap: 10px;
+  padding: 12px 14px;
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+.xero-pull-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.xero-pull-warning {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-warning-soft, #fff6e5);
+  color: var(--color-text);
+  font-size: 13px;
+}
+.xero-pull-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.xero-pull-table th {
+  text-align: left; font-weight: 600; padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+.xero-pull-table td { padding: 7px 8px; border-bottom: 1px solid var(--color-border-subtle, rgba(0,0,0,0.06)); vertical-align: top; }
+.xero-pull-table td:first-child, .xero-pull-table th:first-child { width: 28px; }
+.xero-pull-table input[type='checkbox'] { width: 18px; height: 18px; }
+.xero-pull-same td { opacity: 0.55; }
+.xero-pull-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 700px) {
+  /* Never drop a column here — the two values side by side ARE the feature.
+     Let the table scroll inside its own card instead. */
+  .xero-pull { overflow-x: auto; }
+  .xero-pull-table { min-width: 480px; }
+  .xero-pull-actions button { flex: 1 1 auto; }
+}
+
 /* ── Labour vs takings ─────────────────────────────────────────────────
    Contract deltas, the salary-headroom band, and real OT against actual
    takings. Wide tables scroll inside their wrap, never the page. */

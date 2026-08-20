@@ -50,6 +50,14 @@ import {
   safeCompareBase64
 } from '../lib/integration-crypto.js';
 import { HttpError } from '../lib/http.js';
+import {
+  auStateCode,
+  buildXeroPullFields,
+  ordinaryEarningsLine,
+  payPeriodWeeks,
+  selectPullFields,
+  type XeroEmployeeDetail
+} from '../lib/xero-employee-pull.js';
 import { deputyService } from './deputy.service.js';
 
 type Provider = 'SQUARE' | 'XERO' | 'DEPUTY' | 'LIGHTSPEED';
@@ -4062,26 +4070,6 @@ function xeroTenantsForVenue(
   return [];
 }
 
-// Xero AU payroll wants the state as a code — "New South Wales" comes back
-// as "Invalid Region", which is not a phrase anyone would connect to a state
-// field. Staff type it however they like, so normalise on the way out.
-const AU_STATE_CODES: Record<string, string> = {
-  'new south wales': 'NSW', nsw: 'NSW',
-  victoria: 'VIC', vic: 'VIC',
-  queensland: 'QLD', qld: 'QLD',
-  'south australia': 'SA', sa: 'SA',
-  'western australia': 'WA', wa: 'WA',
-  tasmania: 'TAS', tas: 'TAS',
-  'northern territory': 'NT', nt: 'NT',
-  'australian capital territory': 'ACT', act: 'ACT'
-};
-
-function auStateCode(value: string | null | undefined): string | undefined {
-  const key = (value ?? '').trim().toLowerCase();
-  if (!key) return undefined;
-  return AU_STATE_CODES[key] ?? value?.trim().toUpperCase().slice(0, 3);
-}
-
 function xeroEmployeeBody(staff: {
   firstName: string;
   lastName: string;
@@ -4399,6 +4387,220 @@ export async function xeroEmployeeLinkOptions(staffProfileId: string) {
     });
   }
   return { staff: `${staff.firstName} ${staff.lastName}`, venue: staff.venue, organisations };
+}
+
+// ── Xero → the profile ─────────────────────────────────────────────────────
+// The push's mirror image. Payroll is where a person's details actually stay
+// current — someone moves house and tells the bookkeeper, not the roster — so
+// this reads the linked employee back and offers whatever differs.
+//
+// Three rules it will not break:
+//
+//  1. Nothing is written unless it was asked for. The preview says what
+//     differs; the apply takes a list of field keys and writes only those. A
+//     silent overwrite would let a stale payroll record quietly undo what a
+//     manager typed this morning.
+//  2. Tax file numbers, bank accounts and super memberships are never read
+//     back. They travel outward only — and Xero masks the TFN it returns, so
+//     "pulling" it would replace a real number with asterisks. The preview
+//     reports only whether each is set over there.
+//  3. A termination date is reported, never applied. Ending someone's
+//     employment is a decision, not a sync.
+
+async function xeroEmployeeSnapshot(staffProfileId: string, options?: { tenantId?: string }) {
+  const staff = await prisma.staffProfile.findUnique({
+    where: { id: staffProfileId },
+    select: {
+      id: true, firstName: true, lastName: true, venue: true, email: true, phone: true,
+      dateOfBirth: true, startDate: true, addressLine1: true, addressLine2: true,
+      suburb: true, state: true, postcode: true, employmentType: true,
+      contractedWeeklyHours: true, payRateCents: true, employmentStatus: true,
+      xeroEmployeeId: true, xeroPayrollCalendarId: true, xeroEarningsRateId: true,
+      payProfile: { select: { payMode: true } },
+      xeroEmployees: { select: { tenantId: true, tenantName: true, xeroEmployeeId: true } }
+    }
+  });
+  if (!staff) throw new HttpError(404, 'Staff member not found.');
+
+  const initial = await connectionSelect('XERO');
+  if (!initial || initial.status !== 'CONNECTED') {
+    throw new HttpError(409, 'Xero is not connected. Reconnect it in Admin → Integrations.');
+  }
+  let connection: IntegrationConnection = initial;
+  const tenants = xeroTenantsFromConnection(connection);
+  if (tenants.length === 0) throw new HttpError(409, 'No Xero organisation is connected.');
+
+  // Which organisation to read from: the one asked for, else the one their
+  // venue implies, else whichever they happen to be linked in. Dual-venue
+  // staff exist in both payrolls, and the venue is the better guess.
+  const candidates = options?.tenantId
+    ? tenants.filter((tenant) => tenant.id === options.tenantId)
+    : [...xeroTenantsForVenue(staff.venue, tenants), ...tenants];
+  const linked = candidates
+    .map((tenant) => ({ tenant, link: staff.xeroEmployees.find((row) => row.tenantId === tenant.id) ?? null }))
+    .find((entry) => entry.link);
+  const tenant = linked?.tenant ?? candidates[0] ?? null;
+  // The legacy single column is the fallback for people linked before the
+  // per-organisation table existed — but only when no organisation was named,
+  // since it may well point at the other company's record.
+  const employeeId = linked?.link?.xeroEmployeeId ?? (options?.tenantId ? null : staff.xeroEmployeeId);
+  if (!tenant || !employeeId) {
+    throw new HttpError(
+      409,
+      `${staff.firstName} isn't linked to a Xero employee${options?.tenantId ? ' in that organisation' : ''} yet — link them first, then pull.`
+    );
+  }
+
+  const detail = await xeroGetJson<{ Employees?: XeroEmployeeDetail[] }>(
+    `/payroll.xro/1.0/Employees/${encodeURIComponent(employeeId)}`,
+    { connection, tenantId: tenant.id }
+  );
+  connection = detail.connection;
+  const employee = detail.data.Employees?.[0];
+  if (!employee) {
+    throw new HttpError(404, `Xero has no employee record ${employeeId} in ${tenant.name ?? 'that organisation'}.`);
+  }
+
+  const warnings: string[] = [];
+
+  // Standard hours are stated per pay period, so the period's length is what
+  // decides whether "76" means a normal fortnight or an impossible week.
+  let periodWeeks: number | null = null;
+  let calendarName: string | null = null;
+  if (employee.PayrollCalendarID) {
+    try {
+      const calendars = await xeroGetJson<{
+        PayrollCalendars?: Array<{ Name?: string; CalendarType?: string }>;
+      }>(`/payroll.xro/1.0/PayrollCalendars/${encodeURIComponent(employee.PayrollCalendarID)}`, {
+        connection,
+        tenantId: tenant.id
+      });
+      connection = calendars.connection;
+      const calendar = calendars.data.PayrollCalendars?.[0];
+      calendarName = trimText(calendar?.Name) || null;
+      periodWeeks = payPeriodWeeks(calendar?.CalendarType);
+    } catch {
+      // Can't read the calendar, so can't convert the hours. The field simply
+      // isn't offered — a guessed contract is worse than no contract.
+    }
+  } else {
+    warnings.push('No payroll calendar is set on their Xero record, so contracted hours cannot be worked out.');
+  }
+
+  if (!ordinaryEarningsLine(employee)) {
+    warnings.push('Their Xero pay template has no earnings line, so there is no rate or standard hours to read.');
+  }
+
+  const fields = buildXeroPullFields({
+    profile: staff,
+    employee,
+    dates: {
+      dateOfBirth: parseXeroDate(employee.DateOfBirth),
+      startDate: parseXeroDate(employee.StartDate)
+    },
+    periodWeeks,
+    calendarName,
+    tenantName: tenant.name,
+    manualPay: staff.payProfile?.payMode === 'MANUAL_FULL_TIME' || staff.payProfile?.payMode === 'CASH'
+  });
+
+  const terminated = parseXeroDate(employee.TerminationDate);
+  if (terminated) {
+    warnings.push(
+      `Xero has ${staff.firstName} terminated on ${isoDateOnly(terminated)}, and their status here is "${staff.employmentStatus}". End their employment by hand if that's right — this won't do it for you.`
+    );
+  }
+
+  return {
+    staffName: `${staff.firstName} ${staff.lastName}`.trim(),
+    connectionId: connection.id,
+    tenant,
+    employeeId,
+    employeeName: `${employee.FirstName ?? ''} ${employee.LastName ?? ''}`.trim() || employeeId,
+    employeeStatus: trimText(employee.Status) || null,
+    fields,
+    // Reported, never imported — see rule 2 above.
+    held: {
+      bankAccount: (employee.BankAccounts ?? []).length > 0,
+      superFund: (employee.SuperMemberships ?? []).length > 0,
+      taxDeclaration: Boolean(trimText(employee.TaxDeclaration?.TaxFileNumber))
+    },
+    leave: (employee.LeaveBalances ?? [])
+      .filter((row) => trimText(row.LeaveName))
+      .map((row) => ({
+        name: trimText(row.LeaveName) as string,
+        units: typeof row.NumberOfUnits === 'number' ? row.NumberOfUnits : null,
+        unit: trimText(row.TypeOfUnits) || 'Hours'
+      })),
+    warnings
+  };
+}
+
+// What Xero holds for this person, beside what the profile holds. Reads only.
+export async function xeroEmployeePullPreview(staffProfileId: string, options?: { tenantId?: string }) {
+  const snapshot = await xeroEmployeeSnapshot(staffProfileId, options);
+  return {
+    staff: snapshot.staffName,
+    tenantId: snapshot.tenant.id,
+    tenantName: snapshot.tenant.name,
+    xeroEmployeeId: snapshot.employeeId,
+    employeeName: snapshot.employeeName,
+    employeeStatus: snapshot.employeeStatus,
+    // `value` stays on this side of the wire.
+    fields: snapshot.fields.map(({ value: _value, ...rest }) => rest),
+    held: snapshot.held,
+    leave: snapshot.leave,
+    warnings: snapshot.warnings
+  };
+}
+
+// Take the chosen fields. The browser sends field KEYS, never values: this
+// re-reads Xero and writes only what it just saw there itself, so a tampered
+// or stale form cannot put anything into a profile.
+export async function applyXeroEmployeePull(staffProfileId: string, input: unknown, actor?: AuthUser) {
+  const body = (input ?? {}) as Record<string, unknown>;
+  const wanted = Array.isArray(body.fields) ? body.fields.map((key) => String(key)) : [];
+  if (wanted.length === 0) throw new HttpError(400, 'Choose at least one field to take from Xero.');
+  const tenantId = typeof body.tenantId === 'string' && body.tenantId ? body.tenantId : undefined;
+
+  const snapshot = await xeroEmployeeSnapshot(staffProfileId, { tenantId });
+  const { data, applied, skipped } = selectPullFields(snapshot.fields, wanted);
+
+  if (applied.length === 0) {
+    return { staff: snapshot.staffName, applied, skipped, message: 'Nothing changed — Xero already agrees with the profile.' };
+  }
+
+  // The email column is unique across profiles, and taking one that belongs to
+  // somebody else fails at the database with a message nobody can act on.
+  if (typeof data.email === 'string') {
+    const clash = await prisma.staffProfile.findFirst({
+      where: { email: data.email, id: { not: staffProfileId } },
+      select: { firstName: true, lastName: true }
+    });
+    if (clash) {
+      throw new HttpError(
+        409,
+        `${data.email} already belongs to ${clash.firstName} ${clash.lastName} here. Sort that out before taking it from Xero.`
+      );
+    }
+  }
+
+  await prisma.staffProfile.update({ where: { id: staffProfileId }, data });
+  await recordEvent({
+    provider: 'XERO',
+    connectionId: snapshot.connectionId,
+    eventType: 'DATA_IMPORTED',
+    summary: `Took ${applied.map((entry) => entry.label.toLowerCase()).join(', ')} from Xero for ${snapshot.staffName}.`,
+    actor,
+    metadata: {
+      staffProfileId,
+      tenantId: snapshot.tenant.id,
+      xeroEmployeeId: snapshot.employeeId,
+      fields: applied.map((entry) => entry.key)
+    }
+  });
+
+  return { staff: snapshot.staffName, applied, skipped };
 }
 
 // Link (or unlink, with a null id) a profile to the employee record it

@@ -202,6 +202,30 @@ staffRouter.post('/:id/xero-link', requireManager, async (req, res, next) => {
   }
 });
 
+
+// What Xero's copy of this person says, next to what the profile says.
+// Reads only — nothing is written until the POST below names the fields.
+staffRouter.get('/:id/xero-pull', requireManager, async (req, res, next) => {
+  try {
+    const { xeroEmployeePullPreview } = await import('../services/integration.service.js');
+    const tenantId = typeof req.query.tenantId === 'string' && req.query.tenantId ? req.query.tenantId : undefined;
+    res.json(await xeroEmployeePullPreview(String(req.params.id), { tenantId }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Take the chosen fields from Xero onto the profile. The body carries field
+// KEYS, not values — the service re-reads Xero and writes only what it sees
+// there itself.
+staffRouter.post('/:id/xero-pull', requireManager, async (req, res, next) => {
+  try {
+    const { applyXeroEmployeePull } = await import('../services/integration.service.js');
+    res.json(await applyXeroEmployeePull(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
 staffRouter.post('/merge', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');
