@@ -604,7 +604,16 @@ input, select { font: inherit; }
    list with the pour prices on the row — the thing you read is the thing you
    press. Sticky filters, because on a hundred wines you scroll and still want
    to narrow. */
-.pos-wine { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 0; }
+.pos-wine {
+  display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 0;
+  /* Inset like every other view — .pos-grid is 12px, and without this the
+     search box and the section headings sit flush against both edges. */
+  padding-inline: 12px;
+  /* A wine row reads left to right: name, then the price you press. Left to
+     stretch, a 1100px column puts them a whole screen apart. Capped and
+     centred, they stay in one glance. Below this width it does nothing. */
+  width: 100%; max-width: 860px; margin-inline: auto;
+}
 .pos-wine-filters {
   display: flex; flex-direction: column; gap: 7px; padding: 10px 0 10px;
   border-bottom: 1px solid var(--pos-border-soft, rgba(31,53,36,0.08));
@@ -637,9 +646,16 @@ input, select { font: inherit; }
 .pos-wine-row {
   display: flex; align-items: center; gap: 10px; padding: 10px 12px;
   border-bottom: 1px solid var(--pos-border-soft, rgba(31,53,36,0.08));
+  /* Wraps rather than overflows. The cart takes a fixed 360px, so on an iPad
+     held upright this column is barely 270px — and an unwrapped row pushed
+     the pour buttons underneath the cart, where they could be read but not
+     pressed. Now the prices drop below the name instead. */
+  flex-wrap: wrap; row-gap: 8px;
 }
 .pos-wine-row.is-86 { opacity: 0.4; }
-.pos-wine-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+/* A basis rather than 0, so the name keeps a readable measure and the row
+   wraps once it cannot have one. */
+.pos-wine-main { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .pos-wine-name { font-size: 14.5px; font-weight: 700; line-height: 1.3; }
 .pos-wine-vintage { font-weight: 500; opacity: 0.55; font-variant-numeric: tabular-nums; margin-right: 6px; }
 .pos-wine-meta { font-size: 12.5px; opacity: 0.6; }
@@ -653,7 +669,7 @@ input, select { font: inherit; }
 .pos-wine-tag.is-som { color: var(--pos-accent, #4f6b47); opacity: 1; }
 .pos-wine-tag.is-ltd { color: #8a6a1f; opacity: 1; }
 
-.pos-wine-pours { display: flex; gap: 5px; }
+.pos-wine-pours { display: flex; gap: 5px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
 .pos-wine-pour {
   font: inherit; cursor: pointer; border-radius: 11px; padding: 8px 10px; min-width: 70px; min-height: 52px;
   border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); background: var(--pos-card, #fff); color: inherit;
