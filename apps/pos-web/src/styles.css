@@ -598,3 +598,87 @@ input, select { font: inherit; }
   .pos-banquet-quick { grid-template-columns: repeat(4, 1fr); }
   .pos-banquet-options { max-height: 40vh; }
 }
+
+/* ── The wine list ───────────────────────────────────────────────────────
+   Not a grid. Wine is asked for by grape, region or price, so it reads as a
+   list with the pour prices on the row — the thing you read is the thing you
+   press. Sticky filters, because on a hundred wines you scroll and still want
+   to narrow. */
+.pos-wine { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 0; }
+.pos-wine-filters {
+  display: flex; flex-direction: column; gap: 7px; padding: 10px 0 10px;
+  border-bottom: 1px solid var(--pos-border-soft, rgba(31,53,36,0.08));
+  position: sticky; top: 0; background: var(--pos-bg, #faf8f3); z-index: 3;
+}
+.pos-wine-search {
+  font: inherit; font-size: 15px; padding: 11px 14px; border-radius: 11px;
+  border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); background: var(--pos-card, #fff); color: inherit;
+}
+.pos-wine-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pos-wine-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; opacity: 0.45; min-width: 42px; }
+.pos-wine-chip {
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 6px 11px;
+  border-radius: 9999px; border: 1px solid var(--pos-border, rgba(31,53,36,0.16));
+  background: transparent; color: inherit;
+}
+.pos-wine-chip[aria-pressed="true"] { background: var(--pos-accent-bg, #1f3524); border-color: var(--pos-accent-bg, #1f3524); color: var(--pos-accent-fg, #f8f6f1); }
+.pos-wine-chip:disabled { opacity: 0.28; cursor: default; }
+.pos-wine-n { font-weight: 500; opacity: 0.5; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.pos-wine-clear { font: inherit; font-size: 12px; font-weight: 700; background: none; border: 0; color: var(--pos-accent, #4f6b47); cursor: pointer; padding: 6px 4px; }
+.pos-wine-count { font-size: 11.5px; opacity: 0.45; }
+
+.pos-wine-rows { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
+.pos-wine-group {
+  position: sticky; top: 0; z-index: 1; padding: 6px 12px;
+  background: var(--pos-panel, #f1ebe3); font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.75;
+}
+.pos-wine-band { font-weight: 600; letter-spacing: 0.05em; text-transform: none; opacity: 0.7; margin-left: 8px; }
+.pos-wine-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-bottom: 1px solid var(--pos-border-soft, rgba(31,53,36,0.08));
+}
+.pos-wine-row.is-86 { opacity: 0.4; }
+.pos-wine-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pos-wine-name { font-size: 14.5px; font-weight: 700; line-height: 1.3; }
+.pos-wine-vintage { font-weight: 500; opacity: 0.55; font-variant-numeric: tabular-nums; margin-right: 6px; }
+.pos-wine-meta { font-size: 12.5px; opacity: 0.6; }
+.pos-wine-marks { letter-spacing: 2px; color: var(--pos-accent, #4f6b47); }
+.pos-wine-note { font-size: 12px; opacity: 0.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pos-wine-tag {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 5px; background: var(--pos-chip, #efe8dc); opacity: 0.75; margin-left: 6px;
+}
+.pos-wine-tag.is-out { color: var(--pos-danger, #9a3a2e); opacity: 1; }
+.pos-wine-tag.is-som { color: var(--pos-accent, #4f6b47); opacity: 1; }
+.pos-wine-tag.is-ltd { color: #8a6a1f; opacity: 1; }
+
+.pos-wine-pours { display: flex; gap: 5px; }
+.pos-wine-pour {
+  font: inherit; cursor: pointer; border-radius: 11px; padding: 8px 10px; min-width: 70px; min-height: 52px;
+  border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); background: var(--pos-card, #fff); color: inherit;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15;
+}
+.pos-wine-pour:disabled { opacity: 0.3; cursor: default; }
+.pos-wine-size { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; font-weight: 700; }
+.pos-wine-price { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pos-wine-like {
+  font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; min-width: 52px; min-height: 52px;
+  background: transparent; border: 1px dashed var(--pos-border, rgba(31,53,36,0.16));
+  border-radius: 11px; color: inherit; opacity: 0.65;
+}
+.pos-wine-similar {
+  padding: 8px 12px 12px; background: var(--pos-panel, #f1ebe3);
+  border-bottom: 1px solid var(--pos-border-soft, rgba(31,53,36,0.08));
+  display: flex; flex-direction: column; gap: 5px;
+}
+.pos-wine-similar-head { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; opacity: 0.6; }
+.pos-wine-similar-row { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
+.pos-wine-similar-name { flex: 1; min-width: 0; font-weight: 600; }
+.pos-wine-empty { padding: 40px 16px; text-align: center; opacity: 0.6; font-size: 14px; }
+.pos-rail-count { opacity: 0.5; font-variant-numeric: tabular-nums; margin-left: 6px; font-size: 12px; }
+
+@media (max-width: 720px) {
+  .pos-wine-note { display: none; }
+  .pos-wine-pour { min-width: 62px; padding: 8px 7px; }
+}

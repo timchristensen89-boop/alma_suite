@@ -6672,6 +6672,38 @@ export const winePourLinkInputSchema = z.object({
   ml: z.coerce.number().int().min(15).max(3000)
 });
 
+// What the register needs to sell a wine, shipped with the menu so opening the
+// wine list costs no round trip. Price comes off the recipe, as everywhere.
+export type RegisterWinePour = {
+  recipeId: string;
+  ml: number;
+  priceCents: number;
+  /** The catalogue title — what the bill and the docket will say. */
+  title: string;
+  printName: string | null;
+};
+
+export type RegisterWine = {
+  id: string;
+  venue: string;
+  /** Producer and cuvee joined the way the printed list sets them. */
+  name: string;
+  producer: string;
+  cuvee: string | null;
+  grape: string | null;
+  region: string | null;
+  origin: string | null;
+  vintage: number | null;
+  section: string | null;
+  styleBand: string | null;
+  pairsWith: string[];
+  tastingNote: string | null;
+  sommelierPour: boolean;
+  limitedStock: boolean;
+  serveChilled: boolean;
+  pours: RegisterWinePour[];
+};
+
 // What the banquet report answers: a set menu sells for one price and its
 // dishes ring at $0, so each table's package revenue is shared across the
 // dishes that table was served, in proportion to their a la carte value.

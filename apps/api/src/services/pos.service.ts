@@ -896,7 +896,7 @@ export const posService = {
     // Everything the banquet picker needs, shipped with the menu so tapping a
     // set menu opens instantly instead of waiting on a second request.
     const setMenuIds = recipes.filter((recipe) => recipe.kind === 'SET_MENU').map((recipe) => recipe.id);
-    const [eightySix, modifierGroups, variantLinks, setMenuLines, setMenuCourses] = await Promise.all([
+    const [eightySix, modifierGroups, variantLinks, setMenuLines, setMenuCourses, wineRows] = await Promise.all([
       prisma.pos86.findMany({ select: { recipeId: true } }),
       prisma.posModifierGroup.findMany({
         where: { active: true },
@@ -932,7 +932,20 @@ export const posService = {
               }
             }
           })
-        : Promise.resolve([])
+        : Promise.resolve([]),
+      // Wine sells differently from everything else: the guest asks for a
+      // grape, a region or a number, never for a tile. The register lists it
+      // instead of gridding it, which needs the detail alongside the price.
+      prisma.wine.findMany({
+        where: { status: 'ACTIVE', pours: { some: {} } },
+        orderBy: [{ venue: 'asc' }, { sortOrder: 'asc' }],
+        include: {
+          pours: {
+            orderBy: { ml: 'asc' },
+            include: { recipe: { select: { id: true, title: true, printTitle: true, salePriceCents: true, status: true } } }
+          }
+        }
+      })
     ]);
     // Variants: children fold under their parent's tile on the register (the
     // QR menu keeps the flat rows). A self-row labels the parent option.
@@ -995,8 +1008,40 @@ export const posService = {
         };
       })
       .filter((plan) => plan.courses.length > 0 || plan.fixed.length > 0);
+    // A pour with no price cannot be sold, and a wine with no sellable pour is
+    // not on the list — both are reported in Stock, not papered over here.
+    const wines = wineRows
+      .map((wine) => ({
+        id: wine.id,
+        venue: wine.venue,
+        name: `${wine.producer}${wine.cuvee ? ` '${wine.cuvee}'` : ''}`,
+        producer: wine.producer,
+        cuvee: wine.cuvee,
+        grape: wine.grape,
+        region: wine.region,
+        origin: wine.origin,
+        vintage: wine.vintage,
+        section: wine.section,
+        styleBand: wine.styleBand,
+        pairsWith: wine.pairsWith,
+        tastingNote: wine.tastingNote,
+        sommelierPour: wine.sommelierPour,
+        limitedStock: wine.limitedStock,
+        serveChilled: wine.serveChilled,
+        pours: wine.pours
+          .filter((pour) => pour.recipe.status === 'ACTIVE' && pour.recipe.salePriceCents !== null)
+          .map((pour) => ({
+            recipeId: pour.recipe.id,
+            ml: pour.ml,
+            priceCents: pour.recipe.salePriceCents as number,
+            title: pour.recipe.title,
+            printName: pour.recipe.printTitle
+          }))
+      }))
+      .filter((wine) => wine.pours.length > 0);
     return {
       categories,
+      wines,
       setMenus,
       itemCount: recipes.length,
       eightySix: eightySix.map((row) => row.recipeId),
