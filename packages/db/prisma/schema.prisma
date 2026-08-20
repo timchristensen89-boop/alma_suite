@@ -3069,6 +3069,13 @@ model Recipe {
   status             String                    @default("ACTIVE")
   estimatedCost      Float                     @default(0)
   notes              String?
+  // What this dish is, dietary-wise: a list of DISH_DIETARY ids
+  // (packages/shared/src/dietary.ts) — 'gf', 'vgn', 'nuts' and so on.
+  //
+  // Empty means NOBODY HAS CHECKED, not "no allergens". Everything that reads
+  // this must treat an empty list as unknown; dishAnswersGuest is the one
+  // place that decides, and it is tested for exactly this.
+  dietary            Json                      @default("[]")
   /// The venue-twin link. The catalogue is duplicated per venue (each venue
   /// carries its own copy of the same dish under a different id); twins point
   /// at ONE canonical member of their group (which keeps this null). Nothing

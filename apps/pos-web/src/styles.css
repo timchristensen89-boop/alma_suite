@@ -676,6 +676,26 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
    not. Only the filters differ, because a menu gets asked different questions
    than a wine list. */
 .pos-menu-filters { /* shares every rule above with .pos-wine-filters */ }
+/* Dietary marks on a menu row. Small, because they are a reference not a
+   decision — the row is still a button that rings the dish. "Contains" is the
+   only one coloured like a warning, because it is the only one that means do
+   not serve this to them. */
+.pos-list-diet { display: inline-flex; gap: 4px; margin-left: 8px; }
+.pos-list-diet i {
+  font-style: normal; font-size: 9.5px; font-weight: 800; letter-spacing: 0.06em;
+  padding: 2px 5px; border-radius: 4px; text-transform: uppercase;
+  background: rgba(31, 53, 36, 0.08); color: var(--pos-text2, inherit); opacity: 0.75;
+}
+.pos-list-diet i[data-kind='contains'] { background: rgba(147, 48, 31, 0.14); color: #93301f; opacity: 1; }
+.pos-list-diet i[data-kind='onAsk'] { background: rgba(124, 90, 17, 0.13); color: #7c5a11; }
+
+/* The caveat under a dietary filter. It is the most important sentence on the
+   page — it is what stops a hidden dish being read as an unsafe dish. */
+.pos-menu-caveat {
+  margin: 2px 0 0; font-size: 12px; line-height: 1.45; opacity: 0.7;
+  border-left: 2px solid rgba(147, 48, 31, 0.4); padding-left: 8px;
+}
+
 .pos-menu-none {
   margin: 24px auto; text-align: center; opacity: 0.7; font-size: 15px;
   display: flex; flex-direction: column; align-items: center; gap: 10px;

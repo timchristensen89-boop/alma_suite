@@ -2,6 +2,10 @@ import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState
 import { loadStripeTerminal, type Terminal, type Reader } from '@stripe/terminal-js';
 import { api, clearApiTokens, consumeSuiteHandoffToken, messageForError, openSuiteApp, setApiAuthToken, setApiPinToken } from './api';
 import { POS_SURFACES, SUITE_APP_LINKS } from './suiteApps';
+// Dietary vocabulary, shared with Stock and the booking parser so a guest's
+// requirement and a dish's label are the same words rather than two sets that
+// nearly match.
+import { answerableGuestTags, dietaryKind, dietaryLabel, dietaryShort, dishAnswersGuest, parseDishDietary } from '@alma/shared';
 
 // Lazy: jsQR is ~130KB the till never needs until somebody actually taps
 // "Scan the card" — the register's first paint shouldn't carry it.
@@ -1901,7 +1905,9 @@ export function App() {
     q: string;
     kind: 'any' | 'FOOD' | 'BEVERAGE' | 'SET_MENU';
     avail: 'any' | 'on' | 'off';
-  }>({ q: '', kind: 'any', avail: 'any' });
+    /** A guest requirement, in the booking parser's own vocabulary. */
+    diet: string | null;
+  }>({ q: '', kind: 'any', avail: 'any', diet: null });
 
   /**
    * Does this dish survive the full-menu filters? Every term must appear
@@ -1910,6 +1916,14 @@ export function App() {
    */
   const menuMatch = (item: MenuItem, categoryKind: string) => {
     if (menuFilters.kind !== 'any' && categoryKind !== menuFilters.kind) return false;
+    if (menuFilters.diet) {
+      // 'yes' and 'ask' only. A dish nobody has tagged is UNKNOWN, and an
+      // unknown dish must never be offered to somebody who asked for gluten
+      // free — that is the whole reason this filter exists rather than the
+      // floor guessing from the title.
+      const verdict = dishAnswersGuest(item.dietary ?? [], menuFilters.diet);
+      if (verdict !== 'yes' && verdict !== 'ask') return false;
+    }
     const off = eightySix.has(item.recipeId);
     if (menuFilters.avail === 'on' && off) return false;
     if (menuFilters.avail === 'off' && !off) return false;
@@ -1919,7 +1933,8 @@ export function App() {
     return terms.every((term) => hay.includes(term));
   };
 
-  const menuFiltersOn = menuFilters.q.trim() !== '' || menuFilters.kind !== 'any' || menuFilters.avail !== 'any';
+  const menuFiltersOn =
+    menuFilters.q.trim() !== '' || menuFilters.kind !== 'any' || menuFilters.avail !== 'any' || menuFilters.diet !== null;
 
   /** How many dishes survive the filters — the bar's count and the empty state
       read the same number rather than each working it out. */
@@ -3753,7 +3768,7 @@ export function App() {
                           <button
                             type="button"
                             className="pos-wine-clear"
-                            onClick={() => setMenuFilters({ q: '', kind: 'any', avail: 'any' })}
+                            onClick={() => setMenuFilters({ q: '', kind: 'any', avail: 'any', diet: null })}
                           >
                             Clear
                           </button>
@@ -3776,6 +3791,29 @@ export function App() {
                             )
                           : null}
                       </div>
+                      {/* Only what the kitchen has actually marked. A venue
+                          that has not walked the menu yet gets no row here
+                          rather than a row that finds nothing. */}
+                      {all.some((entry) => (entry.item.dietary ?? []).length > 0) ? (
+                        <div className="pos-wine-chips">
+                          <span className="pos-wine-label">Suits</span>
+                          {chip('d-any', 'Anyone', menuFilters.diet === null, all.length, () =>
+                            setMenuFilters({ ...menuFilters, diet: null })
+                          )}
+                          {answerableGuestTags().map((tag) =>
+                            chip(
+                              `d-${tag}`,
+                              tag,
+                              menuFilters.diet === tag,
+                              countIf((entry) => {
+                                const verdict = dishAnswersGuest(entry.item.dietary ?? [], tag);
+                                return verdict === 'yes' || verdict === 'ask';
+                              }),
+                              () => setMenuFilters({ ...menuFilters, diet: menuFilters.diet === tag ? null : tag })
+                            )
+                          )}
+                        </div>
+                      ) : null}
                       {/* Only worth showing once something is actually 86'd. */}
                       {countIf((entry) => eightySix.has(entry.item.recipeId)) > 0 ? (
                         <div className="pos-wine-chips">
@@ -3790,6 +3828,12 @@ export function App() {
                             setMenuFilters({ ...menuFilters, avail: 'off' })
                           )}
                         </div>
+                      ) : null}
+                      {menuFilters.diet ? (
+                        <p className="pos-menu-caveat">
+                          Showing dishes the kitchen has marked <strong>{menuFilters.diet}</strong>. Anything not marked is
+                          hidden because nobody has checked it — not because it is unsuitable. Ask the kitchen.
+                        </p>
                       ) : null}
                     </div>
                   );
@@ -3872,6 +3916,15 @@ export function App() {
                                   >
                                     <i className={`pos-list-dot ${hueClass(hueForCategory(category.name))}`} />
                                     <span>{item.title}</span>
+                                    {(item.dietary ?? []).length > 0 ? (
+                                      <span className="pos-list-diet">
+                                        {parseDishDietary(item.dietary ?? []).map((id) => (
+                                          <i key={id} data-kind={dietaryKind(id)} title={dietaryLabel(id)}>
+                                            {dietaryShort(id)}
+                                          </i>
+                                        ))}
+                                      </span>
+                                    ) : null}
                                     {quantity > 0 ? <em>×{quantity}</em> : null}
                                     <b>{eightySix.has(item.recipeId) ? "86'd" : money(item.priceCents)}</b>
                                     <u>＋</u>
@@ -3888,7 +3941,7 @@ export function App() {
                 {activeCategory === '__all__' && menuFiltersOn && menuShownCount === 0 ? (
                   <p className="pos-menu-none">
                     Nothing on the menu matches that.
-                    <button type="button" onClick={() => setMenuFilters({ q: '', kind: 'any', avail: 'any' })}>
+                    <button type="button" onClick={() => setMenuFilters({ q: '', kind: 'any', avail: 'any', diet: null })}>
                       Clear the filters
                     </button>
                   </p>

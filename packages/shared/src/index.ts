@@ -1,3 +1,4 @@
+export * from './dietary.js';
 export * from './availability.js';
 export * from './shift-claims.js';
 export * from './rostering-guards.js';
@@ -6393,6 +6394,8 @@ export type Recipe = {
   // Kitchen docket/KDS override name. NULL = dockets print `title`, same as
   // the register tile and guest receipts.
   printTitle: string | null;
+  /** DISH_DIETARY ids. Empty = nobody has checked, NOT "no allergens". */
+  dietary: string[];
   kind: string | null;
   category: string | null;
   subcategory: string | null;
@@ -6894,6 +6897,10 @@ export const recipeVenuePriceInputSchema = z.object({
 export const recipeCreateInputSchema = z.object({
   title: z.string().min(2, 'Title is required'),
   printTitle: z.string().optional().or(z.literal('')),
+  // Unknown tags are dropped rather than rejected: a save must not fail
+  // because a client sent a tag this build does not know, and a tag nobody
+  // recognises must never reach the floor looking like a claim about a plate.
+  dietary: z.array(z.string()).optional(),
   kind: z.string().optional().or(z.literal('')),
   category: z.string().optional().or(z.literal('')),
   subcategory: z.string().optional().or(z.literal('')),

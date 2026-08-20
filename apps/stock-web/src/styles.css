@@ -3484,3 +3484,21 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 .wine-toggle { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
 .wine-pours-edit { display: flex; flex-direction: column; gap: 8px; }
 .wine-link { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+
+/* Dietary picker — a claim about a plate, so it reads as a checklist rather
+   than as chips you flick through. The three kinds are coloured apart because
+   they mean genuinely different things: "suits" and "on ask" let a dish IN,
+   "contains" rules it OUT, and mixing those up is how somebody gets hurt. */
+.dietary-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.dietary-tag {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 13px; border-radius: 9999px; cursor: pointer;
+  border: 1px solid var(--line, rgba(31, 53, 36, 0.18));
+  font-size: 14px; line-height: 1;
+}
+.dietary-tag input { margin: 0; }
+.dietary-tag.is-on { border-color: currentColor; font-weight: 600; }
+.dietary-tag.is-suits.is-on { color: #1f6b3f; background: rgba(31, 107, 63, 0.09); }
+.dietary-tag.is-onAsk.is-on { color: #7c5a11; background: rgba(124, 90, 17, 0.10); }
+/* Contains is the only one that means "do not serve this to them". */
+.dietary-tag.is-contains.is-on { color: #93301f; background: rgba(147, 48, 31, 0.10); }
