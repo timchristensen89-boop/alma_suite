@@ -6767,6 +6767,73 @@ export type BanquetReportPayload = {
   nights: Array<{ date: string; tables: number; covers: number; revenueCents: number; costCents: number; marginCents: number }>;
 };
 
+// What the wine report answers: which grapes, regions, price bands and pour
+// sizes the list actually sells, at what margin, and what has gone quiet.
+//
+// Margin is over costedRevenueCents, never over revenueCents — a wine with no
+// cost recorded would otherwise read as pure profit and top every table. The
+// uncosted slice is carried alongside so a partial number is never mistaken
+// for a whole one.
+export type WineBucketRow = {
+  key: string;
+  label: string;
+  /** On the list in this bucket, whether or not it sold. */
+  wines: number;
+  bottles: number;
+  glasses: number;
+  quantity: number;
+  revenueCents: number;
+  costedRevenueCents: number;
+  costCents: number;
+  marginCents: number;
+  marginPercent: number | null;
+  sharePercent: number | null;
+};
+
+export type WineAgingRow = {
+  wineId: string;
+  venue: string;
+  name: string;
+  vintage: number | null;
+  /** Years since the vintage at the report's end date. NULL = non-vintage. */
+  vintageAge: number | null;
+  bottlePriceCents: number | null;
+  soldInWindow: number;
+  /** Last sale of any pour, from either register. NULL = never sold. */
+  lastSoldAt: string | null;
+  daysSinceSold: number | null;
+  limitedStock: boolean;
+};
+
+export type WineReportPayload = {
+  range: { start: string; end: string };
+  venue: string | null;
+  totals: {
+    winesOnList: number;
+    poursSellable: number;
+    quantity: number;
+    bottles: number;
+    glasses: number;
+    revenueCents: number;
+    costedRevenueCents: number;
+    uncostedRevenueCents: number;
+    costCents: number;
+    marginCents: number;
+    marginPercent: number | null;
+    /** Split by which till rang it, so the changeover window stays legible. */
+    registerRevenueCents: number;
+    importedRevenueCents: number;
+  };
+  /** Named plainly so the page can say which numbers are soft, and why. */
+  gaps: { uncostedWines: string[]; unpricedWines: string[] };
+  byGrape: WineBucketRow[];
+  byRegion: WineBucketRow[];
+  byOrigin: WineBucketRow[];
+  byBand: WineBucketRow[];
+  byPourSize: WineBucketRow[];
+  aging: WineAgingRow[];
+};
+
 export type RecipeIngredientOption = {
   id: string;
   type: 'STOCK_ITEM' | 'PREP_RECIPE';

@@ -161,6 +161,21 @@ reportsRouter.get('/banquets', requireManager, async (req, res, next) => {
   }
 });
 
+// What the wine list is doing: grape, region, price band, pour size, margin,
+// and what has not sold. Reads both registers, because the suite's own POS
+// only started ringing wine today and the history is in the imported rows.
+reportsRouter.get('/wines', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reportsService.wines({
+      start: typeof req.query.start === 'string' ? req.query.start : '',
+      end: typeof req.query.end === 'string' ? req.query.end : '',
+      venue: typeof req.query.venue === 'string' ? req.query.venue : ''
+    }, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reportsRouter.post('/sales/import', requireManager, async (req, res, next) => {
   try {
     res.json(await reportsService.importActualSales(req.body, req.user!));

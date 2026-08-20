@@ -3,6 +3,19 @@ import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { staffCostingRate, splitOvertimeHours, costForRate, weeklyFixedCostCents, salariedVenueAllocations, staffPayRateSelect } from '../lib/staff-pay-rates.js';
 import {
+  PRICE_BANDS,
+  agingWines,
+  bottlePriceCents,
+  bucketBy,
+  isBottle,
+  marginPercent,
+  poursizeLabel,
+  priceBand,
+  type PourFact,
+  type SaleFact,
+  type WineFact
+} from '../lib/wine-report.js';
+import {
   salesActualImportSchema,
   salesActualQuerySchema,
   reportsMenuProfitabilityQuerySchema,
@@ -18,6 +31,7 @@ import {
   type ReportsComplianceSummary,
   type ReportsContentSummary,
   type ReportsGiftCardSummary,
+  type WineReportPayload,
   type ReportsMarketingSummary,
   type ReportsOverviewPayload,
   type ReportsPrimeCostPayload,
@@ -1973,6 +1987,252 @@ export const reportsService = {
           marginCents: round(night.revenueCents - night.costCents)
         }))
         .sort((a, b) => a.date.localeCompare(b.date))
+    };
+  },
+
+  // What the wine list is doing: grape, region, price band, pour size, margin,
+  // and what has gone quiet.
+  //
+  // Sales come from BOTH registers. The suite's own POS only started ringing
+  // wine on 2026-08-20, so every night before that lives in the imported Square
+  // and Lightspeed rows, matched to a recipe. Reading one and not the other
+  // would either lose the history or lose today. Both feed the same shape and
+  // the payload says how much came from where.
+  async wines(input: unknown, actor?: AuthUser): Promise<WineReportPayload> {
+    const data = salesActualQuerySchema.parse(input);
+    const start = parseDate(data.start, 'Wine report start date');
+    const end = parseDate(data.end, 'Wine report end date');
+    if (end <= start) throw new HttpError(400, 'Wine report end date must be after the start date');
+    const venueScope = salesVenueScope(actor, data.venue);
+
+    const [catalogue, orders, imported] = await Promise.all([
+      prisma.wine.findMany({
+        where: { status: 'ACTIVE', ...(venueScope ? { venue: venueScope } : {}) },
+        include: {
+          pours: {
+            include: {
+              recipe: {
+                select: { id: true, status: true, salePriceCents: true, estimatedCost: true, portionSize: true, yieldQuantity: true }
+              }
+            }
+          }
+        }
+      }),
+      prisma.posOrder.findMany({
+        where: {
+          status: 'PAID',
+          training: false,
+          serviceDate: { gte: start, lt: end },
+          ...(venueScope ? { venue: venueScope } : {})
+        },
+        select: {
+          serviceDate: true,
+          lines: { select: { recipeId: true, quantity: true, totalCents: true, isGiftCard: true } }
+        }
+      }),
+      prisma.salesItemActualEntry.findMany({
+        where: {
+          serviceDate: { gte: start, lt: end },
+          recipeId: { not: null },
+          ...(venueScope ? { venue: venueScope } : {})
+        },
+        select: { recipeId: true, quantity: true, netSalesCents: true, serviceDate: true }
+      })
+    ]);
+
+    // The cost of ONE pour, the same way the rest of the suite costs a recipe:
+    // estimatedCost is the batch, portions divide it. Wine is normally one
+    // portion per recipe, but a carafe recipe entered as a yield would not be.
+    const pourCostCents = (recipe: { estimatedCost: number | null; portionSize: number | null; yieldQuantity: number | null }) => {
+      if (recipe.estimatedCost == null || recipe.estimatedCost <= 0) return null;
+      const portions =
+        recipe.portionSize && recipe.portionSize > 0 && recipe.yieldQuantity && recipe.yieldQuantity > 0
+          ? recipe.yieldQuantity / recipe.portionSize
+          : recipe.yieldQuantity && recipe.yieldQuantity > 0
+            ? recipe.yieldQuantity
+            : 1;
+      return Math.round((recipe.estimatedCost * 100) / portions);
+    };
+
+    const wines: WineFact[] = catalogue.map((row) => ({
+      id: row.id,
+      venue: row.venue,
+      name: [row.vintage ?? 'NV', row.producer, row.cuvee ? `'${row.cuvee}'` : ''].filter(Boolean).join(' ').trim(),
+      grape: row.grape,
+      region: row.region,
+      origin: row.origin,
+      vintage: row.vintage,
+      section: row.section,
+      limitedStock: row.limitedStock,
+      sommelierPour: row.sommelierPour,
+      pours: row.pours
+        .filter((pour) => pour.recipe.status === 'ACTIVE')
+        .map(
+          (pour): PourFact => ({
+            recipeId: pour.recipeId,
+            ml: pour.ml,
+            salePriceCents: pour.recipe.salePriceCents,
+            costCents: pourCostCents(pour.recipe)
+          })
+        )
+    }));
+
+    // recipeId -> the wine and pour it belongs to, so a sale of any pour finds
+    // its bottle. A recipe that is not a linked pour is not wine and is skipped.
+    const pourByRecipe = new Map<string, { wine: WineFact; pour: PourFact }>();
+    for (const wine of wines) for (const pour of wine.pours) pourByRecipe.set(pour.recipeId, { wine, pour });
+
+    const day = (date: Date) => date.toISOString().slice(0, 10);
+    const sales: SaleFact[] = [];
+    for (const order of orders) {
+      // The serviceDate filter already excludes these, but a sale with no
+      // trading day has no place on a dated report either way.
+      if (!order.serviceDate) continue;
+      const date = day(order.serviceDate);
+      for (const line of order.lines) {
+        if (!line.recipeId || line.isGiftCard) continue;
+        if (!pourByRecipe.has(line.recipeId)) continue;
+        sales.push({
+          recipeId: line.recipeId,
+          quantity: line.quantity,
+          revenueCents: line.totalCents,
+          date,
+          source: 'register'
+        });
+      }
+    }
+    for (const entry of imported) {
+      if (!entry.recipeId || !pourByRecipe.has(entry.recipeId)) continue;
+      sales.push({
+        recipeId: entry.recipeId,
+        quantity: entry.quantity,
+        revenueCents: entry.netSalesCents,
+        date: day(entry.serviceDate),
+        source: 'imported'
+      });
+    }
+
+    const lines = sales.flatMap((sale) => {
+      const found = pourByRecipe.get(sale.recipeId);
+      return found ? [{ wine: found.wine, pour: found.pour, sale }] : [];
+    });
+
+    const revenueCents = lines.reduce((sum, line) => sum + line.sale.revenueCents, 0);
+    const quantity = lines.reduce((sum, line) => sum + line.sale.quantity, 0);
+    const bottles = lines.filter((line) => isBottle(line.pour.ml)).reduce((sum, line) => sum + line.sale.quantity, 0);
+    const costedRevenueCents = lines
+      .filter((line) => line.pour.costCents !== null)
+      .reduce((sum, line) => sum + line.sale.revenueCents, 0);
+    const costCents = lines
+      .filter((line) => line.pour.costCents !== null)
+      .reduce((sum, line) => sum + (line.pour.costCents ?? 0) * line.sale.quantity, 0);
+
+    // Which wines belong in which bucket, sold or not — so a grape that is on
+    // the list and never moves still has a row saying it never moves.
+    const membership = (keyOf: (wine: WineFact) => string | null) => {
+      const map = new Map<string, Set<string>>();
+      for (const wine of wines) {
+        const key = keyOf(wine);
+        if (!key) continue;
+        const set = map.get(key) ?? new Set<string>();
+        set.add(wine.id);
+        map.set(key, set);
+      }
+      return map;
+    };
+
+    const bandOf = (wine: WineFact) => priceBand(bottlePriceCents(wine))?.id ?? null;
+    const bandLabel = new Map(PRICE_BANDS.map((band) => [band.id as string, band.label as string]));
+
+    const byPourSize = new Map<string, Set<string>>();
+    for (const wine of wines) {
+      for (const pour of wine.pours) {
+        const key = String(pour.ml);
+        const set = byPourSize.get(key) ?? new Set<string>();
+        set.add(wine.id);
+        byPourSize.set(key, set);
+      }
+    }
+
+    const soldInWindow = new Map<string, number>();
+    const lastSoldAt = new Map<string, string>();
+    for (const line of lines) {
+      soldInWindow.set(line.wine.id, (soldInWindow.get(line.wine.id) ?? 0) + line.sale.quantity);
+      const seen = lastSoldAt.get(line.wine.id);
+      if (!seen || line.sale.date > seen) lastSoldAt.set(line.wine.id, line.sale.date);
+    }
+
+    // A wine last sold BEFORE the window still has a last-sold date worth
+    // showing, so "never sold" means never, not "not in these four weeks".
+    const everRecipeIds = [...pourByRecipe.keys()];
+    const [everOrders, everImported] = everRecipeIds.length
+      ? await Promise.all([
+          prisma.posOrderLine.findMany({
+            where: { recipeId: { in: everRecipeIds }, order: { status: 'PAID', training: false, serviceDate: { lt: start } } },
+            select: { recipeId: true, order: { select: { serviceDate: true } } },
+            orderBy: { order: { serviceDate: 'desc' } },
+            take: 5000
+          }),
+          prisma.salesItemActualEntry.findMany({
+            where: { recipeId: { in: everRecipeIds }, serviceDate: { lt: start } },
+            select: { recipeId: true, serviceDate: true },
+            orderBy: { serviceDate: 'desc' },
+            take: 5000
+          })
+        ])
+      : [[], []];
+    const noteEarlier = (recipeId: string | null, date: Date | null) => {
+      if (!date) return;
+      const found = recipeId ? pourByRecipe.get(recipeId) : null;
+      if (!found) return;
+      const iso = day(date);
+      const seen = lastSoldAt.get(found.wine.id);
+      if (!seen || iso > seen) lastSoldAt.set(found.wine.id, iso);
+    };
+    for (const row of everOrders) noteEarlier(row.recipeId, row.order.serviceDate);
+    for (const row of everImported) noteEarlier(row.recipeId, row.serviceDate);
+
+    const asOf = day(new Date(end.getTime() - 86_400_000));
+    const uncosted = wines.filter((wine) => wine.pours.length > 0 && wine.pours.every((pour) => pour.costCents === null));
+    const unpriced = wines.filter((wine) => bottlePriceCents(wine) === null);
+
+    return {
+      range: { start: data.start, end: data.end },
+      venue: venueScope ?? null,
+      totals: {
+        winesOnList: wines.length,
+        poursSellable: wines.reduce((sum, wine) => sum + wine.pours.length, 0),
+        quantity,
+        bottles,
+        glasses: quantity - bottles,
+        revenueCents,
+        costedRevenueCents,
+        uncostedRevenueCents: revenueCents - costedRevenueCents,
+        costCents,
+        marginCents: costedRevenueCents - costCents,
+        marginPercent: marginPercent(costedRevenueCents, costCents),
+        registerRevenueCents: lines
+          .filter((line) => line.sale.source === 'register')
+          .reduce((sum, line) => sum + line.sale.revenueCents, 0),
+        importedRevenueCents: lines
+          .filter((line) => line.sale.source === 'imported')
+          .reduce((sum, line) => sum + line.sale.revenueCents, 0)
+      },
+      gaps: {
+        uncostedWines: uncosted.map((wine) => `${wine.venue} · ${wine.name}`),
+        unpricedWines: unpriced.map((wine) => `${wine.venue} · ${wine.name}`)
+      },
+      byGrape: bucketBy(lines, membership((wine) => wine.grape), (line) => (line.wine.grape ? { key: line.wine.grape, label: line.wine.grape } : null), revenueCents),
+      byRegion: bucketBy(lines, membership((wine) => wine.region), (line) => (line.wine.region ? { key: line.wine.region, label: line.wine.region } : null), revenueCents),
+      byOrigin: bucketBy(lines, membership((wine) => wine.origin), (line) => (line.wine.origin ? { key: line.wine.origin, label: line.wine.origin } : null), revenueCents),
+      byBand: bucketBy(lines, membership(bandOf), (line) => {
+        const id = bandOf(line.wine);
+        return id ? { key: id, label: bandLabel.get(id) ?? id } : null;
+      }, revenueCents).map((row) => ({ ...row, label: bandLabel.get(row.key) ?? row.label })),
+      byPourSize: bucketBy(lines, byPourSize, (line) => ({ key: String(line.pour.ml), label: poursizeLabel(line.pour.ml) }), revenueCents)
+        .map((row) => ({ ...row, label: poursizeLabel(Number(row.key)) }))
+        .sort((a, b) => Number(a.key) - Number(b.key)),
+      aging: agingWines(wines, soldInWindow, lastSoldAt, asOf)
     };
   },
 
