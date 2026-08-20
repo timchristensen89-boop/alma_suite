@@ -1145,7 +1145,11 @@ export function App() {
     void (async () => {
       try {
         void api<Array<{ name: string }>>('/api/pos/courses')
-          .then((rows) => setCourses(rows.map((row) => row.name)))
+          // An empty list is not an answer, it is a bad reply: the API seeds
+          // the cycle on first read, so it never legitimately has none. Keep
+          // the fallback rather than leaving the register with no courses to
+          // fire on.
+          .then((rows) => { if (rows.length > 0) setCourses(rows.map((row) => row.name)); })
           .catch(() => undefined);
         void api<Record<string, string[]>>('/api/pos/adjust-reasons').then(setReasons).catch(() => undefined);
         const res = await api<MenuPayload>('/api/pos/menu');
@@ -1957,6 +1961,16 @@ export function App() {
     return Math.ceil(heads / course.perGuests);
   }
 
+  // Which course a banquet dish FIRES on, which is not the same thing as what
+  // the course is called. The firing order set in Stock wins. A course name is
+  // only accepted when it is a course the register actually cycles through -
+  // the seeded courses are named after their dish, and taking those at face
+  // value gave a table of four fourteen one-dish "courses" on the fire screen.
+  function courseFiresOn(course: SetMenuCourse): string {
+    if (course.posCourse) return course.posCourse;
+    return courses.includes(course.name) ? course.name : 'NOW';
+  }
+
   function askableCourses(plan: SetMenuPlan): SetMenuCourse[] {
     return plan.courses.filter(
       (course) => course.options.length !== 1 || eightySix.has(course.options[0]!.recipeId)
@@ -2078,7 +2092,7 @@ export function App() {
           // eight people share is one upgrade, not eight.
           unitPriceCents: option.supplementCents,
           quantity: portions,
-          course: course.posCourse || course.name,
+          course: courseFiresOn(course),
           modifiers: null,
           notes: null,
           packagedBy: plan.recipeId
