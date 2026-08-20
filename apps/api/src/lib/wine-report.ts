@@ -115,6 +115,7 @@ export type Bucket = {
    */
   costedRevenueCents: number;
   costCents: number;
+  /** Ex-GST on both sides — see marginPercent. */
   marginCents: number;
   marginPercent: number | null;
   /** Share of all wine revenue in the window. */
@@ -122,12 +123,39 @@ export type Bucket = {
 };
 
 /**
+ * Australian GST. The register takes money GST inclusive; the stocktake sheets
+ * the wine costs come from are ex-GST.
+ */
+export const GST_RATE = 0.1;
+
+/** What the venue actually keeps out of a GST-inclusive till figure. */
+export function exGstCents(inclusiveCents: number): number {
+  return Math.round(inclusiveCents / (1 + GST_RATE));
+}
+
+/**
  * Margin over the revenue we can actually cost. NULL when nothing in the
  * bucket has a cost — an empty column is honest, 100% is not.
+ *
+ * BOTH SIDES EX-GST. Revenue arrives here GST inclusive (till takings) and
+ * cost arrives ex-GST (the bar stocktake prices a bottle ex-GST), so comparing
+ * them raw counted the GST as margin and read about nine points high — a
+ * $73 bottle costing $13.54 showed 81% when the truth is 79.6%. Wine GP is
+ * quoted ex-GST on both sides in every venue Tim has run, so revenue drops to
+ * ex-GST here rather than cost being grossed up.
+ *
+ * revenueCents on the bucket stays inclusive on purpose: that is the number
+ * that reconciles against the day's takings.
  */
 export function marginPercent(costedRevenueCents: number, costCents: number): number | null {
   if (costedRevenueCents <= 0) return null;
-  return ((costedRevenueCents - costCents) / costedRevenueCents) * 100;
+  const net = exGstCents(costedRevenueCents);
+  return ((net - costCents) / net) * 100;
+}
+
+/** Margin in dollars, on the same ex-GST basis as marginPercent. */
+export function marginCentsOf(costedRevenueCents: number, costCents: number): number {
+  return exGstCents(costedRevenueCents) - costCents;
 }
 
 type Line = { wine: WineFact; pour: PourFact; sale: SaleFact };
@@ -185,7 +213,7 @@ export function bucketBy(
   return [...buckets.values()]
     .map((bucket) => ({
       ...bucket,
-      marginCents: bucket.costedRevenueCents - bucket.costCents,
+      marginCents: marginCentsOf(bucket.costedRevenueCents, bucket.costCents),
       marginPercent: marginPercent(bucket.costedRevenueCents, bucket.costCents),
       sharePercent: totalRevenueCents > 0 ? (bucket.revenueCents / totalRevenueCents) * 100 : null
     }))
