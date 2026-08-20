@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, messageForError } from './api';
 import { QrSheet } from './QrSheet';
+import { ALMA_MARK } from './brand';
 
 // ── POS back office — alma-pos.web.app/#office ─────────────────────────────
 // Register settings live here, out of the way of service: printer/docket
@@ -215,7 +216,7 @@ export function Office() {
   return (
     <div className="office-shell">
       <header className="office-header">
-        <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" />
+        <img src={ALMA_MARK} alt="" className="pos-mark" />
         <strong>Back office</strong>
         <span className="pos-wordmark-chip">POS settings</span>
         <span style={{ flex: 1 }} />
