@@ -127,3 +127,79 @@ export function impliedPrice(menuCents: number, siblings: SiblingPour[]): number
       : Math.round(((offsets[middle - 1] ?? 0) + (offsets[middle] ?? 0)) / 2);
   return Math.max(0, menuCents + offset);
 }
+
+/**
+ * A subcategory that names a drink family which is not wine.
+ *
+ * The register's wine items carry a legacy free-text subcategory from the
+ * import, and a handful of wines came across filed under "Cocktails" — a
+ * Chenin Blanc at St Alma and a Tempranillo at Avalon among them. It is
+ * harmless at the register (the POS never reads subcategory) but it is the
+ * sub-label under the title in Stock, so those wines read as cocktails to
+ * whoever is looking at the list.
+ *
+ * The test is deliberately narrow: it fires only when the text names a
+ * DIFFERENT drink family and says nothing about wine. "Wine by the glass"
+ * mentions wine and stays. "Bubbles" names no other family and stays — an
+ * unfamiliar subcategory is unknown, not wrong, and this must not quietly
+ * strip labels somebody chose on purpose.
+ */
+const OTHER_DRINK_FAMILY =
+  /cocktail|beer|cider|spirit|liquor|whisk|vodka|\bgin\b|\brum\b|tequila|mezcal|coffee|\btea\b|juice|soft drink|soda|water/;
+const MENTIONS_WINE = /wine|sparkling|champagne|prosecco|ros[eé]|bubbles|vermouth|sherry|\bport\b|muscat|fortified|sake/;
+
+export function contradictsWine(subcategory: string | null | undefined): boolean {
+  const value = (subcategory ?? '').trim().toLowerCase();
+  if (!value) return false;
+  if (MENTIONS_WINE.test(value)) return false;
+  return OTHER_DRINK_FAMILY.test(value);
+}
+
+export type WineShape = {
+  kind: string | null;
+  subcategory: string | null;
+  /** The neighbour this shape reads like, for the report. */
+  from: string;
+};
+
+type Neighbour = { title: string; kind: string | null; subcategory: string | null };
+
+/** Most frequent value, ties going to whichever was seen first. */
+function commonest<T>(values: T[]): T | undefined {
+  const counts = new Map<T, number>();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  let best: T | undefined;
+  let bestCount = 0;
+  for (const [value, count] of counts) {
+    if (count > bestCount) {
+      best = value;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+/**
+ * The shape a new wine should be created with, read off the wines already in
+ * the register beside it.
+ *
+ * Taking the FIRST neighbour — which is what this used to do — means one badly
+ * filed legacy row decides how every new wine at that venue is filed. Taking
+ * the commonest means it takes a vote, and one odd row loses. Neighbours whose
+ * subcategory names another drink family are not counted at all, so a pool
+ * that happens to be mostly mislabelled still cannot pass the mislabel on:
+ * blank is a worse label than the right one and a better one than a wrong one.
+ */
+export function dominantShape(neighbours: Neighbour[]): WineShape | null {
+  if (neighbours.length === 0) return null;
+  const kind = commonest(neighbours.map((neighbour) => neighbour.kind)) ?? null;
+  const usable = neighbours.filter((neighbour) => !contradictsWine(neighbour.subcategory));
+  const subcategory = usable.length === 0 ? null : (commonest(usable.map((n) => n.subcategory)) ?? null);
+  const from =
+    usable.find((n) => n.kind === kind && n.subcategory === subcategory)?.title ??
+    usable.find((n) => n.subcategory === subcategory)?.title ??
+    neighbours.find((n) => n.kind === kind)?.title ??
+    neighbours[0]?.title ??
+    '';
+  return { kind, subcategory, from };
+}

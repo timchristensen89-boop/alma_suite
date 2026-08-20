@@ -39,7 +39,7 @@ import { resolve } from 'node:path';
 import { prisma } from '@alma/db';
 import { poursizeOf, scoreCandidate, tokens } from '../src/lib/wine-match.js';
 import { parseWineList, wineLabel, type WineListRow } from '../src/lib/wine-list.js';
-import { itemTitle, sectionCategory } from '../src/lib/wine-items.js';
+import { dominantShape, itemTitle, sectionCategory, type WineShape } from '../src/lib/wine-items.js';
 
 const FILE = resolve(import.meta.dirname, '../../../docs/wine-list.tsv');
 
@@ -137,16 +137,21 @@ async function main() {
     }
   }
 
-  // Shape copied from a neighbour rather than invented, so a new Shiraz files
-  // itself exactly where the register's other Shiraz already sits.
-  const template = new Map<string, { kind: string | null; subcategory: string | null; from: string }>();
+  // Shape copied from the neighbours rather than invented, so a new Shiraz
+  // files itself exactly where the register's other Shiraz already sits.
+  //
+  // From the neighbourS, plural, and by vote: reading the first row back from
+  // the database let one badly filed legacy item — a Chenin Blanc filed under
+  // "Cocktails" — decide how every new white at St Alma was filed. A vote
+  // outnumbers it, and dominantShape refuses that subcategory outright.
+  const template = new Map<string, WineShape>();
   for (const plan of planned) {
     const key = `${plan.venue}|${plan.category}`;
     if (template.has(key)) continue;
-    const match =
-      pool.find((recipe) => recipe.venue === plan.venue && recipe.category === plan.category) ??
-      pool.find((recipe) => recipe.venue === plan.venue);
-    if (match) template.set(key, { kind: match.kind, subcategory: match.subcategory, from: match.title });
+    const sameCategory = pool.filter((recipe) => recipe.venue === plan.venue && recipe.category === plan.category);
+    const neighbours = sameCategory.length > 0 ? sameCategory : pool.filter((recipe) => recipe.venue === plan.venue);
+    const shape = dominantShape(neighbours);
+    if (shape) template.set(key, shape);
   }
 
   const report = (title: string, lines: string[]) => {
@@ -179,7 +184,7 @@ async function main() {
           `${shape ? '' : '   [no neighbour to copy — kind and subcategory left blank]'}`
       );
     }
-    console.log('\nShape copied from:');
+    console.log('\nShape copied from (the commonest among that venue and category):');
     for (const [key, shape] of template) {
       console.log(`  ${key.padEnd(28)} ${shape.from}  (kind: ${shape.kind ?? 'none'}, subcategory: ${shape.subcategory ?? 'none'})`);
     }
