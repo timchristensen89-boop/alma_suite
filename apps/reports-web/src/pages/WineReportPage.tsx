@@ -63,7 +63,7 @@ function BucketTable({ rows, unit }: { rows: WineBucketRow[]; unit: string }) {
           <th className="num">Glasses</th>
           <th className="num">Revenue</th>
           <th className="num">Share</th>
-          <th className="num">Margin</th>
+          <th className="num">Margin<small> ex GST</small></th>
           <th className="num">Margin %</th>
         </tr>
       </thead>
@@ -173,7 +173,10 @@ export function WineReportPage() {
     const bucket = (title: string, rows: WineBucketRow[]): Array<Array<string | number>> => [
       [],
       [title],
-      ['', 'On list', 'Bottles', 'Glasses', 'Quantity', 'Revenue', 'Share %', 'Costed revenue', 'Cost', 'Margin', 'Margin %'],
+      // Revenue is what the till took (GST inclusive); margin is ex-GST on
+      // both sides. Spelled out in the header so a spreadsheet away from this
+      // page cannot be read the wrong way.
+      ['', 'On list', 'Bottles', 'Glasses', 'Quantity', 'Revenue (inc GST)', 'Share %', 'Costed revenue (inc GST)', 'Cost (ex GST)', 'Margin (ex GST)', 'Margin %'],
       ...rows.map((row) => [
         row.label,
         row.wines,
@@ -199,7 +202,7 @@ export function WineReportPage() {
       ['Revenue', dollars(payload.totals.revenueCents)],
       ['Revenue with a cost behind it', dollars(payload.totals.costedRevenueCents)],
       ['Revenue with no cost recorded', dollars(payload.totals.uncostedRevenueCents)],
-      ['Margin', dollars(payload.totals.marginCents)],
+      ['Margin (ex GST)', dollars(payload.totals.marginCents)],
       ['Margin %', payload.totals.marginPercent === null ? '' : payload.totals.marginPercent.toFixed(1)],
       ...bucket('By grape', payload.byGrape),
       ...bucket('By region', payload.byRegion),
@@ -295,7 +298,7 @@ export function WineReportPage() {
             <small>
               {totals.marginPercent === null
                 ? 'no cost recorded on anything that sold'
-                : `${percent(totals.marginPercent)} on ${money(totals.costedRevenueCents)} of costed sales`}
+                : `${percent(totals.marginPercent)} on ${money(totals.costedRevenueCents)} of costed sales — ex GST both sides`}
             </small>
           </div>
         </div>

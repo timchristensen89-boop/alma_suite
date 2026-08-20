@@ -8,6 +8,7 @@ import {
   bottlePriceCents,
   bucketBy,
   isBottle,
+  marginCentsOf,
   marginPercent,
   poursizeLabel,
   priceBand,
@@ -2209,7 +2210,7 @@ export const reportsService = {
         costedRevenueCents,
         uncostedRevenueCents: revenueCents - costedRevenueCents,
         costCents,
-        marginCents: costedRevenueCents - costCents,
+        marginCents: marginCentsOf(costedRevenueCents, costCents),
         marginPercent: marginPercent(costedRevenueCents, costCents),
         registerRevenueCents: lines
           .filter((line) => line.sale.source === 'register')

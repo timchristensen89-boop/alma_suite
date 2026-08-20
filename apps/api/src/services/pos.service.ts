@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
+import { parseDishDietary } from '@alma/shared';
 import { nswHolidayName } from '../lib/nsw-holidays.js';
 import { courseDishIds, stillFixed } from '../lib/set-menu-plan.js';
 import { mailService } from './mail.service.js';
@@ -834,7 +835,7 @@ export const posService = {
     const hiddenCats = new Set(hides.filter((hide) => hide.kind === 'CATEGORY').map((hide) => hide.key.toLowerCase()));
     const recipes = await prisma.recipe.findMany({
       where: { status: 'ACTIVE', isPrepRecipe: false, salePriceCents: { gt: 0 } },
-      select: { id: true, title: true, printTitle: true, kind: true, category: true, venue: true, salePriceCents: true, canonicalId: true },
+      select: { id: true, title: true, printTitle: true, kind: true, category: true, venue: true, salePriceCents: true, canonicalId: true, dietary: true },
       orderBy: [{ category: 'asc' }, { title: 'asc' }]
     });
     // Per-venue price overrides. RecipeVenuePrice is maintained by the Square
@@ -856,6 +857,8 @@ export const posService = {
       recipeId: string;
       title: string;
       printTitle?: string | null;
+      /** DISH_DIETARY ids. Empty = nobody has checked, NOT "no allergens". */
+      dietary?: string[];
       priceCents: number;
       venue: string | null;
       canonicalId?: string | null;
@@ -883,6 +886,10 @@ export const posService = {
           (recipe.venue ? overrides?.[recipe.venue] : undefined) ?? recipe.salePriceCents ?? 0,
         venue: recipe.venue,
         canonicalId: recipe.canonicalId ?? null,
+        // Parsed rather than passed through: the column is free-form JSON, and
+        // a tag the vocabulary does not know must not reach the floor looking
+        // like a claim about a plate.
+        ...(parseDishDietary(recipe.dietary).length > 0 ? { dietary: parseDishDietary(recipe.dietary) } : {}),
         ...(overrides ? { venuePrices: overrides } : {})
       };
       group.items.push(item);

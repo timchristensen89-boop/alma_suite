@@ -14,6 +14,8 @@ import type {
   StockItem,
   StockItemsPayload
 } from '@alma/shared';
+// Values, not types — the import above is type-only.
+import { DISH_DIETARY, parseDishDietary } from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { IconChevronDown, IconRecipes } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -43,6 +45,8 @@ type RecipeLineDraft = {
 type RecipeDraft = {
   title: string;
   printTitle: string;
+  /** DISH_DIETARY ids. Empty = nobody has checked, NOT "no allergens". */
+  dietary: string[];
   kind: string;
   category: string;
   subcategory: string;
@@ -1122,6 +1126,7 @@ function emptyRecipeDraft(): RecipeDraft {
   return {
     title: '',
     printTitle: '',
+    dietary: [],
     kind: 'FOOD',
     category: '',
     subcategory: '',
@@ -1155,6 +1160,7 @@ function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
   return {
     title: recipe.title,
     printTitle: recipe.printTitle ?? '',
+    dietary: parseDishDietary(recipe.dietary),
     kind: normaliseRecipeKindForForm(recipe),
     category: recipe.category ?? '',
     subcategory: recipe.subcategory ?? '',
@@ -1302,6 +1308,7 @@ function RecipeForm({
     const payload: RecipeCreateInput = {
       title: draft.title.trim(),
       printTitle: draft.printTitle.trim(),
+      dietary: draft.dietary,
       kind: draft.kind.trim(),
       // A recipe is a production (prep/batch) recipe when created in the
       // production view OR explicitly flagged via the toggle in the item editor.
@@ -1380,6 +1387,42 @@ function RecipeForm({
           <Input label="Sale price" type="number" step="0.01" value={draft.salePrice} onChange={(event) => update('salePrice', event.currentTarget.value)} />
         )}
       </div>
+      {/* Dietary — a claim about a plate, so it is deliberately plain
+          checkboxes rather than something clever. Nothing here is inferred:
+          a dish is only gluten free because somebody ticked it.
+
+          Empty is NOT a claim. An unticked dish reads as "nobody has checked"
+          everywhere it is used, never as "free of everything" — the register's
+          filter excludes unmarked dishes rather than offering them. */}
+      <fieldset className="form-fieldset">
+        <legend>Dietary</legend>
+        <p className="form-hint">
+          Only tick what the kitchen has actually confirmed. Anything left unticked shows on the register as
+          &ldquo;not checked&rdquo;, which is the honest answer — it is never read as safe.
+        </p>
+        <div className="dietary-picker">
+          {DISH_DIETARY.map((tag) => {
+            const on = draft.dietary.includes(tag.id);
+            return (
+              <label key={tag.id} className={`dietary-tag is-${tag.kind} ${on ? 'is-on' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={(event) =>
+                    update(
+                      'dietary',
+                      event.currentTarget.checked
+                        ? parseDishDietary([...draft.dietary, tag.id])
+                        : draft.dietary.filter((id) => id !== tag.id)
+                    )
+                  }
+                />
+                <span>{tag.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
       {pageMode === 'production' ? null : (
         <div className="recipe-venue-prices">
           <span className="recipe-venue-prices-label">Per-venue prices (optional)</span>

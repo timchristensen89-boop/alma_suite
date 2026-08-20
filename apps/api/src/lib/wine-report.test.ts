@@ -6,6 +6,8 @@ import {
   bucketBy,
   daysBetween,
   isBottle,
+  exGstCents,
+  marginCentsOf,
   marginPercent,
   poursizeLabel,
   priceBand,
@@ -96,9 +98,31 @@ describe('poursizeLabel', () => {
   });
 });
 
+describe('exGstCents', () => {
+  it('takes the GST back out of a till figure', () => {
+    assert.equal(exGstCents(7300), 6636);
+    assert.equal(exGstCents(1100), 1000);
+  });
+
+  it('leaves nothing as nothing', () => {
+    assert.equal(exGstCents(0), 0);
+  });
+});
+
 describe('marginPercent', () => {
-  it('is the margin over the revenue we can cost', () => {
-    assert.equal(marginPercent(10000, 3000), 70);
+  const close = (actual: number | null, expected: number) =>
+    assert.ok(actual !== null && Math.abs(actual - expected) < 0.05, `${actual} vs ${expected}`);
+
+  it('is the margin over the revenue we can cost, both sides ex-GST', () => {
+    // $100 inc GST is $90.91 kept; against a $30 ex-GST cost that is 67%,
+    // not the 70% this read before revenue was put on the same basis.
+    close(marginPercent(10000, 3000), 67.0);
+  });
+
+  it('matches the real case that exposed this', () => {
+    // Moments of Clarity Riesling: $73 a bottle on the list, $13.54 a bottle
+    // in the stocktake. Comparing raw showed 81%; the truth is 79.6%.
+    close(marginPercent(7300, 1354), 79.6);
   });
 
   it('is NULL, not 100, when nothing has a cost', () => {
@@ -107,7 +131,18 @@ describe('marginPercent', () => {
   });
 
   it('goes negative rather than hiding a wine sold under cost', () => {
-    assert.equal(marginPercent(1000, 1500), -50);
+    // $10 inc GST is $9.09 kept against $15 of wine.
+    close(marginPercent(1000, 1500), -65.0);
+  });
+});
+
+describe('marginCentsOf', () => {
+  it('is the dollar margin on the same ex-GST basis as the percentage', () => {
+    assert.equal(marginCentsOf(7300, 1354), 6636 - 1354);
+  });
+
+  it('agrees in sign with marginPercent on a wine sold under cost', () => {
+    assert.ok(marginCentsOf(1000, 1500) < 0);
   });
 });
 
@@ -159,7 +194,9 @@ describe('bucketBy', () => {
     const shirazRow = rows.find((row) => row.key === 'Shiraz');
     // 2 x $50 bottle + 4 x $5 glass = $120.
     assert.equal(shirazRow?.costCents, 12000);
-    assert.equal(shirazRow?.marginCents, 36000 - 12000);
+    // $360 of till revenue is $327.27 kept, against $120 of wine. Margin is
+    // measured ex-GST on both sides — the GST was never ours to count.
+    assert.equal(shirazRow?.marginCents, exGstCents(36000) - 12000);
   });
 
   it('gives a grape on the list but never sold its own row', () => {

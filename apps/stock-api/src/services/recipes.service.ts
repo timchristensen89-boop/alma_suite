@@ -22,6 +22,7 @@ import {
   type RecipeLine,
   type RecipeStatus,
   type RecipeWithLines,
+  parseDishDietary,
   type RecipesPayload,
   type RecipesSummary,
   type SetMenuComponentOption,
@@ -175,6 +176,7 @@ function toRecipePayload(row: RecipeRow): Recipe {
     legacyId: row.legacyId,
     title: row.title,
     printTitle: row.printTitle,
+    dietary: parseDishDietary(row.dietary),
     kind: row.kind,
     category: row.category,
     subcategory: row.subcategory,
@@ -222,6 +224,7 @@ function toRecipeWithLinesPayload(row: RecipeWithLinesRow): RecipeWithLines {
     legacyId: row.legacyId,
     title: row.title,
     printTitle: row.printTitle,
+    dietary: parseDishDietary(row.dietary),
     kind: row.kind,
     category: row.category,
     subcategory: row.subcategory,
@@ -1527,6 +1530,9 @@ export const recipesService = {
       data: {
         title: data.title.trim(),
         printTitle: normaliseOptionalText(data.printTitle) ?? null,
+        // Parsed on the way in, so an unknown tag is dropped at the door
+        // rather than stored and shown to the floor as a claim.
+        dietary: parseDishDietary(data.dietary ?? []),
         kind: normaliseOptionalText(data.kind) ?? null,
         category: normaliseOptionalText(data.category) ?? null,
         subcategory: normaliseOptionalText(data.subcategory) ?? null,
@@ -1617,6 +1623,7 @@ export const recipesService = {
       data: {
         ...(data.title !== undefined && { title: data.title.trim() }),
         ...(data.printTitle !== undefined && { printTitle: normaliseOptionalText(data.printTitle) }),
+        ...(data.dietary !== undefined && { dietary: parseDishDietary(data.dietary) }),
         ...(data.kind !== undefined && { kind: normaliseOptionalText(data.kind) }),
         ...(data.category !== undefined && {
           category: normaliseOptionalText(data.category)

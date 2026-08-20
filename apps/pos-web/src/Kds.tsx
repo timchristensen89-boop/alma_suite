@@ -32,6 +32,26 @@ function ageLabel(seconds: number) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+/**
+ * Which colour slot a course heading gets.
+ *
+ * The pass reads a ticket from a metre away and needs to know at a glance
+ * whether the next thing down is Course 1 or Course 3. Every heading was the
+ * same muted grey, so that took reading the words.
+ *
+ * Deliberately NOT green, amber or red: those three already mean something
+ * else on this screen — how late the ticket is — and a course that borrowed
+ * one would read as urgency. The register seeds NOW plus Course 1-6
+ * (pos.service listCourses); anything else a venue types falls through to a
+ * neutral slot rather than colliding with a numbered one.
+ */
+function courseTone(course: string): string {
+  const name = course.trim().toLowerCase();
+  if (name === 'now') return 'now';
+  const numbered = /^course\s+([1-6])$/.exec(name);
+  return numbered ? `c${numbered[1]}` : 'other';
+}
+
 export function Kds() {
   const [venue, setVenue] = useState(() => localStorage.getItem('alma.kds.venue') ?? VENUES[0]!);
   const [station, setStation] = useState(() => localStorage.getItem('alma.kds.station') ?? 'Kitchen');
@@ -138,7 +158,7 @@ export function Kds() {
               </div>
               {ticket.openedByName ? <small className="kds-server">{ticket.openedByName}</small> : null}
               {Array.from(byCourse.entries()).map(([course, lines]) => (
-                <div key={course} className="kds-course">
+                <div key={course} className="kds-course" data-course={courseTone(course)}>
                   <em>{course}</em>
                   {lines.map((line, index) => (
                     <div key={index} className="kds-line">

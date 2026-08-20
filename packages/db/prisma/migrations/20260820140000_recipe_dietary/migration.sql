@@ -1,0 +1,21 @@
+-- What a dish is, dietary-wise.
+--
+-- Until now the suite could describe a GUEST's dietary requirement — the
+-- booking parser pulls "coeliac" and "no nuts" out of SevenRooms free text and
+-- follows the table onto the register — but not a DISH's. So a somm or a floor
+-- lead could see that table 7 needs gluten free and had nothing to check it
+-- against except asking the kitchen.
+--
+-- A list of tag ids from packages/shared/src/dietary.ts ('gf', 'vgn', 'nuts'),
+-- defaulting to an empty list.
+--
+-- EMPTY MEANS NOBODY HAS CHECKED. It does not mean the dish is free of
+-- anything. Every menu item starts empty and stays that way until a human
+-- walks the menu, so anything reading this column must treat empty as unknown
+-- rather than safe — dishAnswersGuest is the single place that decides, and it
+-- is tested for exactly that case.
+--
+-- Json rather than a Postgres text[] to match how the suite already stores
+-- small tag lists (PosOrder.dietary, PosQrPendingOrder.dietary), so there is
+-- one shape to read rather than two.
+ALTER TABLE "Recipe" ADD COLUMN "dietary" JSONB NOT NULL DEFAULT '[]';

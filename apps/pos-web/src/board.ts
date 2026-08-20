@@ -15,6 +15,12 @@ export type MenuItem = {
   // tile, bill and receipts always show `title` — only the cart line's
   // snapshot for printing reads this.
   printTitle?: string | null;
+  /**
+   * DISH_DIETARY ids from Stock. ABSENT OR EMPTY MEANS NOBODY HAS CHECKED —
+   * not "free of everything". The register's filter excludes unmarked dishes
+   * rather than offering them.
+   */
+  dietary?: string[];
   priceCents: number;
   venue: string | null;
   variantOf?: string | null;
