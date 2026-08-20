@@ -318,10 +318,20 @@ input, select { font: inherit; }
 /* KDS */
 .kds-shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; background: #101214; }
 .kds-header { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--pos-panel); border-bottom: 1px solid var(--pos-line); }
-.kds-header select { background: var(--pos-raise); color: var(--pos-text); border: 1px solid var(--pos-line); border-radius: 10px; padding: 8px 10px; }
+/* --pos-raise is only ever defined as a dark charcoal (#262b31, :root) with no
+   light-theme value, so on the cream KDS header these controls painted dark
+   and their --pos-text label painted dark on top of it. --pos-card is defined
+   in both themes, which is what these needed all along. */
+.kds-header select { background: var(--pos-card); color: var(--pos-text); border: 1px solid var(--pos-border); border-radius: 10px; padding: 8px 10px; }
 .kds-stations { display: flex; gap: 6px; }
-.kds-stations button { background: var(--pos-raise); border: 1px solid var(--pos-line); color: var(--pos-muted); border-radius: 9999px; padding: 8px 16px; font-weight: 700; }
-.kds-stations button.is-active { background: var(--pos-accent); border-color: var(--pos-accent); color: #fff; }
+/* The station you are NOT on still has to be readable — it is the tap that
+   moves the pass between Kitchen and Bar. It was --pos-muted on --pos-raise,
+   which is dark-on-dark in the light theme and unreadable either way. */
+.kds-stations button { background: var(--pos-card); border: 1px solid var(--pos-border); color: var(--pos-text); border-radius: 9999px; padding: 8px 16px; font-weight: 700; }
+/* Hard-coded #fff worked on the light theme's dark-green accent and failed on
+   the dark theme's pale sage one — the station you were actually on was the
+   unreadable one. --pos-bg inverts with the accent, so it contrasts in both. */
+.kds-stations button.is-active { background: var(--pos-accent); border-color: var(--pos-accent); color: var(--pos-bg); }
 .kds-count { color: var(--pos-muted); font-weight: 700; }
 .kds-error { background: var(--pos-danger); color: #fff; padding: 8px 14px; font-weight: 600; }
 .kds-allday { display: flex; gap: 16px; overflow-x: auto; padding: 8px 14px; border-bottom: 1px solid var(--pos-line); color: var(--pos-muted); white-space: nowrap; }
@@ -341,7 +351,48 @@ input, select { font: inherit; }
 .kds-ticket.is-warn .kds-age { color: #d9a05a; }
 .kds-ticket.is-late .kds-age { color: var(--pos-danger); }
 .kds-server { color: var(--pos-muted); }
-.kds-course em { display: block; font-style: normal; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--pos-muted); margin: 6px 0 2px; }
+/* Course headings, colour-coded and readable from the pass.
+   Every heading used to be var(--pos-muted) at 10.5px — the same faint grey
+   whether it said NOW or Course 3 — so telling one course from the next meant
+   reading the words on a screen a metre away.
+
+   Two palettes, because a KDS ticket is var(--pos-panel): cream (#f1ebe3) in
+   the light theme and near-black (#10160f) in the dark one. A single set
+   cannot serve both — the first version of this was picked for the dark shell
+   and left NOW nearly invisible on a cream ticket.
+
+   Both palettes avoid amber and red: those already mean how late the ticket
+   is (.is-warn / .is-late), and a course wearing one would read as urgency.
+
+   The bar down the left does most of the work — it is visible peripherally,
+   before anyone focuses on the text. */
+.kds-course { border-left: 3px solid var(--kds-course, var(--pos-line)); padding-left: 8px; margin: 8px 0 2px; }
+.kds-course em {
+  display: block; font-style: normal;
+  font-size: 12.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--kds-course, var(--pos-muted));
+  margin: 0 0 3px;
+}
+
+/* Light ticket: deep, saturated inks. NOW is the darkest — it is not one
+   course among several, it is what goes down the moment the table sits. */
+.kds-course[data-course='now']   { --kds-course: #1f3524; }
+.kds-course[data-course='c1']    { --kds-course: #1d5f96; }
+.kds-course[data-course='c2']    { --kds-course: #6b3fa0; }
+.kds-course[data-course='c3']    { --kds-course: #0f6f6a; }
+.kds-course[data-course='c4']    { --kds-course: #a83a70; }
+.kds-course[data-course='c5']    { --kds-course: #3d4b9e; }
+.kds-course[data-course='c6']    { --kds-course: #7a3f7a; }
+.kds-course[data-course='other'] { --kds-course: var(--pos-muted); }
+
+/* Dark ticket: the same hues lifted until they carry on near-black. */
+body.pos-dark .kds-course[data-course='now'] { --kds-course: #f0e6d2; }
+body.pos-dark .kds-course[data-course='c1']  { --kds-course: #6fb3e0; }
+body.pos-dark .kds-course[data-course='c2']  { --kds-course: #b490e6; }
+body.pos-dark .kds-course[data-course='c3']  { --kds-course: #5fc9c3; }
+body.pos-dark .kds-course[data-course='c4']  { --kds-course: #e88fc0; }
+body.pos-dark .kds-course[data-course='c5']  { --kds-course: #8fa0e0; }
+body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
 .kds-line b { display: block; font-size: 15px; }
 .kds-line small { display: block; color: var(--pos-muted); }
 .kds-note { color: #d9a05a !important; }
@@ -349,7 +400,7 @@ input, select { font: inherit; }
 .kds-empty { margin: auto; color: var(--pos-muted); font-size: 18px; }
 .kds-recent { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--pos-line); }
 .kds-recent-label { color: var(--pos-muted); font-weight: 700; }
-.kds-recent button { background: var(--pos-raise); border: 1px solid var(--pos-line); color: var(--pos-text); border-radius: 10px; padding: 8px 14px; font-weight: 700; }
+.kds-recent button { background: var(--pos-card); border: 1px solid var(--pos-border); color: var(--pos-text); border-radius: 10px; padding: 8px 14px; font-weight: 700; }
 
 /* fusion */
 .pos-till-toggle { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--pos-muted); }
