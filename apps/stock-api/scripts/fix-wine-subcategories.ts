@@ -30,7 +30,7 @@
  *   node --import tsx scripts/fix-wine-subcategories.ts --venue "St Alma"
  */
 import { prisma } from '@alma/db';
-import { contradictsWine, dominantShape } from '../src/lib/wine-items.js';
+import { WINE_CATEGORY_FILTER, contradictsWine, dominantShape } from '../src/lib/wine-items.js';
 
 type Fix = {
   id: string;
@@ -54,11 +54,7 @@ async function main() {
       status: 'ACTIVE',
       isPrepRecipe: false,
       ...(onlyVenue ? { venue: onlyVenue } : {}),
-      OR: [
-        { category: { contains: 'Wine', mode: 'insensitive' } },
-        { category: { contains: 'Sparkling', mode: 'insensitive' } },
-        { category: { contains: 'Rose', mode: 'insensitive' } }
-      ]
+      ...WINE_CATEGORY_FILTER
     },
     select: { id: true, title: true, venue: true, category: true, kind: true, subcategory: true },
     orderBy: [{ venue: 'asc' }, { category: 'asc' }, { title: 'asc' }]

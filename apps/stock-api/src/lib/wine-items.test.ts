@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  WINE_CATEGORIES,
   contradictsWine,
   dominantShape,
   impliedPrice,
@@ -34,13 +35,18 @@ describe('sectionCategory', () => {
       ['Cabernet & Bordeaux blends', 'Red Wine'],
       ['Mexican wine', 'Red Wine'],
       ['Rosé', 'Rose'],
-      ['Bubbles', 'Sparkling Wine']
+      ['Bubbles', 'Sparkling Wine'],
+      ['Sweet & fortified', 'Fortified']
     ];
     for (const [section, category] of expected) assert.equal(sectionCategory(section), category, section);
   });
 
-  it('refuses to guess at the fortified, which is none of the four', () => {
-    assert.equal(sectionCategory('Sweet & fortified'), null);
+  it('files the fortified under the category Tim named for it', () => {
+    // Held back deliberately until there was a home for it: a Rutherglen
+    // Muscat is not red, white, rosé or sparkling, and forcing it into one
+    // would have buried it. Fortified is now a category of its own.
+    assert.equal(sectionCategory('Sweet & fortified'), 'Fortified');
+    assert.equal(sectionCategory('Fortified'), 'Fortified');
   });
 
   it('is not thrown by case or a stray space', () => {
@@ -263,5 +269,21 @@ describe('dominantShape', () => {
     ];
     assert.deepEqual(dominantShape(pool), dominantShape(pool));
     assert.equal(dominantShape(pool)?.subcategory, 'Red');
+  });
+});
+
+describe('WINE_CATEGORIES', () => {
+  it('contains every category sectionCategory can produce', () => {
+    // The one query filter and the one mapping have to agree, or a wine gets
+    // created under a category nothing afterwards looks in.
+    const produced = [
+      'Chardonnay', 'Other whites', 'White', 'Sauvignon Blanc & Semillon', 'Riesling',
+      'Skin contact & orange', 'Other reds', 'Shiraz', 'Red', 'Pinot Noir',
+      'Cabernet & Bordeaux blends', 'Mexican wine', 'Rosé', 'Bubbles', 'Sweet & fortified'
+    ].map((section) => sectionCategory(section));
+    for (const category of produced) {
+      assert.ok(category, 'every heading on the two lists must map somewhere');
+      assert.ok(WINE_CATEGORIES.includes(category as (typeof WINE_CATEGORIES)[number]), category ?? '');
+    }
   });
 });

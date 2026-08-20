@@ -10,13 +10,41 @@
 import type { WineListRow } from './wine-list.js';
 
 /**
- * The printed list's headings, mapped to the four categories the register
- * actually files wine under (Red Wine / White Wine / Rose / Sparkling Wine).
+ * Every category the register files wine under, as sectionCategory writes them.
+ */
+export const WINE_CATEGORIES = ['Red Wine', 'White Wine', 'Rose', 'Sparkling Wine', 'Fortified'] as const;
+
+/**
+ * "This recipe is a wine, however it happens to be filed" — as a Prisma
+ * predicate, in one place.
+ *
+ * It used to be four hand-copied OR blocks across wines.service.ts and three
+ * scripts. Adding Fortified meant editing all four, and missing one would have
+ * left the Muscat invisible to whichever script was missed while every other
+ * script happily created it again. Substrings rather than exact names because
+ * the legacy import is inconsistent ("Wine", "Red Wine", "Wine - Red").
+ */
+export const WINE_CATEGORY_FILTER = {
+  OR: [
+    { category: { contains: 'Wine', mode: 'insensitive' as const } },
+    { category: { contains: 'Sparkling', mode: 'insensitive' as const } },
+    { category: { contains: 'Rose', mode: 'insensitive' as const } },
+    { category: { contains: 'Fortified', mode: 'insensitive' as const } }
+  ]
+};
+
+/**
+ * The printed list's headings, mapped to the categories the register files
+ * wine under.
  *
  * "Skin contact & orange" is white fruit however it is made, and both Mexican
- * wines on the list are Cabernet reds. "Sweet & fortified" is deliberately
- * absent: a Rutherglen Muscat is none of the four, and inventing a category
- * for it would put it somewhere nobody looks. It gets reported instead.
+ * wines on the list are Cabernet reds.
+ *
+ * "Sweet & fortified" was reported rather than filed until Tim named a home
+ * for it, because a Rutherglen Muscat is not red, white, rosé or sparkling and
+ * forcing it into one would have put it where nobody looks. Fortified is now a
+ * category of its own — which is why WINE_CATEGORIES below is the list every
+ * query works from rather than four hard-coded strings in four files.
  */
 const SECTION_CATEGORY = new Map<string, string>([
   ['chardonnay', 'White Wine'],
@@ -33,10 +61,12 @@ const SECTION_CATEGORY = new Map<string, string>([
   ['mexican wine', 'Red Wine'],
   ['rosé', 'Rose'],
   ['rose', 'Rose'],
-  ['bubbles', 'Sparkling Wine']
+  ['bubbles', 'Sparkling Wine'],
+  ['sweet & fortified', 'Fortified'],
+  ['fortified', 'Fortified']
 ]);
 
-/** NULL when the list's heading has no home in the register's four. */
+/** NULL when the list's heading has no home among WINE_CATEGORIES. */
 export function sectionCategory(section: string | null): string | null {
   if (!section) return null;
   return SECTION_CATEGORY.get(section.trim().toLowerCase()) ?? null;

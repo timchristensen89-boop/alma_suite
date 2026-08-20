@@ -30,6 +30,7 @@ import { resolve } from 'node:path';
 import { prisma } from '@alma/db';
 import { poursizeOf, scoreCandidate, tokens } from '../src/lib/wine-match.js';
 import { parseWineList, type WineListRow } from '../src/lib/wine-list.js';
+import { WINE_CATEGORY_FILTER } from '../src/lib/wine-items.js';
 
 const FILE = resolve(import.meta.dirname, '../../../docs/wine-list.tsv');
 const readList = (): WineListRow[] => parseWineList(readFileSync(FILE, 'utf8'));
@@ -49,11 +50,7 @@ async function main() {
     where: {
       status: 'ACTIVE',
       isPrepRecipe: false,
-      OR: [
-        { category: { contains: 'Wine', mode: 'insensitive' } },
-        { category: { contains: 'Sparkling', mode: 'insensitive' } },
-        { category: { contains: 'Rose', mode: 'insensitive' } }
-      ]
+      ...WINE_CATEGORY_FILTER
     },
     select: { id: true, title: true, venue: true, salePriceCents: true, category: true }
   });
