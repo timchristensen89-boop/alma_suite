@@ -18,6 +18,7 @@ import {
   type GiftCardPromoCode,
   type GiftCardPromoQuote,
   type GiftCardPublicConfig,
+  type GiftCardRedemptionInput,
   type GiftCardPublic,
   type GiftCardReport,
   type GiftCardPurchaseReport,
@@ -2255,14 +2256,10 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       return;
     }
     try {
+      const body: GiftCardRedemptionInput = { code, amountCents, venue, notes };
       const updated = await api<GiftCard>('/api/gift-cards/redeem', {
         method: 'POST',
-        body: JSON.stringify({
-          code,
-          amountCents,
-          venue,
-          notes
-        })
+        body: JSON.stringify(body)
       });
       setSelectedCard(updated);
       setAmount('');

@@ -16,13 +16,16 @@
 
 import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { GiftCard } from '@alma/shared';
+import type { GiftCard, GiftCardRedemptionInput } from '@alma/shared';
 import { api, ApiRequestError, messageForError } from '../api';
 import { AppShell, type PageShellProps, type Venue } from '../shell';
 
 type Props = Omit<PageShellProps, 'requirePin'> & { venue: Venue };
 
-const VENUE_API_NAMES: Record<string, string> = {
+// Keyed by the venue union rather than by string: adding a venue to Venue['id']
+// then becomes a typecheck failure here instead of a redemption that 400s at
+// the counter.
+const VENUE_API_NAMES: Record<Venue['id'], string> = {
   'st-alma': 'St Alma',
   'alma-avalon': 'Alma Avalon'
 };
@@ -49,7 +52,7 @@ function sanitiseAmount(raw: string): string {
 }
 
 export function GiftCardRedeemPage({ venue, auth, onRequestStaffPin, onSwitchStaff }: Props) {
-  const venueApiName = VENUE_API_NAMES[venue.id] ?? null;
+  const venueApiName: string | undefined = VENUE_API_NAMES[venue.id];
 
   const [code, setCode] = useState('');
   const [card, setCard] = useState<GiftCard | null>(null);
@@ -111,17 +114,22 @@ export function GiftCardRedeemPage({ venue, auth, onRequestStaffPin, onSwitchSta
       setError(`Amount is more than the ${dollars(card.balanceCents)} balance.`);
       return;
     }
+    // The API requires a venue and answers a missing one with the bare word
+    // "Required", which tells the floor nothing. A device on a venue this page
+    // has no API spelling for says so instead, and names itself so it can be
+    // mapped.
+    if (!venueApiName) {
+      setError(`This iPad is set to "${venue.name}", which gift cards does not recognise as a venue. Redeem from the counter app and let Tim know.`);
+      return;
+    }
     setRedeeming(true);
     setError('');
     setAmountError('');
     try {
+      const body: GiftCardRedemptionInput = { code: card.code, amountCents, venue: venueApiName };
       const updated = await api<GiftCard>('/api/gift-cards/redeem', {
         method: 'POST',
-        body: JSON.stringify({
-          code: card.code,
-          amountCents,
-          venue: venueApiName ?? undefined
-        })
+        body: JSON.stringify(body)
       });
       setSuccess({ redeemed: amountCents, balance: updated.balanceCents });
       setCard(updated);
@@ -135,7 +143,7 @@ export function GiftCardRedeemPage({ venue, auth, onRequestStaffPin, onSwitchSta
     } finally {
       setRedeeming(false);
     }
-  }, [amount, card, venueApiName]);
+  }, [amount, card, venueApiName, venue.name]);
 
   const fallback = (
     <div className="preview-panel gift-fallback">
