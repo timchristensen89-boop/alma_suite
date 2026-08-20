@@ -16,7 +16,7 @@
  * they are covered by the same cache-first rule as the rest of the app and
  * there is no separate request that can fail. Resized to 2x their largest
  * drawn size first, which is why that is affordable: 49.5 KB of PNG became
- * 16 KB, and nothing on screen changes.
+ * 17 KB, and nothing on screen changes.
  *
  * public/brand/ still holds the originals — the PWA manifest icons and the
  * terminal idle screens are loaded by the browser, not by this bundle. The
