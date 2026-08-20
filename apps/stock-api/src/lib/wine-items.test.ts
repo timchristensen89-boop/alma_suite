@@ -1,6 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { impliedPrice, itemTitle, outlierPours, sectionCategory, type SiblingPour } from './wine-items.js';
+import {
+  WINE_CATEGORIES,
+  contradictsWine,
+  dominantShape,
+  impliedPrice,
+  itemTitle,
+  outlierPours,
+  sectionCategory,
+  type SiblingPour
+} from './wine-items.js';
 
 const pour = (ml: number, menu: number, register: number | null): SiblingPour => ({
   ml,
@@ -26,13 +35,18 @@ describe('sectionCategory', () => {
       ['Cabernet & Bordeaux blends', 'Red Wine'],
       ['Mexican wine', 'Red Wine'],
       ['Rosé', 'Rose'],
-      ['Bubbles', 'Sparkling Wine']
+      ['Bubbles', 'Sparkling Wine'],
+      ['Sweet & fortified', 'Fortified']
     ];
     for (const [section, category] of expected) assert.equal(sectionCategory(section), category, section);
   });
 
-  it('refuses to guess at the fortified, which is none of the four', () => {
-    assert.equal(sectionCategory('Sweet & fortified'), null);
+  it('files the fortified under the category Tim named for it', () => {
+    // Held back deliberately until there was a home for it: a Rutherglen
+    // Muscat is not red, white, rosé or sparkling, and forcing it into one
+    // would have buried it. Fortified is now a category of its own.
+    assert.equal(sectionCategory('Sweet & fortified'), 'Fortified');
+    assert.equal(sectionCategory('Fortified'), 'Fortified');
   });
 
   it('is not thrown by case or a stray space', () => {
@@ -153,5 +167,123 @@ describe('impliedPrice', () => {
 
   it('never returns a negative price', () => {
     assert.equal(impliedPrice(100, [pour(750, 8000, 10)]), 0);
+  });
+});
+
+describe('contradictsWine', () => {
+  it('catches the real fault: wines filed under Cocktails', () => {
+    // Both live: Loic Mahe Sables & Schists Chenin Blanc at St Alma, and
+    // Capa Tempranillo 150mL at Avalon.
+    assert.equal(contradictsWine('Cocktails'), true);
+    assert.equal(contradictsWine('cocktail'), true);
+  });
+
+  it('catches the other drink families too', () => {
+    for (const value of ['Beer', 'Spirits', 'Whisky', 'Coffee', 'Soft drinks', 'Tea', 'Juice']) {
+      assert.equal(contradictsWine(value), true, value);
+    }
+  });
+
+  it('leaves a subcategory that says wine alone', () => {
+    for (const value of ['Wine by the glass', 'Sparkling wine', 'Rosé', 'Fortified', 'Port', 'Muscat']) {
+      assert.equal(contradictsWine(value), false, value);
+    }
+  });
+
+  it('treats an unfamiliar label as unknown, not wrong', () => {
+    // Nobody has to justify their filing to this function. It only fires on a
+    // label that names something else.
+    for (const value of ['Bubbles', 'Cellar door', 'Premium', 'By the bottle', '']) {
+      assert.equal(contradictsWine(value), false, value);
+    }
+    assert.equal(contradictsWine(null), false);
+    assert.equal(contradictsWine(undefined), false);
+  });
+
+  it('is not fooled by a wine whose name contains a spirit word', () => {
+    // "Port" and "Sherry" are wine; "Ginger beer" is not, and neither is a
+    // subcategory that merely reads "Gin".
+    assert.equal(contradictsWine('Port & sherry'), false);
+    assert.equal(contradictsWine('Gin'), true);
+    // Substrings must not fire: "Origin" is not gin, "Teapot" is not tea.
+    assert.equal(contradictsWine('Origin'), false);
+    assert.equal(contradictsWine('Teapot'), false);
+  });
+});
+
+describe('dominantShape', () => {
+  const neighbour = (title: string, kind: string | null, subcategory: string | null) => ({ title, kind, subcategory });
+
+  it('takes a vote instead of whichever row came back first', () => {
+    // This is the bug: the mislabelled Chenin Blanc sorted first and decided
+    // how every new white at St Alma was filed.
+    const shape = dominantShape([
+      neighbour('Loic Mahe Sables & Schists Chenin Blanc', 'BEVERAGE', 'Cocktails'),
+      neighbour('Tolpuddle Chardonnay 750mL', 'BEVERAGE', 'Wine by the glass'),
+      neighbour('Grosset Polish Hill Riesling 750mL', 'BEVERAGE', 'Wine by the glass')
+    ]);
+    assert.equal(shape?.subcategory, 'Wine by the glass');
+    assert.equal(shape?.kind, 'BEVERAGE');
+    assert.equal(shape?.from, 'Tolpuddle Chardonnay 750mL');
+  });
+
+  it('refuses the mislabel even when the mislabel would win the vote', () => {
+    // Blank is a worse label than the right one and a better one than a wrong
+    // one, so a pool that is mostly wrong still cannot pass it on.
+    const shape = dominantShape([
+      neighbour('Capa Tempranillo 150mL', 'BEVERAGE', 'Cocktails'),
+      neighbour('Capa Tempranillo 250mL', 'BEVERAGE', 'Cocktails'),
+      neighbour('Wendouree Cabernet Malbec 750mL', 'BEVERAGE', 'Wine by the glass')
+    ]);
+    assert.equal(shape?.subcategory, 'Wine by the glass');
+    assert.equal(shape?.kind, 'BEVERAGE');
+  });
+
+  it('leaves the subcategory blank when every neighbour is mislabelled', () => {
+    const shape = dominantShape([
+      neighbour('Capa Tempranillo 150mL', 'BEVERAGE', 'Cocktails'),
+      neighbour('Capa Tempranillo 250mL', 'BEVERAGE', 'Cocktails')
+    ]);
+    assert.equal(shape?.subcategory, null);
+    // The kind is still worth copying — it is not the thing that was wrong.
+    assert.equal(shape?.kind, 'BEVERAGE');
+  });
+
+  it('keeps a blank subcategory when that is what the neighbours have', () => {
+    const shape = dominantShape([
+      neighbour('BenMarco Malbec 150mL', 'BEVERAGE', null),
+      neighbour('BenMarco Malbec 750mL', 'BEVERAGE', null),
+      neighbour('Villa Albergotti Chianti Superiore 250mL', 'BEVERAGE', 'Wine by the glass')
+    ]);
+    assert.equal(shape?.subcategory, null);
+  });
+
+  it('has nothing to say about an empty register', () => {
+    assert.equal(dominantShape([]), null);
+  });
+
+  it('gives the same answer twice on a tie', () => {
+    const pool = [
+      neighbour('A 750mL', 'BEVERAGE', 'Red'),
+      neighbour('B 750mL', 'BEVERAGE', 'White')
+    ];
+    assert.deepEqual(dominantShape(pool), dominantShape(pool));
+    assert.equal(dominantShape(pool)?.subcategory, 'Red');
+  });
+});
+
+describe('WINE_CATEGORIES', () => {
+  it('contains every category sectionCategory can produce', () => {
+    // The one query filter and the one mapping have to agree, or a wine gets
+    // created under a category nothing afterwards looks in.
+    const produced = [
+      'Chardonnay', 'Other whites', 'White', 'Sauvignon Blanc & Semillon', 'Riesling',
+      'Skin contact & orange', 'Other reds', 'Shiraz', 'Red', 'Pinot Noir',
+      'Cabernet & Bordeaux blends', 'Mexican wine', 'Rosé', 'Bubbles', 'Sweet & fortified'
+    ].map((section) => sectionCategory(section));
+    for (const category of produced) {
+      assert.ok(category, 'every heading on the two lists must map somewhere');
+      assert.ok(WINE_CATEGORIES.includes(category as (typeof WINE_CATEGORIES)[number]), category ?? '');
+    }
   });
 });

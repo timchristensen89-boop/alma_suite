@@ -6,6 +6,7 @@ import {
   type WineRow
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { WINE_CATEGORY_FILTER } from '../lib/wine-items.js';
 
 /**
  * The wine list as the printed menu describes it.
@@ -53,13 +54,7 @@ function toRow(wine: Awaited<ReturnType<typeof prisma.wine.findFirstOrThrow<{ in
 }
 
 /** Wine items in the catalogue, however they happen to be filed. */
-const WINE_CATEGORY = {
-  OR: [
-    { category: { contains: 'Wine', mode: 'insensitive' as const } },
-    { category: { contains: 'Sparkling', mode: 'insensitive' as const } },
-    { category: { contains: 'Rose', mode: 'insensitive' as const } }
-  ]
-};
+const WINE_CATEGORY = WINE_CATEGORY_FILTER;
 
 export const winesService = {
   async list(options?: { venue?: string | null }): Promise<WineListPayload> {

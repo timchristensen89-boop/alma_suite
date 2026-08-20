@@ -3476,18 +3476,46 @@ export function App() {
                   </button>
                 );
                 const countIf = (test: (wine: RegisterWine) => boolean) => wines.filter(test).length;
+                // Nothing to clear, no Clear button. On an iPad the filter bar
+                // is competing with the list for the same screen, and a button
+                // that does nothing is the first thing that should go.
+                const filtersOn =
+                  wineFilters.q.trim() !== '' ||
+                  wineFilters.pour !== 'any' ||
+                  wineFilters.colours.length > 0 ||
+                  wineFilters.band !== null ||
+                  wineFilters.pairs.length > 0;
                 let section: string | null = null;
                 let styleBand: string | null = null;
                 return (
                   <div className="pos-wine">
                     <div className="pos-wine-filters">
-                      <input
-                        className="pos-wine-search"
-                        type="search"
-                        value={wineFilters.q}
-                        placeholder="Grape, region, producer, or a word from the note"
-                        onChange={(event) => setWineFilters({ ...wineFilters, q: event.currentTarget.value, open: null })}
-                      />
+                      {/* Search, tally and Clear share one line. Each had its
+                          own row before, and on a 270px column that cost two
+                          rows of wine for a word and a button. */}
+                      <div className="pos-wine-find">
+                        <input
+                          className="pos-wine-search"
+                          type="search"
+                          value={wineFilters.q}
+                          placeholder="Grape, region, producer, or a word from the note"
+                          onChange={(event) => setWineFilters({ ...wineFilters, q: event.currentTarget.value, open: null })}
+                        />
+                        <span className="pos-wine-count">
+                          {shownWines.length === wines.length
+                            ? `${wines.length} wines`
+                            : `${shownWines.length} of ${wines.length}`}
+                        </span>
+                        {filtersOn ? (
+                          <button
+                            type="button"
+                            className="pos-wine-clear"
+                            onClick={() => setWineFilters({ q: '', pour: 'any', colours: [], band: null, pairs: [], open: null })}
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
                       <div className="pos-wine-chips">
                         <span className="pos-wine-label">Pour</span>
                         {chip('any', 'Everything', wineFilters.pour === 'any', wines.length, () =>
@@ -3547,19 +3575,7 @@ export function App() {
                               })
                           )
                         )}
-                        <button
-                          type="button"
-                          className="pos-wine-clear"
-                          onClick={() => setWineFilters({ q: '', pour: 'any', colours: [], band: null, pairs: [], open: null })}
-                        >
-                          Clear
-                        </button>
                       </div>
-                      <span className="pos-wine-count">
-                        {shownWines.length === wines.length
-                          ? `${wines.length} wines`
-                          : `${shownWines.length} of ${wines.length} wines`}
-                      </span>
                     </div>
                     <div className="pos-wine-rows">
                       {shownWines.length === 0 ? (
