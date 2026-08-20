@@ -3457,12 +3457,16 @@ export function App() {
                   label: string,
                   on: boolean,
                   count: number,
-                  toggle: () => void
+                  toggle: () => void,
+                  // Colour chips wear the colour they filter for, so the chip
+                  // and the wines it finds are recognisably the same thing.
+                  colour?: string
                 ) => (
                   <button
                     key={key}
                     type="button"
                     className="pos-wine-chip"
+                    data-colour={colour}
                     aria-pressed={on}
                     disabled={count === 0}
                     onClick={toggle}
@@ -3511,7 +3515,8 @@ export function App() {
                                   ? wineFilters.colours.filter((id) => id !== colour.id)
                                   : [...wineFilters.colours, colour.id],
                                 open: null
-                              })
+                              }),
+                            colour.id
                           )
                         )}
                       </div>
@@ -3566,7 +3571,7 @@ export function App() {
                           section = wine.section;
                           styleBand = wine.styleBand;
                           rows.push(
-                            <div key={`h-${wine.id}`} className="pos-wine-group">
+                            <div key={`h-${wine.id}`} className="pos-wine-group" data-colour={wineColour(wine)}>
                               {section ?? 'Wine'}
                               {styleBand ? <span className="pos-wine-band">{styleBand}</span> : null}
                             </div>
@@ -3574,7 +3579,7 @@ export function App() {
                         }
                         const off = wineOff(wine);
                         rows.push(
-                          <div key={wine.id} className={`pos-wine-row${off ? ' is-86' : ''}`}>
+                          <div key={wine.id} className={`pos-wine-row${off ? ' is-86' : ''}`} data-colour={wineColour(wine)}>
                             <span className="pos-wine-main">
                               <span className="pos-wine-name">
                                 <span className="pos-wine-vintage">{wine.vintage ?? 'NV'}</span>
