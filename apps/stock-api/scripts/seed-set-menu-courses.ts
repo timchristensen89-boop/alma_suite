@@ -12,18 +12,32 @@
  * course with nothing to choose would leave the register's picker unable to
  * finish the table. Lines that are only a name are listed and skipped.
  *
+ * Each course also gets the POS course it FIRES on, worked out by
+ * src/lib/course-flow.ts: drinks and the dips-and-chips go on NOW, then the
+ * rest flow through Course 1, 2, 3 ... with the mains and the sides together.
+ * Without it the register falls back to the course's own name, and since these
+ * courses are named after their dish, a banquet came out as a dozen one-dish
+ * "courses" on the fire screen.
+ *
  * Menus that already have courses are left alone — this seeds, it does not
- * overwrite hand-built work. The ONE exception is `perGuests`: a course seeded
- * before that column existed has no idea its dish is shared, so the register
- * would send one board of fries per head. Where a course still has no
- * perGuests and its component says the dish is shared, the number is filled in.
- * Nothing else about an existing course is touched, and a course whose
- * perGuests has already been set by hand is left exactly as it is.
+ * overwrite hand-built work. There are TWO exceptions, both filling in a blank
+ * a course seeded before the column existed could not have known:
+ *
+ *   perGuests — a course with no idea its dish is shared makes the register
+ *   send one board of fries per head.
+ *
+ *   posCourse — a course with no firing order makes the register invent one
+ *   from the dish name.
+ *
+ * Both are written only where they are still NULL. A course somebody has set
+ * by hand is left exactly as it is, and nothing else about an existing course
+ * is touched.
  *
  *   node --import tsx scripts/seed-set-menu-courses.ts
  *   node --import tsx scripts/seed-set-menu-courses.ts --apply
  */
 import { prisma } from '@alma/db';
+import { NOW, planCourseFlow, type CourseDish } from '../src/lib/course-flow.js';
 
 async function main() {
   const apply = process.argv.includes('--apply');
@@ -42,20 +56,34 @@ async function main() {
           ingredientName: true,
           perGuests: true,
           subRecipeId: true,
-          subRecipe: { select: { id: true, title: true } }
+          subRecipe: { select: { id: true, title: true, kind: true, category: true } }
         }
       },
       _count: { select: { setMenuCourses: true } },
       setMenuCourses: {
-        select: { id: true, name: true, perGuests: true, options: { select: { recipeId: true } } }
+        orderBy: { sortOrder: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          posCourse: true,
+          perGuests: true,
+          options: {
+            orderBy: { sortOrder: 'asc' },
+            select: { recipeId: true, recipe: { select: { title: true, kind: true, category: true } } }
+          }
+        }
       }
     }
   });
 
   const skipped: string[] = [];
   const backfill: Array<{ id: string; perGuests: number; label: string }> = [];
+  const firing: Array<{ id: string; posCourse: string; label: string }> = [];
   const nameOnly: string[] = [];
-  const planned: Array<{ menu: (typeof menus)[number]; courses: Array<{ name: string; recipeId: string; shared: number | null }> }> = [];
+  const planned: Array<{
+    menu: (typeof menus)[number];
+    courses: Array<{ name: string; recipeId: string; shared: number | null; posCourse: string }>;
+  }> = [];
 
   for (const menu of menus) {
     const label = `${menu.venue ?? 'shared'} · ${menu.title}`;
@@ -73,15 +101,30 @@ async function main() {
         if (!component?.perGuests) continue;
         backfill.push({ id: course.id, perGuests: component.perGuests, label: `${label} — ${course.name}` });
       }
+      // Firing order is worked out across the WHOLE menu, not per course: the
+      // numbering depends on which sittings the menu uses, so a course has to
+      // be read next to its siblings even when only some of them need writing.
+      const flow = planCourseFlow(
+        menu.setMenuCourses.map((course): CourseDish => {
+          const first = course.options[0]?.recipe;
+          return first ? { title: first.title, kind: first.kind, category: first.category } : { title: course.name };
+        })
+      );
+      menu.setMenuCourses.forEach((course, index) => {
+        if (course.posCourse) return;
+        firing.push({ id: course.id, posCourse: flow[index] ?? NOW, label: `${label} — ${course.name}` });
+      });
       continue;
     }
-    const courses = [];
+    const dishes: CourseDish[] = [];
+    const draft: Array<{ name: string; recipeId: string; shared: number | null }> = [];
     for (const line of menu.lines) {
       if (!line.subRecipe) {
         nameOnly.push(`${label} — "${line.ingredientName}" is a name with no dish behind it`);
         continue;
       }
-      courses.push({
+      dishes.push({ title: line.subRecipe.title, kind: line.subRecipe.kind, category: line.subRecipe.category });
+      draft.push({
         // The component's own name is what the kitchen calls it; the dish title
         // is the fallback when the line was never named.
         name: (line.ingredientName || line.subRecipe.title).slice(0, 60),
@@ -89,18 +132,23 @@ async function main() {
         shared: line.perGuests
       });
     }
-    if (courses.length === 0) {
+    if (draft.length === 0) {
       skipped.push(`${label} — no components with a dish behind them`);
       continue;
     }
-    planned.push({ menu, courses });
+    const flow = planCourseFlow(dishes);
+    planned.push({
+      menu,
+      courses: draft.map((course, index) => ({ ...course, posCourse: flow[index] ?? NOW }))
+    });
   }
 
   console.log(`${menus.length} active set menus.`);
   for (const { menu, courses } of planned) {
     console.log(`\n${menu.venue ?? 'shared'} · ${menu.title} — ${courses.length} course(s)`);
     for (const course of courses) {
-      console.log(`   ${course.name}${course.shared ? `  (was shared between ${course.shared})` : ''}`);
+      const shared = course.shared ? `  (was shared between ${course.shared})` : '';
+      console.log(`   ${course.posCourse.padEnd(9)}  ${course.name}${shared}`);
     }
   }
   const report = (title: string, lines: string[]) => {
@@ -112,6 +160,10 @@ async function main() {
   report(
     'Shared dishes to fill in on courses that already exist',
     backfill.map((row) => `${row.label} — shared between ${row.perGuests}`)
+  );
+  report(
+    'Firing order to fill in on courses that already exist',
+    firing.map((row) => `${row.posCourse.padEnd(9)}  ${row.label}`)
   );
   report('Components with no dish behind them — left for you to attach', nameOnly);
 
@@ -129,6 +181,7 @@ async function main() {
           setMenuRecipeId: menu.id,
           name: course.name,
           pick: 1,
+          posCourse: course.posCourse,
           // Carried straight from the costing: a component shared between four
           // is a course shared between four, and the register divides by it.
           perGuests: course.shared && course.shared > 1 ? course.shared : null,
@@ -144,8 +197,22 @@ async function main() {
     await prisma.setMenuCourse.update({ where: { id: row.id }, data: { perGuests: row.perGuests } });
     filled += 1;
   }
+  let fired = 0;
+  for (const row of firing) {
+    // Guarded at write time as well: a manager who set the firing order while
+    // this was running keeps it.
+    const result = await prisma.setMenuCourse.updateMany({
+      where: { id: row.id, posCourse: null },
+      data: { posCourse: row.posCourse }
+    });
+    fired += result.count;
+  }
   console.log(`\nCreated ${created} placeholder courses across ${planned.length} menus.`);
   if (filled > 0) console.log(`Filled in "shared between" on ${filled} existing course(s).`);
+  if (fired > 0) console.log(`Filled in the firing order on ${fired} existing course(s).`);
+  if (fired !== firing.length) {
+    console.log(`${firing.length - fired} had a firing order set by someone else while this ran, and were left alone.`);
+  }
   await prisma.$disconnect();
 }
 

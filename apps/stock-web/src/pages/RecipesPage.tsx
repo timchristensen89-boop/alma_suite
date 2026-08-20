@@ -1980,6 +1980,12 @@ function RecipeLinesTable({
 // is on offer tonight. Two jobs, deliberately separated — flipping a dish on
 // or off happens most services and saves itself on the tap; changing the shape
 // of the menu is rarer and saves as a whole.
+// The course cycle the register fires on. posService.listCourses seeds exactly
+// these names and pos-web falls back to them, so a course picked here already
+// has a column on the fire screen. It was a free-text box until a banquet came
+// out as a dozen one-dish courses, each named after its own dish.
+const POS_COURSE_NAMES = ['NOW', 'Course 1', 'Course 2', 'Course 3', 'Course 4', 'Course 5', 'Course 6'];
+
 type CourseDraft = {
   id: string | null;
   name: string;
@@ -2224,11 +2230,20 @@ function SetMenuCoursesPanel({
                   value={draft.perGuests}
                   onChange={(event) => patchCourse(index, { perGuests: event.currentTarget.value })}
                 />
-                <Input
+                <Select
                   label="Fires as (POS course)"
                   value={draft.posCourse}
-                  placeholder="Leave blank to use the course name"
                   onChange={(event) => patchCourse(index, { posCourse: event.currentTarget.value })}
+                  options={[
+                    { value: '', label: 'Not set - the register decides' },
+                    // A name typed in before this was a dropdown stays
+                    // selectable, so opening the editor can never quietly
+                    // change when a course fires.
+                    ...(draft.posCourse && !POS_COURSE_NAMES.includes(draft.posCourse)
+                      ? [{ value: draft.posCourse, label: draft.posCourse }]
+                      : []),
+                    ...POS_COURSE_NAMES.map((name) => ({ value: name, label: name }))
+                  ]}
                 />
                 <Button
                   type="button"

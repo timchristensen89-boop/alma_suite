@@ -4,6 +4,7 @@ import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
 import { nswHolidayName } from '../lib/nsw-holidays.js';
+import { courseDishIds, stillFixed } from '../lib/set-menu-plan.js';
 import { mailService } from './mail.service.js';
 import { authService } from './auth.service.js';
 import { giftCardService } from './gift-card.service.js';
@@ -972,8 +973,9 @@ export const posService = {
     const setMenus = setMenuIds
       .map((recipeId) => {
         const recipe = itemRefs.get(recipeId);
-        const courses = setMenuCourses
-          .filter((course) => course.setMenuRecipeId === recipeId)
+        const menuCourses = setMenuCourses.filter((course) => course.setMenuRecipeId === recipeId);
+        const coursedRecipeIds = courseDishIds(menuCourses);
+        const courses = menuCourses
           .map((course) => ({
             id: course.id,
             name: course.name,
@@ -996,8 +998,9 @@ export const posService = {
           recipeId,
           title: recipe?.title ?? '',
           salePriceCents: recipe?.priceCents ?? null,
-          fixed: setMenuLines
-            .filter((line) => line.recipeId === recipeId)
+          // A component that has become a course is NOT also a fixed line —
+          // see set-menu-plan.ts for why, and what it costs to get wrong.
+          fixed: stillFixed(setMenuLines.filter((line) => line.recipeId === recipeId), coursedRecipeIds)
             .map((line) => ({
               name: line.subRecipe?.title ?? line.ingredientName,
               printName: line.subRecipe?.printTitle ?? null,
