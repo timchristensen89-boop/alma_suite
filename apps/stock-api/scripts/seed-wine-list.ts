@@ -28,6 +28,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { prisma } from '@alma/db';
+import { poursizeOf, scoreCandidate, tokens } from '../src/lib/wine-match.js';
 
 type Row = {
   venue: string;
@@ -83,69 +84,6 @@ function readList(): Row[] {
   });
 }
 
-/**
- * Words that carry no signal either way: pour sizes, vintages, and articles.
- *
- * Kept deliberately short. An earlier version also dropped "domaine",
- * "chateau", "estate", "reserve" and the like as boilerplate — which threw
- * away the very words that tell Domaines Schlumberger from Domaine Bouchard,
- * and left Gilbert Family Wines with one token out of three.
- */
-const NOISE = new Set(['ml', 'mls', 'bottle', 'btl', 'glass', 'nv', 'the', 'and', 'de', 'du', 'di', 'da', 'la', 'le', 'el']);
-
-/**
- * Accents are the single biggest source of near-misses: the printed list sets
- * Château Domecq and Taittinger Brut Réserve, the register has them plain.
- * Folding diacritics away makes those exact rather than 0.25.
- */
-function tokens(text: string): Set<string> {
-  return new Set(
-    text
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/\b\d{2,4}\s*ml\b/g, ' ')
-      .replace(/\b(19|20)\d{2}\b/g, ' ')
-      .replace(/[''`"]/g, '')
-      .replace(/[^a-z0-9]+/g, ' ')
-      .split(' ')
-      .filter((word) => word.length > 1 && !NOISE.has(word))
-  );
-}
-
-function shared(a: Set<string>, b: Set<string>): number {
-  let n = 0;
-  for (const token of a) if (b.has(token)) n += 1;
-  return n;
-}
-
-/**
- * How well a menu row explains a register title.
- *
- * Not a symmetric similarity: the two describe the same wine at different
- * lengths, and which side is longer varies. The register writes "Producer Grape
- * Size" while the list writes producer, cuvee and the blend spelled out — so
- * "Château Domecq, Cabernet Sauvignon Merlot Nebbiolo" against "Chateau Domecq
- * 750mL" is a perfect match that Dice scores 0.5, purely for the words the
- * register leaves out.
- *
- * What matters is that every word in the register title is accounted for by the
- * wine (precision), weighted by how much of the producer's name the register
- * kept (coverage) so a fuller name beats a one-word coincidence.
- */
-function explains(wanted: Set<string>, maker: Set<string>, recipe: Set<string>): number {
-  if (recipe.size === 0 || maker.size === 0) return 0;
-  const precision = shared(wanted, recipe) / recipe.size;
-  const coverage = shared(maker, recipe) / maker.size;
-  return precision * (0.5 + 0.5 * coverage);
-}
-
-/** "BenMarco Malbec 150mL" -> 150. Absent means the whole bottle. */
-function poursizeOf(title: string): number {
-  const match = title.match(/(\d{2,4})\s*ml\b/i);
-  return match ? Number(match[1]) : 750;
-}
-
 const CONFIDENT = 0.62;
 /** How far clear of the runner-up a match has to be to count as unambiguous. */
 const MARGIN = 0.08;
@@ -187,7 +125,11 @@ async function main() {
     // share at least one word of the producer or the cuvee before the grape
     // counts for anything.
     const maker = tokens(`${row.producer} ${row.cuvee ?? ''}`);
-    const wanted = tokens(`${row.producer} ${row.cuvee ?? ''} ${row.grape ?? ''}`);
+    // `section` earns its place here and nowhere else: the register appends the
+    // style to the title ("R. Paulazzo Rose") where the list keeps it in a
+    // column, and an unexplained word costs the match. It is deliberately NOT
+    // in `maker`, so it can never make a match on its own.
+    const wanted = tokens(`${row.producer} ${row.cuvee ?? ''} ${row.grape ?? ''} ${row.section ?? ''}`);
     const found: Array<{ ml: number; recipe: (typeof pool)[number]; score: number }> = [];
 
     for (const pour of row.pours) {
@@ -195,7 +137,7 @@ async function main() {
         .filter((recipe) => recipe.venue === row.venue && recipe.ml === pour.ml && !claimed.has(recipe.id))
         .map((recipe) => ({
           recipe,
-          score: shared(maker, recipe.tokens) > 0 ? explains(wanted, maker, recipe.tokens) : 0
+          score: scoreCandidate({ wanted, maker, title: recipe.title, recipeTokens: recipe.tokens, rowVintage: row.vintage })
         }))
         .sort((a, b) => b.score - a.score);
 
@@ -211,7 +153,11 @@ async function main() {
         // register. Worth a human eye, not a silent first-come win.
         const taken = pool
           .filter((recipe) => recipe.venue === row.venue && recipe.ml === pour.ml && claimed.has(recipe.id))
-          .find((recipe) => explains(wanted, maker, recipe.tokens) >= CONFIDENT);
+          .find(
+            (recipe) =>
+              scoreCandidate({ wanted, maker, title: recipe.title, recipeTokens: recipe.tokens, rowVintage: row.vintage }) >=
+              CONFIDENT
+          );
         if (taken) contested.push(`${label}  →  ${taken.title}, already taken by ${(contest.get(taken.id) ?? []).join(', ')}`);
         else missing.push(`${label}${best ? `  (closest: ${best.recipe.title} @ ${best.score.toFixed(2)})` : ''}`);
         continue;

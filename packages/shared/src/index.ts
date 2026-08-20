@@ -6548,6 +6548,12 @@ export type SetMenuCourse = {
   posCourse: string | null;
   /** Choices each guest makes here. covers x pick = what the table owes. */
   pick: number;
+  /**
+   * One serve feeds this many guests — the shared sides, the whole fish. The
+   * register divides by it, so a side shared between 4 sends 2 portions for a
+   * table of 8. NULL = one serve each.
+   */
+  perGuests: number | null;
   sortOrder: number;
   options: SetMenuCourseOption[];
 };
@@ -6578,6 +6584,8 @@ export const setMenuCoursesSaveInputSchema = z.object({
         posCourse: z.string().max(40).nullish(),
         /** 1 = one each (the normal case); 2 = two entrees each. */
         pick: z.coerce.number().int().min(1).max(9).default(1),
+        /** Shared between this many. Null/absent = one serve each. */
+        perGuests: z.coerce.number().int().min(2).max(40).nullish(),
         options: z
           .array(
             z.object({

@@ -5306,17 +5306,43 @@ type XeroLinkOptions = {
   }>;
 };
 
+// What Xero's own copy of a person says, next to what the profile says.
+// `value` never crosses the wire — the apply re-reads Xero and writes only
+// what it sees there itself, so this is a display, not a payload.
+type XeroPullPreview = {
+  staff: string;
+  tenantId: string;
+  tenantName: string | null;
+  xeroEmployeeId: string;
+  employeeName: string;
+  employeeStatus: string | null;
+  fields: Array<{
+    key: string;
+    label: string;
+    current: string | null;
+    incoming: string | null;
+    differs: boolean;
+    recommended: boolean;
+    note?: string;
+  }>;
+  held: { bankAccount: boolean; superFund: boolean; taxDeclaration: boolean };
+  leave: Array<{ name: string; units: number | null; unit: string }>;
+  warnings: string[];
+};
+
 // The profile page's Xero panel: one card per connected organisation, each
 // with "push this profile there" and "link to the employee already there".
 // Both companies are always shown — a manager can push someone to either,
 // whatever the venue field says.
-function StaffXeroPanel({ staffId }: { staffId: string }) {
+function StaffXeroPanel({ staffId, onChanged }: { staffId: string; onChanged?: () => void }) {
   const [options, setOptions] = useState<XeroLinkOptions | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<'success' | 'error'>('success');
   const [picks, setPicks] = useState<Record<string, string>>({});
+  const [pull, setPull] = useState<XeroPullPreview | null>(null);
+  const [take, setTake] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -5350,6 +5376,57 @@ function StaffXeroPanel({ staffId }: { staffId: string }) {
       await load();
     } catch (err) {
       report(err instanceof Error ? err.message : 'Could not push to Xero.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Read their record in one organisation and show what differs. Ticks the
+  // fields worth taking by default, and leaves the judgement calls — their
+  // login address, a rate for someone paid outside Xero — for a person.
+  async function loadPull(tenantId: string) {
+    setBusy(`pull:${tenantId}`);
+    setMessage(null);
+    try {
+      const preview = await api<XeroPullPreview>(
+        `/api/staff/${staffId}/xero-pull?tenantId=${encodeURIComponent(tenantId)}`
+      );
+      setPull(preview);
+      setTake(Object.fromEntries(preview.fields.filter((field) => field.recommended).map((field) => [field.key, true])));
+    } catch (err) {
+      setPull(null);
+      report(err instanceof Error ? err.message : 'Could not read them from Xero.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function applyPull() {
+    if (!pull) return;
+    const fields = Object.entries(take).filter(([, on]) => on).map(([key]) => key);
+    if (fields.length === 0) return;
+    setBusy('pull:apply');
+    setMessage(null);
+    try {
+      const result = await api<{
+        applied: Array<{ key: string; label: string; value: string | null }>;
+        skipped: Array<{ key: string; why: string }>;
+        message?: string;
+      }>(`/api/staff/${staffId}/xero-pull`, {
+        method: 'POST',
+        body: JSON.stringify({ tenantId: pull.tenantId, fields })
+      });
+      report(
+        result.applied.length > 0
+          ? `Took ${result.applied.map((entry) => `${entry.label.toLowerCase()} → ${entry.value ?? 'blank'}`).join(', ')}.`
+          : result.message ?? 'Nothing changed.',
+        'success'
+      );
+      setPull(null);
+      setTake({});
+      onChanged?.();
+    } catch (err) {
+      report(err instanceof Error ? err.message : 'Could not save what Xero had.', 'error');
     } finally {
       setBusy(null);
     }
@@ -5389,6 +5466,8 @@ function StaffXeroPanel({ staffId }: { staffId: string }) {
   }
   if (!options) return <Spinner label="Asking Xero for its employee lists..." />;
 
+  const takeCount = Object.values(take).filter(Boolean).length;
+
   return (
     <div className="xero-panel">
       {options.organisations.map((org) => {
@@ -5412,7 +5491,10 @@ function StaffXeroPanel({ staffId }: { staffId: string }) {
               <Select
                 label="Link to Xero employee"
                 value={pick}
-                onChange={(event) => setPicks((current) => ({ ...current, [org.tenantId]: event.currentTarget.value }))}
+                onChange={(event) => {
+                  const chosen = event.currentTarget.value;
+                  setPicks((current) => ({ ...current, [org.tenantId]: chosen }));
+                }}
                 options={[
                   { label: org.employees.length ? 'Pick an employee…' : 'No employees in this organisation', value: '' },
                   ...org.employees.map((employee) => ({
@@ -5442,14 +5524,127 @@ function StaffXeroPanel({ staffId }: { staffId: string }) {
               >
                 {busy === `push:${org.tenantId}` ? 'Pushing…' : `Push to ${org.tenantName ?? 'Xero'}`}
               </Button>
+              {org.linkedXeroEmployeeId ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy !== null}
+                  title={`Read their record in ${org.tenantName ?? 'this organisation'} and show what differs`}
+                  onClick={() => void loadPull(org.tenantId)}
+                >
+                  {busy === `pull:${org.tenantId}` ? 'Reading…' : 'Pull from Xero'}
+                </Button>
+              ) : null}
             </div>
+            {pull && pull.tenantId === org.tenantId ? (
+              <div className="xero-pull">
+                <div className="xero-pull-head">
+                  <strong>{pull.employeeName}</strong>
+                  <span className="subtle">
+                    in {pull.tenantName ?? 'Xero'}
+                    {pull.employeeStatus && pull.employeeStatus.toUpperCase() !== 'ACTIVE'
+                      ? ` · ${pull.employeeStatus.toLowerCase()}`
+                      : ''}
+                  </span>
+                </div>
+                {pull.warnings.map((warning) => (
+                  <p key={warning} className="xero-pull-warning">{warning}</p>
+                ))}
+                {pull.fields.some((field) => field.differs) ? (
+                  <>
+                    <table className="xero-pull-table">
+                      <thead>
+                        <tr>
+                          <th aria-label="Take" />
+                          <th>Field</th>
+                          <th>On the profile</th>
+                          <th>In Xero</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pull.fields.map((field) => (
+                          <tr key={field.key} className={field.differs ? undefined : 'xero-pull-same'}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(take[field.key])}
+                                disabled={!field.differs}
+                                aria-label={`Take ${field.label} from Xero`}
+                                onChange={(event) => {
+                                  // Read it here: React clears `currentTarget`
+                                  // once the handler returns, and the updater
+                                  // below runs after that.
+                                  const ticked = event.currentTarget.checked;
+                                  setTake((current) => ({ ...current, [field.key]: ticked }));
+                                }}
+                              />
+                            </td>
+                            <td>
+                              {field.label}
+                              {field.note ? <div className="subtle">{field.note}</div> : null}
+                            </td>
+                            <td>{field.current ?? <span className="subtle">not set</span>}</td>
+                            <td>
+                              {field.differs ? <strong>{field.incoming}</strong> : <span className="subtle">same</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="xero-pull-actions">
+                      <Button type="button" disabled={busy !== null || takeCount === 0} onClick={() => void applyPull()}>
+                        {busy === 'pull:apply'
+                          ? 'Saving…'
+                          : takeCount === 1
+                            ? 'Take 1 field'
+                            : `Take ${takeCount} fields`}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={busy !== null}
+                        onClick={() => {
+                          setPull(null);
+                          setTake({});
+                        }}
+                      >
+                        Close
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="subtle">Everything Xero holds already matches this profile.</p>
+                )}
+                <p className="subtle">
+                  Held in Xero and never copied back:{' '}
+                  {[
+                    pull.held.taxDeclaration ? 'tax declaration' : null,
+                    pull.held.bankAccount ? 'bank account' : null,
+                    pull.held.superFund ? 'super fund' : null
+                  ]
+                    .filter(Boolean)
+                    .join(', ') || 'none of them are set over there yet — push the profile to set them up'}
+                  .
+                </p>
+                {pull.leave.length > 0 ? (
+                  <p className="subtle">
+                    Leave:{' '}
+                    {pull.leave
+                      .map((row) => `${row.name} ${row.units === null ? '—' : row.units.toFixed(2)} ${row.unit.toLowerCase()}`)
+                      .join(' · ')}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </section>
         );
       })}
       <p className="subtle">
         Push sends their profile (contact, bank, tax, super) into that company's payroll — it matches an existing
         employee by name before ever creating one. Link just points this profile at an employee record that already
-        exists, without changing anything in Xero.
+        exists, without changing anything in Xero. Pull reads their record the other way — it shows what differs and
+        writes only the fields you tick. Tax file numbers, bank accounts and super are never read back; they travel
+        outward only.
       </p>
       <ActionFeedback message={message} tone={messageTone} />
     </div>
@@ -5980,6 +6175,10 @@ function StaffProfileWorkspacePage({
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [payrollModalOpen, setPayrollModalOpen] = useState(false);
   const [xeroModalOpen, setXeroModalOpen] = useState(false);
+  // A pull writes to the profile behind the modal. Refreshing it right away
+  // remounts the panel and wipes the "here is what I took" line before anyone
+  // has read it, so the refresh waits until the modal is closed.
+  const [xeroPulled, setXeroPulled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
@@ -6977,10 +7176,16 @@ function StaffProfileWorkspacePage({
       <StaffModal
         open={xeroModalOpen}
         title={`Xero — ${staffFullName(member)}`}
-        subtitle="Push this profile into either company's payroll, or link it to the employee record already there."
-        onClose={() => setXeroModalOpen(false)}
+        subtitle="Push this profile into either company's payroll, link it to the employee record already there, or pull that record's details back onto this profile."
+        onClose={() => {
+          setXeroModalOpen(false);
+          if (xeroPulled) {
+            setXeroPulled(false);
+            void reload();
+          }
+        }}
       >
-        {xeroModalOpen ? <StaffXeroPanel staffId={member.id} /> : null}
+        {xeroModalOpen ? <StaffXeroPanel staffId={member.id} onChanged={() => setXeroPulled(true)} /> : null}
       </StaffModal>
     </div>
   );

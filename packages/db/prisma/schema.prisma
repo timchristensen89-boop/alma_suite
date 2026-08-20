@@ -3353,6 +3353,11 @@ model SetMenuCourse {
   /// case); 2 = two entrées each. covers x pick = what the table owes before
   /// the picker will let service move on.
   pick            Int             @default(1)
+  /// One serve feeds this many guests — the shared sides and the whole fish.
+  /// The register divides by it, so a side shared between 4 prints 2 portions
+  /// for a table of 8 rather than 8. NULL = one serve each, the normal case.
+  /// Mirrors RecipeLine.perGuests, which is where the costing already says it.
+  perGuests       Int?
   sortOrder       Int             @default(0)
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt

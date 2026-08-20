@@ -1985,6 +1985,8 @@ type CourseDraft = {
   name: string;
   posCourse: string;
   pick: string;
+  /** Blank = one serve each. "4" = one serve between four. */
+  perGuests: string;
   options: Array<{ id: string | null; recipeId: string; title: string; supplement: string; available: boolean }>;
 };
 
@@ -1994,6 +1996,7 @@ function toDrafts(courses: SetMenuCourse[]): CourseDraft[] {
     name: course.name,
     posCourse: course.posCourse ?? '',
     pick: String(course.pick),
+    perGuests: course.perGuests ? String(course.perGuests) : '',
     options: course.options.map((option) => ({
       id: option.id,
       recipeId: option.recipeId,
@@ -2116,6 +2119,9 @@ function SetMenuCoursesPanel({
               name: draft.name.trim(),
               posCourse: draft.posCourse.trim() || null,
               pick: Number(draft.pick) || 1,
+              // Blank means one each, which is not the same as "shared
+              // between 1" — send null so the register keeps its default.
+              perGuests: Number(draft.perGuests) > 1 ? Number(draft.perGuests) : null,
               options: draft.options.map((option) => ({
                 recipeId: option.recipeId,
                 supplementCents: option.supplement.trim() ? Math.round(Number(option.supplement) * 100) : 0,
@@ -2165,7 +2171,10 @@ function SetMenuCoursesPanel({
             <div key={course.id} className="setmenu-tonight-course">
               <span className="setmenu-tonight-name">
                 {course.name}
-                <small>{course.pick === 1 ? 'one each' : `${course.pick} each`}</small>
+                <small>
+                  {course.pick === 1 ? 'one each' : `${course.pick} each`}
+                  {course.perGuests && course.perGuests > 1 ? `, shared between ${course.perGuests}` : ''}
+                </small>
               </span>
               <div className="setmenu-tonight-dishes">
                 {course.options.map((option) => (
@@ -2205,6 +2214,15 @@ function SetMenuCoursesPanel({
                   max={9}
                   value={draft.pick}
                   onChange={(event) => patchCourse(index, { pick: event.currentTarget.value })}
+                />
+                <Input
+                  label="Shared between"
+                  type="number"
+                  min={2}
+                  max={40}
+                  placeholder="Not shared"
+                  value={draft.perGuests}
+                  onChange={(event) => patchCourse(index, { perGuests: event.currentTarget.value })}
                 />
                 <Input
                   label="Fires as (POS course)"
@@ -2308,7 +2326,7 @@ function SetMenuCoursesPanel({
               onClick={() => {
                 setDrafts((current) => [
                   ...current,
-                  { id: null, name: '', posCourse: '', pick: '1', options: [] }
+                  { id: null, name: '', posCourse: '', pick: '1', perGuests: '', options: [] }
                 ]);
                 setDirty(true);
               }}

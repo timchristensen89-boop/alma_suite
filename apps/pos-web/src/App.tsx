@@ -82,6 +82,8 @@ type SetMenuCourse = {
   posCourse: string | null;
   /** Choices each guest makes here. covers x pick = what the table owes. */
   pick: number;
+  /** One serve feeds this many. NULL = one each. */
+  perGuests: number | null;
   options: SetMenuOption[];
 };
 // What the register needs to sell a wine. Price comes off the recipe each pour
@@ -1947,6 +1949,14 @@ export function App() {
   // question — it gets filled for the whole table at commit. (Unless that one
   // dish is 86'd, in which case service needs to see it rather than have the
   // register quietly ring something the kitchen cannot cook.)
+  // What the kitchen actually plates for this many guests. A course with no
+  // perGuests is one serve each; "shared between 4" rounds up, because half a
+  // board of fries is not a thing anyone can send.
+  function banquetPortions(course: SetMenuCourse, heads: number): number {
+    if (!course.perGuests || course.perGuests <= 1) return heads;
+    return Math.ceil(heads / course.perGuests);
+  }
+
   function askableCourses(plan: SetMenuPlan): SetMenuCourse[] {
     return plan.courses.filter(
       (course) => course.options.length !== 1 || eightySix.has(course.options[0]!.recipeId)
@@ -2054,14 +2064,20 @@ export function App() {
           ? picks[course.id]?.[option.recipeId] ?? 0
           : covers * course.pick;
         if (heads <= 0) continue;
+        // Heads are what the guests want; portions are what the kitchen
+        // plates. A side shared between four sends two boards to a table of
+        // eight, the same rule the fixed components above already follow.
+        const portions = banquetPortions(course, heads);
         lines.push({
           recipeId: option.recipeId,
           name: option.title,
           printName: null,
           // A supplement is real money on the bill — the eye fillet upgrade
-          // is charged per guest who took it, on top of the package.
+          // is charged per guest who took it, on top of the package. On a
+          // shared course it is charged per SERVE, because upgrading a board
+          // eight people share is one upgrade, not eight.
           unitPriceCents: option.supplementCents,
-          quantity: heads,
+          quantity: portions,
           course: course.posCourse || course.name,
           modifiers: null,
           notes: null,
@@ -5850,6 +5866,9 @@ export function App() {
                   <>
                     <p className="pos-muted pos-banquet-ask">
                       {course.name} — {course.pick === 1 ? 'one each' : `${course.pick} each`}
+                      {course.perGuests && course.perGuests > 1
+                        ? `, shared between ${course.perGuests}`
+                        : ''}
                     </p>
                     <div className="pos-banquet-options">
                       {course.options.map((option) => {
@@ -5874,6 +5893,11 @@ export function App() {
                                       : ''}
                               </span>
                               {heads > 0 ? <span className="pos-banquet-count">{heads}</span> : null}
+                              {heads > 0 && banquetPortions(course, heads) !== heads ? (
+                                <span className="pos-banquet-portions">
+                                  {banquetPortions(course, heads)} to plate
+                                </span>
+                              ) : null}
                             </button>
                             <button
                               type="button"
