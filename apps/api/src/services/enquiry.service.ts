@@ -4,6 +4,13 @@ import { prisma } from '@alma/db';
 import { Prisma } from '@prisma/client';
 import type { AuthUser } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import {
+  computeOpenTimes,
+  venueDayStart,
+  venueWeekday,
+  type DayAvailability
+} from '../lib/enquiry-availability.js';
+import { buildEnquiryDraft, type EnquiryDraft } from '../lib/enquiry-draft.js';
 import { mailService } from './mail.service.js';
 
 /**
@@ -19,6 +26,8 @@ import { mailService } from './mail.service.js';
  *    so the guest's answer comes back to an address we actually read
  *  - `recordInboundReply` matches that answer to its enquiry and appends it
  *  - `clashesFor` answers "what else is on this date at this venue"
+ *  - `suggestedReplyFor` has the first reply already written when staff open
+ *    the thread, so answering is an edit rather than a blank page
  */
 
 // Where staff replies come from, and where guest answers must land. Both
@@ -130,6 +139,91 @@ function parseRawJson(req: Request): Record<string, unknown> {
     return JSON.parse(raw) as Record<string, unknown>;
   } catch {
     throw new HttpError(400, 'Payload is not valid JSON.');
+  }
+}
+
+/**
+ * What the venue could still take on the enquiry's date, measured.
+ *
+ * Reads the same three tables the booking widget reads — availability rules,
+ * live reservations, blackouts — and hands them to the pure slot maths. Every
+ * unknown comes back as UNKNOWN rather than as a yes: no venue, no date, no
+ * party size, or a read that failed all mean "we cannot say", and the draft
+ * drops a tier rather than inventing a table.
+ *
+ * The reservation window runs from an hour before the venue day to two hours
+ * past the longest a venue day can be (25 hours, on the April changeover), so
+ * a booking that starts before midnight still counts against the slots it
+ * overlaps.
+ */
+async function availabilityFor(enquiry: {
+  venue: string;
+  eventDate: Date | null;
+  partySize: number | null;
+}): Promise<DayAvailability> {
+  if (!enquiry.venue) return { kind: 'UNKNOWN', reason: 'no venue on the enquiry' };
+  if (!enquiry.eventDate) return { kind: 'UNKNOWN', reason: 'no date on the enquiry' };
+  if (!enquiry.partySize || enquiry.partySize < 1) {
+    return { kind: 'UNKNOWN', reason: 'no party size on the enquiry' };
+  }
+
+  const dayStart = venueDayStart(enquiry.eventDate);
+  const dayEnd = new Date(dayStart.getTime() + 26 * 3_600_000);
+  const window = { gte: new Date(dayStart.getTime() - 3_600_000), lt: dayEnd };
+
+  try {
+    const [rules, reservations, blackouts] = await Promise.all([
+      prisma.reserveAvailabilityRule.findMany({
+        // onlineEnabled on purpose: a time we suggest to a guest has to be one
+        // the booking engine itself would sell. Rules held back from the
+        // widget were held back for a reason nobody wrote down.
+        where: { venue: enquiry.venue, active: true, onlineEnabled: true },
+        select: {
+          id: true,
+          servicePeriod: true,
+          daysOfWeek: true,
+          startTime: true,
+          endTime: true,
+          intervalMinutes: true,
+          defaultDurationMinutes: true,
+          minPartySize: true,
+          maxPartySize: true,
+          capacity: true
+        }
+      }),
+      prisma.reserveReservation.findMany({
+        where: {
+          venue: enquiry.venue,
+          startsAt: window,
+          status: { in: ['PENDING', 'CONFIRMED', 'SEATED'] }
+        },
+        select: {
+          covers: true,
+          startsAt: true,
+          endsAt: true,
+          availabilityRuleId: true,
+          servicePeriod: true
+        }
+      }),
+      prisma.reserveBlackout.findMany({
+        where: { venue: enquiry.venue, startAt: { lt: dayEnd }, endAt: { gt: dayStart } },
+        select: { startAt: true, endAt: true }
+      })
+    ]);
+
+    return computeOpenTimes({
+      dayStart,
+      weekday: venueWeekday(enquiry.eventDate),
+      partySize: enquiry.partySize,
+      rules,
+      reservations,
+      blackouts
+    });
+  } catch (err) {
+    // A failed read must never become an offer, and must not stop the thread
+    // opening either.
+    console.error('[enquiry] Could not measure availability for a draft', err);
+    return { kind: 'UNKNOWN', reason: 'availability could not be read' };
   }
 }
 
@@ -329,7 +423,10 @@ export const enquiryService = {
       include: { messages: { orderBy: [{ createdAt: 'asc' }] } }
     });
     if (!enquiry) throw new HttpError(404, 'Enquiry not found.');
-    const clashes = await enquiryService.clashesFor(id);
+    const [clashes, suggestedReply] = await Promise.all([
+      enquiryService.clashesFor(id),
+      enquiryService.suggestedReplyFor(enquiry)
+    ]);
 
     return {
       id: enquiry.id,
@@ -356,7 +453,8 @@ export const enquiryService = {
         deliveryError: message.deliveryError,
         createdAt: message.createdAt.toISOString()
       })),
-      clashes
+      clashes,
+      suggestedReply
     };
   },
 
@@ -393,6 +491,67 @@ export const enquiryService = {
       status: row.status,
       eventType: row.eventType
     }));
+  },
+
+  /**
+   * The reply we would write, ready for a human to edit and send.
+   *
+   * DRAFT ONLY. Nothing in this file sends it. Auto-send is where Tim wants to
+   * get to and the shape is deliberately ready for it — a scheduler that woke
+   * on NEW enquiries, called this, and handed the body to `reply` behind an
+   * env flag would be the whole change — but that flag and that scheduler do
+   * not exist, and a draft that can send itself is not a draft.
+   *
+   * Recomputed on open rather than stored. Availability goes stale in minutes:
+   * a draft written at capture and read two days later would be offering times
+   * that sold that afternoon, and the one promise this feature has to keep is
+   * that a time in a draft is a time we have.
+   *
+   * Only ever the FIRST reply. Once anyone has answered, the conversation has
+   * a shape no template knows about.
+   */
+  async suggestedReplyFor(enquiry: {
+    id: string;
+    contactName: string;
+    email: string | null;
+    phone: string | null;
+    venue: string;
+    eventDate: Date | null;
+    partySize: number | null;
+    status: EnquiryStatus;
+  }): Promise<EnquiryDraft | null> {
+    if (!enquiry.email) return null;
+    if (enquiry.status === 'BOOKED' || enquiry.status === 'CLOSED') return null;
+    const answered = await prisma.reserveEnquiryMessage.count({
+      where: { enquiryId: enquiry.id, direction: 'OUTBOUND' }
+    });
+    if (answered > 0) return null;
+
+    const [availability, venues] = await Promise.all([
+      availabilityFor(enquiry),
+      prisma.venue.findMany({ select: { name: true } })
+    ]);
+
+    // Note what is not passed: enquiry.notes never leaves this function. The
+    // draft is built from validated fields and templates, and the guest's own
+    // prose has no route into it.
+    return buildEnquiryDraft({
+      contactName: enquiry.contactName,
+      venue: enquiry.venue,
+      knownVenues: venues.map((row) => row.name),
+      eventDate: enquiry.eventDate,
+      // Always null, and measured rather than assumed: no intake form collects
+      // a preferred time, so `eventDate` is the only column there is and it
+      // cannot be read as one. `eventDateOf` above stamps a date-only value at
+      // noon +10:00, which is 1pm in Sydney for half the year — reading an
+      // hour out of it would mean skipping the question for every enquiry
+      // between October and April. So the draft always asks.
+      preferredTime: null,
+      partySize: enquiry.partySize,
+      phone: enquiry.phone,
+      availability,
+      now: new Date()
+    });
   },
 
   /**

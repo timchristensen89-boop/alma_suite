@@ -1959,6 +1959,14 @@ type EnquiryThread = {
     status: string;
     eventType: string | null;
   }>;
+  // The reply the API already wrote for this enquiry, or null once anyone has
+  // answered. Never sent by anything — it fills the box and waits.
+  suggestedReply: {
+    tier: 1 | 2 | 3;
+    body: string;
+    basis: string;
+    offeredTimes: string[];
+  } | null;
 };
 
 const ENQUIRY_STATUS_LABEL: Record<string, string> = {
@@ -2017,13 +2025,23 @@ function EnquiriesSection() {
     void reload();
   }, [reload]);
 
-  const openThread = useCallback(async (id: string) => {
+  // `refreshing` means we are re-reading the thread already on screen after
+  // acting on it. Before, that path cleared the reply box and the notice, so a
+  // send that failed lost both the message and the reason — and "Reply sent."
+  // was wiped the instant it was set.
+  const openThread = useCallback(async (id: string, options: { refreshing?: boolean } = {}) => {
     setOpenId(id);
     setThreadLoading(true);
-    setReply('');
-    setNotice(null);
+    if (!options.refreshing) {
+      setReply('');
+      setNotice(null);
+    }
     try {
-      setThread(await api<EnquiryThread>(`/api/reserve/enquiries/${id}`));
+      const data = await api<EnquiryThread>(`/api/reserve/enquiries/${id}`);
+      setThread(data);
+      // The draft lands in the box rather than on the thread: staff edit it as
+      // their own words, and nothing leaves until they press send.
+      if (!options.refreshing) setReply(data.suggestedReply?.body ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not open that enquiry.');
     } finally {
@@ -2046,7 +2064,7 @@ function EnquiriesSection() {
       } else {
         setNotice(`Not sent: ${result.delivery.reason ?? result.delivery.status}`);
       }
-      await openThread(thread.id);
+      await openThread(thread.id, { refreshing: true });
       await reload();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Could not send that reply.');
@@ -2062,7 +2080,7 @@ function EnquiriesSection() {
         method: 'PUT',
         body: JSON.stringify({ status })
       });
-      await openThread(thread.id);
+      await openThread(thread.id, { refreshing: true });
       await reload();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Could not update the status.');
@@ -2196,8 +2214,29 @@ function EnquiriesSection() {
                 ))}
               </div>
 
+              {thread.suggestedReply ? (
+                <div className="enquiries-suggestion">
+                  <span className="enquiries-suggestion-tag">Suggested reply</span>
+                  <p>
+                    {thread.suggestedReply.basis}. Change anything you want before you send it —
+                    nothing goes out on its own.
+                  </p>
+                  {reply === thread.suggestedReply.body ? null : (
+                    <button
+                      type="button"
+                      className="enquiries-suggestion-restore"
+                      onClick={() => setReply(thread.suggestedReply?.body ?? '')}
+                    >
+                      Put the suggestion back
+                    </button>
+                  )}
+                </div>
+              ) : null}
               <Textarea
-                rows={5}
+                rows={7}
+                className={`enquiries-reply${
+                  thread.suggestedReply && reply === thread.suggestedReply.body ? ' is-suggested' : ''
+                }`}
                 placeholder="Write your reply…"
                 value={reply}
                 onChange={(event) => setReply(event.currentTarget.value)}
