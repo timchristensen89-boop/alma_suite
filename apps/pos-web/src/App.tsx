@@ -43,6 +43,8 @@ import {
   type Pin,
   type TabsConfig
 } from './board';
+// The A mark and the fish, inlined into the bundle rather than fetched.
+import { ALMA_MARK, ALMA_FISH } from './brand';
 
 // ── ALMA POS v2 ─────────────────────────────────────────────────────────────
 // Home screen (open tables/tabs + quick sale + day glance) → order screen
@@ -2950,7 +2952,7 @@ export function App() {
               void refreshOpenOrders();
             }}
           >
-            <img src="/brand/alma-a-mark.png" alt="" />
+            <img src={ALMA_MARK} alt="" />
             <strong>{venueIdentity.businessName.toLowerCase()}</strong>
             <span>POS</span>
           </div>
@@ -3059,7 +3061,7 @@ export function App() {
         </div>
       ) : null}
       <header className="pos-header">
-        <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" onClick={() => { setOrder(null); void refreshOpenOrders(); }} />
+        <img src={ALMA_MARK} alt="" className="pos-mark" onClick={() => { setOrder(null); void refreshOpenOrders(); }} />
         <strong onClick={() => { setOrder(null); void refreshOpenOrders(); }} style={{ cursor: 'pointer' }}>
           {venueIdentity.businessName.toLowerCase()}
         </strong>
@@ -4397,7 +4399,7 @@ export function App() {
               ) : null}
               {(order?.lines ?? []).length === 0 && !targetCourse ? (
                 <div className="pos-cart-empty">
-                  <img src="/brand/alma-fish.png" alt="" className="pos-fish-empty" />
+                  <img src={ALMA_FISH} alt="" className="pos-fish-empty" />
                   <p className="pos-muted">Tap a course, then tap items — they land in that course.</p>
                 </div>
               ) : null}
@@ -6499,7 +6501,7 @@ export function App() {
       {lockScreen ? (
         <div className="pos-modal pos-lock" role="dialog">
           <div className="pos-modal-panel">
-            <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" />
+            <img src={ALMA_MARK} alt="" className="pos-mark" />
             <h2>Register locked</h2>
             <p className="pos-muted">Idle for a minute — the bill is saved. Enter your staff code to keep going.</p>
             <input
@@ -8381,7 +8383,7 @@ function SignIn({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
   return (
     <div className="pos-center">
       <div className="pos-signin">
-        <img src="/brand/alma-a-mark.png" alt="" className="pos-mark pos-signin-mark" />
+        <img src={ALMA_MARK} alt="" className="pos-mark pos-signin-mark" />
         <h1>ALMA POS</h1>
         {bounced ? (
           <>
