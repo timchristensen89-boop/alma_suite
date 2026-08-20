@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, api } from './lib/api';
+import type { GiftCardRedemptionInput } from '@alma/shared';
 import { ScanSheet } from './ScanSheet';
 
 /**
@@ -29,6 +30,41 @@ const money = (cents: number) =>
 
 /** Amounts a venue actually sells. Anything else goes in the keypad. */
 const QUICK_AMOUNTS = [50, 100, 150, 200, 250, 500];
+
+/**
+ * Where the money lands. Every redemption is revenue for one venue, and an
+ * unredeemed balance is a liability until it does — so the API requires this
+ * and rejects the redemption outright without it.
+ *
+ * These are the API's own canonical spellings (gift-card.service
+ * REDEMPTION_VENUES). It normalises loose spellings, but sending exactly what
+ * it expects means the counter never depends on that.
+ */
+const COUNTER_VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
+
+/**
+ * A counter iPad stands in one venue all day, so asking every single time is
+ * friction that gets tapped past. Asked once, remembered, and changeable.
+ */
+const VENUE_KEY = 'alma.giftcards.counter.venue';
+
+function loadVenue(): string {
+  try {
+    const saved = localStorage.getItem(VENUE_KEY);
+    return saved && COUNTER_VENUES.includes(saved) ? saved : '';
+  } catch {
+    return '';
+  }
+}
+
+function rememberVenue(venue: string) {
+  try {
+    localStorage.setItem(VENUE_KEY, venue);
+  } catch {
+    // A locked-down browser refusing storage is not a reason to block a sale;
+    // the venue is still held in state for this session.
+  }
+}
 
 type Tender = 'CARD' | 'CASH' | 'EFTPOS' | 'STRIPE' | 'COMP';
 
@@ -434,6 +470,7 @@ function RedeemPanel() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ took: number; left: number } | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [venue, setVenue] = useState(loadVenue);
   const codeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { codeRef.current?.focus(); }, []);
@@ -458,12 +495,20 @@ function RedeemPanel() {
     if (!card) return;
     if (cents <= 0) { setError('Enter how much to take off.'); return; }
     if (cents > card.balanceCents) { setError(`That card only has ${money(card.balanceCents)} on it.`); return; }
+    // Caught here so the counter says what to do about it. Without a venue the
+    // API rejects the whole redemption, and its message is the bare word
+    // "Required" — which is what staff were staring at.
+    if (!venue) { setError('Tap which venue is taking this first — that is where the money lands.'); return; }
     setBusy(true);
     setError(null);
     try {
+      // Typed against the API's own input schema. This is the guard that was
+      // missing: an untyped object literal let this panel ship without a venue
+      // at all, and nothing said so until a manager could not redeem a card.
+      const body: GiftCardRedemptionInput = { code: card.code, amountCents: cents, venue };
       const updated = await api<Card>('/api/gift-cards/redeem', {
         method: 'POST',
-        body: JSON.stringify({ code: card.code, amountCents: cents })
+        body: JSON.stringify(body)
       });
       setDone({ took: cents, left: updated.balanceCents });
       setCard(updated);
@@ -498,6 +543,24 @@ function RedeemPanel() {
 
   return (
     <main className="counter-body">
+      {/* First thing on the screen, because the redemption is refused without
+          it. Remembered after the first tap, so this is a one-off on each
+          counter rather than a question before every card. */}
+      <p className="counter-kicker">Taking this at</p>
+      <div className="counter-venues" role="group" aria-label="Venue taking this redemption">
+        {COUNTER_VENUES.map((name) => (
+          <button
+            key={name}
+            type="button"
+            className={venue === name ? 'is-on' : ''}
+            aria-pressed={venue === name}
+            onClick={() => { setVenue(name); rememberVenue(name); setError(null); }}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+
       {/* Scanning is the fast path — the guest holds up their pass and the
           code never gets typed. The keyboard stays for worn printed cards. */}
       <button type="button" className="counter-primary counter-scanbtn" onClick={() => setScanning(true)}>

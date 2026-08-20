@@ -3211,6 +3211,36 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   color: #1a2717;
 }
 
+/* Which venue is taking the redemption. Sits above the card lookup because
+   the API refuses the redemption without it. Wraps rather than scrolls — three
+   venues fit two rows on the narrowest counter iPad, and a venue you cannot
+   see is a venue nobody picks. */
+.counter-venues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.counter-venues button {
+  flex: 1 1 auto;
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid rgba(231, 205, 139, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 251, 238, 0.04);
+  color: #efe0cf;
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.counter-venues button.is-on {
+  background: #e7cd8b;
+  border-color: #e7cd8b;
+  color: #1a2717;
+  font-weight: 600;
+}
+
 .counter-field {
   display: flex;
   flex-direction: column;
