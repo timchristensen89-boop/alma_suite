@@ -625,13 +625,44 @@ input, select { font: inherit; }
 }
 .pos-wine-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .pos-wine-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; opacity: 0.45; min-width: 42px; }
+/* Raised off the page rather than drawn on it. Transparent with a hairline
+   border, these read as labels on the warm background instead of things to
+   press — the same reason the pour buttons sit on --pos-card. */
 .pos-wine-chip {
   font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 6px 11px;
   border-radius: 9999px; border: 1px solid var(--pos-border, rgba(31,53,36,0.16));
-  background: transparent; color: inherit;
+  background: var(--pos-card, #fff); color: inherit;
+  box-shadow: 0 1px 2px rgba(31, 53, 36, 0.06);
 }
-.pos-wine-chip[aria-pressed="true"] { background: var(--pos-accent-bg, #1f3524); border-color: var(--pos-accent-bg, #1f3524); color: var(--pos-accent-fg, #f8f6f1); }
-.pos-wine-chip:disabled { opacity: 0.28; cursor: default; }
+.pos-wine-chip[aria-pressed="true"] {
+  background: var(--pos-accent-bg, #1f3524); border-color: var(--pos-accent-bg, #1f3524);
+  color: var(--pos-accent-fg, #f8f6f1); box-shadow: none;
+}
+.pos-wine-chip:disabled { opacity: 0.28; cursor: default; box-shadow: none; }
+
+/* ── Wine by colour ──────────────────────────────────────────────────────
+   The colour chip wears the colour it filters for, the section heading is
+   banded in it, and every row carries it as a stripe down its left edge. One
+   token set, three places, so a scroll down the list reads as blocks of
+   colour and the filter that finds them is recognisably the same thing. */
+.pos-wine-chip[data-colour] {
+  background: var(--wine-bg); border-color: var(--wine-bd); color: var(--wine-fg);
+}
+.pos-wine-chip[data-colour][aria-pressed="true"] {
+  /* Pressed still means filled and dark — the colour says WHICH filter, the
+     fill says whether it is on, and those two must not fight. */
+  background: var(--pos-accent-bg, #1f3524); color: var(--pos-accent-fg, #f8f6f1);
+  /* Pressed fills dark like every other chip row, and keeps its colour as the
+     ring — an inset shadow on a full pill renders as a sliver, which reads as
+     a glitch rather than as a state. */
+  border-color: var(--wine-fg); box-shadow: none;
+}
+[data-colour="white"] { --wine-bg: var(--wine-white-bg); --wine-fg: var(--wine-white-fg); --wine-bd: var(--wine-white-bd); }
+[data-colour="red"] { --wine-bg: var(--wine-red-bg); --wine-fg: var(--wine-red-fg); --wine-bd: var(--wine-red-bd); }
+[data-colour="rose"] { --wine-bg: var(--wine-rose-bg); --wine-fg: var(--wine-rose-fg); --wine-bd: var(--wine-rose-bd); }
+[data-colour="sparkling"] { --wine-bg: var(--wine-sparkling-bg); --wine-fg: var(--wine-sparkling-fg); --wine-bd: var(--wine-sparkling-bd); }
+[data-colour="orange"] { --wine-bg: var(--wine-orange-bg); --wine-fg: var(--wine-orange-fg); --wine-bd: var(--wine-orange-bd); }
+[data-colour="fortified"] { --wine-bg: var(--wine-fortified-bg); --wine-fg: var(--wine-fortified-fg); --wine-bd: var(--wine-fortified-bd); }
 .pos-wine-n { font-weight: 500; opacity: 0.5; margin-left: 4px; font-variant-numeric: tabular-nums; }
 .pos-wine-clear { font: inherit; font-size: 12px; font-weight: 700; background: none; border: 0; color: var(--pos-accent, #4f6b47); cursor: pointer; padding: 6px 4px; }
 .pos-wine-count { font-size: 11.5px; opacity: 0.45; }
@@ -639,13 +670,19 @@ input, select { font: inherit; }
 .pos-wine-rows { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
 .pos-wine-group {
   position: sticky; top: 0; z-index: 1; padding: 6px 12px;
-  background: var(--pos-panel, #f1ebe3); font-size: 10.5px; font-weight: 800;
-  letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.75;
+  background: var(--wine-bg, var(--pos-panel, #f1ebe3)); color: var(--wine-fg, inherit);
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border-left: 4px solid var(--wine-fg, transparent);
 }
 .pos-wine-band { font-weight: 600; letter-spacing: 0.05em; text-transform: none; opacity: 0.7; margin-left: 8px; }
 .pos-wine-row {
   display: flex; align-items: center; gap: 10px; padding: 10px 12px;
   border-bottom: 1px solid var(--pos-border-soft, rgba(31,53,36,0.08));
+  /* The stripe is the whole point of the colour on a row: it survives being
+     scrolled past at speed, where a tinted background would just make the
+     text harder to read. */
+  border-left: 4px solid var(--wine-fg, transparent);
   /* Wraps rather than overflows. The cart takes a fixed 360px, so on an iPad
      held upright this column is barely 270px — and an unwrapped row pushed
      the pour buttons underneath the cart, where they could be read but not

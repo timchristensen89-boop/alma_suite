@@ -34,6 +34,20 @@
   --tile-slate-bg: #dde3ec; --tile-slate-fg: #3d4c64; --tile-slate-bd: rgba(77, 94, 122, 0.25);
   --tile-shell-bg: #f5dcce; --tile-shell-fg: #7a4a33; --tile-shell-bd: rgba(122, 74, 51, 0.22);
   --tile-cocoa-bg: #e9dcd8; --tile-cocoa-fg: #5d403f; --tile-cocoa-bd: rgba(104, 74, 74, 0.25);
+
+  /* Wine by colour. Same bg/fg/bd shape as the tiles above so it belongs to
+     the system rather than sitting beside it. Straw, claret, blush, gold,
+     amber and a fortified brown — near enough to the glass to be read without
+     the label, and far enough apart from each other to be told at a glance
+     down a scrolling list. White, sparkling and skin contact are the three
+     that risk collapsing into one gold, so they are pulled deliberately
+     apart: greenish, gold, orange. */
+  --wine-white-bg: #eef1d6; --wine-white-fg: #59631f; --wine-white-bd: rgba(89, 99, 31, 0.3);
+  --wine-red-bg: #f0d6d6; --wine-red-fg: #7a2733; --wine-red-bd: rgba(122, 39, 51, 0.28);
+  --wine-rose-bg: #fadde1; --wine-rose-fg: #8c3f52; --wine-rose-bd: rgba(140, 63, 82, 0.28);
+  --wine-sparkling-bg: #f8e7bd; --wine-sparkling-fg: #7c6014; --wine-sparkling-bd: rgba(124, 96, 20, 0.3);
+  --wine-orange-bg: #f8dcbc; --wine-orange-fg: #8f4e18; --wine-orange-bd: rgba(143, 78, 24, 0.3);
+  --wine-fortified-bg: #e6d8cd; --wine-fortified-fg: #5f4229; --wine-fortified-bd: rgba(95, 66, 41, 0.3);
 }
 
 body.pos-dark {
@@ -60,6 +74,13 @@ body.pos-dark {
   --tile-slate-bg: #232b38; --tile-slate-fg: #afc0da; --tile-slate-bd: rgba(175, 192, 218, 0.2);
   --tile-shell-bg: #382a22; --tile-shell-fg: #f0cdb9; --tile-shell-bd: rgba(240, 205, 185, 0.2);
   --tile-cocoa-bg: #322525; --tile-cocoa-fg: #d9b8b4; --tile-cocoa-bd: rgba(217, 184, 180, 0.2);
+
+  --wine-white-bg: #2b3020; --wine-white-fg: #d8e0a6; --wine-white-bd: rgba(216, 224, 166, 0.22);
+  --wine-red-bg: #37211f; --wine-red-fg: #eaadaa; --wine-red-bd: rgba(234, 173, 170, 0.22);
+  --wine-rose-bg: #3a232a; --wine-rose-fg: #f2b8c3; --wine-rose-bd: rgba(242, 184, 195, 0.22);
+  --wine-sparkling-bg: #38301b; --wine-sparkling-fg: #ecca8a; --wine-sparkling-bd: rgba(236, 202, 138, 0.22);
+  --wine-orange-bg: #3a2a1a; --wine-orange-fg: #efbc85; --wine-orange-bd: rgba(239, 188, 133, 0.22);
+  --wine-fortified-bg: #302722; --wine-fortified-fg: #d5bda6; --wine-fortified-bd: rgba(213, 189, 166, 0.22);
 }
 
 /* ── Shell & header ── */
