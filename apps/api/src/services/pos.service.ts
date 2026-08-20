@@ -979,6 +979,7 @@ export const posService = {
             name: course.name,
             posCourse: course.posCourse,
             pick: course.pick,
+            perGuests: course.perGuests,
             sortOrder: course.sortOrder,
             options: course.options.map((option) => ({
               id: option.id,

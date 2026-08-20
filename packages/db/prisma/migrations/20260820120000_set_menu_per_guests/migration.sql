@@ -1,0 +1,13 @@
+-- One serve of a course can feed more than one guest: the shared sides, the
+-- whole fish, the board that lands in the middle of the table.
+--
+-- Without this the register rings one of everything per head, so Shoestring
+-- Fries "shared between 4" prints eight portions for a table of eight. The
+-- costing has always known the number (RecipeLine.perGuests); the course did
+-- not, so it could not be carried across when the courses were seeded from
+-- those components.
+--
+-- NULL means one serve each, which is what every existing course gets and how
+-- the register already behaves — so this column changes nothing until it is
+-- filled in.
+ALTER TABLE "SetMenuCourse" ADD COLUMN "perGuests" INTEGER;

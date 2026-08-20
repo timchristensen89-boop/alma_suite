@@ -1297,6 +1297,7 @@ export const recipesService = {
       name: course.name,
       posCourse: course.posCourse,
       pick: course.pick,
+      perGuests: course.perGuests,
       sortOrder: course.sortOrder,
       options: course.options.map((option) => ({
         id: option.id,
@@ -1338,6 +1339,7 @@ export const recipesService = {
             name: course.name.trim(),
             posCourse: course.posCourse?.trim() || null,
             pick: course.pick,
+            perGuests: course.perGuests ?? null,
             sortOrder: index,
             options: {
               create: course.options.map((option, optionIndex) => ({
