@@ -171,7 +171,18 @@ export const qrOrderService = {
   async context(token: string) {
     const { venue, tableLabel } = parseToken(token);
     const menu = (await posService.registerMenu()) as {
-      categories: Array<{ name: string; items: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null }> }>;
+      categories: Array<{
+        name: string;
+        kind: string;
+        items: Array<{
+          recipeId: string;
+          title: string;
+          priceCents: number;
+          venue: string | null;
+          dietary?: string[];
+          variantOf?: string;
+        }>;
+      }>;
       eightySix?: string[];
     };
     const eightySix = new Set(menu.eightySix ?? []);
@@ -193,11 +204,25 @@ export const qrOrderService = {
         .filter((category) => !qrHiddenCats.has(category.name.toLowerCase()))
         .map((category) => ({
           name: category.name,
+          // Kitchen or bar, and whether it is a set menu. The guest page needs
+          // it to offer "food / drinks" the way the register's full menu does,
+          // and to put the banquets first.
+          kind: category.kind,
           items: category.items
             .filter((item) => !eightySix.has(item.recipeId))
             .filter((item) => !qrHiddenItems.has(item.recipeId))
             .filter((item) => !item.venue || item.venue === venue)
-            .map((item) => ({ recipeId: item.recipeId, title: item.title, priceCents: item.priceCents }))
+            // A variant row (the 250mL of a wine, say) belongs under its
+            // parent at the register, not as its own line on a guest menu.
+            .filter((item) => !item.variantOf)
+            .map((item) => ({
+              recipeId: item.recipeId,
+              title: item.title,
+              priceCents: item.priceCents,
+              // Empty means nobody has checked, never "no allergens" — the
+              // guest page has to say that, not imply the dish is safe.
+              dietary: item.dietary ?? []
+            }))
         }))
         .filter((category) => category.items.length > 0)
     };

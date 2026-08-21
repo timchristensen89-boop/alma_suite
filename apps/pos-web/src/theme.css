@@ -1776,6 +1776,210 @@ body.pos-v2 .pos-shell, .pos-shell { overflow: hidden; }
 .pos-be-textsize button { min-width: 30px; justify-content: center; }
 .pos-be-textsize button span { line-height: 1; }
 
+/* ── The QR menu a guest actually reads ──────────────────────────────────
+   This is the only ALMA surface a customer ever sees, and it was the plainest
+   one we had: a wordmark in letter-spaced sans, closed accordions, and a
+   price. It now opens the way the register's full menu does — everything on
+   screen, searchable, narrowable — because a menu you have to unfold one
+   drawer at a time is a menu most tables order two things from.
+
+   The forest goes at the top and stays there. Dish names are set in the
+   display serif and prices in the sans (Cormorant's figures are old-style and
+   turn "$44.00" into a squiggle), which is the same split the printed menus
+   use. */
+.qr-shell { background: var(--pos-bg); color: var(--pos-text); font-family: var(--font-sans); }
+
+.qr-header {
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  padding-top: calc(14px + env(safe-area-inset-top));
+  background: var(--pos-text);
+  border-bottom: 0;
+  color: var(--pos-accent-fg);
+}
+.qr-mark { width: 30px; height: 30px; flex: none; object-fit: contain; }
+.qr-place { display: flex; flex-direction: column; line-height: 1.25; }
+.qr-place b {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 19px;
+  letter-spacing: 0;
+  color: var(--pos-accent-fg);
+}
+.qr-place em {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(248, 246, 241, 0.65);
+}
+.qr-header .qr-billbtn {
+  border: 1px solid rgba(248, 246, 241, 0.4);
+  color: var(--pos-accent-fg);
+  background: transparent;
+  padding: 8px 16px;
+}
+
+/* Find-and-narrow. Sticky under the masthead so it is still reachable four
+   screens into a long list, and the chip rows swipe rather than wrap — six
+   category chips wrapping to three lines is how the register's own filter bar
+   used to eat a third of an iPad. */
+.qr-find {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 16px 9px;
+  background: var(--pos-bg);
+  border-bottom: 1px solid var(--pos-border-soft);
+}
+.qr-find-row { display: flex; align-items: center; gap: 9px; }
+.qr-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 15px;
+  padding: 11px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--pos-border);
+  background: var(--pos-card);
+  color: inherit;
+}
+.qr-count { flex: none; font-size: 11.5px; color: var(--pos-text3); white-space: nowrap; }
+.qr-clear {
+  flex: none; font: inherit; font-size: 12px; font-weight: 700; padding: 6px 4px;
+  background: none; border: 0; color: var(--pos-accent); cursor: pointer; white-space: nowrap;
+}
+.qr-chips {
+  display: flex; align-items: center; gap: 6px;
+  flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.qr-chips::-webkit-scrollbar { display: none; }
+.qr-chips > * { flex: none; }
+.qr-chips-label {
+  position: sticky; left: 0; z-index: 1; padding-right: 2px;
+  background: var(--pos-bg);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--pos-text3);
+}
+.qr-chips button {
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  padding: 7px 13px; border-radius: 9999px;
+  border: 1px solid var(--pos-border);
+  background: var(--pos-card); color: inherit;
+  box-shadow: 0 1px 2px rgba(31, 53, 36, 0.06);
+}
+.qr-chips button[aria-pressed='true'] {
+  background: var(--pos-accent-bg);
+  border-color: var(--pos-accent-bg);
+  color: var(--pos-accent-fg);
+  box-shadow: none;
+}
+.qr-n { font-weight: 500; opacity: 0.5; margin-left: 5px; font-variant-numeric: tabular-nums; }
+/* The sentence that stops a hidden dish reading as an unsafe one. */
+.qr-caveat {
+  margin: 2px 0 0; font-size: 12px; line-height: 1.45; color: var(--pos-text2);
+  border-left: 2px solid rgba(147, 48, 31, 0.4); padding-left: 8px;
+}
+.qr-none { padding: 32px 16px; text-align: center; color: var(--pos-text2); }
+
+/* The basket. Its fields carried a border and a radius and no colours at all,
+   so they fell through to the browser's own control face — dark grey boxes
+   with grey placeholder text on a cream page, on the two inputs where a guest
+   writes their name and their allergies. */
+.qr-cart {
+  background: var(--pos-card);
+  border-top: 1px solid var(--pos-border);
+  box-shadow: 0 -8px 28px rgba(31, 53, 36, 0.12);
+}
+.qr-cart input {
+  font: inherit;
+  font-size: 15px;
+  background: var(--pos-bg);
+  color: var(--pos-text);
+  border: 1px solid var(--pos-border);
+}
+.qr-cart input::placeholder { color: var(--pos-text3); }
+.qr-cart-toggle { color: var(--pos-text); }
+.qr-submit {
+  font-family: var(--font-sans);
+  font-variant-numeric: lining-nums tabular-nums;
+  background: var(--pos-accent-bg);
+  color: var(--pos-accent-fg);
+  min-height: 52px;
+}
+.qr-call { background: var(--pos-card); border-color: var(--pos-border); color: var(--pos-text); }
+.qr-diet-chips button { background: var(--pos-card); border-color: var(--pos-border); color: var(--pos-text); }
+.qr-diet-chips button.is-on { background: var(--pos-accent-bg); border-color: var(--pos-accent-bg); color: var(--pos-accent-fg); }
+
+/* A section heading, not a button — nothing here folds any more. */
+.qr-cat { border-bottom: 0; }
+.qr-cat-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin: 0;
+  padding: 22px 16px 6px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 23px;
+  letter-spacing: 0;
+  color: var(--pos-text);
+}
+.qr-cat-head span {
+  font-family: var(--font-sans); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.1em; color: var(--pos-text3);
+}
+
+.qr-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 12px 7px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  background: var(--pos-card);
+  border: 1px solid var(--pos-border-soft);
+  box-shadow: 0 1px 2px rgba(31, 53, 36, 0.04);
+}
+/* Already in the basket: the row says so without you opening it. */
+.qr-item.is-on { border-color: var(--pos-accent-bg); box-shadow: 0 1px 2px rgba(31, 53, 36, 0.1); }
+.qr-item-name { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.qr-item-title {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--pos-text);
+}
+.qr-item-name small {
+  font-family: var(--font-sans);
+  font-size: 13px; font-weight: 700;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--pos-text2);
+  margin-top: 0;
+}
+/* Same marks, same colours, same meanings as the register and the dockets. */
+.qr-item-diet { display: inline-flex; gap: 4px; }
+.qr-item-diet i {
+  font-style: normal; font-size: 9.5px; font-weight: 800; letter-spacing: 0.06em;
+  padding: 2px 5px; border-radius: 4px; text-transform: uppercase;
+  background: rgba(31, 53, 36, 0.08); color: var(--pos-text2);
+}
+.qr-item-diet i[data-kind='contains'] { background: rgba(147, 48, 31, 0.14); color: #93301f; }
+.qr-item-diet i[data-kind='onAsk'] { background: rgba(124, 90, 17, 0.13); color: #7c5a11; }
+
+.qr-add {
+  flex: none;
+  background: var(--pos-accent-bg); color: var(--pos-accent-fg);
+  border: 0; border-radius: 9999px; padding: 10px 20px;
+  font-family: var(--font-sans); font-weight: 700; font-size: 13.5px; cursor: pointer;
+  min-height: 40px;
+}
+.qr-stepper button { border-color: var(--pos-accent-bg); color: var(--pos-accent-bg); }
+
 /* Guest basket: collapsible, so a table ordering a second round can still
    see the menu underneath it. */
 .qr-cart-toggle {
