@@ -104,6 +104,11 @@ function isStaffWriteAllowed(req: Request) {
   // shouldn't wait on a manager. The route only ever rotates the caller's own
   // token; resetting somebody else's stays on the manager-guarded route.
   if (req.path === '/api/staff/me/calendar/rotate' && req.method === 'POST') return true;
+  // Turning notifications on and off for your own phone. Both are writes by a
+  // non-manager, and without these the "Notifications" card answers "this is a
+  // manager-only action" to the person whose phone it is.
+  if (req.path === '/api/staff/me/push/subscribe' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/push/unsubscribe' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/unavailability' && req.method === 'POST') return true;
   if (/^\/api\/staff\/unavailability\/[^/]+$/.test(req.path) && req.method === 'DELETE') return true;
   if (req.path === '/api/staff/me/clock/in' && req.method === 'POST') return true;

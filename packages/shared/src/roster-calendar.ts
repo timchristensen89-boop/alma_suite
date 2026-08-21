@@ -262,3 +262,52 @@ export function rosterShiftLine(shift: {
     area: shift.area?.trim() || null
   };
 }
+
+export type RosterPushNotification = {
+  title: string;
+  body: string;
+};
+
+/**
+ * The one or two lines a phone shows on the lock screen when a roster drops.
+ *
+ * A lock screen gives you roughly a title and two lines before it truncates,
+ * and the person reading it is usually mid-something-else. So the body leads
+ * with the count and then spells out the first shift in full — that is the one
+ * they actually need to plan around, and if the notification is all they ever
+ * read, knowing when they are next on is the useful half.
+ *
+ * Shifts are sorted here rather than trusted in order: they arrive grouped by
+ * person out of a database query, and "your next shift" being whichever row
+ * came back first would be wrong about half the time.
+ */
+export function rosterPushNotification(
+  shifts: ReadonlyArray<{
+    startsAt: string | Date;
+    endsAt: string | Date;
+    venue?: string | null;
+    area?: string | null;
+    roleTitle?: string | null;
+  }>
+): RosterPushNotification {
+  if (shifts.length === 0) {
+    // Not expected — nothing calls this with an empty roster — but a push that
+    // says nothing is worse than one that says the honest thing.
+    return { title: 'Your roster is up', body: 'Open ALMA Staff to see it.' };
+  }
+
+  const sorted = [...shifts].sort(
+    (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+  );
+  const first = rosterShiftLine(sorted[0]!);
+  const firstLine = `${first.day}, ${first.hours} · ${first.where}`;
+
+  if (sorted.length === 1) {
+    return { title: 'Your roster is up', body: firstLine };
+  }
+
+  return {
+    title: `Your roster is up — ${sorted.length} shifts`,
+    body: `First up: ${firstLine}`
+  };
+}

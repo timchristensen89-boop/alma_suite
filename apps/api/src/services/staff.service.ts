@@ -13,6 +13,7 @@ import {
   expiredCertificationsForShift,
   normaliseOnboardingSettings,
   buildRosterCalendar,
+  rosterPushNotification,
   webcalUrl,
   rosterShiftInputSchema,
   rosterPublishInputSchema,
@@ -92,6 +93,7 @@ import { configuredSuperRateFraction } from './settings.service.js';
 import { authService } from './auth.service.js';
 import { communicationsService } from './communications.service.js';
 import { mailService } from './mail.service.js';
+import { pushService } from './push.service.js';
 import { handbookDocumentService } from './handbook-document.service.js';
 import { createThread } from './messaging.service.js';
 
@@ -4829,7 +4831,11 @@ export const staffService = {
       breakMinutes: number | null;
       notes: string | null;
     }>
-  ): Promise<{ emailed: number; skipped: Array<{ name: string; reason: string }> }> {
+  ): Promise<{
+    emailed: number;
+    pushed: number;
+    skipped: Array<{ name: string; reason: string }>;
+  }> {
     const byStaff = new Map<string, typeof shifts[number][]>();
     for (const shift of shifts) {
       if (!shift.staffProfileId) continue;
@@ -4837,7 +4843,7 @@ export const staffService = {
       list.push(shift);
       byStaff.set(shift.staffProfileId, list);
     }
-    if (byStaff.size === 0) return { emailed: 0, skipped: [] };
+    if (byStaff.size === 0) return { emailed: 0, pushed: 0, skipped: [] };
 
     const staff = await prisma.staffProfile.findMany({
       where: { id: { in: [...byStaff.keys()] } },
@@ -4853,17 +4859,25 @@ export const staffService = {
 
     const skipped: Array<{ name: string; reason: string }> = [];
     const sendable: Array<{ profile: (typeof staff)[number]; token: string }> = [];
+    // Push is a separate list from email on purpose: somebody with no address
+    // on file may still have the app on their phone, and that is exactly the
+    // person most at risk of never learning they are rostered.
+    const pushable: Array<(typeof staff)[number]> = [];
 
     for (const profile of staff) {
       const name = `${profile.firstName} ${profile.lastName}`.trim();
+      // Employment is checked before contact details. A terminated person with
+      // no address is not "missing an email" — they are gone, and reporting the
+      // address as the problem sends a manager off to fix the wrong thing.
+      if (profile.employmentStatus === 'TERMINATED' || profile.employmentStatus === 'ARCHIVED') {
+        skipped.push({ name, reason: `${profile.employmentStatus.toLowerCase()} — not notified` });
+        continue;
+      }
+      pushable.push(profile);
       if (!profile.email) {
         // Worth saying out loud: a roster that silently misses someone is the
         // failure this feature exists to prevent.
         skipped.push({ name, reason: 'no email address on file' });
-        continue;
-      }
-      if (profile.employmentStatus === 'TERMINATED' || profile.employmentStatus === 'ARCHIVED') {
-        skipped.push({ name, reason: `${profile.employmentStatus.toLowerCase()} — not emailed` });
         continue;
       }
       sendable.push({ profile, token: profile.calendarToken ?? '' });
@@ -4913,8 +4927,40 @@ export const staffService = {
       skipped.push({ name, reason });
     });
 
-    console.info(`[roster] published shifts for ${byStaff.size} staff — emailed ${emailed}, skipped ${skipped.length}`);
-    return { emailed, skipped };
+    // Push after email, and never in a way that can fail the publish. A phone
+    // that is off, uninstalled or out of battery is normal; the email and the
+    // app itself are still carrying the news.
+    let pushed = 0;
+    const pushResults = await Promise.allSettled(
+      pushable.map(async (profile) => {
+        const mine = byStaff.get(profile.id) ?? [];
+        if (mine.length === 0) return 0;
+        const { title, body } = rosterPushNotification(
+          mine.map((shift) => ({
+            startsAt: shift.startsAt,
+            endsAt: shift.endsAt,
+            venue: shift.venue,
+            area: shift.area,
+            roleTitle: shift.roleTitle
+          }))
+        );
+        const outcome = await pushService.sendToStaff(profile.id, { title, body, url: '/roster' });
+        return outcome.sent;
+      })
+    );
+    for (const result of pushResults) {
+      if (result.status === 'fulfilled') {
+        pushed += result.value;
+      } else {
+        const reason = result.reason instanceof Error ? result.reason.message : 'push failed';
+        console.error(`[roster] push failed: ${reason}`);
+      }
+    }
+
+    console.info(
+      `[roster] published shifts for ${byStaff.size} staff — emailed ${emailed}, pushed to ${pushed} device(s), skipped ${skipped.length}`
+    );
+    return { emailed, pushed, skipped };
   },
 
   async listRosterForecastSnapshots(input: { start?: string; end?: string; venue?: string }, actor?: AuthUser) {

@@ -117,6 +117,23 @@ export const env = {
   suiteAuthSecret: process.env.SUITE_AUTH_SECRET ?? sessionSecret,
   isProduction,
   sessionCookieName: 'alma.sid',
+  /**
+   * Web push (VAPID).
+   *
+   * The public key is not a secret — it ships to every browser that
+   * subscribes — but it is served from the API at runtime rather than baked
+   * into the staff bundle, so rotating the pair is an env change and a
+   * restart rather than a frontend rebuild.
+   *
+   * `subject` must be a mailto: or https: URL identifying us; push services
+   * reject a VAPID header without one and some of them email it when a
+   * sending pattern looks wrong.
+   */
+  webPush: {
+    publicKey: process.env.VAPID_PUBLIC_KEY ?? '',
+    privateKey: process.env.VAPID_PRIVATE_KEY ?? '',
+    subject: process.env.VAPID_SUBJECT ?? 'mailto:tim@almagroup.com.au'
+  },
   sessionMaxAgeMs: 30 * 24 * 60 * 60 * 1000,
   websiteMenu: {
     githubToken: process.env.WEBSITE_MENU_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? '',

@@ -719,6 +719,7 @@ model StaffProfile {
   ownedAlmaTasks               AlmaTask[]                 @relation("AlmaTaskOwner")
   completedAlmaTasks           AlmaTask[]                 @relation("AlmaTaskCompletedBy")
   dismissedAlmaTasks           AlmaTask[]                 @relation("AlmaTaskDismissedBy")
+  pushSubscriptions            StaffPushSubscription[]
 
   @@index([venue])
   @@index([accountType, venue])
@@ -5596,4 +5597,38 @@ model StaffXeroEmployee {
   @@unique([staffProfileId, tenantId])
   @@index([tenantId])
   @@index([xeroEmployeeId])
+}
+
+/// One browser, on one device, that has agreed to be told when a roster drops.
+///
+/// Keyed by endpoint because that is what the browser gives us and what the
+/// push service accepts — a person legitimately has several (phone, iPad,
+/// the desktop they do admin on), and reinstalling the app produces a new
+/// one rather than reusing the old.
+///
+/// Rows are deleted, never soft-disabled, when the push service says the
+/// endpoint is gone (404/410). A dead endpoint is not a state worth keeping:
+/// it can never come back, and the browser mints a fresh row on re-subscribe.
+model StaffPushSubscription {
+  id             String       @id @default(cuid())
+  staffProfileId String
+  staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  /// The push service URL. Unique across everyone: if a device is handed to
+  /// another staff member and they subscribe, the row moves to them rather
+  /// than the old owner keeping a feed of somebody else's shifts.
+  endpoint       String       @unique
+  /// The subscription's public key and auth secret, base64url as the browser
+  /// gave them. Used to encrypt each payload to that device.
+  p256dh         String
+  auth           String
+  /// What asked for it, so a manager chasing "I'm not getting them" can see
+  /// whether the phone ever registered at all.
+  userAgent      String?
+  createdAt      DateTime     @default(now())
+  lastSuccessAt  DateTime?
+  /// Consecutive send failures that were not a hard "gone". Enough of them and
+  /// it is worth a human look, but they do not stop us trying.
+  failureCount   Int          @default(0)
+
+  @@index([staffProfileId])
 }

@@ -4,6 +4,7 @@ import { HttpError } from '../lib/http.js';
 import { integrationService } from '../services/integration.service.js';
 import { shiftTaskService } from '../services/shift-task.service.js';
 import { staffService } from '../services/staff.service.js';
+import { pushService } from '../services/push.service.js';
 
 export const staffRouter = Router();
 
@@ -836,6 +837,51 @@ staffRouter.post('/me/calendar/rotate', async (req, res, next) => {
     if (!req.user?.id) throw new HttpError(401, 'Sign in to reset your calendar link.');
     const { links } = await staffService.rotateCalendarToken(req.user.id);
     res.json(links);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/*
+ * Push notifications for this staff member's own phone.
+ *
+ * GET carries the VAPID public key as well as the current device count, so the
+ * app makes one call to render the whole card. The key is public by definition
+ * — it goes to every browser that subscribes — and serving it rather than
+ * baking it into the bundle means rotating the pair is an env change and a
+ * restart, not a frontend rebuild.
+ */
+staffRouter.get('/me/push', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to manage notifications.');
+    const { configured, publicKey } = pushService.config();
+    res.json({ configured, publicKey, devices: await pushService.deviceCount(req.user.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/push/subscribe', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to turn on notifications.');
+    const body = (req.body ?? {}) as { subscription?: unknown };
+    const saved = await pushService.subscribe(
+      req.user.id,
+      body.subscription as never,
+      req.header('user-agent')
+    );
+    res.status(201).json({ ...saved, devices: await pushService.deviceCount(req.user.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/push/unsubscribe', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to turn off notifications.');
+    const body = (req.body ?? {}) as { endpoint?: string };
+    const removed = await pushService.unsubscribe(req.user.id, String(body.endpoint ?? ''));
+    res.json({ ...removed, devices: await pushService.deviceCount(req.user.id) });
   } catch (error) {
     next(error);
   }
