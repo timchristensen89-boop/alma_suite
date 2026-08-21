@@ -2167,6 +2167,7 @@ model GiftCard {
   promoCode               GiftCardPromoCode?   @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   redemptions             GiftCardRedemption[]
   customArtwork           GiftCardArtwork?
+  donation                GiftCardDonation?
 
   @@index([status])
   @@index([purchaserEmail])
@@ -2189,6 +2190,51 @@ model GiftCardArtwork {
   data       Bytes
   createdAt  DateTime @default(now())
   giftCard   GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+}
+
+// A voucher given away under the donation and sponsorship policy — a raffle
+// prize, an auction lot, a school fete. Its own table rather than more columns
+// on GiftCard, because a donation carries a whole second story (who asked, what
+// for, whether they agreed to name us) that no ordinary card query wants to
+// carry, and because the annual cap is a property of this table.
+//
+// @domain: giftcards | home: suite
+model GiftCardDonation {
+  id                   String    @id @default(cuid())
+  giftCardId           String    @unique
+  // The calendar year the allocation is drawn from, and which of that year's
+  // twelve this is. The unique pair below is the cap: the database refuses a
+  // thirteenth, so two managers cannot both take number twelve.
+  year                 Int
+  sequence             Int
+  organisation         String
+  cause                String?
+  contactName          String?
+  contactEmail         String?
+  // Which venue's voucher it is. The cap is group-wide; this is for reporting.
+  venue                String
+  eventDate            DateTime?
+  // The five policy criteria, stored as answered rather than recomputed, so a
+  // later change to the policy never rewrites history.
+  local                Boolean   @default(false)
+  bringsPeopleIn       Boolean   @default(false)
+  named                Boolean   @default(false)
+  existingRelationship Boolean   @default(false)
+  dgrEndorsed          Boolean   @default(false)
+  score                Int       @default(0)
+  // Where the promised listing was confirmed. Filed with the invoice, this is
+  // what supports treating the voucher as sponsorship rather than a gift.
+  listingEvidence      String?
+  notes                String?
+  approvedById         String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  giftCard             GiftCard  @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+
+  @@unique([year, sequence])
+  @@index([year])
+  @@index([organisation])
+  @@index([venue])
 }
 
 // @domain: giftcards | home: suite

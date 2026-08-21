@@ -12,7 +12,20 @@ import {
   giftCardRedemptionInputSchema,
   giftCardSettingsInputSchema,
   normaliseGiftCardSettings,
+  DONATION_ANNUAL_CAP,
+  DONATION_ASSUMED_REDEMPTION_RATE,
+  DONATION_FOOD_COST_RATE,
+  assessDonation,
+  donationActualCostCents,
+  donationConditions,
+  donationExpectedCostCents,
+  donationExpiry,
+  donationScore,
   type AuthUser,
+  type DonationAllocation,
+  type DonationCriteria,
+  type DonationRecord,
+  type DonationReport,
   type GiftCardPublicConfig,
   type GiftCardSettings
 } from '@alma/shared';
@@ -245,6 +258,97 @@ function normaliseRedemptionVenue(raw: string): string {
   if (value.includes('alma') || value.includes('freshwater') || value.includes('fresh water')) return 'St Alma';
   if (value.includes('function') || value.includes('pop')) return 'Functions / Pop-up';
   throw new HttpError(400, `Choose the venue taking this redemption: ${REDEMPTION_VENUES.join(', ')}.`);
+}
+
+/**
+ * Whose voucher a donation is. Not the same list as REDEMPTION_VENUES: a
+ * donated raffle prize is written for one venue or for either, and "Functions
+ * / Pop-up" is not somewhere a prize winner turns up.
+ */
+export const DONATION_VENUES = ['St Alma', 'Alma Avalon', 'Either venue'] as const;
+
+/** Staff names for the "approved by" column, in one query rather than N. */
+async function approverNames(ids: Array<string | null>): Promise<Map<string, string>> {
+  const wanted = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  if (wanted.length === 0) return new Map();
+  const staff = await prisma.staffProfile.findMany({
+    where: { id: { in: wanted } },
+    select: { id: true, firstName: true, lastName: true }
+  });
+  return new Map(staff.map((person) => [person.id, `${person.firstName} ${person.lastName}`.trim()]));
+}
+
+function toDonationRecord(
+  row: {
+    id: string;
+    year: number;
+    sequence: number;
+    organisation: string;
+    cause: string | null;
+    contactName: string | null;
+    contactEmail: string | null;
+    venue: string;
+    eventDate: Date | null;
+    local: boolean;
+    bringsPeopleIn: boolean;
+    named: boolean;
+    existingRelationship: boolean;
+    dgrEndorsed: boolean;
+    score: number;
+    listingEvidence: string | null;
+    notes: string | null;
+    approvedById: string | null;
+    createdAt: Date;
+    giftCard: {
+      code: string;
+      status: string;
+      initialValueCents: number;
+      balanceCents: number;
+      expiresAt: Date | null;
+      redemptions: Array<{ amountCents: number; status: string; redeemedAt: Date }>;
+    };
+  },
+  names: Map<string, string>
+): DonationRecord {
+  // Voided redemptions were put back on the card, so they are not spend.
+  const live = row.giftCard.redemptions.filter((redemption) => redemption.status === 'COMPLETED');
+  const redeemedCents = live.reduce((sum, redemption) => sum + redemption.amountCents, 0);
+  const lastRedeemedAt = live.reduce<Date | null>(
+    (latest, redemption) => (!latest || redemption.redeemedAt > latest ? redemption.redeemedAt : latest),
+    null
+  );
+  return {
+    id: row.id,
+    year: row.year,
+    sequence: row.sequence,
+    organisation: row.organisation,
+    cause: row.cause,
+    contactName: row.contactName,
+    contactEmail: row.contactEmail,
+    venue: row.venue,
+    eventDate: row.eventDate ? row.eventDate.toISOString() : null,
+    criteria: {
+      local: row.local,
+      bringsPeopleIn: row.bringsPeopleIn,
+      named: row.named,
+      existingRelationship: row.existingRelationship,
+      dgrEndorsed: row.dgrEndorsed
+    },
+    score: row.score,
+    listingEvidence: row.listingEvidence,
+    notes: row.notes,
+    approvedByName: row.approvedById ? (names.get(row.approvedById) ?? null) : null,
+    createdAt: row.createdAt.toISOString(),
+    card: {
+      code: row.giftCard.code,
+      status: row.giftCard.status,
+      initialValueCents: row.giftCard.initialValueCents,
+      balanceCents: row.giftCard.balanceCents,
+      redeemedCents,
+      expiresAt: row.giftCard.expiresAt ? row.giftCard.expiresAt.toISOString() : null,
+      lastRedeemedAt: lastRedeemedAt ? lastRedeemedAt.toISOString() : null
+    }
+  };
 }
 
 function normalisePromoCode(code: string) {
@@ -1210,10 +1314,33 @@ export const giftCardService = {
 
   async lookup(code: string) {
     const card = await findCardByCode(code);
-    if (!card.paidAt || card.status === 'PENDING_PAYMENT') {
+    // The guard here is about an online order Stripe has not confirmed yet,
+    // which is exactly what PENDING_PAYMENT means. It used to also test
+    // paidAt — but a comped counter card and a donation voucher are both live
+    // with paidAt deliberately null, so checking the balance on either came
+    // back "payment has not been confirmed". Status is the thing that governs
+    // whether a card can be used, so status is what this asks.
+    if (card.status === 'PENDING_PAYMENT') {
       throw new HttpError(404, 'Gift card payment has not been confirmed by Stripe.');
     }
-    return toGiftCardPayload(card);
+    // A donation voucher carries conditions an ordinary card does not, and the
+    // person holding it will not have read them. Ride them along so the counter
+    // can say so before the redemption, not after.
+    const donation = await prisma.giftCardDonation.findUnique({
+      where: { giftCardId: card.id },
+      select: { organisation: true, year: true, sequence: true, venue: true }
+    });
+    return {
+      ...toGiftCardPayload(card),
+      donation: donation
+        ? {
+            organisation: donation.organisation,
+            reference: `${donation.year}/${donation.sequence}`,
+            venue: donation.venue,
+            conditions: donationConditions()
+          }
+        : null
+    };
   },
 
   // Activate a physical gift card at point of sale. The user types the
@@ -1315,6 +1442,257 @@ export const giftCardService = {
     }
 
     return toGiftCardPayload(card);
+  },
+
+  /* ---------------------------------------------------------------- */
+  /* Donations and sponsorship                                         */
+  /* ---------------------------------------------------------------- */
+
+  /** How many of this year's twelve are gone, and how many are left. */
+  async donationAllocation(year = new Date().getFullYear()): Promise<DonationAllocation> {
+    const used = await prisma.giftCardDonation.count({ where: { year } });
+    return { year, cap: DONATION_ANNUAL_CAP, used, remaining: Math.max(0, DONATION_ANNUAL_CAP - used) };
+  },
+
+  /**
+   * Issue a donation voucher.
+   *
+   * A real gift card, so it behaves like one at the till and shows up in the
+   * card register — but comped, twelve months rather than three years, and
+   * booked against the year's allocation of twelve. The cap is held by a unique
+   * index on (year, sequence) rather than by a check up here, so two managers
+   * issuing at the same moment cannot both take the last one.
+   */
+  async recordDonation(input: unknown, actor?: AuthUser | null) {
+    if (!input || typeof input !== 'object') throw new HttpError(400, 'Donation details required.');
+    const data = input as Record<string, unknown>;
+
+    const str = (key: string, max = 200) => {
+      const value = data[key];
+      return typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
+    };
+    const flag = (key: string) => data[key] === true;
+
+    const organisation = str('organisation');
+    const amountCents =
+      typeof data.amountCents === 'number' ? Math.round(data.amountCents) : NaN;
+    const venueRaw = str('venue') ?? '';
+    const venue = (DONATION_VENUES as readonly string[]).includes(venueRaw) ? venueRaw : '';
+    const criteria: DonationCriteria = {
+      local: flag('local'),
+      bringsPeopleIn: flag('bringsPeopleIn'),
+      named: flag('named'),
+      existingRelationship: flag('existingRelationship'),
+      dgrEndorsed: flag('dgrEndorsed')
+    };
+
+    if (!venue) {
+      throw new HttpError(400, `Choose whose voucher this is: ${DONATION_VENUES.join(', ')}.`);
+    }
+
+    const year = new Date().getFullYear();
+    const used = await prisma.giftCardDonation.count({ where: { year } });
+    const verdict = assessDonation({
+      amountCents: Number.isFinite(amountCents) ? amountCents : 0,
+      used,
+      criteria,
+      organisation: organisation ?? ''
+    });
+    if (!verdict.ok) {
+      // One sentence, because a wall of them is a wall nobody reads.
+      throw new HttpError(400, verdict.reasons.join(' '));
+    }
+
+    const eventDateRaw = str('eventDate');
+    const eventDate = eventDateRaw ? new Date(eventDateRaw) : null;
+    const issuedAt = new Date();
+    const expiresAt = donationExpiry(issuedAt);
+    const conditions = donationConditions();
+
+    // Retry once per remaining slot: the only way the create loses is another
+    // manager taking the sequence number we just read, and there are at most
+    // twelve of those in a year.
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < DONATION_ANNUAL_CAP; attempt += 1) {
+      const highest = await prisma.giftCardDonation.findFirst({
+        where: { year },
+        orderBy: { sequence: 'desc' },
+        select: { sequence: true }
+      });
+      const sequence = (highest?.sequence ?? 0) + 1;
+      if (sequence > DONATION_ANNUAL_CAP) {
+        throw new HttpError(
+          409,
+          `All ${DONATION_ANNUAL_CAP} donations for ${year} are gone. The answer is no until the calendar turns.`
+        );
+      }
+      try {
+        const created = await prisma.$transaction(async (tx) => {
+          const card = await tx.giftCard.create({
+            data: {
+              code: await issueUnusedCode(),
+              status: 'ACTIVE',
+              initialValueCents: amountCents,
+              balanceCents: amountCents,
+              discountCents: 0,
+              currency: 'aud',
+              purchaserName: `Donation · ${organisation}`,
+              purchaserEmail: str('contactEmail', 160)?.toLowerCase() ?? (actor?.email?.toLowerCase() ?? 'donations@alma'),
+              recipientName: str('contactName', 120),
+              // Deliberately not emailed on issue. A raffle prize goes to
+              // whoever wins it, not to the person who asked for it, so the
+              // card number is handed over on paper or forwarded by Tim.
+              recipientEmail: null,
+              message: conditions,
+              promoCodeId: null,
+              promoCodeSnapshot: 'DONATION',
+              testMode: false,
+              stripeCheckoutSessionId: `donation:${year}:${sequence}`,
+              // No money changed hands. paidAt stays null so this never lands
+              // in a sold-value total and overstates takings.
+              paidAt: null,
+              amountPaidCents: 0,
+              saleChannel: 'DONATION',
+              tender: 'COMP',
+              tenderReference: `${organisation} ${year}/${sequence}`.slice(0, 64),
+              soldByStaffId: actor?.id ?? null,
+              expiresAt
+            },
+            include: { redemptions: true }
+          });
+          const donation = await tx.giftCardDonation.create({
+            data: {
+              giftCardId: card.id,
+              year,
+              sequence,
+              organisation: organisation!,
+              cause: str('cause', 300),
+              contactName: str('contactName', 120),
+              contactEmail: str('contactEmail', 160)?.toLowerCase() ?? null,
+              venue,
+              eventDate: eventDate && !Number.isNaN(eventDate.getTime()) ? eventDate : null,
+              ...criteria,
+              score: donationScore(criteria),
+              listingEvidence: str('listingEvidence', 400),
+              notes: str('notes', 1000),
+              approvedById: actor?.id ?? null
+            }
+          });
+          return { card, donation };
+        });
+        console.info(
+          `[gift-cards] donation ${year}/${created.donation.sequence} code=${created.card.code} ` +
+            `${organisation} ${amountCents}c venue=${venue} by ${actor?.email ?? actor?.id ?? 'unknown'}`
+        );
+        return {
+          card: toGiftCardPayload(created.card),
+          donation: await this.getDonation(created.donation.id),
+          allocation: await this.donationAllocation(year),
+          warnings: verdict.warnings
+        };
+      } catch (error) {
+        // P2002 on (year, sequence) — somebody else took that number. Read the
+        // highest again and try for the next one.
+        const code = (error as { code?: string } | null)?.code;
+        if (code !== 'P2002') throw error;
+        lastError = error;
+      }
+    }
+    throw (lastError ?? new HttpError(409, 'Could not book that donation. Try again.'));
+  },
+
+  async getDonation(id: string): Promise<DonationRecord> {
+    const row = await prisma.giftCardDonation.findUnique({
+      where: { id },
+      include: { giftCard: { include: { redemptions: true } } }
+    });
+    if (!row) throw new HttpError(404, 'No such donation.');
+    return toDonationRecord(row, await approverNames([row.approvedById]));
+  },
+
+  /**
+   * Record the listing after the fact.
+   *
+   * The policy's tax note turns on being named: keep the email confirming the
+   * listing and file it with the invoice. This is where that gets written down,
+   * so it exists when the accountant asks rather than in somebody's inbox.
+   */
+  async updateDonation(id: string, input: unknown): Promise<DonationRecord> {
+    if (!input || typeof input !== 'object') throw new HttpError(400, 'Nothing to update.');
+    const data = input as Record<string, unknown>;
+    const patch: Record<string, unknown> = {};
+    if (typeof data.listingEvidence === 'string') patch.listingEvidence = data.listingEvidence.trim().slice(0, 400) || null;
+    if (typeof data.notes === 'string') patch.notes = data.notes.trim().slice(0, 1000) || null;
+    if (typeof data.named === 'boolean') patch.named = data.named;
+    if (Object.keys(patch).length === 0) throw new HttpError(400, 'Nothing to update.');
+
+    const existing = await prisma.giftCardDonation.findUnique({ where: { id } });
+    if (!existing) throw new HttpError(404, 'No such donation.');
+    if (typeof patch.named === 'boolean') {
+      patch.score = donationScore({
+        local: existing.local,
+        bringsPeopleIn: existing.bringsPeopleIn,
+        named: patch.named as boolean,
+        existingRelationship: existing.existingRelationship,
+        dgrEndorsed: existing.dgrEndorsed
+      });
+    }
+    await prisma.giftCardDonation.update({ where: { id }, data: patch });
+    return this.getDonation(id);
+  },
+
+  /**
+   * The donation register for a year.
+   *
+   * The policy claims twelve $200 vouchers cost $500–800 rather than $2,400.
+   * This is where that claim gets checked: face value against value actually
+   * redeemed, at food cost, with the redemption rate measured instead of
+   * assumed — which the policy itself asks for.
+   */
+  async donationReport(input: { year?: number } = {}): Promise<DonationReport> {
+    const year = Number.isFinite(input.year) ? Number(input.year) : new Date().getFullYear();
+    const rows = await prisma.giftCardDonation.findMany({
+      where: { year },
+      orderBy: { sequence: 'asc' },
+      include: { giftCard: { include: { redemptions: true } } }
+    });
+    const names = await approverNames(rows.map((row) => row.approvedById));
+    const donations = rows.map((row) => toDonationRecord(row, names));
+
+    const faceValueCents = donations.reduce((sum, row) => sum + row.card.initialValueCents, 0);
+    const redeemedCents = donations.reduce((sum, row) => sum + row.card.redeemedCents, 0);
+    const now = new Date();
+    const expiredUnusedCents = rows.reduce((sum, row) => {
+      const expired = row.giftCard.expiresAt ? row.giftCard.expiresAt < now : false;
+      return expired ? sum + row.giftCard.balanceCents : sum;
+    }, 0);
+
+    const byVenueMap = new Map<string, { venue: string; count: number; faceValueCents: number; redeemedCents: number }>();
+    for (const row of donations) {
+      const entry = byVenueMap.get(row.venue) ?? { venue: row.venue, count: 0, faceValueCents: 0, redeemedCents: 0 };
+      entry.count += 1;
+      entry.faceValueCents += row.card.initialValueCents;
+      entry.redeemedCents += row.card.redeemedCents;
+      byVenueMap.set(row.venue, entry);
+    }
+
+    return {
+      year,
+      allocation: { year, cap: DONATION_ANNUAL_CAP, used: rows.length, remaining: Math.max(0, DONATION_ANNUAL_CAP - rows.length) },
+      summary: {
+        faceValueCents,
+        redeemedCents,
+        actualCostCents: donationActualCostCents(redeemedCents, DONATION_FOOD_COST_RATE),
+        expectedCostCents: donationExpectedCostCents(faceValueCents, DONATION_ASSUMED_REDEMPTION_RATE, DONATION_FOOD_COST_RATE),
+        // Value-weighted, because cost follows dollars and not card counts.
+        // Null with nothing issued, rather than a misleading zero.
+        redemptionRate: faceValueCents > 0 ? redeemedCents / faceValueCents : null,
+        unusedCount: donations.filter((row) => row.card.redeemedCents === 0).length,
+        expiredUnusedCents
+      },
+      byVenue: [...byVenueMap.values()].sort((a, b) => b.faceValueCents - a.faceValueCents),
+      donations
+    };
   },
 
   async redeem(input: unknown, redeemedById?: string) {

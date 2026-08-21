@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, api } from './lib/api';
-import type { GiftCardRedemptionInput } from '@alma/shared';
+import {
+  DONATION_ANNUAL_CAP,
+  DONATION_CRITERIA,
+  EMPTY_DONATION_CRITERIA,
+  assessDonation,
+  donationConditions,
+  isDonationBlackout,
+  type DonationAllocation,
+  type DonationCriteria,
+  type DonationCriterionId,
+  type GiftCardRedemptionInput
+} from '@alma/shared';
 import { ScanSheet } from './ScanSheet';
 
 /**
@@ -23,7 +34,46 @@ type Card = {
   initialValueCents: number;
   expiresAt?: string | null;
   recipientName?: string | null;
+  /**
+   * Present only on a voucher given away under the donation policy. It carries
+   * conditions an ordinary card does not — dine-in, never a Friday or Saturday
+   * night — and the person holding it will not have read them.
+   */
+  donation?: {
+    organisation: string;
+    reference: string;
+    venue: string;
+    conditions: string;
+  } | null;
 };
+
+/**
+ * The conditions banner. Shown wherever a donation voucher is on screen, and
+ * shown loudly when it is presented inside the blackout — a Friday or Saturday
+ * evening is exactly when a full room cannot absorb it, which is the whole
+ * reason the restriction exists.
+ *
+ * It warns; it does not block. A manager standing in a quiet Friday can still
+ * take it, and a rule the owner cannot override stops being a policy and starts
+ * being an obstacle.
+ */
+function DonationConditions({ card }: { card: Card }) {
+  if (!card.donation) return null;
+  const blackout = isDonationBlackout(new Date());
+  return (
+    <div className={`counter-donation-note ${blackout ? 'is-blackout' : ''}`}>
+      <p className="counter-donation-head">
+        Donation voucher · {card.donation.organisation} · {card.donation.reference}
+      </p>
+      <p>{card.donation.conditions}</p>
+      {blackout ? (
+        <p className="counter-donation-blackout">
+          It is a Friday or Saturday evening — this voucher is not valid now. Take it only if a manager says so.
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 const money = (cents: number) =>
   new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(cents / 100);
@@ -77,7 +127,7 @@ const TENDERS: Array<{ id: Tender; label: string; hint: string }> = [
 ];
 
 export function CounterApp() {
-  const [mode, setMode] = useState<'sell' | 'balance' | 'redeem'>('sell');
+  const [mode, setMode] = useState<'sell' | 'balance' | 'redeem' | 'donate'>('sell');
 
   return (
     <div className="counter">
@@ -111,9 +161,26 @@ export function CounterApp() {
           >
             Redeem
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'donate'}
+            className={mode === 'donate' ? 'is-on' : ''}
+            onClick={() => setMode('donate')}
+          >
+            Donation
+          </button>
         </div>
       </header>
-      {mode === 'sell' ? <SellPanel /> : mode === 'balance' ? <BalancePanel /> : <RedeemPanel />}
+      {mode === 'sell' ? (
+        <SellPanel />
+      ) : mode === 'balance' ? (
+        <BalancePanel />
+      ) : mode === 'redeem' ? (
+        <RedeemPanel />
+      ) : (
+        <DonatePanel />
+      )}
     </div>
   );
 }
@@ -445,6 +512,7 @@ function BalancePanel() {
                 ? 'Fully used'
                 : card.status.replace('_', ' ').toLowerCase()}
           </p>
+          <DonationConditions card={card} />
           <p className="counter-note">
             {money(card.initialValueCents)} originally
             {spent > 0 ? ` · ${money(spent)} spent` : ' · nothing spent yet'}
@@ -600,6 +668,7 @@ function RedeemPanel() {
         <section className="counter-card-found">
           <p className="counter-kicker">{card.code}</p>
           <p className="counter-balance">{money(card.balanceCents)}</p>
+          <DonationConditions card={card} />
           <p className="counter-note">
             {card.status !== 'ACTIVE'
               ? `This card is ${card.status.toLowerCase().replace('_', ' ')} — it cannot be used.`
@@ -634,6 +703,192 @@ function RedeemPanel() {
           <button type="button" className="counter-secondary" onClick={startOver}>Different card</button>
         </section>
       ) : null}
+    </main>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Donation                                                            */
+/* ------------------------------------------------------------------ */
+
+const DONATION_VENUES = ['St Alma', 'Alma Avalon', 'Either venue'];
+const DONATION_AMOUNTS = [150, 175, 200];
+
+/**
+ * Somebody has walked in and asked, or rung, and the answer is needed now.
+ *
+ * The screen leads with how many of the year's twelve are left, because that is
+ * the fact that decides it. Cash is not offered — the policy does not have a
+ * cash option, so neither does the till. Everything the register needs is asked
+ * here rather than promised to be filled in later, because later never comes.
+ */
+function DonatePanel() {
+  const [allocation, setAllocation] = useState<DonationAllocation | null>(null);
+  const [organisation, setOrganisation] = useState('');
+  const [cause, setCause] = useState('');
+  const [venue, setVenue] = useState('St Alma');
+  const [amount, setAmount] = useState(200);
+  const [criteria, setCriteria] = useState<DonationCriteria>({ ...EMPTY_DONATION_CRITERIA });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [issued, setIssued] = useState<{ card: Card; donation: { sequence: number; year: number } } | null>(null);
+
+  const refresh = () => {
+    api<DonationAllocation>('/api/gift-cards/donations/allocation')
+      .then(setAllocation)
+      .catch(() => setError('Could not check how many are left this year.'));
+  };
+
+  useEffect(refresh, []);
+
+  const verdict = useMemo(
+    () =>
+      assessDonation({
+        amountCents: amount * 100,
+        used: allocation?.used ?? 0,
+        criteria,
+        organisation
+      }),
+    [amount, allocation, criteria, organisation]
+  );
+
+  function toggle(id: DonationCriterionId) {
+    setCriteria((current) => ({ ...current, [id]: !current[id] }));
+  }
+
+  async function give() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api<{ card: Card; donation: { sequence: number; year: number } }>(
+        '/api/gift-cards/donations',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            organisation: organisation.trim(),
+            cause: cause.trim() || null,
+            venue,
+            amountCents: amount * 100,
+            ...criteria
+          })
+        }
+      );
+      setIssued(result);
+      refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not issue that voucher.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function reset() {
+    setIssued(null);
+    setOrganisation('');
+    setCause('');
+    setAmount(200);
+    setCriteria({ ...EMPTY_DONATION_CRITERIA });
+    setError(null);
+  }
+
+  if (issued) {
+    return (
+      <main className="counter-body counter-issued">
+        <p className="counter-kicker">Write this on the voucher</p>
+        <p className="counter-code">{issued.card.code}</p>
+        <p className="counter-issued-value">
+          {money(issued.card.initialValueCents)} · {issued.donation.year}/{issued.donation.sequence}
+        </p>
+        <p className="counter-note">{donationConditions()}</p>
+        <button type="button" className="counter-primary" onClick={reset}>
+          Done
+        </button>
+      </main>
+    );
+  }
+
+  const remaining = allocation?.remaining ?? 0;
+
+  return (
+    <main className="counter-body">
+      <div className={`counter-allocation ${remaining <= 0 ? 'is-spent' : remaining <= 2 ? 'is-low' : ''}`}>
+        <strong>{allocation ? remaining : '—'}</strong>
+        <span>
+          of {allocation?.cap ?? DONATION_ANNUAL_CAP} left {allocation ? `for ${allocation.year}` : ''}
+        </span>
+      </div>
+
+      {remaining <= 0 && allocation ? (
+        <p className="counter-note counter-donation-blackout">
+          They are all gone for {allocation.year}. The answer is no until the calendar turns — there is a template for
+          saying so on the Donations screen.
+        </p>
+      ) : null}
+
+      <label className="counter-field">
+        <span>Who is asking</span>
+        <input value={organisation} onChange={(event) => setOrganisation(event.target.value)} placeholder="Freshwater SLSC" />
+      </label>
+      <label className="counter-field">
+        <span>What for</span>
+        <input value={cause} onChange={(event) => setCause(event.target.value)} placeholder="Nippers raffle" />
+      </label>
+
+      <p className="counter-kicker">How much</p>
+      <div className="counter-amounts">
+        {DONATION_AMOUNTS.map((value) => (
+          <button key={value} type="button" className={amount === value ? 'is-on' : ''} onClick={() => setAmount(value)}>
+            ${value}
+          </button>
+        ))}
+      </div>
+
+      <p className="counter-kicker">Whose voucher</p>
+      <div className="counter-venues" role="group" aria-label="Which venue the voucher is for">
+        {DONATION_VENUES.map((name) => (
+          <button key={name} type="button" className={venue === name ? 'is-on' : ''} aria-pressed={venue === name} onClick={() => setVenue(name)}>
+            {name}
+          </button>
+        ))}
+      </div>
+
+      <p className="counter-kicker">
+        Does it stack up? {verdict.score} of {DONATION_CRITERIA.length}
+      </p>
+      <div className="counter-criteria" role="group" aria-label="Donation criteria">
+        {DONATION_CRITERIA.map((criterion) => (
+          <button
+            key={criterion.id}
+            type="button"
+            className={criteria[criterion.id] ? 'is-on' : ''}
+            aria-pressed={criteria[criterion.id]}
+            onClick={() => toggle(criterion.id)}
+          >
+            {criterion.label}
+          </button>
+        ))}
+      </div>
+
+      {verdict.warnings.map((warning) => (
+        <p key={warning} className="counter-note counter-donation-warn">
+          {warning}
+        </p>
+      ))}
+      {error ? <p className="counter-error">{error}</p> : null}
+
+      {/* Disabled until the allocation has actually come back: before it does
+          this screen would be assessing against a used count of zero, and could
+          offer a voucher in a year that is already spent. The server refuses it
+          either way, but offering a button that cannot work is worse than
+          waiting half a second for the number. */}
+      <button
+        type="button"
+        className="counter-primary"
+        disabled={busy || !allocation || !verdict.ok}
+        onClick={() => void give()}
+      >
+        {busy ? 'Issuing…' : `Give ${money(amount * 100)}`}
+      </button>
     </main>
   );
 }

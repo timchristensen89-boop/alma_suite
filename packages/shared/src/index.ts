@@ -1,3 +1,4 @@
+export * from './donations.js';
 export * from './dietary.js';
 export * from './availability.js';
 export * from './shift-claims.js';
