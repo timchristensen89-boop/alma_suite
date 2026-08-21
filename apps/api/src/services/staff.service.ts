@@ -88,6 +88,7 @@ import type {
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
 import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
+import { allocateTipsByVenue } from '../lib/tips-allocation.js';
 import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { configuredSuperRateFraction } from './settings.service.js';
 import { authService } from './auth.service.js';
@@ -6353,7 +6354,13 @@ export const staffService = {
     const startDate = parseDate(data.start, 'Tips start date');
     const endDate = parseDate(data.end, 'Tips end date');
     const venue = data.venue || 'All venues';
-    const venueWhere = data.venue ? { venue: data.venue } : {};
+    // A timesheet saved without a venue still belongs to somebody, and that
+    // somebody has a venue on their profile. Matching the Xero export's rule
+    // here is what stops a shift with a blank venue quietly costing its owner
+    // their share of the week's tips.
+    const venueWhere = data.venue
+      ? { OR: [{ venue: data.venue }, { venue: null, staffProfile: { venue: data.venue } }] }
+      : {};
 
     const [cashEntries, cardEntries, timesheets, paidRuns, manualHoursEntries] = await Promise.all([
       prisma.staffTipCashEntry.findMany({
@@ -6439,76 +6446,61 @@ export const staffService = {
       );
     }
 
-    const cashTipsCents = cashEntries.reduce((sum, entry) => sum + entry.amountCents, 0);
-    const squareTipsCents = cardEntries.reduce((sum, entry) => sum + entry.amountCents, 0);
-    const tipPoolCents = cashTipsCents + squareTipsCents;
-    const breakageCentsPerDay = data.breakageCentsPerDay ?? 3000;
-    const tradingDaySet = new Set([
-      ...cashEntries.map((e) => e.serviceDate.toISOString().slice(0, 10)),
-      ...cardEntries.map((e) => e.serviceDate.toISOString().slice(0, 10))
-    ]);
-    const tradingDays = tradingDaySet.size;
-    const breakageCents = tradingDays * breakageCentsPerDay;
-    const allocatablePoolCents = Math.max(0, tipPoolCents - breakageCents);
-    const byStaff = new Map<string, {
+    // Hours are gathered per person *per venue*. Somebody who did Thursday at
+    // Avalon and Saturday at St Alma has a share of each venue's pool, sized by
+    // what they worked there — not one merged share of a merged pot.
+    const byStaffVenue = new Map<string, {
       staffProfileId: string;
       name: string;
       roleTitle: string | null;
       venue: string | null;
       approvedHours: number;
     }>();
+    const keyOf = (staffProfileId: string, venue: string | null) => `${staffProfileId}::${venue ?? ''}`;
 
     // A manual-hours entry (incl. a Deputy import) is the authoritative hours
-    // for that person/week — skip their timesheet rows so the two don't
-    // double-count in the pool.
-    const manualStaffIds = new Set(manualHoursEntries.map((entry) => entry.staffProfileId));
+    // for that person at that venue for the week — skip their timesheet rows
+    // for the same venue so the two don't double-count. Their shifts at the
+    // *other* venue still stand: a Deputy import for St Alma says nothing
+    // about what they worked at Avalon.
+    const manualKeys = new Set(manualHoursEntries.map((entry) => keyOf(entry.staffProfileId, entry.venue)));
     for (const timesheet of timesheets) {
-      if (manualStaffIds.has(timesheet.staffProfileId)) continue;
+      const timesheetVenue = timesheet.venue ?? timesheet.staffProfile.venue;
+      if (manualKeys.has(keyOf(timesheet.staffProfileId, timesheetVenue))) continue;
       const hours = timesheetHours(timesheet);
       if (hours <= 0) continue;
-      const existing = byStaff.get(timesheet.staffProfileId) ?? {
+      const key = keyOf(timesheet.staffProfileId, timesheetVenue);
+      const existing = byStaffVenue.get(key) ?? {
         staffProfileId: timesheet.staffProfileId,
         name: `${timesheet.staffProfile.firstName} ${timesheet.staffProfile.lastName}`,
         roleTitle: timesheet.roleTitle ?? timesheet.staffProfile.roleTitle,
-        venue: timesheet.venue ?? timesheet.staffProfile.venue,
+        venue: timesheetVenue,
         approvedHours: 0
       };
       existing.approvedHours += hours;
-      byStaff.set(timesheet.staffProfileId, existing);
+      byStaffVenue.set(key, existing);
     }
 
     // Inject manual hours entries into the allocation pool
     for (const entry of manualHoursEntries) {
-      const existing = byStaff.get(entry.staffProfileId) ?? {
+      const key = keyOf(entry.staffProfileId, entry.venue);
+      const existing = byStaffVenue.get(key) ?? {
         staffProfileId: entry.staffProfileId,
         name: `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}`,
         roleTitle: entry.staffProfile.roleTitle,
-        venue: entry.staffProfile.venue,
+        venue: entry.venue,
         approvedHours: 0
       };
       existing.approvedHours += entry.hours;
-      byStaff.set(entry.staffProfileId, existing);
+      byStaffVenue.set(key, existing);
     }
 
-    const approvedHours = Array.from(byStaff.values()).reduce((sum, row) => sum + row.approvedHours, 0);
-    let allocatedCents = 0;
-    const entitlements = Array.from(byStaff.values())
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((row, index, rows) => {
-        const isLast = index === rows.length - 1;
-        const amountCents = approvedHours > 0
-          ? isLast
-            ? allocatablePoolCents - allocatedCents
-            : Math.round((row.approvedHours / approvedHours) * allocatablePoolCents)
-          : 0;
-        allocatedCents += amountCents;
-        return {
-          ...row,
-          approvedHours: Math.round(row.approvedHours * 100) / 100,
-          amountCents,
-          paymentMethod: 'CASH' as const
-        };
-      });
+    const allocation = allocateTipsByVenue({
+      cashEntries,
+      cardEntries,
+      hours: Array.from(byStaffVenue.values())
+    });
+    const { cashTipsCents, squareTipsCents, tipPoolCents, tradingDays, approvedHours, entitlements } = allocation;
 
     return {
       start: startDate.toISOString(),
@@ -6517,18 +6509,20 @@ export const staffService = {
       cashTipsCents,
       squareTipsCents,
       tipPoolCents,
-      breakageCentsPerDay,
-      breakageCents,
-      allocatablePoolCents,
       tradingDays,
-      approvedHours: Math.round(approvedHours * 100) / 100,
+      approvedHours,
+      venues: allocation.venues,
+      unassigned: allocation.unassigned,
       paidRuns: paidRuns.map((run) => ({
         id: run.id,
         paidAt: run.paidAt.toISOString(),
         tipPoolCents: run.tipPoolCents,
         lineCount: run.lines.length
       })),
-      paidEntitlements: (paidRuns[0]?.lines ?? []).map((line) => ({
+      // Every locked run in range, not just the first. Scoped to a venue there
+      // is at most one; unscoped there is one per venue, and taking [0] there
+      // silently reported half the group's paid tips.
+      paidEntitlements: paidRuns.flatMap((run) => run.lines).map((line) => ({
         staffProfileId: line.staffProfileId,
         name: `${line.staffProfile.firstName} ${line.staffProfile.lastName}`,
         roleTitle: line.staffProfile.roleTitle,
@@ -7080,7 +7074,7 @@ export const staffService = {
         venue: data.venue,
         weekStart: startDate,
         weekEnd: endDate,
-        tipPoolCents: summary.allocatablePoolCents,
+        tipPoolCents: summary.tipPoolCents,
         notes: data.notes || null,
         paidById: paidById ?? null,
         lines: {

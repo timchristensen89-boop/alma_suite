@@ -16438,7 +16438,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   const [manualStaffId, setManualStaffId] = useState('');
   const [manualHours, setManualHours] = useState('');
   const [manualNotes, setManualNotes] = useState('');
-  const [breakagePerDay, setBreakagePerDay] = useState('30');
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [adjustments, setAdjustments] = useState<Record<string, { adjustment: string; excluded: boolean; notes: string }>>({});
   const [summary, setSummary] = useState<StaffTipsSummary | null>(null);
@@ -16461,7 +16460,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     })();
   }, []);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
-  const breakageCentsPerDay = useMemo(() => Math.round((Number(breakagePerDay) || 0) * 100), [breakagePerDay]);
   const venueOptions = useMemo(
     () => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]).map((value) => ({ label: value, value })),
     [staff]
@@ -16474,8 +16472,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       const query = new URLSearchParams({
         start: weekStart.toISOString(),
         end: weekEnd.toISOString(),
-        venue,
-        breakageCentsPerDay: String(breakageCentsPerDay)
+        venue
       });
       setSummary(await api<StaffTipsSummary>(`/api/staff/tips?${query.toString()}`));
     } catch (err) {
@@ -16483,7 +16480,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     } finally {
       setLoading(false);
     }
-  }, [breakageCentsPerDay, venue, weekEnd, weekStart]);
+  }, [venue, weekEnd, weekStart]);
 
   useEffect(() => {
     if (!venue && venueOptions[0]) setVenue(venueOptions[0].value);
@@ -16548,7 +16545,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   }, [adjustments, summary?.entitlements]);
 
   const totalPayoutCents = reviewedRows.reduce((sum, row) => sum + row.finalAmountCents, 0);
-  const payoutVarianceCents = totalPayoutCents - (summary?.allocatablePoolCents ?? 0);
+  const payoutVarianceCents = totalPayoutCents - (summary?.tipPoolCents ?? 0);
   const lockedRows = summary?.paidEntitlements ?? [];
   const hasPaidRun = lockedRows.length > 0;
 
@@ -16774,7 +16771,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     try {
       const result = await api<{ csv: string }>('/api/staff/tips/export/csv', {
         method: 'POST',
-        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay, adjustments: adjustmentPayload })
+        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, adjustments: adjustmentPayload })
       });
       downloadTextFile(`alma-tips-${venue}-${toDateInput(weekStart)}.csv`, result.csv);
       setMessage('Tips CSV exported.');
@@ -16808,7 +16805,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
           start: weekStart.toISOString(),
           end: weekEnd.toISOString(),
           venue,
-          breakageCentsPerDay,
           ...(abaAccountKey ? { accountKey: abaAccountKey } : {})
         })
       });
@@ -16828,7 +16824,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       return;
     }
     if (payoutVarianceCents !== 0) {
-      setMessage(`Final payout must balance to the allocatable pool (after breakage) before marking paid. Current variance is ${formatCents(payoutVarianceCents)}.`);
+      setMessage(`Final payout must balance to the tip pool before marking paid. Current variance is ${formatCents(payoutVarianceCents)}.`);
       return;
     }
     if (!window.confirm(`Mark ${formatCents(totalPayoutCents)} tips paid for ${venue}? This creates the approved tip run used by Reports payroll export.`)) {
@@ -16839,7 +16835,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     try {
       await api('/api/staff/tips/mark-paid', {
         method: 'POST',
-        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay, notes: payoutNotes, adjustments: adjustmentPayload })
+        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, notes: payoutNotes, adjustments: adjustmentPayload })
       });
       setMessage('Tips approved and paid. You can now export ABA or CSV.');
       setPayoutNotes('');
@@ -16908,7 +16904,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       />
 
       {/* Tips week navigator — same editorial style as the roster board so
-          the two pages feel like one tool. Venue + breakage live below. */}
+          the two pages feel like one tool. The venue picker lives below. */}
       <div className="alma-roster-header alma-roster-header--tight">
         <div className="alma-roster-header-titles">
           <span className="alma-roster-eyebrow">Staff · Tips</span>
@@ -16975,44 +16971,58 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         </div>
       </div>
 
-      {/* Venue + breakage controls live just below the week selector. */}
-      <TipsSection title="Review settings" summary={`${venue || 'Choose venue'} · $${breakagePerDay || 0}/day breakage`}>
+      {/* Venue picker lives just below the week selector. Tips pool per venue,
+          so this choice decides whose money is on screen — nothing on this page
+          is ever a group total. */}
+      <TipsSection title="Review settings" summary={venue || 'Choose venue'}>
         <Card padding="tight">
           <div className="tips-controls-row">
             <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
-            <Input label="Breakage/day ($)" type="number" min="0" step="1" value={breakagePerDay} onChange={(event) => setBreakagePerDay(event.currentTarget.value)} style={{ width: 130 }} />
           </div>
+          <p className="subtle" style={{ marginTop: 8, marginBottom: 0 }}>
+            Each venue's tips are split between the people who worked that venue. Switch venues to review the other pool.
+          </p>
         </Card>
       </TipsSection>
 
       {/* Summary stats */}
-      <TipsSection title="Summary" summary={`${formatCents(summary?.allocatablePoolCents ?? 0)} allocatable · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
+      <TipsSection title="Summary" summary={`${formatCents(summary?.tipPoolCents ?? 0)} to split · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
         <div className="stats-grid">
-          <StatCard label="Breakage" value={formatCents(summary?.breakageCents ?? 0)} hint={`$${breakagePerDay}/day × ${summary?.tradingDays ?? 0} days`} loading={loading} />
-          <StatCard label="Allocatable pool" value={formatCents(summary?.allocatablePoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
+          <StatCard label="Tip pool" value={formatCents(summary?.tipPoolCents ?? 0)} hint={`Cash + card at ${venue || 'this venue'}`} loading={loading} />
           <StatCard label="Final payout" value={formatCents(totalPayoutCents)} hint={payoutVarianceCents === 0 ? 'Balances to pool' : `${formatCents(Math.abs(payoutVarianceCents))} ${payoutVarianceCents > 0 ? 'over' : 'under'}`} loading={loading} />
           <StatCard label="Approved hours" value={roundHours(summary?.approvedHours ?? 0)} hint="Used for allocation" loading={loading} />
           <StatCard label="Run status" value={hasPaidRun ? 'Locked' : 'Waiting'} hint={hasPaidRun ? 'Payroll export ready' : 'Approve at the bottom'} loading={loading} />
         </div>
       </TipsSection>
 
+      {/* Hours with no venue are in nobody's pool. Say so loudly — the whole
+          point of naming them is that someone is otherwise quietly unpaid. */}
+      {summary?.unassigned?.length ? (
+        <Card padding="tight">
+          <p className="error-text" style={{ margin: 0 }}>
+            {summary.unassigned.length === 1 ? '1 person has' : `${summary.unassigned.length} people have`} approved hours with no venue,
+            so they are in no tip pool: {summary.unassigned.map((row) => `${row.name} (${roundHours(row.approvedHours)}h)`).join(', ')}.
+            Set the venue on their timesheet or their staff profile, then refresh.
+          </p>
+        </Card>
+      ) : null}
+
       {loading ? <Spinner label="Loading tips..." /> : null}
       {message && !messageTarget ? <p className={message.includes('Could') || message.includes('Choose') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
       {/* Per-day breakdown */}
       {(summary?.cardEntries.length || summary?.cashEntries.length) ? (
-        <TipsSection title="Daily breakdown" summary={`Square + cash less $${breakagePerDay}/day breakage`}>
-          <Card title="Daily breakdown" subtitle={`Square + cash tips minus $${breakagePerDay} breakage per trading day.`}>
+        <TipsSection title="Daily breakdown" summary="Card + cash, night by night">
+          <Card title="Daily breakdown" subtitle={`Card and cash tips taken at ${venue || 'this venue'}, night by night.`}>
             <div className="table-scroll">
               <table className="report-table">
                 <thead>
                   <tr>
                     <th>Date</th>
                     <th>Day</th>
-                    <th>Square tips</th>
+                    <th>Card tips</th>
                     <th>Cash tips</th>
-                    <th>− Breakage</th>
-                    <th>= Allocatable</th>
+                    <th>Total</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -17034,15 +17044,13 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
                       .sort(([a], [b]) => a.localeCompare(b))
                       .map(([date, row]) => {
                         const dayName = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
-                        const allocatable = Math.max(0, row.square + row.cash - breakageCentsPerDay);
                         return (
                           <tr key={date}>
                             <td>{date}</td>
                             <td>{dayName}</td>
                             <td>{formatCents(row.square)}</td>
                             <td>{row.cash ? formatCents(row.cash) : <span className="subtle">—</span>}</td>
-                            <td className="subtle">−{formatCents(breakageCentsPerDay)}</td>
-                            <td><strong>{formatCents(allocatable)}</strong></td>
+                            <td><strong>{formatCents(row.square + row.cash)}</strong></td>
                           </tr>
                         );
                       });
@@ -17053,8 +17061,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
                     <td colSpan={2}><strong>Total</strong></td>
                     <td><strong>{formatCents(summary?.squareTipsCents ?? 0)}</strong></td>
                     <td><strong>{formatCents(summary?.cashTipsCents ?? 0)}</strong></td>
-                    <td className="subtle">−{formatCents(summary?.breakageCents ?? 0)}</td>
-                    <td><strong>{formatCents(summary?.allocatablePoolCents ?? 0)}</strong></td>
+                    <td><strong>{formatCents(summary?.tipPoolCents ?? 0)}</strong></td>
                   </tr>
                 </tfoot>
               </table>
@@ -17334,7 +17341,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
 
       {/* Payroll status + entitlements */}
       <TipsSection title="Staff entitlements" summary={`${reviewedRows.length} staff · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
-        <Card title="Staff entitlements" subtitle={`Tip pool after $${breakagePerDay}/day breakage deduction, split by approved hours. Review and adjust before locking.`} padding="none" className="tips-entitlements-card">
+        <Card title="Staff entitlements" subtitle={`${venue || 'This venue'}'s tip pool split by approved hours. Review and adjust before locking.`} padding="none" className="tips-entitlements-card">
         <div className="tips-status-bar">
           <div className={`tips-status-panel ${hasPaidRun ? 'is-locked' : ''}`}>
             <span>
@@ -17457,7 +17464,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       ) : null}
 
       <TipsSection title="Approve and pay" summary={hasPaidRun ? 'Export the approved run' : 'Final payroll approval'}>
-        <Card title={hasPaidRun ? 'Approved run exports' : 'Approve and pay'} subtitle={hasPaidRun ? 'Export the locked tip run for bank payment or payroll records.' : 'Approve once the final payout balances to the allocatable pool.'}>
+        <Card title={hasPaidRun ? 'Approved run exports' : 'Approve and pay'} subtitle={hasPaidRun ? 'Export the locked tip run for bank payment or payroll records.' : 'Approve once the final payout balances to the tip pool.'}>
           <div className="tips-approval-footer">
             <div>
               <strong>{hasPaidRun ? 'Ready to export' : 'Waiting for review'}</strong>
