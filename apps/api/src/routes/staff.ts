@@ -792,6 +792,62 @@ staffRouter.get('/roster-board', requireManager, async (req, res, next) => {
 // Read-only published team roster — visible to every authenticated user
 // (staff included) so they can see a copy of the live roster. Published
 // shifts only, venue-scoped. No manager guard.
+/*
+ * A staff member's calendar feed.
+ *
+ * No auth middleware on purpose: Apple Calendar and Google Calendar cannot
+ * carry a session when they poll a subscription, so the token in the path is
+ * the credential. It is 32 random bytes and rotatable, and the service returns
+ * the same flat 404 for a malformed token as for one that does not exist, so
+ * this cannot be used to probe for valid tokens.
+ */
+staffRouter.get('/calendar/:token.ics', async (req, res, next) => {
+  try {
+    const { ics, filename } = await staffService.calendarFeed(String(req.params.token ?? ''));
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    // inline, not attachment: a subscribing client should read it, not offer
+    // to save it. A browser hitting the same URL still downloads it.
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    // Clients poll this on their own schedule; a cached copy would show a
+    // roster that has since been amended.
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.send(ics);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// The signed-in staff member's own links, for the "My calendar" panel.
+staffRouter.get('/me/calendar', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to get your calendar link.');
+    res.json(await staffService.calendarLinks(req.user.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Lost phone, or someone leaving: burn the old link and issue a new one.
+staffRouter.post('/me/calendar/rotate', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to reset your calendar link.');
+    const { links } = await staffService.rotateCalendarToken(req.user.id);
+    res.json(links);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// A manager resetting somebody else's, for the same reasons.
+staffRouter.post('/:id/calendar/rotate', requireManager, async (req, res, next) => {
+  try {
+    const { links } = await staffService.rotateCalendarToken(String(req.params.id));
+    res.json(links);
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/roster/published', async (req, res, next) => {
   try {
     const start = typeof req.query.start === 'string' ? req.query.start : undefined;

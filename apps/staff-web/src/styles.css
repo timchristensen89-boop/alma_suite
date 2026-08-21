@@ -9290,3 +9290,39 @@ html[data-theme='dark'] .alma-taskbar-sheet { background: var(--color-elevated, 
 .labour-daycell.is-good em { color: #2f6b3c; }
 .labour-daycell.is-warning em { color: #9a6b1f; }
 .labour-daycell.is-danger em { color: #b3262e; }
+
+/* ------------------------------------------------------------------ */
+/* Calendar subscription                                               */
+/* ------------------------------------------------------------------ */
+
+.staff-calendar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.staff-calendar-hint { margin: 0 0 0.9rem; line-height: 1.5; }
+
+.staff-calendar-secret summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+/*
+ * The URL is a credential, and it is long. Wrapped rather than truncated so it
+ * can be read off the screen and typed in by hand when the clipboard is not
+ * available — which on a locked-down work phone is often.
+ */
+.staff-calendar-url {
+  margin: 0.6rem 0;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  user-select: all;
+}

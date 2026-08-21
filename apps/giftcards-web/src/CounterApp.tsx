@@ -126,8 +126,36 @@ const TENDERS: Array<{ id: Tender; label: string; hint: string }> = [
   { id: 'COMP', label: 'Comp', hint: 'No money taken' }
 ];
 
+/** Tim, by the address he signs in with. Mirrors the API's GIFT_CARD_OWNER_EMAIL. */
+const GIFT_CARD_OWNER_EMAIL = 'tim@almagroup.com.au';
+
 export function CounterApp() {
   const [mode, setMode] = useState<'sell' | 'balance' | 'redeem' | 'donate'>('sell');
+  /**
+   * Whether the Donation tab is offered at all.
+   *
+   * A counter iPad usually signs in as a venue device, and giving a voucher
+   * away spends one of the group's twelve for the year — a director's call, not
+   * a floor one. The API refuses everyone but Tim outright, so showing the tab
+   * to whoever is on would only be a button that 403s. He can still reach it
+   * from any device by signing in as himself.
+   */
+  const [canDonate, setCanDonate] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<{ user: { email?: string | null } | null }>('/api/auth/me')
+      .then((session) => {
+        if (cancelled) return;
+        setCanDonate(session.user?.email?.toLowerCase() === GIFT_CARD_OWNER_EMAIL);
+      })
+      .catch(() => {
+        // A device that cannot say who it is does not get the tab.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="counter">
@@ -161,22 +189,24 @@ export function CounterApp() {
           >
             Redeem
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'donate'}
-            className={mode === 'donate' ? 'is-on' : ''}
-            onClick={() => setMode('donate')}
-          >
-            Donation
-          </button>
+          {canDonate ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'donate'}
+              className={mode === 'donate' ? 'is-on' : ''}
+              onClick={() => setMode('donate')}
+            >
+              Donation
+            </button>
+          ) : null}
         </div>
       </header>
       {mode === 'sell' ? (
         <SellPanel />
       ) : mode === 'balance' ? (
         <BalancePanel />
-      ) : mode === 'redeem' ? (
+      ) : mode === 'redeem' || !canDonate ? (
         <RedeemPanel />
       ) : (
         <DonatePanel />

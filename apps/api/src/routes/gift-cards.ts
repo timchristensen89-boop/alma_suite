@@ -283,9 +283,19 @@ giftCardsRouter.post('/physical/activate', requireManager, async (req, res, next
 /* Donations and sponsorship                                           */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Owner-only, not manager-only.
+ *
+ * Giving one away spends a scarce, group-wide resource — one of twelve for the
+ * year — and the policy's templates are signed by the director. requireManager
+ * would let any venue manager burn an allocation the whole group shares.
+ * requireGiftCardOwner is the same gate that guards promo codes and checkout
+ * settings: Tim, by email, and nobody else.
+ */
+
 // What is left of this year's twelve. Read by both the admin screen and the
 // counter iPad before either offers the button.
-giftCardsRouter.get('/donations/allocation', requireManager, async (req, res, next) => {
+giftCardsRouter.get('/donations/allocation', requireGiftCardOwner, async (req, res, next) => {
   try {
     const year = typeof req.query.year === 'string' ? Number(req.query.year) : undefined;
     res.json(await giftCardService.donationAllocation(Number.isFinite(year) ? year : undefined));
@@ -298,7 +308,7 @@ giftCardsRouter.get('/donations/allocation', requireManager, async (req, res, ne
 // donated voucher is never a sale — it carries no paidAt, so it cannot show up
 // in takings — and the question asked of it is a different one: what did the
 // programme actually cost, against what it looks like from the outside.
-giftCardsRouter.get('/donations/report', requireManager, async (req, res, next) => {
+giftCardsRouter.get('/donations/report', requireGiftCardOwner, async (req, res, next) => {
   try {
     const year = typeof req.query.year === 'string' ? Number(req.query.year) : undefined;
     res.json(await giftCardService.donationReport({ year: Number.isFinite(year) ? year : undefined }));
@@ -307,7 +317,7 @@ giftCardsRouter.get('/donations/report', requireManager, async (req, res, next) 
   }
 });
 
-giftCardsRouter.post('/donations', requireManager, async (req, res, next) => {
+giftCardsRouter.post('/donations', requireGiftCardOwner, async (req, res, next) => {
   try {
     res.status(201).json(await giftCardService.recordDonation(req.body, req.user));
   } catch (error) {
@@ -317,7 +327,7 @@ giftCardsRouter.post('/donations', requireManager, async (req, res, next) => {
 
 // Record the listing after the event: the email confirming you were named is
 // what supports treating this as sponsorship rather than a gift.
-giftCardsRouter.patch('/donations/:id', requireManager, async (req, res, next) => {
+giftCardsRouter.patch('/donations/:id', requireGiftCardOwner, async (req, res, next) => {
   try {
     res.json(await giftCardService.updateDonation(String(req.params.id), req.body));
   } catch (error) {

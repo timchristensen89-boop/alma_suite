@@ -2852,6 +2852,8 @@ function StaffMemberRosterPage() {
 
       <OpenShiftsCard onClaimApproved={loadRoster} refreshKey={swapRefresh} />
 
+      <MyCalendarCard />
+
       <Card title="Upcoming shifts" subtitle="Upcoming rostered shifts and confirmations." padding="none">
         {loading ? <Spinner label="Loading roster…" /> : null}
         {!loading && upcoming.length === 0 ? <EmptyState title="No upcoming shifts" description="Published shifts will appear here once they’re assigned." /> : null}
@@ -3024,6 +3026,114 @@ function ShiftClaimsPanel({ onDecided }: { onDecided: () => Promise<void> }) {
 // Shifts published with nobody on them. Staff put their hand up here; a
 // manager decides. Hidden entirely when there is nothing open, so the roster
 // page doesn't carry a permanently empty box.
+/**
+ * "Put my shifts on my phone."
+ *
+ * A subscription, not a download. The list above is right today; the
+ * subscription is still right after a manager moves a shift on Thursday, which
+ * is the whole reason this exists. The download is kept as a fallback for
+ * anyone whose calendar app will not take a feed.
+ *
+ * The link is a credential — anybody holding it can read this person's shifts —
+ * so it is not shown in full until asked for, and it can be reset from here if
+ * a phone goes missing.
+ */
+function MyCalendarCard() {
+  const [links, setLinks] = useState<{ feedUrl: string; subscribeUrl: string; issuedAt: string | null } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [revealed, setRevealed] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setLinks(await api<{ feedUrl: string; subscribeUrl: string; issuedAt: string | null }>('/api/staff/me/calendar'));
+    } catch {
+      setError('Could not get your calendar link.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function copy() {
+    if (!links) return;
+    try {
+      await navigator.clipboard.writeText(links.feedUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard refused — the link is on screen to copy by hand.
+      setRevealed(true);
+    }
+  }
+
+  async function reset() {
+    setResetting(true);
+    setError(null);
+    try {
+      const next = await api<{ feedUrl: string; subscribeUrl: string }>('/api/staff/me/calendar/rotate', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      setLinks({ ...next, issuedAt: new Date().toISOString() });
+      setRevealed(true);
+    } catch {
+      setError('Could not reset the link.');
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  return (
+    <Card
+      title="My shifts on my phone"
+      subtitle="Add it once. When a shift moves, your calendar moves with it."
+    >
+      {loading ? <Spinner label="Getting your link…" /> : null}
+      {error ? <p className="error-text">{error}</p> : null}
+      {links ? (
+        <>
+          <div className="staff-calendar-actions">
+            {/* webcal:// so iOS and macOS subscribe rather than importing a
+                snapshot that goes stale the first time a shift changes. */}
+            <Button type="button" onClick={() => window.location.assign(links.subscribeUrl)}>
+              Add to my calendar
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void copy()}>
+              {copied ? 'Link copied' : 'Copy link'}
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => window.open(links.feedUrl, '_blank', 'noopener')}>
+              Download this week
+            </Button>
+          </div>
+          <p className="subtle staff-calendar-hint">
+            On an iPhone, tap <strong>Add to my calendar</strong>. On Android or a computer, tap{' '}
+            <strong>Copy link</strong> and paste it into Google Calendar under <em>Other calendars → From URL</em>.
+          </p>
+          <details className="staff-calendar-secret" open={revealed}>
+            <summary>Show the link, and reset it if you have lost your phone</summary>
+            <p className="staff-calendar-url">{links.feedUrl}</p>
+            <p className="subtle">
+              Anyone with this link can see your shifts — don't post it anywhere. Resetting it stops the old one
+              working straight away, and you'll need to add the calendar again on every device.
+            </p>
+            <Button type="button" size="sm" variant="danger" disabled={resetting} onClick={() => void reset()}>
+              {resetting ? 'Resetting…' : 'Reset my link'}
+            </Button>
+          </details>
+        </>
+      ) : null}
+    </Card>
+  );
+}
+
 function OpenShiftsCard({ onClaimApproved, refreshKey = 0 }: { onClaimApproved: () => Promise<void>; refreshKey?: number }) {
   const [shifts, setShifts] = useState<StaffOpenShift[]>([]);
   const [loading, setLoading] = useState(true);
@@ -12991,7 +13101,9 @@ function RosterPage({
     setMessage(null);
     setMessageTarget('publish');
     try {
-      await api('/api/staff/roster/publish', {
+      const published = await api<{
+        notified?: { emailed: number; skipped: Array<{ name: string; reason: string }> };
+      }>('/api/staff/roster/publish', {
         method: 'POST',
         body: JSON.stringify({
           start: weekStart.toISOString(),
@@ -13025,7 +13137,19 @@ function RosterPage({
       });
       await refreshBoard(weekStart, weekEnd);
       setPublishPreviewOpen(false);
-      setMessage('Draft roster published.');
+      // Say who was actually told. A roster that silently misses somebody is
+      // the failure this is meant to prevent, so the skipped names are named.
+      const notified = published?.notified;
+      if (!notified || notified.emailed === 0 && notified.skipped.length === 0) {
+        setMessage('Draft roster published.');
+      } else {
+        const emailed = `${notified.emailed} ${notified.emailed === 1 ? 'person' : 'people'} emailed their shifts and calendar link`;
+        setMessage(
+          notified.skipped.length === 0
+            ? `Published — ${emailed}.`
+            : `Published — ${emailed}. Not told: ${notified.skipped.map((row) => `${row.name} (${row.reason})`).join(', ')}.`
+        );
+      }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not publish roster.');
     } finally {
