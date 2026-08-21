@@ -1480,6 +1480,9 @@ export function App() {
   // The category tab bar, honouring the user's saved order/hidden/groups.
   const tabsConfig: TabsConfig = home.categories ?? { order: [], hidden: [], groups: [] };
   const visibleTabs = useMemo(() => visibleTabTokens(menu.map((category) => category.name), tabsConfig), [menu, tabsConfig]);
+  // The two tabs that bring their own search bar. Anywhere else the header
+  // search is the only one there is, so it stays.
+  const pageOwnsSearch = activeCategory === WINE_TAB || activeCategory === '__all__';
 
   // Nav editing (reorder, group, hide, rename) lives ONLY in the board
   // editor now — the register just reads this config. Board TILES are still
@@ -1559,6 +1562,34 @@ export function App() {
   // count as 4/2 slots. Under-estimating is safe (a roomier page), scrolling
   // away is not.
   const [searchTerm, setSearchTerm] = useState('');
+  // The chip rows on Full menu and Wine cost about a hundred pixels of list.
+  // Worth it while you are narrowing, dead weight once you know what you are
+  // looking for — so they fold, and the choice sticks to the device. Nothing
+  // is lost while they are folded: the tally and Clear stay on the search
+  // line, so a filter left on is still visible.
+  const [chipsOpen, setChipsOpen] = useState(() => {
+    try {
+      return localStorage.getItem('alma.pos.filterChips') !== 'off';
+    } catch {
+      return true;
+    }
+  });
+  const toggleChips = useCallback(() => {
+    setChipsOpen((open) => {
+      try {
+        localStorage.setItem('alma.pos.filterChips', open ? 'off' : 'on');
+      } catch {
+        /* private browsing — the fold still works, it just won't be remembered */
+      }
+      return !open;
+    });
+  }, []);
+  // Switching to Full menu or Wine takes the header search off screen. Its
+  // term has to go with it — a filter still running behind a box you can no
+  // longer see reads as a page with items missing.
+  useEffect(() => {
+    if (pageOwnsSearch && searchTerm) setSearchTerm('');
+  }, [pageOwnsSearch, searchTerm]);
   useEffect(() => {
     const el = boardPagerRef.current;
     if (!el) return;
@@ -3203,7 +3234,12 @@ export function App() {
             ))}
           </select>
         )}
-        {view === 'register' ? (
+        {/* One search bar, never two. Full menu and Wine each carry their own
+            search — richer than this one (a wine is found by grape, region or
+            a word from the note; a dish by what it suits) and sitting right
+            above the list it filters. Showing this as well was two boxes
+            competing for the same job and a row of screen nobody got back. */}
+        {view === 'register' && !pageOwnsSearch ? (
           <PosSearchBox onTerm={setSearchTerm} />
         ) : null}
         <span style={{ flex: 1 }} />
@@ -3586,7 +3622,17 @@ export function App() {
                             Clear
                           </button>
                         ) : null}
+                        <button
+                          type="button"
+                          className="pos-wine-fold"
+                          aria-expanded={chipsOpen}
+                          onClick={toggleChips}
+                        >
+                          {chipsOpen ? 'Fewer filters' : 'Filters'}
+                        </button>
                       </div>
+                      {chipsOpen ? (
+                      <>
                       <div className="pos-wine-chips">
                         <span className="pos-wine-label">Pour</span>
                         {chip('any', 'Everything', wineFilters.pour === 'any', wines.length, () =>
@@ -3647,6 +3693,8 @@ export function App() {
                           )
                         )}
                       </div>
+                      </>
+                      ) : null}
                     </div>
                     <div className="pos-wine-rows">
                       {shownWines.length === 0 ? (
@@ -3773,7 +3821,17 @@ export function App() {
                             Clear
                           </button>
                         ) : null}
+                        <button
+                          type="button"
+                          className="pos-wine-fold"
+                          aria-expanded={chipsOpen}
+                          onClick={toggleChips}
+                        >
+                          {chipsOpen ? 'Fewer filters' : 'Filters'}
+                        </button>
                       </div>
+                      {chipsOpen ? (
+                      <>
                       <div className="pos-wine-chips">
                         <span className="pos-wine-label">Where</span>
                         {chip('k-any', 'Everything', menuFilters.kind === 'any', all.length, () =>
@@ -3828,6 +3886,8 @@ export function App() {
                             setMenuFilters({ ...menuFilters, avail: 'off' })
                           )}
                         </div>
+                      ) : null}
+                      </>
                       ) : null}
                       {menuFilters.diet ? (
                         <p className="pos-menu-caveat">
