@@ -329,6 +329,12 @@ export function BoardEditor({
           </button>
         </div>
         <span className="pos-be-who">{operatorName ? `${operatorName}'s layout` : 'This layout'} · saves as you go</span>
+        {/* The two appearance pickers travel together. On anything wider than
+            a phone this wrapper is display:contents, so the header is exactly
+            the row it has always been; on a phone it becomes one flex item and
+            the pair wraps onto its own line as a unit instead of the marks
+            being squeezed to a stub beside the tabs. */}
+        <div className="pos-be-look">
         <span className="pos-be-iconpick" title="Food-group marks on the nav and the board">
           {ICON_STYLES.map((option) => (
             <button
@@ -363,6 +369,7 @@ export function BoardEditor({
             </button>
           ))}
         </span>
+        </div>
         <button type="button" className="pos-be-add" disabled={!undo} onClick={undoLast}>
           ↶ Undo
         </button>

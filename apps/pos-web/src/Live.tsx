@@ -29,7 +29,16 @@ export function Live() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    document.body.classList.toggle('pos-dark', localStorage.getItem('alma.pos.theme') === 'dark');
+    // Wrapped because a till can be running inside a webview with site data
+    // switched off, where merely touching localStorage throws — and an
+    // unhandled throw here takes the whole board down over a colour scheme.
+    let dark = false;
+    try {
+      dark = localStorage.getItem('alma.pos.theme') === 'dark';
+    } catch {
+      /* no stored preference reachable — the light board is the default */
+    }
+    document.body.classList.toggle('pos-dark', dark);
   }, []);
 
   useEffect(() => {
@@ -55,9 +64,37 @@ export function Live() {
   const grandTotal = (board?.venues ?? []).reduce((sum, venue) => sum + venue.totalCents, 0);
   const grandCovers = (board?.venues ?? []).reduce((sum, venue) => sum + venue.covers, 0);
 
+  // Opened from the register's app switcher, Live gets its own window so the
+  // two run side by side. In that case the way back is to close this one —
+  // the register is still there behind it, with its open bill intact.
+  // Reached any other way (a bookmark, a shared link, a second device) there
+  // is nothing behind, so the button navigates instead. The label says which
+  // of the two is about to happen rather than guessing on the operator's
+  // behalf: they were stuck here because there was no button at all.
+  const ownWindow = typeof window !== 'undefined' && Boolean(window.opener) && !window.opener?.closed;
+  const backToRegister = () => {
+    if (ownWindow) {
+      window.close();
+      return;
+    }
+    // main.tsx picks the surface at load time, so dropping the hash has to
+    // reload rather than just change it.
+    window.location.href = `${window.location.origin}${window.location.pathname}`;
+  };
+
   return (
     <div className="live-shell">
       <header className="live-header">
+        {/* First, on the left, where a back control belongs — not tucked after
+            the total where a thumb never looks for it. */}
+        <button
+          type="button"
+          className="live-back"
+          onClick={backToRegister}
+          title={ownWindow ? 'Close this window — the register is behind it' : 'Back to the register'}
+        >
+          {ownWindow ? '✕ Close' : '← Register'}
+        </button>
         <strong>ALMA Live</strong>
         <span className="live-date">{board?.serviceDate ?? '—'}</span>
         <span style={{ flex: 1 }} />

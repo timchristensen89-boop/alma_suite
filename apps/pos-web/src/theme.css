@@ -259,6 +259,28 @@ body.pos-dark .pos-modal { background: rgba(0, 0, 0, 0.55); }
 .office-tabs { display: flex; gap: 7px; padding: 14px 24px 0; flex-wrap: wrap; }
 .office-tabs button { background: transparent; border: 1px solid var(--pos-border); border-radius: 9999px; color: var(--pos-text2); font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; padding: 8px 16px; cursor: pointer; font-family: inherit; }
 .office-tabs button.is-active { background: var(--pos-accent-bg); color: var(--pos-accent-fg); border-color: transparent; }
+/* One or the other, never both. Wide screens get the pills; a phone gets the
+   select, because nine pills wrap to four rows there. */
+.office-tabs-select { display: none; }
+.office-tabs-select label { display: flex; align-items: center; gap: 10px; }
+.office-tabs-select span {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--pos-text3); flex: none;
+}
+.office-tabs-select select {
+  flex: 1; min-width: 0; font: inherit; font-size: 14px; font-weight: 700;
+  padding: 11px 13px; border-radius: 12px;
+  border: 1px solid var(--pos-border); background: var(--pos-card); color: var(--pos-text);
+}
+@media (max-width: 700px) {
+  .office-tabs { display: none; }
+  .office-tabs-select { display: block; padding: 12px 14px 0; }
+  /* "Back office" in the display face wrapped to two lines beside the chip and
+     the back button, which is where the cramped feeling starts. */
+  .office-header { flex-wrap: wrap; row-gap: 6px; padding: 10px 14px; }
+  .office-header strong { font-size: 22px; }
+  .pos-wordmark-chip { order: 5; }
+}
 .office-main { padding: 18px 24px 60px; max-width: 1080px; }
 .office-lead { font-size: 13px; color: var(--pos-text2); margin: 0 0 14px; max-width: 70ch; }
 .office-card { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--pos-card); border: 1px solid var(--pos-border-soft); border-radius: 16px; padding: 12px 16px; margin-bottom: 10px; }
@@ -368,6 +390,19 @@ body.pos-dark { --pos-btn: rgba(248, 246, 241, 0.05); --pos-btn-strong: rgba(248
 .live-header { background: var(--pos-bg); border-bottom: 1px solid var(--pos-border-soft); }
 .live-header strong { font-family: var(--font-display); font-weight: 500; font-size: 22px; letter-spacing: 0; text-transform: lowercase; color: var(--pos-text); }
 .live-date { color: var(--pos-text3); }
+.live-back {
+  border-color: var(--pos-border); background: var(--pos-card); color: var(--pos-text2);
+  box-shadow: 0 1px 2px rgba(31, 53, 36, 0.06);
+}
+.live-back:hover { background: var(--pos-hover); color: var(--pos-text); }
+/* On a phone the title, the date, the grand total and the way out do not fit
+   on one 390px line. The date is the first thing to go under — it is the only
+   one of the four nobody is looking for. */
+@media (max-width: 560px) {
+  .live-header { flex-wrap: wrap; row-gap: 4px; }
+  .live-header strong { font-size: 19px; }
+  .live-date { order: 5; flex-basis: 100%; font-size: 11px; }
+}
 .live-grand { color: var(--pos-text); font-weight: 900; }
 .live-grand small { color: var(--pos-text3); }
 .live-error { background: #9a3a2e; color: #fff; border-radius: 9999px; margin: 10px 12px 0; }
@@ -1063,6 +1098,12 @@ summary.pos-list-head.is-tab-edit {
   background: var(--pos-card);
 }
 .pos-be-tabs { display: flex; gap: 6px; }
+/* Invisible to layout everywhere but a phone, where the phone block turns it
+   into a real flex item so the two appearance pickers wrap as a pair. Declared
+   here rather than beside .pos-be-iconpick because a media query adds no
+   specificity: a later plain rule would win and the wrapper would never
+   become a flex item at all. */
+.pos-be-look { display: contents; }
 .pos-be-tabs button {
   border: 1px solid var(--pos-border);
   background: transparent;
@@ -1296,6 +1337,74 @@ summary.pos-list-head.is-tab-edit {
   .pos-be-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr); overflow-y: auto; }
   .pos-be-right { grid-template-rows: minmax(140px, 1fr) auto; }
   .pos-be-who { display: none; }
+}
+
+/* ── The editor on a phone ────────────────────────────────────────────────
+   Eleven controls in one non-wrapping row — two tabs, four icon styles,
+   three text sizes, Undo, Done — made the header wider than the phone. The
+   whole document went with it, which is why the list card looked sliced down
+   its right edge: nothing was broken about the card, the page was simply
+   wider than the screen and everything past 390px was off it.
+
+   So: the header wraps into two honest rows — what you are editing and how
+   to leave on the first, how it looks on the second — and the body stops
+   being two fr-sized scrollers stacked inside a fixed height. On a phone
+   there is no room to scroll two things independently; the page scrolls, the
+   list is as long as it is, and the preview follows underneath. */
+@media (max-width: 700px) {
+  .pos-be-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    gap: 8px;
+    padding: 10px 12px;
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    /* The one that matters. As a grid item the header defaults to
+       min-width: auto, so it grew to its own min-content — 439px on a 390px
+       phone — and then nothing inside it could shrink, because the line it
+       was shrinking to fit was itself sized by the content. Wrapping and
+       overflow-x did nothing until this was set. */
+    min-width: 0;
+  }
+  /* Row one: the two tabs share what is left after Undo and Done, which are
+     the two things that must never shrink to an unreadable stub. */
+  .pos-be-tabs { flex: 1 1 120px; min-width: 0; }
+  .pos-be-tabs button { flex: 1 1 0; min-width: 0; padding-inline: 10px; }
+  .pos-be-head .pos-be-add,
+  .pos-be-done { order: 2; flex: none; }
+  .pos-be-done { padding: 10px 16px; }
+  /* Row two: appearance, scrollable rather than wrapped, so it can never be
+     the thing that widens the page again. */
+  /* Row two: appearance, as one item, so the pair wraps together. The marks
+     take what is left beside the text sizes and swipe for the rest. */
+  .pos-be-look {
+    display: flex;
+    order: 3;
+    flex: 1 1 100%;
+    min-width: 0;
+    gap: 8px;
+    align-items: center;
+  }
+  .pos-be-iconpick {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .pos-be-iconpick::-webkit-scrollbar { display: none; }
+  .pos-be-textsize { flex: none; }
+
+  /* The page scrolls; the panels do not. */
+  .pos-boardedit { grid-template-rows: auto auto; overflow: visible; }
+  .pos-be-body {
+    grid-template-rows: auto auto;
+    overflow: visible;
+    padding: 10px 12px calc(24px + env(safe-area-inset-bottom));
+  }
+  .pos-be-list { overflow: visible; }
+  .pos-be-right { grid-template-rows: auto auto; }
+  .pos-be-board { overflow: visible; }
 }
 
 /* ── Bill actions chooser ────────────────────────────────────────────────
@@ -1699,21 +1808,23 @@ body.pos-v2 .pos-cart .pos-charge {
 
 @media (max-width: 700px) {
   /* The bill is pinned to the bottom of the phone and never leaves — that is
-     the point of it. So everything that scrolls has to STOP SHORT of it.
-     Without this the last row of tiles sits under the bar: you can't read it
-     and you can't tap it, which is what "lose this last row" was describing.
-     60px is the collapsed bar, plus the home-indicator inset. */
-  .pos-menu,
-  .pos-home-wrap,
-  .pos-board-pager,
-  .pos-grid {
+     the point of it. So everything that scrolls has to STOP SHORT of it, or
+     the last row of tiles sits under the bar where it can't be read or
+     tapped.
+
+     The allowance goes on the OUTERMOST column and nowhere else. Putting it
+     on every container in the chain and then zeroing the inner ones went
+     wrong twice over: .pos-home-wrap still matched, so the gap was counted
+     twice and left ~140px of dead cream under the board; and zeroing
+     .pos-grid took away the 16px of its own bottom padding, which left the
+     last row of tiles flush against the grid's edge. .pos-grid carries
+     `contain: paint`, so flush means the bottom of those tiles — border
+     radius, shadow and all — is painted off. That is the "cut off at the
+     bottom of the tiles" that keeps coming back: not a scrolling fault, a
+     clipping one, which is why more padding on the wrong element never
+     fixed it. */
+  .pos-menu {
     padding-bottom: calc(72px + env(safe-area-inset-bottom));
-  }
-  /* Nested containers would otherwise add the gap several times over. */
-  .pos-home-wrap .pos-board-pager,
-  .pos-home-wrap .pos-grid,
-  .pos-menu .pos-grid {
-    padding-bottom: 0;
   }
 }
 

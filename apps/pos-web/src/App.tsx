@@ -5951,6 +5951,23 @@ export function App() {
                   key={surface.id}
                   type="button"
                   onClick={() => {
+                    setAppsOpen(false);
+                    if (surface.ownWindow) {
+                      // A named window, so tapping Live twice raises the one
+                      // that's already open instead of stacking a second.
+                      const opened = window.open(
+                        `${window.location.origin}${window.location.pathname}${surface.hash}`,
+                        `alma-${surface.id}`
+                      );
+                      // Popup blocked, or a phone that has no second window to
+                      // give: fall through to the ordinary navigation rather
+                      // than leaving the tap doing nothing. Live's own header
+                      // knows which case it is in and offers the way back.
+                      if (opened) {
+                        opened.focus();
+                        return;
+                      }
+                    }
                     // main.tsx reloads on hashchange, so this IS the navigation.
                     window.location.hash = surface.hash;
                   }}
