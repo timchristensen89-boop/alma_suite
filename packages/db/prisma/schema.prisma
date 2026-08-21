@@ -3121,7 +3121,21 @@ model Recipe {
   isPrepRecipe       Boolean                   @default(false)
   status             String                    @default("ACTIVE")
   estimatedCost      Float                     @default(0)
+  /// INTERNAL. Kitchen and back-office notes — prep reminders, supplier
+  /// quirks, "use the small pan". Never shown to a guest; the QR menu reads
+  /// `guestDescription` instead, precisely so that writing freely in here
+  /// stays safe.
   notes              String?
+  /// What a GUEST reads under the dish name on the QR menu.
+  ///
+  /// Separate from `notes` on purpose: one is written for the kitchen and the
+  /// other is published to whoever scans the code on the table. Seeded from
+  /// the printed menus' own descriptions, which are already the guest-facing
+  /// copy and already signed off — "Corn chips, wakame", "Pico de gallo,
+  /// guacachile, three pieces".
+  ///
+  /// NULL means no copy yet, and the menu simply shows the dish name.
+  guestDescription   String?
   // What this dish is, dietary-wise: a list of DISH_DIETARY ids
   // (packages/shared/src/dietary.ts) — 'gf', 'vgn', 'nuts' and so on.
   //

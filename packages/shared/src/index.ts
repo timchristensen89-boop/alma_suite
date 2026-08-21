@@ -6414,6 +6414,11 @@ export type Recipe = {
   // Kitchen docket/KDS override name. NULL = dockets print `title`, same as
   // the register tile and guest receipts.
   printTitle: string | null;
+  /**
+   * The one line a GUEST reads under the dish name — the printed menu's own
+   * words. Distinct from `notes`, which is internal and must never be shown.
+   */
+  guestDescription: string | null;
   /** DISH_DIETARY ids. Empty = nobody has checked, NOT "no allergens". */
   dietary: string[];
   kind: string | null;
@@ -6917,6 +6922,14 @@ export const recipeVenuePriceInputSchema = z.object({
 export const recipeCreateInputSchema = z.object({
   title: z.string().min(2, 'Title is required'),
   printTitle: z.string().optional().or(z.literal('')),
+  // Guest-facing, so it is capped rather than silently truncated: a paragraph
+  // that arrives here is a mistake worth telling somebody about, not copy to
+  // cut off mid-word on a phone.
+  guestDescription: z
+    .string()
+    .max(240, 'Keep the guest description to a line, the way the menu prints it')
+    .optional()
+    .or(z.literal('')),
   // Unknown tags are dropped rather than rejected: a save must not fail
   // because a client sent a tag this build does not know, and a tag nobody
   // recognises must never reach the floor looking like a claim about a plate.

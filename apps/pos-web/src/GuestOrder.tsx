@@ -19,6 +19,12 @@ type GuestItem = {
   recipeId: string;
   title: string;
   priceCents: number;
+  /**
+   * The printed menu's own line — "Pipian mole, pepitas". Guest-safe copy the
+   * kitchen has already signed off; the recipe's internal notes are a separate
+   * field the server never sends down this path.
+   */
+  description?: string;
   /** DISH_DIETARY ids. Empty = nobody has checked, NOT "free from". */
   dietary?: string[];
 };
@@ -166,7 +172,12 @@ export function GuestOrder({ token }: { token: string }) {
       .map((category) => ({
         ...category,
         items: category.items.filter((item) => {
-          if (term && !item.title.toLowerCase().includes(term) && !category.name.toLowerCase().includes(term)) return false;
+          // Search what the guest can actually read. Someone typing "avocado"
+          // is looking at the words under the dish names, not the names.
+          if (term) {
+            const hay = `${item.title} ${item.description ?? ''} ${category.name}`.toLowerCase();
+            if (!hay.includes(term)) return false;
+          }
           if (filters.diet) {
             // 'yes' and 'ask' both stay: a dish the kitchen can adapt is one a
             // guest should still see, with the caveat spelled out below.
@@ -452,6 +463,7 @@ export function GuestOrder({ token }: { token: string }) {
                       </span>
                     ) : null}
                   </span>
+                  {item.description ? <em className="qr-item-desc">{item.description}</em> : null}
                   <small>{money(item.priceCents)}</small>
                 </span>
                 {quantity === 0 ? (

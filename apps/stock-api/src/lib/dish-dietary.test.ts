@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import test from 'node:test';
 import { dishTokens, matchDish, parsePrintedMarks, scoreDish } from './dish-dietary.js';
 
@@ -85,4 +87,43 @@ test('scoring asks whether the register carries everything the menu named', () =
   // Asymmetric on purpose: the register title is usually the longer one.
   assert.equal(scoreDish('Broccolini', 'Broccolini, almond mole'), 1);
   assert.ok(scoreDish('Broccolini almond mole', 'Broccolini') < 1);
+});
+
+// ── The transcription itself ────────────────────────────────────────────────
+// docs/menu-dietary.tsv has two columns that are allowed to disagree: `printed`
+// is what the menu shows, `apply` is what gets written to the register. Every
+// disagreement is a judgement somebody made — a vegan mark withheld from a beef
+// taco, a nut mark taken from the stricter of two current prints — and a
+// judgement with no reason recorded is indistinguishable from a typo.
+
+test('every place the register departs from the print says why', () => {
+  const path = resolve(import.meta.dirname, '../../../../docs/menu-dietary.tsv');
+  const lines = readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() && !line.startsWith('#'));
+  const header = lines.shift()!.split('\t');
+  const col = (cells: string[], name: string) => cells[header.indexOf(name)]?.trim() ?? '';
+
+  assert.ok(lines.length > 30, 'the menu transcription should not have gone missing');
+
+  for (const line of lines) {
+    const cells = line.split('\t');
+    const dish = `${col(cells, 'venue')} · ${col(cells, 'dish')}`;
+    const printed = [...parsePrintedMarks(col(cells, 'printed')).tags].sort();
+    const applied = col(cells, 'apply')
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+      .sort();
+
+    // Shellfish has no printed mark — the menus never had one — so a shellfish
+    // tag on a prawn dish is an addition, not a departure from the print.
+    const departure = applied.filter((tag) => tag !== 'shellfish');
+    if (departure.join('|') === printed.join('|')) continue;
+
+    assert.ok(
+      col(cells, 'note'),
+      `${dish}: register says ${departure.join(', ') || '(none)'} where the menu prints ${printed.join(', ') || '(none)'}, with no note saying why`
+    );
+  }
 });

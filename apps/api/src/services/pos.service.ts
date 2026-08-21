@@ -835,7 +835,7 @@ export const posService = {
     const hiddenCats = new Set(hides.filter((hide) => hide.kind === 'CATEGORY').map((hide) => hide.key.toLowerCase()));
     const recipes = await prisma.recipe.findMany({
       where: { status: 'ACTIVE', isPrepRecipe: false, salePriceCents: { gt: 0 } },
-      select: { id: true, title: true, printTitle: true, kind: true, category: true, venue: true, salePriceCents: true, canonicalId: true, dietary: true },
+      select: { id: true, title: true, printTitle: true, guestDescription: true, kind: true, category: true, venue: true, salePriceCents: true, canonicalId: true, dietary: true },
       orderBy: [{ category: 'asc' }, { title: 'asc' }]
     });
     // Per-venue price overrides. RecipeVenuePrice is maintained by the Square
@@ -857,6 +857,12 @@ export const posService = {
       recipeId: string;
       title: string;
       printTitle?: string | null;
+      /**
+       * The menu's own line under the dish name, for guests. `Recipe.notes` is
+       * internal and is deliberately not selected here — nothing on this path
+       * should be able to leak it onto a table's phone.
+       */
+      description?: string;
       /** DISH_DIETARY ids. Empty = nobody has checked, NOT "no allergens". */
       dietary?: string[];
       priceCents: number;
@@ -886,6 +892,7 @@ export const posService = {
           (recipe.venue ? overrides?.[recipe.venue] : undefined) ?? recipe.salePriceCents ?? 0,
         venue: recipe.venue,
         canonicalId: recipe.canonicalId ?? null,
+        ...(recipe.guestDescription?.trim() ? { description: recipe.guestDescription.trim() } : {}),
         // Parsed rather than passed through: the column is free-form JSON, and
         // a tag the vocabulary does not know must not reach the floor looking
         // like a claim about a plate.

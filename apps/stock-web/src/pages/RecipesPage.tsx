@@ -45,6 +45,8 @@ type RecipeLineDraft = {
 type RecipeDraft = {
   title: string;
   printTitle: string;
+  /** The line a guest reads on the QR menu. Never `notes`, which is internal. */
+  guestDescription: string;
   /** DISH_DIETARY ids. Empty = nobody has checked, NOT "no allergens". */
   dietary: string[];
   kind: string;
@@ -1126,6 +1128,7 @@ function emptyRecipeDraft(): RecipeDraft {
   return {
     title: '',
     printTitle: '',
+    guestDescription: '',
     dietary: [],
     kind: 'FOOD',
     category: '',
@@ -1160,6 +1163,7 @@ function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
   return {
     title: recipe.title,
     printTitle: recipe.printTitle ?? '',
+    guestDescription: recipe.guestDescription ?? '',
     dietary: parseDishDietary(recipe.dietary),
     kind: normaliseRecipeKindForForm(recipe),
     category: recipe.category ?? '',
@@ -1308,6 +1312,7 @@ function RecipeForm({
     const payload: RecipeCreateInput = {
       title: draft.title.trim(),
       printTitle: draft.printTitle.trim(),
+      guestDescription: draft.guestDescription.trim(),
       dietary: draft.dietary,
       kind: draft.kind.trim(),
       // A recipe is a production (prep/batch) recipe when created in the
@@ -1386,6 +1391,20 @@ function RecipeForm({
         ) : (
           <Input label="Sale price" type="number" step="0.01" value={draft.salePrice} onChange={(event) => update('salePrice', event.currentTarget.value)} />
         )}
+      </div>
+      {/* Guest description. Its own row because it is prose, and next to
+          Dietary because these two are the only fields on this form a GUEST
+          ever reads. `Notes`, further down, is the opposite: internal, and it
+          is never sent to the QR menu. */}
+      <div className="form-grid">
+        <Input
+          label="Guest description"
+          value={draft.guestDescription}
+          maxLength={240}
+          onChange={(event) => update('guestDescription', event.currentTarget.value)}
+          placeholder="Pipian mole, pepitas"
+          hint="Shown under the dish on the QR menu — the menu's own line, word for word. Leave blank and the guest sees the dish name alone. Not the same as Notes, which stays internal."
+        />
       </div>
       {/* Dietary — a claim about a plate, so it is deliberately plain
           checkboxes rather than something clever. Nothing here is inferred:
