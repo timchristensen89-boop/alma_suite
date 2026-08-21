@@ -179,6 +179,7 @@ export const qrOrderService = {
           title: string;
           priceCents: number;
           venue: string | null;
+          description?: string;
           dietary?: string[];
           variantOf?: string;
         }>;
@@ -219,6 +220,11 @@ export const qrOrderService = {
               recipeId: item.recipeId,
               title: item.title,
               priceCents: item.priceCents,
+              // The menu's own line, and only that. This shape is a whitelist
+              // rather than a spread on purpose: `Recipe.notes` is internal —
+              // prep steps, supplier gripes, "use the older tray first" — and
+              // a guest page is the last place it should be able to surface.
+              ...(item.description ? { description: item.description } : {}),
               // Empty means nobody has checked, never "no allergens" — the
               // guest page has to say that, not imply the dish is safe.
               dietary: item.dietary ?? []

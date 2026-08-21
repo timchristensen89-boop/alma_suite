@@ -176,6 +176,7 @@ function toRecipePayload(row: RecipeRow): Recipe {
     legacyId: row.legacyId,
     title: row.title,
     printTitle: row.printTitle,
+    guestDescription: row.guestDescription,
     dietary: parseDishDietary(row.dietary),
     kind: row.kind,
     category: row.category,
@@ -224,6 +225,7 @@ function toRecipeWithLinesPayload(row: RecipeWithLinesRow): RecipeWithLines {
     legacyId: row.legacyId,
     title: row.title,
     printTitle: row.printTitle,
+    guestDescription: row.guestDescription,
     dietary: parseDishDietary(row.dietary),
     kind: row.kind,
     category: row.category,
@@ -1530,6 +1532,7 @@ export const recipesService = {
       data: {
         title: data.title.trim(),
         printTitle: normaliseOptionalText(data.printTitle) ?? null,
+        guestDescription: normaliseOptionalText(data.guestDescription) ?? null,
         // Parsed on the way in, so an unknown tag is dropped at the door
         // rather than stored and shown to the floor as a claim.
         dietary: parseDishDietary(data.dietary ?? []),
@@ -1623,6 +1626,9 @@ export const recipesService = {
       data: {
         ...(data.title !== undefined && { title: data.title.trim() }),
         ...(data.printTitle !== undefined && { printTitle: normaliseOptionalText(data.printTitle) }),
+        ...(data.guestDescription !== undefined && {
+          guestDescription: normaliseOptionalText(data.guestDescription)
+        }),
         ...(data.dietary !== undefined && { dietary: parseDishDietary(data.dietary) }),
         ...(data.kind !== undefined && { kind: normaliseOptionalText(data.kind) }),
         ...(data.category !== undefined && {

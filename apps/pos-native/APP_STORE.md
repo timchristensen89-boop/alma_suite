@@ -1,9 +1,39 @@
 # Shipping ALMA POS to the App Store
 
-State as of 2026-08-14: the shell builds and runs (Tap to Pay deliberately
+State as of 2026-08-22: the shell builds and runs (Tap to Pay deliberately
 off — see App.tsx). Apple Developer Program: enrolled. This file is the
 submission playbook; everything here except the build/upload commands is
 already prepared.
+
+## Checked on 2026-08-22
+
+Verified rather than assumed:
+
+- **Icon** `assets/icon.png` is 1024x1024 with no alpha channel. Apple rejects
+  an app icon with alpha, so this is worth re-checking after any redraw.
+- **WebView target** is `https://alma-pos.web.app`, the live register, with
+  `originWhitelist` limited to https.
+- **Listing URLs resolve.** `/privacy` and `/contact` both exist on the
+  marketing site. So does `/account-deletion`, which Apple requires of any app
+  that lets you sign in — worth naming in App Review Information.
+
+Fixed on 2026-08-22, and the reason matters for review:
+
+- **The shipping build no longer asks for location or Bluetooth.** It used to.
+  `app.json` declared `NSLocationWhenInUseUsageDescription` as "Stripe requires
+  your location to accept card payments on this device" and pulled in the
+  Stripe Terminal plugin with two Bluetooth strings — in a build with no
+  payment feature at all. A reviewer would have been shown permission dialogs
+  about card payments while looking for a payment feature that isn't there,
+  which contradicts the argument in "Review-proofing" below and runs at
+  Guideline 5.1.1 (do not request data the app does not use). Those three
+  strings and the plugin now live behind `ALMA_TAP_TO_PAY=1` in app.config.js,
+  alongside the entitlement. A normal build declares camera only, which the
+  register genuinely uses for gift card and QR scanning.
+- **The Terminal SDK no longer starts on launch** when Tap to Pay is off.
+  Starting it is what makes the OS treat this as a payment app.
+
+Not done, and it needs a decision (see "The reviewer's till" below).
 
 ## Phase 1 — the shell on TestFlight, then the store
 
@@ -48,9 +78,26 @@ business tool, not a payment app.
 
 ### Review-proofing
 
-- **Demo account:** create a device account PIN that opens a TRAINING-mode
-  register at a demo venue and put it in App Review Information. Never give
-  reviewers a live till.
+- **Demo account — the reviewer's till.** The intent was a device account PIN
+  that opens a TRAINING-mode register, so a reviewer never rings into a real
+  till. That does not work as things stand: training mode is
+  `alma.pos.training` in localStorage, a per-DEVICE toggle. A reviewer signing
+  in on their own device starts with it OFF, and nothing about the account
+  turns it on — so their test orders land in a live venue's takings, drawer
+  and reports.
+
+  Two ways out, and it is a decision rather than a fix:
+
+  1. **Data only, available today.** Create a demo VENUE and an account scoped
+     to it. Orders are then real but land somewhere that is nobody's takings,
+     and every report already filters by venue. No code, no release.
+  2. **Make training a property of the ACCOUNT, not the device.** A flag on
+     the staff/device profile that forces training on at sign-in and cannot be
+     switched off from that account. Correct, and useful well beyond App
+     Review — it is also how you would hand a new starter a safe till. Costs
+     a migration, an API change and a client change.
+
+  Option 1 unblocks the submission; option 2 is the one worth having.
 - **Guideline 4.2 (minimum functionality):** if the reviewer pushes back on
   the WebView, the response is that this is an internal business tool for a
   named company's venues with native device integration on the roadmap

@@ -1,0 +1,57 @@
+# Dietary marks, transcribed from the printed menus on 2026-08-22:
+#   Alma Avalon a la carte      (Alma__Food_137.pdf)
+#   St Alma a la carte          (St_Alma__Food_137.pdf)
+#   St Alma Taco Tuesday        (St_Alma__Food_Tuesday_137.pdf)
+#
+# Both venues print the same key:
+#   V vegetarian · VG vegan · GF gluten free · GFA gluten free available
+#   DF dairy free · N contains nuts · A australian · I imported
+#
+# A and I are PROVENANCE, not dietary, and are deliberately not imported.
+#
+# `printed` is exactly what the menu shows — the audit trail.
+# `apply`   is what gets written to Recipe.dietary. Where the two differ,
+#           `note` says why, every time.
+#
+# An empty `apply` claims NOTHING, which the register reads as "nobody has
+# checked" rather than "safe". That is the whole safety model: a dish can be
+# ruled OUT on a contains tag, never ruled IN by the absence of one.
+venue	section	dish	description	printed	apply	note
+Alma Avalon	To start	Guacamole	Corn chips, wakame	VG·GFA·DF	vgn,gfo,df	
+Alma Avalon	To start	Mexican shrimp cocktail	Avocado, onion and cucumber salsa	GF·DF·I	gf,df,shellfish	shellfish is not on the printed key, but shrimp is shellfish. A contains tag can only rule a dish OUT, so adding it can only make the filter safer.
+Alma Avalon	To start	Salmon sashimi hard shell taco	Pico de gallo, guacachile, three pieces	GFA·DF·N·A	gfo,df,nuts	
+Alma Avalon	To start	Sweet corn	Panko, cotija cheese, chipotle, four pieces	V·GFA	veg,gfo	
+Alma Avalon	To start	Halloumi	Agave glaze, salsa macha, three pieces	V·GF·N	veg,gf,nuts	
+Alma Avalon	To start	Chicken tinga empanadas	Salsa roja, three pieces	GFA·DF	gfo,df	
+Alma Avalon	Tacos	Barramundi taco	Coleslaw, chipotle aioli	GF·DF·A	gf,df	
+Alma Avalon	Tacos	Pork belly taco	Guacamole, pineapple salsa	GF·DF	gf,df	
+Alma Avalon	Tacos	Zucchini taco	Salsa macha, avocado	VG·GF·DF·N	vgn,gf,df,nuts	
+Alma Avalon	Tacos	Carne asada taco	Avocado, onions	VG·GF	gf	VEGAN CLAIM WITHHELD. The menu marks this VG, but carne asada is grilled beef. Present in both the current and the previous print, so not a one-off slip. Almost certainly meant DF. Not imported until the kitchen says.
+Alma Avalon	To share	Fish of the day al pastor	Pico de pina, avocado mousse	GF·DF·A	gf,df	
+Alma Avalon	To share	Agave beef short rib	Grilled cos, baby carrots, tortillas	GF·DF	gf,df	
+Alma Avalon	To share	Cauliflower steak	Butter bean cream, roast pepita salsa	V·GF	veg,gf	
+Alma Avalon	Sides	Broccolini	Pipian mole, pepitas	VG·GF·DF·N	vgn,gf,df,nuts	Avalon's broccolini is pipian (pumpkin seed); St Alma's is almond. Both marked N.
+Alma Avalon	Sides	Shoestring fries	Paprika, chipotle aioli	V·DF	veg,df	
+Alma Avalon	Sides	Nashi pear	Goat's cheese	V·GF	veg,gf	
+Alma Avalon	Sweet	Churros	Dulce de leche, chocolate ice cream	V·N	veg,nuts	
+Alma Avalon	Sweet	Pistachio flan	Pistachio, white chocolate ganache	V·GF·N	veg,gf,nuts	
+St Alma	To start	Guacamole	Salsa macha, tostadas	VG·GFA·DF·N	vgn,gfo,df,nuts	SAME NAME, DIFFERENT DISH. St Alma's guacamole is salsa macha and carries N; Avalon's is wakame and does not. Never match this one across venues.
+St Alma	To start	Kingfish ceviche	Apple, cucumber, strawberry and basil aguachile, roe	GF·DF·A	gf,df	
+St Alma	To start	Prawn tostada	Avocado, salmon and guajillo pate	GFA·DF·I	gfo,df,shellfish	prawn is shellfish; see the shrimp cocktail note.
+St Alma	To start	Chicken tinga empanadas	Morita salsa, pickled onions, three pieces	GFA·DF	gfo,df	
+St Alma	To start	Mushroom carnita empanadas	Morita salsa, pickled onions, three pieces	V·GFA·DF	veg,gfo,df	
+St Alma	Tacos	Barramundi taco	Guacamole, pickled cabbage, chipotle aioli	GFA·DF·A	gfo,df	Avalon's barramundi taco is GF; St Alma's is GFA. Per venue, not per name.
+St Alma	Tacos	Beef birria taco	Morita salsa, crispy chickpeas	GF·DF	gf,df	
+St Alma	Tacos	Nopal taco	Avocado salsa, fried potatoes	VG·GF·DF	vgn,gf,df,nuts	CONFLICT BETWEEN TWO CURRENT MENUS. `printed` is the a la carte; Taco Tuesday prints the same dish as VG·GF·DF·N. Nuts applied because a contains tag only rules OUT, so the safer of the two wins — but one of the two prints is wrong and needs settling.
+St Alma	Tacos	Chorizo and potato taco	Refried beans, tomatillo salsa	GF·DF	gf,df	
+St Alma	From the grill	Grilled snapper	Chipotle and cauliflower puree, fennel, green apple pico	GF·A	gf	
+St Alma	From the grill	Roasted cabbage	Pepita mole, shishito peppers, allow 30 minutes	VG·GF·N	vgn,gf,nuts	
+St Alma	From the grill	Grilled octopus	Chimichurri, refried bean puree, crunchy lentils	GFA·DF·I	gfo,df,shellfish	Octopus is a mollusc. The tag vocabulary has one shellfish tag rather than splitting crustacean from mollusc, and a contains tag only rules out, so it is applied.
+St Alma	From the grill	Roast chicken	Esquites, salsa macha	GF·N	gf,nuts	
+St Alma	From the grill	Agave beef short rib	Grilled cos, pickled carrots, tortillas	GF·DF	gf,df	
+St Alma	Sides	Polenta and Parmesan fries	Chipotle aioli	V·GFA	veg,gfo	
+St Alma	Sides	Roasted baby beetroot	Grapefruit, goat cheese cream, hazelnut	V·GF·N	veg,gf,nuts	
+St Alma	Sides	Green leaf salad	Roasted hazelnut, orange segments, citrus vinaigrette	V·GF·DF·N	veg,gf,df,nuts	
+St Alma	Sides	Broccolini	Almond mole	VG·GF·DF·N	vgn,gf,df,nuts	
+St Alma	Sweet	Dairy free pavlova	Passion fruit, charred mezcal pineapple	V·GF·DF	veg,gf,df	
+St Alma	Sweet	Churros	Almond and white chocolate ganache, ice cream	V·N	veg,nuts	
