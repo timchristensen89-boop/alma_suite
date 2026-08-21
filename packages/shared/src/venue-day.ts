@@ -44,19 +44,61 @@ function zoneOffsetMs(instant: Date, timeZone: string): number {
 }
 
 /**
- * The UTC instant at which a venue-local day begins.
+ * The UTC instant of a venue-local wall-clock time on a venue-local day.
+ *
+ * This is the one to reach for whenever a stored `HH:MM` — an availability
+ * rule, a service start, a cut-off — has to become a real instant. Building it
+ * with `setHours` instead uses the SERVER's zone, and the API containers run
+ * UTC, so a 6pm rule becomes 6pm UTC: four or five in the morning in Sydney.
  *
  * Two passes: guess using the offset in force at the naive instant, then
  * correct using the offset actually in force at the guess. That second pass is
  * what makes the daylight-saving boundaries land correctly — on those days the
- * offset before and after midnight differ.
+ * offset before and after the time differ.
+ *
+ * A wall-clock time that does not exist (2am on the morning the clocks go
+ * forward) resolves to the instant the clock skips to, which is 3am.
  */
-export function venueDayStart(day: string, timeZone = VENUE_TIME_ZONE): Date | null {
+export function venueInstant(day: string, time = '00:00', timeZone = VENUE_TIME_ZONE): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
-  const wallClock = Date.parse(`${day}T00:00:00Z`);
-  if (Number.isNaN(wallClock)) return null;
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(time.trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = Number(match[3] ?? '0');
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const midnight = Date.parse(`${day}T00:00:00Z`);
+  if (Number.isNaN(midnight)) return null;
+  const wallClock = midnight + ((hour * 60 + minute) * 60 + second) * 1000;
   const firstGuess = wallClock - zoneOffsetMs(new Date(wallClock), timeZone);
   return new Date(wallClock - zoneOffsetMs(new Date(firstGuess), timeZone));
+}
+
+/** The UTC instant at which a venue-local day begins. */
+export function venueDayStart(day: string, timeZone = VENUE_TIME_ZONE): Date | null {
+  return venueInstant(day, '00:00', timeZone);
+}
+
+/**
+ * The day of the week a YYYY-MM-DD falls on, 0 = Sunday, matching `getDay()`.
+ *
+ * Read off the calendar date itself rather than off an instant, because an
+ * instant's weekday depends on which zone you ask in — and the weekday a
+ * roster or an availability rule means is the venue's, always.
+ */
+export function venueWeekday(day: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const parsed = Date.parse(`${day}T00:00:00Z`);
+  return Number.isNaN(parsed) ? null : new Date(parsed).getUTCDay();
+}
+
+/** A wall-clock label for an instant, in the venue's zone — "6:00 pm". */
+export function venueTimeLabel(instant: Date, timeZone = VENUE_TIME_ZONE): string {
+  return new Intl.DateTimeFormat('en-AU', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone
+  }).format(instant);
 }
 
 /** The YYYY-MM-DD after the one given, or null if that isn't a date. */
