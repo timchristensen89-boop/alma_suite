@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
 import { prisma } from '@alma/db';
 import { Prisma } from '@prisma/client';
-import type { AuthUser } from '@alma/shared';
+import { venueDayBounds, venueDayKey, venueInstant, type AuthUser } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import {
   computeOpenTimes,
@@ -64,14 +64,27 @@ function partySizeOf(data: Record<string, unknown>): number | null {
 function eventDateOf(value: unknown): Date | null {
   const raw = text(value);
   if (!raw) return null;
-  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T12:00:00+10:00`) : new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  // Noon in the VENUE's zone, so the instant stays on the intended date no
+  // matter which way it is later formatted. A hardcoded +10:00 is an hour out
+  // for the half of the year Sydney is on daylight saving.
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? venueInstant(raw, '12:00') : new Date(raw);
+  if (!parsed || Number.isNaN(parsed.getTime())) return null;
+  return parsed;
 }
 
+/**
+ * The half-open UTC window covering the venue day an instant falls in.
+ *
+ * Both halves of this used to be wrong. The day was stamped at a hardcoded
+ * +10:00, an hour out for the half of the year Sydney is on daylight saving;
+ * and the end was start + 24h, which is wrong on the two transition days —
+ * they run 23 and 25 hours, so the window either overran into the next day or
+ * left an hour of it uncovered.
+ */
 function dayBounds(date: Date) {
-  const key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(date);
-  const start = new Date(`${key}T00:00:00+10:00`);
-  return { start, end: new Date(start.getTime() + 24 * 3_600_000) };
+  const bounds = Number.isNaN(date.getTime()) ? null : venueDayBounds(venueDayKey(date));
+  if (!bounds) return { start: date, end: date };
+  return { start: bounds.gte, end: bounds.lt };
 }
 
 function formatEventDate(date: Date | null) {
@@ -543,9 +556,8 @@ export const enquiryService = {
       // Always null, and measured rather than assumed: no intake form collects
       // a preferred time, so `eventDate` is the only column there is and it
       // cannot be read as one. `eventDateOf` above stamps a date-only value at
-      // noon +10:00, which is 1pm in Sydney for half the year — reading an
-      // hour out of it would mean skipping the question for every enquiry
-      // between October and April. So the draft always asks.
+      // noon in the venue's zone purely to hold the date steady; that noon is
+      // a placeholder, not something a guest said. So the draft always asks.
       preferredTime: null,
       partySize: enquiry.partySize,
       phone: enquiry.phone,
