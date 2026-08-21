@@ -795,9 +795,12 @@ staffRouter.get('/roster-board', requireManager, async (req, res, next) => {
 /*
  * A staff member's calendar feed.
  *
- * No auth middleware on purpose: Apple Calendar and Google Calendar cannot
- * carry a session when they poll a subscription, so the token in the path is
- * the credential. It is 32 random bytes and rotatable, and the service returns
+ * Unauthenticated on purpose: Apple Calendar and Google Calendar cannot carry
+ * a session when they poll a subscription, so the token in the path is the
+ * credential. That is not a property of this handler — authMiddleware gates
+ * every route in the app, so this path is also listed in lib/public-paths.ts,
+ * and it 401s to every calendar client in the company if that entry is
+ * removed. It is 32 random bytes and rotatable, and the service returns
  * the same flat 404 for a malformed token as for one that does not exist, so
  * this cannot be used to probe for valid tokens.
  */
