@@ -4644,6 +4644,8 @@ export type GiftCardReportRedemption = {
   cardStatus: GiftCard['status'];
   recipientName: string | null;
   purchaserName: string;
+  /** A test card. Never counted unless the report was asked to include them. */
+  testMode: boolean;
   redeemedByName: string | null;
 };
 
@@ -4659,6 +4661,8 @@ export type GiftCardReport = {
   };
   byVenue: Array<{ venue: string; redemptionCount: number; redeemedCents: number }>;
   redemptions: GiftCardReportRedemption[];
+  /** Whether test cards were counted in this response. */
+  includeTest: boolean;
   /** True when the log hit its server-side cap and older rows in range were dropped. */
   truncated: boolean;
 };

@@ -122,7 +122,8 @@ giftCardsRouter.get('/report', requireManager, async (req, res, next) => {
       await giftCardService.report({
         from: typeof req.query.from === 'string' ? req.query.from : undefined,
         to: typeof req.query.to === 'string' ? req.query.to : undefined,
-        venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+        venue: typeof req.query.venue === 'string' ? req.query.venue : undefined,
+        includeTest: req.query.includeTest === 'true'
       })
     );
   } catch (error) {

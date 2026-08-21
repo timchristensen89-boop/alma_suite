@@ -1567,6 +1567,10 @@ type ReportRangeKey = (typeof REPORT_RANGES)[number]['key'];
 function GiftCardReporting() {
   const [rangeKey, setRangeKey] = useState<ReportRangeKey>('month');
   const [venue, setVenue] = useState('all');
+  // Off by default: a test card is not money, and counting it in the liability
+  // would be wrong. On when you are checking the till flow actually works —
+  // a redemption you cannot see looks exactly like one that never happened.
+  const [includeTest, setIncludeTest] = useState(false);
   // Venue options come from the unfiltered response and then stay put, so
   // picking a venue doesn't collapse the dropdown to a single entry.
   const [venueOptions, setVenueOptions] = useState<string[]>([]);
@@ -1592,6 +1596,7 @@ function GiftCardReporting() {
     const params = new URLSearchParams({ to: range.to });
     if (range.from) params.set('from', range.from);
     if (venue !== 'all') params.set('venue', venue);
+    if (includeTest) params.set('includeTest', 'true');
     api<GiftCardReport>(`/api/gift-cards/report?${params.toString()}`)
       .then((next) => {
         if (cancelled) return;
@@ -1612,7 +1617,7 @@ function GiftCardReporting() {
     return () => {
       cancelled = true;
     };
-  }, [range, venue]);
+  }, [range, venue, includeTest]);
 
   const rangeLabel = REPORT_RANGES.find((item) => item.key === rangeKey)?.label ?? '';
   const summary = report?.summary;
@@ -1646,7 +1651,24 @@ function GiftCardReporting() {
               ...venueOptions.map((name) => ({ label: name, value: name }))
             ]}
           />
+          <label className="giftcards-report-testtoggle">
+            <input
+              type="checkbox"
+              checked={includeTest}
+              onChange={(event) => setIncludeTest(event.currentTarget.checked)}
+            />
+            <span>Include test cards</span>
+          </label>
         </div>
+        {includeTest ? (
+          <p className="error-text giftcards-report-testnote">
+            Test cards are in these figures. They are not real money — turn this off before reading the numbers as takings.
+          </p>
+        ) : (
+          <p className="subtle giftcards-report-testnote">
+            Test cards are left out. Turn them on above if you are checking that a redemption reaches this page.
+          </p>
+        )}
       </Card>
 
       {error ? <p className="error-text">{error}</p> : null}
@@ -1703,6 +1725,7 @@ function GiftCardReporting() {
             <div key={row.id} className="giftcards-report-row">
               <div className="giftcards-report-row-main">
                 <strong>{row.code}</strong>
+                {row.testMode ? <span className="giftcards-report-testtag">Test</span> : null}
                 <span className="subtle">
                   {row.recipientName || row.purchaserName}
                   {row.notes ? ` · ${row.notes}` : ''}
@@ -2493,12 +2516,26 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
               const issuedLastMonth = giftCards.filter((c) => !c.testMode && c.paidAt && new Date(c.paidAt) >= prevMonthStart && new Date(c.paidAt) < prevMonthEnd);
               const issuedThisCents = issuedThisMonth.reduce((s, c) => s + c.initialValueCents, 0);
               const issuedLastCents = issuedLastMonth.reduce((s, c) => s + c.initialValueCents, 0);
-              const redeemedThisCents = giftCards.reduce((sum, c) => {
-                return sum + c.redemptions.filter((r) => new Date(r.createdAt) >= monthStart).reduce((s, r) => s + r.amountCents, 0);
-              }, 0);
-              const redeemedLastCents = giftCards.reduce((sum, c) => {
-                return sum + c.redemptions.filter((r) => new Date(r.createdAt) >= prevMonthStart && new Date(r.createdAt) < prevMonthEnd).reduce((s, r) => s + r.amountCents, 0);
-              }, 0);
+              // Test cards out, the same as issued above. They were in this
+              // half of the dashboard and not the other, so redeeming a test
+              // card moved the redeemed figure without ever having moved the
+              // issued one — the two columns were counting different things.
+              // Dated by redeemedAt, which is what the field means.
+              const realCards = giftCards.filter((c) => !c.testMode);
+              const redeemedBetween = (start: Date, end: Date | null) =>
+                realCards.reduce(
+                  (sum, c) =>
+                    sum +
+                    c.redemptions
+                      .filter((r) => {
+                        const at = new Date(r.redeemedAt);
+                        return at >= start && (end === null || at < end);
+                      })
+                      .reduce((s, r) => s + r.amountCents, 0),
+                  0
+                );
+              const redeemedThisCents = redeemedBetween(monthStart, null);
+              const redeemedLastCents = redeemedBetween(prevMonthStart, prevMonthEnd);
               const outstandingCents = data?.totals.activeBalanceCents ?? 0;
               const issuedDelta = issuedLastCents > 0 ? ((issuedThisCents - issuedLastCents) / issuedLastCents) * 100 : null;
               const redeemedDelta = redeemedLastCents > 0 ? ((redeemedThisCents - redeemedLastCents) / redeemedLastCents) * 100 : null;

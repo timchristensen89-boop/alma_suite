@@ -1050,16 +1050,23 @@ export const giftCardService = {
   // venue, and by whom. Staff names are resolved server-side so the client
   // never needs the staff directory. Sold/outstanding figures ride along so
   // the page reads as one statement: money in, money drawn down, money owed.
-  async report(input: { from?: string; to?: string; venue?: string }) {
+  async report(input: { from?: string; to?: string; venue?: string; includeTest?: boolean }) {
     const to = input.to ? new Date(input.to) : new Date();
     const from = input.from ? new Date(input.from) : null;
     if (Number.isNaN(to.getTime()) || (from !== null && Number.isNaN(from.getTime()))) {
       throw new HttpError(400, 'from and to must be ISO dates.');
     }
+    // Test cards are out of the numbers by default — they are not money and a
+    // liability figure that counts them is wrong. But a redemption you cannot
+    // see is indistinguishable from a redemption that did not happen, so there
+    // has to be a way to look: with the toggle on, test rows join the log and
+    // the totals, and every one of them is flagged as test on the way out.
+    const includeTest = input.includeTest === true;
+    const realCardsOnly = includeTest ? {} : { testMode: false };
     const redeemedAt = { lte: to, ...(from ? { gte: from } : {}) };
     const redemptionWhere = {
       status: 'COMPLETED' as const,
-      giftCard: { testMode: false },
+      ...(includeTest ? {} : { giftCard: { testMode: false } }),
       // "Unallocated" is the report's name for redemptions that predate the
       // venue requirement — filtering by it must find those NULL rows.
       ...(input.venue ? { venue: input.venue === 'Unallocated' ? null : input.venue } : {}),
@@ -1072,7 +1079,7 @@ export const giftCardService = {
         orderBy: [{ redeemedAt: 'desc' }],
         take: LOG_CAP,
         include: {
-          giftCard: { select: { code: true, status: true, purchaserName: true, recipientName: true } }
+          giftCard: { select: { code: true, status: true, purchaserName: true, recipientName: true, testMode: true } }
         }
       }),
       prisma.giftCardRedemption.groupBy({
@@ -1090,7 +1097,7 @@ export const giftCardService = {
         _sum: { initialValueCents: true },
         _count: { _all: true },
         where: {
-          testMode: false,
+          ...realCardsOnly,
           status: { in: ['ACTIVE', 'REDEEMED'] },
           paidAt: { lte: to, ...(from ? { gte: from } : {}) }
         }
@@ -1098,7 +1105,7 @@ export const giftCardService = {
       prisma.giftCard.aggregate({
         _sum: { balanceCents: true },
         _count: { _all: true },
-        where: { testMode: false, status: 'ACTIVE' }
+        where: { ...realCardsOnly, status: 'ACTIVE' }
       })
     ]);
     const staffIds = [...new Set(rows.map((row) => row.redeemedById).filter((id): id is string => Boolean(id)))];
@@ -1136,8 +1143,10 @@ export const giftCardService = {
         cardStatus: row.giftCard.status,
         recipientName: row.giftCard.recipientName,
         purchaserName: row.giftCard.purchaserName,
+        testMode: row.giftCard.testMode,
         redeemedByName: row.redeemedById ? (staffName.get(row.redeemedById) ?? null) : null
       })),
+      includeTest,
       truncated: rows.length === LOG_CAP
     };
   },
