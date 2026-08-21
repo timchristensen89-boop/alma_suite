@@ -279,6 +279,52 @@ giftCardsRouter.post('/physical/activate', requireManager, async (req, res, next
   }
 });
 
+/* ------------------------------------------------------------------ */
+/* Donations and sponsorship                                           */
+/* ------------------------------------------------------------------ */
+
+// What is left of this year's twelve. Read by both the admin screen and the
+// counter iPad before either offers the button.
+giftCardsRouter.get('/donations/allocation', requireManager, async (req, res, next) => {
+  try {
+    const year = typeof req.query.year === 'string' ? Number(req.query.year) : undefined;
+    res.json(await giftCardService.donationAllocation(Number.isFinite(year) ? year : undefined));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// The donation register: separate from the purchase report on purpose. A
+// donated voucher is never a sale — it carries no paidAt, so it cannot show up
+// in takings — and the question asked of it is a different one: what did the
+// programme actually cost, against what it looks like from the outside.
+giftCardsRouter.get('/donations/report', requireManager, async (req, res, next) => {
+  try {
+    const year = typeof req.query.year === 'string' ? Number(req.query.year) : undefined;
+    res.json(await giftCardService.donationReport({ year: Number.isFinite(year) ? year : undefined }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.post('/donations', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await giftCardService.recordDonation(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Record the listing after the event: the email confirming you were named is
+// what supports treating this as sponsorship rather than a gift.
+giftCardsRouter.patch('/donations/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.updateDonation(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.post('/redeem', requireGiftCardRedeemer, async (req, res, next) => {
   try {
     const card = await giftCardService.redeem(req.body, req.user?.id);

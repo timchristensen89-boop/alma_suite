@@ -1,6 +1,7 @@
 import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CardArtGallery } from './cardArt/Gallery';
 import { CounterApp } from './CounterApp';
+import { DonationsPage } from './DonationsPage';
 import { ScanSheet } from './ScanSheet';
 import { CustomCardDesigner, type CustomCardDesignerHandle } from './CustomCardDesigner';
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
@@ -57,6 +58,7 @@ import { SuiteSignOutButton } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import {
+  IconGift,
   IconKeyRound,
   IconReceipt,
   IconScan,
@@ -91,6 +93,12 @@ const GIFTCARD_NAV_ITEMS = [
     label: 'Reporting',
     description: 'Who redeemed what, where',
     icon: <ChartIcon />
+  },
+  {
+    href: '/donations#donations',
+    label: 'Donations',
+    description: 'The twelve a year, and what they cost',
+    icon: <IconGift />
   },
   {
     href: '/redeem#redeem',
@@ -1470,6 +1478,7 @@ function SidebarNav() {
   const sectionFromLocation = useCallback(() => {
     if (window.location.pathname.startsWith('/orders')) return '/orders#recent';
     if (window.location.pathname.startsWith('/reporting')) return '/reporting#report';
+    if (window.location.pathname.startsWith('/donations')) return '/donations#donations';
     if (window.location.pathname.startsWith('/admin')) return '/admin#settings';
     if (window.location.pathname.startsWith('/activate')) return '/activate#activate';
     return '/redeem#redeem';
@@ -2320,9 +2329,11 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       ? 'orders'
       : currentPath.startsWith('/reporting')
         ? 'reporting'
-        : currentPath.startsWith('/activate')
-          ? 'activate'
-          : 'redeem';
+        : currentPath.startsWith('/donations')
+          ? 'donations'
+          : currentPath.startsWith('/activate')
+            ? 'activate'
+            : 'redeem';
   const pageCopy = {
     redeem: {
       eyebrow: 'Daily workflow',
@@ -2338,6 +2349,12 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       eyebrow: 'Reporting',
       title: 'Redemption reporting',
       description: 'Every redemption — which card, how much, at which venue, and who rang it through. View only.'
+    },
+    donations: {
+      eyebrow: 'Donations & sponsorship',
+      title: 'The twelve a year',
+      description:
+        'Vouchers not cash, twelve a year, $150–$200 each. The policy, the button, and what the programme actually costs.'
     },
     admin: {
       eyebrow: 'Setup',
@@ -2731,6 +2748,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         ) : null}
 
         {activeGiftCardPage === 'reporting' ? <><GiftCardReporting /><GiftCardPurchases /></> : null}
+        {activeGiftCardPage === 'donations' ? <DonationsPage /> : null}
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
         {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
       </div>
@@ -2875,10 +2893,20 @@ export function App() {
   // nearly repeated that story — every staff route needs a line here.)
   const isActivatePath = window.location.pathname.startsWith('/activate');
   const isReportingPath = window.location.pathname.startsWith('/reporting');
+  const isDonationsPath = window.location.pathname.startsWith('/donations');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
   if (isArtPath) return <CardArtGallery />;
   if (isCounterPath) return <CounterApp />;
-  if (!isRedeemPath && !isOrdersPath && !isAdminPath && !isActivatePath && !isReportingPath) return <PublicGiftCardShop />;
+  if (
+    !isRedeemPath &&
+    !isOrdersPath &&
+    !isAdminPath &&
+    !isActivatePath &&
+    !isReportingPath &&
+    !isDonationsPath
+  ) {
+    return <PublicGiftCardShop />;
+  }
   return <GiftCardAdminApp />;
 }

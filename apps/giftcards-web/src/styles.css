@@ -3886,3 +3886,324 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
 
 /* The counter's scan-first button sits above the keyboard path. */
 .counter-scanbtn { width: 100%; }
+
+/* ------------------------------------------------------------------ */
+/* Donations and sponsorship                                           */
+/* ------------------------------------------------------------------ */
+
+.donation-policy {
+  list-style: none;
+  counter-reset: donation-rule;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.donation-policy li {
+  counter-increment: donation-rule;
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  gap: 0.15rem 0.6rem;
+  align-items: baseline;
+}
+
+.donation-policy li::before {
+  content: counter(donation-rule);
+  grid-row: span 2;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  opacity: 0.45;
+}
+
+.donation-policy li strong { font-weight: 600; }
+.donation-policy li span { grid-column: 2; font-size: 0.9rem; opacity: 0.75; }
+
+.donation-why { margin-bottom: 1rem; }
+.donation-why h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+
+.donation-why-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.donation-why-table th,
+.donation-why-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  text-align: right;
+}
+
+.donation-why-table thead th,
+.donation-why-table tbody th { text-align: left; font-weight: 500; }
+.donation-why-table tbody td:last-child { font-weight: 600; }
+
+.donation-tax { margin-top: 0.75rem; font-size: 0.9rem; }
+.donation-tax summary { cursor: pointer; font-weight: 500; }
+.donation-tax p { margin: 0.6rem 0 0; opacity: 0.8; line-height: 1.5; }
+
+/* Allocation --------------------------------------------------------- */
+
+.donation-allocation {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.donation-allocation strong { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+.donation-allocation small { opacity: 0.7; }
+.donation-allocation.is-low { background: color-mix(in srgb, #c98a12 22%, transparent); }
+.donation-allocation.is-spent { background: color-mix(in srgb, #b23b3b 22%, transparent); }
+
+/* Twelve pips: the year at a glance, no counting required. */
+.donation-pips {
+  display: flex;
+  gap: 0.3rem;
+  margin: 0 0 1rem;
+}
+
+.donation-pips span {
+  width: 100%;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.donation-pips span.is-used { background: var(--giftcards-primary, #2f5d3f); }
+
+/* Issue form --------------------------------------------------------- */
+
+.donation-kicker {
+  margin: 1.1rem 0 0.5rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.donation-amounts { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.donation-amounts button,
+.donation-custom {
+  min-width: 5.5rem;
+  padding: 0.6rem 1rem;
+  border-radius: 0.6rem;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.donation-amounts button.is-on {
+  background: var(--giftcards-primary, #2f5d3f);
+  border-color: var(--giftcards-primary, #2f5d3f);
+  color: #fff;
+}
+
+.donation-custom { cursor: text; }
+
+.donation-criteria { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+
+.donation-criteria label {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  cursor: pointer;
+}
+
+.donation-criteria input { margin-top: 0.2rem; }
+.donation-criteria span { display: grid; gap: 0.1rem; }
+.donation-criteria small { opacity: 0.7; font-size: 0.85rem; }
+
+.donation-blockers,
+.donation-warnings {
+  list-style: none;
+  margin: 0.9rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.donation-blockers { background: color-mix(in srgb, #b23b3b 14%, transparent); }
+.donation-warnings { background: color-mix(in srgb, #c98a12 14%, transparent); }
+
+.donation-code {
+  font-size: clamp(1.8rem, 5vw, 2.6rem);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.donation-issued-value { font-size: 1.05rem; margin: 0 0 0.5rem; }
+.donation-conditions { opacity: 0.8; font-size: 0.9rem; margin: 0 0 0.75rem; }
+
+/* Register ----------------------------------------------------------- */
+
+.donation-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.donation-stat {
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.6rem;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  display: grid;
+  gap: 0.2rem;
+}
+
+.donation-stat.is-strong {
+  border-color: var(--giftcards-primary, #2f5d3f);
+  background: color-mix(in srgb, var(--giftcards-primary, #2f5d3f) 8%, transparent);
+}
+
+.donation-stat-label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.65; }
+.donation-stat-value { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.donation-stat small { opacity: 0.7; font-size: 0.82rem; }
+
+.donation-verdict {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  line-height: 1.5;
+}
+
+.donation-venues { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.35rem; font-size: 0.9rem; }
+.donation-venues li { display: flex; justify-content: space-between; gap: 1rem; }
+
+.donation-cell-note { display: block; opacity: 0.65; font-size: 0.82rem; }
+
+.donation-linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.donation-linkish.is-missing { opacity: 0.6; font-style: italic; }
+.donation-edit-row td { background: color-mix(in srgb, currentColor 5%, transparent); }
+
+/* Templates ---------------------------------------------------------- */
+
+.donation-templates {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.donation-templates article {
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+
+.donation-templates header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.donation-templates h4 { margin: 0; font-size: 0.9rem; }
+
+.donation-templates pre {
+  margin: 0;
+  padding: 0.75rem;
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+/* Counter iPad ------------------------------------------------------- */
+
+.counter-allocation {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.9rem;
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  margin-bottom: 1rem;
+}
+
+.counter-allocation strong { font-size: 2.4rem; font-variant-numeric: tabular-nums; line-height: 1; }
+.counter-allocation.is-low { background: color-mix(in srgb, #c98a12 25%, transparent); }
+.counter-allocation.is-spent { background: color-mix(in srgb, #b23b3b 25%, transparent); }
+
+.counter-criteria { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.counter-criteria button {
+  flex: 1 1 8rem;
+  min-height: 3rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.6rem;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  background: transparent;
+  color: inherit;
+  font-size: 0.95rem;
+}
+
+.counter-criteria button.is-on {
+  background: var(--giftcards-primary, #2f5d3f);
+  border-color: var(--giftcards-primary, #2f5d3f);
+  color: #fff;
+}
+
+/*
+ * Colours are literal here, not color-mix against currentColor. The counter
+ * shell is a dark green gradient with cream text, and mixing against that
+ * produced a muted brown panel that read as decoration — on a full Friday
+ * night this is the one thing on the screen that must not be skimmed.
+ */
+.counter-donation-note {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border-left: 5px solid #e7cd8b;
+  background: rgba(231, 205, 139, 0.16);
+  color: #f7ecdb;
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.counter-donation-note p { margin: 0 0 6px; }
+.counter-donation-note p:last-child { margin-bottom: 0; }
+.counter-donation-head { font-weight: 600; letter-spacing: 0.01em; }
+
+/* Solid, not a tint: the blackout has to survive a glance across the pass. */
+.counter-donation-note.is-blackout {
+  background: #8f1d1d;
+  border-left-color: #ffb4a6;
+  color: #ffe9e4;
+}
+
+.counter-donation-blackout { font-weight: 700; }
+.counter-donation-warn { opacity: 0.9; }
