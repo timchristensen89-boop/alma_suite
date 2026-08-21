@@ -16,8 +16,15 @@
   --pos-border: rgba(31, 53, 36, 0.12);
   --pos-border-soft: rgba(31, 53, 36, 0.08);
   --pos-text: #1f3524;
-  --pos-text2: rgba(31, 53, 36, 0.7);
-  --pos-text3: rgba(31, 53, 36, 0.52);
+  /* Alphas chosen against the grounds these actually sit on, not by eye.
+     Secondary text was 0.7 and tertiary 0.52, which measured 3.0:1 on cream
+     and 2.8:1 on a terra tile — under AA at every size the register uses them
+     at. "4 items" under a tile name, "drag · colour · remove", the hint lines:
+     all of it was decoration you had to lean in to read, on a screen someone
+     reads across a bar in a rush. 0.72 clears 4.5:1 on the worst ground in
+     the system (the terra tiles); 0.82 keeps a real step above it. */
+  --pos-text2: rgba(31, 53, 36, 0.82);
+  --pos-text3: rgba(31, 53, 36, 0.72);
   --pos-accent-bg: #1f3524;
   --pos-accent-fg: #f8f6f1;
   --pos-chip: #efe8dc;
@@ -25,8 +32,14 @@
   /* legacy var names used across styles.css — remapped to the new system */
   --pos-accent: #4f6b47;
   --pos-line: rgba(31, 53, 36, 0.12);
-  --pos-muted: rgba(31, 53, 36, 0.55);
+  --pos-muted: rgba(31, 53, 36, 0.72);
   --pos-danger: #9a3a2e;
+  /* Amber says "needs attention" — a table calling, money still owing. As a
+     fill (#b5772f) it is fine; as text on paper it measured 3.7:1, so the one
+     colour in the system that means "look at this" was the hardest to read.
+     This is the reading version; the fill keeps its brightness. */
+  --pos-warn: #b5772f;
+  --pos-warn-text: #96601c;
 
   --tile-terra-bg: #f2d6ce; --tile-terra-fg: #7c2f24; --tile-terra-bd: rgba(154, 58, 46, 0.22);
   --tile-amber-bg: #f6e5cc; --tile-amber-fg: #7e5218; --tile-amber-bd: rgba(181, 119, 47, 0.25);
@@ -67,6 +80,10 @@ body.pos-dark {
   --pos-line: rgba(248, 246, 241, 0.14);
   --pos-muted: rgba(248, 246, 241, 0.55);
   --pos-danger: #f0b7ac;
+  /* On the dark board cream-on-forest already clears AA at these alphas, and
+     the amber only has to be light enough — it is the same colour both ways. */
+  --pos-warn: #eacb96;
+  --pos-warn-text: #eacb96;
 
   --tile-terra-bg: #3a2420; --tile-terra-fg: #f0b7ac; --tile-terra-bd: rgba(240, 183, 172, 0.2);
   --tile-amber-bg: #39301d; --tile-amber-fg: #eacb96; --tile-amber-bd: rgba(234, 203, 150, 0.2);
@@ -318,7 +335,9 @@ body.pos-dark .pos-rail { background: #10160f; }
 .pos-rail-venue i { width: 8px; height: 8px; border-radius: 9999px; background: #c7dab2; flex: none; }
 .pos-rail-venue select { background: transparent; border: 0; color: #f8f6f1; font-family: inherit; font-size: 12.5px; font-weight: 600; width: 100%; outline: none; }
 .pos-rail-venue select option { color: #1f3524; }
-.pos-rail-eyebrow { font-size: 9px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(255, 255, 255, 0.4); padding: 12px 10px 4px; }
+/* 0.4 measured 3.45:1 on the forest rail; 0.55 clears AA and the eyebrow is
+   still plainly quieter than the items under it. */
+.pos-rail-eyebrow { font-size: 9px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); padding: 12px 10px 4px; }
 .pos-rail-item { display: flex; align-items: center; gap: 8px; background: transparent; border: 0; border-radius: 10px; color: rgba(255, 255, 255, 0.75); font-family: inherit; font-size: 12.5px; font-weight: 500; padding: 8px 10px; cursor: pointer; text-align: left; transition: all 180ms var(--ease-out); }
 .pos-rail-item:hover { background: rgba(255, 255, 255, 0.06); }
 .pos-rail-item.is-on { background: rgba(255, 255, 255, 0.1); color: #fff; font-weight: 700; }
@@ -387,8 +406,31 @@ body.pos-dark { --pos-btn: rgba(248, 246, 241, 0.05); --pos-btn-strong: rgba(248
 
 /* ── ALMA Live in the paper design ── */
 .live-shell { background: var(--pos-bg); color: var(--pos-text); font-family: var(--font-sans); }
-.live-header { background: var(--pos-bg); border-bottom: 1px solid var(--pos-border-soft); }
-.live-header strong { font-family: var(--font-display); font-weight: 500; font-size: 22px; letter-spacing: 0; text-transform: lowercase; color: var(--pos-text); }
+/* The one place the forest actually gets to be a surface.
+   On an iPad the green lives in the left rail; on a phone that rail is hidden,
+   so the brand disappears entirely — which is why the board reads as anonymous
+   cream. Live is the right place to give it back: it is a board you glance at
+   rather than work in, so a strong header costs nothing in service and the
+   masthead is doing what a masthead is for. The register's own chrome is left
+   alone deliberately; that one is a working surface and repainting it is a
+   decision, not a fix. */
+.live-header {
+  background: var(--pos-text);
+  border-bottom: 0;
+  color: var(--pos-accent-fg);
+  padding-top: calc(14px + env(safe-area-inset-top));
+}
+.live-header strong { font-family: var(--font-display); font-weight: 500; font-size: 22px; letter-spacing: 0; text-transform: lowercase; color: var(--pos-accent-fg); }
+.live-header .live-date { color: rgba(248, 246, 241, 0.7); }
+.live-header .live-grand { color: var(--pos-accent-fg); }
+.live-header .live-grand small { color: rgba(248, 246, 241, 0.7); }
+.live-header .live-back {
+  border-color: rgba(248, 246, 241, 0.35);
+  background: transparent;
+  color: var(--pos-accent-fg);
+  box-shadow: none;
+}
+.live-header .live-back:hover { background: rgba(248, 246, 241, 0.12); color: var(--pos-accent-fg); }
 .live-date { color: var(--pos-text3); }
 .live-back {
   border-color: var(--pos-border); background: var(--pos-card); color: var(--pos-text2);
@@ -412,8 +454,8 @@ body.pos-dark { --pos-btn: rgba(248, 246, 241, 0.05); --pos-btn-strong: rgba(248
 .live-total { color: var(--pos-text); }
 .live-stats { color: var(--pos-text3); }
 .live-stats b { color: var(--pos-text); }
-.live-open { color: #b5772f; }
-.live-open b { color: #b5772f; }
+.live-open { color: var(--pos-warn-text); }
+.live-open b { color: var(--pos-warn-text); }
 .live-hour-bar { background: linear-gradient(180deg, #4f6b47, #3f5738); }
 body.pos-dark .live-hour-bar { background: linear-gradient(180deg, #bcd3a8, #4f6b47); }
 .live-hour small { color: var(--pos-text3); }
@@ -452,6 +494,29 @@ body.pos-v2 .pos-cart.is-collapsed .pos-cart-strip { background: var(--pos-card)
 .pos-floor-table.is-occupied.is-away { background: var(--tile-moss-bg); color: var(--tile-moss-fg); border-color: var(--tile-moss-bd); }
 
 .office-chiprow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+/* These were unstyled buttons: the browser's own grey face with the page's
+   forest text on top, measuring 2.47:1 — the worst contrast anywhere in the
+   register, and on the control that decides what guests can order. They wear
+   the chip shape the rest of the suite uses, and hidden reads as struck
+   through rather than merely dimmer. */
+.office-chiprow button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 13px;
+  border-radius: 9999px;
+  cursor: pointer;
+  border: 1px solid var(--pos-border);
+  background: var(--pos-card);
+  color: var(--pos-text);
+}
+.office-chiprow button:hover { background: var(--pos-hover); }
+.office-chiprow button.is-off {
+  background: var(--pos-chip);
+  color: var(--pos-text3);
+  border-style: dashed;
+  text-decoration: line-through;
+}
 .office-chip { background: var(--pos-btn); border: 1px solid var(--pos-border); border-radius: 9999px; color: var(--pos-text); font-size: 12px; font-weight: 600; padding: 7px 13px; cursor: pointer; font-family: inherit; }
 .office-chip:hover { background: var(--pos-btn-strong); }
 .office-chip.is-hidden { opacity: 0.55; text-decoration: line-through; }
