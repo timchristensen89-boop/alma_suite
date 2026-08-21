@@ -197,6 +197,8 @@ function systemMarketingActor(venue: string | null): AuthUser {
     venue,
     accountType: 'HUMAN',
     isAdmin: true,
+    // A system job is never a training till.
+    trainingOnly: false,
     role: 'ADMIN',
     appAccess: []
   } as AuthUser;

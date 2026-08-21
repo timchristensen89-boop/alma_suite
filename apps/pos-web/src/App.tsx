@@ -406,8 +406,12 @@ type StaffOption = { id: string; name: string; roleTitle: string; hasPin: boolea
 type AuthShape =
   | 'loading'
   | null
-  | { kind: 'staff'; name: string }
-  | { kind: 'device'; staffName: string | null; staffList: StaffOption[] };
+  // `trainingOnly` is a practice account. It comes from the server on every
+  // /api/auth/me, and on a shared device it is already the OR of the till and
+  // the PIN — the client only reads it. Nothing here can clear it, which is
+  // the entire difference from the localStorage switch it replaces.
+  | { kind: 'staff'; name: string; trainingOnly: boolean }
+  | { kind: 'device'; staffName: string | null; staffList: StaffOption[]; trainingOnly: boolean };
 
 export function App() {
   const [me, setMe] = useState<AuthShape>('loading');
@@ -511,7 +515,19 @@ export function App() {
   const [courses, setCourses] = useState<string[]>(FALLBACK_COURSES);
   // Course the next tapped item lands in (null = automatic food/drinks pick).
   const [targetCourse, setTargetCourse] = useState<string | null>(null);
-  const [training, setTraining] = useState(() => localStorage.getItem('alma.pos.training') === '1');
+  // Training has two sources and they are not equal.
+  //
+  // `trainingSwitch` is the old one: a per-device opt-in a manager flips to
+  // practise on a real till. It stays, because it is useful.
+  //
+  // `trainingLocked` is the account saying so, and it wins. It cannot be
+  // switched off here, and the server does not believe this client anyway —
+  // createOrder ORs the account's flag in regardless of what we send. The UI
+  // below is honesty about a decision already made server-side, not the
+  // decision itself.
+  const [trainingSwitch, setTrainingSwitch] = useState(() => localStorage.getItem('alma.pos.training') === '1');
+  const trainingLocked = me !== 'loading' && me !== null && me.trainingOnly;
+  const training = trainingSwitch || trainingLocked;
   const [managerGate, setManagerGate] = useState<null | { message: string; pin: string; retry: (pin: string) => void }>(null);
   const [pinSearch, setPinSearch] = useState('');
   const [deviceLanding, setDeviceLanding] = useState(() => localStorage.getItem('alma.pos.deviceLanding') ?? '');
@@ -1020,7 +1036,16 @@ export function App() {
 
   const refreshAuth = useCallback(async () => {
     try {
-      const res = await api<{ user: { id: string; firstName?: string; lastName?: string; accountType?: string; deviceAccount?: boolean } | null }>('/api/auth/me');
+      const res = await api<{
+        user: {
+          id: string;
+          firstName?: string;
+          lastName?: string;
+          accountType?: string;
+          trainingOnly?: boolean;
+          deviceAccount?: boolean;
+        } | null;
+      }>('/api/auth/me');
       const user = res.user;
       if (!user) {
         setMe(null);
@@ -1033,9 +1058,13 @@ export function App() {
         const staffName = list.activeUser
           ? `${list.activeUser.firstName ?? ''} ${list.activeUser.lastName ?? ''}`.trim() || null
           : null;
-        setMe({ kind: 'device', staffName, staffList: list.staff });
+        setMe({ kind: 'device', staffName, staffList: list.staff, trainingOnly: user.trainingOnly === true });
       } else {
-        setMe({ kind: 'staff', name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Staff' });
+        setMe({
+          kind: 'staff',
+          name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Staff',
+          trainingOnly: user.trainingOnly === true
+        });
       }
     } catch {
       setMe(null);
@@ -3378,13 +3407,19 @@ export function App() {
       ) : null}
       {training ? (
         <div
-          className="pos-training"
-          onClick={() => {
-            setTraining(false);
-            localStorage.setItem('alma.pos.training', '0');
-          }}
+          className={trainingLocked ? 'pos-training is-locked' : 'pos-training'}
+          onClick={
+            trainingLocked
+              ? undefined
+              : () => {
+                  setTrainingSwitch(false);
+                  localStorage.setItem('alma.pos.training', '0');
+                }
+          }
         >
-          TRAINING MODE — sales don't count, nothing reaches the kitchen. Tap to end.
+          {trainingLocked
+            ? "TRAINING TILL — sales don't count, nothing reaches the kitchen. This account is practice only."
+            : "TRAINING MODE — sales don't count, nothing reaches the kitchen. Tap to end."}
         </div>
       ) : null}
       {offline || queue.length > 0 ? (
@@ -7578,21 +7613,29 @@ export function App() {
             </details>
             <details className="pos-acc">
               <summary>
-                Training <small>{training ? 'ON' : 'off'}</small>
+                Training <small>{trainingLocked ? 'ON — this account' : training ? 'ON' : 'off'}</small>
               </summary>
               <div className="pos-acc-body">
-                <label className="pos-check-row">
-                  <input
-                    type="checkbox"
-                    checked={training}
-                    onChange={() => {
-                      const next = !training;
-                      setTraining(next);
-                      localStorage.setItem('alma.pos.training', next ? '1' : '0');
-                    }}
-                  />
-                  Training mode — practice sales that never post
-                </label>
+                {trainingLocked ? (
+                  <p className="pos-hint">
+                    This account is a training till. Every bill it opens is a practice sale — no takings, no drawer, no
+                    reports, nothing to the kitchen — and card terminals and gift cards are switched off on it. It cannot
+                    be turned off from here; an admin changes it on the staff profile.
+                  </p>
+                ) : (
+                  <label className="pos-check-row">
+                    <input
+                      type="checkbox"
+                      checked={trainingSwitch}
+                      onChange={() => {
+                        const next = !trainingSwitch;
+                        setTrainingSwitch(next);
+                        localStorage.setItem('alma.pos.training', next ? '1' : '0');
+                      }}
+                    />
+                    Training mode — practice sales that never post
+                  </label>
+                )}
               </div>
             </details>
             <button

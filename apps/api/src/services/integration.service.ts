@@ -199,6 +199,8 @@ const integrationSchedulerActor: AuthUser = {
   venue: null,
   accountType: 'HUMAN',
   isAdmin: true,
+  // A scheduled job is never a training till.
+  trainingOnly: false,
   role: 'ADMIN',
   appAccess: []
 };

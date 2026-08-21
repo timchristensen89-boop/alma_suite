@@ -2267,6 +2267,14 @@ export const staffService = {
       throw new HttpError(403, 'Managers cannot move staff profiles outside their venue.');
     }
 
+    // Training-only is a financial control, not a preference. Setting it stops
+    // a real person's sales counting toward takings; clearing it hands a live
+    // till to whoever was meant to be practising. Either direction is an admin
+    // decision, the same as isAdmin itself.
+    if (data.trainingOnly !== undefined && actor && !actor.isAdmin && actor.role !== 'ADMIN') {
+      throw new HttpError(403, 'Only an Alma admin can put an account on a training till, or take it off one.');
+    }
+
     if (email && email !== existing.email) {
       const conflict = await prisma.staffProfile.findUnique({ where: { email } });
       if (conflict) {
@@ -2291,6 +2299,7 @@ export const staffService = {
         }),
         ...onboardingDetailUpdateData(data),
         ...(data.posPermissions !== undefined && { posPermissions: data.posPermissions }),
+        ...(data.trainingOnly !== undefined && { trainingOnly: data.trainingOnly }),
         ...(data.notes !== undefined && { notes: data.notes || null })
     };
 

@@ -172,7 +172,7 @@ posRouter.patch('/tables/:id/position', async (req, res, next) => {
 
 posRouter.post('/orders', async (req, res, next) => {
   try {
-    res.status(201).json(await posService.createOrder(req.body));
+    res.status(201).json(await posService.createOrder(req.body, req.user));
   } catch (error) {
     next(error);
   }

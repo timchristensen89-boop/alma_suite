@@ -237,6 +237,8 @@ body.pos-dark .pos-modal { background: rgba(0, 0, 0, 0.55); }
 .pos-offline { background: #9a3a2e; color: #fff; bottom: 76px; }
 .pos-offline.is-syncing { background: #b5772f; color: #fff; }
 .pos-training { background: #b5772f; color: #fff; bottom: 76px; cursor: pointer; }
+/* Locked by the account: not a thing you dismiss, so it stops offering to be. */
+.pos-training.is-locked { cursor: default; }
 @keyframes pos-toast-in { from { opacity: 0; transform: translate(-50%, 14px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 /* receipts print on paper — force ink on white regardless of theme */
@@ -717,6 +719,15 @@ body.pos-dark .pos-danger-ghost { color: #e88a77 !important; border-color: rgba(
 .pos-acc summary small { font-weight: 500; color: var(--pos-text-soft, #777); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
 .pos-acc-body { padding: 4px 14px 12px; border-top: 1px solid var(--pos-border); }
 .pos-check-row { display: flex; align-items: center; gap: 10px; padding: 7px 2px; font-size: 13.5px; cursor: pointer; }
+/* Where a setting is decided elsewhere, prose rather than a checkbox nobody
+   can move — a disabled control reads as a bug, an explanation reads as a
+   rule. */
+.pos-hint {
+  margin: 4px 2px 2px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--pos-text2);
+}
 .pos-check-row input { width: 17px; height: 17px; accent-color: #1f3524; flex: none; }
 body.pos-dark .pos-check-row input { accent-color: #7fb894; }
 
