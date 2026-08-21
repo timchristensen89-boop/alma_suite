@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import nodemailer from 'nodemailer';
 import QRCode from 'qrcode';
+import { rosterShiftLine } from '@alma/shared';
 
 /**
  * The ALMA wordmark, in the ink that suits the surface behind it. Always the
@@ -528,6 +529,109 @@ export const mailService = {
    * mentioned again. Short, specific, and it says how long they have left —
    * a reminder that does not give a deadline reads as optional.
    */
+
+  /**
+   * "Here is your week, and here is the link that keeps it up to date."
+   *
+   * Sent once per person when a roster is published, listing only the shifts
+   * that just went live. Two things have to survive being read on a phone in
+   * ten seconds: the days they are on, and the calendar link — so those are
+   * the only two things given any weight.
+   *
+   * The subscribe link matters more than the list. The list is right today;
+   * the subscription is right after Tim moves a shift on Thursday.
+   */
+  async sendRosterPublished(input: {
+    to: string;
+    firstName: string;
+    shifts: Array<{
+      startsAt: string;
+      endsAt: string;
+      venue?: string | null;
+      area?: string | null;
+      roleTitle?: string | null;
+      breakMinutes?: number | null;
+    }>;
+    feedUrl: string;
+    subscribeUrl: string;
+  }): Promise<EmailDeliveryResult> {
+    const count = input.shifts.length;
+    if (count === 0) {
+      return { status: 'skipped', reason: 'No shifts to send' };
+    }
+
+    // Formatted by the shared helper so what is tested is what is sent — the
+    // day and the time are rendered in venue time there, explicitly, which is
+    // the part that goes silently wrong on a UTC server twice a year.
+    const rows = input.shifts.map((shift) => rosterShiftLine(shift));
+
+    const first = rows[0]!;
+    const span = count === 1 ? first.day : `${first.day} – ${rows.at(-1)!.day}`;
+    const subject = count === 1 ? `Your shift: ${first.day}` : `Your ${count} shifts — ${span}`;
+
+    const text = [
+      `Hi ${input.firstName},`,
+      '',
+      count === 1 ? 'A shift has just gone up for you:' : `${count} shifts have just gone up for you:`,
+      '',
+      ...rows.map((row) => `  ${row.day}   ${row.hours}   ${row.where}${row.area ? ` (${row.area})` : ''}`),
+      '',
+      'Add these to your phone once and they stay right — if a shift moves, your calendar moves with it:',
+      input.subscribeUrl,
+      '',
+      "If that link does not open, paste this one into your calendar app instead:",
+      input.feedUrl,
+      '',
+      'Check with your manager if anything looks wrong.'
+    ].join('\n');
+
+    const rowsHtml = rows
+      .map(
+        (row) => `
+          <tr>
+            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:14px;font-weight:600;white-space:nowrap">
+              ${escapeHtml(row.day)}
+            </td>
+            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:14px;white-space:nowrap">
+              ${escapeHtml(row.hours)}
+            </td>
+            <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:14px;color:#475569">
+              ${escapeHtml(row.where)}${row.area ? `<br><span style="font-size:12px;color:#94a3b8">${escapeHtml(row.area)}</span>` : ''}
+            </td>
+          </tr>`
+      )
+      .join('');
+
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#0f172a;max-width:560px;margin:0 auto;padding:24px">
+        <div style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#64748b;margin-bottom:18px">
+          ALMA Suites · Roster
+        </div>
+        <p style="font-size:16px;margin:0 0 12px">Hi ${escapeHtml(input.firstName)},</p>
+        <p style="font-size:14px;margin:0 0 18px">
+          ${count === 1 ? 'A shift has just gone up for you.' : `${count} shifts have just gone up for you.`}
+        </p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 22px">
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        <p style="margin:0 0 10px">
+          <a href="${escapeHtml(input.subscribeUrl)}" style="display:inline-block;background:${BRAND_ACCENT};color:#ffffff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:8px;font-size:14px">
+            Add to my calendar
+          </a>
+        </p>
+        <p style="font-size:13px;color:#475569;margin:0 0 18px">
+          Add it once and it stays right — if a shift moves, your calendar moves with it. If the button does not open,
+          paste <a href="${escapeHtml(input.feedUrl)}" style="color:${BRAND_ACCENT}">this link</a> into your calendar app.
+        </p>
+        <p style="font-size:13px;color:#475569;margin:0">
+          Check with your manager if anything looks wrong.
+        </p>
+      </div>
+    `;
+
+    return deliverEmail({ to: input.to, subject, text, html });
+  },
+
   async sendOnboardingReminder(input: {
     to: string;
     firstName: string;

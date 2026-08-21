@@ -628,6 +628,12 @@ model StaffProfile {
   email                        String?                    @unique
   phone                        String?
   venue                        String?
+  /// Secret in the URL of this person's calendar feed. Apple and Google
+  /// Calendar cannot carry a login when they poll a subscription, so the token
+  /// IS the credential — long, random, and rotatable by the holder or a
+  /// manager if a phone goes missing. Null until they first ask for the link.
+  calendarToken                String?                    @unique
+  calendarTokenIssuedAt        DateTime?
   employmentStatus             String                     @default("ACTIVE")
   accountType                  StaffAccountType           @default(HUMAN)
   startDate                    DateTime?

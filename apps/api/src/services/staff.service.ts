@@ -12,6 +12,8 @@ import {
   describeCertificationBlock,
   expiredCertificationsForShift,
   normaliseOnboardingSettings,
+  buildRosterCalendar,
+  webcalUrl,
   rosterShiftInputSchema,
   rosterPublishInputSchema,
   rosterShiftUpdateInputSchema,
@@ -83,6 +85,7 @@ import type {
   StaffLeaveType
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { env } from '../env.js';
 import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
 import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { configuredSuperRateFraction } from './settings.service.js';
@@ -91,6 +94,18 @@ import { communicationsService } from './communications.service.js';
 import { mailService } from './mail.service.js';
 import { handbookDocumentService } from './handbook-document.service.js';
 import { createThread } from './messaging.service.js';
+
+export type RosterCalendarLinks = {
+  /** https — what Google Calendar wants pasted in, and what a browser downloads. */
+  feedUrl: string;
+  /** webcal:// — iOS and macOS hand this straight to Calendar as a subscription. */
+  subscribeUrl: string;
+};
+
+function calendarLinksFor(token: string): RosterCalendarLinks {
+  const feedUrl = `${env.publicApiUrl.replace(/\/+$/, '')}/api/staff/calendar/${token}.ics`;
+  return { feedUrl, subscribeUrl: webcalUrl(feedUrl) };
+}
 
 function generateToken() {
   return randomBytes(24).toString('base64url');
@@ -4597,6 +4612,118 @@ export const staffService = {
     return { renamed: result.count };
   },
 
+
+  /* ---------------------------------------------------------------- */
+  /* Calendar feed                                                     */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * The secret in this person's calendar URL, minted on first ask.
+   *
+   * 32 bytes of base64url — a calendar client cannot carry a login when it
+   * polls, so the token is the whole credential and has to be long enough that
+   * guessing is hopeless. Idempotent: asking twice gives the same link, so a
+   * staff member re-opening the page does not silently break the subscription
+   * already on their phone.
+   */
+  async ensureCalendarToken(staffProfileId: string): Promise<string> {
+    const existing = await prisma.staffProfile.findUnique({
+      where: { id: staffProfileId },
+      select: { calendarToken: true }
+    });
+    if (!existing) throw new HttpError(404, 'Staff profile not found');
+    if (existing.calendarToken) return existing.calendarToken;
+
+    const token = randomBytes(32).toString('base64url');
+    await prisma.staffProfile.update({
+      where: { id: staffProfileId },
+      data: { calendarToken: token, calendarTokenIssuedAt: new Date() }
+    });
+    return token;
+  },
+
+  /**
+   * Burn the old link and issue a new one — for a lost phone, or a person
+   * leaving. Anything subscribed to the old URL stops updating immediately,
+   * which is the point.
+   */
+  async rotateCalendarToken(staffProfileId: string): Promise<{ token: string; links: RosterCalendarLinks }> {
+    const token = randomBytes(32).toString('base64url');
+    await prisma.staffProfile.update({
+      where: { id: staffProfileId },
+      data: { calendarToken: token, calendarTokenIssuedAt: new Date() }
+    });
+    return { token, links: calendarLinksFor(token) };
+  },
+
+  async calendarLinks(staffProfileId: string): Promise<RosterCalendarLinks & { issuedAt: string | null }> {
+    const token = await this.ensureCalendarToken(staffProfileId);
+    const profile = await prisma.staffProfile.findUnique({
+      where: { id: staffProfileId },
+      select: { calendarTokenIssuedAt: true }
+    });
+    return {
+      ...calendarLinksFor(token),
+      issuedAt: profile?.calendarTokenIssuedAt ? profile.calendarTokenIssuedAt.toISOString() : null
+    };
+  },
+
+  /**
+   * Serve one person's calendar, addressed only by the token.
+   *
+   * DRAFT shifts are excluded: a draft is the manager's working copy and
+   * putting it on somebody's phone would have them turn up to a shift that was
+   * never actually given to them. Cancelled ones ARE included so the feed can
+   * tell the phone to strike them out — a subscription only learns about a
+   * removal if it is told.
+   *
+   * The window is deliberately wide backwards as well as forwards: a client
+   * that re-syncs and finds last week missing may quietly delete history.
+   */
+  async calendarFeed(token: string): Promise<{ ics: string; filename: string }> {
+    const clean = String(token || '').replace(/\.ics$/i, '').trim();
+    if (!clean || clean.length < 20) throw new HttpError(404, 'No calendar here.');
+
+    const profile = await prisma.staffProfile.findUnique({
+      where: { calendarToken: clean },
+      select: { id: true, firstName: true, lastName: true }
+    });
+    if (!profile) throw new HttpError(404, 'No calendar here.');
+
+    const now = new Date();
+    const from = new Date(now);
+    from.setMonth(from.getMonth() - 3);
+    const to = new Date(now);
+    to.setMonth(to.getMonth() + 12);
+
+    const shifts = await prisma.rosterShift.findMany({
+      where: {
+        staffProfileId: profile.id,
+        status: { in: ['PUBLISHED', 'COMPLETED', 'CANCELLED'] },
+        startsAt: { gte: from, lte: to }
+      },
+      orderBy: { startsAt: 'asc' },
+      select: {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+        venue: true,
+        area: true,
+        roleTitle: true,
+        notes: true,
+        breakMinutes: true,
+        updatedAt: true,
+        status: true
+      }
+    });
+
+    const staffName = `${profile.firstName} ${profile.lastName}`.trim();
+    return {
+      ics: buildRosterCalendar({ shifts, staffName, now }),
+      filename: `alma-shifts-${profile.firstName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`
+    };
+  },
+
   async publishRoster(input: unknown, publishedById?: string, actor?: AuthUser) {
     const data = rosterPublishInputSchema.parse(input);
     const startDate = new Date(data.start);
@@ -4609,15 +4736,43 @@ export const staffService = {
     }
     const scopedVenue = scopeVenueForActor(data.venue || undefined, actor);
 
-    await prisma.rosterShift.updateMany({
-      where: {
-        status: 'DRAFT',
-        startsAt: { lt: endDate },
-        endsAt: { gt: startDate },
-        ...(scopedVenue ? { venue: scopedVenue } : {})
-      },
-      data: { status: 'PUBLISHED' }
+    const draftWhere = {
+      status: 'DRAFT' as const,
+      startsAt: { lt: endDate },
+      endsAt: { gt: startDate },
+      ...(scopedVenue ? { venue: scopedVenue } : {})
+    };
+
+    /*
+     * Read who is about to be told BEFORE flipping the status.
+     *
+     * updateMany hands back a count, not rows, and the instant it runs these
+     * shifts are indistinguishable from ones published last week — so this is
+     * the only moment the "newly published" set exists. It is also what makes
+     * a second publish harmless: the drafts are gone, so nobody is emailed
+     * twice about the same week.
+     *
+     * Open shifts (staffProfileId null) are nobody's to be told about.
+     */
+    const newlyPublished = await prisma.rosterShift.findMany({
+      where: { ...draftWhere, staffProfileId: { not: null } },
+      orderBy: { startsAt: 'asc' },
+      select: {
+        id: true,
+        staffProfileId: true,
+        startsAt: true,
+        endsAt: true,
+        venue: true,
+        area: true,
+        roleTitle: true,
+        breakMinutes: true,
+        notes: true
+      }
     });
+
+    await prisma.rosterShift.updateMany({ where: draftWhere, data: { status: 'PUBLISHED' } });
+
+    const notified = await this.notifyPublishedShifts(newlyPublished);
 
     if (data.forecast) {
       await prisma.rosterForecastSnapshot.deleteMany({
@@ -4647,7 +4802,119 @@ export const staffService = {
       });
     }
 
-    return this.listRoster(startDate.toISOString(), endDate.toISOString(), undefined, actor);
+    // An object, not the bare array this used to return: listRoster hands back
+    // an array, and spreading one into an object silently turns it into
+    // {"0": shift, "1": shift} — legal TypeScript, nonsense over the wire.
+    const shifts = await this.listRoster(startDate.toISOString(), endDate.toISOString(), undefined, actor);
+    return { shifts, notified };
+  },
+
+  /**
+   * Tell each rostered person what they are on, and hand them their calendar.
+   *
+   * One email per person covering all their shifts, not one per shift. Sent in
+   * parallel and individually caught: a bounced address is a thing to report,
+   * never a reason to fail a publish that has already happened. The counts come
+   * back so the manager sees who actually got told.
+   */
+  async notifyPublishedShifts(
+    shifts: ReadonlyArray<{
+      id: string;
+      staffProfileId: string | null;
+      startsAt: Date;
+      endsAt: Date;
+      venue: string | null;
+      area: string | null;
+      roleTitle: string | null;
+      breakMinutes: number | null;
+      notes: string | null;
+    }>
+  ): Promise<{ emailed: number; skipped: Array<{ name: string; reason: string }> }> {
+    const byStaff = new Map<string, typeof shifts[number][]>();
+    for (const shift of shifts) {
+      if (!shift.staffProfileId) continue;
+      const list = byStaff.get(shift.staffProfileId) ?? [];
+      list.push(shift);
+      byStaff.set(shift.staffProfileId, list);
+    }
+    if (byStaff.size === 0) return { emailed: 0, skipped: [] };
+
+    const staff = await prisma.staffProfile.findMany({
+      where: { id: { in: [...byStaff.keys()] } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        employmentStatus: true,
+        calendarToken: true
+      }
+    });
+
+    const skipped: Array<{ name: string; reason: string }> = [];
+    const sendable: Array<{ profile: (typeof staff)[number]; token: string }> = [];
+
+    for (const profile of staff) {
+      const name = `${profile.firstName} ${profile.lastName}`.trim();
+      if (!profile.email) {
+        // Worth saying out loud: a roster that silently misses someone is the
+        // failure this feature exists to prevent.
+        skipped.push({ name, reason: 'no email address on file' });
+        continue;
+      }
+      if (profile.employmentStatus === 'TERMINATED' || profile.employmentStatus === 'ARCHIVED') {
+        skipped.push({ name, reason: `${profile.employmentStatus.toLowerCase()} — not emailed` });
+        continue;
+      }
+      sendable.push({ profile, token: profile.calendarToken ?? '' });
+    }
+
+    // Mint any missing tokens first, so the email always carries a working link.
+    for (const entry of sendable) {
+      if (!entry.token) entry.token = await this.ensureCalendarToken(entry.profile.id);
+    }
+
+    const results = await Promise.allSettled(
+      sendable.map(async (entry) => {
+        const mine = byStaff.get(entry.profile.id) ?? [];
+        const outcome = await mailService.sendRosterPublished({
+          to: entry.profile.email!,
+          firstName: entry.profile.firstName,
+          shifts: mine.map((shift) => ({
+            startsAt: shift.startsAt.toISOString(),
+            endsAt: shift.endsAt.toISOString(),
+            venue: shift.venue,
+            area: shift.area,
+            roleTitle: shift.roleTitle,
+            breakMinutes: shift.breakMinutes
+          })),
+          ...calendarLinksFor(entry.token)
+        });
+        // 'skipped' means mail is not configured at all, which is a system
+        // state rather than this person's fault — but it still means they were
+        // not told, so it is reported the same way.
+        if (outcome.status !== 'sent') {
+          throw new Error(outcome.status === 'failed' ? outcome.reason : `not sent: ${outcome.reason}`);
+        }
+        return entry.profile.id;
+      })
+    );
+
+    let emailed = 0;
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        emailed += 1;
+        return;
+      }
+      const profile = sendable[index]!.profile;
+      const name = `${profile.firstName} ${profile.lastName}`.trim();
+      const reason = result.reason instanceof Error ? result.reason.message : 'email failed';
+      console.error(`[roster] could not email ${name}: ${reason}`);
+      skipped.push({ name, reason });
+    });
+
+    console.info(`[roster] published shifts for ${byStaff.size} staff — emailed ${emailed}, skipped ${skipped.length}`);
+    return { emailed, skipped };
   },
 
   async listRosterForecastSnapshots(input: { start?: string; end?: string; venue?: string }, actor?: AuthUser) {
