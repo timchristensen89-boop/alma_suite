@@ -28,6 +28,7 @@
   --pos-accent-bg: #1f3524;
   --pos-accent-fg: #f8f6f1;
   --pos-chip: #efe8dc;
+  --pos-rail-bg: #1f3524;
   --pos-hover: rgba(31, 53, 36, 0.05);
   /* legacy var names used across styles.css — remapped to the new system */
   --pos-accent: #4f6b47;
@@ -75,6 +76,7 @@ body.pos-dark {
   --pos-accent-bg: #efe8dc;
   --pos-accent-fg: #1f3524;
   --pos-chip: rgba(248, 246, 241, 0.08);
+  --pos-rail-bg: #10160f;
   --pos-hover: rgba(248, 246, 241, 0.06);
   --pos-accent: #bcd3a8;
   --pos-line: rgba(248, 246, 241, 0.14);
@@ -244,7 +246,7 @@ body.pos-dark .pos-modal { background: rgba(0, 0, 0, 0.55); }
 
 
 /* brand mark + identity */
-.pos-mark { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; cursor: pointer; }
+.pos-mark { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; cursor: pointer; background: var(--pos-rail-bg); }
 .pos-abn { font-size: 10.5px; color: var(--pos-text3); margin: 2px 0 0; letter-spacing: 0.06em; }
 .pos-receipt-brand { font-family: var(--font-display); font-size: 17px; color: var(--pos-text2); margin: 0 0 2px; }
 .pos-identity-fields { display: flex; gap: 8px; margin-top: 10px; }
@@ -296,7 +298,10 @@ body.pos-dark .pos-modal { background: rgba(0, 0, 0, 0.55); }
      the back button, which is where the cramped feeling starts. */
   .office-header { flex-wrap: wrap; row-gap: 6px; padding: 10px 14px; }
   .office-header strong { font-size: 22px; }
-  .pos-wordmark-chip { order: 5; }
+  /* Scoped to the office header on purpose. Unscoped, this also reordered the
+     REGISTER's masthead chip, dropping "POS" onto a row of its own and leaving
+     a band of dead green between it and the venue name. */
+  .office-header .pos-wordmark-chip { order: 5; }
 }
 .office-main { padding: 18px 24px 60px; max-width: 1080px; }
 .office-lead { font-size: 13px; color: var(--pos-text2); margin: 0 0 14px; max-width: 70ch; }
@@ -326,8 +331,7 @@ body.pos-dark .pos-modal { background: rgba(0, 0, 0, 0.55); }
 /* ── v2 rail design ── */
 body.pos-v2 .pos-shell { display: flex; flex-direction: row; }
 .pos-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.pos-rail { flex: 0 0 190px; background: #1f3524; color: #f8f6f1; display: flex; flex-direction: column; gap: 3px; padding: 20px 12px; overflow-y: auto; position: sticky; top: 0; height: 100vh; }
-body.pos-dark .pos-rail { background: #10160f; }
+.pos-rail { flex: 0 0 190px; background: var(--pos-rail-bg); color: #f8f6f1; display: flex; flex-direction: column; gap: 3px; padding: 20px 12px; overflow-y: auto; position: sticky; top: 0; height: 100vh; }
 .pos-rail-brand { display: flex; align-items: center; gap: 9px; padding: 2px 8px 12px; }
 .pos-rail-brand img { height: 20px; display: block; }
 .pos-rail-brand span { font-size: 9px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; padding: 3px 8px; border-radius: 9999px; background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.85); }
@@ -401,6 +405,95 @@ body.pos-dark { --pos-btn: rgba(248, 246, 241, 0.05); --pos-btn-strong: rgba(248
   body.pos-v2 .pos-tabs { display: flex; }
   body.pos-v2 .pos-cart { padding: 0; }
   body.pos-v2 .pos-cart-lines { border-radius: 16px 16px 0 0; }
+
+  /* ── The masthead does the rail's job ──
+     The rail is where the forest lives, and the mark and the venue name live
+     on it — which is why the header gives up its own copy of all three to the
+     rail in the v2 layout. Fold the rail away for a phone and BOTH are gone:
+     no green, no mark, no venue name, a register that could belong to anyone.
+     So the masthead takes the job over, in the rail's own colours rather than
+     an approximation of them — same token, so the two can never drift. */
+  body.pos-v2 .pos-header {
+    background: var(--pos-rail-bg);
+    border-bottom: 0;
+    color: #f8f6f1;
+    padding-top: calc(8px + env(safe-area-inset-top));
+  }
+  body.pos-v2 .pos-header > strong {
+    color: #f8f6f1;
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: 19px;
+    letter-spacing: 0;
+    text-transform: lowercase;
+  }
+  /* Cream at these alphas on forest is the rail's own scale, already measured
+     to clear AA there — see the eyebrow note above .pos-rail-eyebrow. */
+  body.pos-v2 .pos-header .pos-wordmark-chip {
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.85);
+  }
+  body.pos-v2 .pos-header .pos-crumb { color: rgba(255, 255, 255, 0.78); }
+  body.pos-v2 .pos-header .pos-covers-chip {
+    background: rgba(255, 255, 255, 0.12);
+    color: #f8f6f1;
+  }
+  body.pos-v2 .pos-header .pos-type-chip.is-away { border-color: rgba(255, 255, 255, 0.4); color: #f3b3a6; }
+  body.pos-v2 .pos-header .pos-pkg-chip.is-on { background: #c7dab2; color: #1f3524; }
+  body.pos-v2 .pos-header select {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.28);
+    color: #f8f6f1;
+  }
+  body.pos-v2 .pos-header select option { color: #1f3524; background: #fff; }
+
+  /* Everything else that lives in the masthead. These all draw with
+     --pos-text, which IS the forest — so on the new ground they measured
+     1.00:1: "Bills", "Tables", "New order", the staff chip and both round
+     buttons were rendering forest-on-forest, i.e. not at all. Repainting the
+     header means repainting everything standing on it, not just the brand. */
+  body.pos-v2 .pos-header .pos-ghost,
+  body.pos-v2 .pos-header .pos-staff-chip,
+  body.pos-v2 .pos-header .pos-theme-btn {
+    color: #f8f6f1;
+    border-color: rgba(255, 255, 255, 0.32);
+  }
+  body.pos-v2 .pos-header .pos-ghost:hover,
+  body.pos-v2 .pos-header .pos-theme-btn:hover { background: rgba(255, 255, 255, 0.1); }
+  /* The active pill keeps its pale-green fill, which needs forest back on top. */
+  body.pos-v2 .pos-header .pos-ghost-active { background: #c7dab2; color: #1f3524; border-color: transparent; }
+
+  /* Four rows of chrome ate 196px — a quarter of the screen before a single
+     tile. Tightened so the actions settle onto one row: the register is for
+     working in, and the board is the part that matters. */
+  /* The header is one flat flex list, so with wrap on, an action button can
+     land between the venue name and the crumb and split the brand across two
+     rows — which is how the same build measured 3 rows one way and 4 another.
+     Ordering makes the grouping explicit: brand, then actions, then the search
+     on a row of its own. Row count then depends on how much fits, never on
+     which element happened to be next in the DOM. */
+  body.pos-v2 .pos-header { column-gap: 6px; }
+  body.pos-v2 .pos-header > * { order: 2; }
+  body.pos-v2 .pos-header .pos-mark,
+  body.pos-v2 .pos-header > strong,
+  body.pos-v2 .pos-header .pos-wordmark-chip,
+  body.pos-v2 .pos-header .pos-crumb { order: 1; }
+  body.pos-v2 .pos-header .pos-search { order: 3; flex: 1 0 100%; }
+  body.pos-v2 .pos-header .pos-ghost { padding: 7px 8px; letter-spacing: 0.06em; }
+  /* Capped, because the row it sits on wrapped or didn't depending on how long
+     the signed-in person's name was — "Tim C" fitted and "Tim Christensen"
+     took a whole extra row of the board with it. Whose shift it is should not
+     change the layout. */
+  body.pos-v2 .pos-header .pos-staff-chip {
+    padding: 6px 8px;
+    font-size: 11px;
+    max-width: 108px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  body.pos-v2 .pos-header .pos-theme-btn { width: 32px; height: 32px; }
+  body.pos-v2 .pos-header .pos-search { padding: 7px 14px; border-color: rgba(255, 255, 255, 0.28); }
 }
 
 
@@ -766,9 +859,14 @@ body:not(.pos-v2) .pos-cart .pos-meta-chips > button { border-color: rgba(255, 2
 /* Rail design: brand lives at the top of the rail; the header keeps the room */
 .pos-rail-brand { cursor: pointer; }
 .pos-rail-brand strong { flex: 1; font-family: var(--font-display); font-size: 17px; font-weight: 500; letter-spacing: 0; text-transform: lowercase; color: #f8f6f1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-body.pos-v2 .pos-header .pos-mark,
-body.pos-v2 .pos-header > strong,
-body.pos-v2 .pos-header .pos-wordmark-chip { display: none; }
+/* The header hands the mark, the venue name and the chip to the rail — but
+   only while there IS a rail. Below 700px the rail folds away and the header
+   takes all three back; see the masthead block at the phone breakpoint. */
+@media (min-width: 701px) {
+  body.pos-v2 .pos-header .pos-mark,
+  body.pos-v2 .pos-header > strong,
+  body.pos-v2 .pos-header .pos-wordmark-chip { display: none; }
+}
 
 /* Full menu: category headers read as bold outlined buttons — night-proof */
 summary.pos-list-head { border: 1.5px solid var(--pos-border); background: var(--pos-card); border-radius: 12px; padding: 12px 15px; margin-bottom: 8px; }
