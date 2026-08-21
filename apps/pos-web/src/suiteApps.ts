@@ -20,8 +20,11 @@ export const SUITE_APP_LINKS: SuiteAppLink[] = [
 
 // The register's own sibling surfaces — same app, different hash, and
 // main.tsx reloads on hashchange so plain assignment is the navigation.
-export const POS_SURFACES: Array<{ id: string; label: string; hint: string; hash: string }> = [
+export const POS_SURFACES: Array<{ id: string; label: string; hint: string; hash: string; ownWindow?: boolean }> = [
   { id: 'office', label: 'Office', hint: 'Menus, tables, QRs, settings', hash: '#office' },
   { id: 'kds', label: 'Kitchen screen', hint: 'The KDS for the pass', hash: '#kds' },
-  { id: 'live', label: 'Live board', hint: 'Tonight at a glance', hash: '#live' }
+  // Live is something you glance at while the register keeps taking orders,
+  // so it opens beside the till rather than on top of it. Every other surface
+  // replaces the register because you are going there to do a job.
+  { id: 'live', label: 'Live board', hint: 'Tonight at a glance — opens beside the register', hash: '#live', ownWindow: true }
 ];

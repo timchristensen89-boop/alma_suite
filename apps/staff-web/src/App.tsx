@@ -101,6 +101,13 @@ import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import { LoginPage } from './LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
 import { api, apiBlob, apiQueued, createSuiteHandoffUrl, flushQueue, queuedRequestCount } from './lib/api';
+import {
+  currentEndpoint,
+  disablePush,
+  enablePush,
+  pushReadiness,
+  type PushReadiness
+} from './lib/push.js';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import {
@@ -2854,6 +2861,8 @@ function StaffMemberRosterPage() {
 
       <MyCalendarCard />
 
+      <NotificationsCard />
+
       <Card title="Upcoming shifts" subtitle="Upcoming rostered shifts and confirmations." padding="none">
         {loading ? <Spinner label="Loading roster…" /> : null}
         {!loading && upcoming.length === 0 ? <EmptyState title="No upcoming shifts" description="Published shifts will appear here once they’re assigned." /> : null}
@@ -3128,6 +3137,129 @@ function MyCalendarCard() {
               {resetting ? 'Resetting…' : 'Reset my link'}
             </Button>
           </details>
+        </>
+      ) : null}
+    </Card>
+  );
+}
+
+/**
+ * Turning roster notifications on for the phone in your hand.
+ *
+ * Per device, not per person: the browser subscription belongs to this
+ * browser on this handset, so someone who works off a phone and an iPad turns
+ * it on twice, and losing one device does not silence the other.
+ */
+function NotificationsCard() {
+  const [state, setState] = useState<{ configured: boolean; publicKey: string; devices: number } | null>(null);
+  const [thisDeviceOn, setThisDeviceOn] = useState(false);
+  const [readiness, setReadiness] = useState<PushReadiness>({ state: 'ready' });
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setReadiness(pushReadiness());
+      const [config, endpoint] = await Promise.all([
+        api<{ configured: boolean; publicKey: string; devices: number }>('/api/staff/me/push'),
+        currentEndpoint()
+      ]);
+      setState(config);
+      setThisDeviceOn(Boolean(endpoint));
+    } catch {
+      setError('Could not check your notification settings.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function turnOn() {
+    if (!state) return;
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      const result = await enablePush(state.publicKey);
+      setState({ ...state, devices: result.devices });
+      setThisDeviceOn(true);
+      setNote('This device will now buzz when a roster is published.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not turn notifications on.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function turnOff() {
+    if (!state) return;
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      const result = await disablePush();
+      setState({ ...state, devices: result.devices });
+      setThisDeviceOn(false);
+      setNote('Turned off for this device.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not turn notifications off.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Nothing to offer until the server has keys. Showing a button that cannot
+  // work is worse than showing nothing at all.
+  if (!loading && state && !state.configured) return null;
+
+  const otherDevices = state ? Math.max(0, state.devices - (thisDeviceOn ? 1 : 0)) : 0;
+
+  return (
+    <Card
+      title="Tell me when the roster drops"
+      subtitle="A notification on this device the moment your shifts are published."
+    >
+      {loading ? <Spinner label="Checking this device…" /> : null}
+      {error ? <p className="error-text">{error}</p> : null}
+
+      {!loading && readiness.state === 'needs-install' ? (
+        <p className="subtle">
+          {readiness.reason} Tap <strong>Share</strong> then <strong>Add to Home Screen</strong>, open ALMA Staff
+          from the new icon, and this button will work.
+        </p>
+      ) : null}
+      {!loading && (readiness.state === 'unsupported' || readiness.state === 'blocked') ? (
+        <p className="subtle">{readiness.reason}</p>
+      ) : null}
+
+      {!loading && readiness.state === 'ready' && state ? (
+        <>
+          <div className="staff-calendar-actions">
+            {thisDeviceOn ? (
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => void turnOff()}>
+                {busy ? 'Turning off…' : 'Turn off on this device'}
+              </Button>
+            ) : (
+              <Button type="button" disabled={busy} onClick={() => void turnOn()}>
+                {busy ? 'Turning on…' : 'Notify me on this device'}
+              </Button>
+            )}
+            <Badge tone={thisDeviceOn ? 'positive' : 'warning'}>{thisDeviceOn ? 'On here' : 'Off here'}</Badge>
+          </div>
+          {note ? <p className="subtle">{note}</p> : null}
+          <p className="subtle staff-calendar-hint">
+            {otherDevices > 0
+              ? `Also on ${otherDevices} other device${otherDevices === 1 ? '' : 's'}. `
+              : ''}
+            You'll still get the email either way — this just gets to you faster.
+          </p>
         </>
       ) : null}
     </Card>
@@ -13102,7 +13234,7 @@ function RosterPage({
     setMessageTarget('publish');
     try {
       const published = await api<{
-        notified?: { emailed: number; skipped: Array<{ name: string; reason: string }> };
+        notified?: { emailed: number; pushed?: number; skipped: Array<{ name: string; reason: string }> };
       }>('/api/staff/roster/publish', {
         method: 'POST',
         body: JSON.stringify({
@@ -13140,14 +13272,19 @@ function RosterPage({
       // Say who was actually told. A roster that silently misses somebody is
       // the failure this is meant to prevent, so the skipped names are named.
       const notified = published?.notified;
-      if (!notified || notified.emailed === 0 && notified.skipped.length === 0) {
+      const pushed = notified?.pushed ?? 0;
+      if (!notified || (notified.emailed === 0 && pushed === 0 && notified.skipped.length === 0)) {
         setMessage('Draft roster published.');
       } else {
         const emailed = `${notified.emailed} ${notified.emailed === 1 ? 'person' : 'people'} emailed their shifts and calendar link`;
+        // Devices, not people: one person can have the app on a phone and a
+        // tablet, and saying "3 people notified" when it was one person's
+        // three devices would overstate the reach.
+        const buzzed = pushed > 0 ? `, buzzed ${pushed} device${pushed === 1 ? '' : 's'}` : '';
         setMessage(
           notified.skipped.length === 0
-            ? `Published — ${emailed}.`
-            : `Published — ${emailed}. Not told: ${notified.skipped.map((row) => `${row.name} (${row.reason})`).join(', ')}.`
+            ? `Published — ${emailed}${buzzed}.`
+            : `Published — ${emailed}${buzzed}. Not told: ${notified.skipped.map((row) => `${row.name} (${row.reason})`).join(', ')}.`
         );
       }
     } catch (err) {
@@ -16301,7 +16438,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   const [manualStaffId, setManualStaffId] = useState('');
   const [manualHours, setManualHours] = useState('');
   const [manualNotes, setManualNotes] = useState('');
-  const [breakagePerDay, setBreakagePerDay] = useState('30');
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [adjustments, setAdjustments] = useState<Record<string, { adjustment: string; excluded: boolean; notes: string }>>({});
   const [summary, setSummary] = useState<StaffTipsSummary | null>(null);
@@ -16324,7 +16460,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     })();
   }, []);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
-  const breakageCentsPerDay = useMemo(() => Math.round((Number(breakagePerDay) || 0) * 100), [breakagePerDay]);
   const venueOptions = useMemo(
     () => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]).map((value) => ({ label: value, value })),
     [staff]
@@ -16337,8 +16472,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       const query = new URLSearchParams({
         start: weekStart.toISOString(),
         end: weekEnd.toISOString(),
-        venue,
-        breakageCentsPerDay: String(breakageCentsPerDay)
+        venue
       });
       setSummary(await api<StaffTipsSummary>(`/api/staff/tips?${query.toString()}`));
     } catch (err) {
@@ -16346,7 +16480,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     } finally {
       setLoading(false);
     }
-  }, [breakageCentsPerDay, venue, weekEnd, weekStart]);
+  }, [venue, weekEnd, weekStart]);
 
   useEffect(() => {
     if (!venue && venueOptions[0]) setVenue(venueOptions[0].value);
@@ -16411,7 +16545,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   }, [adjustments, summary?.entitlements]);
 
   const totalPayoutCents = reviewedRows.reduce((sum, row) => sum + row.finalAmountCents, 0);
-  const payoutVarianceCents = totalPayoutCents - (summary?.allocatablePoolCents ?? 0);
+  const payoutVarianceCents = totalPayoutCents - (summary?.tipPoolCents ?? 0);
   const lockedRows = summary?.paidEntitlements ?? [];
   const hasPaidRun = lockedRows.length > 0;
 
@@ -16637,7 +16771,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     try {
       const result = await api<{ csv: string }>('/api/staff/tips/export/csv', {
         method: 'POST',
-        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay, adjustments: adjustmentPayload })
+        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, adjustments: adjustmentPayload })
       });
       downloadTextFile(`alma-tips-${venue}-${toDateInput(weekStart)}.csv`, result.csv);
       setMessage('Tips CSV exported.');
@@ -16671,7 +16805,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
           start: weekStart.toISOString(),
           end: weekEnd.toISOString(),
           venue,
-          breakageCentsPerDay,
           ...(abaAccountKey ? { accountKey: abaAccountKey } : {})
         })
       });
@@ -16691,7 +16824,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       return;
     }
     if (payoutVarianceCents !== 0) {
-      setMessage(`Final payout must balance to the allocatable pool (after breakage) before marking paid. Current variance is ${formatCents(payoutVarianceCents)}.`);
+      setMessage(`Final payout must balance to the tip pool before marking paid. Current variance is ${formatCents(payoutVarianceCents)}.`);
       return;
     }
     if (!window.confirm(`Mark ${formatCents(totalPayoutCents)} tips paid for ${venue}? This creates the approved tip run used by Reports payroll export.`)) {
@@ -16702,7 +16835,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     try {
       await api('/api/staff/tips/mark-paid', {
         method: 'POST',
-        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay, notes: payoutNotes, adjustments: adjustmentPayload })
+        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, notes: payoutNotes, adjustments: adjustmentPayload })
       });
       setMessage('Tips approved and paid. You can now export ABA or CSV.');
       setPayoutNotes('');
@@ -16771,7 +16904,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       />
 
       {/* Tips week navigator — same editorial style as the roster board so
-          the two pages feel like one tool. Venue + breakage live below. */}
+          the two pages feel like one tool. The venue picker lives below. */}
       <div className="alma-roster-header alma-roster-header--tight">
         <div className="alma-roster-header-titles">
           <span className="alma-roster-eyebrow">Staff · Tips</span>
@@ -16838,44 +16971,58 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         </div>
       </div>
 
-      {/* Venue + breakage controls live just below the week selector. */}
-      <TipsSection title="Review settings" summary={`${venue || 'Choose venue'} · $${breakagePerDay || 0}/day breakage`}>
+      {/* Venue picker lives just below the week selector. Tips pool per venue,
+          so this choice decides whose money is on screen — nothing on this page
+          is ever a group total. */}
+      <TipsSection title="Review settings" summary={venue || 'Choose venue'}>
         <Card padding="tight">
           <div className="tips-controls-row">
             <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
-            <Input label="Breakage/day ($)" type="number" min="0" step="1" value={breakagePerDay} onChange={(event) => setBreakagePerDay(event.currentTarget.value)} style={{ width: 130 }} />
           </div>
+          <p className="subtle" style={{ marginTop: 8, marginBottom: 0 }}>
+            Each venue's tips are split between the people who worked that venue. Switch venues to review the other pool.
+          </p>
         </Card>
       </TipsSection>
 
       {/* Summary stats */}
-      <TipsSection title="Summary" summary={`${formatCents(summary?.allocatablePoolCents ?? 0)} allocatable · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
+      <TipsSection title="Summary" summary={`${formatCents(summary?.tipPoolCents ?? 0)} to split · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
         <div className="stats-grid">
-          <StatCard label="Breakage" value={formatCents(summary?.breakageCents ?? 0)} hint={`$${breakagePerDay}/day × ${summary?.tradingDays ?? 0} days`} loading={loading} />
-          <StatCard label="Allocatable pool" value={formatCents(summary?.allocatablePoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
+          <StatCard label="Tip pool" value={formatCents(summary?.tipPoolCents ?? 0)} hint={`Cash + card at ${venue || 'this venue'}`} loading={loading} />
           <StatCard label="Final payout" value={formatCents(totalPayoutCents)} hint={payoutVarianceCents === 0 ? 'Balances to pool' : `${formatCents(Math.abs(payoutVarianceCents))} ${payoutVarianceCents > 0 ? 'over' : 'under'}`} loading={loading} />
           <StatCard label="Approved hours" value={roundHours(summary?.approvedHours ?? 0)} hint="Used for allocation" loading={loading} />
           <StatCard label="Run status" value={hasPaidRun ? 'Locked' : 'Waiting'} hint={hasPaidRun ? 'Payroll export ready' : 'Approve at the bottom'} loading={loading} />
         </div>
       </TipsSection>
 
+      {/* Hours with no venue are in nobody's pool. Say so loudly — the whole
+          point of naming them is that someone is otherwise quietly unpaid. */}
+      {summary?.unassigned?.length ? (
+        <Card padding="tight">
+          <p className="error-text" style={{ margin: 0 }}>
+            {summary.unassigned.length === 1 ? '1 person has' : `${summary.unassigned.length} people have`} approved hours with no venue,
+            so they are in no tip pool: {summary.unassigned.map((row) => `${row.name} (${roundHours(row.approvedHours)}h)`).join(', ')}.
+            Set the venue on their timesheet or their staff profile, then refresh.
+          </p>
+        </Card>
+      ) : null}
+
       {loading ? <Spinner label="Loading tips..." /> : null}
       {message && !messageTarget ? <p className={message.includes('Could') || message.includes('Choose') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
       {/* Per-day breakdown */}
       {(summary?.cardEntries.length || summary?.cashEntries.length) ? (
-        <TipsSection title="Daily breakdown" summary={`Square + cash less $${breakagePerDay}/day breakage`}>
-          <Card title="Daily breakdown" subtitle={`Square + cash tips minus $${breakagePerDay} breakage per trading day.`}>
+        <TipsSection title="Daily breakdown" summary="Card + cash, night by night">
+          <Card title="Daily breakdown" subtitle={`Card and cash tips taken at ${venue || 'this venue'}, night by night.`}>
             <div className="table-scroll">
               <table className="report-table">
                 <thead>
                   <tr>
                     <th>Date</th>
                     <th>Day</th>
-                    <th>Square tips</th>
+                    <th>Card tips</th>
                     <th>Cash tips</th>
-                    <th>− Breakage</th>
-                    <th>= Allocatable</th>
+                    <th>Total</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -16897,15 +17044,13 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
                       .sort(([a], [b]) => a.localeCompare(b))
                       .map(([date, row]) => {
                         const dayName = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
-                        const allocatable = Math.max(0, row.square + row.cash - breakageCentsPerDay);
                         return (
                           <tr key={date}>
                             <td>{date}</td>
                             <td>{dayName}</td>
                             <td>{formatCents(row.square)}</td>
                             <td>{row.cash ? formatCents(row.cash) : <span className="subtle">—</span>}</td>
-                            <td className="subtle">−{formatCents(breakageCentsPerDay)}</td>
-                            <td><strong>{formatCents(allocatable)}</strong></td>
+                            <td><strong>{formatCents(row.square + row.cash)}</strong></td>
                           </tr>
                         );
                       });
@@ -16916,8 +17061,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
                     <td colSpan={2}><strong>Total</strong></td>
                     <td><strong>{formatCents(summary?.squareTipsCents ?? 0)}</strong></td>
                     <td><strong>{formatCents(summary?.cashTipsCents ?? 0)}</strong></td>
-                    <td className="subtle">−{formatCents(summary?.breakageCents ?? 0)}</td>
-                    <td><strong>{formatCents(summary?.allocatablePoolCents ?? 0)}</strong></td>
+                    <td><strong>{formatCents(summary?.tipPoolCents ?? 0)}</strong></td>
                   </tr>
                 </tfoot>
               </table>
@@ -17197,7 +17341,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
 
       {/* Payroll status + entitlements */}
       <TipsSection title="Staff entitlements" summary={`${reviewedRows.length} staff · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
-        <Card title="Staff entitlements" subtitle={`Tip pool after $${breakagePerDay}/day breakage deduction, split by approved hours. Review and adjust before locking.`} padding="none" className="tips-entitlements-card">
+        <Card title="Staff entitlements" subtitle={`${venue || 'This venue'}'s tip pool split by approved hours. Review and adjust before locking.`} padding="none" className="tips-entitlements-card">
         <div className="tips-status-bar">
           <div className={`tips-status-panel ${hasPaidRun ? 'is-locked' : ''}`}>
             <span>
@@ -17320,7 +17464,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       ) : null}
 
       <TipsSection title="Approve and pay" summary={hasPaidRun ? 'Export the approved run' : 'Final payroll approval'}>
-        <Card title={hasPaidRun ? 'Approved run exports' : 'Approve and pay'} subtitle={hasPaidRun ? 'Export the locked tip run for bank payment or payroll records.' : 'Approve once the final payout balances to the allocatable pool.'}>
+        <Card title={hasPaidRun ? 'Approved run exports' : 'Approve and pay'} subtitle={hasPaidRun ? 'Export the locked tip run for bank payment or payroll records.' : 'Approve once the final payout balances to the tip pool.'}>
           <div className="tips-approval-footer">
             <div>
               <strong>{hasPaidRun ? 'Ready to export' : 'Waiting for review'}</strong>

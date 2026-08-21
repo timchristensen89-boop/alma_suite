@@ -450,6 +450,15 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
 .live-venue-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .live-venue-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
 .live-total { font-size: 22px; font-weight: 800; color: #7fc79a; }
+/* The way out. Live used to be a one-way door: open it on a phone mid-service
+   and the only way back to the register was the browser's own back button,
+   which on an installed app shell is not there at all. */
+.live-back {
+  font: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+  padding: 8px 13px; border-radius: 9999px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--pos-border, #262b31);
+  background: var(--pos-card, transparent); color: inherit;
+}
 .live-stats { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; font-size: 12px; color: #8b939e; }
 .live-stats b { color: #e8ebee; }
 .live-open { color: #d9a05a; }
@@ -665,8 +674,14 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
      centred, they stay in one glance. Below this width it does nothing. */
   width: 100%; max-width: 860px; margin-inline: auto;
 }
+/* Space is the luxury on a register: every millimetre this bar keeps is a
+   millimetre of list nobody can see. Padding and gaps are trimmed to where
+   the next step would start to feel cramped and stop there — the chips keep
+   their 29px target untouched, because a filter you have to aim at is worse
+   than a filter that costs a few pixels. The rest of the height is given
+   back by folding the chip rows away entirely (.pos-wine-fold). */
 .pos-wine-filters {
-  display: flex; flex-direction: column; gap: 7px; padding: 10px 0 10px;
+  display: flex; flex-direction: column; gap: 5px; padding: 7px 0 6px;
   border-bottom: 1px solid var(--pos-border-soft, rgba(31,53,36,0.08));
   position: sticky; top: 0; background: var(--pos-bg, #faf8f3); z-index: 3;
 }
@@ -705,7 +720,7 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
   border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); background: var(--pos-card, #fff); color: inherit; cursor: pointer;
 }
 .pos-wine-search {
-  font: inherit; font-size: 15px; padding: 11px 14px; border-radius: 11px;
+  font: inherit; font-size: 14.5px; padding: 9px 13px; border-radius: 10px;
   border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); background: var(--pos-card, #fff); color: inherit;
 }
 /* One line per group, swiped rather than wrapped.
@@ -714,7 +729,7 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
    an iPad's 1180px before a single wine was visible. Nothing is hidden — a
    half-cut chip at the right edge is the cue that the row keeps going. */
 .pos-wine-chips {
-  display: flex; gap: 6px; align-items: center;
+  display: flex; gap: 5px; align-items: center;
   flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
   scrollbar-width: none; -ms-overflow-style: none;
 }
@@ -776,6 +791,17 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
   color: var(--pos-accent, #4f6b47); cursor: pointer; padding: 6px 4px; flex: none; white-space: nowrap;
 }
 .pos-wine-count { font-size: 11.5px; opacity: 0.45; flex: none; white-space: nowrap; }
+/* Folds the chip rows away. Sits with Clear rather than above the rows it
+   hides, because the search line is the one thing that never folds. */
+.pos-wine-fold {
+  font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  padding: 6px 10px; border-radius: 9999px; flex: none; white-space: nowrap;
+  border: 1px solid var(--pos-border, rgba(31,53,36,0.16));
+  background: none; color: var(--pos-accent, #4f6b47);
+}
+.pos-wine-fold[aria-expanded="false"] {
+  background: var(--pos-card, #fff);
+}
 
 .pos-wine-rows { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
 .pos-wine-group {

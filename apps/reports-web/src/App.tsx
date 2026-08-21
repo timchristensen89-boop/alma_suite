@@ -1600,10 +1600,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
   const activeStaff = data.staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
   const staffById = useMemo(() => new Map(activeStaff.map((member) => [member.id, member])), [activeStaff]);
-  const tipsByStaffId = useMemo(
-    () => new Map(((data.tips?.paidEntitlements.length ? data.tips.paidEntitlements : data.tips?.entitlements) ?? []).map((row) => [row.staffProfileId, row.amountCents])),
-    [data.tips]
-  );
+  // Summed, not keyed: tips pool per venue, so somebody who worked both venues
+  // has a line in each pool. Keying by id would keep only the last one and
+  // under-report their week.
+  const tipsByStaffId = useMemo(() => {
+    const rows = (data.tips?.paidEntitlements.length ? data.tips.paidEntitlements : data.tips?.entitlements) ?? [];
+    const totals = new Map<string, number>();
+    for (const row of rows) totals.set(row.staffProfileId, (totals.get(row.staffProfileId) ?? 0) + row.amountCents);
+    return totals;
+  }, [data.tips]);
   const venues = useMemo(
     () =>
       Array.from(
@@ -1908,7 +1913,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       `Sales variance: ${actualSalesCents ? formatCurrency(forecastSalesVarianceCents) : 'not available'}`,
       `Planned roster wages: ${formatCurrency(publishedForecastTotals.rosterCostCents || forecastTotals.plannedCostCents)}`,
       `Actual timesheet wages: ${formatCurrency(actualWageCostCents)}`,
-      `Tips pool: ${data.tips ? formatCurrency(data.tips.allocatablePoolCents ?? data.tips.tipPoolCents) : 'not loaded'}`,
+      `Tips pool: ${data.tips ? formatCurrency(data.tips.tipPoolCents) : 'not loaded'}`,
       `Actual wage percentage: ${actualWagePercent ? `${actualWagePercent.toFixed(1)}%` : 'not available'}`,
       '',
       ...venuePerformanceRows.map((row) =>
@@ -3465,7 +3470,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {(() => {
             const labourPct = primeTotals?.wagePercent ?? null;
             const incomplete = labourPct != null && labourPct > 120;
-            const tipsPoolCents = data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0;
+            // Every venue's pool, summed. Each was split inside its own venue.
+            const tipsPoolCents = data.tips?.tipPoolCents ?? 0;
             const payroll = wageTotals.approvedCostCents + tipsPoolCents;
             const tone = incomplete || labourPct == null
               ? 'neutral'
@@ -3502,7 +3508,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 <div className="ov-prime-col">
                   <span className="ov-prime-label">Payroll total</span>
                   <span className="ov-prime-col-value">{formatCurrency(payroll)}</span>
-                  <span className="ov-prime-col-hint">Approved wages + {formatCurrency(tipsPoolCents)} tips pool (after breakage deduction)</span>
+                  <span className="ov-prime-col-hint">Approved wages + {formatCurrency(tipsPoolCents)} tips pool (each venue pooled separately)</span>
                 </div>
               </section>
             );

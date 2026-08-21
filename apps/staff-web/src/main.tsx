@@ -43,6 +43,24 @@ async function boot() {
   if (native) {
     requestAnimationFrame(() => void initNativeShell());
   }
+
+  /*
+   * Keep the service worker current on the web.
+   *
+   * Registering here rather than only when somebody turns notifications on
+   * means a staff member who subscribed months ago picks up a fixed worker on
+   * their next visit. Web only: inside the native shell the app is served from
+   * the bundle and push will go through the platform, not this.
+   *
+   * Failure is silent by design — a browser that refuses to register a worker
+   * still runs the whole app, and the notifications card says so in its own
+   * words when someone actually tries to switch it on.
+   */
+  if (!native && 'serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      void navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => undefined);
+    });
+  }
 }
 
 void boot();

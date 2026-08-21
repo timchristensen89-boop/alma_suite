@@ -3781,6 +3781,44 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   flex-wrap: wrap;
 }
 
+/* Test cards are off by default and the page says so either way — silence
+   here would leave you unable to tell "no redemptions" from "not shown". */
+.giftcards-report-testtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding-bottom: 6px;
+  white-space: nowrap;
+}
+
+.giftcards-report-testtoggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent, #2f5d3f);
+  cursor: pointer;
+}
+
+.giftcards-report-testnote {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+}
+
+/* On the row itself, not only in the header — scrolling the log, the badge is
+   the only thing between a test redemption and a real one. */
+.giftcards-report-testtag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(147, 48, 31, 0.13);
+  color: #93301f;
+}
+
 .giftcards-report-venues {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

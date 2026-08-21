@@ -16,8 +16,15 @@
   --pos-border: rgba(31, 53, 36, 0.12);
   --pos-border-soft: rgba(31, 53, 36, 0.08);
   --pos-text: #1f3524;
-  --pos-text2: rgba(31, 53, 36, 0.7);
-  --pos-text3: rgba(31, 53, 36, 0.52);
+  /* Alphas chosen against the grounds these actually sit on, not by eye.
+     Secondary text was 0.7 and tertiary 0.52, which measured 3.0:1 on cream
+     and 2.8:1 on a terra tile — under AA at every size the register uses them
+     at. "4 items" under a tile name, "drag · colour · remove", the hint lines:
+     all of it was decoration you had to lean in to read, on a screen someone
+     reads across a bar in a rush. 0.72 clears 4.5:1 on the worst ground in
+     the system (the terra tiles); 0.82 keeps a real step above it. */
+  --pos-text2: rgba(31, 53, 36, 0.82);
+  --pos-text3: rgba(31, 53, 36, 0.72);
   --pos-accent-bg: #1f3524;
   --pos-accent-fg: #f8f6f1;
   --pos-chip: #efe8dc;
@@ -25,8 +32,14 @@
   /* legacy var names used across styles.css — remapped to the new system */
   --pos-accent: #4f6b47;
   --pos-line: rgba(31, 53, 36, 0.12);
-  --pos-muted: rgba(31, 53, 36, 0.55);
+  --pos-muted: rgba(31, 53, 36, 0.72);
   --pos-danger: #9a3a2e;
+  /* Amber says "needs attention" — a table calling, money still owing. As a
+     fill (#b5772f) it is fine; as text on paper it measured 3.7:1, so the one
+     colour in the system that means "look at this" was the hardest to read.
+     This is the reading version; the fill keeps its brightness. */
+  --pos-warn: #b5772f;
+  --pos-warn-text: #96601c;
 
   --tile-terra-bg: #f2d6ce; --tile-terra-fg: #7c2f24; --tile-terra-bd: rgba(154, 58, 46, 0.22);
   --tile-amber-bg: #f6e5cc; --tile-amber-fg: #7e5218; --tile-amber-bd: rgba(181, 119, 47, 0.25);
@@ -67,6 +80,10 @@ body.pos-dark {
   --pos-line: rgba(248, 246, 241, 0.14);
   --pos-muted: rgba(248, 246, 241, 0.55);
   --pos-danger: #f0b7ac;
+  /* On the dark board cream-on-forest already clears AA at these alphas, and
+     the amber only has to be light enough — it is the same colour both ways. */
+  --pos-warn: #eacb96;
+  --pos-warn-text: #eacb96;
 
   --tile-terra-bg: #3a2420; --tile-terra-fg: #f0b7ac; --tile-terra-bd: rgba(240, 183, 172, 0.2);
   --tile-amber-bg: #39301d; --tile-amber-fg: #eacb96; --tile-amber-bd: rgba(234, 203, 150, 0.2);
@@ -259,6 +276,28 @@ body.pos-dark .pos-modal { background: rgba(0, 0, 0, 0.55); }
 .office-tabs { display: flex; gap: 7px; padding: 14px 24px 0; flex-wrap: wrap; }
 .office-tabs button { background: transparent; border: 1px solid var(--pos-border); border-radius: 9999px; color: var(--pos-text2); font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; padding: 8px 16px; cursor: pointer; font-family: inherit; }
 .office-tabs button.is-active { background: var(--pos-accent-bg); color: var(--pos-accent-fg); border-color: transparent; }
+/* One or the other, never both. Wide screens get the pills; a phone gets the
+   select, because nine pills wrap to four rows there. */
+.office-tabs-select { display: none; }
+.office-tabs-select label { display: flex; align-items: center; gap: 10px; }
+.office-tabs-select span {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--pos-text3); flex: none;
+}
+.office-tabs-select select {
+  flex: 1; min-width: 0; font: inherit; font-size: 14px; font-weight: 700;
+  padding: 11px 13px; border-radius: 12px;
+  border: 1px solid var(--pos-border); background: var(--pos-card); color: var(--pos-text);
+}
+@media (max-width: 700px) {
+  .office-tabs { display: none; }
+  .office-tabs-select { display: block; padding: 12px 14px 0; }
+  /* "Back office" in the display face wrapped to two lines beside the chip and
+     the back button, which is where the cramped feeling starts. */
+  .office-header { flex-wrap: wrap; row-gap: 6px; padding: 10px 14px; }
+  .office-header strong { font-size: 22px; }
+  .pos-wordmark-chip { order: 5; }
+}
 .office-main { padding: 18px 24px 60px; max-width: 1080px; }
 .office-lead { font-size: 13px; color: var(--pos-text2); margin: 0 0 14px; max-width: 70ch; }
 .office-card { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--pos-card); border: 1px solid var(--pos-border-soft); border-radius: 16px; padding: 12px 16px; margin-bottom: 10px; }
@@ -296,7 +335,9 @@ body.pos-dark .pos-rail { background: #10160f; }
 .pos-rail-venue i { width: 8px; height: 8px; border-radius: 9999px; background: #c7dab2; flex: none; }
 .pos-rail-venue select { background: transparent; border: 0; color: #f8f6f1; font-family: inherit; font-size: 12.5px; font-weight: 600; width: 100%; outline: none; }
 .pos-rail-venue select option { color: #1f3524; }
-.pos-rail-eyebrow { font-size: 9px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(255, 255, 255, 0.4); padding: 12px 10px 4px; }
+/* 0.4 measured 3.45:1 on the forest rail; 0.55 clears AA and the eyebrow is
+   still plainly quieter than the items under it. */
+.pos-rail-eyebrow { font-size: 9px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); padding: 12px 10px 4px; }
 .pos-rail-item { display: flex; align-items: center; gap: 8px; background: transparent; border: 0; border-radius: 10px; color: rgba(255, 255, 255, 0.75); font-family: inherit; font-size: 12.5px; font-weight: 500; padding: 8px 10px; cursor: pointer; text-align: left; transition: all 180ms var(--ease-out); }
 .pos-rail-item:hover { background: rgba(255, 255, 255, 0.06); }
 .pos-rail-item.is-on { background: rgba(255, 255, 255, 0.1); color: #fff; font-weight: 700; }
@@ -365,9 +406,45 @@ body.pos-dark { --pos-btn: rgba(248, 246, 241, 0.05); --pos-btn-strong: rgba(248
 
 /* ── ALMA Live in the paper design ── */
 .live-shell { background: var(--pos-bg); color: var(--pos-text); font-family: var(--font-sans); }
-.live-header { background: var(--pos-bg); border-bottom: 1px solid var(--pos-border-soft); }
-.live-header strong { font-family: var(--font-display); font-weight: 500; font-size: 22px; letter-spacing: 0; text-transform: lowercase; color: var(--pos-text); }
+/* The one place the forest actually gets to be a surface.
+   On an iPad the green lives in the left rail; on a phone that rail is hidden,
+   so the brand disappears entirely — which is why the board reads as anonymous
+   cream. Live is the right place to give it back: it is a board you glance at
+   rather than work in, so a strong header costs nothing in service and the
+   masthead is doing what a masthead is for. The register's own chrome is left
+   alone deliberately; that one is a working surface and repainting it is a
+   decision, not a fix. */
+.live-header {
+  background: var(--pos-text);
+  border-bottom: 0;
+  color: var(--pos-accent-fg);
+  padding-top: calc(14px + env(safe-area-inset-top));
+}
+.live-header strong { font-family: var(--font-display); font-weight: 500; font-size: 22px; letter-spacing: 0; text-transform: lowercase; color: var(--pos-accent-fg); }
+.live-header .live-date { color: rgba(248, 246, 241, 0.7); }
+.live-header .live-grand { color: var(--pos-accent-fg); }
+.live-header .live-grand small { color: rgba(248, 246, 241, 0.7); }
+.live-header .live-back {
+  border-color: rgba(248, 246, 241, 0.35);
+  background: transparent;
+  color: var(--pos-accent-fg);
+  box-shadow: none;
+}
+.live-header .live-back:hover { background: rgba(248, 246, 241, 0.12); color: var(--pos-accent-fg); }
 .live-date { color: var(--pos-text3); }
+.live-back {
+  border-color: var(--pos-border); background: var(--pos-card); color: var(--pos-text2);
+  box-shadow: 0 1px 2px rgba(31, 53, 36, 0.06);
+}
+.live-back:hover { background: var(--pos-hover); color: var(--pos-text); }
+/* On a phone the title, the date, the grand total and the way out do not fit
+   on one 390px line. The date is the first thing to go under — it is the only
+   one of the four nobody is looking for. */
+@media (max-width: 560px) {
+  .live-header { flex-wrap: wrap; row-gap: 4px; }
+  .live-header strong { font-size: 19px; }
+  .live-date { order: 5; flex-basis: 100%; font-size: 11px; }
+}
 .live-grand { color: var(--pos-text); font-weight: 900; }
 .live-grand small { color: var(--pos-text3); }
 .live-error { background: #9a3a2e; color: #fff; border-radius: 9999px; margin: 10px 12px 0; }
@@ -377,8 +454,8 @@ body.pos-dark { --pos-btn: rgba(248, 246, 241, 0.05); --pos-btn-strong: rgba(248
 .live-total { color: var(--pos-text); }
 .live-stats { color: var(--pos-text3); }
 .live-stats b { color: var(--pos-text); }
-.live-open { color: #b5772f; }
-.live-open b { color: #b5772f; }
+.live-open { color: var(--pos-warn-text); }
+.live-open b { color: var(--pos-warn-text); }
 .live-hour-bar { background: linear-gradient(180deg, #4f6b47, #3f5738); }
 body.pos-dark .live-hour-bar { background: linear-gradient(180deg, #bcd3a8, #4f6b47); }
 .live-hour small { color: var(--pos-text3); }
@@ -417,6 +494,29 @@ body.pos-v2 .pos-cart.is-collapsed .pos-cart-strip { background: var(--pos-card)
 .pos-floor-table.is-occupied.is-away { background: var(--tile-moss-bg); color: var(--tile-moss-fg); border-color: var(--tile-moss-bd); }
 
 .office-chiprow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+/* These were unstyled buttons: the browser's own grey face with the page's
+   forest text on top, measuring 2.47:1 — the worst contrast anywhere in the
+   register, and on the control that decides what guests can order. They wear
+   the chip shape the rest of the suite uses, and hidden reads as struck
+   through rather than merely dimmer. */
+.office-chiprow button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 13px;
+  border-radius: 9999px;
+  cursor: pointer;
+  border: 1px solid var(--pos-border);
+  background: var(--pos-card);
+  color: var(--pos-text);
+}
+.office-chiprow button:hover { background: var(--pos-hover); }
+.office-chiprow button.is-off {
+  background: var(--pos-chip);
+  color: var(--pos-text3);
+  border-style: dashed;
+  text-decoration: line-through;
+}
 .office-chip { background: var(--pos-btn); border: 1px solid var(--pos-border); border-radius: 9999px; color: var(--pos-text); font-size: 12px; font-weight: 600; padding: 7px 13px; cursor: pointer; font-family: inherit; }
 .office-chip:hover { background: var(--pos-btn-strong); }
 .office-chip.is-hidden { opacity: 0.55; text-decoration: line-through; }
@@ -1063,6 +1163,12 @@ summary.pos-list-head.is-tab-edit {
   background: var(--pos-card);
 }
 .pos-be-tabs { display: flex; gap: 6px; }
+/* Invisible to layout everywhere but a phone, where the phone block turns it
+   into a real flex item so the two appearance pickers wrap as a pair. Declared
+   here rather than beside .pos-be-iconpick because a media query adds no
+   specificity: a later plain rule would win and the wrapper would never
+   become a flex item at all. */
+.pos-be-look { display: contents; }
 .pos-be-tabs button {
   border: 1px solid var(--pos-border);
   background: transparent;
@@ -1296,6 +1402,74 @@ summary.pos-list-head.is-tab-edit {
   .pos-be-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr); overflow-y: auto; }
   .pos-be-right { grid-template-rows: minmax(140px, 1fr) auto; }
   .pos-be-who { display: none; }
+}
+
+/* ── The editor on a phone ────────────────────────────────────────────────
+   Eleven controls in one non-wrapping row — two tabs, four icon styles,
+   three text sizes, Undo, Done — made the header wider than the phone. The
+   whole document went with it, which is why the list card looked sliced down
+   its right edge: nothing was broken about the card, the page was simply
+   wider than the screen and everything past 390px was off it.
+
+   So: the header wraps into two honest rows — what you are editing and how
+   to leave on the first, how it looks on the second — and the body stops
+   being two fr-sized scrollers stacked inside a fixed height. On a phone
+   there is no room to scroll two things independently; the page scrolls, the
+   list is as long as it is, and the preview follows underneath. */
+@media (max-width: 700px) {
+  .pos-be-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    gap: 8px;
+    padding: 10px 12px;
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    /* The one that matters. As a grid item the header defaults to
+       min-width: auto, so it grew to its own min-content — 439px on a 390px
+       phone — and then nothing inside it could shrink, because the line it
+       was shrinking to fit was itself sized by the content. Wrapping and
+       overflow-x did nothing until this was set. */
+    min-width: 0;
+  }
+  /* Row one: the two tabs share what is left after Undo and Done, which are
+     the two things that must never shrink to an unreadable stub. */
+  .pos-be-tabs { flex: 1 1 120px; min-width: 0; }
+  .pos-be-tabs button { flex: 1 1 0; min-width: 0; padding-inline: 10px; }
+  .pos-be-head .pos-be-add,
+  .pos-be-done { order: 2; flex: none; }
+  .pos-be-done { padding: 10px 16px; }
+  /* Row two: appearance, scrollable rather than wrapped, so it can never be
+     the thing that widens the page again. */
+  /* Row two: appearance, as one item, so the pair wraps together. The marks
+     take what is left beside the text sizes and swipe for the rest. */
+  .pos-be-look {
+    display: flex;
+    order: 3;
+    flex: 1 1 100%;
+    min-width: 0;
+    gap: 8px;
+    align-items: center;
+  }
+  .pos-be-iconpick {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .pos-be-iconpick::-webkit-scrollbar { display: none; }
+  .pos-be-textsize { flex: none; }
+
+  /* The page scrolls; the panels do not. */
+  .pos-boardedit { grid-template-rows: auto auto; overflow: visible; }
+  .pos-be-body {
+    grid-template-rows: auto auto;
+    overflow: visible;
+    padding: 10px 12px calc(24px + env(safe-area-inset-bottom));
+  }
+  .pos-be-list { overflow: visible; }
+  .pos-be-right { grid-template-rows: auto auto; }
+  .pos-be-board { overflow: visible; }
 }
 
 /* ── Bill actions chooser ────────────────────────────────────────────────
@@ -1602,6 +1776,210 @@ body.pos-v2 .pos-shell, .pos-shell { overflow: hidden; }
 .pos-be-textsize button { min-width: 30px; justify-content: center; }
 .pos-be-textsize button span { line-height: 1; }
 
+/* ── The QR menu a guest actually reads ──────────────────────────────────
+   This is the only ALMA surface a customer ever sees, and it was the plainest
+   one we had: a wordmark in letter-spaced sans, closed accordions, and a
+   price. It now opens the way the register's full menu does — everything on
+   screen, searchable, narrowable — because a menu you have to unfold one
+   drawer at a time is a menu most tables order two things from.
+
+   The forest goes at the top and stays there. Dish names are set in the
+   display serif and prices in the sans (Cormorant's figures are old-style and
+   turn "$44.00" into a squiggle), which is the same split the printed menus
+   use. */
+.qr-shell { background: var(--pos-bg); color: var(--pos-text); font-family: var(--font-sans); }
+
+.qr-header {
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  padding-top: calc(14px + env(safe-area-inset-top));
+  background: var(--pos-text);
+  border-bottom: 0;
+  color: var(--pos-accent-fg);
+}
+.qr-mark { width: 30px; height: 30px; flex: none; object-fit: contain; }
+.qr-place { display: flex; flex-direction: column; line-height: 1.25; }
+.qr-place b {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 19px;
+  letter-spacing: 0;
+  color: var(--pos-accent-fg);
+}
+.qr-place em {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(248, 246, 241, 0.65);
+}
+.qr-header .qr-billbtn {
+  border: 1px solid rgba(248, 246, 241, 0.4);
+  color: var(--pos-accent-fg);
+  background: transparent;
+  padding: 8px 16px;
+}
+
+/* Find-and-narrow. Sticky under the masthead so it is still reachable four
+   screens into a long list, and the chip rows swipe rather than wrap — six
+   category chips wrapping to three lines is how the register's own filter bar
+   used to eat a third of an iPad. */
+.qr-find {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 16px 9px;
+  background: var(--pos-bg);
+  border-bottom: 1px solid var(--pos-border-soft);
+}
+.qr-find-row { display: flex; align-items: center; gap: 9px; }
+.qr-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 15px;
+  padding: 11px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--pos-border);
+  background: var(--pos-card);
+  color: inherit;
+}
+.qr-count { flex: none; font-size: 11.5px; color: var(--pos-text3); white-space: nowrap; }
+.qr-clear {
+  flex: none; font: inherit; font-size: 12px; font-weight: 700; padding: 6px 4px;
+  background: none; border: 0; color: var(--pos-accent); cursor: pointer; white-space: nowrap;
+}
+.qr-chips {
+  display: flex; align-items: center; gap: 6px;
+  flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.qr-chips::-webkit-scrollbar { display: none; }
+.qr-chips > * { flex: none; }
+.qr-chips-label {
+  position: sticky; left: 0; z-index: 1; padding-right: 2px;
+  background: var(--pos-bg);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--pos-text3);
+}
+.qr-chips button {
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  padding: 7px 13px; border-radius: 9999px;
+  border: 1px solid var(--pos-border);
+  background: var(--pos-card); color: inherit;
+  box-shadow: 0 1px 2px rgba(31, 53, 36, 0.06);
+}
+.qr-chips button[aria-pressed='true'] {
+  background: var(--pos-accent-bg);
+  border-color: var(--pos-accent-bg);
+  color: var(--pos-accent-fg);
+  box-shadow: none;
+}
+.qr-n { font-weight: 500; opacity: 0.5; margin-left: 5px; font-variant-numeric: tabular-nums; }
+/* The sentence that stops a hidden dish reading as an unsafe one. */
+.qr-caveat {
+  margin: 2px 0 0; font-size: 12px; line-height: 1.45; color: var(--pos-text2);
+  border-left: 2px solid rgba(147, 48, 31, 0.4); padding-left: 8px;
+}
+.qr-none { padding: 32px 16px; text-align: center; color: var(--pos-text2); }
+
+/* The basket. Its fields carried a border and a radius and no colours at all,
+   so they fell through to the browser's own control face — dark grey boxes
+   with grey placeholder text on a cream page, on the two inputs where a guest
+   writes their name and their allergies. */
+.qr-cart {
+  background: var(--pos-card);
+  border-top: 1px solid var(--pos-border);
+  box-shadow: 0 -8px 28px rgba(31, 53, 36, 0.12);
+}
+.qr-cart input {
+  font: inherit;
+  font-size: 15px;
+  background: var(--pos-bg);
+  color: var(--pos-text);
+  border: 1px solid var(--pos-border);
+}
+.qr-cart input::placeholder { color: var(--pos-text3); }
+.qr-cart-toggle { color: var(--pos-text); }
+.qr-submit {
+  font-family: var(--font-sans);
+  font-variant-numeric: lining-nums tabular-nums;
+  background: var(--pos-accent-bg);
+  color: var(--pos-accent-fg);
+  min-height: 52px;
+}
+.qr-call { background: var(--pos-card); border-color: var(--pos-border); color: var(--pos-text); }
+.qr-diet-chips button { background: var(--pos-card); border-color: var(--pos-border); color: var(--pos-text); }
+.qr-diet-chips button.is-on { background: var(--pos-accent-bg); border-color: var(--pos-accent-bg); color: var(--pos-accent-fg); }
+
+/* A section heading, not a button — nothing here folds any more. */
+.qr-cat { border-bottom: 0; }
+.qr-cat-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin: 0;
+  padding: 22px 16px 6px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 23px;
+  letter-spacing: 0;
+  color: var(--pos-text);
+}
+.qr-cat-head span {
+  font-family: var(--font-sans); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.1em; color: var(--pos-text3);
+}
+
+.qr-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 12px 7px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  background: var(--pos-card);
+  border: 1px solid var(--pos-border-soft);
+  box-shadow: 0 1px 2px rgba(31, 53, 36, 0.04);
+}
+/* Already in the basket: the row says so without you opening it. */
+.qr-item.is-on { border-color: var(--pos-accent-bg); box-shadow: 0 1px 2px rgba(31, 53, 36, 0.1); }
+.qr-item-name { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.qr-item-title {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--pos-text);
+}
+.qr-item-name small {
+  font-family: var(--font-sans);
+  font-size: 13px; font-weight: 700;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--pos-text2);
+  margin-top: 0;
+}
+/* Same marks, same colours, same meanings as the register and the dockets. */
+.qr-item-diet { display: inline-flex; gap: 4px; }
+.qr-item-diet i {
+  font-style: normal; font-size: 9.5px; font-weight: 800; letter-spacing: 0.06em;
+  padding: 2px 5px; border-radius: 4px; text-transform: uppercase;
+  background: rgba(31, 53, 36, 0.08); color: var(--pos-text2);
+}
+.qr-item-diet i[data-kind='contains'] { background: rgba(147, 48, 31, 0.14); color: #93301f; }
+.qr-item-diet i[data-kind='onAsk'] { background: rgba(124, 90, 17, 0.13); color: #7c5a11; }
+
+.qr-add {
+  flex: none;
+  background: var(--pos-accent-bg); color: var(--pos-accent-fg);
+  border: 0; border-radius: 9999px; padding: 10px 20px;
+  font-family: var(--font-sans); font-weight: 700; font-size: 13.5px; cursor: pointer;
+  min-height: 40px;
+}
+.qr-stepper button { border-color: var(--pos-accent-bg); color: var(--pos-accent-bg); }
+
 /* Guest basket: collapsible, so a table ordering a second round can still
    see the menu underneath it. */
 .qr-cart-toggle {
@@ -1699,21 +2077,23 @@ body.pos-v2 .pos-cart .pos-charge {
 
 @media (max-width: 700px) {
   /* The bill is pinned to the bottom of the phone and never leaves — that is
-     the point of it. So everything that scrolls has to STOP SHORT of it.
-     Without this the last row of tiles sits under the bar: you can't read it
-     and you can't tap it, which is what "lose this last row" was describing.
-     60px is the collapsed bar, plus the home-indicator inset. */
-  .pos-menu,
-  .pos-home-wrap,
-  .pos-board-pager,
-  .pos-grid {
+     the point of it. So everything that scrolls has to STOP SHORT of it, or
+     the last row of tiles sits under the bar where it can't be read or
+     tapped.
+
+     The allowance goes on the OUTERMOST column and nowhere else. Putting it
+     on every container in the chain and then zeroing the inner ones went
+     wrong twice over: .pos-home-wrap still matched, so the gap was counted
+     twice and left ~140px of dead cream under the board; and zeroing
+     .pos-grid took away the 16px of its own bottom padding, which left the
+     last row of tiles flush against the grid's edge. .pos-grid carries
+     `contain: paint`, so flush means the bottom of those tiles — border
+     radius, shadow and all — is painted off. That is the "cut off at the
+     bottom of the tiles" that keeps coming back: not a scrolling fault, a
+     clipping one, which is why more padding on the wrong element never
+     fixed it. */
+  .pos-menu {
     padding-bottom: calc(72px + env(safe-area-inset-bottom));
-  }
-  /* Nested containers would otherwise add the gap several times over. */
-  .pos-home-wrap .pos-board-pager,
-  .pos-home-wrap .pos-grid,
-  .pos-menu .pos-grid {
-    padding-bottom: 0;
   }
 }
 

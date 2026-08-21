@@ -1077,11 +1077,13 @@ export const timesheetExportInputSchema = z.object({
   markExported: z.boolean().default(false)
 });
 
+// Tips are always pooled per venue, never across the group. `venue` narrows
+// the page to one; leaving it off returns every venue's pool side by side,
+// still separately split — it is not a combined pot.
 export const tipsQuerySchema = z.object({
   start: z.string().min(4),
   end: z.string().min(4),
-  venue: z.string().optional().or(z.literal('')),
-  breakageCentsPerDay: z.coerce.number().int().nonnegative().default(3000)
+  venue: z.string().optional().or(z.literal(''))
 });
 
 export const salesActualQuerySchema = z.object({
@@ -4642,6 +4644,8 @@ export type GiftCardReportRedemption = {
   cardStatus: GiftCard['status'];
   recipientName: string | null;
   purchaserName: string;
+  /** A test card. Never counted unless the report was asked to include them. */
+  testMode: boolean;
   redeemedByName: string | null;
 };
 
@@ -4657,6 +4661,8 @@ export type GiftCardReport = {
   };
   byVenue: Array<{ venue: string; redemptionCount: number; redeemedCents: number }>;
   redemptions: GiftCardReportRedemption[];
+  /** Whether test cards were counted in this response. */
+  includeTest: boolean;
   /** True when the log hit its server-side cap and older rows in range were dropped. */
   truncated: boolean;
 };
@@ -4876,6 +4882,17 @@ export type StaffTipEntitlement = {
   paymentMethod: 'CASH';
 };
 
+export type StaffTipVenuePool = {
+  venue: string;
+  cashTipsCents: number;
+  squareTipsCents: number;
+  tipPoolCents: number;
+  tradingDays: number;
+  approvedHours: number;
+  staffCount: number;
+  allocatedCents: number;
+};
+
 export type StaffTipsSummary = {
   start: string;
   end: string;
@@ -4883,11 +4900,12 @@ export type StaffTipsSummary = {
   cashTipsCents: number;
   squareTipsCents: number;
   tipPoolCents: number;
-  breakageCentsPerDay: number;
-  breakageCents: number;
-  allocatablePoolCents: number;
   tradingDays: number;
   approvedHours: number;
+  /** One entry per venue that either took tips or worked hours this week. */
+  venues: StaffTipVenuePool[];
+  /** Hours with no venue on the timesheet or the profile — in nobody's pool. */
+  unassigned: Array<{ staffProfileId: string; name: string; approvedHours: number }>;
   paidRuns: Array<{
     id: string;
     paidAt: string;

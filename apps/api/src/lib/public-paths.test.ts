@@ -28,6 +28,11 @@ test('the calendar entry opens nothing beyond the feed itself', () => {
 test('the rest of the staff surface still needs a session', () => {
   assert.equal(isPublic('/api/staff/me/calendar'), false);
   assert.equal(isPublic('/api/staff/me/calendar/rotate'), false);
+  // Push subscriptions are tied to a signed-in person; an open subscribe
+  // endpoint would let a stranger point a device at somebody's roster.
+  assert.equal(isPublic('/api/staff/me/push'), false);
+  assert.equal(isPublic('/api/staff/me/push/subscribe'), false);
+  assert.equal(isPublic('/api/staff/me/push/unsubscribe'), false);
   assert.equal(isPublic('/api/staff/abc123/calendar/rotate'), false);
   assert.equal(isPublic('/api/staff/roster/published'), false);
   assert.equal(isPublic('/api/staff/profiles'), false);

@@ -31,8 +31,23 @@ type Terminal = {
   lastUsedAt: string | null;
 };
 
+// The back office's nine sections, in one place: the pill row and the phone's
+// select both read from this, so they can never offer different sections.
+const OFFICE_TABS = [
+  ['printers', 'Printers & dockets'],
+  ['terminals', 'Card terminals'],
+  ['qr', 'Table QR codes'],
+  ['menu', 'Menu visibility'],
+  ['modifiers', 'Modifiers'],
+  ['variants', 'Variants'],
+  ['specials', 'Specials'],
+  ['rules', 'Surcharges & discounts'],
+  ['identity', 'Venues & receipts']
+] as const;
+type OfficeTab = (typeof OFFICE_TABS)[number][0];
+
 export function Office() {
-  const [tab, setTab] = useState<'printers' | 'terminals' | 'qr' | 'menu' | 'modifiers' | 'variants' | 'specials' | 'rules' | 'identity'>('printers');
+  const [tab, setTab] = useState<OfficeTab>('printers');
   const [hides, setHides] = useState<MenuHide[]>([]);
   const [fullMenu, setFullMenu] = useState<MenuShape | null>(null);
   const [hideSearch, setHideSearch] = useState('');
@@ -222,25 +237,29 @@ export function Office() {
         <span style={{ flex: 1 }} />
         <a href="/" className="office-back">← Register</a>
       </header>
+      {/* Nine sections. As pills on a phone they wrapped to four rows and ate
+          the screen before a single setting appeared — so on a phone they are
+          a select, which is one row and the control iOS already knows how to
+          present full-screen. Both are rendered and the breakpoint picks one:
+          no resize listener, and no chance of the two disagreeing about which
+          section is open. */}
       <nav className="office-tabs">
-        {(
-          [
-            ['printers', 'Printers & dockets'],
-            ['terminals', 'Card terminals'],
-            ['qr', 'Table QR codes'],
-            ['menu', 'Menu visibility'],
-            ['modifiers', 'Modifiers'],
-            ['variants', 'Variants'],
-            ['specials', 'Specials'],
-            ['rules', 'Surcharges & discounts'],
-            ['identity', 'Venues & receipts']
-          ] as const
-        ).map(([key, label]) => (
+        {OFFICE_TABS.map(([key, label]) => (
           <button key={key} type="button" className={tab === key ? 'is-active' : ''} onClick={() => setTab(key)}>
             {label}
           </button>
         ))}
       </nav>
+      <div className="office-tabs-select">
+        <label>
+          <span>Section</span>
+          <select value={tab} onChange={(event) => setTab(event.currentTarget.value as OfficeTab)}>
+            {OFFICE_TABS.map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
       {error ? <div className="pos-error" onClick={() => setError(null)}>{error}</div> : null}
       {info ? <div className="pos-info" onClick={() => setInfo(null)}>{info}</div> : null}
 
