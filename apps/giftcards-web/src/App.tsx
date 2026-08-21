@@ -98,7 +98,11 @@ const GIFTCARD_NAV_ITEMS = [
     href: '/donations#donations',
     label: 'Donations',
     description: 'The twelve a year, and what they cost',
-    icon: <IconGift />
+    icon: <IconGift />,
+    // Giving one away spends one of twelve for the whole group, and the policy
+    // is the director's. The API refuses everyone else outright; this keeps the
+    // door out of their way rather than letting them walk into a 403.
+    ownerOnly: true
   },
   {
     href: '/redeem#redeem',
@@ -1470,7 +1474,18 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
-function SidebarNav() {
+/** Tim, by the address he signs in with. Mirrors the API's GIFT_CARD_OWNER_EMAIL. */
+const GIFT_CARD_OWNER_EMAIL = 'tim@almagroup.com.au';
+
+export function isGiftCardOwner(user?: { email?: string | null } | null) {
+  return user?.email?.toLowerCase() === GIFT_CARD_OWNER_EMAIL;
+}
+
+function SidebarNav({ isOwner }: { isOwner: boolean }) {
+  const navItems = useMemo(
+    () => GIFTCARD_NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner),
+    [isOwner]
+  );
   const navRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
@@ -1496,7 +1511,7 @@ function SidebarNav() {
     };
   }, [sectionFromLocation]);
 
-  const active = GIFTCARD_NAV_ITEMS.find((item) => item.href === activeHref) ?? GIFTCARD_NAV_ITEMS[2]!;
+  const active = navItems.find((item) => item.href === activeHref) ?? navItems[0]!;
 
   return (
     <div ref={navRef} className="mobile-nav-layer">
@@ -1518,7 +1533,7 @@ function SidebarNav() {
         className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
       >
         <li className="sidebar-nav-section">Gift Cards</li>
-        {GIFTCARD_NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <li key={item.href}>
             <a
               href={item.href}
@@ -2371,7 +2386,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   return (
     <AppShell
       brand={<ProductLogo appId="giftcards" size="md" showBrandMark={false} />}
-      sidebar={<SidebarNav />}
+      sidebar={<SidebarNav isOwner={isGiftCardOwner(user)} />}
       topBar={
         <TopBar
           title="ALMA Gift Cards"
@@ -2748,7 +2763,21 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         ) : null}
 
         {activeGiftCardPage === 'reporting' ? <><GiftCardReporting /><GiftCardPurchases /></> : null}
-        {activeGiftCardPage === 'donations' ? <DonationsPage /> : null}
+        {activeGiftCardPage === 'donations' ? (
+          isGiftCardOwner(user) ? (
+            <DonationsPage />
+          ) : (
+            // Typing the URL is the only way to land here without the nav item.
+            // Say so plainly rather than rendering a page whose every request
+            // will 403.
+            <Card title="Donations" subtitle="Not your call to make.">
+              <p className="subtle">
+                Donations and sponsorship are handled by Tim. If someone has asked the venue for a raffle prize, send
+                it to him rather than promising anything — there are only twelve a year across both venues.
+              </p>
+            </Card>
+          )
+        ) : null}
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
         {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
       </div>
