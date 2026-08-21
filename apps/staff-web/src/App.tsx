@@ -393,6 +393,11 @@ const TODAY_TABS: HubTab[] = [
 // selector and form the labour-cost workflow.
 const ROSTER_PAY_TABS: HubTab[] = [
   { to: '/roster', label: 'Roster' },
+  // Managers work shifts too. Without this they reach the roster they BUILD
+  // and never the one they are ON — which also put their own calendar feed
+  // and roster notifications out of reach entirely, since both live on the
+  // personal page.
+  { to: '/my-roster', label: 'My shifts' },
   { to: '/leave', label: 'Leave' },
   { to: '/timesheets', label: 'Timesheets' },
   { to: '/tips', label: 'Tips' },
@@ -21131,6 +21136,7 @@ function StaffShell() {
           <Route path="/device" element={<DeviceHomePage />} />
           <Route path="/" element={<StaffMemberHome staff={staff} loading={loading} reload={reload} />} />
           <Route path="/roster" element={<StaffMemberRosterPage />} />
+          <Route path="/my-roster" element={<StaffMemberRosterPage />} />
           <Route path="/clock" element={<StaffMemberClockPage />} />
           <Route path="/availability" element={<StaffMemberAvailabilityPage />} />
           <Route path="/leave" element={<StaffMemberLeavePage />} />
@@ -21169,6 +21175,7 @@ function StaffShell() {
           <Route path="/staff/:staffId" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/staff/:staffId/:section" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/roster" element={<HubLayout tabs={ROSTER_PAY_TABS}><RosterPage staff={staff} roster={roster} reload={reload} /></HubLayout>} />
+          <Route path="/my-roster" element={<HubLayout tabs={ROSTER_PAY_TABS}><StaffMemberRosterPage /></HubLayout>} />
           <Route path="/leave" element={<HubLayout tabs={ROSTER_PAY_TABS}><LeaveCalendarPage staff={staff} /></HubLayout>} />
           <Route path="/noticeboard" element={<NoticeboardPage />} />
           <Route path="/handbook" element={<StaffHandbookPage />} />
