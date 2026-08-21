@@ -10,20 +10,10 @@
       "bundleIdentifier": "au.com.almagroup.pos",
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Stripe requires your location to accept card payments on this device.",
         "NSCameraUsageDescription": "Scan gift cards and QR codes at the register."
       }
     },
     "plugins": [
-      [
-        "@stripe/stripe-terminal-react-native",
-        {
-          "bluetoothBackgroundMode": false,
-          "locationWhenInUsePermission": "Stripe requires your location to accept card payments on this device.",
-          "bluetoothPeripheralPermission": "Connect to a Stripe card reader.",
-          "bluetoothAlwaysUsagePermission": "Connect to a Stripe card reader."
-        }
-      ],
       [
         "expo-build-properties",
         {
