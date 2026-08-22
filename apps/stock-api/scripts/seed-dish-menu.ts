@@ -115,7 +115,11 @@ async function main() {
       // Maybe it exists but is tagged to the other venue entirely.
       const elsewhere = everything.filter((row) => scoreDish(title, row.title) >= 0.6);
       if (elsewhere.length > 0) {
-        return `tagged to ${elsewhere.map((row) => row.venue ?? '(shared)').join(', ')}, so ${venue}'s register hides it`;
+        // Deduped: two recipes both tagged to Avalon read as "tagged to Alma
+        // Avalon, Alma Avalon", which looks like a data error in the report
+        // rather than what it is — the same answer twice.
+        const venues = [...new Set(elsewhere.map((row) => row.venue ?? '(shared)'))];
+        return `tagged to ${venues.join(', ')}, so ${venue}'s register hides it`;
       }
       return null;
     }
@@ -125,7 +129,10 @@ async function main() {
       if (!row.salePriceCents || row.salePriceCents <= 0) return `"${row.title}" has NO PRICE — the register only shows dishes priced above zero`;
       return `"${row.title}" looks sellable; the name is just too far from the menu's to match`;
     });
-    return reasons.join('; ');
+    // Same reason for two candidate rows is one reason, not two. "Churros is a
+    // prep recipe; Churros is a prep recipe" is noise that makes a short list
+    // look like a long one.
+    return [...new Set(reasons)].join('; ');
   };
   // isDrink is the register's own test, shared with the course planner. The
   // previous version of this line knew about five wine categories and nothing
