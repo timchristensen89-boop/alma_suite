@@ -41,8 +41,13 @@ import { resolve } from 'node:path';
 import { prisma } from '@alma/db';
 import { parseDishDietary, dietaryShort } from '@alma/shared';
 import { matchDish, parsePrintedMarks } from '../src/lib/dish-dietary.js';
+import { isDrink } from '../src/lib/course-flow.js';
 
-const DRINK_CATEGORIES = new Set(['Red Wine', 'White Wine', 'Rose', 'Sparkling Wine', 'Fortified']);
+// Which venue to report on. The menus are per-venue and so is the launch, so
+// `--venue "Alma Avalon"` narrows everything below to the kitchen you are
+// actually asking about.
+const VENUE_FLAG = process.argv.indexOf('--venue');
+const ONLY_VENUE = VENUE_FLAG > -1 ? process.argv[VENUE_FLAG + 1] ?? null : null;
 
 type MenuRow = {
   venue: string;
@@ -81,13 +86,19 @@ const same = (a: string[], b: string[]) => a.length === b.length && a.every((tag
 async function main() {
   const apply = process.argv.includes('--apply');
   const overwrite = process.argv.includes('--overwrite');
-  const menu = readMenu();
+  const menu = readMenu().filter((row) => !ONLY_VENUE || row.venue === ONLY_VENUE);
+  if (ONLY_VENUE) console.log(`Reporting on ${ONLY_VENUE} only.\n`);
 
   const recipes = await prisma.recipe.findMany({
     where: { status: 'ACTIVE', isPrepRecipe: false },
-    select: { id: true, title: true, venue: true, category: true, dietary: true, guestDescription: true }
+    select: { id: true, title: true, venue: true, kind: true, category: true, dietary: true, guestDescription: true }
   });
-  const food = recipes.filter((row) => !DRINK_CATEGORIES.has(row.category ?? ''));
+  // isDrink is the register's own test, shared with the course planner. The
+  // previous version of this line knew about five wine categories and nothing
+  // else, so every mezcal and margarita was counted as an unchecked dish.
+  const food = recipes
+    .filter((row) => !isDrink(row.kind, row.category))
+    .filter((row) => !ONLY_VENUE || row.venue === ONLY_VENUE);
 
   const byVenue = new Map<string, typeof food>();
   for (const row of food) {
@@ -130,7 +141,16 @@ async function main() {
     }
     if (match.kind === 'ambiguous') {
       const options = match.candidates.map((c) => `${c.registerTitle} (${c.score.toFixed(2)})`).join('  vs  ');
-      ambiguous.push(`  ${row.venue} · ${row.dish}  ->  ${options}`);
+      // A tie at 1.00 is not really an ambiguous MATCH — it means the register
+      // holds the same dish twice, usually once bare and once with a piece
+      // count. That is a duplicate to merge in Stock, not a judgement call
+      // about which dish the menu meant, so it is said differently.
+      const duplicate = match.candidates.length > 1 && match.candidates.every((c) => c.score === 1);
+      ambiguous.push(
+        duplicate
+          ? `  ${row.venue} · ${row.dish}\n      DUPLICATE IN THE REGISTER — the same dish twice: ${options}`
+          : `  ${row.venue} · ${row.dish}  ->  ${options}`
+      );
       continue;
     }
 
@@ -191,33 +211,51 @@ async function main() {
   }
   if (ambiguous.length) {
     console.log(`Two register dishes fit equally well, so neither was used (${ambiguous.length}):`);
+    console.log('  (a DUPLICATE line is a Stock cleanup; anything else is a question about which dish the menu means)');
     for (const line of ambiguous) console.log(line);
     console.log('');
   }
   if (unmatched.length) {
-    console.log(`On the menu, not in the register (${unmatched.length}):`);
+    console.log(`On the menu, not in the register (${unmatched.length}) — a guest cannot order these from the QR menu:`);
     for (const line of unmatched) console.log(line);
     console.log('');
   }
 
   // The other direction, and the one that matters at the table: a dish a guest
   // can order tonight that still carries no marks, or no words, at all.
+  // Grouped by category rather than listed flat. A bare list of forty names
+  // out of hundreds tells you the number is big and nothing else; the shape of
+  // it — which sections are covered and which are untouched — is the part you
+  // can act on.
+  const byCategory = (rows: typeof food, heading: string, why: string) => {
+    if (!rows.length) return;
+    const groups = new Map<string, string[]>();
+    for (const row of rows) {
+      const key = `${row.venue ?? '(shared)'} · ${row.category ?? '(no category)'}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(row.title);
+    }
+    console.log(`${heading} (${rows.length}) — ${why}`);
+    for (const [key, titles] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
+      console.log(`  ${key}  (${titles.length})`);
+      for (const title of titles.slice(0, 6)) console.log(`      ${title}`);
+      if (titles.length > 6) console.log(`      ... and ${titles.length - 6} more`);
+    }
+    console.log('');
+  };
+
   const marked = new Set(tagWrites.map((write) => write.id));
-  const stillBlank = food.filter((row) => !marked.has(row.id) && parseDishDietary(row.dietary).length === 0);
-  if (stillBlank.length) {
-    console.log(`Still unmarked after this run (${stillBlank.length}) — the filter reads these as "nobody has checked":`);
-    for (const row of stillBlank.slice(0, 40)) console.log(`  ${(row.venue ?? '(shared)').padEnd(12)} ${row.title}`);
-    if (stillBlank.length > 40) console.log(`  ... and ${stillBlank.length - 40} more`);
-    console.log('');
-  }
+  byCategory(
+    food.filter((row) => !marked.has(row.id) && parseDishDietary(row.dietary).length === 0),
+    'Still unmarked after this run',
+    'the filter reads these as "nobody has checked"'
+  );
   const described = new Set(descWrites.map((write) => write.id));
-  const stillBare = food.filter((row) => !described.has(row.id) && !row.guestDescription?.trim());
-  if (stillBare.length) {
-    console.log(`Still without a description (${stillBare.length}) — a guest sees the name and the price:`);
-    for (const row of stillBare.slice(0, 40)) console.log(`  ${(row.venue ?? '(shared)').padEnd(12)} ${row.title}`);
-    if (stillBare.length > 40) console.log(`  ... and ${stillBare.length - 40} more`);
-    console.log('');
-  }
+  byCategory(
+    food.filter((row) => !described.has(row.id) && !row.guestDescription?.trim()),
+    'Still without a description',
+    'a guest sees the name and the price and nothing else'
+  );
 
   if (!apply) {
     console.log('Dry run. Nothing written. Re-run with --apply to write the above.');
