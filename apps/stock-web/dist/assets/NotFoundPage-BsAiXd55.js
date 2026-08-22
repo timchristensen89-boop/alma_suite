@@ -1,0 +1,1 @@
+import{u as e,j as t,C as n,E as s,L as a}from"./index-BDLd9XqM.js";function o(){return e("Not found"),t.jsx("div",{className:"page-stack",children:t.jsx(n,{children:t.jsx(s,{title:"We couldn't find that page",description:t.jsxs(t.Fragment,{children:["The URL didn't match any section."," ",t.jsx(a,{to:"/",children:"Go to the overview"}),"."]})})})})}export{o as NotFoundPage};

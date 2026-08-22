@@ -1,0 +1,17 @@
+{
+  "name": "ALMA Staff",
+  "short_name": "ALMA Staff",
+  "description": "Rosters, shifts, checks and training for the ALMA Group team.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1f3524",
+  "theme_color": "#1f3524",
+  "icons": [
+    { "src": "/brand/alma-staff-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/alma-staff-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/alma-staff-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
