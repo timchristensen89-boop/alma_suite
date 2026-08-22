@@ -40,7 +40,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { prisma } from '@alma/db';
 import { parseDishDietary, dietaryShort } from '@alma/shared';
-import { matchDish, parsePrintedMarks } from '../src/lib/dish-dietary.js';
+import { matchDish, parsePrintedMarks, scoreDish } from '../src/lib/dish-dietary.js';
 import { isDrink } from '../src/lib/course-flow.js';
 
 // Which venue to report on. The menus are per-venue and so is the launch, so
@@ -91,8 +91,42 @@ async function main() {
 
   const recipes = await prisma.recipe.findMany({
     where: { status: 'ACTIVE', isPrepRecipe: false },
-    select: { id: true, title: true, venue: true, kind: true, category: true, dietary: true, guestDescription: true }
+    select: { id: true, title: true, venue: true, kind: true, category: true, dietary: true, guestDescription: true, salePriceCents: true }
   });
+
+  // Everything, including what the register will not show. "On the menu, not
+  // in the register" used to be one undifferentiated list, which is not
+  // actionable: a dish nobody has entered and a dish sitting there with no
+  // price need completely different things done to them, and only one of them
+  // is a typing job.
+  //
+  // The register asks for status ACTIVE, isPrepRecipe false and
+  // salePriceCents > 0, then the client drops anything tagged to the other
+  // venue. A dish can fail any one of those and look identical from the floor:
+  // it simply is not there.
+  const everything = await prisma.recipe.findMany({
+    select: { id: true, title: true, venue: true, kind: true, category: true, status: true, isPrepRecipe: true, salePriceCents: true }
+  });
+  const whyHidden = (title: string, venue: string): string | null => {
+    const candidates = everything.filter(
+      (row) => scoreDish(title, row.title) >= 0.6 && (!row.venue || row.venue === venue)
+    );
+    if (candidates.length === 0) {
+      // Maybe it exists but is tagged to the other venue entirely.
+      const elsewhere = everything.filter((row) => scoreDish(title, row.title) >= 0.6);
+      if (elsewhere.length > 0) {
+        return `tagged to ${elsewhere.map((row) => row.venue ?? '(shared)').join(', ')}, so ${venue}'s register hides it`;
+      }
+      return null;
+    }
+    const reasons = candidates.map((row) => {
+      if (row.status !== 'ACTIVE') return `"${row.title}" is ${row.status}`;
+      if (row.isPrepRecipe) return `"${row.title}" is a prep recipe, not a sellable dish`;
+      if (!row.salePriceCents || row.salePriceCents <= 0) return `"${row.title}" has NO PRICE — the register only shows dishes priced above zero`;
+      return `"${row.title}" looks sellable; the name is just too far from the menu's to match`;
+    });
+    return reasons.join('; ');
+  };
   // isDrink is the register's own test, shared with the course planner. The
   // previous version of this line knew about five wine categories and nothing
   // else, so every mezcal and margarita was counted as an unchecked dish.
@@ -119,6 +153,10 @@ async function main() {
   const ambiguous: string[] = [];
   const unmatched: string[] = [];
   const flagged: string[] = [];
+  // Matched, marked, described — and still not on the register, because the
+  // register only shows dishes priced above zero. This one is easy to miss
+  // precisely because everything else about the dish is right.
+  const priceless: string[] = [];
 
   for (const row of menu) {
     const pool = byVenue.get(row.venue) ?? [];
@@ -136,7 +174,8 @@ async function main() {
     const match = matchDish(row.dish, pool.map((item) => item.title));
     if (match.kind === 'unmatched') {
       const closest = match.closest ? `  (closest: ${match.closest.registerTitle} @ ${match.closest.score.toFixed(2)})` : '';
-      unmatched.push(`  ${row.venue} · ${row.dish}${closest}`);
+      const why = whyHidden(row.dish, row.venue);
+      unmatched.push(`  ${row.venue} · ${row.dish}${closest}${why ? `\n      ${why}` : ''}`);
       continue;
     }
     if (match.kind === 'ambiguous') {
@@ -155,6 +194,9 @@ async function main() {
     }
 
     const item = pool.find((candidate) => candidate.title === match.registerTitle)!;
+    if (!item.salePriceCents || item.salePriceCents <= 0) {
+      priceless.push(`  ${row.venue} · ${item.title}`);
+    }
 
     // ── The dietary marks ──
     const current = parseDishDietary(item.dietary);
@@ -215,8 +257,14 @@ async function main() {
     for (const line of ambiguous) console.log(line);
     console.log('');
   }
+  if (priceless.length) {
+    console.log(`Priced at nothing, so the register hides them (${priceless.length}) — these ARE in Stock and this run marked them, but nobody can ring one up:`);
+    for (const line of priceless) console.log(line);
+    console.log('  Give each a price in Stock and it appears at the till.\n');
+  }
   if (unmatched.length) {
-    console.log(`On the menu, not in the register (${unmatched.length}) — a guest cannot order these from the QR menu:`);
+    console.log(`On the menu, not in the register (${unmatched.length}) — nobody can order these, at the till or on the QR menu:`);
+    console.log('  (a line beneath a dish says why it is hidden; no line means no recipe exists at all)');
     for (const line of unmatched) console.log(line);
     console.log('');
   }
