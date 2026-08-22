@@ -53,6 +53,7 @@ type MenuRow = {
   venue: string;
   section: string;
   dish: string;
+  price: string;
   description: string;
   printed: string;
   apply: string;
@@ -72,6 +73,7 @@ function readMenu(): MenuRow[] {
       venue: at(cells, 'venue'),
       section: at(cells, 'section'),
       dish: at(cells, 'dish'),
+      price: at(cells, 'price'),
       description: at(cells, 'description'),
       printed: at(cells, 'printed'),
       apply: at(cells, 'apply'),
@@ -164,6 +166,10 @@ async function main() {
   // register only shows dishes priced above zero. This one is easy to miss
   // precisely because everything else about the dish is right.
   const priceless: string[] = [];
+  // The register's price against the printed one. REPORTED, never written:
+  // a price is money, and a script that quietly re-prices a menu because a PDF
+  // disagreed with it is not something anybody asked for.
+  const priceDiff: string[] = [];
 
   for (const row of menu) {
     const pool = byVenue.get(row.venue) ?? [];
@@ -203,6 +209,14 @@ async function main() {
     const item = pool.find((candidate) => candidate.title === match.registerTitle)!;
     if (!item.salePriceCents || item.salePriceCents <= 0) {
       priceless.push(`  ${row.venue} · ${item.title}`);
+    } else if (row.price) {
+      const printed = Math.round(Number(row.price) * 100);
+      if (Number.isFinite(printed) && printed > 0 && printed !== item.salePriceCents) {
+        const money = (cents: number) => `$${(cents / 100).toFixed(2).replace(/\.00$/, '')}`;
+        priceDiff.push(
+          `  ${row.venue} · ${item.title.padEnd(38)} register ${money(item.salePriceCents).padEnd(7)} menu ${money(printed)}`
+        );
+      }
     }
 
     // ── The dietary marks ──
@@ -263,6 +277,11 @@ async function main() {
     console.log('  (a DUPLICATE line is a Stock cleanup; anything else is a question about which dish the menu means)');
     for (const line of ambiguous) console.log(line);
     console.log('');
+  }
+  if (priceDiff.length) {
+    console.log(`The register and the print disagree on price (${priceDiff.length}):`);
+    for (const line of priceDiff) console.log(line);
+    console.log('  Nothing was changed. Prices are money — fix whichever is wrong in Stock, or reprint.\n');
   }
   if (priceless.length) {
     console.log(`Priced at nothing, so the register hides them (${priceless.length}) — these ARE in Stock and this run marked them, but nobody can ring one up:`);
