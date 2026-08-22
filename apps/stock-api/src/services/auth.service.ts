@@ -20,6 +20,7 @@ function toAuthUser(profile: {
   venue: string | null;
   accountType?: 'HUMAN' | 'VENUE_DEVICE';
   isAdmin: boolean;
+  trainingOnly?: boolean;
   appAccess: Array<Pick<AuthUser['appAccess'][number], 'appId' | 'status' | 'role'> & { permissions: unknown }>;
 }): AuthUser {
   const accountType = profile.accountType ?? 'HUMAN';
@@ -45,6 +46,10 @@ function toAuthUser(profile: {
     venue: profile.venue,
     accountType,
     isAdmin: accountType === 'HUMAN' ? profile.isAdmin : false,
+    // Carried for completeness. Stock has no till to protect, but the session
+    // shape is shared and a field that silently reads false in one app and
+    // true in another is how a safety flag stops being one.
+    trainingOnly: profile.trainingOnly === true,
     role: accountType === 'HUMAN' && profile.isAdmin ? 'ADMIN' : isManager ? 'MANAGER' : 'STAFF',
     appAccess: profile.appAccess.map((access) => ({
       appId: access.appId,

@@ -414,6 +414,7 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
 
 /* training banner */
 .pos-training { background: #d9a05a; color: #241d10; padding: 8px 14px; font-weight: 800; font-size: 13px; letter-spacing: 0.04em; cursor: pointer; }
+.pos-training.is-locked { cursor: default; }
 
 /* course chips in the bill */
 .pos-course-pick { display: flex; flex-wrap: wrap; gap: 5px; padding-bottom: 8px; border-bottom: 1px solid var(--pos-line, #262b31); margin-bottom: 8px; }

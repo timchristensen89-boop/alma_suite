@@ -3,12 +3,16 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
-import { parseDishDietary } from '@alma/shared';
+import { parseDishDietary, type AuthUser } from '@alma/shared';
 import { nswHolidayName } from '../lib/nsw-holidays.js';
 import { courseDishIds, stillFixed } from '../lib/set-menu-plan.js';
 import { mailService } from './mail.service.js';
 import { authService } from './auth.service.js';
 import { giftCardService } from './gift-card.service.js';
+import { isTrainingSafeTender, orderIsTraining } from '../lib/training-till.js';
+
+/** Every tender the register accepts. */
+const POS_PAYMENT_METHODS = ['CASH', 'CARD_EXTERNAL', 'STRIPE_TERMINAL', 'SQUARE_TERMINAL', 'GIFT_CARD', 'ONLINE'];
 
 const stripe = env.stripe?.secretKey ? new Stripe(env.stripe.secretKey) : null;
 
@@ -1460,7 +1464,19 @@ export const posService = {
     return { deleted: true };
   },
 
-  async createOrder(input: unknown) {
+  /**
+   * Open a bill.
+   *
+   * `caller` is what makes training real. The flag used to arrive in the body,
+   * from `alma.pos.training` in the browser's localStorage — per device,
+   * defaulting to off, and asserted by the very client you are trying to
+   * restrict. A training account signing in on their own phone got a live
+   * till, which is exactly the case the flag exists to prevent.
+   *
+   * So the server decides. A training-only account cannot open a real bill,
+   * whatever the client sends, and the client has no way to ask for one.
+   */
+  async createOrder(input: unknown, caller?: AuthUser | null) {
     const body = (input ?? {}) as Record<string, unknown>;
     const venue = str(body.venue);
     if (!venue) throw new HttpError(400, 'venue is required.');
@@ -1507,7 +1523,7 @@ export const posService = {
         data: {
           venue,
           idempotencyKey,
-          training: body.training === true,
+          training: orderIsTraining(body.training, caller?.trainingOnly),
           openedByName: str(body.openedByName) || null,
           orderType: str(body.orderType).toUpperCase() === 'TAKEAWAY' ? 'TAKEAWAY' : 'DINE_IN',
           tableLabel,
@@ -1954,8 +1970,8 @@ export const posService = {
   async payOrder(id: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const method = str(body.method).toUpperCase();
-    if (!['CASH', 'CARD_EXTERNAL', 'STRIPE_TERMINAL', 'SQUARE_TERMINAL', 'GIFT_CARD', 'ONLINE'].includes(method)) {
-      throw new HttpError(400, 'method must be CASH, CARD_EXTERNAL, STRIPE_TERMINAL, SQUARE_TERMINAL, GIFT_CARD or ONLINE.');
+    if (!POS_PAYMENT_METHODS.includes(method)) {
+      throw new HttpError(400, `method must be one of ${POS_PAYMENT_METHODS.join(', ')}.`);
     }
     const tipCents = body.tipCents === undefined ? 0 : asInt(body.tipCents, 'tip', { min: 0, max: 500_000 });
 
@@ -1963,6 +1979,19 @@ export const posService = {
     if (!order) throw new HttpError(404, 'Order not found.');
     if (order.status !== 'OPEN') throw new HttpError(400, `Order is already ${order.status}.`);
     if (order.lines.length === 0) throw new HttpError(400, 'Add at least one item before charging.');
+
+    // A training bill may be tendered, because practising the charge screen is
+    // most of the point. What it may NOT do is move money that lives outside
+    // our own books: cash and "card on the standalone machine" are records we
+    // then exclude from takings, but a gift card is really debited and a
+    // terminal really charges somebody's card. Those are not reversible by
+    // marking a row `training`, so they are refused rather than filtered.
+    if (order.training && !isTrainingSafeTender(method)) {
+      throw new HttpError(
+        400,
+        'This is a training bill — practise with Cash or Card, which post nowhere. Gift cards and card terminals move real money and are switched off here.'
+      );
+    }
     if (order.payments.length === 0) {
       await recomputeOrder(id);
       order = (await prisma.posOrder.findUnique({ where: { id }, include: { lines: true, payments: true } }))!;

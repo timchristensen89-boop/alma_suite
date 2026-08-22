@@ -8450,6 +8450,40 @@ function AccessPage({
                         );
                       })}
                     </div>
+                    {/* Training till. Admin-only, and deliberately not one of
+                        the POS permission chips above — those widen what
+                        somebody may approve, this decides whether their sales
+                        are real. The API refuses it from a non-admin too; this
+                        just doesn't offer what would be refused. */}
+                    {user?.isAdmin || user?.role === 'ADMIN' ? (
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                          <input
+                            type="checkbox"
+                            defaultChecked={Boolean(
+                              (selected as unknown as { trainingOnly?: boolean })?.trainingOnly
+                            )}
+                            onChange={(event) => {
+                              if (!selected) return;
+                              const next = event.currentTarget.checked;
+                              void api(`/api/staff/${selected.id}`, {
+                                method: 'PATCH',
+                                body: JSON.stringify({ trainingOnly: next })
+                              })
+                                .then(() => reload())
+                                .catch(() => setMessage('Could not change the training setting.'));
+                            }}
+                          />
+                          <strong>Training till</strong>
+                        </label>
+                        <span className="subtle" style={{ display: 'block', marginTop: 4 }}>
+                          Every bill this account opens is a practice sale — no takings, no drawer, no reports, nothing
+                          to the kitchen — and card terminals and gift cards are refused on it. The register shows it and
+                          offers no way to switch it off. Use it for a new starter learning the till, or for an App
+                          Review tester.
+                        </span>
+                      </div>
+                    ) : null}
                     <Input label="Start date" type="date" value={profileDraft.startDate} onChange={(event) => updateProfile('startDate', event.currentTarget.value)} />
                     <Input label="Date of birth" type="date" value={profileDraft.dateOfBirth} onChange={(event) => updateProfile('dateOfBirth', event.currentTarget.value)} />
                   </div>

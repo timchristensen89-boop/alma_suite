@@ -10,6 +10,7 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { mailService } from './mail.service.js';
+import { sessionTrainingOnly } from '../lib/training-till.js';
 
 function permissionRecord(value: unknown): Record<string, boolean> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -28,6 +29,7 @@ function toAuthUser(profile: {
   venue: string | null;
   accountType?: 'HUMAN' | 'VENUE_DEVICE';
   isAdmin: boolean;
+  trainingOnly?: boolean;
   appAccess: Array<Pick<AuthUser['appAccess'][number], 'appId' | 'status' | 'role'> & { permissions: unknown }>;
 }): AuthUser {
   const accountType = profile.accountType ?? 'HUMAN';
@@ -53,6 +55,9 @@ function toAuthUser(profile: {
     venue: profile.venue,
     accountType,
     isAdmin: accountType === 'HUMAN' ? profile.isAdmin : false,
+    // Unlike isAdmin, this is NOT scoped to HUMAN accounts: a venue device can
+    // be a training till, and that is half the point of the flag.
+    trainingOnly: profile.trainingOnly === true,
     role: accountType === 'HUMAN' && profile.isAdmin ? 'ADMIN' : isManager ? 'MANAGER' : 'STAFF',
     appAccess: profile.appAccess.map((access) => ({
       appId: access.appId,
@@ -246,6 +251,9 @@ export const authService = {
     return {
       ...staffUser,
       isAdmin: false,
+      // Widens rather than narrows, unlike everything else here. See
+      // lib/training-till.ts — the reasoning and the tests live with it.
+      trainingOnly: sessionTrainingOnly(deviceUser.trainingOnly, staffUser.trainingOnly),
       role: 'STAFF',
       venue: deviceUser.venue,
       appAccess: intersectAppAccess(staffUser, deviceUser),

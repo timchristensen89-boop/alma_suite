@@ -612,6 +612,8 @@ export const staffLeaveRequestUpdateSchema = z.object({
 
 export const staffProfileCreateInputSchema = z.object({
   posPermissions: z.record(z.boolean()).optional(),
+  // A practice account. Admin-only to set — see staff.service.
+  trainingOnly: z.boolean().optional(),
   firstName: z.string().min(2),
   lastName: z.string().min(2),
   roleTemplateId: z.string().optional().or(z.literal('')),
@@ -2118,6 +2120,15 @@ export type AuthUser = {
   venue: string | null;
   accountType: z.infer<typeof staffAccountTypeSchema>;
   isAdmin: boolean;
+  /**
+   * A practice account: the register forces every order it opens to be a
+   * training sale, and offers no way to turn that off.
+   *
+   * On a shared-device session this is the OR of the device account and the
+   * person's PIN account — a training PIN on a live till and a live PIN on a
+   * training till both come out safe. Widening is the only safe direction.
+   */
+  trainingOnly: boolean;
   role: 'ADMIN' | 'MANAGER' | 'STAFF';
   appAccess: Array<Pick<StaffAppAccess, 'appId' | 'status' | 'role' | 'permissions'>>;
   deviceAccount?: {

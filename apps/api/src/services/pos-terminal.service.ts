@@ -201,6 +201,14 @@ export const posTerminalService = {
     if (!order) throw new HttpError(404, 'Order not found.');
     if (order.status !== 'OPEN') throw new HttpError(400, `Order is already ${order.status}.`);
     if (order.lines.length === 0) throw new HttpError(400, 'Add at least one item before charging.');
+    // A terminal charges a real card. Marking the bill `training` afterwards
+    // does not give the money back, so a practice bill never reaches one — the
+    // refusal lives here as well as in payOrder because this route starts the
+    // charge, and the tender is only recorded once the card has already gone
+    // through.
+    if (order.training) {
+      throw new HttpError(400, 'This is a training bill — it cannot charge a card. Practise with Cash or Card instead.');
+    }
 
     const device = await prisma.posTerminalDevice.findUnique({ where: { id: deviceId } });
     if (!device) throw new HttpError(404, 'Terminal not found.');

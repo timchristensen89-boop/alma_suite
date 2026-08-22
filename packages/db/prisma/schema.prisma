@@ -686,6 +686,19 @@ model StaffProfile {
   pinLockedUntil               DateTime?
   // POS abilities for non-managers: {refunds, voids, discounts, till, office}.
   posPermissions               Json                       @default("{}")
+  /// A practice account. Everything it opens at the register is a training
+  /// sale — no takings, no drawer, no reports, nothing to the kitchen.
+  ///
+  /// It lives HERE, on the account, rather than in the browser, because the
+  /// old training switch was `alma.pos.training` in localStorage: a per-DEVICE
+  /// toggle that starts OFF. Hand someone a login and they get a live till on
+  /// their own phone regardless of what you meant. This flag travels with the
+  /// account instead, is forced on server-side at order creation, and cannot
+  /// be turned off from the till.
+  ///
+  /// Two uses, one mechanism: a new starter you want on a real-looking register
+  /// that cannot cost you anything, and an App Review demo login.
+  trainingOnly                 Boolean                    @default(false)
   pinLastFailedAt              DateTime?
   isAdmin                      Boolean                    @default(false)
   lastLoginAt                  DateTime?
