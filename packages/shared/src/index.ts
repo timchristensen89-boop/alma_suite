@@ -6384,6 +6384,8 @@ export type RecipeLine = {
   cost: number | null;
   wastePercent: number | null;
   perGuests: number | null;
+  /** Counted by the costing, never served. See set-menu-plan.ts. */
+  costingOnly: boolean;
   itemId: string | null;
   item: { id: string; name: string; unit: string; countUnit: string | null; avgCostCents: number | null } | null;
   subRecipeId: string | null;
@@ -6909,6 +6911,9 @@ export const recipeLineInputSchema = z.object({
   wastePercent: z.coerce.number().min(0).max(100).optional(),
   // Set menus: component shared between N guests (its cost ÷ N per person).
   perGuests: z.coerce.number().positive().optional(),
+  // Set menus: counted by the costing, never sent to a bill or a docket — the
+  // allowance for what a table drinks, which no kitchen can plate.
+  costingOnly: z.boolean().optional(),
   itemId: z.string().optional().or(z.literal('')),
   subRecipeId: z.string().optional().or(z.literal(''))
 }).refine((line) => !(line.itemId && line.subRecipeId), {

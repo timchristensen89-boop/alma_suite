@@ -1,0 +1,14 @@
+-- A set menu component that is costed but never served.
+--
+-- A banquet price carries things the kitchen never plates — the allowance for
+-- what a table drinks being the obvious one. Those belong in the margin and
+-- nowhere else: an "average drinks" line on a docket is an instruction to make
+-- something that does not exist.
+--
+-- Until now a component had two possible lives: a course served it (so the
+-- table was asked), or nothing did (so it went on every bill and fired to the
+-- kitchen). There was no way to say "count this and stay quiet".
+--
+-- Defaults false, so every existing component keeps behaving exactly as it
+-- does today and nothing changes until somebody ticks the box.
+ALTER TABLE "RecipeLine" ADD COLUMN "costingOnly" BOOLEAN NOT NULL DEFAULT false;

@@ -932,6 +932,9 @@ export const posService = {
               ingredientName: true,
               quantity: true,
               perGuests: true,
+              // Costed but never served — stillFixed drops these, so a drinks
+              // allowance stays out of the bill and off the docket.
+              costingOnly: true,
               subRecipeId: true,
               subRecipe: { select: { title: true, printTitle: true } }
             }
