@@ -985,6 +985,13 @@ export function App() {
     picks: Record<string, Record<string, number>>;
   }>(null);
   const [wastage, setWastage] = useState<null | { search: string; recipeId: string; itemName: string; quantity: string; reason: string }>(null);
+  // Selling a gift card at the till. The server side of this has existed for a
+  // while — PosGiftCardSale, GST-free face value, issued and emailed when the
+  // bill settles, cancelled if the bill is refunded — with no way to reach it
+  // from the register. This is that way.
+  const [giftSale, setGiftSale] = useState<
+    null | { amountDollars: string; recipientName: string; recipientEmail: string; code: string; physical: boolean; saving: boolean }
+  >(null);
   const [lineAction, setLineAction] = useState<null | { lineId: string; name: string; kind: 'COMP' | 'PRICE_CHANGE'; reason: string; price: string }>(null);
   const [discounting, setDiscounting] = useState<null | { mode: 'percent' | 'amount'; value: string; reason: string }>(null);
   // One chooser for everything you do TO a bill (discount, comp, split,
@@ -2481,6 +2488,67 @@ export function App() {
     }
   }
 
+  /**
+   * Put a gift card on the bill.
+   *
+   * The card is NOT created here. It becomes real when the bill is paid —
+   * that is where the server activates it, emails the recipient and, if the
+   * bill is later refunded in full, cancels it again. Selling the card and
+   * taking the money are the same transaction, which is the point: the guest
+   * pays for it on the same screen as everything else, and nobody has to
+   * remember to go and issue it afterwards.
+   *
+   * A gift card also needs a bill to sit on, so a walk-in buying nothing else
+   * gets one opened for them.
+   */
+  async function addGiftCardToBill() {
+    if (!giftSale) return;
+    const dollars = Number(giftSale.amountDollars);
+    if (!Number.isFinite(dollars) || dollars < 5 || dollars > 1000) {
+      setError('A gift card is between $5 and $1000.');
+      return;
+    }
+    if (giftSale.recipientEmail.trim() && !giftSale.recipientEmail.includes('@')) {
+      setError('That email address looks wrong — check it before charging.');
+      return;
+    }
+    setGiftSale({ ...giftSale, saving: true });
+    setError(null);
+    try {
+      let target = order;
+      // A pending- draft is display-only and has no server id to hang a sale
+      // on, so it cannot take one either.
+      if (!target || target.id.startsWith('pending-')) {
+        target = await api<Order>('/api/pos/orders', {
+          method: 'POST',
+          body: JSON.stringify({ venue, openedByName: operatorName || undefined, training: training || undefined })
+        });
+      }
+      const updated = await api<Order>(`/api/pos/orders/${target.id}/gift-cards`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amountCents: Math.round(dollars * 100),
+          code: giftSale.physical ? giftSale.code.trim().toUpperCase() || undefined : undefined,
+          recipientName: giftSale.recipientName.trim() || undefined,
+          recipientEmail: giftSale.recipientEmail.trim() || undefined
+        })
+      });
+      setOrder(updated);
+      setGiftSale(null);
+      setView('register');
+      setInfo(
+        giftSale.physical
+          ? `$${dollars} card on the bill — write ${giftSale.code.trim().toUpperCase() || 'the number'} on the physical card. It goes live when the bill is paid.`
+          : giftSale.recipientEmail.trim()
+            ? `$${dollars} card on the bill — emailed to ${giftSale.recipientEmail.trim()} once the bill is paid.`
+            : `$${dollars} card on the bill. It goes live when the bill is paid.`
+      );
+    } catch (err) {
+      setError(messageForError(err, 'Could not add the gift card.'));
+      setGiftSale((current) => (current ? { ...current, saving: false } : current));
+    }
+  }
+
   // Tap to Pay: the shell collects the card on this phone, then the payment
   // is recorded against the bill exactly like any other card tender.
   async function takeTapToPay() {
@@ -3112,6 +3180,17 @@ export function App() {
             onClick={() => setWastage({ search: '', recipeId: '', itemName: '', quantity: '1', reason: '' })}
           >
             Wastage
+          </button>
+          {/* Also an action: somebody at the counter buying a card is not on a
+              table and has nothing to add to a board. */}
+          <button
+            type="button"
+            className="pos-rail-item"
+            onClick={() =>
+              setGiftSale({ amountDollars: '', recipientName: '', recipientEmail: '', code: '', physical: false, saving: false })
+            }
+          >
+            Gift card
           </button>
           {/* The nav is READ-ONLY here — it is arranged in the board editor,
               so a busy service can't reorder it by accident. */}
@@ -6451,6 +6530,93 @@ export function App() {
             </button>
             <button type="button" className="pos-ghost pos-modal-close" onClick={() => setFireSheet(null)}>
               Hold everything
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {giftSale ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Sell a gift card</h2>
+
+            <div className="pos-reason-list" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {[50, 100, 150, 200, 250].map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  className={Number(giftSale.amountDollars) === amount ? 'pos-chip is-on' : 'pos-chip'}
+                  onClick={() => setGiftSale({ ...giftSale, amountDollars: String(amount) })}
+                >
+                  ${amount}
+                </button>
+              ))}
+            </div>
+            <input
+              className="pos-tender"
+              inputMode="decimal"
+              placeholder="Or another amount"
+              value={giftSale.amountDollars}
+              onChange={(event) => setGiftSale({ ...giftSale, amountDollars: event.currentTarget.value })}
+            />
+
+            <input
+              className="pos-tender"
+              placeholder="Who is it for? (optional)"
+              value={giftSale.recipientName}
+              onChange={(event) => setGiftSale({ ...giftSale, recipientName: event.currentTarget.value })}
+            />
+            <input
+              className="pos-tender"
+              type="email"
+              inputMode="email"
+              autoCapitalize="off"
+              autoCorrect="off"
+              placeholder="Their email — we send the card here"
+              value={giftSale.recipientEmail}
+              onChange={(event) => setGiftSale({ ...giftSale, recipientEmail: event.currentTarget.value })}
+            />
+
+            <label className="pos-check-row">
+              <input
+                type="checkbox"
+                checked={giftSale.physical}
+                onChange={(event) => setGiftSale({ ...giftSale, physical: event.currentTarget.checked, code: '' })}
+              />
+              They are taking a physical card
+            </label>
+            {giftSale.physical ? (
+              <>
+                <input
+                  className="pos-tender"
+                  placeholder="Card number — leave blank and we'll make one up"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  value={giftSale.code}
+                  onChange={(event) => setGiftSale({ ...giftSale, code: event.currentTarget.value.toUpperCase() })}
+                />
+                <p className="pos-hint">
+                  Type the number already printed on the card, or leave it blank and write the number we generate onto a
+                  blank one. Either way the card only goes live once the bill is paid.
+                </p>
+              </>
+            ) : null}
+
+            <p className="pos-hint">
+              This goes on the bill now and is charged like anything else. The card itself is created, and the email
+              sent, the moment the bill is paid — never before, so an abandoned sale cannot leave a live card behind.
+            </p>
+
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={giftSale.saving || !giftSale.amountDollars.trim()}
+              onClick={() => void addGiftCardToBill()}
+            >
+              {giftSale.saving ? 'Adding…' : `Add $${giftSale.amountDollars.trim() || '0'} to the bill`}
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setGiftSale(null)}>
+              Cancel
             </button>
           </div>
         </div>
