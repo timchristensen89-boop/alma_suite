@@ -210,6 +210,7 @@ function toLinePayload(row: RecipeLineRow): RecipeLine {
     cost: row.cost,
     wastePercent: row.wastePercent,
     perGuests: row.perGuests,
+    costingOnly: row.costingOnly,
     itemId: row.itemId,
     item: row.item ?? null,
     subRecipeId: row.subRecipeId,
@@ -1178,6 +1179,8 @@ export const recipesService = {
         wastePercent: num(line.wastePercent) ?? 0,
         cost: num(line.cost),
         perGuests: num(line.perGuests),
+        // Counted by the costing, never served. See set-menu-plan.ts.
+        costingOnly: line.costingOnly === true,
         itemId,
         subRecipeId,
         item: itemId ? itemMap.get(itemId) ?? null : null,
@@ -1562,6 +1565,7 @@ export const recipesService = {
                 cost: line.cost ?? null,
                 wastePercent: applyDefaultWastage({ wastePercent: line.wastePercent }).wastePercent,
                 perGuests: line.perGuests ?? null,
+                costingOnly: line.costingOnly === true,
                 itemId: normaliseOptionalText(line.itemId) ?? null,
                 subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
               }))
@@ -1687,6 +1691,7 @@ export const recipesService = {
               cost: line.cost ?? null,
               wastePercent: line.wastePercent ?? null,
               perGuests: line.perGuests ?? null,
+              costingOnly: line.costingOnly === true,
               itemId: normaliseOptionalText(line.itemId) ?? null,
               subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
             }))

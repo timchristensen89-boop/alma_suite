@@ -4,6 +4,7 @@ import type {
   RecipeCreateInput,
   RecipeCostLine,
   RecipeCostPayload,
+  RecipeLine,
   RecipeLineInput,
   RecipeUpdateInput,
   RecipeWithLines,
@@ -22,6 +23,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
+import { orphanedComponents } from '../lib/setMenuOrphans';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
 import { PortionsBuilder } from '../features/recipes/PortionsBuilder';
@@ -775,6 +777,20 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
                     menuId={detail.id}
                     canManage={canManage}
                     allRecipes={data?.recipes ?? []}
+                    components={detail.lines}
+                    onComponentsChanged={async () => {
+                      try {
+                        const [full, refreshedCost] = await Promise.all([
+                          api<RecipeWithLines>(`/api/recipes/${recipe.id}`),
+                          api<RecipeCostPayload>(`/api/recipes/${recipe.id}/cost`)
+                        ]);
+                        setDetail(full);
+                        setCostDetail(refreshedCost);
+                      } catch {
+                        /* refresh failure is non-fatal */
+                      }
+                      void load();
+                    }}
                   />
                 ) : null}
                 {detail && detail.id === recipe.id && detail.kind === 'SET_MENU' ? (
@@ -1628,6 +1644,7 @@ type EditableLineDraft = {
   unit: string;
   wastePercent: string;
   perGuests: string;
+  costingOnly: boolean;
 };
 
 function lineToDraft(line: RecipeWithLines['lines'][number]): EditableLineDraft {
@@ -1638,7 +1655,8 @@ function lineToDraft(line: RecipeWithLines['lines'][number]): EditableLineDraft 
     quantity: line.quantity != null ? String(line.quantity) : '',
     unit: line.unit ?? '',
     wastePercent: line.wastePercent != null ? String(line.wastePercent) : '',
-    perGuests: line.perGuests != null ? String(line.perGuests) : ''
+    perGuests: line.perGuests != null ? String(line.perGuests) : '',
+    costingOnly: line.costingOnly === true
   };
 }
 
@@ -1790,7 +1808,8 @@ function RecipeLinesTable({
         quantity: '',
         unit: '',
         wastePercent: '',
-        perGuests: ''
+        perGuests: '',
+        costingOnly: false
       }
     ]);
     setDirty(true);
@@ -1813,6 +1832,10 @@ function RecipeLinesTable({
           if (line.subRecipeId) out.subRecipeId = line.subRecipeId;
           if (line.wastePercent.trim()) out.wastePercent = Number(line.wastePercent);
           if (line.perGuests.trim()) out.perGuests = Number(line.perGuests);
+          // Always sent, not only when true: PATCH replaces the whole line
+          // list, so omitting a cleared checkbox would leave the old value
+          // standing and the dish would silently stay off the docket.
+          out.costingOnly = line.costingOnly;
           return out;
         });
       const updated = await api<RecipeWithLines>(`/api/recipes/${detail.id}`, {
@@ -1884,6 +1907,7 @@ function RecipeLinesTable({
             <th>{isSetMenu ? 'Qty pp' : 'Qty'}</th>
             <th>Unit</th>
             {isSetMenu ? <th>Shared between</th> : null}
+            {isSetMenu ? <th>Cost only</th> : null}
             <th>Line cost</th>
             <th>Source</th>
             <th aria-label="Delete" />
@@ -1974,6 +1998,24 @@ function RecipeLinesTable({
                       <option value="6">6 guests</option>
                       <option value="8">8 guests</option>
                     </select>
+                  </td>
+                ) : null}
+                {isSetMenu ? (
+                  <td>
+                    {/* The third state. A banquet's price carries what the
+                        table drinks on average, and no kitchen can plate an
+                        average — so it is counted here and never printed. */}
+                    <label
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                      title="Counted in the cost, never sent to a bill or a docket — use it for the drinks allowance."
+                    >
+                      <input
+                        type="checkbox"
+                        checked={draft.costingOnly}
+                        onChange={(event) => updateDraft(index, { costingOnly: event.currentTarget.checked })}
+                      />
+                      Cost only
+                    </label>
                   </td>
                 ) : null}
                 <td>{formatCurrencyCents(costLine?.lineCostCents ?? null)}</td>
@@ -2078,11 +2120,16 @@ function toDrafts(courses: SetMenuCourse[]): CourseDraft[] {
 function SetMenuCoursesPanel({
   menuId,
   canManage,
-  allRecipes
+  allRecipes,
+  components,
+  onComponentsChanged
 }: {
   menuId: string;
   canManage: boolean;
   allRecipes: Recipe[];
+  /** The set menu's own component lines — what it is costed as containing. */
+  components: RecipeLine[];
+  onComponentsChanged: () => void | Promise<void>;
 }) {
   const [courses, setCourses] = useState<SetMenuCourse[] | null>(null);
   const [drafts, setDrafts] = useState<CourseDraft[]>([]);
@@ -2091,6 +2138,18 @@ function SetMenuCoursesPanel({
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  // Removing a course does NOT remove the dish. Courses and components are two
+  // records of the same dish: while the course exists it suppresses the
+  // component and the table is asked, and the moment it goes the component
+  // comes back as a fixed inclusion — on every bill, fired to the kitchen,
+  // nobody having chosen it. That is the "I removed it and it still prints"
+  // report, and it is invisible from this panel, so these two pieces of state
+  // make it visible and offer to finish the job.
+  const [pendingRemoval, setPendingRemoval] = useState<
+    { index: number; courseName: string; orphans: Array<{ subRecipeId: string; name: string }> } | null
+  >(null);
+  const [componentsToDrop, setComponentsToDrop] = useState<string[]>([]);
+  const [componentsToQuiet, setComponentsToQuiet] = useState<string[]>([]);
 
   useEffect(() => {
     let live = true;
@@ -2198,6 +2257,42 @@ function SetMenuCoursesPanel({
             }))
         })
       });
+      // Then, and only then, the components the user chose to remove with
+      // their course. Courses first because that save is the one that can be
+      // rejected; if it throws we have not already stripped the recipe.
+      if (componentsToDrop.length > 0 || componentsToQuiet.length > 0) {
+        const keep = components
+          .filter((line) => !(line.subRecipeId && componentsToDrop.includes(line.subRecipeId)))
+          .map((line) => ({
+            ...line,
+            costingOnly:
+              line.costingOnly || Boolean(line.subRecipeId && componentsToQuiet.includes(line.subRecipeId))
+          }));
+        await api<RecipeWithLines>(`/api/recipes/${menuId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            // Every field carried through, not just the ones this panel cares
+            // about: PATCH replaces the whole line list, so anything omitted
+            // here is deleted. A component that points at a stock item rather
+            // than a sub-recipe would lose its itemId and its cost, and the
+            // menu's margin would move without anybody touching a price.
+            lines: keep.map((line) => ({
+              ingredientName: line.ingredientName,
+              quantity: line.quantity ?? undefined,
+              unit: line.unit ?? undefined,
+              cost: line.cost ?? undefined,
+              wastePercent: line.wastePercent ?? undefined,
+              perGuests: line.perGuests ?? undefined,
+              costingOnly: line.costingOnly,
+              itemId: line.itemId ?? undefined,
+              subRecipeId: line.subRecipeId ?? undefined
+            }))
+          })
+        });
+        setComponentsToDrop([]);
+        setComponentsToQuiet([]);
+        await onComponentsChanged();
+      }
       setCourses(rows);
       setDrafts(toDrafts(rows));
       setDirty(false);
@@ -2223,6 +2318,91 @@ function SetMenuCoursesPanel({
 
       {error ? <p className="error-text">{error}</p> : null}
       {note ? <p className="subtle">{note}</p> : null}
+
+      {/* The question this panel could not previously answer: what happens to
+          the dishes when the course goes. */}
+      {pendingRemoval ? (
+        <div className="card" style={{ borderColor: '#b5772f', padding: 14, marginBottom: 12 }}>
+          <strong>Removing “{pendingRemoval.courseName}” does not remove the food.</strong>
+          <p className="subtle" style={{ marginTop: 6 }}>
+            {pendingRemoval.orphans.length === 1 ? 'This dish is' : 'These dishes are'} also listed as{' '}
+            {pendingRemoval.orphans.length === 1 ? 'a component' : 'components'} of this set menu. With the course gone
+            nobody is asked about {pendingRemoval.orphans.length === 1 ? 'it' : 'them'} any more — so{' '}
+            {pendingRemoval.orphans.length === 1 ? 'it goes' : 'they go'} on every bill automatically and fire to the
+            kitchen unchosen.
+          </p>
+          <ul style={{ margin: '8px 0 12px 18px' }}>
+            {pendingRemoval.orphans.map((orphan) => (
+              <li key={orphan.subRecipeId}>{orphan.name}</li>
+            ))}
+          </ul>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setComponentsToDrop((current) => [
+                  ...current,
+                  ...pendingRemoval.orphans.map((orphan) => orphan.subRecipeId)
+                ]);
+                setDrafts((current) => current.filter((_, i) => i !== pendingRemoval.index));
+                setDirty(true);
+                setPendingRemoval(null);
+              }}
+            >
+              Remove the course and {pendingRemoval.orphans.length === 1 ? 'the dish' : 'these dishes'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                // Usually the right answer for a banquet: the menu is still
+                // priced to include this, the kitchen just stops being told
+                // about it. Same switch as the drinks allowance.
+                setComponentsToQuiet((current) => [
+                  ...current,
+                  ...pendingRemoval.orphans.map((orphan) => orphan.subRecipeId)
+                ]);
+                setDrafts((current) => current.filter((_, i) => i !== pendingRemoval.index));
+                setDirty(true);
+                setPendingRemoval(null);
+              }}
+            >
+              Keep the cost, stop serving {pendingRemoval.orphans.length === 1 ? 'it' : 'them'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setDrafts((current) => current.filter((_, i) => i !== pendingRemoval.index));
+                setDirty(true);
+                setPendingRemoval(null);
+              }}
+            >
+              Everyone gets {pendingRemoval.orphans.length === 1 ? 'it' : 'them'}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setPendingRemoval(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {componentsToDrop.length > 0 || componentsToQuiet.length > 0 ? (
+        <p className="subtle">
+          When you save:{' '}
+          {componentsToDrop.length > 0
+            ? `${componentsToDrop.length} ${componentsToDrop.length === 1 ? 'dish' : 'dishes'} removed from this menu’s components`
+            : ''}
+          {componentsToDrop.length > 0 && componentsToQuiet.length > 0 ? ', and ' : ''}
+          {componentsToQuiet.length > 0
+            ? `${componentsToQuiet.length} kept in the cost but no longer served`
+            : ''}
+          .
+        </p>
+      ) : null}
+
       {courses === null ? <Spinner label="Loading courses" /> : null}
 
       {courses !== null && tonightRows.length === 0 && !editing ? (
@@ -2313,8 +2493,18 @@ function SetMenuCoursesPanel({
                   variant="ghost"
                   disabled={!canManage}
                   onClick={() => {
-                    setDrafts((current) => current.filter((_, i) => i !== index));
-                    setDirty(true);
+                    // Which dishes stop being asked about and start being
+                    // given to everyone? The rule is in setMenuOrphans.ts with
+                    // its tests — the cases that matter are a dish two courses
+                    // both serve (not stranded) and a component with no dish
+                    // behind it (nothing to strand).
+                    const orphans = orphanedComponents(drafts, index, components, componentsToDrop);
+                    if (orphans.length === 0) {
+                      setDrafts((current) => current.filter((_, i) => i !== index));
+                      setDirty(true);
+                      return;
+                    }
+                    setPendingRemoval({ index, courseName: draft.name.trim() || 'this course', orphans });
                   }}
                 >
                   Remove course

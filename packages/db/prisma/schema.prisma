@@ -3332,6 +3332,22 @@ model RecipeLine {
   wastePercent   Float?
   // Set-menu lines: this component is shared between N guests (cost ÷ N per person).
   perGuests      Float?
+  /// Costed, never served.
+  ///
+  /// A banquet's price has to carry things the kitchen never plates — the
+  /// allowance for what a table drinks, most obviously. Those belong in the
+  /// margin and nowhere else: an "average drinks" line on a docket is an
+  /// instruction to make something that does not exist.
+  ///
+  /// Until this existed a set menu component had only two possible lives. A
+  /// course could serve it, so the table was asked; or nothing did, and the
+  /// register put it on every bill and fired it to the kitchen. There was no
+  /// way to say "count this and stay quiet", which is why a drinks allowance
+  /// could not be costed without printing.
+  ///
+  /// The costing reads every line regardless. This changes the SERVICE side
+  /// only: stillFixed drops these, so they never reach a bill or a docket.
+  costingOnly    Boolean    @default(false)
   itemId         String?
   subRecipeId    String?
   createdAt      DateTime   @default(now())
