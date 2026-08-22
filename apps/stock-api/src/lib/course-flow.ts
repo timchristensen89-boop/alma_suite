@@ -40,6 +40,23 @@ export const TIER_MAIN = 3;
  */
 const DRINK = /bar|bev|cocktail|drink|wine|beer|spirit|liquor|coffee|tea|juice|margarita|mezcal|tequila|vodka|gin|whiskey/;
 
+/**
+ * Is this a drink?
+ *
+ * Exported because the answer was starting to be re-invented per caller, and
+ * the third copy got it wrong: seed-dish-menu.ts had its own list of five wine
+ * categories, so every spirit and cocktail in the register counted as an
+ * unmarked DISH and the "nobody has checked this food" tally read 326 when the
+ * real number was a fraction of that. A wrong number in a safety report is
+ * worse than no number, because it is the one people stop reading.
+ *
+ * Kind and category only, never the title — "beer-battered" and "tequila
+ * prawns" are food, and the register agrees because it asks the same way.
+ */
+export function isDrink(kind: string | null | undefined, category: string | null | undefined): boolean {
+  return DRINK.test(`${kind ?? ''} ${category ?? ''}`.toLowerCase());
+}
+
 /** Guacamole and the tostadas it comes with — on the table before anything else. */
 const DIPS_AND_CHIPS = /guacamole|guac\b|tostada|corn chip|totopo|salsa|queso|nacho|\bdips?\b/;
 
@@ -62,7 +79,7 @@ export type CourseDish = {
 export function courseTier(dish: CourseDish): number {
   // Kind and category only, never the title: "beer-battered" and "tequila
   // prawns" are food, and the register agrees because it asks the same way.
-  if (DRINK.test(`${dish.kind ?? ''} ${dish.category ?? ''}`.toLowerCase())) return TIER_NOW;
+  if (isDrink(dish.kind, dish.category)) return TIER_NOW;
   const title = (dish.title ?? '').toLowerCase();
   if (DIPS_AND_CHIPS.test(title)) return TIER_NOW;
   if (TACO.test(title)) return TIER_TACO;
