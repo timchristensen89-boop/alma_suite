@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
-import { parseDishDietary, type AuthUser } from '@alma/shared';
+import { parseDishDietary, type AuthUser, type PriceWindow } from '@alma/shared';
 import { nswHolidayName } from '../lib/nsw-holidays.js';
 import { courseDishIds, stillFixed } from '../lib/set-menu-plan.js';
 import { mailService } from './mail.service.js';
@@ -874,7 +874,23 @@ export const posService = {
       canonicalId?: string | null;
       venuePrices?: Record<string, number>;
       variantOf?: string;
-      variants?: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null; label: string }>;
+      variants?: Array<{
+        recipeId: string;
+        title: string;
+        printTitle?: string | null;
+        priceCents: number;
+        venue: string | null;
+        label: string;
+        priceWindows?: PriceWindow[];
+      }>;
+      /**
+       * Weekday price windows (Taco Tuesday), shipped raw rather than baked:
+       * the register caches this payload across days, so it applies the
+       * window against ITS day at render and ring time. The QR flow bakes
+       * them server-side instead — @alma/shared's price-window arithmetic is
+       * the one implementation both run.
+       */
+      priceWindows?: PriceWindow[];
     };
     const byCategory = new Map<string, { name: string; kind: string; items: RegisterItem[] }>();
     const itemRefs = new Map<string, RegisterItem>();
@@ -915,7 +931,7 @@ export const posService = {
     // Everything the banquet picker needs, shipped with the menu so tapping a
     // set menu opens instantly instead of waiting on a second request.
     const setMenuIds = recipes.filter((recipe) => recipe.kind === 'SET_MENU').map((recipe) => recipe.id);
-    const [eightySix, modifierGroups, variantLinks, setMenuLines, setMenuCourses, wineRows] = await Promise.all([
+    const [eightySix, modifierGroups, variantLinks, priceWindowRows, setMenuLines, setMenuCourses, wineRows] = await Promise.all([
       prisma.pos86.findMany({ select: { recipeId: true } }),
       prisma.posModifierGroup.findMany({
         where: { active: true },
@@ -923,6 +939,11 @@ export const posService = {
         orderBy: { sortOrder: 'asc' }
       }),
       prisma.posVariantLink.findMany({ orderBy: [{ parentRecipeId: 'asc' }, { sortOrder: 'asc' }] }),
+      prisma.posPriceWindow.findMany({
+        where: { active: true },
+        orderBy: { createdAt: 'asc' },
+        select: { recipeId: true, label: true, weekdays: true, priceCents: true, onlyWindow: true }
+      }),
       setMenuIds.length
         ? prisma.recipeLine.findMany({
             where: { recipeId: { in: setMenuIds } },
@@ -969,14 +990,39 @@ export const posService = {
         }
       })
     ]);
+    // Weekday price windows (Taco Tuesday). Attached BEFORE the variants fold
+    // so each option carries its own recipe's windows into the sheet.
+    const windowsByRecipe = new Map<string, PriceWindow[]>();
+    for (const row of priceWindowRows) {
+      const list = windowsByRecipe.get(row.recipeId) ?? [];
+      list.push({ weekdays: row.weekdays, priceCents: row.priceCents, onlyWindow: row.onlyWindow, label: row.label });
+      windowsByRecipe.set(row.recipeId, list);
+    }
+    for (const [recipeId, windows] of windowsByRecipe) {
+      const item = itemRefs.get(recipeId);
+      if (item) item.priceWindows = windows;
+    }
     // Variants: children fold under their parent's tile on the register (the
     // QR menu keeps the flat rows). A self-row labels the parent option.
     const variantsByParent = new Map<string, NonNullable<RegisterItem['variants']>>();
+    const variantOption = (item: RegisterItem, label: string): NonNullable<RegisterItem['variants']>[number] => ({
+      recipeId: item.recipeId,
+      title: item.title,
+      // The docket name rides along: a variant is added straight from the
+      // sheet, and dropping printTitle there would send the tile name to the
+      // kitchen instead of the preparation ("Barramundi Taco" for a battered
+      // one).
+      printTitle: item.printTitle ?? null,
+      priceCents: item.priceCents,
+      venue: item.venue,
+      label,
+      ...(item.priceWindows ? { priceWindows: item.priceWindows } : {})
+    });
     for (const link of variantLinks) {
       const child = itemRefs.get(link.childRecipeId);
       if (!child) continue;
       const list = variantsByParent.get(link.parentRecipeId) ?? [];
-      list.push({ recipeId: child.recipeId, title: child.title, priceCents: child.priceCents, venue: child.venue, label: link.label });
+      list.push(variantOption(child, link.label));
       variantsByParent.set(link.parentRecipeId, list);
       if (link.childRecipeId !== link.parentRecipeId) child.variantOf = link.parentRecipeId;
     }
@@ -984,7 +1030,7 @@ export const posService = {
       const parent = itemRefs.get(parentId);
       if (!parent) continue;
       if (!options.some((option) => option.recipeId === parentId)) {
-        options.unshift({ recipeId: parent.recipeId, title: parent.title, priceCents: parent.priceCents, venue: parent.venue, label: 'Standard' });
+        options.unshift(variantOption(parent, 'Standard'));
       }
       parent.variants = options;
     }

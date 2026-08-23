@@ -44,6 +44,7 @@ St Alma	Tacos	Barramundi taco	8	Guacamole, pickled cabbage, chipotle aioli	GFA·
 St Alma	Tacos	Beef birria taco	8	Morita salsa, crispy chickpeas	GF·DF	gf,df	Taco Tuesday prices this at 5, not 8.
 St Alma	Tacos	Nopal taco	8	Avocado salsa, fried potatoes	VG·GF·DF	vgn,gf,df,nuts	CONFLICT BETWEEN TWO CURRENT MENUS. `printed` is the a la carte; Taco Tuesday prints the same dish as VG·GF·DF·N. Nuts applied because a contains tag only rules OUT, so the safer of the two wins — but one of the two prints is wrong and needs settling. Taco Tuesday prices this at 5, not 8.
 St Alma	Tacos	Chorizo and potato taco	8	Refried beans, tomatillo salsa	GF·DF	gf,df	Taco Tuesday prices this at 5, not 8.
+St Alma	Tacos	Try them all	20	One of each, the whole taco board. Swap any for the day's special.			Taco Tuesday print only — the register offers it on Tuesdays and hides it otherwise (PosPriceWindow onlyWindow). No printed marks; the dish stays unchecked on purpose.
 St Alma	From the grill	Grilled snapper	39	Chipotle and cauliflower puree, fennel, green apple pico	GF·A	gf	
 St Alma	From the grill	Roasted cabbage	32	Pepita mole, shishito peppers, allow 30 minutes	VG·GF·N	vgn,gf,nuts	
 St Alma	From the grill	Grilled octopus	38	Chimichurri, refried bean puree, crunchy lentils	GFA·DF·I	gfo,df,shellfish	Octopus is a mollusc. The tag vocabulary has one shellfish tag rather than splitting crustacean from mollusc, and a contains tag only rules out, so it is applied.
