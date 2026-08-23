@@ -5,6 +5,19 @@ import { HttpError } from '../lib/http.js';
 import { squareTerminalContext, squareTerminalGet, squareTerminalPost } from './integration.service.js';
 import { env } from '../env.js';
 import { posService, stripeForVenue } from './pos.service.js';
+import {
+  effectivePriceCents,
+  menuForDay,
+  offeredOnDay,
+  venueDayKey,
+  venueWeekday,
+  type PriceWindow
+} from '@alma/shared';
+
+/** Today's weekday where the restaurant stands, not where the server runs. */
+function venueWeekdayNow(): number {
+  return venueWeekday(venueDayKey(new Date())) ?? new Date().getDay();
+}
 
 const stripe = env.stripe.secretKey ? new Stripe(env.stripe.secretKey) : null;
 
@@ -182,11 +195,17 @@ export const qrOrderService = {
           description?: string;
           dietary?: string[];
           variantOf?: string;
+          priceWindows?: PriceWindow[];
         }>;
       }>;
       eightySix?: string[];
     };
     const eightySix = new Set(menu.eightySix ?? []);
+    // Taco Tuesday, baked: the guest page gets today's prices as plain
+    // numbers, and dishes outside their window (the Tuesday-only taco board)
+    // simply do not exist today. Same arithmetic the register runs against
+    // its own day.
+    const dayMenu = menuForDay(menu.categories, venueWeekdayNow());
     // What guests may order is curated separately from what staff sell. The
     // register menu has already had its own hides applied; these are the
     // guest-only ones on top.
@@ -201,7 +220,7 @@ export const qrOrderService = {
     return {
       venue,
       tableLabel,
-      categories: menu.categories
+      categories: dayMenu
         .filter((category) => !qrHiddenCats.has(category.name.toLowerCase()))
         .map((category) => ({
           name: category.name,
@@ -263,17 +282,37 @@ export const qrOrderService = {
     });
 
     // Server-side pricing — the client's prices are never trusted.
-    const [recipes, eightySixed] = await Promise.all([
+    const [recipes, eightySixed, windowRows] = await Promise.all([
       prisma.recipe.findMany({
         where: { id: { in: wanted.map((line) => line.recipeId) }, status: 'ACTIVE', isPrepRecipe: false, salePriceCents: { gt: 0 } },
         select: { id: true, title: true, kind: true, category: true, salePriceCents: true }
       }),
-      prisma.pos86.findMany({ where: { recipeId: { in: wanted.map((line) => line.recipeId) } }, select: { recipeId: true } })
+      prisma.pos86.findMany({ where: { recipeId: { in: wanted.map((line) => line.recipeId) } }, select: { recipeId: true } }),
+      prisma.posPriceWindow.findMany({
+        where: { recipeId: { in: wanted.map((line) => line.recipeId) }, active: true },
+        orderBy: { createdAt: 'asc' },
+        select: { recipeId: true, weekdays: true, priceCents: true, onlyWindow: true }
+      })
     ]);
     const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
     const soldOut = new Set(eightySixed.map((row) => row.recipeId));
+    // Taco Tuesday, repriced with the same arithmetic the menu was shown
+    // with. A dish outside its window (the Tuesday-only board on a Wednesday)
+    // is as unavailable as one that was archived.
+    const weekday = venueWeekdayNow();
+    const windowsByRecipe = new Map<string, PriceWindow[]>();
+    for (const row of windowRows) {
+      const list = windowsByRecipe.get(row.recipeId) ?? [];
+      list.push(row);
+      windowsByRecipe.set(row.recipeId, list);
+    }
+    const priceToday = (recipeId: string): number =>
+      effectivePriceCents(recipeById.get(recipeId)!.salePriceCents ?? 0, windowsByRecipe.get(recipeId), weekday);
     for (const line of wanted) {
       if (!recipeById.has(line.recipeId)) throw new HttpError(400, 'An item on your order is no longer available.');
+      if (!offeredOnDay(windowsByRecipe.get(line.recipeId), weekday)) {
+        throw new HttpError(400, 'An item on your order is no longer available.');
+      }
       if (soldOut.has(line.recipeId)) {
         throw new HttpError(409, `${recipeById.get(line.recipeId)!.title} has just sold out — please adjust your order.`);
       }
@@ -283,10 +322,7 @@ export const qrOrderService = {
     // send the guest to Square; confirmPaid turns it into real lines once the
     // money is in. An abandoned checkout leaves a dead row here rather than
     // phantom items on a table that a server has to notice and strip out.
-    const totalCents = wanted.reduce(
-      (sum, line) => sum + (recipeById.get(line.recipeId)!.salePriceCents ?? 0) * line.quantity,
-      0
-    );
+    const totalCents = wanted.reduce((sum, line) => sum + priceToday(line.recipeId) * line.quantity, 0);
     if (totalCents <= 0) throw new HttpError(400, 'That order came to nothing — please order with your server.');
 
     const pending = await prisma.posQrPendingOrder.create({
@@ -302,7 +338,7 @@ export const qrOrderService = {
           return {
             recipeId: recipe.id,
             name: recipe.title,
-            unitPriceCents: recipe.salePriceCents ?? 0,
+            unitPriceCents: priceToday(recipe.id),
             quantity: line.quantity,
             notes: line.notes
           };

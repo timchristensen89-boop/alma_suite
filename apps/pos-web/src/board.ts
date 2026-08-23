@@ -3,6 +3,7 @@
 // tokens and page breaks — a preview that paginates differently from the
 // real board is worse than no preview, so the maths lives here once.
 import type { CSSProperties } from 'react';
+import type { PriceWindow } from '@alma/shared';
 
 export type MenuItem = {
   recipeId: string;
@@ -24,7 +25,22 @@ export type MenuItem = {
   priceCents: number;
   venue: string | null;
   variantOf?: string | null;
-  variants?: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null; label: string }> | null;
+  variants?: Array<{
+    recipeId: string;
+    title: string;
+    printTitle?: string | null;
+    priceCents: number;
+    venue: string | null;
+    label: string;
+    priceWindows?: PriceWindow[];
+  }> | null;
+  /**
+   * Weekday price windows (Taco Tuesday), raw from the server. The register
+   * derives a menu FOR TODAY from these (menuForDay in @alma/shared) before
+   * anything renders or rings — the cached payload stays day-agnostic so an
+   * offline register crossing midnight keeps pricing correctly.
+   */
+  priceWindows?: PriceWindow[];
 };
 export type MenuCategory = { name: string; kind: string; items: MenuItem[] };
 

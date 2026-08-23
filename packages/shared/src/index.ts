@@ -1,3 +1,4 @@
+export * from './price-window.js';
 export * from './roster-calendar.js';
 export * from './donations.js';
 export * from './dietary.js';

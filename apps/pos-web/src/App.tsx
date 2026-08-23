@@ -5,7 +5,7 @@ import { POS_SURFACES, SUITE_APP_LINKS } from './suiteApps';
 // Dietary vocabulary, shared with Stock and the booking parser so a guest's
 // requirement and a dish's label are the same words rather than two sets that
 // nearly match.
-import { answerableGuestTags, dietaryKind, dietaryLabel, dietaryShort, dishAnswersGuest, parseDishDietary } from '@alma/shared';
+import { answerableGuestTags, dietaryKind, dietaryLabel, dietaryShort, dishAnswersGuest, menuForDay, parseDishDietary } from '@alma/shared';
 
 // Lazy: jsQR is ~130KB the till never needs until somebody actually taps
 // "Scan the card" — the register's first paint shouldn't carry it.
@@ -429,21 +429,40 @@ export function App() {
     () => new Map((readMenuCache()?.setMenus ?? []).map((plan) => [plan.recipeId, plan]))
   );
   const [allWines, setAllWines] = useState<RegisterWine[]>(() => readMenuCache()?.wines ?? []);
+  // The weekday the register prices by — device-local, the same convention
+  // as the offline weekend surcharge, and re-checked each minute so Taco
+  // Tuesday ends when Tuesday does, even on a register nobody reloads.
+  const [priceDay, setPriceDay] = useState<number>(() => new Date().getDay());
+  useEffect(() => {
+    const tick = window.setInterval(() => {
+      setPriceDay((current) => {
+        const day = new Date().getDay();
+        return day === current ? current : day;
+      });
+    }, 60_000);
+    return () => window.clearInterval(tick);
+  }, []);
   // Each venue sells its own menu: St Alma items at St Alma, Avalon's at
   // Avalon. Unassigned items and Functions / Pop-up see everything.
   const menu = useMemo(() => {
-    if (venue !== 'St Alma' && venue !== 'Alma Avalon') return rawMenu;
-    return rawMenu
-      .map((category) => ({
-        ...category,
-        items: category.items
-          .filter((item) => !item.venue || item.venue === venue)
-          // Shared (venue-null) recipes price per register via the override
-          // map; venue-tagged ones arrive with it already applied.
-          .map((item) => (item.venuePrices?.[venue] != null ? { ...item, priceCents: item.venuePrices[venue] } : item))
-      }))
-      .filter((category) => category.items.length > 0);
-  }, [rawMenu, venue]);
+    const venueMenu =
+      venue !== 'St Alma' && venue !== 'Alma Avalon'
+        ? rawMenu
+        : rawMenu
+            .map((category) => ({
+              ...category,
+              items: category.items
+                .filter((item) => !item.venue || item.venue === venue)
+                // Shared (venue-null) recipes price per register via the override
+                // map; venue-tagged ones arrive with it already applied.
+                .map((item) => (item.venuePrices?.[venue] != null ? { ...item, priceCents: item.venuePrices[venue] } : item))
+            }))
+            .filter((category) => category.items.length > 0);
+    // Taco Tuesday bakes LAST, so a weekday window beats a per-venue
+    // override, and a dish outside its window (the Tuesday-only taco board)
+    // is not on the board at all today.
+    return menuForDay(venueMenu, priceDay).filter((category) => category.items.length > 0);
+  }, [rawMenu, venue, priceDay]);
   const [kindByRecipe, setKindByRecipe] = useState<Map<string, string>>(() => {
     const kinds = new Map<string, string>();
     for (const category of readMenuCache()?.categories ?? []) {
@@ -7463,7 +7482,7 @@ export function App() {
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
             <h2>{variantSheet.title}</h2>
-            <p className="pos-muted">Which pour?</p>
+            <p className="pos-muted">Which one?</p>
             <div className="pos-variant-list">
               {(variantSheet.variants ?? []).map((option) => (
                 <button
@@ -7472,7 +7491,16 @@ export function App() {
                   className={eightySix.has(option.recipeId) ? 'is-86d' : ''}
                   onClick={() => {
                     setVariantSheet(null);
-                    addItem({ recipeId: option.recipeId, title: option.title, priceCents: option.priceCents, venue: option.venue });
+                    // printTitle rides along so the kitchen sees the
+                    // preparation ("Battered Barramundi Taco"), not the
+                    // parent tile's name.
+                    addItem({
+                      recipeId: option.recipeId,
+                      title: option.title,
+                      printTitle: option.printTitle ?? null,
+                      priceCents: option.priceCents,
+                      venue: option.venue
+                    });
                   }}
                 >
                   <span>{option.label}</span>

@@ -96,6 +96,17 @@ async function main() {
     select: { id: true, title: true, venue: true, kind: true, category: true, dietary: true, guestDescription: true, salePriceCents: true }
   });
 
+  // Variant children fold under a parent tile on the register (a wine's
+  // pours; the fish taco's Battered/Grilled). The menu prints the PARENT —
+  // "Barramundi taco" — so a child must not compete for the match: before
+  // this filter the battered and grilled rows both scored 1.00 against the
+  // one printed line and the seeder threw the pair back as ambiguous forever.
+  const variantChildren = new Set(
+    (await prisma.posVariantLink.findMany({ select: { parentRecipeId: true, childRecipeId: true } }))
+      .filter((link) => link.childRecipeId !== link.parentRecipeId)
+      .map((link) => link.childRecipeId)
+  );
+
   // Everything, including what the register will not show. "On the menu, not
   // in the register" used to be one undifferentiated list, which is not
   // actionable: a dish nobody has entered and a dish sitting there with no
@@ -141,6 +152,7 @@ async function main() {
   // else, so every mezcal and margarita was counted as an unchecked dish.
   const food = recipes
     .filter((row) => !isDrink(row.kind, row.category))
+    .filter((row) => !variantChildren.has(row.id))
     .filter((row) => !ONLY_VENUE || row.venue === ONLY_VENUE);
 
   const byVenue = new Map<string, typeof food>();

@@ -5675,3 +5675,29 @@ model StaffPushSubscription {
 
   @@index([staffProfileId])
 }
+
+// @domain: pos | home: suite
+// A price a dish takes on particular weekdays — Taco Tuesday rings the tacos
+// at $5 without anybody re-keying prices on the day. The register applies the
+// window at render/ring time (device-local day, so an offline register stays
+// right), and the QR flow applies it server-side in the venue's timezone —
+// QR prices are never trusted from the client.
+//
+// onlyWindow makes the window the dish's ONLY life: outside it the dish is
+// not offered at all (the "Try them all" taco board exists on Tuesdays and
+// nowhere else). A dish with no windows sells all week at its normal price.
+model PosPriceWindow {
+  id         String   @id @default(cuid())
+  recipeId   String
+  // Shown nowhere yet — carried so a report can say WHY a line rang at $5.
+  label      String
+  // csv of JS weekday numbers 0-6, same shape as PosRule.weekdays.
+  weekdays   String
+  priceCents Int
+  onlyWindow Boolean  @default(false)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([recipeId])
+}
