@@ -2314,6 +2314,14 @@ model Timesheet {
   clockInAt          DateTime
   clockOutAt         DateTime
   breakMinutes       Int             @default(0)
+  /// Deputy leave timesheets (annual, sick, ...) import with this set. Leave
+  /// is pay without floor time: the Xero ordinary-hours push and the tips
+  /// pool both leave these rows out — Xero pays leave through leave
+  /// applications, and nobody on leave worked the shifts that earned the
+  /// week's tips. The timesheet list still shows them, badged.
+  isLeave            Boolean         @default(false)
+  /// The Deputy leave rule's name ("Annual Leave", "Personal/Carer's Leave").
+  leaveKind          String?
   notes              String?
   status             TimesheetStatus @default(DRAFT)
   submittedAt        DateTime?

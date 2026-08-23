@@ -9170,14 +9170,22 @@ export const integrationService = {
     // so a UI bug that sends [] can never silently push the whole payroll.
     const selectedStaffIds = (input.staffProfileIds ?? []).filter((id) => typeof id === 'string' && id.length > 0);
 
+    const pushScope = {
+      status: 'APPROVED' as const,
+      paymentMethod: { not: 'CASH' },
+      workDate: { gte: start, lt: end },
+      ...(selectedStaffIds.length > 0 ? { staffProfileId: { in: selectedStaffIds } } : {}),
+      ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
+    };
+    // Leave never goes as ordinary hours: Xero pays leave through a leave
+    // application, and pushing the same week twice is double pay. Said out
+    // loud below rather than silently dropped.
+    const leaveEntries = await prisma.timesheet.findMany({
+      where: { ...pushScope, isLeave: true },
+      select: { clockInAt: true, clockOutAt: true, breakMinutes: true }
+    });
     const entries = await prisma.timesheet.findMany({
-      where: {
-        status: 'APPROVED',
-        paymentMethod: { not: 'CASH' },
-        workDate: { gte: start, lt: end },
-        ...(selectedStaffIds.length > 0 ? { staffProfileId: { in: selectedStaffIds } } : {}),
-        ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
-      },
+      where: { ...pushScope, isLeave: false },
       orderBy: [{ workDate: 'asc' }, { clockInAt: 'asc' }],
       include: {
         staffProfile: {
@@ -9195,6 +9203,13 @@ export const integrationService = {
       }
     });
 
+    if (leaveEntries.length > 0) {
+      const leaveHours = Math.round(leaveEntries.reduce((sum, entry) => sum + entryHours(entry), 0) * 100) / 100;
+      warnings.push(
+        `${leaveEntries.length} leave timesheet${leaveEntries.length === 1 ? '' : 's'} (${leaveHours}h) stayed behind — leave reaches Xero as a leave application, not ordinary hours.`
+      );
+    }
+
     if (entries.length === 0) {
       return {
         pushed: 0,
@@ -9203,6 +9218,7 @@ export const integrationService = {
         markedExported: 0,
         results: [],
         warnings: [
+          ...warnings,
           selectedStaffIds.length > 0
             ? 'No approved timesheets for the selected staff in this period.'
             : 'No approved timesheets in this period. Only APPROVED shifts are pushed — approve them first.'
