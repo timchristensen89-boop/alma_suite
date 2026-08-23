@@ -19482,6 +19482,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                 <span className="timesheet-row-area subtle">{entry.area || '—'}</span>
                 <div className="timesheet-row-badges">
                   <Badge tone={timesheetTone(entry.status)} dot>{entry.status}</Badge>
+                  {entry.isLeave ? <Badge tone="info">{entry.leaveKind ?? 'Leave'}</Badge> : null}
                   <Badge tone={entry.paymentMethod === 'CASH' ? 'warning' : 'muted'}>
                     {entry.paymentMethod === 'CASH' ? (entry.cashPaidAt ? 'Cash paid' : 'Cash') : 'Xero'}
                   </Badge>

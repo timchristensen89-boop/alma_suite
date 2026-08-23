@@ -4736,6 +4736,8 @@ export type Timesheet = {
   clockInAt: string;
   clockOutAt: string;
   breakMinutes: number;
+  isLeave: boolean;
+  leaveKind: string | null;
   notes: string | null;
   status: TimesheetStatus;
   submittedAt: string | null;

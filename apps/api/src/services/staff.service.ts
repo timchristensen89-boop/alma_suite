@@ -6309,13 +6309,17 @@ export const staffService = {
     // 'all' means every venue, not a venue called "all" — without this the
     // export runs clean and produces an empty CSV.
     const scopedVenue = scopeVenueForActor(data.venue && data.venue !== 'all' ? data.venue : undefined, actor);
+    const exportScope = {
+      status: 'APPROVED' as const,
+      paymentMethod: { not: 'CASH' },
+      workDate: { gte: startDate, lt: endDate },
+      ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
+    };
+    // Same rule as the API push: leave is paid through a Xero leave
+    // application, so exporting it as ordinary hours pays the week twice.
+    const leaveExcluded = await prisma.timesheet.count({ where: { ...exportScope, isLeave: true } });
     const entries = await prisma.timesheet.findMany({
-      where: {
-        status: 'APPROVED',
-        paymentMethod: { not: 'CASH' },
-        workDate: { gte: startDate, lt: endDate },
-        ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
-      },
+      where: { ...exportScope, isLeave: false },
       orderBy: [{ workDate: 'asc' }, { clockInAt: 'asc' }],
       include: {
         staffProfile: {
@@ -6352,6 +6356,7 @@ export const staffService = {
     return {
       exportBatchId,
       count: entries.length,
+      leaveExcluded,
       markedExported: data.markExported,
       csv: toXeroCsv(rows),
       rows
@@ -6389,6 +6394,9 @@ export const staffService = {
       prisma.timesheet.findMany({
         where: {
           status: { in: ['APPROVED', 'EXPORTED'] },
+          // Tips are earned on the floor. A week of annual leave is pay, not
+          // service, and must not dilute everyone else's share.
+          isLeave: false,
           workDate: { gte: startDate, lt: endDate },
           ...venueWhere
         },
