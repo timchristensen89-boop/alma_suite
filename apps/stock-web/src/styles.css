@@ -3502,3 +3502,21 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 .dietary-tag.is-onAsk.is-on { color: #7c5a11; background: rgba(124, 90, 17, 0.10); }
 /* Contains is the only one that means "do not serve this to them". */
 .dietary-tag.is-contains.is-on { color: #93301f; background: rgba(147, 48, 31, 0.10); }
+
+/* Weekday pricing (price windows) on the dish form. */
+.price-window-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 10px; border: 1px solid var(--border, #e3e0d8); border-radius: 10px; margin-bottom: 8px;
+}
+.price-window-main { display: flex; flex-direction: column; gap: 2px; }
+.price-window-main small { color: var(--muted, #6b7280); }
+.price-window-actions { display: flex; gap: 8px; align-items: center; }
+.price-window-add { border: 1px dashed var(--border, #e3e0d8); border-radius: 10px; padding: 10px; margin: 8px 0; display: flex; flex-direction: column; gap: 10px; }
+.price-window-days { display: flex; flex-wrap: wrap; gap: 6px; }
+.price-window-days button {
+  border: 1px solid var(--border, #e3e0d8); background: transparent; border-radius: 9999px;
+  padding: 6px 12px; font-size: 13px; cursor: pointer;
+}
+.price-window-days button.is-on { background: #1f3524; color: #f3efe6; border-color: #1f3524; }
+.price-window-only { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.price-window-only input { margin-top: 2px; }

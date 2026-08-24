@@ -32,6 +32,8 @@ type GuestItem = {
 type GuestMenu = {
   venue: string;
   tableLabel: string;
+  /** The register's weekend/holiday surcharge, charged at checkout too. */
+  surcharge?: { label: string; percent: number } | null;
   categories: Array<{ name: string; kind?: string; items: GuestItem[] }>;
 };
 
@@ -154,6 +156,11 @@ export function GuestOrder({ token }: { token: string }) {
   const items = useMemo(() => new Map((menu?.categories ?? []).flatMap((category) => category.items.map((item) => [item.recipeId, item] as const))), [menu]);
   const cartCount = [...cart.values()].reduce((sum, quantity) => sum + quantity, 0);
   const cartTotal = [...cart.entries()].reduce((sum, [recipeId, quantity]) => sum + (items.get(recipeId)?.priceCents ?? 0) * quantity, 0);
+  // The same arithmetic the server runs at submit — shown here so the button
+  // says exactly what the card will be charged, surcharge included.
+  const surcharge = menu?.surcharge ?? null;
+  const cartSurchargeCents = surcharge ? Math.round((cartTotal * surcharge.percent) / 100) : 0;
+  const cartGrandCents = cartTotal + cartSurchargeCents;
 
   // Set menus first, always. They are the biggest order a table can place and
   // the easiest decision to make — burying them under "S" in an alphabetical
@@ -516,7 +523,7 @@ export function GuestOrder({ token }: { token: string }) {
             onClick={() => setCartOpen((open) => !open)}
           >
             <span>
-              {cartCount} item{cartCount === 1 ? '' : 's'} · {money(cartTotal)}
+              {cartCount} item{cartCount === 1 ? '' : 's'} · {money(cartGrandCents)}
             </span>
             <em>{cartOpen ? '▾ hide' : '▴ show'}</em>
           </button>
@@ -548,8 +555,13 @@ export function GuestOrder({ token }: { token: string }) {
             </button>
           </div>
           {called ? <p className="qr-called">{called}</p> : null}
+          {surcharge && cartSurchargeCents > 0 ? (
+            <p className="qr-muted qr-surcharge">
+              {surcharge.label}: +{money(cartSurchargeCents)} — the same surcharge the venue applies to every bill today.
+            </p>
+          ) : null}
           <button type="button" className="qr-submit" disabled={busy} onClick={() => void submit()}>
-            {busy ? 'Taking you to payment…' : `Pay ${money(cartTotal)} · ${cartCount} item${cartCount === 1 ? '' : 's'}`}
+            {busy ? 'Taking you to payment…' : `Pay ${money(cartGrandCents)} · ${cartCount} item${cartCount === 1 ? '' : 's'}`}
           </button>
         </div>
       ) : null}
