@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ALMA_MARK } from './brand';
 // The same dietary vocabulary the register and Stock use. A guest reading
 // "GF" here and a chef reading it on the docket have to mean the same thing.
-import { answerableGuestTags, dietaryKind, dietaryShort, dishAnswersGuest, parseDishDietary } from '@alma/shared';
+import { answerableGuestTags, dietaryKind, dietaryShort, dishAnswersGuest, guestTagIsAllergy, parseDishDietary } from '@alma/shared';
 
 // ── Guest QR ordering ───────────────────────────────────────────────────────
 // alma-pos.web.app/#o/<token>: the page a guest lands on after scanning the
@@ -179,10 +179,18 @@ export function GuestOrder({ token }: { token: string }) {
             if (!hay.includes(term)) return false;
           }
           if (filters.diet) {
-            // 'yes' and 'ask' both stay: a dish the kitchen can adapt is one a
-            // guest should still see, with the caveat spelled out below.
             const verdict = dishAnswersGuest(item.dietary ?? [], filters.diet);
-            if (verdict !== 'yes' && verdict !== 'ask') return false;
+            if (guestTagIsAllergy(filters.diet)) {
+              // An allergy filter can only rule dishes OUT — no tag in the
+              // vocabulary is a positive "checked allergen-free" claim, so
+              // everything left is unverified, and the caveat below tells the
+              // guest to speak to staff, always.
+              if (verdict === 'no') return false;
+            } else {
+              // A diet: 'yes' and 'ask' both stay — a dish the kitchen can
+              // adapt is one a guest should still see, with the caveat below.
+              if (verdict !== 'yes' && verdict !== 'ask') return false;
+            }
           }
           return true;
         })
@@ -428,10 +436,17 @@ export function GuestOrder({ token }: { token: string }) {
             </div>
           ) : null}
           {filters.diet ? (
-            <p className="qr-caveat">
-              Showing what the kitchen has marked <strong>{filters.diet}</strong>. Anything unmarked is hidden because
-              nobody has checked it — not because it is unsuitable. Ask us and we will tell you properly.
-            </p>
+            guestTagIsAllergy(filters.diet) ? (
+              <p className="qr-caveat">
+                Hiding dishes marked as containing it. <strong>Everything still shown is unverified, not safe</strong> —
+                please tell your waiter about a {filters.diet.toLowerCase()} before ordering, every time.
+              </p>
+            ) : (
+              <p className="qr-caveat">
+                Showing what the kitchen has marked <strong>{filters.diet}</strong>. Anything unmarked is hidden because
+                nobody has checked it — not because it is unsuitable. Ask us and we will tell you properly.
+              </p>
+            )
           ) : null}
         </div>
       ) : null}

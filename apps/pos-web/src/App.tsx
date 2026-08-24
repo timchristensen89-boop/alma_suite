@@ -5,7 +5,7 @@ import { POS_SURFACES, SUITE_APP_LINKS } from './suiteApps';
 // Dietary vocabulary, shared with Stock and the booking parser so a guest's
 // requirement and a dish's label are the same words rather than two sets that
 // nearly match.
-import { answerableGuestTags, dietaryKind, dietaryLabel, dietaryShort, dishAnswersGuest, menuForDay, parseDishDietary } from '@alma/shared';
+import { answerableGuestTags, dietaryKind, dietaryLabel, dietaryShort, dishAnswersGuest, guestTagIsAllergy, menuForDay, parseDishDietary } from '@alma/shared';
 
 // Lazy: jsQR is ~130KB the till never needs until somebody actually taps
 // "Scan the card" — the register's first paint shouldn't carry it.
@@ -2004,12 +2004,21 @@ export function App() {
   const menuMatch = (item: MenuItem, categoryKind: string) => {
     if (menuFilters.kind !== 'any' && categoryKind !== menuFilters.kind) return false;
     if (menuFilters.diet) {
-      // 'yes' and 'ask' only. A dish nobody has tagged is UNKNOWN, and an
-      // unknown dish must never be offered to somebody who asked for gluten
-      // free — that is the whole reason this filter exists rather than the
-      // floor guessing from the title.
       const verdict = dishAnswersGuest(item.dietary ?? [], menuFilters.diet);
-      if (verdict !== 'yes' && verdict !== 'ask') return false;
+      if (guestTagIsAllergy(menuFilters.diet)) {
+        // An allergy can only ever rule dishes OUT — nothing in the tag
+        // vocabulary is a positive "checked, allergen-free" claim, so the
+        // best any dish can be is "not marked as containing it". Drop the
+        // marked ones, keep the rest, and the note under the chips says
+        // plainly that unmarked is unverified, not safe.
+        if (verdict === 'no') return false;
+      } else {
+        // A diet: 'yes' and 'ask' only. A dish nobody has tagged is UNKNOWN,
+        // and an unknown dish must never be offered to somebody who asked for
+        // gluten free — that is the whole reason this filter exists rather
+        // than the floor guessing from the title.
+        if (verdict !== 'yes' && verdict !== 'ask') return false;
+      }
     }
     const off = eightySix.has(item.recipeId);
     if (menuFilters.avail === 'on' && off) return false;
@@ -4007,7 +4016,11 @@ export function App() {
                               menuFilters.diet === tag,
                               countIf((entry) => {
                                 const verdict = dishAnswersGuest(entry.item.dietary ?? [], tag);
-                                return verdict === 'yes' || verdict === 'ask';
+                                // An allergy chip counts what it will SHOW: everything
+                                // not marked as containing the allergen (none of which
+                                // is thereby safe — the caveat below says so). A diet
+                                // chip counts real yes/ask claims only.
+                                return guestTagIsAllergy(tag) ? verdict !== 'no' : verdict === 'yes' || verdict === 'ask';
                               }),
                               () => setMenuFilters({ ...menuFilters, diet: menuFilters.diet === tag ? null : tag })
                             )
@@ -4032,10 +4045,18 @@ export function App() {
                       </>
                       ) : null}
                       {menuFilters.diet ? (
-                        <p className="pos-menu-caveat">
-                          Showing dishes the kitchen has marked <strong>{menuFilters.diet}</strong>. Anything not marked is
-                          hidden because nobody has checked it — not because it is unsuitable. Ask the kitchen.
-                        </p>
+                        guestTagIsAllergy(menuFilters.diet) ? (
+                          <p className="pos-menu-caveat">
+                            Hiding dishes marked as containing it. <strong>Everything left is unverified, not safe</strong> —
+                            nothing on the menu is checked allergen-free. Always tell the kitchen about a{' '}
+                            <strong>{menuFilters.diet.toLowerCase()}</strong>.
+                          </p>
+                        ) : (
+                          <p className="pos-menu-caveat">
+                            Showing dishes the kitchen has marked <strong>{menuFilters.diet}</strong>. Anything not marked is
+                            hidden because nobody has checked it — not because it is unsuitable. Ask the kitchen.
+                          </p>
+                        )
                       ) : null}
                     </div>
                   );
@@ -5699,7 +5720,25 @@ export function App() {
                           Refund
                         </button>
                       </>
-                    ) : null}
+                    ) : (() => {
+                      // An OPEN bill paid past its total (edited down after a
+                      // payment) owes the guest change — offer the refund here,
+                      // pre-filled with exactly the overpayment.
+                      const takenAll = row.payments.reduce((sum, payment) => sum + payment.amountCents + payment.tipCents, 0);
+                      const overCents = takenAll - (row.totalCents + row.tipCents);
+                      return row.status === 'OPEN' && overCents > 0 ? (
+                        <button
+                          type="button"
+                          className="pos-ghost"
+                          onClick={() => {
+                            setBills(null);
+                            setRefunding({ order: row, amount: String(overCents / 100), reason: '', method: 'REFUND' });
+                          }}
+                        >
+                          Refund {money(overCents)} over
+                        </button>
+                      ) : null;
+                    })()}
                     <button
                       type="button"
                       className="pos-ghost"
