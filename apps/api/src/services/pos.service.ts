@@ -188,8 +188,22 @@ export function stripeForVenue(venue: string | null | undefined): Stripe | null 
   return stripeByVenue.get(slug) ?? stripe;
 }
 
+// A failed manager-PIN try cannot be pinned to one account (it is compared
+// against every manager), so per-profile lockout cannot carry this. A small
+// in-process sliding window backstops the per-IP route limiter: past this
+// many failures in the window, the whole gate cools off — real service never
+// gets near it, and a sweep from rotating IPs dies here anyway.
+const recentPinFailures: number[] = [];
+const PIN_FAILURE_WINDOW_MS = 10 * 60_000;
+const PIN_FAILURE_WINDOW_LIMIT = 25;
+
 async function verifyManagerPin(pin: string, permission?: string): Promise<string> {
   if (!/^\d{4,8}$/.test(pin)) throw new HttpError(403, 'Manager PIN required.');
+  const now = Date.now();
+  while (recentPinFailures.length && recentPinFailures[0]! < now - PIN_FAILURE_WINDOW_MS) recentPinFailures.shift();
+  if (recentPinFailures.length >= PIN_FAILURE_WINDOW_LIMIT) {
+    throw new HttpError(429, 'Too many PIN attempts — the manager gate is cooling off for a few minutes.');
+  }
   const managers = await prisma.staffProfile.findMany({
     where: {
       accountType: 'HUMAN',
@@ -207,6 +221,7 @@ async function verifyManagerPin(pin: string, permission?: string): Promise<strin
     if (profile.pinLockedUntil && profile.pinLockedUntil.getTime() > Date.now()) continue;
     if (await authService.comparePin(pin, profile.pinHash!)) return `${profile.firstName} ${profile.lastName}`.trim();
   }
+  recentPinFailures.push(now);
   throw new HttpError(403, 'That PIN does not belong to a manager.');
 }
 
@@ -519,10 +534,25 @@ async function postPosActuals(venue: string, serviceDate: Date = sydneyTodayUtcM
   const netIncCents = Math.max(0, totalIncCents - refunds);
   const exGstCents = Math.round((netIncCents * 10) / 11);
   const covers = orders.reduce((sum, order) => sum + (order.covers ?? 0), 0);
-  const cardTips = orders
-    .flatMap((order) => order.payments)
-    .filter((payment) => payment.method !== 'CASH' && payment.tipCents > 0)
-    .reduce((sum, payment) => sum + payment.tipCents, 0);
+  // Card tips in: non-cash rows with a positive tip, as ever. Reversals ride
+  // as NEGATIVE tipCents on refund rows and count WHATEVER medium the money
+  // physically went back in — the pool is no longer owed the tip either way.
+  // Summing only the positive ones left a refunded bill's tip in the pool
+  // forever, paid to staff out of money the guest took home.
+  const cardTips = Math.max(
+    0,
+    orders
+      .flatMap((order) => order.payments)
+      .reduce(
+        (sum, payment) =>
+          payment.tipCents < 0
+            ? sum + payment.tipCents
+            : payment.method !== 'CASH'
+              ? sum + payment.tipCents
+              : sum,
+        0
+      )
+  );
   const source = 'alma-pos';
   const externalId = `${source}:${venue}:${serviceDate.toISOString().slice(0, 10)}`;
   await prisma.salesActualEntry.upsert({
@@ -538,20 +568,26 @@ async function postPosActuals(venue: string, serviceDate: Date = sydneyTodayUtcM
     },
     update: { salesCents: exGstCents, coversCount: covers || null }
   });
-  if (cardTips > 0) {
+  {
     const importKey = `alma-pos:${venue}:${serviceDate.toISOString().slice(0, 10)}`;
-    await prisma.staffTipCardEntry.upsert({
-      where: { importKey },
-      create: {
-        venue,
-        serviceDate,
-        amountCents: cardTips,
-        source: 'alma-pos',
-        importKey,
-        notes: 'Card tips taken on ALMA POS.'
-      },
-      update: { amountCents: cardTips }
-    });
+    if (cardTips > 0) {
+      await prisma.staffTipCardEntry.upsert({
+        where: { importKey },
+        create: {
+          venue,
+          serviceDate,
+          amountCents: cardTips,
+          source: 'alma-pos',
+          importKey,
+          notes: 'Card tips taken on ALMA POS.'
+        },
+        update: { amountCents: cardTips }
+      });
+    } else {
+      // The day's tips netted back to zero (refunds) — a stale row here
+      // would still pay the pool out of money the guest took home.
+      await prisma.staffTipCardEntry.updateMany({ where: { importKey }, data: { amountCents: 0 } });
+    }
   }
 }
 
@@ -730,8 +766,26 @@ async function applyRefund(input: {
         : `This open bill is only ${(overpaidCents / 100).toFixed(2)} over — refund at most that, or settle the bill first.`
     );
   }
+  // A FULL refund hands the tip back too — and the tip pool must see that.
+  // The reversal rides as negative tipCents on a non-cash row (whatever
+  // medium the money physically went back in), because the day's card-tip
+  // total is computed from non-cash tipCents; without this, a refunded
+  // bill's tip stayed in the staff pool and the venue paid it twice.
+  const cardTipCents = order.payments
+    .filter((payment) => payment.method !== 'CASH' && payment.tipCents > 0)
+    .reduce((sum, payment) => sum + payment.tipCents, 0);
+  const tipReturnCents = amountCents >= paid ? Math.min(cardTipCents, amountCents) : 0;
+  // One row, the chosen medium: amount + tip still sums to -amountCents, so
+  // the drawer (cash refunds), the paid total and the day repost all stay
+  // exact — only the tip portion is now labelled as the tip going back.
   await prisma.posPayment.create({
-    data: { orderId, method, amountCents: -amountCents, tipCents: 0, reference: 'refund' }
+    data: {
+      orderId,
+      method,
+      amountCents: -(amountCents - tipReturnCents),
+      tipCents: -tipReturnCents,
+      reference: 'refund'
+    }
   });
   await prisma.posAdjustment.create({
     data: {

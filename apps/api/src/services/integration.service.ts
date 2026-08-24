@@ -4062,13 +4062,27 @@ function xeroTenantsForVenue(
   tenants: Array<{ id: string; name: string | null }>
 ): Array<{ id: string; name: string | null }> {
   const wanted = normaliseMatchText(venue ?? '');
-  const freshwater = tenants.find((tenant) => normaliseMatchText(tenant.name ?? '').includes('freshwater'));
-  const avalon = tenants.find((tenant) => normaliseMatchText(tenant.name ?? '').includes('avalon'));
+  // Each company is recognised by ANY of the names it actually goes by — the
+  // Xero organisation is registered under the LEGAL name, not the venue name.
+  // Matching on 'freshwater'/'avalon' alone meant an org named "Two Cooked
+  // Chooks Pty Ltd" matched nothing, every shift grouped as "unresolved", and
+  // the push fell back to try-every-org — the wrong-company path this mapping
+  // exists to prevent. These aliases are business facts, same as the
+  // St Alma ↔ Freshwater trading-name mapping below.
+  const FRESHWATER_NAMES = ['freshwater', 'st alma', 'saint alma'];
+  const AVALON_NAMES = ['avalon', 'two cooked chooks', 'tcc'];
+  const findTenant = (aliases: string[]) =>
+    tenants.find((tenant) => {
+      const name = normaliseMatchText(tenant.name ?? '');
+      return name !== '' && aliases.some((alias) => name.includes(alias));
+    });
+  const freshwater = findTenant(FRESHWATER_NAMES);
+  const avalon = findTenant(AVALON_NAMES);
   if (wanted === 'both') return [freshwater, avalon].filter(Boolean) as Array<{ id: string; name: string | null }>;
-  if (wanted.includes('avalon')) return avalon ? [avalon] : [];
+  if (AVALON_NAMES.some((alias) => wanted.includes(alias))) return avalon ? [avalon] : [];
   // "St Alma" is the trading name of the Freshwater entity — the one mapping
   // nobody guesses right from the names alone.
-  if (wanted.includes('st alma') || wanted.includes('freshwater')) return freshwater ? [freshwater] : [];
+  if (FRESHWATER_NAMES.some((alias) => wanted.includes(alias))) return freshwater ? [freshwater] : [];
   return [];
 }
 
