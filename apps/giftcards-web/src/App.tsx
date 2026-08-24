@@ -186,6 +186,20 @@ function giftCardGoogleWalletUrl(code: string) {
   return `${API_BASE_URL}${apiPath(`/api/gift-cards/wallet/google/${encodeURIComponent(code)}`)}`;
 }
 
+// The customer's rendered artwork, served by card code (public — the code is
+// the credential). Used to show a card exactly as the buyer designed it.
+function giftCardArtworkUrl(code: string) {
+  return `${API_BASE_URL}${apiPath(`/api/gift-cards/artwork/${encodeURIComponent(code)}`)}`;
+}
+
+// A friendly design label for a stored `design` string.
+function designLabel(design: string): string {
+  if (design === 'custom') return 'Custom artwork';
+  if (design === 'default') return 'Default';
+  if (isGiftCardDesign(design)) return GIFT_CARD_DESIGN_META[design].label;
+  return design;
+}
+
 function WalletButtons({ card, wallet, onMessage }: { card: GiftCardPublic; wallet?: WalletConfig | null; onMessage?: (message: string | null) => void }) {
   const canAddToWallet = card.status === 'ACTIVE' && card.balanceCents > 0;
 
@@ -1938,6 +1952,38 @@ function GiftCardPurchases() {
         </Card>
       ) : null}
 
+      {report && (report.popular.byDesign.length > 0 || report.popular.byValue.length > 0) ? (
+        <Card title="Popular choices" subtitle={`What buyers picked in ${rangeLabel.toLowerCase()}.`}>
+          <div className="giftcards-popular">
+            <div className="giftcards-popular-col">
+              <h4>Most popular designs</h4>
+              {report.popular.byDesign.slice(0, 6).map((row) => (
+                <div key={row.design} className="giftcards-popular-row">
+                  <span className="giftcards-popular-swatch">
+                    {row.design === 'custom' ? (
+                      <span className="giftcards-popular-custom">✎</span>
+                    ) : (
+                      <GiftCardArt design={resolveGiftCardDesign(row.design)} amount={100} chrome={false} />
+                    )}
+                  </span>
+                  <span className="giftcards-popular-label">{designLabel(row.design)}</span>
+                  <b>{row.count}</b>
+                </div>
+              ))}
+            </div>
+            <div className="giftcards-popular-col">
+              <h4>Most chosen amounts</h4>
+              {report.popular.byValue.slice(0, 6).map((row) => (
+                <div key={row.valueCents} className="giftcards-popular-row giftcards-popular-row--value">
+                  <span className="giftcards-popular-label">{formatCents(row.valueCents)}</span>
+                  <b>{row.count}</b>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
       <Card title="Purchase log" subtitle="Newest first.">
         {report && report.purchases.length === 0 && !loading ? (
           <EmptyState title="No cards in this window" description="Change the period, source or search above." />
@@ -1972,7 +2018,17 @@ function GiftCardPurchases() {
                     <dt>Message</dt><dd>{row.message || '—'}</dd>
                     <dt>Value</dt><dd>{formatCents(row.initialValueCents)}{row.discountCents ? ` (${formatCents(row.discountCents)} promo${row.promoCode ? ` ${row.promoCode}` : ''})` : ''} · paid {row.amountPaidCents == null ? '—' : formatCents(row.amountPaidCents)}</dd>
                     <dt>Balance</dt><dd>{formatCents(row.balanceCents)} left · {formatCents(row.redeemedCents)} redeemed across {row.redemptionCount} redemption{row.redemptionCount === 1 ? '' : 's'}{row.lastRedeemedAt ? ` · last ${when(row.lastRedeemedAt)}` : ''}</dd>
-                    <dt>Design</dt><dd>{row.design || '—'}</dd>
+                    <dt>Design</dt>
+                    <dd>
+                      <span className="giftcards-detail-art">
+                        {row.design === 'custom' ? (
+                          <img src={giftCardArtworkUrl(row.code)} alt="Custom gift card artwork" loading="lazy" />
+                        ) : row.design ? (
+                          <GiftCardArt design={resolveGiftCardDesign(row.design)} amount={Math.round(row.initialValueCents / 100)} code={row.code} chrome={false} />
+                        ) : null}
+                      </span>
+                      <span>{row.design ? designLabel(row.design) : '—'}</span>
+                    </dd>
                     <dt>Delivery</dt><dd>{row.scheduledDeliveryAt ? `scheduled ${when(row.scheduledDeliveryAt)}` : 'immediate'} · {row.emailedAt ? `emailed ${when(row.emailedAt)}` : 'not emailed'}{row.emailError ? ` · error: ${row.emailError}` : ''}</dd>
                     {row.status === 'ACTIVE' && (row.purchaserEmail || row.recipientEmail) ? (
                       <>

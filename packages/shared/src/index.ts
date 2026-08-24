@@ -4721,6 +4721,10 @@ export type GiftCardPurchaseReport = {
     redeemedCents: number;
   };
   bySource: Array<{ source: string; cardCount: number; soldCents: number }>;
+  popular: {
+    byDesign: Array<{ design: string; count: number; soldCents: number }>;
+    byValue: Array<{ valueCents: number; count: number }>;
+  };
   purchases: GiftCardPurchaseRow[];
   truncated: boolean;
 };
