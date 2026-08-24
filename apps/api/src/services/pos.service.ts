@@ -707,10 +707,29 @@ async function applyRefund(input: {
   requireReason('COMP', reason);
   const order = await prisma.posOrder.findUnique({ where: { id: orderId }, include: { payments: true } });
   if (!order) throw new HttpError(404, 'Bill not found.');
-  if (order.status !== 'PAID') throw new HttpError(400, 'Only paid bills can be refunded.');
   const paid = order.payments.reduce((sum, payment) => sum + payment.amountCents + payment.tipCents, 0);
-  const amountCents = input.amountCents ?? paid;
-  if (amountCents > paid) throw new HttpError(400, `Only ${(paid / 100).toFixed(2)} was paid on this bill.`);
+  // An OPEN bill can still owe the GUEST money: part-paid, then edited down
+  // (an 86'd main taken off after the payment), so more was taken than the
+  // bill now totals. The charge screen sends people here for exactly that
+  // case — refusing every non-PAID bill was a dead end with the guest
+  // waiting, where the only escape was undoing their real payment. Allow the
+  // refund, capped at the overpayment so it can never quietly become a comp.
+  // Against total + tip: a tip is money the guest MEANT to hand over, not an
+  // overpayment to hand back.
+  const overpaidCents = paid - (order.totalCents + order.tipCents);
+  if (order.status !== 'PAID' && !(order.status === 'OPEN' && overpaidCents > 0)) {
+    throw new HttpError(400, 'Only paid bills — or an open bill paid past its total — can be refunded.');
+  }
+  const refundable = order.status === 'PAID' ? paid : overpaidCents;
+  const amountCents = input.amountCents ?? refundable;
+  if (amountCents > refundable) {
+    throw new HttpError(
+      400,
+      order.status === 'PAID'
+        ? `Only ${(paid / 100).toFixed(2)} was paid on this bill.`
+        : `This open bill is only ${(overpaidCents / 100).toFixed(2)} over — refund at most that, or settle the bill first.`
+    );
+  }
   await prisma.posPayment.create({
     data: { orderId, method, amountCents: -amountCents, tipCents: 0, reference: 'refund' }
   });

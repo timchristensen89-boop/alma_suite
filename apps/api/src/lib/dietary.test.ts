@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { DISH_DIETARY, dishAnswersGuest, parseDishDietary, answerableGuestTags } from '@alma/shared';
+import { DISH_DIETARY, dishAnswersGuest, guestTagIsAllergy, parseDishDietary, answerableGuestTags } from '@alma/shared';
 
 describe('parseDishDietary', () => {
   it('keeps the tags it knows', () => {
@@ -79,18 +79,30 @@ describe('dishAnswersGuest — allergies', () => {
     assert.equal(dishAnswersGuest(['gf', 'df', 'vgn', 'nuts'], 'Nut allergy'), 'no');
   });
 
-  it('clears a dish somebody has actually checked', () => {
-    // Tagged for anything at all means a human looked at it.
-    assert.equal(dishAnswersGuest(['gf'], 'Nut allergy'), 'yes');
+  it('NEVER answers yes to an allergy — other tags are not an allergen check', () => {
+    // This used to say 'yes': "tagged for anything counts as checked". But a
+    // dish walked for the printed GF/DF marks was never checked for
+    // shellfish — a prawn tostada tagged gf·df read as SUITABLE for a
+    // shellfish allergy. The absence of a contains tag is not a safety claim.
+    assert.equal(dishAnswersGuest(['gf'], 'Nut allergy'), 'unknown');
+    assert.equal(dishAnswersGuest(['gf', 'df', 'vgn'], 'Shellfish allergy'), 'unknown');
   });
 
   it('will not clear a dish nobody has checked', () => {
     assert.equal(dishAnswersGuest([], 'Nut allergy'), 'unknown');
   });
 
-  it('keeps the two allergies apart', () => {
-    assert.equal(dishAnswersGuest(['nuts'], 'Shellfish allergy'), 'yes');
-    assert.equal(dishAnswersGuest(['shellfish'], 'Nut allergy'), 'yes');
+  it('keeps the two allergies apart — and neither reads as a clean bill for the other', () => {
+    assert.equal(dishAnswersGuest(['nuts'], 'Shellfish allergy'), 'unknown');
+    assert.equal(dishAnswersGuest(['shellfish'], 'Nut allergy'), 'unknown');
+  });
+
+  it('knows which guest tags are allergies (exclude-only)', () => {
+    assert.equal(guestTagIsAllergy('Nut allergy'), true);
+    assert.equal(guestTagIsAllergy('Shellfish allergy'), true);
+    assert.equal(guestTagIsAllergy('GF'), false);
+    assert.equal(guestTagIsAllergy('Vegan'), false);
+    assert.equal(guestTagIsAllergy('Halal'), false);
   });
 });
 

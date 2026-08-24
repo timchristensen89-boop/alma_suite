@@ -95,6 +95,20 @@ export function answerableGuestTags(): string[] {
   return Object.keys(GUEST_TO_DISH);
 }
 
+/**
+ * Whether a guest requirement is an ALLERGY — answerable only by ruling out.
+ *
+ * A diet (GF, vegan) can be answered 'yes': a suits tag is a positive claim
+ * someone made about the dish. An allergy has no suits tag to make — the only
+ * claims in the vocabulary are contains tags, so the best a dish can ever be
+ * is "not marked as containing it". A filter for an allergy must therefore
+ * EXCLUDE the marked dishes and present the rest as unverified, never as safe.
+ */
+export function guestTagIsAllergy(guestTag: string): boolean {
+  const rule = GUEST_TO_DISH[guestTag];
+  return Boolean(rule && rule.suits.length === 0 && rule.excludedBy.length > 0);
+}
+
 export function dishAnswersGuest(dishTags: readonly string[], guestTag: string): DietaryVerdict {
   const rule = GUEST_TO_DISH[guestTag];
   if (!rule) return 'unknown';
@@ -104,10 +118,13 @@ export function dishAnswersGuest(dishTags: readonly string[], guestTag: string):
   // no good to a nut allergy however else it is tagged.
   if (rule.excludedBy.some((id) => tags.includes(id))) return 'no';
 
-  // An allergy is answered by the ABSENCE of a contains tag, which is only
-  // meaningful once somebody has checked the dish at all. Tagged for anything
-  // else counts as checked; untouched does not.
-  if (rule.suits.length === 0) return tags.length > 0 ? 'yes' : 'unknown';
+  // An allergy can NEVER be answered 'yes' here. This used to treat "tagged
+  // for anything else" as "checked for the allergen" — but a dish walked for
+  // the printed GF/DF/V marks has not been checked for shellfish at all, so a
+  // prawn tostada tagged gf·df read as SUITABLE for a shellfish allergy. The
+  // absence of a contains tag is not a safety claim; the verdict stays
+  // unknown and the UI presents un-marked dishes as unverified, not safe.
+  if (rule.suits.length === 0) return 'unknown';
 
   if (rule.suits.some((id) => tags.includes(id))) return 'yes';
   if (rule.onAsk.some((id) => tags.includes(id))) return 'ask';

@@ -1434,6 +1434,9 @@ function RecipeForm({
         <p className="form-hint">
           Only tick what the kitchen has actually confirmed. Anything left unticked shows on the register as
           &ldquo;not checked&rdquo;, which is the honest answer — it is never read as safe.
+          The two <strong>Contains</strong> tags carry the allergy filters: they are the only thing that HIDES a dish
+          from a nut or shellfish allergy, so tick them on every dish that has the allergen — prawns, octopus and other
+          shellfish included — even though the printed menu has no mark for it.
         </p>
         <div className="dietary-picker">
           {DISH_DIETARY.map((tag) => {

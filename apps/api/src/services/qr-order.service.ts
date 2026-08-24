@@ -282,20 +282,36 @@ export const qrOrderService = {
     });
 
     // Server-side pricing — the client's prices are never trusted.
-    const [recipes, eightySixed, windowRows] = await Promise.all([
+    const [recipes, eightySixed, windowRows, venuePriceRows, hides] = await Promise.all([
       prisma.recipe.findMany({
         where: { id: { in: wanted.map((line) => line.recipeId) }, status: 'ACTIVE', isPrepRecipe: false, salePriceCents: { gt: 0 } },
-        select: { id: true, title: true, kind: true, category: true, salePriceCents: true }
+        select: { id: true, title: true, kind: true, category: true, salePriceCents: true, venue: true }
       }),
       prisma.pos86.findMany({ where: { recipeId: { in: wanted.map((line) => line.recipeId) } }, select: { recipeId: true } }),
       prisma.posPriceWindow.findMany({
         where: { recipeId: { in: wanted.map((line) => line.recipeId) }, active: true },
         orderBy: { createdAt: 'asc' },
         select: { recipeId: true, weekdays: true, priceCents: true, onlyWindow: true }
-      })
+      }),
+      // The venue's own price for a dish, when it differs from the base — the
+      // menu was SHOWN with this number (context → registerMenu bakes it), so
+      // the charge must be the same number. Pricing off salePriceCents alone
+      // silently billed a different figure than the page displayed.
+      prisma.recipeVenuePrice.findMany({
+        where: { recipeId: { in: wanted.map((line) => line.recipeId) } },
+        select: { recipeId: true, venue: true, salePriceCents: true }
+      }),
+      // The same hides the guest menu applies: a dish hidden from the register
+      // or from QR is not orderable by knowing its recipeId.
+      prisma.posMenuHide.findMany({ select: { kind: true, key: true } })
     ]);
     const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
     const soldOut = new Set(eightySixed.map((row) => row.recipeId));
+    const venuePriceByRecipe = new Map<string, number>();
+    for (const row of venuePriceRows) {
+      if (row.venue === venue) venuePriceByRecipe.set(row.recipeId, row.salePriceCents);
+    }
+    const hiddenItems = new Set(hides.filter((hide) => hide.kind === 'ITEM' || hide.kind === 'QR_ITEM').map((hide) => hide.key));
     // Taco Tuesday, repriced with the same arithmetic the menu was shown
     // with. A dish outside its window (the Tuesday-only board on a Wednesday)
     // is as unavailable as one that was archived.
@@ -306,15 +322,29 @@ export const qrOrderService = {
       list.push(row);
       windowsByRecipe.set(row.recipeId, list);
     }
-    const priceToday = (recipeId: string): number =>
-      effectivePriceCents(recipeById.get(recipeId)!.salePriceCents ?? 0, windowsByRecipe.get(recipeId), weekday);
+    // The same price the guest was SHOWN: the venue override when the dish is
+    // venue-tagged (registerMenu applies it by the recipe's venue; shared
+    // dishes stay on the base price), then today's window on top of that base.
+    const priceToday = (recipeId: string): number => {
+      const recipe = recipeById.get(recipeId)!;
+      const base = (recipe.venue ? venuePriceByRecipe.get(recipeId) : undefined) ?? recipe.salePriceCents ?? 0;
+      return effectivePriceCents(base, windowsByRecipe.get(recipeId), weekday);
+    };
     for (const line of wanted) {
-      if (!recipeById.has(line.recipeId)) throw new HttpError(400, 'An item on your order is no longer available.');
+      const recipe = recipeById.get(line.recipeId);
+      if (!recipe) throw new HttpError(400, 'An item on your order is no longer available.');
+      // The guards the guest MENU applies, re-applied at submit — a recipeId
+      // is not an entitlement to order what the page never offered:
+      //  - a dish hidden from the register or from QR ordering;
+      //  - the other venue's dish, which would fire to a kitchen that does
+      //    not make it and land another company's food on this bill.
+      if (hiddenItems.has(line.recipeId)) throw new HttpError(400, 'An item on your order is no longer available.');
+      if (recipe.venue && recipe.venue !== venue) throw new HttpError(400, 'An item on your order is no longer available.');
       if (!offeredOnDay(windowsByRecipe.get(line.recipeId), weekday)) {
         throw new HttpError(400, 'An item on your order is no longer available.');
       }
       if (soldOut.has(line.recipeId)) {
-        throw new HttpError(409, `${recipeById.get(line.recipeId)!.title} has just sold out — please adjust your order.`);
+        throw new HttpError(409, `${recipe.title} has just sold out — please adjust your order.`);
       }
     }
 
