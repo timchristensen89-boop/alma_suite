@@ -1236,9 +1236,31 @@ export const giftCardService = {
       bySource.set(key, entry);
     }
 
+    // Most popular design and most common value, over the cards in this window.
+    // (Capped at CAP like the log; the UI says "in this window".)
+    const byDesign = new Map<string, { count: number; soldCents: number }>();
+    const byValue = new Map<number, number>();
+    for (const card of cards) {
+      const design = card.design ?? 'default';
+      const d = byDesign.get(design) ?? { count: 0, soldCents: 0 };
+      d.count += 1;
+      d.soldCents += card.initialValueCents;
+      byDesign.set(design, d);
+      byValue.set(card.initialValueCents, (byValue.get(card.initialValueCents) ?? 0) + 1);
+    }
+    const popular = {
+      byDesign: [...byDesign.entries()]
+        .map(([design, entry]) => ({ design, ...entry }))
+        .sort((a, b) => b.count - a.count || b.soldCents - a.soldCents),
+      byValue: [...byValue.entries()]
+        .map(([valueCents, count]) => ({ valueCents, count }))
+        .sort((a, b) => b.count - a.count || b.valueCents - a.valueCents)
+    };
+
     const soldCents = totals._sum.initialValueCents ?? 0;
     const outstandingCents = totals._sum.balanceCents ?? 0;
     return {
+      popular,
       range: { from: from ? from.toISOString() : null, to: to.toISOString() },
       summary: {
         cardCount: totals._count._all,

@@ -13,6 +13,7 @@ import {
   type GiftCardRedemptionInput
 } from '@alma/shared';
 import { ScanSheet } from './ScanSheet';
+import { GiftCardArt, resolveGiftCardDesign } from './giftCardArt';
 
 /**
  * The counter screen — an iPad standing on the pass, used by whoever is on.
@@ -34,6 +35,10 @@ type Card = {
   initialValueCents: number;
   expiresAt?: string | null;
   recipientName?: string | null;
+  // The design the buyer chose. 'custom' comes with a rendered image URL; a
+  // preset is drawn live by GiftCardArt. Both arrive on the lookup payload.
+  design?: string | null;
+  customArtworkUrl?: string | null;
   /**
    * Present only on a voucher given away under the donation policy. It carries
    * conditions an ordinary card does not — dine-in, never a Friday or Saturday
@@ -472,6 +477,24 @@ function SellPanel() {
  * question at the counter, and answering it inside the redeem flow puts a
  * spend button under the thumb of someone who only meant to look.
  */
+// The card as the buyer designed it — shown on lookup so staff can confirm at a
+// glance they are holding the right voucher.
+function CardArtwork({ card }: { card: Card }) {
+  return (
+    <div className="counter-card-art">
+      {card.customArtworkUrl ? (
+        <img src={card.customArtworkUrl} alt="Gift card artwork" />
+      ) : (
+        <GiftCardArt
+          design={resolveGiftCardDesign(card.design ?? undefined)}
+          amount={Math.round(card.balanceCents / 100)}
+          code={card.code}
+        />
+      )}
+    </div>
+  );
+}
+
 function BalancePanel() {
   const [code, setCode] = useState('');
   const [card, setCard] = useState<Card | null>(null);
@@ -533,6 +556,7 @@ function BalancePanel() {
 
       {card ? (
         <div className="counter-balance">
+          <CardArtwork card={card} />
           {/* The balance is the answer; everything else is context. */}
           <p className="counter-code">{money(card.balanceCents)}</p>
           <p className="counter-issued-value">
