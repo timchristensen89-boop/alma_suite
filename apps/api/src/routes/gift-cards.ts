@@ -259,6 +259,14 @@ giftCardsRouter.get('/cards/:code', requireGiftCardRedeemer, async (req, res, ne
 // Counter sale paid by card through Stripe. Staff show the returned URL as a
 // QR; the customer pays on their own phone, so no card details reach the iPad
 // and no reader hardware is needed. Poll /session/:id to see it land.
+giftCardsRouter.post('/cards/:code/resend', requireManager, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.resendGiftCardEmail(String(req.params.code)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.post('/counter/checkout', requireManager, async (req, res, next) => {
   try {
     res.json(
