@@ -34,7 +34,8 @@ function safeContext(req: Request): string {
   if (!/^\/api\/gift-cards\//.test(req.path)) return '';
   const body = (req.body ?? {}) as Record<string, unknown>;
   const parts: string[] = [];
-  if (typeof body.code === 'string') parts.push(`code=${body.code}`);
+  // Never the full code — it's the bearer secret. Enough tail to correlate.
+  if (typeof body.code === 'string') parts.push(`code=***${body.code.slice(-4)}`);
   if (typeof body.amountCents === 'number') parts.push(`amountCents=${body.amountCents}`);
   if (typeof body.venue === 'string') parts.push(`venue=${body.venue}`);
   return parts.length ? ` ${parts.join(' ')}` : '';

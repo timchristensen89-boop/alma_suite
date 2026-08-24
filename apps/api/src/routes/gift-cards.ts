@@ -343,7 +343,7 @@ giftCardsRouter.post('/redeem', requireGiftCardRedeemer, async (req, res, next) 
     // day's redemptions can be reconstructed from the log alone.
     const body = (req.body ?? {}) as { amountCents?: unknown; venue?: unknown };
     console.info(
-      `[gift-cards] redeemed code=${card.code} amountCents=${String(body.amountCents)} venue=${String(body.venue)} ` +
+      `[gift-cards] redeemed code=***${card.code.slice(-4)} amountCents=${String(body.amountCents)} venue=${String(body.venue)} ` +
         `balanceCents=${card.balanceCents} by ${req.user?.accountType ?? 'user'}:${req.user?.email ?? req.user?.firstName ?? req.user?.id}`
     );
     res.json(card);

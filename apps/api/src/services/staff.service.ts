@@ -7171,8 +7171,15 @@ export const staffService = {
   },
 
   async listInvites() {
+    // The token is the credential that lets someone set a password on the new
+    // hire's account — it must never travel in a list. Select the rest.
     return prisma.staffInvite.findMany({
-      orderBy: [{ createdAt: 'desc' }]
+      orderBy: [{ createdAt: 'desc' }],
+      select: {
+        id: true, email: true, note: true, expiresAt: true, completedAt: true,
+        staffProfileId: true, remindersSent: true, managerAlertAt: true,
+        createdAt: true, updatedAt: true
+      }
     });
   },
 
