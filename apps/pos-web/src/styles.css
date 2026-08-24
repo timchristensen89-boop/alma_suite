@@ -579,7 +579,9 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
 /* A tab folder opened from the nav: its categories stacked as sections.
    flex+min-height+overflow make it a real screen — without them the stack
    ran past the viewport with no way to scroll. */
-.pos-grid-groups { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0 20px; }
+/* Same side gutter as the Full menu's .pos-list wrapper — with none, the
+   list rows and section heads sat flush against the nav rail. */
+.pos-grid-groups { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; overflow-y: auto; padding: 4px 18px 48px; }
 .pos-group-head { margin: 0 0 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pos-muted, #8b939e); }
 /* Sub-folders inside a folder's page: a way back up, then a row of the
    child folders you can drill into before the folder's own categories. */
