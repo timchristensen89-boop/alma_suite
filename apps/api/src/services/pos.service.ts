@@ -2607,7 +2607,11 @@ export const posService = {
     // A gift card is not something anyone cooks.
     order.lines = order.lines.filter((line) => !line.isGiftCard);
     if (onlyLineIds) order.lines = order.lines.filter((line) => onlyLineIds.has(line.id));
-    if (fireCourses) order.lines = order.lines.filter((line) => fireCourses.includes(line.course ?? 'Mains'));
+    // A null course means "fires with NOW" EVERYWHERE — the cart buckets it
+    // under NOW and the docket prints it under NOW. This filter defaulted to
+    // 'Mains', so firing NOW showed those lines as sent on the register while
+    // the kitchen never got them.
+    if (fireCourses) order.lines = order.lines.filter((line) => fireCourses.includes(line.course ?? 'NOW'));
     if (order.lines.length === 0) return { dockets: [], sent: 0 };
     const [profiles, courses, recipeRows] = await Promise.all([
       this.listPrinterProfiles(),

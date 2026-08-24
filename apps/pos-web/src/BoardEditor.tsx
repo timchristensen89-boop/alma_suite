@@ -279,8 +279,16 @@ export function BoardEditor({
     const value = raw.trim().slice(0, 30);
     if (!value || value === oldName) return;
     if (tabsConfig.groups.some((group) => group.name === value)) return;
+    // The mark override is keyed by plain name — a rename must carry it
+    // over, or the folder silently loses its chosen icon.
+    const icons = { ...(tabsConfig.icons ?? {}) };
+    if (Object.prototype.hasOwnProperty.call(icons, oldName)) {
+      icons[value] = icons[oldName]!;
+      delete icons[oldName];
+    }
     commitTabs({
       ...tabsConfig,
+      ...(tabsConfig.icons ? { icons } : Object.keys(icons).length ? { icons } : {}),
       order: (tabsConfig.order.length ? tabsConfig.order : tokens).map((token) => (token === `g:${oldName}` ? `g:${value}` : token)),
       // A rename must follow through to any sub-folder that names this one
       // as its parent, or the children fall out of the tree.

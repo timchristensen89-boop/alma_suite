@@ -41,6 +41,7 @@ import {
   updateFolderAtPath,
   visibleTabTokens,
   childNavGroups,
+  groupSubtreeCats,
   type FolderPin,
   type HomeConfig,
   type MenuCategory,
@@ -73,6 +74,9 @@ type OrderLine = {
   // rings, so the bill can group them and the report can tell them from comps.
   packagedBy?: string | null;
   sentAt?: string | null;
+  // Server-built voucher line (syncGiftCardLines). Never cooked, never fired,
+  // never editable here — the cart shows it in its own block, off the courses.
+  isGiftCard?: boolean;
 };
 // What the register needs to run a banquet, shipped with the menu.
 type SetMenuOption = {
@@ -1498,7 +1502,7 @@ export function App() {
       const stamp = new Date().toISOString();
       setOrder((current) =>
         current
-          ? { ...current, lines: current.lines.map((line) => ((line.course ?? 'NOW') === name && !(line as { sentAt?: string | null }).sentAt ? { ...line, sentAt: stamp } : line)) }
+          ? { ...current, lines: current.lines.map((line) => (!line.isGiftCard && (line.course ?? 'NOW') === name && !(line as { sentAt?: string | null }).sentAt ? { ...line, sentAt: stamp } : line)) }
           : current
       );
       setInfo(`${name} fired to the kitchen.`);
@@ -1513,17 +1517,28 @@ export function App() {
     const groups = new Map<string, Array<{ line: Order['lines'][number]; index: number }>>();
     for (const name of courses) groups.set(name, []);
     (order?.lines ?? []).forEach((line, index) => {
+      // A gift-card line is never cooked: grouped under NOW it read as a
+      // course with food waiting, and its 🔥 flip-flopped forever because
+      // /send rightly refuses to stamp it. It gets its own block below.
+      if (line.isGiftCard) return;
       const key = line.course ?? courses[0] ?? 'NOW';
       groups.set(key, [...(groups.get(key) ?? []), { line, index }]);
     });
     return [...groups.entries()];
   }, [order, courses]);
+  const giftLines = useMemo(
+    () => (order?.lines ?? []).map((line, index) => ({ line, index })).filter((entry) => entry.line.isGiftCard),
+    [order]
+  );
 
   // Bill lines grouped under their course, in service order.
   const courseGroups = useMemo(() => {
     const groups = new Map<string, Array<{ line: Order['lines'][number]; index: number }>>();
     (order?.lines ?? []).forEach((line, index) => {
-      const key = line.course ?? 'Mains';
+      // Null course = NOW, the same default the cart, the fire filter and
+      // the docket all use — three different defaults here once meant a
+      // line could show under one course and fire under another.
+      const key = line.course ?? 'NOW';
       groups.set(key, [...(groups.get(key) ?? []), { line, index }]);
     });
     const rank = (name: string) => {
@@ -2034,16 +2049,25 @@ export function App() {
 
   /** How many dishes survive the filters — the bar's count and the empty state
       read the same number rather than each working it out. */
-  const menuShownCount = useMemo(
-    () =>
-      menu.reduce(
-        (sum, category) =>
-          sum + category.items.filter((item) => !item.variantOf && menuMatch(item, category.kind)).length,
-        0
-      ),
+  const menuShownCount = useMemo(() => {
+    // Count exactly the categories the Full menu RENDERS — the visible tabs
+    // plus every folder's subtree. Counting all of `menu` overstated the
+    // number whenever a category was nav-hidden, and made a search that only
+    // matched an unrendered dish show a count over a blank list.
+    const shownCats = new Set<string>();
+    for (const token of visibleTabs) {
+      if (token.startsWith('g:')) for (const name of groupSubtreeCats(tabsConfig, token.slice(2))) shownCats.add(name);
+      else shownCats.add(token);
+    }
+    return menu.reduce(
+      (sum, category) =>
+        shownCats.has(category.name)
+          ? sum + category.items.filter((item) => !item.variantOf && menuMatch(item, category.kind)).length
+          : sum,
+      0
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [menu, menuFilters, eightySix]
-  );
+  }, [menu, menuFilters, eightySix, visibleTabs, tabsConfig]);
 
   /** Cheapest way to buy the whole bottle, or the dearest pour if there is none. */
   const wineFrom = (wine: RegisterWine) =>
@@ -4066,8 +4090,11 @@ export function App() {
                       .map((token) => {
                         if (token.startsWith('g:')) {
                           const folderName = token.slice(2);
-                          const group = tabsConfig.groups.find((candidate) => candidate.name === folderName);
-                          const cats = (group?.cats ?? [])
+                          // The whole subtree: a dish filed into a SUB-folder
+                          // still belongs to this section on the Full menu —
+                          // before this it rendered nowhere while the header
+                          // count still included it.
+                          const cats = groupSubtreeCats(tabsConfig, folderName)
                             .map((name) => menu.find((category) => category.name === name))
                             .filter((category): category is MenuCategory => Boolean(category));
                           return { token, folderName, cats };
@@ -4715,8 +4742,13 @@ export function App() {
                       {subFolders.length > 0 ? (
                         <div className="pos-group-subfolders">
                           {subFolders.map((sub) => {
-                            const count = sub.cats.reduce(
-                              (sum, catName) => sum + (menu.find((candidate) => candidate.name === catName)?.items.length ?? 0),
+                            // The whole subtree, variant children folded
+                            // under their parent — the same way every other
+                            // surface counts a menu.
+                            const count = groupSubtreeCats(tabsConfig, sub.name).reduce(
+                              (sum, catName) =>
+                                sum +
+                                (menu.find((candidate) => candidate.name === catName)?.items.filter((item) => !item.variantOf).length ?? 0),
                               0
                             );
                             return (
@@ -4746,7 +4778,10 @@ export function App() {
                         <h3 className="pos-group-head">{catName}</h3>
                         {asList ? (
                           <div className="pos-list-rows">
-                            {category.items.map((item) => {
+                            {/* Variant children (a wine's pours, the grilled
+                                twin) fold under their parent tile, as on
+                                every other surface. */}
+                            {category.items.filter((item) => !item.variantOf).map((item) => {
                               const quantity = qtyOf(item.recipeId);
                               return (
                                 <button
@@ -4766,7 +4801,7 @@ export function App() {
                           </div>
                         ) : (
                           <div className="pos-grid">
-                            {category.items.map((item) => (
+                            {category.items.filter((item) => !item.variantOf).map((item) => (
                               <button
                                 key={item.recipeId}
                                 type="button"
@@ -4938,7 +4973,7 @@ export function App() {
                     </span>
                     <span className="pos-line-chips">
                       <button type="button" className="pos-course" onClick={() => cycleCourse(index)}>
-                        {line.course ?? 'Mains'}
+                        {line.course ?? 'NOW'}
                       </button>
                       <button type="button" className="pos-course" onClick={() => cycleSeat(index)}>
                         {line.seat ? `S${line.seat}` : 'S–'}
@@ -4966,6 +5001,26 @@ export function App() {
               )) : null}
                 </div>
               ))}
+              {giftLines.length > 0 ? (
+                <div className="pos-course-group is-open">
+                  <div className="pos-course-head pos-course-head-static">
+                    <span>Gift cards</span>
+                    <small>
+                      {giftLines.reduce((sum, entry) => sum + entry.line.quantity, 0)} item
+                      {giftLines.length === 1 && giftLines[0]!.line.quantity === 1 ? '' : 's'}
+                    </small>
+                  </div>
+                  {giftLines.map(({ line, index }) => (
+                    <div key={`${line.recipeId ?? 'gift'}-${index}`} className="pos-line">
+                      <span className="pos-line-main">
+                        <span className="pos-line-name">{line.name}</span>
+                        {line.notes ? <small className="pos-line-mods">{line.notes}</small> : null}
+                      </span>
+                      <span className="pos-line-total">{money(line.unitPriceCents * line.quantity)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="pos-cart-foot">
               <div className="pos-sumline">
@@ -6768,6 +6823,16 @@ export function App() {
                       {item.title}
                     </button>
                   ))}
+                {/* Most real wastage is not a menu tile — a dropped tray of
+                    prep, a blown keg, tomorrow's fish. The typed name is a
+                    valid item; matching a tile only adds the recipe link. */}
+                <button
+                  type="button"
+                  className="pos-wastage-freetext"
+                  onClick={() => setWastage({ ...wastage, recipeId: '', itemName: wastage.search.trim() })}
+                >
+                  Use “{wastage.search.trim()}” as typed
+                </button>
               </div>
             ) : null}
             <input
@@ -6778,7 +6843,15 @@ export function App() {
               onChange={(event) => setWastage({ ...wastage, quantity: event.currentTarget.value })}
             />
             <div className="pos-reason-list">
-              {(reasons.WASTAGE ?? []).map((reason) => (
+              {/* The reason list comes from the API; offline that map is
+                  empty and the button dead-locked. This fallback mirrors the
+                  server's ADJUST_REASONS.WASTAGE seed VERBATIM — the server
+                  validates the reason against that list, so an invented
+                  fallback would record nothing. */}
+              {(reasons.WASTAGE?.length
+                ? reasons.WASTAGE
+                : ['Dropped / spilled', 'Kitchen error', 'Wrong order', 'Expired / off', 'Customer return', 'Over-prepped', 'Training']
+              ).map((reason) => (
                 <button
                   key={reason}
                   type="button"
