@@ -43,7 +43,10 @@ function decodePem(value: string) {
 }
 
 function requireActiveWalletCard(card: WalletGiftCard) {
-  if (!card.paidAt || card.status !== 'ACTIVE' || card.balanceCents <= 0) {
+  // Status governs, not paidAt — donation vouchers and comped counter cards
+  // are ACTIVE with paidAt deliberately null and belong in a wallet like any
+  // other live card.
+  if (card.status !== 'ACTIVE' || card.balanceCents <= 0) {
     throw new HttpError(404, 'Only paid active gift cards with a remaining balance can be added to Wallet.');
   }
 }

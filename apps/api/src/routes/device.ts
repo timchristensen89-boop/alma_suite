@@ -26,8 +26,13 @@ deviceRouter.get('/staff', async (req, res, next) => {
   }
 });
 
-deviceRouter.get('/pin-staff', async (_req, res, next) => {
+deviceRouter.get('/pin-staff', async (req, res, next) => {
   try {
+    // The full two-venue staff directory (names, roles, venues). It was on
+    // the public list with no session check — an anonymous walk of everyone
+    // on the roster. Same gate as /staff: the venue device IS the caller.
+    const deviceUser = currentDeviceUser(req);
+    if (!deviceUser) throw new HttpError(403, 'Venue device account required.');
     res.json(await deviceService.listPinStaff());
   } catch (error) {
     next(error);

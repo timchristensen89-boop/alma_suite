@@ -948,8 +948,11 @@ export const giftCardService = {
 
   async getPrintableByCode(code: string) {
     const card = await findCardByCode(code);
-    if (!card.paidAt || !['ACTIVE', 'REDEEMED'].includes(card.status)) {
-      throw new HttpError(404, 'Gift card payment has not been confirmed by Stripe.');
+    // Status governs, not paidAt: a comped counter card and a donation
+    // voucher are live with paidAt deliberately null, and both 404'd here
+    // with a message blaming Stripe for a payment that never existed.
+    if (!['ACTIVE', 'REDEEMED'].includes(card.status)) {
+      throw new HttpError(404, 'This gift card is not live yet.');
     }
     return publicGiftCard(toGiftCardPayload(card));
   },
@@ -1182,7 +1185,10 @@ export const giftCardService = {
                 : {};
     const where = {
       paidAt: { lte: to, ...(from ? { gte: from } : {}) },
-      ...(source && source !== 'TEST' ? { testMode: false } : {}),
+      // Test checkouts are visible ONLY under the TEST source filter. The
+      // default view used to include them, so a Stripe test card inflated
+      // sold value, card count and the popularity rankings.
+      ...(source === 'TEST' ? {} : { testMode: false }),
       ...sourceWhere,
       ...(query
         ? {
@@ -1363,6 +1369,11 @@ export const giftCardService = {
     });
     return {
       ...toGiftCardPayload(card),
+      // Same rule as the public payload: design === 'custom' is set exactly
+      // when artwork bytes were stored. Without this the counter's Balance
+      // panel drew the preset fallback for a custom card — staff compared the
+      // guest's card against artwork the buyer never chose.
+      customArtworkUrl: card.design === 'custom' ? artworkUrl(card.code) : null,
       donation: donation
         ? {
             organisation: donation.organisation,
@@ -2035,8 +2046,11 @@ export const giftCardService = {
   // when emailedAt is set, so clear it first, then send. Paid live cards only.
   async resendGiftCardEmail(code: string) {
     const card = await findCardByCode(code);
-    if (!card.paidAt || card.status !== 'ACTIVE') {
-      throw new HttpError(400, 'Only a paid, active gift card can have its voucher resent.');
+    // Status, not paidAt — a donation voucher or comped counter card is
+    // ACTIVE with paidAt deliberately null, and its email can fail like any
+    // other card's.
+    if (card.status !== 'ACTIVE') {
+      throw new HttpError(400, 'Only an active gift card can have its voucher resent.');
     }
     if (!card.purchaserEmail && !card.recipientEmail) {
       throw new HttpError(400, 'This card has no email address on file to send to.');
@@ -2083,8 +2097,9 @@ export const giftCardService = {
 
   async qrCodeSvg(code: string) {
     const card = await findCardByCode(code.replace(/\.svg$/i, ''));
-    if (!card.paidAt || !['ACTIVE', 'REDEEMED'].includes(card.status)) {
-      throw new HttpError(404, 'Gift card payment has not been confirmed.');
+    // Status governs — donation and comped cards are live with paidAt null.
+    if (!['ACTIVE', 'REDEEMED'].includes(card.status)) {
+      throw new HttpError(404, 'This gift card is not live yet.');
     }
     return QRCode.toString(redeemUrl(card.code), {
       type: 'svg',
