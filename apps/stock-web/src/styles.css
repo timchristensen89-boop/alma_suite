@@ -3520,3 +3520,7 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 .price-window-days button.is-on { background: #1f3524; color: #f3efe6; border-color: #1f3524; }
 .price-window-only { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
 .price-window-only input { margin-top: 2px; }
+
+/* Stock dashboard header: venue picker + take-stock beside the title. */
+.stock-dashboard-headeractions { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.stock-dashboard-headeractions .btn { white-space: nowrap; }

@@ -1477,6 +1477,44 @@ function StaffHome({
   const [reonboardMessage, setReonboardMessage] = useState<string | null>(null);
   const [reonboardError, setReonboardError] = useState<string | null>(null);
 
+  // The numbers a manager opens this page FOR, loaded up front: this week's
+  // labour against takings (the labour-week feed the Labour page uses) and
+  // how many timesheets are sitting in the approval queue. Quiet failure —
+  // a broken feed shows an em dash, never blocks the register of people.
+  const [labour, setLabour] = useState<LabourWeekPayload | null>(null);
+  const [approvalQueue, setApprovalQueue] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void api<LabourWeekPayload>(`/api/staff/labour-week?weekStart=${labourMondayOf()}`)
+      .then((data) => {
+        if (!cancelled) setLabour(data);
+      })
+      .catch(() => undefined);
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+    void api<Array<{ id: string }>>(
+      `/api/staff/timesheets?status=SUBMITTED&start=${start.toISOString().slice(0, 10)}`
+    )
+      .then((rows) => {
+        if (!cancelled) setApprovalQueue(rows.length);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const todayKey = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  })();
+  const today = labour?.days.find((day) => day.date === todayKey) ?? null;
+  const todayHours = today ? today.byVenue.reduce((sum, venue) => sum + venue.rosteredHours + venue.openHours, 0) : null;
+  const todayCostCents = today ? today.byVenue.reduce((sum, venue) => sum + venue.estCostCents, 0) : null;
+  const weekLabourPct =
+    labour && labour.totals.salesCents > 0
+      ? Math.round((labour.totals.estCostCents / labour.totals.salesCents) * 1000) / 10
+      : null;
+
   function openProfile(id: string, section = 'personal') {
     onSelect(id);
     navigate(`/staff/${id}/${section}`);
@@ -1516,52 +1554,98 @@ function StaffHome({
 
   return (
     <div className="page-stack staff-settings-page">
-      <AlmaHomeBubble
-        app="staff"
-        appName="Staff"
-        appIcon={<PeopleIcon />}
-        eyebrow="People command"
-        description="Rosters, pay, contracts, certifications. Where the team and the working week meet."
-        statusLabel="Week 25–31 May"
-        statusHint={(() => {
-          if (loading) return 'Loading the staff register…';
-          if (readinessActionCount === 0) {
-            return `${activeStaff.length} active profile${activeStaff.length === 1 ? '' : 's'}. Register is ready for daily use.`;
-          }
-          const bits: string[] = [];
-          if (pending.length > 0) bits.push(`${pending.length} pending onboarding`);
-          if (expiringSoon.length > 0) bits.push(`${expiringSoon.length} expiring record${expiringSoon.length === 1 ? '' : 's'}`);
-          if (missingPayRate.length > 0) bits.push(`${missingPayRate.length} missing pay rate`);
-          return bits.length > 0 ? bits.join(' · ') : `${readinessActionCount} readiness item${readinessActionCount === 1 ? '' : 's'} need review`;
-        })()}
-        statusDot={readinessActionCount === 0 ? 'forest' : 'amber'}
+      <PageHeader
+        eyebrow="Staff"
+        title="People command"
+        description={
+          loading
+            ? 'Loading the staff register…'
+            : readinessActionCount === 0
+              ? `${activeStaff.length} active staff. Register is ready for daily use.`
+              : `${readinessActionCount} readiness item${readinessActionCount === 1 ? '' : 's'} need review below.`
+        }
         actions={
           <>
-            <NavLink to="/brief" className="alma-home-bubble-btn alma-home-bubble-btn--primary">
-              Daily brief →
-            </NavLink>
-            <NavLink to="/readiness" className="alma-home-bubble-btn alma-home-bubble-btn--ghost">
-              Today's readiness
-            </NavLink>
-            <NavLink to="/roster" className="alma-home-bubble-btn alma-home-bubble-btn--ghost">
-              Roster
-            </NavLink>
+            <NavLink to="/brief" className="btn btn-sm">Daily brief</NavLink>
+            <NavLink to="/roster" className="btn btn-ghost btn-sm">Roster</NavLink>
+            <NavLink to="/timesheets" className="btn btn-ghost btn-sm">Timesheets</NavLink>
           </>
         }
       />
 
+      {/* The numbers first: what today costs, how the week is tracking
+          against takings, and what is waiting on a manager. */}
       <div className="stats-grid staff-settings-stats">
-        <NavLink to="/profiles" className="stat-card-link" aria-label="Open staff profiles">
-          <StatCard label="Staff profiles" value={staff.length} hint="Shared records" loading={loading} />
+        <NavLink to="/roster" className="stat-card-link" aria-label="Open the roster">
+          <StatCard
+            label="Rostered today"
+            value={todayHours == null ? '—' : `${Math.round(todayHours * 10) / 10}h`}
+            hint={todayCostCents == null ? 'Roster feed unavailable' : `≈ ${labourMoney(todayCostCents)} labour today`}
+            loading={labour === null && todayHours === null}
+          />
         </NavLink>
+        <NavLink to="/labour" className="stat-card-link" aria-label="Open labour vs takings">
+          <StatCard
+            label="Labour this week"
+            value={labour ? labourMoney(labour.totals.estCostCents) : '—'}
+            hint={
+              labour && labour.totals.overtimeCostCents > 0
+                ? `incl. ${labourMoney(labour.totals.overtimeCostCents)} overtime`
+                : 'Rostered cost, Mon–Sun'
+            }
+          />
+        </NavLink>
+        <NavLink to="/labour" className="stat-card-link" aria-label="Open labour vs takings">
+          <StatCard
+            label="Takings this week"
+            value={labour ? labourMoney(labour.totals.salesCents) : '—'}
+            hint={weekLabourPct != null ? `Labour is ${weekLabourPct}% of takings` : 'No takings recorded yet this week'}
+            tone={weekLabourPct != null && weekLabourPct > 35 ? 'warning' : undefined}
+          />
+        </NavLink>
+        <NavLink to="/timesheets" className="stat-card-link" aria-label="Open timesheets awaiting approval">
+          <StatCard
+            label="Awaiting approval"
+            value={approvalQueue == null ? '—' : approvalQueue}
+            hint="Submitted timesheets, last 30 days"
+            tone={(approvalQueue ?? 0) > 0 ? 'warning' : 'positive'}
+          />
+        </NavLink>
+      </div>
+
+      <div className="stats-grid staff-settings-stats">
         <NavLink to="/profiles" className="stat-card-link" aria-label="Open active staff profiles">
-          <StatCard label="Active" value={activeStaff.length} hint="Not archived" loading={loading} />
+          <StatCard label="Active staff" value={activeStaff.length} hint={`${staff.length} profiles on record`} loading={loading} />
         </NavLink>
         <NavLink to="/approvals" className="stat-card-link" aria-label="Open pending onboarding approvals">
-          <StatCard label="Pending onboarding" value={pending.length} hint="Invite created" loading={loading} />
+          <StatCard
+            label="Pending onboarding"
+            value={pending.length}
+            hint="Invite created, not finished"
+            loading={loading}
+            tone={pending.length > 0 ? 'warning' : 'positive'}
+          />
         </NavLink>
         <NavLink to="/hr" className="stat-card-link" aria-label="Open expiring staff records">
-          <StatCard label="Expiring records" value={expiringSoon.length} hint="Next 30 days" loading={loading} />
+          <StatCard
+            label="Expiring records"
+            value={expiringSoon.length}
+            hint="Visas, certificates — next 30 days"
+            loading={loading}
+            tone={expiringSoon.length > 0 ? 'warning' : 'positive'}
+          />
+        </NavLink>
+        <NavLink to="/roster" className="stat-card-link" aria-label="Open the roster">
+          <StatCard
+            label="On the roster this week"
+            value={labour ? labour.people.length : '—'}
+            hint={
+              labour && labour.people.some((person) => !person.rateKnown)
+                ? `${labour.people.filter((person) => !person.rateKnown).length} without a known pay rate`
+                : 'Everyone rostered has a pay rate'
+            }
+            tone={labour && labour.people.some((person) => !person.rateKnown) ? 'warning' : undefined}
+          />
         </NavLink>
       </div>
 
