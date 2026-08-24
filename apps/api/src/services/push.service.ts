@@ -135,6 +135,24 @@ export const pushService = {
   },
 
   /**
+   * Whether this endpoint is registered to THIS person.
+   *
+   * The browser's own subscription is per DEVICE, not per account — on a
+   * shared handset the previous signer-in may still own the row, and reading
+   * "browser has a subscription" as "on for me" shows the new person 'On
+   * here' while the pushes go to the old owner. The badge asks the server.
+   */
+  async ownsEndpoint(staffProfileId: string, endpoint: string): Promise<boolean> {
+    const clean = String(endpoint ?? '').trim();
+    if (!clean) return false;
+    const row = await prisma.staffPushSubscription.findUnique({
+      where: { endpoint: clean },
+      select: { staffProfileId: true }
+    });
+    return row?.staffProfileId === staffProfileId;
+  },
+
+  /**
    * Push one notification to every device a person has registered.
    *
    * Returns what happened rather than throwing: the caller is normally

@@ -1818,6 +1818,12 @@ model ReserveEnquiryMessage {
   deliveryStatus String?
   deliveryError  String?
 
+  // How an INBOUND reply found its thread: 'message-id' (the client quoted
+  // our Message-ID back — exact) or 'sender-address' (best-effort match on
+  // the From address, which anyone can spoof). The inbox shows a caution on
+  // the weaker kind so a manager verifies before acting on what it asks.
+  matchedBy String?
+
   createdAt DateTime @default(now())
 
   enquiry ReserveEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)

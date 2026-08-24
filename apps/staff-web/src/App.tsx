@@ -3174,7 +3174,19 @@ function NotificationsCard() {
         currentEndpoint()
       ]);
       setState(config);
-      setThisDeviceOn(Boolean(endpoint));
+      // The browser's subscription belongs to the DEVICE; on a shared handset
+      // it may still be registered to whoever signed in before. "On here" is
+      // only true when the server says this endpoint is on THIS account —
+      // otherwise the badge lies while the pushes go to the previous owner.
+      if (endpoint) {
+        const status = await api<{ thisDevice: boolean }>('/api/staff/me/push/status', {
+          method: 'POST',
+          body: JSON.stringify({ endpoint })
+        }).catch(() => ({ thisDevice: true }));
+        setThisDeviceOn(status.thisDevice);
+      } else {
+        setThisDeviceOn(false);
+      }
     } catch {
       setError('Could not check your notification settings.');
     } finally {
