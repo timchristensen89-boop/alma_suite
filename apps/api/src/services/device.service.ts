@@ -9,6 +9,8 @@ import {
   type AuthUser,
   type DeviceStaffListResponse,
   type HomeOperationalSummary
+,
+  venueTodayBounds
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { authService } from './auth.service.js';
@@ -83,6 +85,12 @@ function normaliseVenue(value: string | null | undefined) {
 }
 
 function dayWindow(now = new Date()) {
+  // The VENUE's day, not the server's. setHours() ran in the container's
+  // zone (UTC), so "tonight" spanned UTC-midnight to UTC-midnight and every
+  // Sydney morning the iPad showed YESTERDAY's service until 10–11am.
+  const bounds = venueTodayBounds(now);
+  if (bounds) return { start: bounds.gte, end: bounds.lt };
+  // Unreachable for a valid clock, but never crash the kiosk over a date.
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);

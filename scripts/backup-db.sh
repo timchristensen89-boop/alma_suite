@@ -17,7 +17,19 @@
 # set ONE of these in the cron's environment or an EnvironmentFile:
 #   BACKUP_GCS_BUCKET="gs://alma-db-backups"     # uses `gcloud storage cp`
 #   BACKUP_RCLONE_REMOTE="b2:alma-db-backups"    # uses `rclone copy`
+#
+# Heartbeat (optional): set BACKUP_HEARTBEAT_URL to a healthchecks.io-style
+# ping URL. The script pings it on success and pings <url>/fail on failure —
+# so a cron that silently stops running raises an alert instead of being
+# noticed the day the restore is needed.
 set -euo pipefail
+
+# Any failure from here on pings the /fail endpoint (when a heartbeat URL is
+# configured) before the script dies — set -e makes the trap fire on error.
+beat() {
+  [ -n "${BACKUP_HEARTBEAT_URL:-}" ] && curl -fsS -m 10 --retry 3 "$1" > /dev/null 2>&1 || true
+}
+trap '[ $? -ne 0 ] && beat "${BACKUP_HEARTBEAT_URL:-}/fail"' EXIT
 
 COMPOSE_DIR="${ALMA_DEPLOY_DIR:-/opt/alma/deploy}"
 DB_NAME="${ALMA_DB_NAME:-alma_suite_v18}"
@@ -58,4 +70,5 @@ fi
 # Rotate local copies (offsite retention is the bucket's lifecycle policy).
 echo "→ pruning local backups older than ${KEEP_DAYS} days"
 find "$BACKUP_DIR" -name "alma-${DB_NAME}-*.sql.gz" -type f -mtime "+${KEEP_DAYS}" -print -delete
+beat "${BACKUP_HEARTBEAT_URL:-}"
 echo "→ done"

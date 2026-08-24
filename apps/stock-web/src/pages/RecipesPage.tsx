@@ -2237,6 +2237,18 @@ function SetMenuCoursesPanel({
   }
 
   async function save() {
+    // A course with no name used to be silently FILTERED OUT of the save —
+    // the person lost the course and every dish picked into it, with the
+    // success note claiming all was well. Refuse loudly instead.
+    const unnamed = drafts.filter((draft) => !draft.name.trim());
+    if (unnamed.length > 0) {
+      setNote(
+        unnamed.length === 1
+          ? 'One course has no name — name it (or remove it with its ✕) before saving, or it would be deleted along with its dishes.'
+          : `${unnamed.length} courses have no name — name them (or remove them) before saving, or they would be deleted along with their dishes.`
+      );
+      return;
+    }
     setSaving(true);
     setNote(null);
     try {
@@ -2244,7 +2256,6 @@ function SetMenuCoursesPanel({
         method: 'PUT',
         body: JSON.stringify({
           courses: drafts
-            .filter((draft) => draft.name.trim())
             .map((draft) => ({
               name: draft.name.trim(),
               posCourse: draft.posCourse.trim() || null,
