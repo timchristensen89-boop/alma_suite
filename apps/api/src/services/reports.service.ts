@@ -1754,7 +1754,7 @@ export const reportsService = {
     if (end <= start) throw new HttpError(400, 'Banquet report end date must be after the start date');
     const venueScope = salesVenueScope(actor, data.venue);
 
-    const orders = await prisma.posOrder.findMany({
+    const rawOrders = await prisma.posOrder.findMany({
       where: {
         status: 'PAID',
         training: false,
@@ -1769,6 +1769,7 @@ export const reportsService = {
         orderNumber: true,
         serviceDate: true,
         tableLabel: true,
+        payments: { select: { amountCents: true, tipCents: true } },
         lines: {
           select: {
             recipeId: true,
@@ -1782,6 +1783,15 @@ export const reportsService = {
         }
       }
     });
+
+    // A bill refunded IN FULL is not banquet revenue — its lines still carry
+    // their prices, so counting it booked the function and the refund never
+    // subtracted. Partial refunds and order-level discounts stay counted at
+    // line value (the split across dishes would be a guess); full write-offs
+    // are the case that actually distorts the report.
+    const orders = rawOrders.filter(
+      (order) => order.payments.reduce((sum, payment) => sum + payment.amountCents + payment.tipCents, 0) > 0
+    );
 
     const recipeIds = [...new Set(orders.flatMap((order) => order.lines.map((line) => line.recipeId).filter((id): id is string => Boolean(id))))];
     const recipes = recipeIds.length

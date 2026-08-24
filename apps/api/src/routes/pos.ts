@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import express, { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { prisma } from '@alma/db';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
@@ -21,6 +22,18 @@ function needsManagerPin(req: { user?: { role?: string; isAdmin?: boolean } | nu
   if (!user) return true;
   return user.role !== 'MANAGER' && user.role !== 'ADMIN' && !user.isAdmin;
 }
+
+// The money-reversing endpoints all accept a manager PIN in the body, and a
+// PIN has no per-account lockout to lean on here (a failed try does not say
+// WHOSE PIN it was guessing). This is the brute-force bound: generous for a
+// venue's real refunds/voids, fatal to an automated 4-digit sweep. Per IP.
+const managerPinLimiter = rateLimit({
+  windowMs: 5 * 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many attempts — wait a few minutes and try again.' }
+});
 
 // Constant-time check of the print-station secret. Production refuses to boot
 // without one (env.ts), so an empty expected only happens in local dev.
@@ -175,7 +188,7 @@ posRouter.post('/orders/:id/merge', async (req, res, next) => {
   }
 });
 
-posRouter.post('/orders/:id/reopen', async (req, res, next) => {
+posRouter.post('/orders/:id/reopen', managerPinLimiter, async (req, res, next) => {
   try {
     res.json(await posService.reopenOrder(String(req.params.id), req.body, needsManagerPin(req)));
   } catch (error) {
@@ -183,7 +196,7 @@ posRouter.post('/orders/:id/reopen', async (req, res, next) => {
   }
 });
 
-posRouter.post('/orders/:id/refund', async (req, res, next) => {
+posRouter.post('/orders/:id/refund', managerPinLimiter, async (req, res, next) => {
   try {
     res.json(await posService.refundOrder(String(req.params.id), req.body, !req.user && Boolean(req.deviceUser)));
   } catch (error) {
@@ -308,7 +321,7 @@ posRouter.get('/orders/:id/refundable-cards', async (req, res, next) => {
   }
 });
 
-posRouter.post('/orders/:id/terminal-refund', async (req, res, next) => {
+posRouter.post('/orders/:id/terminal-refund', managerPinLimiter, async (req, res, next) => {
   try {
     res.json(await posTerminalService.startRefund(String(req.params.id), req.body));
   } catch (error) {
@@ -324,7 +337,7 @@ posRouter.get('/terminal-refunds/:refundId', async (req, res, next) => {
   }
 });
 
-posRouter.post('/orders/:id/payments/:paymentId/undo', async (req, res, next) => {
+posRouter.post('/orders/:id/payments/:paymentId/undo', managerPinLimiter, async (req, res, next) => {
   try {
     res.json(await posService.undoPayment(String(req.params.id), String(req.params.paymentId), req.body));
   } catch (err) {
@@ -332,7 +345,7 @@ posRouter.post('/orders/:id/payments/:paymentId/undo', async (req, res, next) =>
   }
 });
 
-posRouter.post('/orders/:id/void', async (req, res, next) => {
+posRouter.post('/orders/:id/void', managerPinLimiter, async (req, res, next) => {
   try {
     res.json(await posService.voidOrder(String(req.params.id), req.body, needsManagerPin(req)));
   } catch (error) {
