@@ -145,6 +145,25 @@ export function childNavGroups(config: TabsConfig, parentName: string | null): N
   return config.groups.filter((group) => (group.parent ?? null) === parentName);
 }
 
+/**
+ * Every category filed under a folder OR any of its sub-folders, depth-first.
+ * The Full menu lists a folder as one section — a dish filed two levels down
+ * still belongs to that section, or it renders nowhere at all. Cycle-guarded:
+ * a parent loop (never writable from the editor, but data is data) terminates
+ * instead of recursing forever.
+ */
+export function groupSubtreeCats(config: TabsConfig, name: string, seen: Set<string> = new Set()): string[] {
+  if (seen.has(name)) return [];
+  seen.add(name);
+  const group = config.groups.find((candidate) => candidate.name === name);
+  if (!group) return [];
+  const cats = [...group.cats];
+  for (const child of childNavGroups(config, name)) {
+    cats.push(...groupSubtreeCats(config, child.name, seen));
+  }
+  return cats;
+}
+
 export type HomeConfig = {
   buttons: string[];
   pins: Pin[];
