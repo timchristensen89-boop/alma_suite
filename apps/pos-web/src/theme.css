@@ -924,6 +924,7 @@ details.pos-list-section > summary.pos-list-head { margin-bottom: 6px; }
   .pos-board-dots { padding: 4px 0 8px; }
   summary.pos-list-head { padding: 10px 12px; }
   .pos-list { padding: 10px 10px 40px; }
+  .pos-grid-groups { padding: 4px 10px 40px; }
 }
 
 /* Full menu everywhere: toolbar, folder subheads, edit jiggle */
