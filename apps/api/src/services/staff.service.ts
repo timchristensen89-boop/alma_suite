@@ -88,7 +88,7 @@ import type {
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
 import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
-import { allocateTipsByVenue } from '../lib/tips-allocation.js';
+import { allocateTipsByVenue, posFirstCardEntries } from '../lib/tips-allocation.js';
 import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { configuredSuperRateFraction } from './settings.service.js';
 import { authService } from './auth.service.js';
@@ -6542,9 +6542,13 @@ export const staffService = {
       byStaffVenue.set(key, existing);
     }
 
+    // POS is the source of truth for card tips: for any venue+day the register
+    // recorded a tip on, the Square/Lightspeed import rows for that venue+day
+    // are dropped so the same tips are not paid twice. (posFirstCardEntries.)
+    const dedupedCardEntries = posFirstCardEntries(cardEntries);
     const allocation = allocateTipsByVenue({
       cashEntries,
-      cardEntries,
+      cardEntries: dedupedCardEntries,
       hours: Array.from(byStaffVenue.values())
     });
     const { cashTipsCents, squareTipsCents, tipPoolCents, tradingDays, approvedHours, entitlements } = allocation;
@@ -6585,7 +6589,7 @@ export const staffService = {
         amountCents: entry.amountCents,
         notes: entry.notes
       })),
-      cardEntries: cardEntries.map((entry) => ({
+      cardEntries: dedupedCardEntries.map((entry) => ({
         id: entry.id,
         serviceDate: entry.serviceDate.toISOString(),
         venue: entry.venue,

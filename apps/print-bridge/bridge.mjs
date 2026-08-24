@@ -25,6 +25,11 @@ import { fileURLToPath } from 'node:url';
 // the bridge follows within a minute; no restart, no editing a command line.
 const API = (process.env.ALMA_API ?? 'https://api.almagroup.com.au').replace(/\/+$/, '');
 const VENUE = process.env.ALMA_VENUE ?? '';
+// Optional print-station secret (matches POS_PRINT_SECRET on the API). When
+// set, every call to the print endpoints carries it as ?k=… ; when empty the
+// URLs are unchanged, so the bridge keeps working until the secret is turned on.
+const PRINT_SECRET = process.env.ALMA_PRINT_SECRET ?? '';
+const withKey = (url) => (PRINT_SECRET ? `${url}${url.includes('?') ? '&' : '?'}k=${encodeURIComponent(PRINT_SECRET)}` : url);
 
 // Fallback: an explicit "<station-url>=<printer-ip>" list, for a venue that
 // isn't in the config yet or a one-off test.
@@ -36,7 +41,7 @@ const STATIC_STATIONS = (process.env.ALMA_STATIONS ?? '')
     // "<station-url>=<printer-host>[:port]"
     const [url, target] = entry.split('=');
     const [host, port] = (target ?? '').split(':');
-    return { url: url?.trim(), host: host?.trim(), port: Number(port) || 9100 };
+    return { url: url ? withKey(url.trim()) : url, host: host?.trim(), port: Number(port) || 9100 };
   })
   .filter((station) => station.url && station.host);
 
@@ -45,14 +50,14 @@ let stations = STATIC_STATIONS;
 async function refreshStations() {
   if (!VENUE) return;
   try {
-    const res = await fetch(`${API}/api/pos/print-stations?venue=${encodeURIComponent(VENUE)}`);
+    const res = await fetch(withKey(`${API}/api/pos/print-stations?venue=${encodeURIComponent(VENUE)}`));
     if (!res.ok) throw new Error(`${res.status}`);
     const rows = await res.json();
     const next = rows
       .filter((row) => row.printerIp)
       .map((row) => {
         const [host, port] = String(row.printerIp).split(':');
-        return { url: `${API}/api/pos/print-poll/${row.id}`, host: host.trim(), port: Number(port) || 9100, name: row.name };
+        return { url: withKey(`${API}/api/pos/print-poll/${row.id}`), host: host.trim(), port: Number(port) || 9100, name: row.name };
       });
     const changed = JSON.stringify(next.map((s) => `${s.name}@${s.host}`)) !== JSON.stringify(stations.map((s) => `${s.name}@${s.host}`));
     stations = next;

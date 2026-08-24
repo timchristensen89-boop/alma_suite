@@ -115,6 +115,10 @@ export const env = {
   corsOrigin: isProduction ? configuredCorsOrigins : configuredCorsOrigins.length > 0 ? configuredCorsOrigins : localCorsOrigins,
   sessionSecret,
   suiteAuthSecret: process.env.SUITE_AUTH_SECRET ?? sessionSecret,
+  // Optional shared secret the kitchen printers / print-bridge present on
+  // the public print-poll and print-station endpoints. Empty = off (the
+  // current behaviour), so nothing breaks until the station URLs carry it.
+  posPrintSecret: process.env.POS_PRINT_SECRET ?? '',
   isProduction,
   sessionCookieName: 'alma.sid',
   /**

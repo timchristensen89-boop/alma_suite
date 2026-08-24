@@ -2003,7 +2003,7 @@ export const posService = {
   async setLines(id: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const lines = parseLines(body.lines).filter((line) => !line.isGiftCard);
-    const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true } });
+    const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true, venue: true, training: true } });
     if (!order) throw new HttpError(404, 'Order not found.');
     if (order.status !== 'OPEN') throw new HttpError(400, `Order is ${order.status} — start a new sale.`);
 
@@ -2013,9 +2013,10 @@ export const posService = {
     // whole course to the kitchen.
     const existingLines = await prisma.posOrderLine.findMany({
       where: { orderId: id },
-      select: { id: true, sentAt: true }
+      select: { id: true, sentAt: true, unitPriceCents: true }
     });
     const sentById = new Map(existingLines.map((line) => [line.id, line.sentAt]));
+    const priorPriceById = new Map(existingLines.map((line) => [line.id, line.unitPriceCents]));
     await prisma.$transaction([
       prisma.posOrderLine.deleteMany({ where: { orderId: id } }),
       prisma.posOrderLine.createMany({
@@ -2041,6 +2042,42 @@ export const posService = {
     // than trusted from the payload.
     await syncGiftCardLines(id);
     await recomputeOrder(id);
+
+    // Audit a comp rung at $0. A line at $0 that no set menu paid for
+    // (packagedBy null) whose dish normally has a price is a manager zeroing a
+    // sale — the register's package/$0 toggle does exactly this — so it leaves
+    // a PosAdjustment the way the explicit comp path does. Only NEWLY zeroed
+    // lines are recorded (a line already $0 on the prior save is not re-logged);
+    // training bills and set-menu inclusions are skipped.
+    if (!order.training) {
+      const newlyZeroed = lines.filter(
+        (line) =>
+          line.unitPriceCents === 0 &&
+          !line.packagedBy &&
+          line.recipeId &&
+          (!line.id || (priorPriceById.get(line.id) ?? 0) > 0)
+      );
+      if (newlyZeroed.length > 0) {
+        const recipes = await prisma.recipe.findMany({
+          where: { id: { in: [...new Set(newlyZeroed.map((line) => line.recipeId!))] } },
+          select: { id: true, salePriceCents: true }
+        });
+        const priceById = new Map(recipes.map((recipe) => [recipe.id, recipe.salePriceCents ?? 0]));
+        const staffName = str(body.staffName) || 'Register';
+        const rows = newlyZeroed
+          .filter((line) => (priceById.get(line.recipeId!) ?? 0) > 0)
+          .map((line) => ({
+            venue: order.venue ?? '',
+            orderId: id,
+            kind: 'COMP',
+            reason: 'Rung at $0 on the register',
+            staffName,
+            itemName: line.name,
+            amountCents: (priceById.get(line.recipeId!) ?? 0) * line.quantity
+          }));
+        if (rows.length > 0) await prisma.posAdjustment.createMany({ data: rows });
+      }
+    }
     return this.getOrder(id);
   },
 
