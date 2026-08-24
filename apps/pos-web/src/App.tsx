@@ -3564,14 +3564,22 @@ export function App() {
             setBillActions(true);
           }}
           onReinstate={(row) => {
-            void api<Order>(`/api/pos/orders/${row.id}/reopen`, { method: 'POST' })
-              .then((reopened) => {
-                setOrder(reopened);
-                setView('register');
-                void refreshOpenOrders();
-                setInfo(`${reopened.tableLabel ? `Table ${reopened.tableLabel}` : `#${reopened.orderNumber}`} is open again — the payment stays on it.`);
-              })
-              .catch((err) => setError(messageForError(err, 'Could not reinstate that bill.')));
+            const attempt = (pin?: string) => {
+              void api<Order>(`/api/pos/orders/${row.id}/reopen`, { method: 'POST', body: JSON.stringify({ managerPin: pin }) })
+                .then((reopened) => {
+                  setManagerGate(null);
+                  setOrder(reopened);
+                  setView('register');
+                  void refreshOpenOrders();
+                  setInfo(`${reopened.tableLabel ? `Table ${reopened.tableLabel}` : `#${reopened.orderNumber}`} is open again — the payment stays on it.`);
+                })
+                .catch((err) => {
+                  const message = messageForError(err, 'Could not reinstate that bill.');
+                  if (/manager/i.test(message)) setManagerGate({ message, pin: '', retry: attempt });
+                  else setError(message);
+                });
+            };
+            attempt();
           }}
           onRefund={(row) => {
             const refunded = row.payments
@@ -5614,13 +5622,21 @@ export function App() {
                           type="button"
                           className="pos-ghost"
                           onClick={() => {
-                            void api<Order>(`/api/pos/orders/${row.id}/reopen`, { method: 'POST' })
-                              .then((reopened) => {
-                                setOrder(reopened);
-                                setBills(null);
-                                setView('register');
-                              })
-                              .catch((err) => setError(messageForError(err, 'Could not reopen.')));
+                            const attempt = (pin?: string) => {
+                              void api<Order>(`/api/pos/orders/${row.id}/reopen`, { method: 'POST', body: JSON.stringify({ managerPin: pin }) })
+                                .then((reopened) => {
+                                  setManagerGate(null);
+                                  setOrder(reopened);
+                                  setBills(null);
+                                  setView('register');
+                                })
+                                .catch((err) => {
+                                  const message = messageForError(err, 'Could not reopen.');
+                                  if (/manager/i.test(message)) setManagerGate({ message, pin: '', retry: attempt });
+                                  else setError(message);
+                                });
+                            };
+                            attempt();
                           }}
                         >
                           Reopen

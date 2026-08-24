@@ -497,10 +497,9 @@ async function issuePendingGiftCards(orderId: string, method: string, venue: str
   return issued;
 }
 
-async function postPosActuals(venue: string) {
+async function postPosActuals(venue: string, serviceDate: Date = sydneyTodayUtcMidnight()) {
   const setting = await prisma.posVenueSetting.findUnique({ where: { venue } });
   if (!setting?.postToReports) return;
-  const serviceDate = sydneyTodayUtcMidnight();
   const orders = await prisma.posOrder.findMany({
     where: { venue, serviceDate, status: 'PAID', training: false },
     include: { payments: true, lines: { where: { isGiftCard: true }, select: { totalCents: true } } }
@@ -763,7 +762,7 @@ async function applyRefund(input: {
       }
     });
   }
-  await postPosActuals(order.venue).catch(() => undefined);
+  await postPosActuals(order.venue, order.serviceDate ?? undefined).catch(() => undefined);
   const refunded = await posService.getOrder(orderId);
   return { ...refunded, giftCardNotes: giftNotes };
 }
@@ -1739,11 +1738,17 @@ export const posService = {
     const sourceId = str(body.sourceOrderId);
     if (!sourceId || sourceId === targetId) throw new HttpError(400, 'Pick a different bill to merge in.');
     const [target, source] = await Promise.all([
-      prisma.posOrder.findUnique({ where: { id: targetId }, select: { status: true, venue: true, tableLabel: true, orderNumber: true, covers: true } }),
-      prisma.posOrder.findUnique({ where: { id: sourceId }, select: { status: true, venue: true, tableLabel: true, orderNumber: true, covers: true } })
+      prisma.posOrder.findUnique({ where: { id: targetId }, select: { status: true, venue: true, training: true, tableLabel: true, orderNumber: true, covers: true } }),
+      prisma.posOrder.findUnique({ where: { id: sourceId }, select: { status: true, venue: true, training: true, tableLabel: true, orderNumber: true, covers: true } })
     ]);
     if (!target || !source) throw new HttpError(404, 'Bill not found.');
     if (target.status !== 'OPEN' || source.status !== 'OPEN') throw new HttpError(400, 'Both bills must be open to merge.');
+    // A merge reassigns lines AND payments. Across venues that would move
+    // recorded revenue between two companies (and two Stripe accounts); across
+    // the training flag it would move real money into or out of the training
+    // exclusion. Neither is ever intended.
+    if (target.venue !== source.venue) throw new HttpError(400, 'Those bills are at different venues — they can’t be merged.');
+    if (target.training !== source.training) throw new HttpError(400, 'A training bill and a real bill can’t be merged.');
     await prisma.$transaction([
       prisma.posOrderLine.updateMany({ where: { orderId: sourceId }, data: { orderId: targetId } }),
       prisma.posPayment.updateMany({ where: { orderId: sourceId }, data: { orderId: targetId } }),
@@ -1765,11 +1770,35 @@ export const posService = {
   },
 
   // Bring a paid bill back to the floor (adds more items, settles again).
-  async reopenOrder(id: string) {
-    const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true } });
+  async reopenOrder(id: string, input: unknown = {}, requireManager = false) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const order = await prisma.posOrder.findUnique({
+      where: { id },
+      select: { status: true, venue: true, serviceDate: true, orderNumber: true, tableLabel: true }
+    });
     if (!order) throw new HttpError(404, 'Bill not found.');
     if (order.status !== 'PAID') throw new HttpError(400, 'Only paid bills can be reopened.');
+    // Reopening pulls a settled bill back off the books. Gate it like the other
+    // money-reversing actions — a manager PIN for a floor-staff session — and
+    // leave an audit row either way.
+    let approvedBy: string | null = null;
+    if (requireManager) approvedBy = await verifyManagerPin(str(body.managerPin), 'voids');
+    const settledDate = order.serviceDate;
     await prisma.posOrder.update({ where: { id }, data: { status: 'OPEN', paidAt: null, serviceDate: null } });
+    await prisma.posAdjustment.create({
+      data: {
+        venue: order.venue,
+        orderId: id,
+        kind: 'PAYMENT_UNDO',
+        reason: 'Bill reopened',
+        staffName: approvedBy ?? (str(body.staffName) || 'Register'),
+        itemName: `REOPEN ${order.tableLabel ? `table ${order.tableLabel}` : `#${order.orderNumber}`}`,
+        amountCents: 0
+      }
+    });
+    // The day it was settled on is now short one paid bill — recompute THAT
+    // day, not today, or its takings stay overstated forever.
+    if (settledDate) await postPosActuals(order.venue, settledDate).catch(() => undefined);
     return this.getOrder(id);
   },
 
@@ -2052,6 +2081,11 @@ export const posService = {
       body.amountCents === undefined || body.amountCents === null
         ? balanceCents
         : asInt(body.amountCents, 'amount', { min: 1 });
+    // A payment is never negative. It only goes negative when the balance does
+    // — lines edited below what was already paid — and a negative payment would
+    // flip the bill to PAID as a refund with no manager PIN and no audit row.
+    // Over-collection is corrected through Refund, which has both.
+    if (amountCents < 0) throw new HttpError(400, 'This bill is already overpaid — use Refund to return money, not a payment.');
     if (amountCents > balanceCents) throw new HttpError(400, `Only ${(balanceCents / 100).toFixed(2)} is owing on this order.`);
 
     const dueCents = amountCents + tipCents;
@@ -2249,8 +2283,9 @@ export const posService = {
         'That card was really charged — use Refund so the money goes back to the guest. Undo would only remove it from this bill.'
       );
     }
-    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, select: { venue: true, status: true, orderNumber: true, tableLabel: true, tipCents: true } });
+    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, select: { venue: true, status: true, serviceDate: true, orderNumber: true, tableLabel: true, tipCents: true } });
     if (!order) throw new HttpError(404, 'Bill not found.');
+    const settledDate = order.serviceDate;
     await prisma.posPayment.delete({ where: { id: paymentId } });
     await prisma.posOrder.update({
       where: { id: orderId },
@@ -2272,7 +2307,7 @@ export const posService = {
         amountCents: payment.amountCents
       }
     });
-    await postPosActuals(order.venue).catch(() => undefined);
+    await postPosActuals(order.venue, settledDate ?? undefined).catch(() => undefined);
     return this.getOrder(orderId);
   },
 
