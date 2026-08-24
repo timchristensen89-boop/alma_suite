@@ -11,6 +11,15 @@ import { posTerminalService } from '../services/pos-terminal.service.js';
 // the unguessable station cuid in the path is the credential.
 export const posRouter = Router();
 
+// A full manager or admin login approves money-reversing actions on its own;
+// a floor-staff or device-PIN session must enter a manager PIN. (Refunds
+// require one from every session and check it in the service regardless.)
+function needsManagerPin(req: { user?: { role?: string; isAdmin?: boolean } | null }): boolean {
+  const user = req.user;
+  if (!user) return true;
+  return user.role !== 'MANAGER' && user.role !== 'ADMIN' && !user.isAdmin;
+}
+
 posRouter.use((req, _res, next) => {
   if (req.path.startsWith('/print-poll/')) return next();
   // The print bridge reads its station list the same way a printer polls.
@@ -148,7 +157,7 @@ posRouter.post('/orders/:id/merge', async (req, res, next) => {
 
 posRouter.post('/orders/:id/reopen', async (req, res, next) => {
   try {
-    res.json(await posService.reopenOrder(String(req.params.id)));
+    res.json(await posService.reopenOrder(String(req.params.id), req.body, needsManagerPin(req)));
   } catch (error) {
     next(error);
   }
@@ -305,7 +314,7 @@ posRouter.post('/orders/:id/payments/:paymentId/undo', async (req, res, next) =>
 
 posRouter.post('/orders/:id/void', async (req, res, next) => {
   try {
-    res.json(await posService.voidOrder(String(req.params.id), req.body, !req.user && Boolean(req.deviceUser)));
+    res.json(await posService.voidOrder(String(req.params.id), req.body, needsManagerPin(req)));
   } catch (error) {
     next(error);
   }
