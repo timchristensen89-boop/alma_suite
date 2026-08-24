@@ -1,5 +1,7 @@
+import { timingSafeEqual } from 'node:crypto';
 import express, { Router } from 'express';
 import { prisma } from '@alma/db';
+import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { mailService } from '../services/mail.service.js';
 import { posService } from '../services/pos.service.js';
@@ -20,10 +22,27 @@ function needsManagerPin(req: { user?: { role?: string; isAdmin?: boolean } | nu
   return user.role !== 'MANAGER' && user.role !== 'ADMIN' && !user.isAdmin;
 }
 
+// Constant-time check of the optional print-station secret.
+function printSecretOk(provided: string): boolean {
+  const expected = env.posPrintSecret;
+  if (!expected) return true; // secret not configured — endpoint stays open
+  if (!provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 posRouter.use((req, _res, next) => {
-  if (req.path.startsWith('/print-poll/')) return next();
-  // The print bridge reads its station list the same way a printer polls.
-  if (req.path === '/print-stations') return next();
+  // The printers and the print-bridge poll these two endpoints with no session.
+  // When POS_PRINT_SECRET is set they must present it (?k=… or the
+  // x-alma-print-secret header); when it is empty the endpoints stay open, so
+  // nothing breaks until the station URLs are updated in a maintenance window.
+  const printPath = req.path.startsWith('/print-poll/') || req.path === '/print-stations';
+  if (printPath) {
+    const provided = typeof req.query.k === 'string' ? req.query.k : req.header('x-alma-print-secret') ?? '';
+    if (!printSecretOk(provided)) return next(new HttpError(401, 'Print station credential required.'));
+    return next();
+  }
   if (!req.user && !req.deviceUser) return next(new HttpError(401, 'Sign in the register first.'));
   next();
 });

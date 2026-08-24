@@ -175,3 +175,33 @@ export function allocateTipsByVenue(input: {
     approvedHours: Math.round(venues.reduce((sum, v) => sum + v.approvedHours, 0) * 100) / 100
   };
 }
+
+/**
+ * POS-first de-duplication of card-tip rows.
+ *
+ * Card tips reach the pool from up to three feeds - the register itself
+ * ('alma-pos'), the Square import ('square') and the Lightspeed import
+ * ('lightspeed') - and they all live in one table, summed. When a venue takes
+ * card on the register AND an import runs for the same day, the same tips are
+ * counted twice and staff are paid twice.
+ *
+ * The rule, decided with the venues: the POS output is the source of truth. For
+ * any venue+day the register recorded a card tip on, the import rows for that
+ * venue+day are dropped. Manual ('control') entries are always kept, and an
+ * import feed is used only where the register has nothing (e.g. a venue that
+ * takes payment entirely through Lightspeed).
+ */
+const IMPORT_TIP_SOURCES = new Set(['square', 'lightspeed']);
+
+export function posFirstCardEntries<T extends { venue: string; serviceDate: Date; source: string }>(
+  entries: T[]
+): T[] {
+  const key = (venue: string, date: Date) => `${venue} ${date.toISOString().slice(0, 10)}`;
+  const posCovered = new Set<string>();
+  for (const entry of entries) {
+    if (entry.source === 'alma-pos') posCovered.add(key(entry.venue, entry.serviceDate));
+  }
+  return entries.filter(
+    (entry) => !(IMPORT_TIP_SOURCES.has(entry.source) && posCovered.has(key(entry.venue, entry.serviceDate)))
+  );
+}

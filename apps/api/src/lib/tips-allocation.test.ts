@@ -124,3 +124,43 @@ describe('allocateTipsByVenue', () => {
     assert.equal(result.entitlements[0]?.amountCents, 10000);
   });
 });
+
+import { posFirstCardEntries } from './tips-allocation.js';
+
+const cardRow = (venue: string, day: string, source: string, amountCents: number) => ({
+  venue,
+  serviceDate: new Date(`${day}T00:00:00.000Z`),
+  source,
+  amountCents
+});
+
+it('POS-first tips: the register wins over an import on the same venue+day', () => {
+  const kept = posFirstCardEntries([
+    cardRow('St Alma', '2026-08-19', 'alma-pos', 5000),
+    cardRow('St Alma', '2026-08-19', 'square', 5000)
+  ]);
+  assert.deepEqual(kept.map((r) => r.source), ['alma-pos']);
+});
+
+it('POS-first tips: an import stands where the register recorded nothing that day', () => {
+  const kept = posFirstCardEntries([cardRow('Alma Avalon', '2026-08-19', 'lightspeed', 4200)]);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0]!.source, 'lightspeed');
+});
+
+it('POS-first tips: the rule is per venue AND per day, not global', () => {
+  const kept = posFirstCardEntries([
+    cardRow('St Alma', '2026-08-19', 'alma-pos', 5000),
+    cardRow('St Alma', '2026-08-20', 'square', 3000),
+    cardRow('Alma Avalon', '2026-08-19', 'lightspeed', 4200)
+  ]);
+  assert.equal(kept.length, 3);
+});
+
+it('POS-first tips: manual (control) entries are always kept', () => {
+  const kept = posFirstCardEntries([
+    cardRow('St Alma', '2026-08-19', 'alma-pos', 5000),
+    cardRow('St Alma', '2026-08-19', 'control', 1200)
+  ]);
+  assert.equal(kept.length, 2);
+});
