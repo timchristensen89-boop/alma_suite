@@ -581,6 +581,24 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
    ran past the viewport with no way to scroll. */
 .pos-grid-groups { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0 20px; }
 .pos-group-head { margin: 0 0 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pos-muted, #8b939e); }
+/* Sub-folders inside a folder's page: a way back up, then a row of the
+   child folders you can drill into before the folder's own categories. */
+.pos-group-back {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--pos-line); background: transparent; color: var(--pos-muted);
+  border-radius: 9999px; font-size: 12px; font-weight: 700; padding: 5px 13px 5px 10px;
+}
+.pos-group-back:hover { color: var(--pos-text); border-color: var(--pos-accent); }
+.pos-group-subfolders { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.pos-group-subfolder {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  background: var(--pos-panel); border: 1px solid var(--pos-line); border-radius: 14px;
+  padding: 14px; min-height: 78px; color: var(--pos-text); text-align: left;
+}
+.pos-group-subfolder:hover { border-color: var(--pos-accent); background: var(--pos-raise); }
+.pos-group-subfolder .pos-nav-icon { width: 22px; height: 22px; }
+.pos-group-subfolder span { font-weight: 700; font-size: 14px; }
+.pos-group-subfolder small { color: var(--pos-muted); font-size: 11px; }
 @media (prefers-reduced-motion: reduce) { .pos-tabs button.is-tab-edit { animation: none; } }
 
 /* QR guest: dietary chips + calling the floor */

@@ -130,9 +130,20 @@ export type TabsConfig = {
   looks?: Record<string, 'tiles' | 'list'>;
   // look: how the folder's items render on the register — square tiles
   // (the Home-page look) or full-menu list rows. Absent = tiles.
-  groups: Array<{ name: string; cats: string[]; c?: string; look?: 'tiles' | 'list' }>;
+  // parent: a folder nested under another folder — a sub-folder. It is
+  // named by the parent's name, drops out of the top-level nav, and
+  // shows inside the parent's page instead. Absent = a top-level folder.
+  groups: Array<{ name: string; cats: string[]; c?: string; look?: 'tiles' | 'list'; parent?: string }>;
   icons?: Record<string, string>;
 };
+
+export type NavGroup = TabsConfig['groups'][number];
+
+// The folders nested directly under `parentName` (its sub-folders), in the
+// order they sit in the config. A top-level folder passes null.
+export function childNavGroups(config: TabsConfig, parentName: string | null): NavGroup[] {
+  return config.groups.filter((group) => (group.parent ?? null) === parentName);
+}
 
 export type HomeConfig = {
   buttons: string[];
@@ -911,7 +922,9 @@ export function visibleTabTokens(catNames: string[], config: TabsConfig): string
   const seen = new Set<string>();
   for (const token of config.order) {
     if (token.startsWith('g:')) {
-      if (config.groups.some((group) => group.name === token.slice(2)) && !seen.has(token)) {
+      // A sub-folder lives inside its parent's page, not in the top-level
+      // nav — so a nested group never earns a tab of its own here.
+      if (config.groups.some((group) => group.name === token.slice(2) && !group.parent) && !seen.has(token)) {
         tokens.push(token);
         seen.add(token);
       }
@@ -921,6 +934,7 @@ export function visibleTabTokens(catNames: string[], config: TabsConfig): string
     }
   }
   for (const group of config.groups) {
+    if (group.parent) continue;
     const token = `g:${group.name}`;
     if (!seen.has(token)) {
       tokens.push(token);

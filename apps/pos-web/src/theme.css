@@ -1486,6 +1486,16 @@ summary.pos-list-head.is-tab-edit {
 .pos-be-subrows li { display: flex; align-items: center; gap: 8px; }
 .pos-be-subrows li em { flex: 1 1 auto; font-style: normal; font-size: 13.5px; }
 
+/* Sub-folders: folders nested inside a folder, edited from within it. */
+.pos-be-subfolders { margin-top: 12px; border-top: 1px dashed var(--pos-border); padding-top: 10px; }
+.pos-be-subfoldhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pos-be-subfolder {
+  margin-top: 8px; padding: 8px 10px; border-radius: 10px;
+  background: var(--pos-panel2, rgba(0, 0, 0, 0.04)); border: 1px solid var(--pos-border);
+}
+.pos-be-subfoldtop { display: flex; align-items: center; gap: 8px; }
+.pos-be-subfoldtop .pos-be-search { flex: 1 1 auto; margin: 0; }
+
 /* Nav previews: a scaled-down read of the rail and the tab bar. */
 .pos-be-rail {
   background: #1f3524; color: #f3efe6; border-radius: 12px;
