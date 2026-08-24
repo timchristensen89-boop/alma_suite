@@ -86,6 +86,7 @@ import type {
   StaffLeaveType
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { bestVenueDaySales } from '../lib/sales-day-totals.js';
 import { env } from '../env.js';
 import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
 import { allocateTipsByVenue, posFirstCardEntries } from '../lib/tips-allocation.js';
@@ -6717,12 +6718,9 @@ export const staffService = {
 
     // A day's takings can arrive from more than one feed (POS close, emailed
     // Lightspeed summary, manual entry). They describe the same money, so the
-    // best-known figure per venue-day is the MAX, never the sum.
-    const salesByVenueDay = new Map<string, number>();
-    for (const row of sales) {
-      const key = `${row.venue}|${row.serviceDate.toISOString().slice(0, 10)}`;
-      salesByVenueDay.set(key, Math.max(salesByVenueDay.get(key) ?? 0, row.salesCents));
-    }
+    // best-known figure per venue-day is the MAX, never the sum — the shared
+    // rule every report now reads (lib/sales-day-totals).
+    const salesByVenueDay = bestVenueDaySales(sales);
 
     type PersonAgg = {
       staffProfileId: string;
