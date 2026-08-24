@@ -58,7 +58,7 @@ import { installSuiteAppAccess,
 } from '@alma/ui';
 import { SuiteSignOutButton } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
-import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
+import { api, ApiError, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import { DrinksPaymentPanel } from './DrinksPaymentPanel';
 import {
   IconClock,
@@ -731,10 +731,43 @@ function SidebarNav() {
   );
 }
 
+const ENQUIRY_QUEUE_KEY = 'alma.reserve.function-enquiries.v1';
+
+/** Replay enquiries queued while the API was unreachable. Quiet best-effort:
+    each success leaves the queue; a failure keeps the rest for next time. */
+async function drainQueuedEnquiries() {
+  let queued: Array<Record<string, string>> = [];
+  try {
+    queued = JSON.parse(window.localStorage.getItem(ENQUIRY_QUEUE_KEY) ?? '[]');
+  } catch {
+    return;
+  }
+  if (!Array.isArray(queued) || queued.length === 0) return;
+  const remaining: Array<Record<string, string>> = [];
+  for (const entry of queued) {
+    try {
+      await api('/api/reserve/public/function-enquiry', { method: 'POST', body: JSON.stringify(entry) });
+    } catch {
+      remaining.push(entry);
+    }
+  }
+  try {
+    if (remaining.length) window.localStorage.setItem(ENQUIRY_QUEUE_KEY, JSON.stringify(remaining));
+    else window.localStorage.removeItem(ENQUIRY_QUEUE_KEY);
+  } catch {
+    /* storage unavailable — the entries already sent are sent */
+  }
+}
+
 function FunctionEnquiryPanel({ venue }: { venue: string }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  // 'sent' = the API took it; 'queued' = saved on this device only. The two
+  // must never share the green tick — a queued enquiry has NOT reached the
+  // events team, and telling the guest it had was how the best leads on the
+  // site quietly vanished.
+  const [outcome, setOutcome] = useState<null | 'sent' | 'queued'>(null);
+  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
     contactName: '',
     email: '',
@@ -745,38 +778,72 @@ function FunctionEnquiryPanel({ venue }: { venue: string }) {
     notes: ''
   });
 
+  // Anything stranded by an earlier outage goes on the next successful visit.
+  useEffect(() => {
+    void drainQueuedEnquiries();
+  }, []);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
+    setError(null);
     try {
       await api('/api/reserve/public/function-enquiry', {
         method: 'POST',
         body: JSON.stringify({ venue, ...form })
       });
-      setSubmitted(true);
-    } catch {
-      // Endpoint not deployed yet — fall back to localStorage queue so the
-      // enquiry isn't lost. Venue team can drain it once API ships.
-      try {
-        const existing = JSON.parse(window.localStorage.getItem('alma.reserve.function-enquiries.v1') ?? '[]');
-        existing.push({ venue, ...form, submittedAt: new Date().toISOString() });
-        window.localStorage.setItem('alma.reserve.function-enquiries.v1', JSON.stringify(existing));
-        setSubmitted(true);
-      } catch {
-        /* swallow */
+      setOutcome('sent');
+      void drainQueuedEnquiries();
+    } catch (err) {
+      const status = err instanceof ApiError ? err.status : null;
+      if (status === 0) {
+        // Genuinely unreachable (offline, DNS, server down) — queue on this
+        // device and SAY that is what happened, never the green tick.
+        try {
+          const existing = JSON.parse(window.localStorage.getItem(ENQUIRY_QUEUE_KEY) ?? '[]');
+          existing.push({ venue, ...form, submittedAt: new Date().toISOString() });
+          window.localStorage.setItem(ENQUIRY_QUEUE_KEY, JSON.stringify(existing));
+          setOutcome('queued');
+        } catch {
+          setError('We could not reach our booking system and could not save your enquiry — please call the venue.');
+        }
+      } else if (status === 429) {
+        setError('Our booking system is busy right now — wait a few seconds and press send again.');
+      } else {
+        // A real 4xx/5xx: the server answered and refused. Show it — a fake
+        // success here loses the lead AND tells the guest not to follow up.
+        setError(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Something went wrong sending your enquiry — please try again, or call the venue.'
+        );
       }
     } finally {
       setSubmitting(false);
     }
   }
 
-  if (submitted) {
+  if (outcome === 'sent') {
     return (
       <div className="function-enquiry-success">
         <div className="function-enquiry-success-icon" aria-hidden="true">✓</div>
         <div>
           <strong>Enquiry sent</strong>
           <p>Thanks — our events team will reply within 1 business day to discuss your function.</p>
+        </div>
+      </div>
+    );
+  }
+  if (outcome === 'queued') {
+    return (
+      <div className="function-enquiry-success">
+        <div className="function-enquiry-success-icon" aria-hidden="true">…</div>
+        <div>
+          <strong>Saved on this device — not sent yet</strong>
+          <p>
+            We could not reach our booking system just now. Your enquiry is saved in this browser and will send
+            automatically next time this page loads with a connection — or call the venue to be sure.
+          </p>
         </div>
       </div>
     );
@@ -813,6 +880,7 @@ function FunctionEnquiryPanel({ venue }: { venue: string }) {
             onChange={(e) => setForm({ ...form, notes: e.currentTarget.value })}
             placeholder="Dietary requirements, dining style, special requests…"
           />
+          {error ? <p className="error-text">{error}</p> : null}
           <div className="toolbar-right">
             <Button type="submit" disabled={submitting}>{submitting ? 'Sending…' : 'Send enquiry'}</Button>
           </div>
@@ -1950,6 +2018,7 @@ type EnquiryThread = {
     authorName: string | null;
     deliveryStatus: string | null;
     deliveryError: string | null;
+    matchedBy?: string | null;
     createdAt: string;
   }>;
   clashes: Array<{
@@ -2205,6 +2274,16 @@ function EnquiriesSection() {
                       <small>{enquiryWhen(message.createdAt)}</small>
                     </header>
                     <p>{message.body}</p>
+                    {message.direction === 'INBOUND' && message.matchedBy === 'sender-address' ? (
+                      // Matched to this thread by the From address alone — a
+                      // header anyone can forge. Say so where the reply is
+                      // read, so nobody acts on "change my booking to…" from
+                      // an email that only CLAIMS to be the guest.
+                      <small className="enquiries-failed">
+                        Matched by sender address only — the email did not reference this thread. Verify with the guest
+                        before acting on anything it asks.
+                      </small>
+                    ) : null}
                     {message.deliveryStatus && message.deliveryStatus !== 'sent' ? (
                       <small className="enquiries-failed">
                         Not delivered{message.deliveryError ? `: ${message.deliveryError}` : ''}

@@ -3843,13 +3843,22 @@ export const staffService = {
     }
 
     const scopedVenue = scopeVenueForActor(undefined, actor);
+    // A PERSON's roster is every shift of theirs, wherever it is — someone
+    // homed at St Alma covering an Avalon Saturday must see that shift in
+    // the app exactly as the publish email, push and calendar feed already
+    // show it. The venue scope is for the venue-wide board query only;
+    // applied to a self-scoped query it silently hid the cross-venue shift
+    // (and miscounted upcoming/pending), so the app contradicted the email.
+    const personScoped = Boolean(staffProfileId) || actor?.role === 'STAFF';
 
     const rows = await prisma.rosterShift.findMany({
       where: {
         startsAt: { lt: endDate },
         endsAt: { gt: startDate },
         ...(staffProfileId ? { staffProfileId } : actor?.role === 'STAFF' ? { staffProfileId: actor.id } : {}),
-        ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
+        ...(!personScoped && scopedVenue
+          ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] }
+          : {})
       },
       orderBy: [{ startsAt: 'asc' }],
       include: {

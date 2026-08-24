@@ -861,6 +861,18 @@ staffRouter.get('/me/push', async (req, res, next) => {
   }
 });
 
+// Is this browser's subscription registered to THIS account? POST because a
+// push endpoint is a long URL that has no place in a query string or a log.
+staffRouter.post('/me/push/status', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to manage notifications.');
+    const body = (req.body ?? {}) as { endpoint?: string };
+    res.json({ thisDevice: await pushService.ownsEndpoint(req.user.id, String(body.endpoint ?? '')) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.post('/me/push/subscribe', async (req, res, next) => {
   try {
     if (!req.user?.id) throw new HttpError(401, 'Sign in to turn on notifications.');

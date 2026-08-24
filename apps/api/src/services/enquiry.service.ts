@@ -10,7 +10,7 @@ import {
   venueWeekday,
   type DayAvailability
 } from '../lib/enquiry-availability.js';
-import { buildEnquiryDraft, type EnquiryDraft } from '../lib/enquiry-draft.js';
+import { buildEnquiryDraft, canonicalVenue, type EnquiryDraft } from '../lib/enquiry-draft.js';
 import { mailService } from './mail.service.js';
 
 /**
@@ -251,18 +251,35 @@ export const enquiryService = {
    * exists to stop.
    */
   async capture(input: EnquiryInput, options: { source?: string; enquiryType?: string } = {}) {
-    const venue = text(input.venue);
-    const contactName = text(input.contactName) || text(input.name);
-    const email = optionalText(input.email);
-    if (!venue || !contactName || !email) {
+    // The ONE public write on this surface — anyone on the internet reaches
+    // it, so it validates like one. Lengths are capped (a 2MB "name" is a
+    // probe, not a guest), the email has to look like an address (a reply
+    // will be sent to it), and the venue must be one of OURS — a free-text
+    // venue string became a row a manager then had to route by hand, and let
+    // junk fan out into the venue filters.
+    const clip = (value: string | null, max: number) => (value ? value.slice(0, max) : null);
+    const rawVenue = clip(text(input.venue), 120) ?? '';
+    const contactName = clip(text(input.contactName) || text(input.name), 120) ?? '';
+    const email = clip(optionalText(input.email), 254);
+    if (!rawVenue || !contactName || !email) {
       throw new HttpError(400, 'Venue, contact name, and email are required');
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new HttpError(400, 'That email address does not look right — check it and try again.');
+    }
+    const venueRows = await prisma.venue.findMany({ select: { name: true } });
+    // With no venues configured yet (a fresh install) the free text passes;
+    // once venues exist, an enquiry must name one of them.
+    const venue = venueRows.length > 0 ? canonicalVenue(rawVenue, venueRows.map((row) => row.name)) : rawVenue;
+    if (!venue) {
+      throw new HttpError(400, 'Pick one of our venues for your enquiry.');
+    }
 
-    const externalRef = optionalText(input.externalRef);
+    const externalRef = clip(optionalText(input.externalRef), 190);
     const eventDate = eventDateOf(input.eventDate);
     const partySize = partySizeOf(input);
-    const notes = optionalText(input.notes) ?? optionalText(input.message);
-    const eventType = optionalText(input.eventType);
+    const notes = clip(optionalText(input.notes) ?? optionalText(input.message), 4000);
+    const eventType = clip(optionalText(input.eventType), 80);
     const source = text(options.source) || text(input.source) || 'public-widget';
     const enquiryType = text(options.enquiryType) || text(input.enquiryType) || 'function';
     const subject = `${venue} enquiry — ${contactName}`;
@@ -283,7 +300,7 @@ export const enquiryService = {
           externalRef,
           contactName,
           email,
-          phone: optionalText(input.phone),
+          phone: clip(optionalText(input.phone), 40),
           venue,
           eventType,
           eventDate,
@@ -464,6 +481,7 @@ export const enquiryService = {
         authorName: message.authorName,
         deliveryStatus: message.deliveryStatus,
         deliveryError: message.deliveryError,
+        matchedBy: message.matchedBy,
         createdAt: message.createdAt.toISOString()
       })),
       clashes,
@@ -667,6 +685,10 @@ export const enquiryService = {
     const quoted = [...messageIdsFrom(headers['in-reply-to']), ...messageIdsFrom(headers.references)];
 
     let enquiryId: string | null = null;
+    // Recorded on the message: 'message-id' is exact (the client quoted our
+    // Message-ID back); 'sender-address' is best-effort AND SPOOFABLE — a
+    // From header is free to forge, so the inbox shows a caution on those.
+    let matchedBy: 'message-id' | 'sender-address' = 'message-id';
     if (quoted.length > 0) {
       const prior = await prisma.reserveEnquiryMessage.findFirst({
         where: { messageId: { in: quoted } },
@@ -682,6 +704,7 @@ export const enquiryService = {
         select: { id: true }
       });
       enquiryId = open?.id ?? null;
+      matchedBy = 'sender-address';
     }
     if (!enquiryId) return { matched: false, reason: `No open enquiry for ${email}` };
 
@@ -698,7 +721,8 @@ export const enquiryService = {
         body: stripQuotedReply(bodyRaw),
         authorName: from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() || email,
         messageId,
-        inReplyTo: quoted[quoted.length - 1] ?? null
+        inReplyTo: quoted[quoted.length - 1] ?? null,
+        matchedBy
       }
     });
     // The guest is now waiting on us, so it goes back on the needs-a-human
