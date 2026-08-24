@@ -85,6 +85,45 @@ recipesRouter.patch('/categories/:id', async (req, res, next) => {
   }
 });
 
+// ── Price windows (Taco Tuesday etc.) ────────────────────────────────────
+// The whole write path for weekday pricing — the register/QR read the rows
+// live, so a manager edits here instead of anyone running a script.
+
+recipesRouter.get('/:id/price-windows', async (req, res, next) => {
+  try {
+    res.json(await recipesService.listPriceWindows(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+recipesRouter.post('/:id/price-windows', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.status(201).json(await recipesService.createPriceWindow(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+recipesRouter.patch('/price-windows/:windowId', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await recipesService.updatePriceWindow(String(req.params.windowId), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+recipesRouter.delete('/price-windows/:windowId', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await recipesService.deletePriceWindow(String(req.params.windowId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 recipesRouter.get('/:id/cost', async (req, res, next) => {
   try {
     res.json(await recipesService.cost(String(req.params.id)));

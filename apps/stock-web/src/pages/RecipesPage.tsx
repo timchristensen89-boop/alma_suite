@@ -1524,6 +1524,9 @@ function RecipeForm({
           Production recipes are reusable prep or batch items. Add them to item recipes as production recipe ingredient lines once the batch is saved.
         </p>
       ) : null}
+      {pageMode !== 'production' && mode === 'edit' && initial ? (
+        <PriceWindowsEditor recipeId={initial.id} basePriceLabel={draft.salePrice ? `$${draft.salePrice}` : 'the sale price'} />
+      ) : null}
       <div className="form-grid three">
         <Select label="Category" value={draft.category} onChange={(event) => update('category', event.currentTarget.value)} options={categoryOptions} />
         <Input label="Subcategory" value={draft.subcategory} onChange={(event) => update('subcategory', event.currentTarget.value)} />
@@ -2769,5 +2772,209 @@ function SetMenuComponentsPanel({
         )
       ) : null}
     </div>
+  );
+}
+
+
+// ── Weekday pricing (price windows) ──────────────────────────────────────
+// Taco Tuesday at $5; a Tuesday-only board. These rows are read LIVE by the
+// register, the QR menu and QR ordering — saving here changes what the till
+// charges on those days, no script and no deploy. Edits apply immediately
+// (they are separate rows, not part of the recipe's Save).
+function PriceWindowsEditor({ recipeId, basePriceLabel }: { recipeId: string; basePriceLabel: string }) {
+  type PriceWindow = {
+    id: string;
+    label: string;
+    weekdays: string;
+    priceCents: number;
+    onlyWindow: boolean;
+    active: boolean;
+  };
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const { user } = useAuth();
+  const canEdit = canManageStock(user);
+  const [rows, setRows] = useState<PriceWindow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState<{ label: string; days: number[]; price: string; onlyWindow: boolean }>({
+    label: '',
+    days: [],
+    price: '',
+    onlyWindow: false
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    api<PriceWindow[]>(`/api/recipes/${recipeId}/price-windows`)
+      .then((data) => {
+        if (!cancelled) setRows(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load weekday pricing.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [recipeId]);
+
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the change.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const dayLabel = (csv: string) => {
+    const days = csv.split(',').filter(Boolean).map(Number);
+    if (days.length === 7) return 'Every day';
+    return days.map((day) => DAYS[day] ?? '?').join(' · ');
+  };
+
+  return (
+    <fieldset className="form-fieldset">
+      <legend>Weekday pricing</legend>
+      <p className="form-hint">
+        A different price on chosen days — the register, QR menu and QR ordering all apply it themselves on the
+        day (Taco Tuesday is these). &ldquo;Only offered on these days&rdquo; hides the dish everywhere on every
+        other day, for boards that exist one day a week. Changes here are live immediately; the rest of the
+        week the dish sells at {basePriceLabel}.
+      </p>
+      {error ? <p className="error-text">{error}</p> : null}
+      {rows === null && !error ? <Spinner label="Loading weekday pricing…" /> : null}
+      {rows !== null && rows.length === 0 && !adding ? (
+        <p className="form-hint">No weekday pricing on this dish.</p>
+      ) : null}
+      {(rows ?? []).map((row) => (
+        <div key={row.id} className="price-window-row">
+          <span className="price-window-main">
+            <strong>{row.label}</strong>
+            <small>
+              {dayLabel(row.weekdays)} · ${(row.priceCents / 100).toFixed(2)}
+              {row.onlyWindow ? ' · only offered on these days' : ''}
+              {row.active ? '' : ' · OFF'}
+            </small>
+          </span>
+          {canEdit ? (
+            <span className="price-window-actions">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    const updated = await api<PriceWindow>(`/api/recipes/price-windows/${row.id}`, {
+                      method: 'PATCH',
+                      body: JSON.stringify({ active: !row.active })
+                    });
+                    setRows((current) => (current ?? []).map((entry) => (entry.id === row.id ? updated : entry)));
+                  })
+                }
+              >
+                {row.active ? 'Turn off' : 'Turn on'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="danger"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    await api(`/api/recipes/price-windows/${row.id}`, { method: 'DELETE' });
+                    setRows((current) => (current ?? []).filter((entry) => entry.id !== row.id));
+                  })
+                }
+              >
+                Remove
+              </Button>
+            </span>
+          ) : null}
+        </div>
+      ))}
+      {canEdit && adding ? (
+        <div className="price-window-add">
+          <div className="form-grid">
+            <Input
+              label="Label"
+              value={draft.label}
+              placeholder="Taco Tuesday"
+              onChange={(event) => setDraft({ ...draft, label: event.currentTarget.value })}
+            />
+            <Input
+              label="Price on those days ($)"
+              type="number"
+              step="0.01"
+              value={draft.price}
+              onChange={(event) => setDraft({ ...draft, price: event.currentTarget.value })}
+            />
+          </div>
+          <div className="price-window-days">
+            {DAYS.map((name, day) => (
+              <button
+                key={name}
+                type="button"
+                className={draft.days.includes(day) ? 'is-on' : ''}
+                onClick={() =>
+                  setDraft({
+                    ...draft,
+                    days: draft.days.includes(day) ? draft.days.filter((d) => d !== day) : [...draft.days, day]
+                  })
+                }
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+          <label className="price-window-only">
+            <input
+              type="checkbox"
+              checked={draft.onlyWindow}
+              onChange={(event) => setDraft({ ...draft, onlyWindow: event.currentTarget.checked })}
+            />
+            <span>Only offered on these days — hidden from the register and QR menu the rest of the week</span>
+          </label>
+          <div className="price-window-actions">
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const priceCents = Math.round(Number(draft.price) * 100);
+                  const created = await api<PriceWindow>(`/api/recipes/${recipeId}/price-windows`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      label: draft.label,
+                      weekdays: draft.days,
+                      priceCents,
+                      onlyWindow: draft.onlyWindow
+                    })
+                  });
+                  setRows((current) => [...(current ?? []), created]);
+                  setDraft({ label: '', days: [], price: '', onlyWindow: false });
+                  setAdding(false);
+                })
+              }
+            >
+              Add window
+            </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {canEdit && !adding ? (
+        <Button type="button" size="sm" variant="secondary" onClick={() => setAdding(true)}>
+          + Add weekday pricing
+        </Button>
+      ) : null}
+    </fieldset>
   );
 }

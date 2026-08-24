@@ -1727,5 +1727,95 @@ export const recipesService = {
       where: { id: { in: uniqueIds } }
     });
     return { deleted: result.count };
+  },
+
+  // ── Price windows ──────────────────────────────────────────────────────
+  // Weekday pricing on a dish (Taco Tuesday at $5; a Tuesday-only board).
+  // The register, the QR menu and QR ordering all read these rows live —
+  // this editor is the whole write path, so a manager can change a window
+  // without anyone running a script against the database.
+
+  async listPriceWindows(recipeId: string) {
+    const recipe = await prisma.recipe.findUnique({ where: { id: recipeId }, select: { id: true } });
+    if (!recipe) throw new HttpError(404, 'Recipe not found');
+    return prisma.posPriceWindow.findMany({ where: { recipeId }, orderBy: { createdAt: 'asc' } });
+  },
+
+  async createPriceWindow(recipeId: string, input: unknown) {
+    const recipe = await prisma.recipe.findUnique({
+      where: { id: recipeId },
+      select: { id: true, salePriceCents: true }
+    });
+    if (!recipe) throw new HttpError(404, 'Recipe not found');
+    const data = parsePriceWindowInput(input, { partial: false });
+    // partial:false guarantees the three required fields threw if absent.
+    return prisma.posPriceWindow.create({
+      data: {
+        recipeId,
+        label: data.label!,
+        weekdays: data.weekdays!,
+        priceCents: data.priceCents!,
+        onlyWindow: data.onlyWindow ?? false,
+        ...(data.active !== undefined ? { active: data.active } : {})
+      }
+    });
+  },
+
+  async updatePriceWindow(windowId: string, input: unknown) {
+    const existing = await prisma.posPriceWindow.findUnique({ where: { id: windowId } });
+    if (!existing) throw new HttpError(404, 'Price window not found');
+    const data = parsePriceWindowInput(input, { partial: true });
+    return prisma.posPriceWindow.update({ where: { id: windowId }, data });
+  },
+
+  async deletePriceWindow(windowId: string) {
+    const existing = await prisma.posPriceWindow.findUnique({ where: { id: windowId }, select: { id: true } });
+    if (!existing) throw new HttpError(404, 'Price window not found');
+    await prisma.posPriceWindow.delete({ where: { id: windowId } });
+    return { deleted: true };
   }
 };
+
+/**
+ * Validate a price-window write. Strict on purpose: these rows change what
+ * the register CHARGES, so a malformed weekday list or a $0 price must be
+ * refused here, not discovered on a Tuesday night.
+ */
+function parsePriceWindowInput(
+  input: unknown,
+  options: { partial: boolean }
+): { label?: string; weekdays?: string; priceCents?: number; onlyWindow?: boolean; active?: boolean } {
+  const body = (input ?? {}) as Record<string, unknown>;
+  const out: { label?: string; weekdays?: string; priceCents?: number; onlyWindow?: boolean; active?: boolean } = {};
+
+  if (body.label !== undefined || !options.partial) {
+    const label = String(body.label ?? '').trim().slice(0, 60);
+    if (!label) throw new HttpError(400, 'Give the window a label — it is how reports say why a line rang at this price.');
+    out.label = label;
+  }
+
+  if (body.weekdays !== undefined || !options.partial) {
+    // Accepted as an array of JS weekday numbers (0=Sun..6=Sat) or the csv
+    // the row stores. Stored as csv, the same shape PosRule uses.
+    const raw = Array.isArray(body.weekdays)
+      ? body.weekdays
+      : String(body.weekdays ?? '').split(',').filter(Boolean);
+    const days = [...new Set(raw.map((entry) => Number(entry)))].filter(
+      (day) => Number.isInteger(day) && day >= 0 && day <= 6
+    );
+    if (days.length === 0) throw new HttpError(400, 'Pick at least one day for the window.');
+    out.weekdays = days.sort((a, b) => a - b).join(',');
+  }
+
+  if (body.priceCents !== undefined || !options.partial) {
+    const priceCents = Number(body.priceCents);
+    if (!Number.isInteger(priceCents) || priceCents < 1) {
+      throw new HttpError(400, 'The window price must be at least 1 cent — the register hides $0 dishes.');
+    }
+    out.priceCents = priceCents;
+  }
+
+  if (body.onlyWindow !== undefined) out.onlyWindow = Boolean(body.onlyWindow);
+  if (body.active !== undefined) out.active = Boolean(body.active);
+  return out;
+}

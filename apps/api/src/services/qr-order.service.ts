@@ -217,9 +217,13 @@ export const qrOrderService = {
     const qrHiddenCats = new Set(
       qrHides.filter((hide) => hide.kind === 'QR_CATEGORY').map((hide) => hide.key.toLowerCase())
     );
+    // Say it before they order: the same weekend/holiday surcharge the
+    // register applies is charged at checkout, so the page must show it.
+    const surcharge = await posService.currentSurcharge();
     return {
       venue,
       tableLabel,
+      ...(surcharge ? { surcharge } : {}),
       categories: dayMenu
         .filter((category) => !qrHiddenCats.has(category.name.toLowerCase()))
         .map((category) => ({
@@ -352,8 +356,15 @@ export const qrOrderService = {
     // send the guest to Square; confirmPaid turns it into real lines once the
     // money is in. An abandoned checkout leaves a dead row here rather than
     // phantom items on a table that a server has to notice and strip out.
-    const totalCents = wanted.reduce((sum, line) => sum + priceToday(line.recipeId) * line.quantity, 0);
-    if (totalCents <= 0) throw new HttpError(400, 'That order came to nothing — please order with your server.');
+    const goodsCents = wanted.reduce((sum, line) => sum + priceToday(line.recipeId) * line.quantity, 0);
+    if (goodsCents <= 0) throw new HttpError(400, 'That order came to nothing — please order with your server.');
+    // The register's weekend/holiday surcharge, applied here too. When these
+    // lines land on the table's bill, recomputeOrder adds the bill-side
+    // surcharge on them — charging it at checkout is what makes the guest's
+    // payment cover that share instead of leaving the table under-paid.
+    const surcharge = await posService.currentSurcharge();
+    const surchargeCents = surcharge ? Math.round((goodsCents * surcharge.percent) / 100) : 0;
+    const totalCents = goodsCents + surchargeCents;
 
     const pending = await prisma.posQrPendingOrder.create({
       data: {

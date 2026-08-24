@@ -903,6 +903,17 @@ export function sanitizeHomescreenPins(raw: unknown): SavedPin[] {
 }
 
 export const posService = {
+  /**
+   * The surcharge in force right now (Sydney) — weekend or public-holiday.
+   * The QR guest flow reads this so a phone order pays the same 10%/15% the
+   * register applies; without it every weekend QR round leaked the surcharge
+   * and left the table's bill under-collected by exactly that share.
+   */
+  async currentSurcharge(): Promise<{ label: string; percent: number } | null> {
+    const { surcharge } = await applicableRules();
+    return surcharge ? { label: surcharge.label, percent: surcharge.percent } : null;
+  },
+
   // The sellable menu, grouped for the register grid: active non-prep recipes
   // with a price, plus set menus. Categories keep the recipe's own category.
   async registerMenu() {
