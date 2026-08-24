@@ -21,7 +21,7 @@ import type { AuthUser } from '@alma/shared';
 import type { IntegrationConnection } from '@prisma/client';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
-import { deputyBreakMinutes, deputyIsLeave } from '../lib/deputy-timesheet.js';
+import { deputyBreakMinutes, deputyIsLeave, deputyWorkDate } from '../lib/deputy-timesheet.js';
 import {
   decryptIntegrationSecret,
   encryptIntegrationSecret
@@ -1244,7 +1244,11 @@ export async function syncTimesheets(
       venue: venue || null,
       area: area || null,
       roleTitle: area || profile.roleTitle,
-      workDate: clockInAt,
+      // The DAY worked, pinned in the venue's zone — not the raw clock-in
+      // instant, whose UTC date is the day before for a weekend morning and
+      // pushed those hours to the wrong award rate. clockInAt/clockOutAt keep
+      // the real times.
+      workDate: deputyWorkDate(clockInAt),
       clockInAt,
       clockOutAt,
       breakMinutes,

@@ -22,10 +22,11 @@ function needsManagerPin(req: { user?: { role?: string; isAdmin?: boolean } | nu
   return user.role !== 'MANAGER' && user.role !== 'ADMIN' && !user.isAdmin;
 }
 
-// Constant-time check of the optional print-station secret.
+// Constant-time check of the print-station secret. Production refuses to boot
+// without one (env.ts), so an empty expected only happens in local dev.
 function printSecretOk(provided: string): boolean {
   const expected = env.posPrintSecret;
-  if (!expected) return true; // secret not configured — endpoint stays open
+  if (!expected) return true; // dev only — prod always has a secret configured
   if (!provided) return false;
   const a = Buffer.from(provided);
   const b = Buffer.from(expected);
@@ -34,9 +35,9 @@ function printSecretOk(provided: string): boolean {
 
 posRouter.use((req, _res, next) => {
   // The printers and the print-bridge poll these two endpoints with no session.
-  // When POS_PRINT_SECRET is set they must present it (?k=… or the
-  // x-alma-print-secret header); when it is empty the endpoints stay open, so
-  // nothing breaks until the station URLs are updated in a maintenance window.
+  // They must present POS_PRINT_SECRET (?k=… or the x-alma-print-secret header);
+  // it is required in production (env.ts), so these endpoints are never open to
+  // an anonymous caller there. Empty is tolerated only in local dev.
   const printPath = req.path.startsWith('/print-poll/') || req.path === '/print-stations';
   if (printPath) {
     const provided = typeof req.query.k === 'string' ? req.query.k : req.header('x-alma-print-secret') ?? '';

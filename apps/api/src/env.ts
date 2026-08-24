@@ -106,6 +106,15 @@ if (isProduction) {
   if (localOrigin) {
     throw new Error(`Production CORS origin must not be localhost: ${localOrigin}`);
   }
+  // The kitchen/till print endpoints answer with no session — the print
+  // secret is their only credential. With it empty they are open to anyone on
+  // the venue wifi: drain dockets and receipts mid-service, read live bill
+  // contents and printer LAN IPs. Refuse to boot without it, like JWT_SECRET.
+  // Set POS_PRINT_SECRET here, in the print-bridge, and on any Epson station
+  // URL (?k=…) together, or printing stops.
+  if (!process.env.POS_PRINT_SECRET) {
+    throw new Error('POS_PRINT_SECRET is required in production — it is the only credential on the public print endpoints');
+  }
 }
 
 export const env = {
@@ -115,9 +124,10 @@ export const env = {
   corsOrigin: isProduction ? configuredCorsOrigins : configuredCorsOrigins.length > 0 ? configuredCorsOrigins : localCorsOrigins,
   sessionSecret,
   suiteAuthSecret: process.env.SUITE_AUTH_SECRET ?? sessionSecret,
-  // Optional shared secret the kitchen printers / print-bridge present on
-  // the public print-poll and print-station endpoints. Empty = off (the
-  // current behaviour), so nothing breaks until the station URLs carry it.
+  // Shared secret the kitchen printers / print-bridge present on the public
+  // print-poll and print-station endpoints. Required in production (guarded
+  // above); empty is only tolerated in local dev, where the endpoints stay
+  // open for convenience.
   posPrintSecret: process.env.POS_PRINT_SECRET ?? '',
   isProduction,
   sessionCookieName: 'alma.sid',

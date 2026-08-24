@@ -110,6 +110,10 @@ app.use(['/api/device/staff-pin-login', '/api/device/pin-login', '/api/pos/manag
 app.use(['/api/gift-cards/redeem', '/api/gift-cards/promo/quote', '/api/gift-cards/session', '/api/gift-cards/print', '/api/gift-cards/qr'], limiter(5, 100));
 // Reserve public routes create guest rows and Stripe intents anonymously.
 app.use(['/api/reserve/public', '/api/reserve/public-widget'], limiter(10, 60));
+// The print poll answers with no session (the station cuid + POS_PRINT_SECRET
+// are the credential). Real printers poll every few seconds, so this is high —
+// but still blunts a flood or an attempt to sweep station ids. Per venue-NAT-IP.
+app.use('/api/pos/print-poll', limiter(1, 600));
 
 // Auth middleware runs on every request — populates req.user from cookie and
 // rejects API calls that aren't on the allowlist of public paths.
