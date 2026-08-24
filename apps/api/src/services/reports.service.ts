@@ -3,6 +3,8 @@ import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { staffCostingRate, splitOvertimeHours, costForRate, weeklyFixedCostCents, salariedVenueAllocations, staffPayRateSelect } from '../lib/staff-pay-rates.js';
 import {
+  GST_RATE,
+  exGstCents,
   PRICE_BANDS,
   agingWines,
   bottlePriceCents,
@@ -46,6 +48,7 @@ import {
 import { HttpError } from '../lib/http.js';
 import { isSuspectRecipeCost } from '../lib/cogs-quality.js';
 import { allocatePackageRevenue } from '../lib/banquet-allocation.js';
+import { bestVenueDaySales, dedupedSalesByVenue, dedupedSalesCents } from '../lib/sales-day-totals.js';
 import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { mailService } from './mail.service.js';
 import { integrationService } from './integration.service.js';
@@ -950,12 +953,18 @@ async function recapPeriod(venue: string | null, start: Date, end: Date, label: 
   // COGS comes from the suite-wide canonical helper (ex-GST, finalised stock
   // purchases, stocktake-bounded with a purchases-only fallback) so the Recap
   // agrees with the Stock dashboard and Prime Cost report to the cent.
-  const [salesAgg, wageCents, cogs] = await Promise.all([
-    prisma.salesActualEntry.aggregate({ where: { serviceDate: { gte: start, lt: end }, ...(venue ? { venue } : {}) }, _sum: { salesCents: true } }),
+  const [salesRows, wageCents, cogs] = await Promise.all([
+    // One figure per venue-day, however many feeds reported it (POS close +
+    // Square/Lightspeed import + manual describe the same money) — a plain
+    // SUM double-counted every day two feeds covered.
+    prisma.salesActualEntry.findMany({
+      where: { serviceDate: { gte: start, lt: end }, ...(venue ? { venue } : {}) },
+      select: { venue: true, serviceDate: true, salesCents: true }
+    }),
     recapWageCents(venue, start, end),
     computeActualCogs({ venue, start, end })
   ]);
-  const salesCents = salesAgg._sum.salesCents ?? 0;
+  const salesCents = dedupedSalesCents(salesRows);
   const { cogsCents, purchasesCents, openingStockCents, closingStockCents, quality: stockQuality } = cogs;
   const primeCostCents = wageCents + cogsCents;
   const pct = (n: number) => (salesCents > 0 ? Math.round((n / salesCents) * 1000) / 10 : null);
@@ -1177,10 +1186,13 @@ export const reportsService = {
       return current;
     };
 
-    for (const entry of salesEntries) {
-      const row = rowFor(entry.venue);
-      row.salesCents += entry.salesCents;
-      row.salesDays.add(entry.serviceDate.toISOString().slice(0, 10));
+    // One figure per venue-day across feeds — same rule as the recap and the
+    // labour view; summing raw rows double-counted multi-source days.
+    for (const [key, cents] of bestVenueDaySales(salesEntries)) {
+      const at = key.lastIndexOf('|');
+      const row = rowFor(key.slice(0, at));
+      row.salesCents += cents;
+      row.salesDays.add(key.slice(at + 1));
     }
     // Cumulative weekly hours per staff for overtime (salaried full-timers >45h/wk).
     const actualWeekHours = new Map<string, number>();
@@ -1638,16 +1650,14 @@ export const reportsService = {
       orderBy: [{ serviceDate: 'asc' }, { venue: 'asc' }, { source: 'asc' }]
     });
 
-    const byVenue = Array.from(
-      entries.reduce((map, entry) => {
-        const current = map.get(entry.venue) ?? { venue: entry.venue, salesCents: 0, days: new Set<string>() };
-        current.salesCents += entry.salesCents;
-        current.days.add(entry.serviceDate.toISOString().slice(0, 10));
-        map.set(entry.venue, current);
-        return map;
-      }, new Map<string, { venue: string; salesCents: number; days: Set<string> }>())
-        .values()
-    ).map((row) => ({ venue: row.venue, salesCents: row.salesCents, days: row.days.size }));
+    // The rows below list every feed's entry (each labelled with its source);
+    // the venue totals take ONE figure per venue-day — two feeds reporting the
+    // same night describe the same money, and summing them inflated the total.
+    const byVenue = Array.from(dedupedSalesByVenue(entries)).map(([venue, row]) => ({
+      venue,
+      salesCents: row.salesCents,
+      days: row.days
+    }));
 
     return {
       entries: entries.map((entry) => ({
@@ -1925,8 +1935,18 @@ export const reportsService = {
 
     const revenueCents = packageRevenueCents + supplementRevenueCents;
     const round = (value: number) => Math.round(value);
-    const marginPercent = (revenue: number, cost: number) =>
-      revenue > 0 ? Math.round(((revenue - cost) / revenue) * 1000) / 10 : null;
+    // Margins are EX-GST on both sides, same convention as the wine report:
+    // revenue rings GST-inclusive at the till, recipe costs come off the
+    // stocktake ex-GST, and comparing them raw counted the GST as margin —
+    // about nine points high. The revenueCents columns stay inclusive on
+    // purpose (they reconcile against the day's takings); only the margin
+    // arithmetic strips the GST.
+    const marginPercent = (revenue: number, cost: number) => {
+      if (revenue <= 0) return null;
+      const net = exGstCents(revenue);
+      return net > 0 ? Math.round(((net - cost) / net) * 1000) / 10 : null;
+    };
+    const marginCents = (revenue: number, cost: number) => round(exGstCents(revenue) - cost);
 
     return {
       range: { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) },
@@ -1938,7 +1958,7 @@ export const reportsService = {
         supplementRevenueCents,
         revenueCents,
         costCents: round(costCents),
-        marginCents: round(revenueCents - costCents),
+        marginCents: marginCents(revenueCents, costCents),
         marginPercent: marginPercent(revenueCents, costCents),
         revenuePerCoverCents: covers > 0 ? Math.round(revenueCents / covers) : 0,
         costPerCoverCents: covers > 0 ? Math.round(costCents / covers) : 0
@@ -1961,7 +1981,7 @@ export const reportsService = {
             supplementRevenueCents: row.supplementRevenueCents,
             revenueCents: round(dishRevenue),
             costCents: round(row.costCents),
-            marginCents: round(dishRevenue - row.costCents),
+            marginCents: marginCents(dishRevenue, row.costCents),
             marginPercent: marginPercent(dishRevenue, row.costCents),
             costed: row.costed,
             menus: [...row.menus].sort()
@@ -1976,7 +1996,7 @@ export const reportsService = {
           covers: row.covers,
           revenueCents: row.revenueCents,
           costCents: round(row.costCents),
-          marginCents: round(row.revenueCents - row.costCents),
+          marginCents: marginCents(row.revenueCents, row.costCents),
           marginPercent: marginPercent(row.revenueCents, row.costCents),
           costPerCoverCents: row.covers > 0 ? Math.round(row.costCents / row.covers) : 0
         }))
@@ -1985,7 +2005,7 @@ export const reportsService = {
         .map((night) => ({
           ...night,
           costCents: round(night.costCents),
-          marginCents: round(night.revenueCents - night.costCents)
+          marginCents: marginCents(night.revenueCents, night.costCents)
         }))
         .sort((a, b) => a.date.localeCompare(b.date))
     };
@@ -2028,6 +2048,7 @@ export const reportsService = {
         },
         select: {
           serviceDate: true,
+          venue: true,
           lines: { select: { recipeId: true, quantity: true, totalCents: true, isGiftCard: true } }
         }
       }),
@@ -2037,7 +2058,7 @@ export const reportsService = {
           recipeId: { not: null },
           ...(venueScope ? { venue: venueScope } : {})
         },
-        select: { recipeId: true, quantity: true, netSalesCents: true, serviceDate: true }
+        select: { recipeId: true, quantity: true, netSalesCents: true, serviceDate: true, venue: true }
       })
     ]);
 
@@ -2085,6 +2106,12 @@ export const reportsService = {
 
     const day = (date: Date) => date.toISOString().slice(0, 10);
     const sales: SaleFact[] = [];
+    // Venue-days the register itself rang wine on. The same night can ALSO
+    // arrive as imported Square/Lightspeed rows — counting both is the same
+    // sale twice, so the register wins per venue+day and imports only fill
+    // the nights the register has nothing for (the pre-2026-08-20 history,
+    // and Avalon while it rings on Lightspeed). Same POS-first rule as tips.
+    const registerWineDays = new Set<string>();
     for (const order of orders) {
       // The serviceDate filter already excludes these, but a sale with no
       // trading day has no place on a dated report either way.
@@ -2093,6 +2120,7 @@ export const reportsService = {
       for (const line of order.lines) {
         if (!line.recipeId || line.isGiftCard) continue;
         if (!pourByRecipe.has(line.recipeId)) continue;
+        registerWineDays.add(`${order.venue}::${date}`);
         sales.push({
           recipeId: line.recipeId,
           quantity: line.quantity,
@@ -2104,11 +2132,18 @@ export const reportsService = {
     }
     for (const entry of imported) {
       if (!entry.recipeId || !pourByRecipe.has(entry.recipeId)) continue;
+      const date = day(entry.serviceDate);
+      if (registerWineDays.has(`${entry.venue}::${date}`)) continue;
       sales.push({
         recipeId: entry.recipeId,
         quantity: entry.quantity,
-        revenueCents: entry.netSalesCents,
-        date: day(entry.serviceDate),
+        // Imported rows carry EX-GST netSalesCents; every other revenue figure
+        // in this report is till-inclusive, and marginPercent strips GST once
+        // for the lot. Mixing the two bases meant the imported half was
+        // GST-reduced twice and the headline GP read low. Gross it back up so
+        // one basis (inclusive) enters the rollup everywhere.
+        revenueCents: Math.round(entry.netSalesCents * (1 + GST_RATE)),
+        date,
         source: 'imported'
       });
     }
