@@ -1059,6 +1059,14 @@ staffRouter.post('/timesheets/:id/cash-paid', requireManager, async (req, res, n
   }
 });
 
+staffRouter.post('/timesheets/:id/unexport', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.unexportTimesheet(String(req.params.id), req.user!));
+  } catch (err) {
+    next(err);
+  }
+});
+
 staffRouter.post('/timesheets/export/xero', requireManager, async (req, res, next) => {
   try {
     const result = await staffService.exportTimesheetsForXero(req.body, req.user);

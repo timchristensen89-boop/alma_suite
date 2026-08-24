@@ -6302,6 +6302,36 @@ export const staffService = {
     });
   },
 
+  // A pushed week that Xero must receive again. EXPORTED means "a draft
+  // timesheet exists in Xero for these hours" — but when the hours were wrong
+  // when they went (the break-less Deputy imports) or got corrected after, the
+  // draft is stale and the row is locked. Unlocking puts it back to APPROVED
+  // so the next push re-sends it; the stale draft has to be deleted in Xero
+  // by hand, which is why the audit note says so in as many words. Manager
+  // venue scoping is the same as every other timesheet action.
+  async unexportTimesheet(id: string, actor: AuthUser) {
+    const existing = await assertActorCanAccessTimesheet(id, actor);
+    if (!existing) throw new HttpError(404, 'Timesheet not found');
+    if (existing.status !== 'EXPORTED') {
+      throw new HttpError(400, 'Only exported timesheets can be unlocked for re-push.');
+    }
+    return prisma.timesheet.update({
+      where: { id },
+      data: {
+        status: 'APPROVED',
+        xeroTimesheetId: null,
+        notes: [existing.notes, 'Unlocked for re-push — delete the old draft timesheet in Xero before pushing again.']
+          .filter(Boolean)
+          .join(' | ')
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, email: true }
+        }
+      }
+    });
+  },
+
   async exportTimesheetsForXero(input: unknown, actor?: AuthUser) {
     const data = timesheetExportInputSchema.parse(input);
     const startDate = parseDate(data.start, 'Export start date');

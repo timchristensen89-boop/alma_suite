@@ -9438,15 +9438,25 @@ export const integrationService = {
         fail('No Xero employee is linked to this staff profile. Push them to Xero from their profile, then push timesheets again.');
         continue;
       }
-      // With a link we know the company, so ask that one only. Without a link
-      // we fall back to trying each — which is how the 31 people who predate
-      // per-company linking keep working.
-      const resolved = link
-        ? await fetchEmployeeInTenant(xeroEmployeeId, groupTenantId!)
+      // When the venue tells us WHICH company pays these hours, only that
+      // company may answer — first via the explicit link, else by trying the
+      // legacy single id against that company (how the people who predate
+      // per-company linking keep working: their one id lives in their one
+      // org). What is no longer allowed is chasing the id into the OTHER
+      // company: that is how Jordan's St Alma weeks were filed as drafts in
+      // Two Cooked Chooks' payroll. A person with hours in a second company
+      // now fails loudly until they're linked to it.
+      const groupTenantName = groupTenantId
+        ? tenants.find((tenant) => tenant.id === groupTenantId)?.name ?? groupTenantId
+        : null;
+      const resolved = groupTenantId
+        ? await fetchEmployeeInTenant(xeroEmployeeId, groupTenantId)
         : await fetchEmployee(xeroEmployeeId);
       if (!resolved) {
         fail(
-          `Xero has no employee ${xeroEmployeeId} in ${tenants.length === 1 ? 'the connected organisation' : `any of the ${tenants.length} connected organisations`}. Re-link the staff profile, then push again.`
+          groupTenantId
+            ? `${name}'s hours here are paid by ${groupTenantName}, but Xero has no employee ${xeroEmployeeId} in that organisation. Open their profile, push them to Xero for that venue to create the link, then push timesheets again.`
+            : `Xero has no employee ${xeroEmployeeId} in ${tenants.length === 1 ? 'the connected organisation' : `any of the ${tenants.length} connected organisations`}. Re-link the staff profile, then push again.`
         );
         continue;
       }
