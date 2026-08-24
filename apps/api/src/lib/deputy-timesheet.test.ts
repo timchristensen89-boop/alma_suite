@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deputyBreakMinutes, deputyIsLeave } from './deputy-timesheet.js';
+import { deputyBreakMinutes, deputyIsLeave, deputyWorkDate } from './deputy-timesheet.js';
+import { dayRateKind } from '@alma/shared';
 
 // 10:00 → 18:00, epoch seconds.
 const START = 1_760_000_000;
@@ -47,4 +48,26 @@ test('leave is flagged by IsLeave or by a LeaveRule id', () => {
 
 test('a leave row takes no break, whatever the numbers say', () => {
   assert.equal(deputyBreakMinutes({ ...span(8), TotalTime: 7.6, IsLeave: true }), 0);
+});
+
+// workDate: the day worked, pinned in Sydney, stored UTC-midnight.
+test('a Saturday-morning shift is a Saturday, not the Friday its UTC instant falls on', () => {
+  // Sat 22 Aug 2026, 08:00 Sydney (AEST +10) = 21 Aug 22:00 UTC.
+  const clockIn = new Date('2026-08-21T22:00:00Z');
+  assert.equal(deputyWorkDate(clockIn).toISOString(), '2026-08-22T00:00:00.000Z');
+  // And it must classify onto the Saturday award rate, not weekday.
+  assert.equal(dayRateKind(deputyWorkDate(clockIn)), 'saturday');
+});
+
+test('a Sunday-morning shift is a Sunday, not the Saturday its UTC instant falls on', () => {
+  // Sun 23 Aug 2026, 09:00 Sydney = 22 Aug 23:00 UTC.
+  const clockIn = new Date('2026-08-22T23:00:00Z');
+  assert.equal(deputyWorkDate(clockIn).toISOString(), '2026-08-23T00:00:00.000Z');
+  assert.equal(dayRateKind(deputyWorkDate(clockIn)), 'sunday');
+});
+
+test('an afternoon shift keeps the same day in Sydney and UTC', () => {
+  // Fri 21 Aug 2026, 16:30 Sydney = 06:30 UTC same date — no drift.
+  assert.equal(deputyWorkDate(new Date('2026-08-21T06:30:00Z')).toISOString(), '2026-08-21T00:00:00.000Z');
+  assert.equal(dayRateKind(deputyWorkDate(new Date('2026-08-21T06:30:00Z'))), 'weekday');
 });
