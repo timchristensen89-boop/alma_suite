@@ -1,0 +1,1 @@
+import{r as o}from"./index-BNGs-AVM.js";const t="alma-stock-venue";function c(){if(typeof window>"u")return"";try{return window.localStorage.getItem(t)??""}catch{return""}}function s(){const[r,n]=o.useState(c),a=o.useCallback(e=>{n(e);try{e?window.localStorage.setItem(t,e):window.localStorage.removeItem(t)}catch{}},[]);return[r,a]}export{s as u};
