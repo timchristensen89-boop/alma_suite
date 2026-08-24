@@ -568,7 +568,7 @@ staffRouter.post('/me/leave', async (req, res, next) => {
 });
 
 // Invite endpoints — declared BEFORE /:id so /invites isn't read as an id
-staffRouter.get('/invites', async (_req, res, next) => {
+staffRouter.get('/invites', requireManager, async (_req, res, next) => {
   try {
     res.json(await staffService.listInvites());
   } catch (error) {

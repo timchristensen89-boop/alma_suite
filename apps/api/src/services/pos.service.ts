@@ -1162,7 +1162,9 @@ export const posService = {
       const success = /success\s*=\s*"?(true|1)/i.test(file);
       if (jobId) {
         await prisma.posPrintJob
-          .updateMany({ where: { id: jobId }, data: { status: success ? 'PRINTED' : 'FAILED', doneAt: new Date() } })
+          // Scope to the station polling: an anonymous caller must not be
+          // able to mark another station's jobs done or failed.
+          .updateMany({ where: { id: jobId, profileId }, data: { status: success ? 'PRINTED' : 'FAILED', doneAt: new Date() } })
           .catch(() => undefined);
       }
       return { xml: '<?xml version="1.0" encoding="UTF-8"?>\n<PrintResponseInfo Version="2.00"/>' };

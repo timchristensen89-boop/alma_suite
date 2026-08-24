@@ -1,6 +1,8 @@
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { env } from './env.js';
 import { authMiddleware } from './lib/auth-middleware.js';
 import { errorHandler, notFoundHandler } from './lib/http.js';
@@ -46,6 +48,24 @@ import { temperatureService } from './services/temperature.service.js';
 
 const app = express();
 
+// Behind Caddy on the VPS: without this, req.ip is the proxy for every request
+// and the per-IP throttles below (and the existing device/QR ones) can't tell
+// clients apart. One hop.
+app.set('trust proxy', 1);
+
+// Security headers. CSP and the cross-origin isolation headers are turned off
+// on purpose: this is a JSON API serving browser frontends on other origins
+// (CORS handles those), and helmet's defaults for CORP/COEP would block those
+// cross-origin reads. What stays on is the useful-for-an-API set — HSTS,
+// no-sniff, frame-deny, referrer policy.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: false,
+    crossOriginEmbedderPolicy: false
+  })
+);
+
 app.use(cors({ origin: env.corsOrigin, credentials: true }));
 app.post('/api/gift-cards/webhook', express.raw({ type: 'application/json' }), stripeGiftCardWebhook);
 app.post('/api/integrations/square/webhook/:accountKey', express.raw({ type: 'application/json', limit: '2mb' }), squareWebhookReceiver);
@@ -66,6 +86,30 @@ app.post('/webhooks/enquiries/forward', express.raw({ type: '*/*', limit: '2mb' 
 app.use(express.json({ limit: '6mb' }));
 app.use(cookieParser());
 app.use('/api/integration-jobs', integrationJobsRouter);
+
+// Brute-force / enumeration / DoS guards on the public surface. Sized so a
+// whole venue behind one NAT IP never trips them in normal service — the point
+// is to stop automated abuse (thousands of tries), not to throttle staff.
+const limiter = (windowMinutes: number, max: number) =>
+  rateLimit({
+    windowMs: windowMinutes * 60_000,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    // A shared secret for cron/scheduler and provider webhooks already gates
+    // those paths; they're mounted above this line anyway.
+    message: { message: 'Too many attempts — wait a moment and try again.' }
+  });
+// Password login and reset: real logins are rare; brute-force is not.
+app.use(['/api/auth/login', '/api/auth/password-reset/request'], limiter(15, 30));
+// PIN login and manager approval: staff hit these all shift, so generous — but
+// still fatal to an automated PIN sweep.
+app.use(['/api/device/staff-pin-login', '/api/device/pin-login', '/api/pos/manager-approve'], limiter(5, 120));
+// Gift-card public routes (the code is the only credential) and promo quoting:
+// close the enumeration window.
+app.use(['/api/gift-cards/redeem', '/api/gift-cards/promo/quote', '/api/gift-cards/session', '/api/gift-cards/print', '/api/gift-cards/qr'], limiter(5, 100));
+// Reserve public routes create guest rows and Stripe intents anonymously.
+app.use(['/api/reserve/public', '/api/reserve/public-widget'], limiter(10, 60));
 
 // Auth middleware runs on every request — populates req.user from cookie and
 // rejects API calls that aren't on the allowlist of public paths.
