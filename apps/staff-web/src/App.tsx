@@ -18780,6 +18780,10 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   const [clockSessions, setClockSessions] = useState<StaffClockSession[]>([]);
   // Submit-new-timesheet modal visibility.
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  // Manual adjustment: the row being edited, and its form. The API has let
+  // managers correct hours up to APPROVED for a while — this is the door.
+  const [editEntry, setEditEntry] = useState<Timesheet | null>(null);
+  const [editForm, setEditForm] = useState({ workDate: '', start: '', end: '', breakMinutes: '0', venue: '', area: '', notes: '' });
   // Explorer rail selection (all / a venue / a staff member).
   const [selection, setSelection] = useState<TimesheetSelection>({ type: 'all' });
   // Week review is a tall table and a manager reviewing one person doesn't
@@ -19311,6 +19315,75 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     }
   }
 
+  function openEdit(entry: Timesheet) {
+    const toTimeInput = (iso: string) => {
+      const at = new Date(iso);
+      return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+    };
+    setEditForm({
+      workDate: toDateInput(new Date(entry.workDate)),
+      start: toTimeInput(entry.clockInAt),
+      end: toTimeInput(entry.clockOutAt),
+      breakMinutes: String(entry.breakMinutes ?? 0),
+      venue: entry.venue ?? '',
+      area: entry.area ?? '',
+      notes: entry.notes ?? ''
+    });
+    setEditEntry(entry);
+  }
+
+  async function saveEdit() {
+    if (!editEntry) return;
+    setMessageTarget(`edit:${editEntry.id}`);
+    const range = shiftTimeRange(editForm.workDate, editForm.start, editForm.end);
+    if (!range) {
+      setMessage('Could not read those times — check the date and both clock times.');
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api(`/api/staff/timesheets/${editEntry.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          workDate: `${editForm.workDate}T00:00:00`,
+          clockInAt: range.startsAt.toISOString(),
+          clockOutAt: range.endsAt.toISOString(),
+          breakMinutes: Number(editForm.breakMinutes) || 0,
+          venue: editForm.venue,
+          area: editForm.area,
+          notes: editForm.notes
+        })
+      });
+      setEditEntry(null);
+      setMessage('Timesheet updated.');
+      await loadTimesheets();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update the timesheet.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // EXPORTED means a draft already sits in Xero. Unlocking re-arms the row for
+  // the next push; the server's audit note (and the confirm here) both say the
+  // stale draft must be deleted in Xero first, or the employee gets two.
+  async function unexportEntry(entry: Timesheet) {
+    if (!window.confirm('Unlock this shift for re-push? Delete its old draft timesheet in Xero first, or the employee ends up with two.')) return;
+    setMessageTarget(`unexport:${entry.id}`);
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api(`/api/staff/timesheets/${entry.id}/unexport`, { method: 'POST', body: JSON.stringify({}) });
+      setMessage('Unlocked — it will go with the next push to Xero.');
+      await loadTimesheets();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not unlock the timesheet.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function renderSubmitFields() {
     return (
       <>
@@ -19476,7 +19549,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               <div key={entry.id} className="timesheet-row">
                 <div className="timesheet-row-when">
                   <strong>{new Date(entry.workDate).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</strong>
-                  <span>{timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)}</span>
+                  <span>{timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)}{entry.breakMinutes ? ` · ${entry.breakMinutes}m break` : ''}</span>
                 </div>
                 <span className="timesheet-row-hours">{roundHours(timesheetHours(entry))}</span>
                 <span className="timesheet-row-area subtle">{entry.area || '—'}</span>
@@ -19506,6 +19579,16 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   {isManagerView && entry.status === 'APPROVED' && entry.paymentMethod === 'CASH' && !entry.cashPaidAt ? (
                     <Button type="button" size="sm" disabled={saving} onClick={() => void markCashPaid(entry.id)}>
                       Cash paid
+                    </Button>
+                  ) : null}
+                  {isManagerView && entry.status !== 'EXPORTED' ? (
+                    <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => openEdit(entry)}>
+                      Edit
+                    </Button>
+                  ) : null}
+                  {isManagerView && entry.status === 'EXPORTED' ? (
+                    <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void unexportEntry(entry)}>
+                      Unlock re-push
                     </Button>
                   ) : null}
                   {isManagerView && entry.status !== 'EXPORTED' ? (
@@ -19871,6 +19954,40 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                 })()}
               </tfoot>
             </table>
+          </div>
+        </div>
+      ) : null}
+
+      {editEntry ? (
+        <div className="timesheet-modal-overlay" role="dialog" aria-modal="true" onClick={() => setEditEntry(null)}>
+          <div className="timesheet-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="timesheet-modal-head">
+              <strong>
+                Adjust — {editEntry.staffProfile ? `${editEntry.staffProfile.firstName} ${editEntry.staffProfile.lastName}` : 'timesheet'}
+              </strong>
+              <button type="button" className="timesheet-modal-close" aria-label="Close" onClick={() => setEditEntry(null)}>
+                ×
+              </button>
+            </header>
+            <div className="timesheet-modal-body">
+              <div className="form-grid">
+                <Input label="Date worked" type="date" value={editForm.workDate} onChange={(event) => setEditForm({ ...editForm, workDate: event.currentTarget.value })} hint="The day the shift STARTED — weekend rates follow this." />
+                <Input label="Clock in" type="time" value={editForm.start} onChange={(event) => setEditForm({ ...editForm, start: event.currentTarget.value })} />
+                <Input label="Clock out" type="time" value={editForm.end} onChange={(event) => setEditForm({ ...editForm, end: event.currentTarget.value })} hint="An end at or before the start rolls to the next day." />
+                <Input label="Break minutes" type="number" value={editForm.breakMinutes} onChange={(event) => setEditForm({ ...editForm, breakMinutes: event.currentTarget.value })} hint="Unpaid break, taken off the paid hours." />
+                <Select label="Venue" value={editForm.venue} onChange={(event) => setEditForm({ ...editForm, venue: event.currentTarget.value })} options={[{ label: '(none)', value: '' }, { label: 'St Alma', value: 'St Alma' }, { label: 'Alma Avalon', value: 'Alma Avalon' }]} hint="Decides which company's payroll pays the shift." />
+                <Input label="Area" value={editForm.area} onChange={(event) => setEditForm({ ...editForm, area: event.currentTarget.value })} />
+                <Input label="Notes" value={editForm.notes} onChange={(event) => setEditForm({ ...editForm, notes: event.currentTarget.value })} />
+              </div>
+              {editEntry.status === 'APPROVED' ? (
+                <p className="subtle">This shift is already approved — your change takes effect as approved, no re-approval dance.</p>
+              ) : null}
+              <div className="toolbar-right">
+                <Button type="button" variant="secondary" onClick={() => setEditEntry(null)}>Cancel</Button>
+                <Button type="button" disabled={saving} onClick={() => void saveEdit()}>Save adjustment</Button>
+                <ActionFeedback message={messageTarget === `edit:${editEntry.id}` ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
