@@ -2006,6 +2006,33 @@ export const giftCardService = {
     return toGiftCardPayload(updated);
   },
 
+  // Manager-triggered re-send of the voucher email — the recovery for a card
+  // whose delivery failed (emailError set) or that a customer says never
+  // arrived even though we recorded a send (a first send can bounce silently).
+  // A deliberate resend must go out regardless: sendGiftCardEmail short-circuits
+  // when emailedAt is set, so clear it first, then send. Paid live cards only.
+  async resendGiftCardEmail(code: string) {
+    const card = await findCardByCode(code);
+    if (!card.paidAt || card.status !== 'ACTIVE') {
+      throw new HttpError(400, 'Only a paid, active gift card can have its voucher resent.');
+    }
+    if (!card.purchaserEmail && !card.recipientEmail) {
+      throw new HttpError(400, 'This card has no email address on file to send to.');
+    }
+    const reset = await prisma.giftCard.update({
+      where: { id: card.id },
+      data: { emailedAt: null },
+      include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
+    });
+    const result = await this.sendGiftCardEmail(reset, await getGiftCardSettings());
+    // sendGiftCardEmail swallows a provider failure into emailError rather than
+    // throwing; surface it so the button reports the real outcome.
+    if (result.emailError) {
+      throw new HttpError(502, `Could not send the voucher: ${result.emailError}`);
+    }
+    return result;
+  },
+
   async disregardUnconfirmedCheckout(session: Stripe.Checkout.Session, reason: string) {
     const cardId = session.metadata?.giftCardId || session.client_reference_id;
     const where = cardId

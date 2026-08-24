@@ -1804,6 +1804,23 @@ function GiftCardPurchases() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [resendingCode, setResendingCode] = useState<string | null>(null);
+  const [resendMsg, setResendMsg] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  async function resendVoucher(code: string) {
+    setResendingCode(code);
+    setResendMsg(null);
+    try {
+      await api(`/api/gift-cards/cards/${encodeURIComponent(code)}/resend`, { method: 'POST', body: JSON.stringify({}) });
+      setResendMsg(`Voucher resent for ${code}.`);
+      setReloadKey((key) => key + 1);
+    } catch (err) {
+      setResendMsg(err instanceof Error ? err.message : `Could not resend ${code}.`);
+    } finally {
+      setResendingCode(null);
+    }
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(query.trim()), 250);
@@ -1842,7 +1859,7 @@ function GiftCardPurchases() {
     return () => {
       cancelled = true;
     };
-  }, [range, source, debounced]);
+  }, [range, source, debounced, reloadKey]);
 
   const rangeLabel = REPORT_RANGES.find((item) => item.key === rangeKey)?.label ?? '';
   const summary = report?.summary;
@@ -1957,6 +1974,24 @@ function GiftCardPurchases() {
                     <dt>Balance</dt><dd>{formatCents(row.balanceCents)} left · {formatCents(row.redeemedCents)} redeemed across {row.redemptionCount} redemption{row.redemptionCount === 1 ? '' : 's'}{row.lastRedeemedAt ? ` · last ${when(row.lastRedeemedAt)}` : ''}</dd>
                     <dt>Design</dt><dd>{row.design || '—'}</dd>
                     <dt>Delivery</dt><dd>{row.scheduledDeliveryAt ? `scheduled ${when(row.scheduledDeliveryAt)}` : 'immediate'} · {row.emailedAt ? `emailed ${when(row.emailedAt)}` : 'not emailed'}{row.emailError ? ` · error: ${row.emailError}` : ''}</dd>
+                    {row.status === 'ACTIVE' && (row.purchaserEmail || row.recipientEmail) ? (
+                      <>
+                        <dt>Resend</dt>
+                        <dd>
+                          <button
+                            type="button"
+                            className="alma-giftcards-btn alma-giftcards-btn--ghost"
+                            disabled={resendingCode === row.code}
+                            onClick={() => void resendVoucher(row.code)}
+                          >
+                            {resendingCode === row.code ? 'Sending…' : 'Resend voucher email'}
+                          </button>
+                          {resendMsg && open === row.code ? (
+                            <span className={resendMsg.startsWith('Voucher resent') ? 'subtle' : 'alma-giftcards-error'}> {resendMsg}</span>
+                          ) : null}
+                        </dd>
+                      </>
+                    ) : null}
                     <dt>Expires</dt><dd>{row.expiresAt ? when(row.expiresAt) : 'never'}</dd>
                     {row.cancelledAt ? <><dt>Cancelled</dt><dd>{when(row.cancelledAt)}{row.cancelReason ? ` · ${row.cancelReason}` : ''}</dd></> : null}
                     {row.stripePaymentIntentId ? <><dt>Stripe</dt><dd>{row.stripePaymentIntentId}</dd></> : null}
