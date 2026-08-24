@@ -19,6 +19,7 @@ import {
   paginatePins,
   pinDisplay,
   visibleTabTokens,
+  childNavGroups,
   type HomeConfig,
   type IconStyle,
   type MenuCategory,
@@ -281,18 +282,36 @@ export function BoardEditor({
     commitTabs({
       ...tabsConfig,
       order: (tabsConfig.order.length ? tabsConfig.order : tokens).map((token) => (token === `g:${oldName}` ? `g:${value}` : token)),
-      groups: tabsConfig.groups.map((group) => (group.name === oldName ? { ...group, name: value } : group))
+      // A rename must follow through to any sub-folder that names this one
+      // as its parent, or the children fall out of the tree.
+      groups: tabsConfig.groups.map((group) =>
+        group.name === oldName
+          ? { ...group, name: value }
+          : group.parent === oldName
+            ? { ...group, parent: value }
+            : group
+      )
     });
     setNavSelected(`g:${value}`);
   }
-  // Removing the folder keeps its categories — they return to the nav in place.
+  // Removing the folder keeps its categories — they return to the nav in
+  // place (a top-level folder) or at the end (a sub-folder, which is not in
+  // the order). Its own sub-folders rise to sit under its parent.
   function dissolveNavFolder(name: string) {
-    const cats = tabsConfig.groups.find((group) => group.name === name)?.cats ?? [];
+    const victim = tabsConfig.groups.find((group) => group.name === name);
+    const cats = victim?.cats ?? [];
+    const grandparent = victim?.parent;
     const base = tabsConfig.order.length ? tabsConfig.order : tokens;
+    const token = `g:${name}`;
+    const wasTopLevel = base.includes(token);
     commitTabs({
       ...tabsConfig,
-      order: base.flatMap((token) => (token === `g:${name}` ? cats : [token])),
-      groups: tabsConfig.groups.filter((group) => group.name !== name)
+      order: wasTopLevel
+        ? base.flatMap((entry) => (entry === token ? cats : [entry]))
+        : [...base, ...cats.filter((cat) => !base.includes(cat))],
+      groups: tabsConfig.groups
+        .filter((group) => group.name !== name)
+        .map((group) => (group.parent === name ? { ...group, parent: grandparent } : group))
     });
     setNavSelected(null);
   }
@@ -302,6 +321,32 @@ export function BoardEditor({
     while (tabsConfig.groups.some((group) => group.name === name)) name = `New folder ${n++}`;
     commitTabs({ ...tabsConfig, order: [...tokens, `g:${name}`], groups: [...tabsConfig.groups, { name, cats: [] }] });
     setNavSelected(`g:${name}`);
+  }
+  // A sub-folder lives inside its parent's page, so it stays out of the
+  // top-level order — the parent is the only place it shows.
+  function newNavSubFolder(parentName: string) {
+    let name = 'Sub-folder';
+    let n = 2;
+    while (tabsConfig.groups.some((group) => group.name === name)) name = `Sub-folder ${n++}`;
+    commitTabs({ ...tabsConfig, groups: [...tabsConfig.groups, { name, cats: [], parent: parentName }] });
+    // Keep the parent open so the new sub-folder appears inside it.
+    setNavSelected(`g:${parentName}`);
+  }
+  // Nest a folder under another (parent named) or promote it back to the top
+  // level (parent null). A nested folder drops out of the tab order; a
+  // promoted one rejoins it at the end.
+  function nestNavFolder(childName: string, parentName: string | null) {
+    if (parentName === childName) return;
+    const base = tabsConfig.order.length ? tabsConfig.order : tokens;
+    const token = `g:${childName}`;
+    const cleaned = base.filter((entry) => entry !== token);
+    commitTabs({
+      ...tabsConfig,
+      order: parentName ? cleaned : [...cleaned, token],
+      groups: tabsConfig.groups.map((group) =>
+        group.name === childName ? { ...group, parent: parentName ?? undefined } : group
+      )
+    });
   }
 
   // Same drawn marks as the register, so the preview tells the truth.
@@ -977,6 +1022,55 @@ export function BoardEditor({
                             ))}
                             {(group?.cats.length ?? 0) === 0 ? <li className="pos-be-empty">Empty — file categories in below.</li> : null}
                           </ol>
+                          <div className="pos-be-subfolders">
+                            <div className="pos-be-subfoldhead">
+                              <span className="pos-be-hint">Sub-folders</span>
+                              <button type="button" className="pos-be-add" onClick={() => newNavSubFolder(groupName!)}>
+                                ＋ Sub-folder
+                              </button>
+                            </div>
+                            {childNavGroups(tabsConfig, groupName!).map((child) => (
+                              <div key={child.name} className="pos-be-subfolder">
+                                <div className="pos-be-subfoldtop">
+                                  <Mark name={child.name} folder />
+                                  <input
+                                    className="pos-be-search"
+                                    defaultValue={child.name}
+                                    placeholder="Sub-folder name"
+                                    onBlur={(event) => renameNavFolder(child.name, event.currentTarget.value)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === 'Enter') renameNavFolder(child.name, event.currentTarget.value);
+                                    }}
+                                  />
+                                  <button type="button" className="pos-be-x" title="Move it back to the top-level nav" onClick={() => nestNavFolder(child.name, null)}>
+                                    Un-nest
+                                  </button>
+                                  <button type="button" className="pos-be-x" title="Remove the sub-folder, keep its categories" onClick={() => dissolveNavFolder(child.name)}>
+                                    Ungroup
+                                  </button>
+                                </div>
+                                <ol>
+                                  {child.cats.map((cat, catIndex) => (
+                                    <li key={cat}>
+                                      <span className="pos-be-move">
+                                        <button type="button" disabled={catIndex === 0} onClick={() => moveWithinNavFolder(child.name, catIndex, -1)}>
+                                          ▲
+                                        </button>
+                                        <button type="button" disabled={catIndex === child.cats.length - 1} onClick={() => moveWithinNavFolder(child.name, catIndex, 1)}>
+                                          ▼
+                                        </button>
+                                      </span>
+                                      <em>{cat}</em>
+                                      <button type="button" className="pos-be-x" title="Take out of the sub-folder" onClick={() => releaseFromNavFolder(child.name, cat)}>
+                                        ⤴
+                                      </button>
+                                    </li>
+                                  ))}
+                                  {child.cats.length === 0 ? <li className="pos-be-empty">Empty — file a category in from its row.</li> : null}
+                                </ol>
+                              </div>
+                            ))}
+                          </div>
                         </li>
                       ) : null}
                       {!isGroup && navSelected === token ? (
@@ -1045,7 +1139,7 @@ export function BoardEditor({
                           <div className="pos-be-chips">
                             {tabsConfig.groups.map((candidate) => (
                               <button key={candidate.name} type="button" onClick={() => fileIntoNavFolder(token, candidate.name)}>
-                                📁 {candidate.name}
+                                📁 {candidate.parent ? `${candidate.parent} › ${candidate.name}` : candidate.name}
                               </button>
                             ))}
                           </div>

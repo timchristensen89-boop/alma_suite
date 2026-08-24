@@ -40,6 +40,7 @@ import {
   pinDisplay,
   updateFolderAtPath,
   visibleTabTokens,
+  childNavGroups,
   type FolderPin,
   type HomeConfig,
   type MenuCategory,
@@ -4060,9 +4061,18 @@ export function App() {
                 ).map(({ token, folderName, cats }) => {
                   const qtyOf = (recipeId: string) =>
                     (order?.lines ?? []).filter((line) => line.recipeId === recipeId).reduce((sum, line) => sum + line.quantity, 0);
-                  // A filtered section stays open: matches hidden inside a
-                  // collapsed <details> are matches nobody finds.
-                  const collapsible = activeCategory === '__all__' && !searchTerm && !menuFiltersOn;
+                  // A search stays open: a match hidden inside a collapsed
+                  // <details> is a match nobody finds. Text, dietary and
+                  // availability filters are searches. The WHERE filter
+                  // (kind — Kitchen/Bar/Set menus) is a scope, not a search:
+                  // browsing Kitchen's sections you still want to fold the
+                  // ones you are not working, so those stay collapsible.
+                  const searching =
+                    Boolean(searchTerm) ||
+                    menuFilters.q.trim() !== '' ||
+                    menuFilters.diet !== null ||
+                    menuFilters.avail !== 'any';
+                  const collapsible = activeCategory === '__all__' && !searching;
                   const total = cats.reduce(
                     (sum, category) =>
                       sum +
@@ -4672,7 +4682,42 @@ export function App() {
                   const asList = group.look === 'list';
                   const qtyOf = (recipeId: string) =>
                     (order?.lines ?? []).filter((line) => line.recipeId === recipeId).reduce((sum, line) => sum + line.quantity, 0);
-                  return group.cats.map((catName) => {
+                  // Sub-folders of this folder open into their own page; a
+                  // nested folder gets a way back to the one it sits inside.
+                  const subFolders = childNavGroups(tabsConfig, group.name);
+                  const backTo = group.parent ? `__group__${group.parent}` : '__all__';
+                  return (
+                    <>
+                      <button type="button" className="pos-group-back" onClick={() => setActiveCategory(backTo)}>
+                        ‹ {group.parent ?? 'Full menu'}
+                      </button>
+                      {subFolders.length > 0 ? (
+                        <div className="pos-group-subfolders">
+                          {subFolders.map((sub) => {
+                            const count = sub.cats.reduce(
+                              (sum, catName) => sum + (menu.find((candidate) => candidate.name === catName)?.items.length ?? 0),
+                              0
+                            );
+                            return (
+                              <button
+                                key={sub.name}
+                                type="button"
+                                className="pos-group-subfolder"
+                                onClick={() => setActiveCategory(`__group__${sub.name}`)}
+                              >
+                                {hasMark(sub.name) ? (
+                                  <Mark name={sub.name} className="pos-nav-icon" />
+                                ) : (
+                                  <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />
+                                )}
+                                <span>{sub.name}</span>
+                                <small>{count} item{count === 1 ? '' : 's'}</small>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      {group.cats.map((catName) => {
                     const category = menu.find((candidate) => candidate.name === catName);
                     if (!category) return null;
                     return (
@@ -4715,7 +4760,9 @@ export function App() {
                         )}
                       </section>
                     );
-                  });
+                      })}
+                    </>
+                  );
                 })()}
               </div>
             ) : (
