@@ -890,3 +890,42 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
   .pos-wine-note { display: none; }
   .pos-wine-pour { min-width: 62px; padding: 8px 7px; }
 }
+
+/* ── Wine filters in the rail ───────────────────────────────────────────
+   A device choice (Customise sheet): the chip rows leave the top of the wine
+   list and stack in the rail under Wine, where height is free — so they wrap
+   instead of swiping, and each group label takes its own line. The rows above
+   the list stay in the DOM and take over exactly when the rail folds away —
+   the same 700px line the rail itself folds at (theme.css). */
+.pos-rail-wine { display: flex; flex-direction: column; padding: 2px 4px 10px 10px; }
+.pos-rail-wine .pos-wine-chips {
+  flex-wrap: wrap; overflow-x: visible; row-gap: 4px; padding: 2px 0;
+}
+.pos-rail-wine .pos-wine-label {
+  position: static; background: transparent; color: rgba(255, 255, 255, 0.55);
+  flex-basis: 100%; min-width: 0; padding: 7px 0 1px;
+}
+/* Colour chips keep their tints — the colour is the label. The colourless
+   ones (pour, price, pairing) dress for the forest instead of the page. */
+.pos-rail-wine .pos-wine-chip:not([data-colour]) {
+  background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.85); box-shadow: none;
+}
+/* Pressed fills dark everywhere else; on a dark rail that reads as off, so
+   here pressed fills cream — the rail's own active colour scheme. */
+.pos-rail-wine .pos-wine-chip[aria-pressed='true'] {
+  background: #f8f6f1; border-color: #f8f6f1; color: #1f3524;
+  /* A ring, not just the fill: pressed-cream and a pastel tint sit close on
+     the forest, and the chip must read as ON from across the till. */
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+.pos-rail-wine .pos-wine-chip[data-colour][aria-pressed='true'] { border-color: var(--wine-bd); }
+.pos-rail-wine .pos-wine-chip:disabled { opacity: 0.3; }
+.pos-rail-wine .pos-wine-n { opacity: 0.55; }
+@media (min-width: 701px) {
+  /* While the rail is showing and carrying the chips, the list keeps only
+     its search line — that is the whole point of the setting. */
+  .pos-wine-filters.is-in-rail .pos-wine-chips,
+  .pos-wine-filters.is-in-rail .pos-wine-fold { display: none; }
+}
+

@@ -568,6 +568,16 @@ export function App() {
     localStorage.setItem('alma.pos.design', design);
   }, [design]);
 
+  // Where this device keeps the wine filters: above the list (default) or in
+  // the rail under Wine. A device choice like the design itself — the rail
+  // has the height to spare — and only the rail design has a rail, so the
+  // classic design ignores it and folded-rail phones fall back to the list.
+  const [wineFiltersInRail, setWineFiltersInRail] = useState(() => localStorage.getItem('alma.pos.wineFiltersInRail') === '1');
+
+  useEffect(() => {
+    localStorage.setItem('alma.pos.wineFiltersInRail', wineFiltersInRail ? '1' : '0');
+  }, [wineFiltersInRail]);
+
   // One number drives the board type, the tile size and the nav; the pager's
   // measurement reads the same value so bigger text means fewer tiles per
   // page rather than tiles scrolling off the bottom.
@@ -2087,6 +2097,93 @@ export function App() {
       .slice(0, 3);
   }
 
+  // The filter chips — Pour, Colour, Price and pairing — built by one
+  // function for their two possible homes: above the list (the default) or
+  // stacked in the rail under Wine when this device asks for that. One
+  // builder, so the two homes can never offer different filters.
+  const renderWineChipRows = () => {
+    const chip = (
+      key: string,
+      label: string,
+      on: boolean,
+      count: number,
+      toggle: () => void,
+      // Colour chips wear the colour they filter for, so the chip and the
+      // wines it finds are recognisably the same thing.
+      colour?: string
+    ) => (
+      <button key={key} type="button" className="pos-wine-chip" data-colour={colour} aria-pressed={on} disabled={count === 0} onClick={toggle}>
+        {label}
+        <span className="pos-wine-n">{count}</span>
+      </button>
+    );
+    const countIf = (test: (wine: RegisterWine) => boolean) => wines.filter(test).length;
+    return (
+      <>
+                      <div className="pos-wine-chips">
+                        <span className="pos-wine-label">Pour</span>
+                        {chip('any', 'Everything', wineFilters.pour === 'any', wines.length, () =>
+                          setWineFilters({ ...wineFilters, pour: 'any', open: null })
+                        )}
+                        {chip('glass', 'By the glass', wineFilters.pour === 'glass', countIf(winePoured), () =>
+                          setWineFilters({ ...wineFilters, pour: 'glass', open: null })
+                        )}
+                        {chip('bottle', 'Bottle only', wineFilters.pour === 'bottle', countIf((wine) => !winePoured(wine)), () =>
+                          setWineFilters({ ...wineFilters, pour: 'bottle', open: null })
+                        )}
+                      </div>
+                      <div className="pos-wine-chips">
+                        <span className="pos-wine-label">Colour</span>
+                        {WINE_COLOURS.map((colour) =>
+                          chip(
+                            colour.id,
+                            colour.label,
+                            wineFilters.colours.includes(colour.id),
+                            countIf((wine) => wineColour(wine) === colour.id),
+                            () =>
+                              setWineFilters({
+                                ...wineFilters,
+                                colours: wineFilters.colours.includes(colour.id)
+                                  ? wineFilters.colours.filter((id) => id !== colour.id)
+                                  : [...wineFilters.colours, colour.id],
+                                open: null
+                              }),
+                            colour.id
+                          )
+                        )}
+                      </div>
+                      <div className="pos-wine-chips">
+                        <span className="pos-wine-label">Price</span>
+                        {WINE_BANDS.map((band) =>
+                          chip(
+                            band.id,
+                            band.label,
+                            wineFilters.band === band.id,
+                            countIf((wine) => band.test(wineFrom(wine))),
+                            () => setWineFilters({ ...wineFilters, band: wineFilters.band === band.id ? null : band.id, open: null })
+                          )
+                        )}
+                        {WINE_PAIRS.map((pair) =>
+                          chip(
+                            pair.id,
+                            pair.label,
+                            wineFilters.pairs.includes(pair.id),
+                            countIf((wine) => wine.pairsWith.includes(pair.id)),
+                            () =>
+                              setWineFilters({
+                                ...wineFilters,
+                                pairs: wineFilters.pairs.includes(pair.id)
+                                  ? wineFilters.pairs.filter((id) => id !== pair.id)
+                                  : [...wineFilters.pairs, pair.id],
+                                open: null
+                              })
+                          )
+                        )}
+                      </div>
+      </>
+    );
+  };
+
   // A pour is an ordinary catalogue item, so selling one goes through the same
   // path as any tile: modifiers, course defaults, the optimistic first tap.
   function addWinePour(wine: RegisterWine, pour: RegisterWinePour) {
@@ -3236,6 +3333,13 @@ export function App() {
                 Wine <span className="pos-rail-count">{wines.length}</span>
               </button>
             ) : null}
+            {wineFiltersInRail && wines.length > 0 && view === 'register' && activeCategory === WINE_TAB ? (
+              // The device asked for the wine filters here: the rail has the
+              // height to spare and the list gets its hundred pixels back.
+              // Phones fold the rail away, so under 700px the chips stay on
+              // the list itself (styles.css keeps that pair honest).
+              <div className="pos-rail-wine">{renderWineChipRows()}</div>
+            ) : null}
             {visibleTabs.map((token) => {
               const isGroup = token.startsWith('g:');
               const groupName = isGroup ? token.slice(2) : null;
@@ -3701,30 +3805,6 @@ export function App() {
             ) : null}
             {activeCategory === WINE_TAB ? (
               (() => {
-                const chip = (
-                  key: string,
-                  label: string,
-                  on: boolean,
-                  count: number,
-                  toggle: () => void,
-                  // Colour chips wear the colour they filter for, so the chip
-                  // and the wines it finds are recognisably the same thing.
-                  colour?: string
-                ) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className="pos-wine-chip"
-                    data-colour={colour}
-                    aria-pressed={on}
-                    disabled={count === 0}
-                    onClick={toggle}
-                  >
-                    {label}
-                    <span className="pos-wine-n">{count}</span>
-                  </button>
-                );
-                const countIf = (test: (wine: RegisterWine) => boolean) => wines.filter(test).length;
                 // Nothing to clear, no Clear button. On an iPad the filter bar
                 // is competing with the list for the same screen, and a button
                 // that does nothing is the first thing that should go.
@@ -3738,7 +3818,7 @@ export function App() {
                 let styleBand: string | null = null;
                 return (
                   <div className="pos-wine">
-                    <div className="pos-wine-filters">
+                    <div className={wineFiltersInRail && design === 'rail' ? 'pos-wine-filters is-in-rail' : 'pos-wine-filters'}>
                       {/* Search, tally and Clear share one line. Each had its
                           own row before, and on a 270px column that cost two
                           rows of wine for a word and a button. */}
@@ -3773,70 +3853,7 @@ export function App() {
                           {chipsOpen ? 'Fewer filters' : 'Filters'}
                         </button>
                       </div>
-                      {chipsOpen ? (
-                      <>
-                      <div className="pos-wine-chips">
-                        <span className="pos-wine-label">Pour</span>
-                        {chip('any', 'Everything', wineFilters.pour === 'any', wines.length, () =>
-                          setWineFilters({ ...wineFilters, pour: 'any', open: null })
-                        )}
-                        {chip('glass', 'By the glass', wineFilters.pour === 'glass', countIf(winePoured), () =>
-                          setWineFilters({ ...wineFilters, pour: 'glass', open: null })
-                        )}
-                        {chip('bottle', 'Bottle only', wineFilters.pour === 'bottle', countIf((wine) => !winePoured(wine)), () =>
-                          setWineFilters({ ...wineFilters, pour: 'bottle', open: null })
-                        )}
-                      </div>
-                      <div className="pos-wine-chips">
-                        <span className="pos-wine-label">Colour</span>
-                        {WINE_COLOURS.map((colour) =>
-                          chip(
-                            colour.id,
-                            colour.label,
-                            wineFilters.colours.includes(colour.id),
-                            countIf((wine) => wineColour(wine) === colour.id),
-                            () =>
-                              setWineFilters({
-                                ...wineFilters,
-                                colours: wineFilters.colours.includes(colour.id)
-                                  ? wineFilters.colours.filter((id) => id !== colour.id)
-                                  : [...wineFilters.colours, colour.id],
-                                open: null
-                              }),
-                            colour.id
-                          )
-                        )}
-                      </div>
-                      <div className="pos-wine-chips">
-                        <span className="pos-wine-label">Price</span>
-                        {WINE_BANDS.map((band) =>
-                          chip(
-                            band.id,
-                            band.label,
-                            wineFilters.band === band.id,
-                            countIf((wine) => band.test(wineFrom(wine))),
-                            () => setWineFilters({ ...wineFilters, band: wineFilters.band === band.id ? null : band.id, open: null })
-                          )
-                        )}
-                        {WINE_PAIRS.map((pair) =>
-                          chip(
-                            pair.id,
-                            pair.label,
-                            wineFilters.pairs.includes(pair.id),
-                            countIf((wine) => wine.pairsWith.includes(pair.id)),
-                            () =>
-                              setWineFilters({
-                                ...wineFilters,
-                                pairs: wineFilters.pairs.includes(pair.id)
-                                  ? wineFilters.pairs.filter((id) => id !== pair.id)
-                                  : [...wineFilters.pairs, pair.id],
-                                open: null
-                              })
-                          )
-                        )}
-                      </div>
-                      </>
-                      ) : null}
+                      {chipsOpen ? renderWineChipRows() : null}
                     </div>
                     <div className="pos-wine-rows">
                       {shownWines.length === 0 ? (
@@ -7866,6 +7883,27 @@ export function App() {
                     {label}
                   </label>
                 ))}
+              </div>
+            </details>
+            <details className="pos-acc">
+              <summary>
+                Wine filters <small>{wineFiltersInRail ? 'In the sidebar' : 'Above the list'}</small>
+              </summary>
+              <div className="pos-acc-body">
+                {(
+                  [
+                    [false, 'Above the wine list'],
+                    [true, 'In the sidebar, under Wine']
+                  ] as const
+                ).map(([value, label]) => (
+                  <label key={label} className="pos-check-row">
+                    <input type="checkbox" checked={wineFiltersInRail === value} onChange={() => setWineFiltersInRail(value)} />
+                    {label}
+                  </label>
+                ))}
+                <p className="pos-hint">
+                  Sidebar list design only — the classic design and phones keep the filters above the list.
+                </p>
               </div>
             </details>
             <details className="pos-acc">
