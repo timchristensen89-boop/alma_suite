@@ -9401,18 +9401,36 @@ export const integrationService = {
     // on the timesheet decides, falling back to the venue on their profile.
     const byStaffTenant = new Map<
       string,
-      { staffProfileId: string; tenantId: string | null; entries: typeof entries }
+      { staffProfileId: string; tenantId: string | null; entries: typeof entries; venueUnmapped: boolean; venue: string | null }
     >();
     for (const entry of entries) {
       const staffProfileId = entry.staffProfile.mergedIntoStaffProfileId ?? entry.staffProfileId;
       const entryVenue = entry.venue ?? entry.staffProfile.venue ?? null;
       const matched = xeroTenantsForVenue(entryVenue, tenants);
-      // Exactly one company, or we can't say — an ambiguous venue ("Both" on a
-      // timesheet that never recorded where it was worked) falls through to the
-      // old try-every-org behaviour rather than guessing which payroll pays it.
-      const tenantId = matched.length === 1 ? matched[0]!.id : null;
-      const key = `${staffProfileId}::${tenantId ?? 'unresolved'}`;
-      const group = byStaffTenant.get(key) ?? { staffProfileId, tenantId, entries: [] as typeof entries };
+      // A concrete venue is one that names a place — not blank, not "Both".
+      const venueKey = normaliseMatchText(entryVenue ?? '');
+      const concrete = venueKey !== '' && venueKey !== 'both';
+      // Which orgs THIS person is actually set up in. Trusting the venue→org
+      // name match alone meant an org whose legal name doesn't contain the
+      // trading word (Avalon's payroll is "Two Cooked Chooks") matched
+      // nothing, and the hours fell through to try-every-org — the exact
+      // wrong-company path this grouping exists to close.
+      const personLinks = linkRows.filter((row) => row.staffProfileId === staffProfileId);
+      let tenantId = matched.length === 1 ? matched[0]!.id : null;
+      // Name match failed but the person is set up in exactly one company —
+      // their hours belong to that one, whatever the org is called. This is
+      // how the single-company people keep working when the org name is a
+      // legal name the trading word doesn't appear in.
+      if (!tenantId && personLinks.length === 1) tenantId = personLinks[0]!.tenantId;
+      // Concrete venue, more than one org, and we STILL can't say which —
+      // a two-company person whose venue does not map to an org. Guessing
+      // here is how St Alma weeks were filed in Two Cooked Chooks: fail this
+      // group loudly instead of trying every org.
+      const venueUnmapped = !tenantId && concrete && tenants.length > 1 && personLinks.length !== 1;
+      const key = `${staffProfileId}::${venueUnmapped ? 'unmapped' : tenantId ?? 'unresolved'}`;
+      const group =
+        byStaffTenant.get(key) ??
+        { staffProfileId, tenantId, entries: [] as typeof entries, venueUnmapped, venue: entryVenue };
       group.entries.push(entry);
       byStaffTenant.set(key, group);
     }
@@ -9441,6 +9459,16 @@ export const integrationService = {
         failed += 1;
         results.push({ employee: name, staffProfileId, status: 'failed', message, hours: 0, periodStart: null, periodEnd: null, xeroTimesheetId: null });
       };
+
+      // A two-company person whose venue does not map to a Xero org — do not
+      // guess which payroll pays these hours (that is how they land in the
+      // wrong company). Name the venue and the fix.
+      if (group.venueUnmapped) {
+        fail(
+          `${name}'s hours are marked "${group.venue ?? '(no venue)'}", which does not map to one of the connected Xero organisations. Either rename the Xero organisation so it matches the venue, or push ${name} to Xero for that venue from their profile to create the link, then push timesheets again.`
+        );
+        continue;
+      }
 
       // The employee record for THIS company, when we know which company it is.
       const link = groupTenantId ? linkFor(staffProfileId, groupTenantId) : null;
