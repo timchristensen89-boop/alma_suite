@@ -46,6 +46,46 @@ jobs:
       - name: Typecheck all packages
         run: pnpm typecheck
 
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Same prerequisites as the typecheck job: the Prisma client and the
+      # internal type declarations the test files import through @alma/*.
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Build internal type declarations
+        run: pnpm --filter @alma/shared --filter @alma/db build
+
+      # The pure suites — no database required. The seven DB-bound stocktake
+      # cases self-skip without DATABASE_URL (see the test file); everything
+      # else must pass. ~900 cases, well under a minute.
+      - name: Run tests
+        run: >-
+          pnpm --filter @alma/api
+               --filter @alma/stock-api
+               --filter @alma/stock-web
+               --filter @alma/ui
+               --filter @alma/db
+               test
+
   domain-boundaries:
     name: Domain boundary guard (warn)
     runs-on: ubuntu-latest
