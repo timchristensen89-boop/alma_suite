@@ -1,0 +1,1 @@
+import{j as t}from"./index-DW8WmWzw.js";function c({message:r,tone:e="success"}){return r?t.jsx("span",{className:`action-feedback action-feedback-${e}`,role:e==="error"?"alert":"status",children:r}):null}export{c as A};
