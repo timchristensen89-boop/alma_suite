@@ -344,6 +344,9 @@ export function App() {
   const pushSeqRef = useRef(0);
   // Register-first: the app opens on menu + bill; Tables is a secondary view.
   const [view, setView] = useState<'register' | 'tables' | 'bills' | 'board'>('register');
+  // Header nav dropdown: Day, Close, Office, theme and switch-user live
+  // behind one button; on phones the view nav folds in too.
+  const [navOpen, setNavOpen] = useState(false);
   // Bills page: everything trading right now plus what's already settled.
   const [settled, setSettled] = useState<Order[]>([]);
   const [splitPick, setSplitPick] = useState<null | { mode: 'item' | 'seat'; picked: string[]; seat: number | null }>(null);
@@ -2321,6 +2324,11 @@ export function App() {
   const operatorName = me.kind === 'staff' ? me.name : me.staffName ?? '';
   const userKey = operatorName.toLowerCase();
   const balance = order ? order.totalCents - paidCents(order) : 0;
+  // Every dropdown action closes the menu first, then goes.
+  const navTo = (go: () => void) => {
+    setNavOpen(false);
+    go();
+  };
 
   return (
     <div className="pos-shell">
@@ -2425,11 +2433,17 @@ export function App() {
         </div>
       ) : null}
       <header className="pos-header">
-        <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" onClick={() => { setOrder(null); void refreshOpenOrders(); }} />
-        <strong onClick={() => { setOrder(null); void refreshOpenOrders(); }} style={{ cursor: 'pointer' }}>
-          {venueIdentity.businessName.toLowerCase()}
-        </strong>
-        <span className="pos-wordmark-chip">POS</span>
+        {/* Brand · context · actions — three groups. Wide screens flatten the
+            wrappers (display: contents) so the iPad row is unchanged; phones
+            stack them into a two-row sticky green bar. */}
+        <div className="pos-header-brand">
+          <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" onClick={() => { setOrder(null); setView('register'); void refreshOpenOrders(); }} />
+          <strong className="pos-header-name" onClick={() => { setOrder(null); setView('register'); void refreshOpenOrders(); }} style={{ cursor: 'pointer' }}>
+            {venueIdentity.businessName.toLowerCase()}
+          </strong>
+          <span className="pos-wordmark-chip">POS</span>
+        </div>
+        <div className="pos-header-context">
         {view === 'register' ? (
           <span className="pos-crumb">
             {!order ? 'New sale' : order.tableLabel ? `Table ${order.tableLabel}` : `Sale #${order.orderNumber}`}
@@ -2490,15 +2504,9 @@ export function App() {
         {view === 'register' ? (
           <input className="pos-search" placeholder="Search menu…" value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
         ) : null}
-        <span style={{ flex: 1 }} />
-        <button
-          type="button"
-          className="pos-theme-btn"
-          title="Switch light / dark"
-          onClick={() => setDarkTheme(!darkTheme)}
-        >
-          {darkTheme ? '☀' : '☾'}
-        </button>
+        </div>
+        <span className="pos-header-spacer" />
+        <div className="pos-header-actions">
         {operatorName ? (
           <button
             type="button"
@@ -2513,33 +2521,41 @@ export function App() {
           <button type="button" className="pos-ghost" onClick={closeBoardEditor}>
             ← Register
           </button>
-        ) : view === 'register' ? (
-          // The top nav is NAVIGATION only — where you go. What you do to the
-          // bill (send, more, charge) sits on the bill itself.
-          <>
-            <button
-              type="button"
-              className="pos-ghost"
-              onClick={() => {
-                setView('bills');
-                void refreshOpenOrders();
-                void loadSettled();
-              }}
-            >
-              Bills
-            </button>
-            <button type="button" className="pos-ghost" onClick={() => { setView('tables'); void refreshOpenOrders(); }}>
-              Tables
-            </button>
-            <button type="button" className="pos-ghost" onClick={() => { setOrder(null); setView('register'); }}>
-              ＋ New order
-            </button>
-          </>
         ) : (
+          // The top nav is NAVIGATION only — where you go. What you do to the
+          // bill (send, more, charge) sits on the bill itself. Wide screens
+          // keep the main destinations inline; on phones they fold into the
+          // Menu dropdown so the bar stays one row.
           <>
-            <button type="button" className="pos-ghost" onClick={() => setView('register')}>
-              Register
-            </button>
+            {view === 'register' ? (
+              <>
+                <button
+                  type="button"
+                  className="pos-ghost pos-nav-wide"
+                  onClick={() => {
+                    setView('bills');
+                    void refreshOpenOrders();
+                    void loadSettled();
+                  }}
+                >
+                  Bills
+                </button>
+                <button type="button" className="pos-ghost pos-nav-wide" onClick={() => { setView('tables'); void refreshOpenOrders(); }}>
+                  Tables
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="pos-ghost pos-nav-wide" onClick={() => setView('register')}>
+                  Register
+                </button>
+                {view === 'tables' ? (
+                  <button type="button" className={`pos-ghost pos-nav-wide ${editLayout ? 'pos-ghost-active' : ''}`} onClick={() => setEditLayout(!editLayout)}>
+                    {editLayout ? 'Done editing' : 'Edit layout'}
+                  </button>
+                ) : null}
+              </>
+            )}
             <button
               type="button"
               className="pos-ghost"
@@ -2548,44 +2564,116 @@ export function App() {
                 setView('register');
               }}
             >
-              ＋ New order
+              ＋ New<span className="pos-nav-wide-inline"> order</span>
             </button>
-            <button type="button" className={`pos-ghost ${editLayout ? 'pos-ghost-active' : ''}`} onClick={() => setEditLayout(!editLayout)}>
-              {editLayout ? 'Done editing' : 'Edit layout'}
-            </button>
-            <button type="button" className="pos-ghost" onClick={() => void openDay()}>
-              Day
-            </button>
-            {me.kind === 'staff' ? (
-              // A button, not an anchor: the lone <a> in this row missed the
-              // button font/centering reset and its label sat high in the pill.
+            <div className="pos-nav-dd">
               <button
                 type="button"
-                className="pos-ghost"
-                onClick={() => {
-                  window.location.hash = 'office';
-                }}
+                className={navOpen ? 'pos-ghost pos-ghost-active' : 'pos-ghost'}
+                aria-haspopup="menu"
+                aria-expanded={navOpen}
+                onClick={() => setNavOpen((current) => !current)}
               >
-                Office
+                <span className="pos-nav-narrow-inline">Menu ▾</span>
+                <span className="pos-nav-wide-inline">More ▾</span>
               </button>
-            ) : null}
-            <button
-              type="button"
-              className="pos-ghost"
-              onClick={() => {
-                void (async () => {
-                  const [gate, drawer] = await Promise.all([
-                    api<CloseGate>(`/api/pos/close-day?venue=${encodeURIComponent(venue)}`),
-                    api<DrawerInfo>(`/api/pos/drawer?venue=${encodeURIComponent(venue)}`)
-                  ]);
-                  setClosing({ gate, drawer, stage: 'checklist', float: '', counts: {}, report: null });
-                })().catch((err) => setError(messageForError(err, 'Could not load close of day.')));
-              }}
-            >
-              Close
-            </button>
+              {navOpen ? (
+                <>
+                  <div className="pos-nav-dd-backdrop" onClick={() => setNavOpen(false)} />
+                  <div className="pos-nav-dd-panel" role="menu">
+                    <div className="pos-nav-dd-who">
+                      {operatorName || 'On the till'} · {venue}
+                    </div>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={view === 'register' ? 'pos-nav-dd-item pos-nav-narrow is-on' : 'pos-nav-dd-item pos-nav-narrow'}
+                      onClick={() => navTo(() => setView('register'))}
+                    >
+                      Register
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={view === 'tables' ? 'pos-nav-dd-item pos-nav-narrow is-on' : 'pos-nav-dd-item pos-nav-narrow'}
+                      onClick={() =>
+                        navTo(() => {
+                          setView('tables');
+                          void refreshOpenOrders();
+                        })
+                      }
+                    >
+                      Tables
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={view === 'bills' ? 'pos-nav-dd-item pos-nav-narrow is-on' : 'pos-nav-dd-item pos-nav-narrow'}
+                      onClick={() =>
+                        navTo(() => {
+                          setView('bills');
+                          void refreshOpenOrders();
+                          void loadSettled();
+                        })
+                      }
+                    >
+                      Bills
+                    </button>
+                    {view === 'tables' ? (
+                      <button type="button" role="menuitem" className="pos-nav-dd-item pos-nav-narrow" onClick={() => navTo(() => setEditLayout(!editLayout))}>
+                        {editLayout ? 'Done editing layout' : 'Edit table layout'}
+                      </button>
+                    ) : null}
+                    <div className="pos-nav-dd-rule pos-nav-narrow" />
+                    <button type="button" role="menuitem" className="pos-nav-dd-item" onClick={() => navTo(() => void openDay())}>
+                      Day summary <em>today so far</em>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="pos-nav-dd-item"
+                      onClick={() =>
+                        navTo(() => {
+                          void (async () => {
+                            const [gate, drawer] = await Promise.all([
+                              api<CloseGate>(`/api/pos/close-day?venue=${encodeURIComponent(venue)}`),
+                              api<DrawerInfo>(`/api/pos/drawer?venue=${encodeURIComponent(venue)}`)
+                            ]);
+                            setClosing({ gate, drawer, stage: 'checklist', float: '', counts: {}, report: null });
+                          })().catch((err) => setError(messageForError(err, 'Could not load close of day.')));
+                        })
+                      }
+                    >
+                      Close of day <em>end of night</em>
+                    </button>
+                    {me.kind === 'staff' ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="pos-nav-dd-item"
+                        onClick={() =>
+                          navTo(() => {
+                            window.location.hash = 'office';
+                          })
+                        }
+                      >
+                        Back office <em>POS settings</em>
+                      </button>
+                    ) : null}
+                    <div className="pos-nav-dd-rule" />
+                    <button type="button" role="menuitem" className="pos-nav-dd-item" onClick={() => navTo(() => setDarkTheme(!darkTheme))}>
+                      {darkTheme ? '☀ Light theme' : '☾ Dark theme'}
+                    </button>
+                    <button type="button" role="menuitem" className="pos-nav-dd-item" onClick={() => navTo(switchUser)}>
+                      ⇄ Switch user
+                    </button>
+                  </div>
+                </>
+              ) : null}
+            </div>
           </>
         )}
+        </div>
       </header>
 
       {error ? (

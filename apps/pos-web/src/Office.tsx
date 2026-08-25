@@ -10,6 +10,22 @@ import { QrSheet } from './QrSheet';
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+// One list drives both tab renders: the pill strip on wide screens and the
+// dropdown on phones.
+const TABS = [
+  ['printers', 'Printers & dockets'],
+  ['terminals', 'Card terminals'],
+  ['qr', 'Table QR codes'],
+  ['menu', 'Menu visibility'],
+  ['modifiers', 'Modifiers'],
+  ['variants', 'Variants'],
+  ['specials', 'Specials'],
+  ['rules', 'Surcharges & discounts'],
+  ['identity', 'Venues & receipts']
+] as const;
+
+type OfficeTab = (typeof TABS)[number][0];
+
 type Profile = { id: string; name: string; venue?: string | null; matchKind: string; categoriesCsv: string; printerIp: string | null; active: boolean; sortOrder: number };
 type Rule = { id: string; kind: string; label: string; percent: number; weekdays: string; holidays: boolean; startMinute: number | null; endMinute: number | null; active: boolean };
 type ModGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: Array<{ id: string; name: string; priceCents: number }> };
@@ -31,7 +47,7 @@ type Terminal = {
 };
 
 export function Office() {
-  const [tab, setTab] = useState<'printers' | 'terminals' | 'qr' | 'menu' | 'modifiers' | 'variants' | 'specials' | 'rules' | 'identity'>('printers');
+  const [tab, setTab] = useState<OfficeTab>('printers');
   const [hides, setHides] = useState<MenuHide[]>([]);
   const [fullMenu, setFullMenu] = useState<MenuShape | null>(null);
   const [hideSearch, setHideSearch] = useState('');
@@ -214,32 +230,34 @@ export function Office() {
 
   return (
     <div className="office-shell">
-      <header className="office-header">
-        <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" />
-        <strong>Back office</strong>
-        <span className="pos-wordmark-chip">POS settings</span>
-        <span style={{ flex: 1 }} />
-        <a href="/" className="office-back">← Register</a>
-      </header>
-      <nav className="office-tabs">
-        {(
-          [
-            ['printers', 'Printers & dockets'],
-            ['terminals', 'Card terminals'],
-            ['qr', 'Table QR codes'],
-            ['menu', 'Menu visibility'],
-            ['modifiers', 'Modifiers'],
-            ['variants', 'Variants'],
-            ['specials', 'Specials'],
-            ['rules', 'Surcharges & discounts'],
-            ['identity', 'Venues & receipts']
-          ] as const
-        ).map(([key, label]) => (
-          <button key={key} type="button" className={tab === key ? 'is-active' : ''} onClick={() => setTab(key)}>
-            {label}
-          </button>
-        ))}
-      </nav>
+      {/* Sticky green top, matching the register's bar: brand row + tabs stay
+          put while the page scrolls. On phones the nine pills collapse into
+          one dropdown. */}
+      <div className="office-top">
+        <header className="office-header">
+          <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" />
+          <strong>Back office</strong>
+          <span className="pos-wordmark-chip">POS settings</span>
+          <span style={{ flex: 1 }} />
+          <a href="/" className="office-back">← Register</a>
+        </header>
+        <nav className="office-tabs">
+          {TABS.map(([key, label]) => (
+            <button key={key} type="button" className={tab === key ? 'is-active' : ''} onClick={() => setTab(key)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+        <label className="office-tab-pick">
+          <select value={tab} onChange={(event) => setTab(event.currentTarget.value as OfficeTab)}>
+            {TABS.map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {error ? <div className="pos-error" onClick={() => setError(null)}>{error}</div> : null}
       {info ? <div className="pos-info" onClick={() => setInfo(null)}>{info}</div> : null}
 
