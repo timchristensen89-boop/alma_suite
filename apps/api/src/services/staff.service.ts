@@ -4012,6 +4012,19 @@ export const staffService = {
    * drafts to staff would have people claiming shifts that may not survive to
    * publication. Only future shifts, and only their own venue.
    */
+  /** "Fri 29 Aug, 5:00 pm — Alma Avalon" — how a shift reads in a push. */
+  _swapShiftLabel(shift: { startsAt: Date; venue: string | null }): string {
+    const when = shift.startsAt.toLocaleString('en-AU', {
+      timeZone: 'Australia/Sydney',
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+    return shift.venue ? `${when} — ${shift.venue}` : when;
+  },
+
   async listOpenShifts(actor?: AuthUser) {
     if (!actor) throw new HttpError(401, 'Not authenticated');
     const venue = actor.role === 'STAFF' ? actor.venue : scopeVenueForActor(undefined, actor);
@@ -4091,6 +4104,10 @@ export const staffService = {
     if (shift.staffProfileId !== actor.id) throw new HttpError(403, 'That is not your shift.');
     if (!shift.offeredAt) throw new HttpError(409, 'That shift is not offered.');
 
+    const waiting = await prisma.rosterShiftClaim.findMany({
+      where: { rosterShiftId: shiftId, status: 'PENDING' },
+      select: { staffProfileId: true }
+    });
     await prisma.$transaction([
       prisma.rosterShift.update({
         where: { id: shiftId },
@@ -4101,6 +4118,16 @@ export const staffService = {
         data: { status: 'DECLINED', decidedAt: new Date() }
       })
     ]);
+    for (const pending of waiting) {
+      void pushService
+        .sendToStaff(pending.staffProfileId, {
+          title: 'Shift no longer available',
+          body: `${this._swapShiftLabel(shift)} was taken back down by its holder.`,
+          url: '/roster',
+          tag: `swap-decision-${shiftId}`
+        })
+        .catch(() => undefined);
+    }
     return { ok: true };
   },
 
@@ -4140,11 +4167,25 @@ export const staffService = {
     // for a shift that can never be given to them.
     await assertCertifiedForShift(actor.id, shift.startsAt);
 
-    return prisma.rosterShiftClaim.upsert({
+    const claim = await prisma.rosterShiftClaim.upsert({
       where: { rosterShiftId_staffProfileId: { rosterShiftId: shiftId, staffProfileId: actor.id } },
       create: { rosterShiftId: shiftId, staffProfileId: actor.id, note, status: 'PENDING' },
       update: { status: 'PENDING', note, decidedAt: null, decidedByUserId: null }
     });
+    // A swap has a person waiting on the other end — tell them somebody put
+    // their hand up. Best-effort: the claim stands whether or not a push
+    // lands, and managers see it in their queue either way.
+    if (shift.offeredAt && shift.staffProfileId && shift.staffProfileId !== actor.id) {
+      void pushService
+        .sendToStaff(shift.staffProfileId, {
+          title: 'Someone wants your shift',
+          body: `${actor.firstName} put their hand up for ${this._swapShiftLabel(shift)}. A manager still has to approve it.`,
+          url: '/roster',
+          tag: `swap-claim-${shiftId}`
+        })
+        .catch(() => undefined);
+    }
+    return claim;
   },
 
   /** Take your hand back down. */
@@ -4230,6 +4271,14 @@ export const staffService = {
         where: { id: claimId },
         data: { status: 'DECLINED', decidedAt: new Date(), decidedByUserId: actor?.id ?? null }
       });
+      void pushService
+        .sendToStaff(claim.staffProfileId, {
+          title: 'Shift request declined',
+          body: `${this._swapShiftLabel(claim.rosterShift)} went another way this time.`,
+          url: '/roster',
+          tag: `swap-decision-${claim.rosterShiftId}`
+        })
+        .catch(() => undefined);
       return { ok: true, approved: false };
     }
 
@@ -4291,6 +4340,26 @@ export const staffService = {
         where: { rosterShiftId: claim.rosterShiftId, staffProfileId: { not: claim.staffProfileId } }
       })
     ]);
+    const label = this._swapShiftLabel(claim.rosterShift);
+    void pushService
+      .sendToStaff(claim.staffProfileId, {
+        title: isSwap ? 'The shift is yours' : 'Shift filled — it\'s yours',
+        body: `${label} is now on your roster.`,
+        url: '/roster',
+        tag: `swap-decision-${claim.rosterShiftId}`
+      })
+      .catch(() => undefined);
+    const previousHolderId = claim.rosterShift.staffProfileId;
+    if (isSwap && previousHolderId && previousHolderId !== claim.staffProfileId) {
+      void pushService
+        .sendToStaff(previousHolderId, {
+          title: 'Your shift swap went through',
+          body: `${label} has been taken — it is off your roster.`,
+          url: '/roster',
+          tag: `swap-decision-${claim.rosterShiftId}`
+        })
+        .catch(() => undefined);
+    }
     return { ok: true, approved: true, swapped: isSwap };
   },
 
@@ -5424,6 +5493,55 @@ export const staffService = {
     });
 
     return sessions.map(toClockSessionPayload);
+  },
+
+  /**
+   * The wall kiosk's one verb. The device session proves which venue's wall
+   * the tablet hangs on; the person is proven per punch by their PIN (already
+   * resolved by the caller). Reuses the same clockIn/out/break flows the
+   * staff app uses, so timesheets cannot tell the difference.
+   */
+  async kioskPunch(actor: AuthUser, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const action = typeof body.action === 'string' ? body.action : 'status';
+    if (action === 'in') await this.clockIn(actor, {});
+    else if (action === 'out') await this.clockOut(actor, {});
+    else if (action === 'break-start') await this.startBreak(actor, {});
+    else if (action === 'break-end') await this.endBreak(actor, {});
+    else if (action !== 'status') throw new HttpError(400, 'Unknown kiosk action.');
+    const session = await prisma.staffClockSession.findFirst({
+      where: { staffProfileId: actor.id, status: 'OPEN', clockOutAt: null },
+      orderBy: [{ clockInAt: 'desc' }],
+      select: { id: true, venue: true, clockInAt: true, currentBreakStartedAt: true, accumulatedBreakMinutes: true }
+    });
+    return {
+      staff: { id: actor.id, firstName: actor.firstName, lastName: actor.lastName, roleTitle: actor.roleTitle || null },
+      session: session
+        ? {
+            clockInAt: session.clockInAt,
+            venue: session.venue,
+            onBreak: Boolean(session.currentBreakStartedAt),
+            breakStartedAt: session.currentBreakStartedAt,
+            breakMinutes: session.accumulatedBreakMinutes
+          }
+        : null
+    };
+  },
+
+  /** Who is on the floor right now — the kiosk's idle screen. */
+  async kioskOnNow(venue: string | null) {
+    const sessions = await prisma.staffClockSession.findMany({
+      where: { status: 'OPEN', clockOutAt: null, ...(venue ? { venue } : {}) },
+      orderBy: [{ clockInAt: 'asc' }],
+      include: { staffProfile: { select: { firstName: true, lastName: true, roleTitle: true } } }
+    });
+    return sessions.map((session) => ({
+      id: session.id,
+      name: `${session.staffProfile.firstName} ${session.staffProfile.lastName}`.trim(),
+      roleTitle: session.roleTitle ?? session.staffProfile.roleTitle ?? null,
+      clockInAt: session.clockInAt,
+      onBreak: Boolean(session.currentBreakStartedAt)
+    }));
   },
 
   async clockIn(actor: AuthUser, input: unknown) {

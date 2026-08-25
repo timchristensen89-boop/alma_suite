@@ -138,6 +138,20 @@ type OrderGuest = {
   tags: string[];
   allergyNotes: string | null;
   dietaryNotes: string | null;
+  loyaltyCode?: string | null;
+  loyaltyPoints?: number;
+  loyaltyJoinedAt?: string | null;
+};
+type LoyaltyMember = {
+  guestId: string;
+  code: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  points: number;
+  creditCents: number;
+  pointValueCents: number;
+  minRedeemPoints: number;
 };
 type GuestProfile = OrderGuest & {
   lastVisitAt: string | null;
@@ -502,7 +516,16 @@ export function App() {
   const [editLayout, setEditLayout] = useState(false);
   const [activeCategory, setActiveCategory] = useState('');
   const [newTable, setNewTable] = useState<null | { label: string; covers: string }>(null);
-  const [charge, setCharge] = useState<null | { stage: 'pay' | 'tip' | 'method' | 'cash' | 'split' | 'gift'; tipCents: number; amountCents: number | null }>(null);
+  const [charge, setCharge] = useState<null | { stage: 'pay' | 'tip' | 'method' | 'cash' | 'split' | 'gift' | 'loyalty'; tipCents: number; amountCents: number | null }>(null);
+  // Loyalty at the charge screen: the handle being typed, and the join
+  // mini-form when the phone isn't a member yet.
+  const [loyalty, setLoyalty] = useState<{ handle: string; joinName: string; joining: boolean; working: boolean; member: LoyaltyMember | null }>({
+    handle: '',
+    joinName: '',
+    joining: false,
+    working: false,
+    member: null
+  });
   // `external` = the code isn't ours (an old Gift Up card, say) — we can
   // still take it, recorded as an outside tender against the number.
   const [gift, setGift] = useState<{
@@ -2948,6 +2971,95 @@ export function App() {
     }
   }
 
+  // Put a member on the bill (or take them off). Attaching is what makes the
+  // points happen — earn fires at settle for whoever is attached, whatever
+  // tender pays the bill.
+  async function attachLoyalty(handle: string) {
+    if (!order || loyalty.working) return;
+    setLoyalty((current) => ({ ...current, working: true }));
+    setError(null);
+    try {
+      const result = await api<{ member: LoyaltyMember; order: Order }>(`/api/pos/orders/${order.id}/loyalty`, {
+        method: 'POST',
+        body: JSON.stringify({ handle })
+      });
+      setOrder(result.order);
+      setLoyalty({ handle: '', joinName: '', joining: false, working: false, member: result.member });
+      setInfo(`${result.member.firstName || 'Member'} on the bill — ${result.member.points} points (${money(result.member.creditCents)}).`);
+    } catch (err) {
+      setLoyalty((current) => ({ ...current, working: false }));
+      const message = messageForError(err, 'Could not find that member.');
+      if (/join them first/i.test(message)) {
+        // Not a member yet: flip straight into the join mini-form with the
+        // phone number already in place.
+        setLoyalty((current) => ({ ...current, joining: true, working: false }));
+      } else {
+        setError(message);
+      }
+    }
+  }
+
+  async function joinLoyaltyAndAttach() {
+    if (!order || loyalty.working) return;
+    setLoyalty((current) => ({ ...current, working: true }));
+    setError(null);
+    try {
+      const joined = await api<{ member: LoyaltyMember; alreadyMember: boolean }>('/api/pos/loyalty/join', {
+        method: 'POST',
+        body: JSON.stringify({ phone: loyalty.handle, firstName: loyalty.joinName, venue })
+      });
+      const result = await api<{ member: LoyaltyMember; order: Order }>(`/api/pos/orders/${order.id}/loyalty`, {
+        method: 'POST',
+        body: JSON.stringify({ handle: joined.member.code })
+      });
+      setOrder(result.order);
+      setLoyalty({ handle: '', joinName: '', joining: false, working: false, member: result.member });
+      setInfo(
+        joined.alreadyMember
+          ? `${result.member.firstName || 'Member'} was already a member — on the bill with ${result.member.points} points.`
+          : `${result.member.firstName || 'New member'} joined — points start with this bill.`
+      );
+    } catch (err) {
+      setLoyalty((current) => ({ ...current, working: false }));
+      setError(messageForError(err, 'Could not join them up.'));
+    }
+  }
+
+  async function takeLoyaltyPayment(appliesCents: number, coversAll: boolean) {
+    if (!order || !charge || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const amountCents = Math.max(1, appliesCents);
+      const tipCents = coversAll ? charge.tipCents : 0;
+      const result = await api<Order & { status: string; loyaltyPointsRemaining?: number | null; loyaltyPointsEarned?: number | null }>(
+        `/api/pos/orders/${order.id}/pay`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ method: 'LOYALTY', amountCents, tipCents })
+        }
+      );
+      const remaining = result.loyaltyPointsRemaining ?? null;
+      if (result.status === 'PAID') {
+        collectIssuedGiftCards(result.id);
+        setReceipt(result);
+        setOrder(null);
+        setCharge(null);
+        setGiftApplied([]);
+        void refreshOpenOrders();
+        setInfo(remaining !== null ? `Paid with points — ${remaining} left on the account.` : 'Paid with points.');
+      } else {
+        setOrder(result);
+        setCharge({ ...charge, amountCents: null });
+        setInfo(`${money(amountCents)} taken in points${remaining !== null ? ` · ${remaining} points left` : ''}. Pay the rest another way.`);
+      }
+    } catch (err) {
+      setError(messageForError(err, 'Points payment failed.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveOrderMeta(meta: { notes?: string; dietary?: Array<{ tag: string; seat: number | null }> }) {
     if (!order) return;
     try {
@@ -5330,6 +5442,24 @@ export function App() {
                       Gift card
                     </button>
                   ) : null}
+                  {!order.id.startsWith('local-') ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setLoyalty({ handle: '', joinName: '', joining: false, working: false, member: null });
+                        setCharge({ ...charge, stage: 'loyalty' });
+                        const code = order.guest?.loyaltyCode;
+                        if (code) {
+                          void api<LoyaltyMember>(`/api/pos/loyalty/member?handle=${encodeURIComponent(code)}`)
+                            .then((member) => setLoyalty((current) => ({ ...current, member })))
+                            .catch(() => undefined);
+                        }
+                      }}
+                    >
+                      {order.guest?.loyaltyCode ? `Points · ${order.guest.firstName}` : 'Loyalty'}
+                    </button>
+                  ) : null}
                 </div>
               </>
             ) : null}
@@ -5467,6 +5597,104 @@ export function App() {
                 ) : null}
               </>
             ) : null}
+            {charge.stage === 'loyalty' && order ? (
+              <>
+                <h2>Points — {money((charge.amountCents ?? balance) + charge.tipCents)}</h2>
+                {order.guest?.loyaltyCode ? (
+                  loyalty.member ? (
+                    (() => {
+                      const member = loyalty.member;
+                      const outstanding = (charge.amountCents ?? balance) + charge.tipCents;
+                      const minCents = member.minRedeemPoints * member.pointValueCents;
+                      const usable = Math.min(member.creditCents, outstanding);
+                      const belowMin = member.creditCents < minCents;
+                      return (
+                        <>
+                          <p className="pos-change">
+                            {member.firstName} {member.lastName} · {member.points} points = {money(member.creditCents)}
+                          </p>
+                          {belowMin ? (
+                            <p className="pos-muted">
+                              Redemptions start at {member.minRedeemPoints} points ({money(minCents)}) — {member.points} so far. The
+                              points still build on this bill.
+                            </p>
+                          ) : (
+                            <button
+                              type="button"
+                              className="pos-charge"
+                              disabled={busy || usable < 1}
+                              onClick={() => void takeLoyaltyPayment(usable, usable >= outstanding)}
+                            >
+                              {usable >= outstanding
+                                ? `Pay ${money(outstanding)} with points`
+                                : `Use all ${money(usable)} of points`}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="pos-ghost"
+                            disabled={busy}
+                            onClick={() => {
+                              void api<Order>(`/api/pos/orders/${order.id}/loyalty`, { method: 'DELETE' })
+                                .then((updatedOrder) => {
+                                  setOrder(updatedOrder);
+                                  setLoyalty({ handle: '', joinName: '', joining: false, working: false, member: null });
+                                })
+                                .catch((err) => setError(messageForError(err, 'Could not take them off.')));
+                            }}
+                          >
+                            Different member
+                          </button>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <p className="pos-muted">Fetching their points…</p>
+                  )
+                ) : (
+                  <>
+                    <p className="pos-muted">
+                      Phone number or LOY- code. Points build on every bill their name is on — whatever way it is paid.
+                    </p>
+                    <input
+                      className="pos-tender"
+                      inputMode="tel"
+                      placeholder="Phone or LOY-XXXXXX"
+                      value={loyalty.handle}
+                      onChange={(event) => setLoyalty((current) => ({ ...current, handle: event.currentTarget.value, joining: false }))}
+                    />
+                    {loyalty.joining ? (
+                      <>
+                        <p className="pos-muted">Not a member yet — first name and they are in.</p>
+                        <input
+                          className="pos-tender"
+                          placeholder="First name"
+                          value={loyalty.joinName}
+                          onChange={(event) => setLoyalty((current) => ({ ...current, joinName: event.currentTarget.value }))}
+                        />
+                        <button
+                          type="button"
+                          className="pos-charge"
+                          disabled={loyalty.working || loyalty.joinName.trim().length === 0}
+                          onClick={() => void joinLoyaltyAndAttach()}
+                        >
+                          {loyalty.working ? 'Joining…' : 'Join and put on the bill'}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="pos-charge"
+                        disabled={loyalty.working || loyalty.handle.trim().length < 4}
+                        onClick={() => void attachLoyalty(loyalty.handle)}
+                      >
+                        {loyalty.working ? 'Looking…' : 'Find member'}
+                      </button>
+                    )}
+                  </>
+                )}
+              </>
+            ) : null}
             {charge.stage === 'cash' ? (
               <CashPad
                 dueCents={(charge.amountCents ?? balance) + charge.tipCents}
@@ -5580,6 +5808,12 @@ export function App() {
               Paid — {receipt.tableLabel ? `Table ${receipt.tableLabel}` : `order #${receipt.orderNumber}`}
             </h2>
             {receipt.changeCents ? <p className="pos-change">Change due: {money(receipt.changeCents)}</p> : null}
+            {(receipt as Order & { loyaltyPointsEarned?: number | null }).loyaltyPointsEarned ? (
+              <p className="pos-change">
+                ★ {(receipt as Order & { loyaltyPointsEarned?: number | null }).loyaltyPointsEarned} points earned
+                {receipt.guest?.firstName ? ` for ${receipt.guest.firstName}` : ''}
+              </p>
+            ) : null}
             <div className="pos-receipt-lines">
               {receipt.lines.map((line, index) => (
                 <div key={index}>
@@ -6208,6 +6442,20 @@ export function App() {
                 <span>
                   Sale is the register. Tables is every open bill on the floor — yours and everyone else&apos;s. Bills is
                   the history: reprints, refunds, finding that table from earlier.
+                </span>
+              </div>
+              <div className="pos-help-item">
+                <strong>Loyalty</strong>
+                <span>
+                  On the charge screen, Loyalty joins a guest up with just a phone number, and their points pay bills like a
+                  gift card. Points build on every bill their name is on, however it is paid.
+                </span>
+              </div>
+              <div className="pos-help-item">
+                <strong>Clock-in kiosk</strong>
+                <span>
+                  Open <em>alma-pos.web.app/#clock</em> on a wall tablet (signed in as this venue) and staff clock in, out and
+                  breaks with their PIN — no Deputy needed.
                 </span>
               </div>
               <div className="pos-help-item">

@@ -5,6 +5,7 @@ import { prisma } from '@alma/db';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { mailService } from '../services/mail.service.js';
+import { loyaltyService } from '../services/loyalty.service.js';
 import { posService } from '../services/pos.service.js';
 import { posTerminalService } from '../services/pos-terminal.service.js';
 
@@ -611,6 +612,73 @@ posRouter.delete('/menu-hides/:id', async (req, res, next) => {
 posRouter.get('/gift-card', async (req, res, next) => {
   try {
     res.json(await posService.giftCardBalance(String(req.query.code ?? '')));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Loyalty ────────────────────────────────────────────────────────────────
+// Staff-authenticated like every other POS route. Join and attach are
+// service-floor actions; settings, report and adjust live in the Office.
+posRouter.get('/loyalty/settings', async (_req, res, next) => {
+  try {
+    res.json(await loyaltyService.settings());
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.put('/loyalty/settings', async (req, res, next) => {
+  try {
+    res.json(await loyaltyService.updateSettings(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/loyalty/join', async (req, res, next) => {
+  try {
+    res.json(await loyaltyService.join(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get('/loyalty/member', async (req, res, next) => {
+  try {
+    res.json(await loyaltyService.memberByHandle(String(req.query.handle ?? '')));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get('/loyalty/report', async (_req, res, next) => {
+  try {
+    res.json(await loyaltyService.report());
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/loyalty/adjust', async (req, res, next) => {
+  try {
+    res.json(await loyaltyService.adjust({ ...(req.body ?? {}), createdBy: req.user?.email ?? req.deviceUser?.firstName ?? null }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/orders/:id/loyalty', async (req, res, next) => {
+  try {
+    res.json(await posService.attachLoyalty(req.params.id, String(req.body?.handle ?? '')));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.delete('/orders/:id/loyalty', async (req, res, next) => {
+  try {
+    res.json(await posService.detachLoyalty(req.params.id));
   } catch (err) {
     next(err);
   }
