@@ -1,9 +1,10 @@
 name: CI
 
+# Manual-only while the Actions minutes are exhausted: every pull_request/push
+# run was failing at queue time and emailing a failure notice. Restore the
+# pull_request + push triggers when minutes are topped up.
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 # Cancel duplicate runs for the same PR / push (saves Actions minutes).
 concurrency:

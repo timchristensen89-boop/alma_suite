@@ -33,7 +33,7 @@ const STOP_WORDS = new Set([
   'and', 'with', 'the', 'for', 'of', 'side', 'extra', 'add', 'new', 'special',
   'single', 'double', 'glass', 'bottle', 'jug', 'pitcher', 'small', 'large',
   'regular', 'main', 'kids', 'gf', 'df', 'vg', 'vgo', 'vegan', 'vegetarian',
-  'ea', 'each', 'pc', 'pcs', 'serve', 'portion', 'plate', 'bowl'
+  'ea', 'each', 'pc', 'pcs', 'serve', 'portion', 'plate', 'bowl', 'hh', 'can'
 ]);
 
 const SYNONYMS: Record<string, string> = {
@@ -47,24 +47,30 @@ const SYNONYMS: Record<string, string> = {
   parmi: 'parmigiana', parma: 'parmigiana'
 };
 
-// Size/quantity tokens: 150ml, 2pc, 500g, 750, 6oz — noise for matching.
+// Size/quantity tokens: 150ml, 2pc, 500g, 750, 6oz. Not noise — wines and
+// spirits come in 150/250/750mL siblings where the size IS the identity — but
+// not the base either: "Fish Taco (2pc)" must still meet "Fish Taco". So the
+// name is scored WITHOUT sizes, and the sizes then confirm or veto.
 const SIZE_TOKEN = /^\d+(ml|l|g|kg|oz|pc|pcs|pk)?$/;
 
-function normalise(value: string): string {
-  return value
+type Comparable = { text: string; sizes: string[] };
+
+function normalise(value: string): Comparable {
+  const words = value
     .toLowerCase()
+    // Strip diacritics so Rosé meets Rose and Mâcon meets Macon.
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/\([^)]*\)/g, ' ')
     .replace(/[^a-z0-9]+/g, ' ')
     .split(' ')
     .map((word) => SYNONYMS[word] ?? word.replace(/s$/, ''))
-    .filter((word) => word.length > 1 && !STOP_WORDS.has(word) && !SIZE_TOKEN.test(word))
-    .join(' ')
-    .trim();
+    .filter((word) => word.length > 1 && !STOP_WORDS.has(word));
+  const sizes = words.filter((word) => SIZE_TOKEN.test(word) && /\d/.test(word)).map((word) => word.replace(/[a-z]+$/, ''));
+  return { text: words.filter((word) => !SIZE_TOKEN.test(word)).join(' ').trim(), sizes };
 }
 
-function score(squareName: string, recipeTitle: string): number {
-  const left = normalise(squareName);
-  const right = normalise(recipeTitle);
+function nameScore(left: string, right: string): number {
   if (!left || !right) return 0;
   if (left === right) return 1;
   if (left.includes(right) || right.includes(left)) return 0.86;
@@ -78,6 +84,20 @@ function score(squareName: string, recipeTitle: string): number {
   // Square carries the flowery name and the recipe the plain one.
   const overlap = intersection / Math.min(leftWords.size, rightWords.size);
   return Math.max(jaccard, overlap * 0.82);
+}
+
+function score(squareName: string, recipeTitle: string): number {
+  const left = normalise(squareName);
+  const right = normalise(recipeTitle);
+  let value = nameScore(left.text, right.text);
+  if (value <= 0) return 0;
+  // Sizes as confirm-or-veto: matching pours reinforce, CONFLICTING pours
+  // kill — a 750mL bottle must never map to the 150mL pour of the same wine.
+  if (left.sizes.length > 0 && right.sizes.length > 0) {
+    const shared = left.sizes.some((size) => right.sizes.includes(size));
+    value = shared ? Math.min(1, value + 0.06) : value - 0.3;
+  }
+  return Math.max(0, Math.min(1, value));
 }
 
 // A Square row that is clearly not a dish: nothing to map, suggest Ignore.
@@ -120,13 +140,20 @@ async function main() {
       }))
       .sort((a, b) => b.s - a.s);
     const best = scored[0];
-    const second = scored[1];
     if (!best || best.s < SUGGEST_THRESHOLD) {
       noCandidate += 1;
       continue;
     }
+    // The gap rule exists to stop guessing between DIFFERENT dishes. The same
+    // recipe existing at both venues (identical normalised name and sizes) is
+    // not ambiguity — the venue boost already ranked the right one first — so
+    // the runner-up that matters is the first genuinely different candidate.
+    const bestKey = JSON.stringify(normalise(best.recipe.title));
+    const second = scored.find(
+      (candidate) => candidate.recipe.id !== best.recipe.id && JSON.stringify(normalise(candidate.recipe.title)) !== bestKey
+    );
 
-    const clearWinner = best.s >= APPLY_THRESHOLD && (!second || best.s - second.s >= GAP || second.recipe.id === best.recipe.id);
+    const clearWinner = best.s >= APPLY_THRESHOLD && (!second || best.s - second.s >= GAP);
     if (clearWinner) {
       applied += 1;
       console.log(
