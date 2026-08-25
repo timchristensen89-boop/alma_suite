@@ -165,12 +165,14 @@ The connection must hold the `accounting.invoices` scope — if Xero was
 connected before that scope was requested, the push answers 409 with
 "reconnect Xero" and the fix is Admin → disconnect → reconnect once.
 
-On the VPS the simplest schedule is root's crontab (no Cloud Scheduler
-needed). 07:00 Sydney is 21:00 UTC (AEST) — the venue is long closed and the
-day is final:
+On the VPS the simplest schedule is a file in `/etc/cron.d` (no Cloud
+Scheduler needed). The secret is read from the env file at run time with
+`grep` rather than sourcing it — docker env files allow unquoted spaces,
+which break `sh` sourcing. 07:00 Sydney is 21:00 UTC (AEST) — the venue is
+long closed and the day is final:
 
 ```
-0 21 * * *  . /opt/alma/deploy/env/suite-api.env && curl -fsS -m 60 -X POST -H "Authorization: Bearer $INTEGRATION_SCHEDULER_SECRET" https://api.almagroup.com.au/api/integration-jobs/pos/daily-sales-to-xero >> /var/log/alma-xero-daily-sales.log 2>&1
+0 21 * * * root curl -fsS -m 60 -X POST -H "Authorization: Bearer $(grep -m1 ^INTEGRATION_SCHEDULER_SECRET= /opt/alma/deploy/env/suite-api.env | cut -d= -f2-)" https://api.almagroup.com.au/api/integration-jobs/pos/daily-sales-to-xero >> /var/log/alma-xero-daily-sales.log 2>&1
 ```
 
 Re-posting a specific day (e.g. after a refund was corrected): body
