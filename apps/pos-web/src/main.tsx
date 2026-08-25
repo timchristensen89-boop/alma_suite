@@ -1,8 +1,20 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
+import { RegisterErrorBoundary, installGlobalCrashReporting } from './ErrorBoundary';
 import './styles.css';
 import './theme.css';
+
+installGlobalCrashReporting();
+
+// Error monitoring, opt-in at build time: without VITE_SENTRY_DSN this branch
+// compiles out and the Sentry chunk is never downloaded by a till.
+const sentryDsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
+if (sentryDsn) {
+  void import('@sentry/react')
+    .then((Sentry) => Sentry.init({ dsn: sentryDsn, environment: import.meta.env.MODE }))
+    .catch(() => undefined);
+}
 
 // #kds turns any tablet into the kitchen display, #live is the owner's
 // phone view; everything else is the register.
@@ -31,8 +43,10 @@ window.addEventListener('hashchange', () => window.location.reload());
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <React.Suspense fallback={null}>
-      {guestToken ? <GuestOrder token={guestToken} /> : isOffice ? <Office /> : isQrSheet ? <QrSheet /> : isKds ? <Kds /> : isLive ? <Live /> : <App />}
-    </React.Suspense>
+    <RegisterErrorBoundary>
+      <React.Suspense fallback={null}>
+        {guestToken ? <GuestOrder token={guestToken} /> : isOffice ? <Office /> : isQrSheet ? <QrSheet /> : isKds ? <Kds /> : isLive ? <Live /> : <App />}
+      </React.Suspense>
+    </RegisterErrorBoundary>
   </React.StrictMode>
 );

@@ -892,3 +892,12 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
   .pos-wine-note { display: none; }
   .pos-wine-pour { min-width: 62px; padding: 8px 7px; }
 }
+
+/* Crash guard: the screen a broken register shows instead of white. */
+.pos-crash { position: fixed; inset: 0; display: grid; place-items: center; background: var(--pos-bg, #14171a); color: var(--pos-text, #f2efe8); padding: 24px; z-index: 9999; }
+.pos-crash-panel { max-width: 420px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.pos-crash-panel h1 { font-size: 22px; margin: 0; }
+.pos-crash-panel p { margin: 0; color: var(--pos-muted, rgba(242,239,232,0.55)); line-height: 1.5; }
+.pos-crash-panel small { color: var(--pos-muted, rgba(242,239,232,0.55)); }
+.pos-crash-primary { min-height: 56px; border-radius: 14px; border: 0; background: var(--pos-accent, #4f8f6b); color: #fff; font-size: 16px; font-weight: 700; }
+.pos-crash-secondary { min-height: 44px; border-radius: 12px; border: 1px solid var(--pos-line, rgba(255,255,255,0.08)); background: transparent; color: var(--pos-text, #f2efe8); }

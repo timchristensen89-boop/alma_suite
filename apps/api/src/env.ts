@@ -129,6 +129,9 @@ export const env = {
   // above); empty is only tolerated in local dev, where the endpoints stay
   // open for convenience.
   posPrintSecret: process.env.POS_PRINT_SECRET ?? '',
+  // Error monitoring is opt-in: set SENTRY_DSN and restart. Empty means the
+  // Sentry SDK is never imported at all.
+  sentryDsn: process.env.SENTRY_DSN ?? '',
   isProduction,
   sessionCookieName: 'alma.sid',
   /**

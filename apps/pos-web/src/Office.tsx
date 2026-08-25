@@ -1271,6 +1271,7 @@ export function Office() {
                     }}
                   />
                 </div>
+                <XeroDailySalesRow venue={identity.venue} />
                 <div className="office-row office-logo-row">
                   {identity.receiptLogo ? (
                     <img src={identity.receiptLogo} alt="" className="office-logo-thumb" />
@@ -1330,6 +1331,85 @@ export function Office() {
           </section>
         ) : null}
       </main>
+    </div>
+  );
+}
+
+// ── Daily sales → Xero ──────────────────────────────────────────────────────
+// The nightly job posts yesterday automatically for every venue with a Xero
+// organisation selected above. This row is the manual handle on the same
+// machinery: see whether a day went across, preview exactly what would post
+// (dry run — nothing written), and push or re-push a day by hand. Idempotent
+// on the server — pushing an already-posted day reports "Already posted"
+// instead of double-billing the books.
+type XeroDayStatus = {
+  configured: boolean;
+  connected: boolean;
+  post: { status: string; invoiceNumber: string | null; totalCents: number; detail: string | null } | null;
+  summary: { netIncCents: number; orderCount: number };
+};
+
+function sydneyYesterday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date(Date.now() - 24 * 60 * 60 * 1000));
+}
+
+function XeroDailySalesRow({ venue }: { venue: string }) {
+  const [date, setDate] = useState(sydneyYesterday);
+  const [status, setStatus] = useState<XeroDayStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    void api<XeroDayStatus>(`/api/pos/xero/status?venue=${encodeURIComponent(venue)}&serviceDate=${date}`)
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, [venue, date]);
+  useEffect(load, [load]);
+
+  const push = (dryRun: boolean) => {
+    setBusy(true);
+    setNote(null);
+    void api<{ skipped: boolean; reason?: string; invoiceNumber: string | null; preview?: { lineItems: Array<{ Description: string; UnitAmount: number }> } }>(
+      '/api/pos/xero/push',
+      { method: 'POST', body: JSON.stringify({ venue, serviceDate: date, dryRun }) }
+    )
+      .then((result) => {
+        if (result.preview) {
+          const lines = result.preview.lineItems.map((line) => `${line.Description}: $${line.UnitAmount.toFixed(2)}`).join(' · ');
+          setNote(`Would post ${result.invoiceNumber}: ${lines || 'no lines'}`);
+        } else if (result.skipped) {
+          setNote(result.reason ?? 'Nothing to do.');
+        } else {
+          setNote(`Posted ${result.invoiceNumber}.`);
+        }
+        load();
+      })
+      .catch((err) => setNote(messageForError(err, 'Could not reach Xero.')))
+      .finally(() => setBusy(false));
+  };
+
+  if (status && !status.configured) return null; // no organisation selected — the dropdown above explains
+  const posted = status?.post;
+  return (
+    <div className="office-row office-xero-day">
+      <span className="office-variant-opts">Daily sales → Xero</span>
+      <input type="date" className="office-input" value={date} max={sydneyYesterday()} onChange={(event) => setDate(event.currentTarget.value)} />
+      <span className="office-variant-opts">
+        {posted
+          ? posted.status === 'POSTED'
+            ? `Posted ${posted.invoiceNumber ?? ''} — $${(posted.totalCents / 100).toFixed(2)}`
+            : `Failed: ${posted.detail ?? 'unknown error'}`
+          : status
+            ? `Not posted — $${((status.summary?.netIncCents ?? 0) / 100).toFixed(2)} takings that day`
+            : '…'}
+      </span>
+      <button type="button" className="office-add" disabled={busy} onClick={() => push(true)}>
+        Preview
+      </button>
+      <button type="button" className="office-add" disabled={busy || posted?.status === 'POSTED'} onClick={() => push(false)}>
+        Post now
+      </button>
+      {note ? <span className="office-hint office-xero-note">{note}</span> : null}
     </div>
   );
 }

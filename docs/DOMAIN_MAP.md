@@ -12,6 +12,34 @@ _Generated as the basis for the stock-forward refactor: keep Stock + Compliance 
 
 ---
 
+## Status check — 2026-08-25
+
+What this map planned vs. what is actually deployed:
+
+- **Running in production:** `api` (the monolith, serving everything below
+  except stock), `stock-api`, and the frontends `pos-web`, `staff-web`,
+  `stock-web`, `giftcards-web`, `reserve-web`, `web` (public site), plus the
+  `print-bridge` on venue hardware. One Postgres database (`alma_suite_v18`).
+- **`apps/staff-api` removed** (this date). It was a scaffold with every
+  route returning 501, built for Phase 3 of `SEPARATION_PLAN.md`; Phases 1–2
+  (breaking up `staff-web/src/App.tsx`, extracting a People API) never
+  started, so the scaffold only reserved a URL space nothing called. It
+  lives in git history if the extraction ever begins in earnest.
+- **`apps/pos-native` stays, deliberately.** It looks stub-like but is the
+  Tap to Pay iOS shell — verified building and loading the live register
+  (2026-08-12), waiting on Apple's Tap to Pay entitlement for the
+  distribution build. It is excluded from the pnpm workspace so it costs
+  the monorepo nothing. See its README before touching it.
+- **Boundary enforcement** is `scripts/check-domain-boundaries.mjs` (warn
+  mode), driven by `packages/db/domain-map.json`. That file keeps its
+  `apps/staff-api` ownership entry as documentation of the intended split;
+  the checker only walks directories that exist.
+- **Unused tables:** see `docs/dead-tables.md` — 18 models with no code
+  path (mostly the never-built forecasting import pipeline), documented,
+  not dropped.
+
+---
+
 ## Domain buckets
 
 ### 🟩 STOCK — the anchor (21 models)

@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { env } from './env.js';
 import { authMiddleware } from './lib/auth-middleware.js';
 import { errorHandler, notFoundHandler } from './lib/http.js';
+import { initSentry } from './lib/sentry.js';
 import { adminRouter } from './routes/admin.js';
 import { almaTasksRouter } from './routes/alma-tasks.js';
 import { publicSnapshotRouter } from './routes/public-snapshot.js';
@@ -45,6 +46,10 @@ import { incidentService } from './services/incident.service.js';
 import { issueService } from './services/issue.service.js';
 import { staffService } from './services/staff.service.js';
 import { temperatureService } from './services/temperature.service.js';
+
+// Fire-and-forget: with no SENTRY_DSN this resolves instantly without loading
+// the SDK; with one, early requests before init simply go unreported.
+void initSentry();
 
 const app = express();
 
