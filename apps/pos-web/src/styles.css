@@ -901,3 +901,58 @@ body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
 .pos-crash-panel small { color: var(--pos-muted, rgba(242,239,232,0.55)); }
 .pos-crash-primary { min-height: 56px; border-radius: 14px; border: 0; background: var(--pos-accent, #4f8f6b); color: #fff; font-size: 16px; font-weight: 700; }
 .pos-crash-secondary { min-height: 44px; border-radius: 12px; border: 1px solid var(--pos-line, rgba(255,255,255,0.08)); background: transparent; color: var(--pos-text, #f2efe8); }
+
+/* ── Clock-in kiosk (#clock) ─────────────────────────────────────────────── */
+.clock-kiosk {
+  min-height: 100dvh;
+  background: var(--forest, #1f3d2b);
+  color: var(--cream, #f5efe4);
+  display: flex;
+  flex-direction: column;
+  padding: 22px clamp(16px, 4vw, 48px) 32px;
+  gap: 20px;
+  font-family: inherit;
+  user-select: none;
+}
+.clock-head { display: flex; align-items: center; gap: 16px; }
+.clock-mark { width: 44px; height: 44px; object-fit: contain; }
+.clock-head strong { display: block; font-size: 34px; line-height: 1; }
+.clock-head span { opacity: 0.75; font-size: 15px; }
+.clock-main { display: flex; gap: clamp(20px, 5vw, 64px); flex: 1; align-items: flex-start; flex-wrap: wrap; }
+.clock-pad { flex: 1 1 300px; max-width: 420px; }
+.clock-dots { font-size: 30px; letter-spacing: 10px; min-height: 42px; margin: 0 0 8px; }
+.clock-error { color: #ffb4a2; margin: 0 0 8px; }
+.clock-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.clock-keys button {
+  font-size: 30px;
+  padding: 18px 0;
+  border-radius: 16px;
+  border: 1px solid rgba(245, 239, 228, 0.25);
+  background: rgba(245, 239, 228, 0.08);
+  color: inherit;
+}
+.clock-keys button:active { background: rgba(245, 239, 228, 0.22); }
+.clock-keys .clock-go { background: var(--cream, #f5efe4); color: var(--forest, #1f3d2b); font-weight: 700; }
+.clock-keys .clock-go:disabled { opacity: 0.35; }
+.clock-onnow { flex: 1 1 260px; max-width: 420px; }
+.clock-onnow h2 { margin: 0 0 10px; font-size: 18px; opacity: 0.8; }
+.clock-row { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 8px; font-size: 17px; }
+.clock-row span:last-child { opacity: 0.7; }
+.clock-row-break span:last-child { color: #ffd58a; opacity: 1; }
+.clock-muted { opacity: 0.6; }
+.clock-actions { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; max-width: 560px; }
+.clock-actions h1 { margin: 0; font-size: 40px; }
+.clock-status { margin: 0; font-size: 19px; opacity: 0.85; }
+.clock-buttons { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
+.clock-primary,
+.clock-secondary {
+  font-size: 24px;
+  padding: 20px 34px;
+  border-radius: 18px;
+  border: none;
+}
+.clock-primary { background: var(--cream, #f5efe4); color: var(--forest, #1f3d2b); font-weight: 700; }
+.clock-secondary { background: rgba(245, 239, 228, 0.14); color: inherit; border: 1px solid rgba(245, 239, 228, 0.3); }
+.clock-ghost { background: none; border: none; color: inherit; opacity: 0.6; font-size: 15px; padding: 8px 0; text-decoration: underline; }
+.clock-done { flex: 1; display: flex; align-items: center; }
+.clock-done p { font-size: 34px; max-width: 640px; line-height: 1.3; }

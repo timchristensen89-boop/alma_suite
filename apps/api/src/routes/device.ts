@@ -9,6 +9,7 @@ import {
 } from '../lib/session.js';
 import { HttpError } from '../lib/http.js';
 import { deviceService } from '../services/device.service.js';
+import { staffService } from '../services/staff.service.js';
 
 export const deviceRouter = Router();
 
@@ -55,6 +56,44 @@ deviceRouter.get('/tonight-service', async (req, res, next) => {
     if (!deviceUser) throw new HttpError(403, 'Venue device account required.');
     const venue = typeof req.query.venue === 'string' && req.query.venue ? req.query.venue : deviceUser.venue ?? null;
     res.json(await deviceService.tonightService(venue));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Wall kiosk ─────────────────────────────────────────────────────────────
+// The clock-in tablet on the wall. The device session is the venue; each
+// punch carries the person's PIN, resolved with the same matcher (and the
+// same per-IP throttle and lockouts) as the staff PIN login — but WITHOUT
+// switching the kiosk's session, so the next person walks straight up.
+deviceRouter.get('/kiosk/on-now', async (req, res, next) => {
+  try {
+    const deviceUser = currentDeviceUser(req);
+    if (!deviceUser) throw new HttpError(403, 'Venue device account required.');
+    res.json(await staffService.kioskOnNow(deviceUser.venue ?? null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+deviceRouter.post('/kiosk/punch', async (req, res, next) => {
+  try {
+    const deviceUser = currentDeviceUser(req);
+    if (!deviceUser) throw new HttpError(403, 'Venue device account required.');
+    // Venue-scoped first (identical PINs at different venues stay separate),
+    // then unscoped — someone rostered across from the other venue must be
+    // able to punch this wall. A real cross-venue collision still 409s.
+    let staffUser;
+    try {
+      staffUser = await deviceService.staffPinLogin({ pin: (req.body ?? {}).pin }, req.ip, deviceUser.venue ?? null);
+    } catch (error) {
+      if (error instanceof HttpError && error.statusCode === 401 && deviceUser.venue) {
+        staffUser = await deviceService.staffPinLogin({ pin: (req.body ?? {}).pin }, req.ip, null);
+      } else {
+        throw error;
+      }
+    }
+    res.json(await staffService.kioskPunch(staffUser, req.body));
   } catch (error) {
     next(error);
   }

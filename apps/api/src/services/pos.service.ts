@@ -9,10 +9,12 @@ import { courseDishIds, stillFixed } from '../lib/set-menu-plan.js';
 import { mailService } from './mail.service.js';
 import { authService } from './auth.service.js';
 import { giftCardService } from './gift-card.service.js';
+import { loyaltyService } from './loyalty.service.js';
 import { isTrainingSafeTender, orderIsTraining } from '../lib/training-till.js';
 
-/** Every tender the register accepts. */
-const POS_PAYMENT_METHODS = ['CASH', 'CARD_EXTERNAL', 'STRIPE_TERMINAL', 'SQUARE_TERMINAL', 'GIFT_CARD', 'ONLINE'];
+/** Every tender the register accepts. LOYALTY spends a member's points and,
+    like gift cards, moves real value — so it is never training-safe. */
+const POS_PAYMENT_METHODS = ['CASH', 'CARD_EXTERNAL', 'STRIPE_TERMINAL', 'SQUARE_TERMINAL', 'GIFT_CARD', 'LOYALTY', 'ONLINE'];
 
 const stripe = env.stripe?.secretKey ? new Stripe(env.stripe.secretKey) : null;
 
@@ -674,7 +676,7 @@ function str(value: unknown): string {
 const ORDER_INCLUDE = {
   lines: { orderBy: { createdAt: 'asc' as const } },
   payments: { orderBy: { createdAt: 'asc' as const } },
-  guest: { select: { id: true, firstName: true, lastName: true, totalVisits: true, totalSpendCents: true, tags: true, allergyNotes: true, dietaryNotes: true } }
+  guest: { select: { id: true, firstName: true, lastName: true, totalVisits: true, totalSpendCents: true, tags: true, allergyNotes: true, dietaryNotes: true, loyaltyCode: true, loyaltyPoints: true, loyaltyJoinedAt: true } }
 };
 
 type LineInput = {
@@ -2240,6 +2242,21 @@ export const posService = {
       giftReference = code;
     }
 
+    // Loyalty points: same order of operations as the gift card — the points
+    // are debited atomically BEFORE the payment row exists, so a failed
+    // redemption (not enough points, programme off) leaves the bill untouched.
+    let loyaltyRedeemed: Awaited<ReturnType<typeof loyaltyService.redeemForOrder>> | null = null;
+    if (method === 'LOYALTY') {
+      if (!order.guestId) throw new HttpError(400, 'Attach the loyalty member to this bill before paying with points.');
+      loyaltyRedeemed = await loyaltyService.redeemForOrder({
+        guestId: order.guestId,
+        orderId: id,
+        amountCents: dueCents,
+        venue: order.venue
+      });
+      giftReference = loyaltyRedeemed.code;
+    }
+
     const settled = amountCents >= balanceCents;
     await prisma.posPayment.create({
       data: {
@@ -2275,7 +2292,21 @@ export const posService = {
     if (settled) {
       await postPosActuals(updated.venue).catch(() => undefined);
     }
-    return { ...updated, changeCents, giftCardRemainingCents, balanceCents: settled ? 0 : balanceCents - amountCents };
+    // Points accrue only when the bill settles, on what was actually consumed
+    // — earnForOrder excludes gift-card top-ups and the points-paid portion,
+    // and its earnKey makes a replayed settle award nothing twice.
+    let loyaltyPointsEarned: number | null = null;
+    if (settled) {
+      loyaltyPointsEarned = await loyaltyService.earnForOrder(updated).catch(() => null);
+    }
+    return {
+      ...updated,
+      changeCents,
+      giftCardRemainingCents,
+      loyaltyPointsEarned,
+      loyaltyPointsRemaining: loyaltyRedeemed?.member?.points ?? null,
+      balanceCents: settled ? 0 : balanceCents - amountCents
+    };
   },
 
   async voidOrder(id: string, input: unknown, requireManager = false) {
@@ -2506,6 +2537,26 @@ export const posService = {
     if (card.status !== 'ACTIVE') throw new HttpError(400, `That gift card is ${card.status.replace('_', ' ').toLowerCase()}.`);
     if (card.expiresAt && card.expiresAt < new Date()) throw new HttpError(400, 'That gift card has expired.');
     return { code: card.code, balanceCents: card.balanceCents, recipientName: card.recipientName ?? null };
+  },
+
+  // Put a loyalty member on the bill. The order's guestId is the same slot a
+  // reservation match uses — attaching by hand simply wins, which is right:
+  // the person standing at the till knows who is paying.
+  async attachLoyalty(orderId: string, handle: string) {
+    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, select: { status: true } });
+    if (!order) throw new HttpError(404, 'Order not found.');
+    if (order.status !== 'OPEN') throw new HttpError(400, `Order is ${order.status} — points attach before the bill settles.`);
+    const member = await loyaltyService.memberByHandle(handle);
+    await prisma.posOrder.update({ where: { id: orderId }, data: { guestId: member.guestId } });
+    return { member, order: await this.getOrder(orderId) };
+  },
+
+  async detachLoyalty(orderId: string) {
+    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, select: { status: true } });
+    if (!order) throw new HttpError(404, 'Order not found.');
+    if (order.status !== 'OPEN') throw new HttpError(400, `Order is ${order.status}.`);
+    await prisma.posOrder.update({ where: { id: orderId }, data: { guestId: null } });
+    return this.getOrder(orderId);
   },
 
   // Add a gift card to the CURRENT BILL. It is not a card yet — just a line
