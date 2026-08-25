@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Recipe, RecipeCostPayload, RecipeWithLines, RecipesPayload } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner } from '@alma/ui';
 import { api } from '../lib/api';
+import { applySimChanges, menuTotals, simDelta, type SimChange, type SimDish } from '../lib/menu-sim';
 
 type MarginTone = 'positive' | 'warning' | 'danger' | 'muted';
 
@@ -182,6 +183,12 @@ export function DishMarginPage() {
   // hardcoded order.
   const [sortKey, setSortKey] = useState<DishSortKey>('margin');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // ── Menu lab: what-if changes against the live menu. Never persisted —
+  // closing the lab (or reloading) forgets everything.
+  const [labOn, setLabOn] = useState(false);
+  const [labChanges, setLabChanges] = useState<Record<string, SimChange>>({});
+  const [redistribute, setRedistribute] = useState(true);
+  const [labDialog, setLabDialog] = useState<null | { mode: 'replace' | 'edit'; dish: EnrichedRecipe }>(null);
 
   function toggleSort(key: DishSortKey) {
     if (sortKey === key) {
@@ -326,6 +333,49 @@ export function DishMarginPage() {
     return { totals, avgMargin, totalRecipes: enriched.length };
   }, [enriched]);
 
+  // The lab's model of the menu: every dish (in the venue scope) that has a
+  // cost, a sell price and actual sales in the window. That's the population
+  // the blended COGS is computed over — dishes missing any of the three can't
+  // move the number and get no lab buttons.
+  const simBaseline = useMemo<SimDish[]>(
+    () =>
+      enriched
+        .filter((r) => venueFilter === 'all' || r.venue === venueFilter)
+        .filter(
+          (r) => r.costCents != null && r.sellCents != null && r.sellCents > 0 && (r.actualSales?.quantitySold ?? 0) > 0
+        )
+        .map((r) => ({
+          id: r.id,
+          title: r.title,
+          group: r.category || 'Menu',
+          qty: r.actualSales?.quantitySold ?? 0,
+          priceCents: r.sellCents ?? 0,
+          costCents: r.costCents ?? 0
+        })),
+    [enriched, venueFilter]
+  );
+  const simIds = useMemo(() => new Set(simBaseline.map((d) => d.id)), [simBaseline]);
+  const labBase = useMemo(() => menuTotals(simBaseline), [simBaseline]);
+  const labRows = useMemo(
+    () => applySimChanges(simBaseline, Object.values(labChanges), redistribute),
+    [simBaseline, labChanges, redistribute]
+  );
+  const labSim = useMemo(() => menuTotals(labRows), [labRows]);
+  const labDelta = useMemo(() => simDelta(labBase, labSim), [labBase, labSim]);
+  const labChangeCount = Object.keys(labChanges).length;
+  // Dishes with known economics anywhere on the book — what Replace can pick from.
+  const replaceCandidates = useMemo(
+    () => enriched.filter((r) => r.costCents != null && r.sellCents != null && r.sellCents > 0),
+    [enriched]
+  );
+
+  function cogsTone(percent: number | null): string {
+    if (percent == null) return 'is-muted';
+    if (percent > 30) return 'is-danger';
+    if (percent < 25) return 'is-info';
+    return 'is-positive';
+  }
+
   if (loading) {
     return (
       <Card title="Dish margins"><Spinner label="Loading recipes…" /></Card>
@@ -417,6 +467,94 @@ export function DishMarginPage() {
           );
         })()}
 
+        <div className="menu-lab">
+          <div className="menu-lab-head">
+            <div className="menu-lab-lead">
+              <strong>Menu lab</strong>
+              <span>
+                Pull a dish, swap it, or reprice it — and watch the WHOLE menu's food-cost percent move. The blended
+                number is sales-mix weighted, so one change moves everything. Nothing here touches the live menu.
+              </span>
+            </div>
+            <Button type="button" variant={labOn ? 'secondary' : 'ghost'} onClick={() => setLabOn((v) => !v)}>
+              {labOn ? 'Close the lab' : 'Open the lab'}
+            </Button>
+          </div>
+          {labOn ? (
+            <>
+              <div className="menu-lab-tiles">
+                <div className={`dish-margin-summary-tile ${cogsTone(labBase.cogsPercent)}`}>
+                  <strong>{labBase.cogsPercent != null ? `${labBase.cogsPercent.toFixed(1)}%` : '—'}</strong>
+                  <span>Menu COGS now · {simBaseline.length} dishes</span>
+                </div>
+                <div className={`dish-margin-summary-tile ${cogsTone(labSim.cogsPercent)}`}>
+                  <strong>{labSim.cogsPercent != null ? `${labSim.cogsPercent.toFixed(1)}%` : '—'}</strong>
+                  <span>Simulated menu COGS</span>
+                </div>
+                <div className={`dish-margin-summary-tile ${labDelta.cogsPointDelta != null && labDelta.cogsPointDelta > 0 ? 'is-danger' : 'is-positive'}`}>
+                  <strong>
+                    {labDelta.cogsPointDelta != null
+                      ? `${labDelta.cogsPointDelta >= 0 ? '+' : ''}${labDelta.cogsPointDelta.toFixed(1)} pts`
+                      : '—'}
+                  </strong>
+                  <span>Change</span>
+                </div>
+                <div className={`dish-margin-summary-tile ${labDelta.gpDeltaCents < 0 ? 'is-danger' : 'is-positive'}`}>
+                  <strong>
+                    {labDelta.gpDeltaCents >= 0 ? '+' : '−'}
+                    {formatMoney(Math.abs(Math.round(labDelta.gpDeltaCents * (7 / lookbackDays))))}
+                  </strong>
+                  <span>Gross profit / week</span>
+                </div>
+              </div>
+              <label className="menu-lab-redistribute">
+                <input type="checkbox" checked={redistribute} onChange={(event) => setRedistribute(event.currentTarget.checked)} />
+                <span>
+                  When a dish is removed, guests order something else from its category — its sales spread across the
+                  survivors. Untick to let those sales simply disappear.
+                </span>
+              </label>
+              {labChangeCount > 0 ? (
+                <div className="menu-lab-changes">
+                  {Object.values(labChanges).map((change) => {
+                    const dishTitle = enriched.find((r) => r.id === change.id)?.title ?? 'Dish';
+                    const label =
+                      change.kind === 'remove'
+                        ? `Removed ${dishTitle}`
+                        : change.kind === 'replace'
+                          ? `${dishTitle} → ${change.title}`
+                          : `Repriced ${dishTitle}`;
+                    return (
+                      <button
+                        key={change.id}
+                        type="button"
+                        className="menu-lab-chip"
+                        title="Undo this change"
+                        onClick={() =>
+                          setLabChanges((cur) => {
+                            const next = { ...cur };
+                            delete next[change.id];
+                            return next;
+                          })
+                        }
+                      >
+                        {label} ✕
+                      </button>
+                    );
+                  })}
+                  <button type="button" className="menu-lab-chip menu-lab-chip-reset" onClick={() => setLabChanges({})}>
+                    Reset all
+                  </button>
+                </div>
+              ) : (
+                <p className="subtle menu-lab-hint">
+                  Use Remove / Replace / Reprice on any row below. Target band: 25–30%.
+                </p>
+              )}
+            </>
+          ) : null}
+        </div>
+
         <div className="dish-margin-filters">
           <Input
             label="Search"
@@ -506,10 +644,13 @@ export function DishMarginPage() {
                   ? sales.quantitySold.toLocaleString()
                   : sales.hasMapping ? '0' : <small className="dish-margin-no-mapping">Not mapped to Square</small>
                 : '—';
+              const labChange = labOn ? labChanges[r.id] : undefined;
+              const labState =
+                labChange?.kind === 'remove' ? 'is-lab-removed' : labChange ? 'is-lab-changed' : '';
               return (
                 <div
                   key={r.id}
-                  className={`dish-margin-row dish-margin-row--clickable is-${meta.tone}`}
+                  className={`dish-margin-row dish-margin-row--clickable is-${meta.tone} ${labState}`.trim()}
                   role="button"
                   tabIndex={0}
                   onClick={() => setActiveRecipeId(r.id)}
@@ -531,6 +672,52 @@ export function DishMarginPage() {
                     >
                       Open recipe →
                     </a>
+                    {labOn ? (
+                      simIds.has(r.id) ? (
+                        <span className="menu-lab-rowactions" onClick={(event) => event.stopPropagation()}>
+                          {labChange ? (
+                            <>
+                              <small className="menu-lab-rowstate">
+                                {labChange.kind === 'remove'
+                                  ? 'Removed from the menu'
+                                  : labChange.kind === 'replace'
+                                    ? `→ ${labChange.title} · ${formatMoney(labChange.priceCents)} sell / ${formatMoney(labChange.costCents)} cost`
+                                    : `→ ${formatMoney(labChange.priceCents)} sell / ${formatMoney(labChange.costCents)} cost`}
+                              </small>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setLabChanges((cur) => {
+                                    const next = { ...cur };
+                                    delete next[r.id];
+                                    return next;
+                                  })
+                                }
+                              >
+                                Undo
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setLabChanges((cur) => ({ ...cur, [r.id]: { kind: 'remove', id: r.id } }))}
+                              >
+                                Remove
+                              </button>
+                              <button type="button" onClick={() => setLabDialog({ mode: 'replace', dish: r })}>
+                                Replace
+                              </button>
+                              <button type="button" onClick={() => setLabDialog({ mode: 'edit', dish: r })}>
+                                Reprice
+                              </button>
+                            </>
+                          )}
+                        </span>
+                      ) : (
+                        <small className="menu-lab-rowstate subtle">Not in the model — needs a cost, a price and sales</small>
+                      )
+                    ) : null}
                   </span>
                   <span>{r.venue || '—'}</span>
                   <span>{formatMoney(r.costCents)}</span>
@@ -566,6 +753,18 @@ export function DishMarginPage() {
         )}
       </Card>
 
+      {labDialog ? (
+        <MenuLabDialog
+          mode={labDialog.mode}
+          dish={labDialog.dish}
+          candidates={replaceCandidates}
+          onApply={(change) => {
+            setLabChanges((cur) => ({ ...cur, [change.id]: change }));
+            setLabDialog(null);
+          }}
+          onClose={() => setLabDialog(null)}
+        />
+      ) : null}
       {activeRecipeId ? (
         <DishDetailModal
           recipeId={activeRecipeId}
@@ -710,6 +909,119 @@ function DishDetailModal({
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Menu-lab dialog: replace a dish, or reprice/recost it ───────────────
+// Replace answers "what if we sold THIS instead" — the newcomer inherits the
+// old dish's sales volume, because that is the question being asked. Pick a
+// real recipe (its cost and price come along) or type a hypothetical one.
+function MenuLabDialog({
+  mode,
+  dish,
+  candidates,
+  onApply,
+  onClose
+}: {
+  mode: 'replace' | 'edit';
+  dish: EnrichedRecipe;
+  candidates: EnrichedRecipe[];
+  onApply: (change: SimChange) => void;
+  onClose: () => void;
+}) {
+  const [pick, setPick] = useState('');
+  const [name, setName] = useState('');
+  const [price, setPrice] = useState(mode === 'edit' && dish.sellCents != null ? String(dish.sellCents / 100) : '');
+  const [cost, setCost] = useState(mode === 'edit' && dish.costCents != null ? String(dish.costCents / 100) : '');
+
+  const matches = useMemo(() => {
+    const term = pick.trim().toLowerCase();
+    if (!term) return [];
+    return candidates.filter((c) => c.id !== dish.id && c.title.toLowerCase().includes(term)).slice(0, 8);
+  }, [pick, candidates, dish.id]);
+
+  const priceCents = Math.round(Number(price) * 100);
+  const costCents = Math.round(Number(cost) * 100);
+  const manualValid = priceCents > 0 && costCents > 0 && (mode === 'edit' || name.trim().length > 0);
+
+  return (
+    <div className="dish-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="dish-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="dish-modal-head">
+          <h3>{mode === 'replace' ? `Replace ${dish.title}` : `Reprice ${dish.title}`}</h3>
+          <button type="button" className="dish-modal-close" onClick={onClose} aria-label="Close">×</button>
+        </div>
+
+        {mode === 'replace' ? (
+          <>
+            <p className="subtle menu-lab-dialog-note">
+              The replacement inherits {dish.title}'s sales ({dish.actualSales?.quantitySold ?? 0} sold in the window).
+              Pick an existing recipe, or sketch a hypothetical below.
+            </p>
+            <Input
+              label="Find a recipe"
+              value={pick}
+              onChange={(event) => setPick(event.currentTarget.value)}
+              placeholder="Start typing a dish name…"
+            />
+            {matches.length > 0 ? (
+              <div className="menu-lab-picklist">
+                {matches.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() =>
+                      onApply({
+                        kind: 'replace',
+                        id: dish.id,
+                        title: c.title,
+                        priceCents: c.sellCents ?? 0,
+                        costCents: c.costCents ?? 0
+                      })
+                    }
+                  >
+                    <strong>{c.title}</strong>
+                    <span>
+                      {formatMoney(c.sellCents)} sell · {formatMoney(c.costCents)} cost
+                      {c.foodCostPercent != null ? ` · ${c.foodCostPercent.toFixed(0)}% food cost` : ''}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="dish-modal-fields">
+              <Input label="Or a new dish — name" value={name} onChange={(event) => setName(event.currentTarget.value)} placeholder="e.g. Market fish taco" />
+            </div>
+          </>
+        ) : (
+          <p className="subtle menu-lab-dialog-note">
+            Same dish, same sales — new economics. Try the price rise, or the cheaper ingredient deal.
+          </p>
+        )}
+
+        <div className="dish-modal-fields">
+          <Input label="Sell price ($)" type="number" value={price} onChange={(event) => setPrice(event.currentTarget.value)} placeholder="e.g. 24.00" />
+          <Input label="Cost ($)" type="number" value={cost} onChange={(event) => setCost(event.currentTarget.value)} placeholder="e.g. 7.20" />
+        </div>
+
+        <div className="dish-modal-actions">
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            type="button"
+            disabled={!manualValid}
+            onClick={() =>
+              onApply(
+                mode === 'replace'
+                  ? { kind: 'replace', id: dish.id, title: name.trim(), priceCents, costCents }
+                  : { kind: 'edit', id: dish.id, priceCents, costCents }
+              )
+            }
+          >
+            Apply to the simulation
+          </Button>
+        </div>
       </div>
     </div>
   );
