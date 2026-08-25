@@ -147,6 +147,35 @@ gcloud scheduler jobs create http alma-integrations-daily-9am \
 
 If you already have the early-morning Xero + Square jobs above, either delete those (`gcloud scheduler jobs delete alma-xero-supplier-import --location australia-southeast1`) or leave them — `runScheduledIntegrationImports` is idempotent and safe to call twice.
 
+## Daily sales → Xero (POS takings into the books)
+
+`POST /api/integration-jobs/pos/daily-sales-to-xero` posts **yesterday's POS
+takings** into each venue's own Xero organisation as an AUTHORISED daily
+sales invoice (food / beverage / surcharge / discounts / refunds split, GST
+exclusive, card tips as a no-GST line when a tips account is set). Idempotent
+per venue+day — a repeat run answers "Already posted" instead of double-billing.
+
+It only posts venues that have a Xero organisation selected in the **POS
+Office → Venues & receipts** card (tenant dropdown + sales/tips account
+codes; sales account defaults to 200). The same card has the manual handle:
+per-day status, a dry-run **Preview**, and **Post now** for a missed or
+corrected day.
+
+The connection must hold the `accounting.invoices` scope — if Xero was
+connected before that scope was requested, the push answers 409 with
+"reconnect Xero" and the fix is Admin → disconnect → reconnect once.
+
+On the VPS the simplest schedule is root's crontab (no Cloud Scheduler
+needed). 07:00 Sydney is 21:00 UTC (AEST) — the venue is long closed and the
+day is final:
+
+```
+0 21 * * *  . /opt/alma/deploy/env/suite-api.env && curl -fsS -m 60 -X POST -H "Authorization: Bearer $INTEGRATION_SCHEDULER_SECRET" https://api.almagroup.com.au/api/integration-jobs/pos/daily-sales-to-xero >> /var/log/alma-xero-daily-sales.log 2>&1
+```
+
+Re-posting a specific day (e.g. after a refund was corrected): body
+`{"serviceDate":"2026-08-20"}`, or use Preview/Post in the Office card.
+
 ## Manual Smoke Test
 
 Use a short-lived local variable and do not print it:

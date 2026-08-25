@@ -3524,3 +3524,10 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 /* Stock dashboard header: venue picker + take-stock beside the title. */
 .stock-dashboard-headeractions { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
 .stock-dashboard-headeractions .btn { white-space: nowrap; }
+
+/* Crash guard fallback. */
+.app-crash { position: fixed; inset: 0; display: grid; place-items: center; background: #f7f5ef; color: #21262b; padding: 24px; z-index: 9999; }
+.app-crash-panel { max-width: 420px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.app-crash-panel h1 { font-size: 20px; margin: 0; }
+.app-crash-panel p { margin: 0; color: #5a6069; line-height: 1.5; }
+.app-crash-panel button { min-height: 48px; border-radius: 12px; border: 0; background: #1f3524; color: #f3efe6; font-size: 15px; font-weight: 700; cursor: pointer; }

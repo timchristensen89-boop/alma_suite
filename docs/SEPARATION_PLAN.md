@@ -50,7 +50,7 @@ _Exit criteria: people-core and workforce are separate code paths sharing the DB
 
 ## Phase 3 — Stand up the Workforce app
 
-- [x] Scaffold `apps/staff-api` (workforce-api) — it has no API of its own today; mirror `stock-api`'s structure. → done; boots on :3020, `/health` ok, stub routes 501, typechecks clean.
+- [ ] Scaffold `apps/staff-api` (workforce-api), mirroring `stock-api`'s structure. → A scaffold was built (booted on :3020, all feature routes 501) and then **removed 2026-08-25**: Phases 1–2 never started, so it sat as dead weight reserving a URL space nothing called. It lives in git history (`apps/staff-api`, removed on the structural-cleanup change) — recover it from there, or re-scaffold from `stock-api`, when Phase 3 actually begins.
 - [ ] Move workforce routes/services out of the monolith `api` into `staff-api`, calling the People API for identity.
 - [ ] Point a modular `staff-web` at `staff-api` instead of the monolith.
 - [ ] Still sharing one DB at this point — prove the app boundary works before moving data.

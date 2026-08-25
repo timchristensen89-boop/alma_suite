@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { captureApiError } from './sentry.js';
 
 export class HttpError extends Error {
   constructor(
@@ -58,6 +59,9 @@ export function errorHandler(error: unknown, req: Request, res: Response, _next:
         ? error.message
         : 'Unknown server error';
   logFailure(req, status, message);
+  // Only genuine breakage goes to monitoring — expected 4xx (validation,
+  // wrong PIN, not-found) is normal service, not an incident.
+  if (status >= 500) captureApiError(error, req);
 
   if (error instanceof ZodError) {
     return res.status(400).json({
