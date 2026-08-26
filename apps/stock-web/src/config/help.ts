@@ -134,6 +134,26 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     ],
     tips: ['Pair this with Price movement to catch dishes squeezed by rising ingredient costs.']
   },
+  '/purchase-orders': {
+    title: 'Purchase orders',
+    intro: 'Raise orders to suppliers, send them by email, receive stock against them and match the invoice.',
+    features: [
+      { name: 'Order guide', desc: 'One supplier\'s whole buying list — agreed price beside what the last invoice charged — with quantities prefilled to par.' },
+      { name: 'Send = email', desc: 'Sending emails the order to the supplier and records what went where. No email configured? You get the exact text to copy.' },
+      { name: '3-way match', desc: 'Ordered vs received vs billed, with every discrepancy listed.' }
+    ],
+    tips: ['A "last paid" above the agreed price on the order guide is a price rise nobody has signed off — query it before ordering.']
+  },
+  '/payments': {
+    title: 'Payments',
+    intro: 'Every unpaid supplier bill and the money recorded against it — overdue first.',
+    features: [
+      { name: 'Record payment', desc: 'One tap pays a bill in full; enter an amount for part-payments.' },
+      { name: 'Owed by supplier', desc: 'Outstanding totals grouped by supplier, with the oldest due date.' },
+      { name: 'Xero-aware', desc: 'Bills that synced from Xero already marked paid there arrive here as paid.' }
+    ],
+    tips: ['Recording is reversible — a bill marked paid by mistake can be set back to unpaid from the Invoices tab.']
+  },
   '/buying': {
     title: 'Buying',
     intro: 'Who supplies each item and what it last cost, worked out from the invoices already entered.',

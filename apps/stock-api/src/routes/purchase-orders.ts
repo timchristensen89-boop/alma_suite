@@ -48,6 +48,23 @@ purchaseOrdersRouter.delete('/price-list/:id', async (req, res, next) => {
   }
 });
 
+// One supplier's full buying list — agreed price beside last paid — ready to
+// turn into an order. Registered before '/:id'.
+purchaseOrdersRouter.get('/order-guide', async (req, res, next) => {
+  try {
+    const supplierId = typeof req.query.supplierId === 'string' ? req.query.supplierId : '';
+    res.json(
+      await purchaseOrdersService.orderGuide(
+        req.user,
+        supplierId,
+        typeof req.query.venue === 'string' ? req.query.venue : null
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 purchaseOrdersRouter.get('/:id', async (req, res, next) => {
   try {
     res.json(await purchaseOrdersService.get(String(req.params.id), req.user));
@@ -74,10 +91,13 @@ purchaseOrdersRouter.patch('/:id', async (req, res, next) => {
   }
 });
 
+// Send = deliver: emails the supplier and stores what went where. Returns
+// { purchaseOrder, email } so the UI can show the outcome (or the copy-paste
+// text when email isn't configured).
 purchaseOrdersRouter.post('/:id/send', async (req, res, next) => {
   try {
     requireStockManager(req.user);
-    res.json(await purchaseOrdersService.setStatus(String(req.params.id), 'SENT', req.user));
+    res.json(await purchaseOrdersService.send(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }

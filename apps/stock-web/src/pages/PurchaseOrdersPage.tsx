@@ -1,5 +1,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import type { StockItem, StockInvoicesPayload, StockSupplierInvoice } from '@alma/shared';
+import type {
+  StockItem,
+  StockInvoicesPayload,
+  StockOrderGuidePayload,
+  StockPurchaseOrderSendEmail,
+  StockSupplierInvoice
+} from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, Textarea } from '@alma/ui';
 import { StockItemPicker } from '../components/StockItemPicker';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -42,6 +48,8 @@ type PurchaseOrder = {
   receivedAt: string | null;
   subtotalCents: number;
   matchedInvoice?: { id: string; invoiceNumber?: string | null } | null;
+  sentAt?: string | null;
+  sentTo?: string | null;
   createdAt: string;
   lines: PurchaseOrderLine[];
 };
@@ -364,7 +372,7 @@ export function PurchaseOrdersPage() {
   const { user } = useAuth();
   const canManage = canManageStock(user);
 
-  const [view, setView] = useState<'orders' | 'price-list'>('orders');
+  const [view, setView] = useState<'orders' | 'guide' | 'price-list'>('orders');
   const [data, setData] = useState<PurchaseOrdersPayload | null>(null);
   const [items, setItems] = useState<StockItem[]>([]);
   const [invoices, setInvoices] = useState<StockSupplierInvoice[]>([]);
@@ -382,6 +390,9 @@ export function PurchaseOrdersPage() {
   const [receiveDraft, setReceiveDraft] = useState<Record<string, string>>({});
   const [matchInvoiceId, setMatchInvoiceId] = useState('');
   const [matchResults, setMatchResults] = useState<Record<string, MatchResult['match']>>({});
+  // What happened when an order was sent: delivered, or the copy-paste
+  // fallback when the supplier has no email / email isn't configured.
+  const [sendResult, setSendResult] = useState<{ orderId: string; email: StockPurchaseOrderSendEmail } | null>(null);
 
   async function load(venue = selectedVenue) {
     setLoading(true);
@@ -516,7 +527,11 @@ export function PurchaseOrdersPage() {
     if (!canManage) return;
     setSaving(true);
     try {
-      await api(`/api/purchase-orders/${order.id}/send`, { method: 'POST' });
+      const result = await api<{ purchaseOrder: PurchaseOrder; email: StockPurchaseOrderSendEmail }>(
+        `/api/purchase-orders/${order.id}/send`,
+        { method: 'POST', body: JSON.stringify({}) }
+      );
+      setSendResult({ orderId: order.id, email: result.email });
       await load(activeVenue);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not send purchase order.');
@@ -629,6 +644,14 @@ export function PurchaseOrdersPage() {
               onClick={() => setView('orders')}
             >
               Orders
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={view === 'guide' ? 'primary' : 'ghost'}
+              onClick={() => setView('guide')}
+            >
+              Order guide
             </Button>
             <Button
               type="button"
@@ -757,12 +780,23 @@ export function PurchaseOrdersPage() {
                           {order.matchedInvoice ? (
                             <span className="subtle">Matched invoice {order.matchedInvoice.invoiceNumber ?? order.matchedInvoice.id}</span>
                           ) : null}
+                          {order.sentAt && order.sentTo ? (
+                            <span className="subtle">Emailed to {order.sentTo} · {new Date(order.sentAt).toLocaleString()}</span>
+                          ) : null}
                         </span>
                         <span className="stock-operation-row-actions">
                           <Badge tone={statusTone(order.status)}>{order.status.replaceAll('_', ' ')}</Badge>
                           {canManage && order.status === 'DRAFT' ? (
                             <>
-                              <Button type="button" size="sm" disabled={saving} onClick={() => void sendOrder(order)}>Send</Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={saving}
+                                title={order.supplier?.email ? `Emails the order to ${order.supplier.email}` : 'No supplier email saved — you will get the order text to copy'}
+                                onClick={() => void sendOrder(order)}
+                              >
+                                Send
+                              </Button>
                               <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => editOrder(order)}>Edit</Button>
                               <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void cancelOrder(order)}>Cancel</Button>
                             </>
@@ -772,6 +806,9 @@ export function PurchaseOrdersPage() {
                               <Button type="button" size="sm" disabled={saving} onClick={() => (isPanelOpen && panel?.mode === 'receive' ? setPanel(null) : openReceive(order))}>
                                 {isPanelOpen && panel?.mode === 'receive' ? 'Close' : 'Receive'}
                               </Button>
+                              {order.status === 'SENT' ? (
+                                <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void sendOrder(order)}>Resend</Button>
+                              ) : null}
                               <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void cancelOrder(order)}>Cancel</Button>
                             </>
                           ) : null}
@@ -782,6 +819,39 @@ export function PurchaseOrdersPage() {
                           ) : null}
                         </span>
                       </div>
+
+                      {sendResult?.orderId === order.id ? (
+                        <div className="po-panel">
+                          {sendResult.email.status === 'SENT' ? (
+                            <p className="subtle">Order emailed to {sendResult.email.to}.</p>
+                          ) : (
+                            <>
+                              <p className="error-text">{sendResult.email.warning}</p>
+                              <Textarea
+                                label={`Copy and send yourself — subject: ${sendResult.email.subject}`}
+                                rows={8}
+                                readOnly
+                                value={sendResult.email.body}
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  void navigator.clipboard
+                                    ?.writeText(`${sendResult.email.subject}\n\n${sendResult.email.body}`)
+                                    .catch(() => undefined);
+                                }}
+                              >
+                                Copy order text
+                              </Button>
+                            </>
+                          )}
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setSendResult(null)}>
+                            Dismiss
+                          </Button>
+                        </div>
+                      ) : null}
 
                       {isPanelOpen && panel?.mode === 'receive' ? (
                         <div className="po-panel">
@@ -862,6 +932,22 @@ export function PurchaseOrdersPage() {
             ) : null}
           </Card>
         </div>
+      ) : view === 'guide' ? (
+        <OrderGuideSection
+          suppliers={data?.suppliers ?? []}
+          venue={activeVenue}
+          canManage={canManage}
+          onError={setError}
+          onCreated={() => {
+            setView('orders');
+            void load(activeVenue);
+          }}
+          onSent={(orderId, email) => {
+            setSendResult({ orderId, email });
+            setView('orders');
+            void load(activeVenue);
+          }}
+        />
       ) : (
         <SupplierPriceListSection
           suppliers={data?.suppliers ?? []}
@@ -871,6 +957,216 @@ export function PurchaseOrdersPage() {
         />
       )}
     </div>
+  );
+}
+
+type OrderGuideProps = {
+  suppliers: Array<{ id: string; name: string; email: string | null }>;
+  venue: string;
+  canManage: boolean;
+  onError: (message: string | null) => void;
+  onCreated: () => void;
+  onSent: (orderId: string, email: StockPurchaseOrderSendEmail) => void;
+};
+
+/**
+ * The order guide: one supplier's whole buying list, priced and ready.
+ *
+ * This is how FoodByUs presents ordering, and the shape the reorder screen's
+ * ad-hoc email always wanted to be. Prices come from two places at once — the
+ * agreed price list (kept current automatically whenever an invoice cost is
+ * applied) and what the last invoice actually charged — because the gap
+ * between those two numbers is a price rise nobody has agreed to.
+ */
+function OrderGuideSection({ suppliers, venue, canManage, onError, onCreated, onSent }: OrderGuideProps) {
+  const [supplierId, setSupplierId] = useState('');
+  const [guide, setGuide] = useState<StockOrderGuidePayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [qty, setQty] = useState<Record<string, string>>({});
+
+  const keyOf = (line: StockOrderGuidePayload['lines'][number]) => line.stockItemId ?? `desc:${line.description}`;
+
+  useEffect(() => {
+    if (!supplierId) {
+      setGuide(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const query = `supplierId=${encodeURIComponent(supplierId)}${venue ? `&venue=${encodeURIComponent(venue)}` : ''}`;
+    api<StockOrderGuidePayload>(`/api/purchase-orders/order-guide?${query}`)
+      .then((payload) => {
+        if (cancelled) return;
+        setGuide(payload);
+        // Below-par quantities prefill; a suggestion is a starting point.
+        const prefill: Record<string, string> = {};
+        for (const line of payload.lines) {
+          if (line.suggestedQuantity > 0 && line.stockItemId) prefill[line.stockItemId] = String(line.suggestedQuantity);
+        }
+        setQty(prefill);
+        setNotice(null);
+        onError(null);
+      })
+      .catch((err) => {
+        if (!cancelled) onError(err instanceof ApiError ? err.message : 'Could not load the order guide.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supplierId, venue]);
+
+  const chosen = useMemo(() => {
+    if (!guide) return [];
+    return guide.lines
+      .map((line) => ({ line, quantity: Number(qty[keyOf(line)] ?? 0) }))
+      .filter((entry) => Number.isFinite(entry.quantity) && entry.quantity > 0);
+  }, [guide, qty]);
+
+  const estimatedCents = chosen.reduce((sum, { line, quantity }) => {
+    const price = line.agreedCostCents ?? line.lastPaidCents;
+    return price === null ? sum : sum + Math.round(price * quantity);
+  }, 0);
+
+  async function raiseOrder(sendNow: boolean) {
+    if (!guide || !canManage) return;
+    if (!venue) {
+      setNotice('Choose a venue first — orders belong to one.');
+      return;
+    }
+    if (chosen.length === 0) {
+      setNotice('Set a quantity on at least one line.');
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    try {
+      const created = await api<PurchaseOrder>('/api/purchase-orders', {
+        method: 'POST',
+        body: JSON.stringify({
+          supplierId: guide.supplier.id,
+          supplierName: guide.supplier.name,
+          venue,
+          notes: 'Raised from the order guide',
+          lines: chosen.map(({ line, quantity }) => ({
+            stockItemId: line.stockItemId ?? undefined,
+            description: line.description,
+            unit: line.unit ?? undefined,
+            orderedQuantity: quantity,
+            unitCostCents: line.agreedCostCents ?? line.lastPaidCents ?? 0
+          }))
+        })
+      });
+      if (sendNow) {
+        const result = await api<{ purchaseOrder: PurchaseOrder; email: StockPurchaseOrderSendEmail }>(
+          `/api/purchase-orders/${created.id}/send`,
+          { method: 'POST', body: JSON.stringify({}) }
+        );
+        onSent(created.id, result.email);
+      } else {
+        onCreated();
+      }
+      setQty({});
+    } catch (err) {
+      setNotice(err instanceof ApiError ? err.message : 'Could not raise the order.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card
+      title="Order guide"
+      subtitle="Everything you buy from one supplier — agreed price beside what the last invoice actually charged. Set quantities and send."
+      padding="none"
+    >
+      <div className="stock-filter-toolbar" style={{ padding: '12px 12px 0' }}>
+        <Select
+          label="Supplier"
+          value={supplierId}
+          onChange={(event) => setSupplierId(event.currentTarget.value)}
+          options={[{ label: 'Choose a supplier…', value: '' }, ...suppliers.map((supplier) => ({ label: supplier.name, value: supplier.id }))]}
+        />
+        {guide ? (
+          <p className="subtle">
+            {guide.supplier.email ? `Orders email to ${guide.supplier.email}.` : 'No email saved for this supplier — sending will hand you the order text to copy.'}
+          </p>
+        ) : null}
+      </div>
+      {notice ? <p className="subtle" style={{ padding: '6px 12px' }}>{notice}</p> : null}
+      {loading ? <Spinner label="Building the order guide…" /> : null}
+      {!loading && !supplierId ? (
+        <EmptyState
+          title="Pick a supplier"
+          description="The guide lists their agreed prices and everything you've bought from them before."
+        />
+      ) : null}
+      {!loading && guide && guide.lines.length === 0 ? (
+        <EmptyState
+          title="Nothing on file yet"
+          description="No agreed prices and no matched invoice history for this supplier. Import an invoice or add prices on the Price list tab."
+        />
+      ) : null}
+      {guide && guide.lines.length > 0 ? (
+        <div className="stock-mobile-list">
+          {guide.lines.map((line) => {
+            const key = keyOf(line);
+            // Last invoice above the agreed price = a rise nobody signed off.
+            const risen =
+              line.agreedCostCents !== null && line.lastPaidCents !== null && line.lastPaidCents > line.agreedCostCents;
+            return (
+              <div key={key} className="stock-operation-row">
+                <span>
+                  <strong>{line.description}</strong>
+                  <span className="subtle">
+                    {line.onHand !== null ? `on hand ${line.onHand}` : ''}
+                    {line.parLevel ? ` / par ${line.parLevel}` : ''}
+                    {line.agreedCostCents !== null ? ` · agreed ${money(line.agreedCostCents)}${line.unit ? `/${line.unit}` : ''}` : ''}
+                    {line.lastPaidCents !== null ? ` · last paid ${money(line.lastPaidCents)}` : ''}
+                    {line.priceMovement !== null && line.priceMovement >= 0.15
+                      ? ` · up ${Math.round(line.priceMovement * 100)}% on the best price paid`
+                      : ''}
+                  </span>
+                  {risen ? <span className="error-text">Last invoice came in above the agreed price</span> : null}
+                </span>
+                <span className="stock-buying-price">
+                  <Input
+                    label="Qty"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={qty[key] ?? ''}
+                    disabled={!canManage}
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
+                      setQty((current) => ({ ...current, [key]: value }));
+                    }}
+                  />
+                </span>
+              </div>
+            );
+          })}
+          <div className="stock-operation-row">
+            <span className="subtle">
+              {chosen.length} line{chosen.length === 1 ? '' : 's'} selected
+              {estimatedCents > 0 ? ` · about ${money(estimatedCents)}` : ''}
+            </span>
+            <span className="stock-operation-row-actions">
+              <Button type="button" variant="secondary" disabled={busy || !canManage} onClick={() => void raiseOrder(false)}>
+                {busy ? 'Working…' : 'Raise draft order'}
+              </Button>
+              <Button type="button" disabled={busy || !canManage} onClick={() => void raiseOrder(true)}>
+                {busy ? 'Working…' : 'Raise & send'}
+              </Button>
+            </span>
+          </div>
+        </div>
+      ) : null}
+    </Card>
   );
 }
 
