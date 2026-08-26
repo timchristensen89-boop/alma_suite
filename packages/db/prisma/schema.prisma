@@ -5261,6 +5261,18 @@ model PosRule {
   updatedAt   DateTime @updatedAt
 }
 
+// The print bridge announces itself once a minute — one row per venue, so
+// the Office can show whether dockets have a working path, and where the
+// box driving them actually is (no more hunting the Pi across venue wifi).
+model PosPrintBridge {
+  id         String   @id @default(cuid())
+  venue      String   @unique
+  hostname   String?
+  lanIps     String? // csv of the machine's LAN IPv4 addresses
+  version    String?
+  lastSeenAt DateTime @default(now())
+}
+
 // One row per (staff member, Xero organisation).
 //
 // St Alma trades as Alma Freshwater Pty Ltd and Alma Avalon is a separate
