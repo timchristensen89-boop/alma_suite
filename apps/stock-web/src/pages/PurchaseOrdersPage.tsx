@@ -832,6 +832,13 @@ type OrderBuilderProps = {
 const NO_SUPPLIER = '__none__';
 
 /**
+ * A guide line as the builder tracks it. `__key` pins a line's identity to the
+ * group it was born in, so a "no supplier on file" line keeps its quantity
+ * when picking a supplier moves it under that supplier's heading.
+ */
+type GuideLine = StockOrderGuideLine & { __key?: string };
+
+/**
  * The whole order on one screen.
  *
  * Everything the venue buys, grouped under the supplier it comes from, with
@@ -851,20 +858,23 @@ function OrderBuilder({ venue, canManage, suppliers, items, onError, onOrdersCha
   const [qty, setQty] = useState<Record<string, string>>({});
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   // Lines added from the catalogue that the guide didn't already carry.
-  const [extras, setExtras] = useState<Record<string, StockOrderGuideLine[]>>({});
+  const [extras, setExtras] = useState<Record<string, GuideLine[]>>({});
   const [adderFor, setAdderFor] = useState<string | null>(null);
   const [adderItem, setAdderItem] = useState('');
   const [reviewing, setReviewing] = useState(false);
   const [note, setNote] = useState('');
   const [expectedAt, setExpectedAt] = useState('');
-  // Where the "no supplier on file" lines should go, chosen at review time.
+  // Per-line supplier picks for "no supplier on file" items, keyed by the
+  // line's stable key. A pick moves the line under that supplier immediately.
+  const [assign, setAssign] = useState<Record<string, string>>({});
+  // Fallback for lines ordered without a pick: one destination, chosen at review.
   const [unassignedSupplierId, setUnassignedSupplierId] = useState('');
   const [unassignedSupplierName, setUnassignedSupplierName] = useState('');
   const [result, setResult] = useState<BatchResult | null>(null);
   const [emailDrafts, setEmailDrafts] = useState<Record<string, string>>({});
 
-  const lineKey = (groupKey: string, line: StockOrderGuideLine) =>
-    `${groupKey}|${line.stockItemId ?? `desc:${line.description}`}`;
+  const lineKey = (groupKey: string, line: GuideLine) =>
+    line.__key ?? `${groupKey}|${line.stockItemId ?? `desc:${line.description}`}`;
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -885,6 +895,7 @@ function OrderBuilder({ venue, canManage, suppliers, items, onError, onOrdersCha
       }
       setQty(prefill);
       setExtras({});
+      setAssign({});
       setOpenGroups({});
       setResult(null);
       setReviewing(false);
@@ -901,24 +912,49 @@ function OrderBuilder({ venue, canManage, suppliers, items, onError, onOrdersCha
     void reload();
   }, [reload]);
 
-  // Guide groups plus any hand-added lines, in render order.
+  // Guide groups plus any hand-added lines, in render order. Unknown-supplier
+  // lines with a pick move under that supplier, carrying their stable key so
+  // the quantity travels with them.
   const groups = useMemo(() => {
     if (!guide) return [];
     const merged = guide.suppliers.map((group) => ({
       key: group.supplier.id,
       supplier: group.supplier,
-      lines: [...group.lines, ...(extras[group.supplier.id] ?? [])]
+      lines: [...group.lines, ...(extras[group.supplier.id] ?? [])] as GuideLine[]
     }));
-    const unassignedLines = [...guide.unassigned, ...(extras[NO_SUPPLIER] ?? [])];
-    if (unassignedLines.length > 0) {
+    const byId = new Map(merged.map((group) => [group.key, group]));
+    const leftover: GuideLine[] = [];
+    for (const line of [...guide.unassigned, ...(extras[NO_SUPPLIER] ?? [])]) {
+      const key = `${NO_SUPPLIER}|${line.stockItemId ?? `desc:${line.description}`}`;
+      const picked = assign[key];
+      if (picked) {
+        let target = byId.get(picked);
+        if (!target) {
+          // A supplier with nothing else on their guide yet still gets a group.
+          const supplier = suppliers.find((candidate) => candidate.id === picked);
+          if (supplier) {
+            target = { key: supplier.id, supplier, lines: [] };
+            merged.push(target);
+            byId.set(supplier.id, target);
+          }
+        }
+        if (target) {
+          target.lines.push({ ...line, __key: key });
+          continue;
+        }
+      }
+      leftover.push(line);
+    }
+    merged.sort((a, b) => a.supplier.name.localeCompare(b.supplier.name));
+    if (leftover.length > 0) {
       merged.push({
         key: NO_SUPPLIER,
         supplier: { id: NO_SUPPLIER, name: 'No supplier on file yet', email: null },
-        lines: unassignedLines
+        lines: leftover
       });
     }
     return merged;
-  }, [guide, extras]);
+  }, [guide, extras, assign, suppliers]);
 
   const needle = search.trim().toLowerCase();
   const visibleGroups = useMemo(() => {
@@ -1009,6 +1045,53 @@ function OrderBuilder({ venue, canManage, suppliers, items, onError, onOrdersCha
     setQty((current) => ({ ...current, [key]: current[key] && Number(current[key]) > 0 ? current[key] : '1' }));
     setAdderFor(null);
     setAdderItem('');
+  }
+
+  /**
+   * Pick who supplies an unknown item, right on its line. The line files
+   * itself under that supplier immediately, and when a price is known it is
+   * saved to the supplier's price list too — so it lives there from now on,
+   * not just for this order.
+   */
+  function assignSupplier(key: string, supplierId: string, line: GuideLine) {
+    if (!supplierId) return;
+    const supplier = suppliers.find((candidate) => candidate.id === supplierId);
+    if (!supplier) return;
+    setAssign((current) => ({ ...current, [key]: supplierId }));
+    setOpenGroups((current) => ({ ...current, [supplierId]: true }));
+    const price = linePriceCents(line);
+    if (line.stockItemId && price !== null) {
+      void api('/api/purchase-orders/price-list', {
+        method: 'POST',
+        body: JSON.stringify({
+          supplierId,
+          stockItemId: line.stockItemId,
+          description: line.description,
+          unit: line.unit ?? undefined,
+          unitCostCents: price
+        })
+      })
+        .then(() =>
+          setNotice(`${line.description} filed under ${supplier.name} and saved to their price list — it lives there from now on.`)
+        )
+        .catch(() =>
+          setNotice(
+            `${line.description} will go on ${supplier.name}'s order. Couldn't save it to their price list — it still files itself for good once one of their invoices is matched.`
+          )
+        );
+    } else {
+      setNotice(
+        `${line.description} will go on ${supplier.name}'s order this time — it files itself for good once one of their invoices is matched.`
+      );
+    }
+  }
+
+  function unassignLine(key: string) {
+    setAssign((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
   }
 
   async function saveSupplierEmail(supplierId: string) {
@@ -1348,8 +1431,9 @@ function OrderBuilder({ venue, canManage, suppliers, items, onError, onOrdersCha
                 <div className="stock-buying-rows">
                   {group.key === NO_SUPPLIER ? (
                     <p className="subtle" style={{ padding: '0 12px' }}>
-                      These are running short but no invoice or price list says who supplies them. Order them anyway —
-                      you pick the supplier at review — or match one of their invoices and they file themselves.
+                      Running short, but nothing on file says who supplies them. Pick a supplier on the line and it
+                      files itself under them — for good, not just this order. Lines left unpicked can still be
+                      ordered; you choose where they go at review.
                     </p>
                   ) : null}
                   {group.lines.map((line) => {
@@ -1380,6 +1464,18 @@ function OrderBuilder({ venue, canManage, suppliers, items, onError, onOrdersCha
                           ) : null}
                         </span>
                         <span className="stock-buying-price">
+                          {group.key === NO_SUPPLIER ? (
+                            <Select
+                              label="Supplier"
+                              value=""
+                              disabled={!canManage}
+                              onChange={(event) => assignSupplier(key, event.currentTarget.value, line)}
+                              options={[
+                                { label: 'Pick supplier…', value: '' },
+                                ...suppliers.map((supplier) => ({ label: supplier.name, value: supplier.id }))
+                              ]}
+                            />
+                          ) : null}
                           <Input
                             label="Qty"
                             type="number"
@@ -1392,6 +1488,17 @@ function OrderBuilder({ venue, canManage, suppliers, items, onError, onOrdersCha
                               setQty((current) => ({ ...current, [key]: value }));
                             }}
                           />
+                          {line.__key ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              title="Put this back under “No supplier on file yet”"
+                              onClick={() => unassignLine(key)}
+                            >
+                              Undo
+                            </Button>
+                          ) : null}
                         </span>
                       </div>
                     );
