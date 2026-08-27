@@ -2,10 +2,13 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
   orderQuantityToPar,
+  holdBackImplausibleGuideSuggestions,
   IMPLAUSIBLE_COUNT_SHARE,
   IMPLAUSIBLE_COUNT_FLOOR_CENTS,
+  stockPurchaseOrderBatchInputSchema,
   stockPurchaseOrderSendInputSchema,
   type AuthUser,
+  type StockFullOrderGuidePayload,
   type StockOrderGuideLine,
   type StockOrderGuidePayload,
   type StockPurchaseOrderSendEmail
@@ -658,6 +661,245 @@ export const purchaseOrdersService = {
       .sort((a, b) => a.description.localeCompare(b.description));
 
     return { supplier, venue, lines, generatedAt: new Date().toISOString() };
+  },
+
+  /**
+   * The whole ordering universe on one screen: every supplier's guide at once,
+   * plus below-par items whose supplier nobody knows yet.
+   *
+   * The per-supplier guide asked the buyer to already know who sells what and
+   * to work through suppliers one dropdown at a time. Real ordering runs the
+   * other way — walk everything the venue buys, set quantities, and let the
+   * orders split themselves by supplier at the end. Sources are the same two
+   * as the per-supplier guide (agreed price lists and invoice history), so
+   * anything ever bought or priced is on this list.
+   */
+  async fullOrderGuide(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockFullOrderGuidePayload> {
+    const venue = actorVenueScope(actor, requestedVenue ?? null);
+
+    const [suppliers, priceList, facts, items, openOrderLines] = await Promise.all([
+      prisma.supplier.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: 'asc' }
+      }),
+      prisma.supplierPriceListItem.findMany({
+        include: { stockItem: { select: { id: true, name: true, unit: true } } }
+      }),
+      itemsService.purchaseFacts(),
+      prisma.stockItem.findMany({
+        where: { status: 'ACTIVE' },
+        select: {
+          id: true, name: true, unit: true, conversionFactor: true,
+          parLevel: true, onHand: true, latestCostCents: true,
+          venueStock: venue ? { where: { venue }, select: { onHand: true, parLevel: true } } : false
+        }
+      }),
+      prisma.purchaseOrderLine.findMany({
+        where: {
+          stockItemId: { not: null },
+          purchaseOrder: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] }, ...(venue ? { venue } : {}) }
+        },
+        select: { stockItemId: true, orderedQuantity: true, receivedQuantity: true }
+      })
+    ]);
+
+    const supplierById = new Map(suppliers.map((s) => [s.id, s]));
+    const itemById = new Map(items.map((item) => [item.id, item]));
+    const onOrderByItem = new Map<string, number>();
+    for (const line of openOrderLines) {
+      if (!line.stockItemId) continue;
+      const outstanding = Math.max(0, line.orderedQuantity - (line.receivedQuantity ?? 0));
+      onOrderByItem.set(line.stockItemId, (onOrderByItem.get(line.stockItemId) ?? 0) + outstanding);
+    }
+
+    type ItemRow = (typeof items)[number];
+    const standing = (item: ItemRow) => {
+      const venueRow = Array.isArray(item.venueStock) ? item.venueStock[0] : null;
+      const onHand = venueRow?.onHand ?? item.onHand;
+      const parLevel = venueRow?.parLevel ?? item.parLevel;
+      const factor = item.conversionFactor && item.conversionFactor > 0 ? item.conversionFactor : 1;
+      const suggestedQuantity =
+        parLevel && parLevel > 0
+          ? orderQuantityToPar({
+              onHand,
+              parLevel,
+              conversionFactor: factor,
+              onOrder: (onOrderByItem.get(item.id) ?? 0) * factor
+            })
+          : 0;
+      return { onHand, parLevel, suggestedQuantity };
+    };
+
+    // One line map per supplier, keyed like the per-supplier guide so a price
+    // list row and the invoice history for the same item merge into one line.
+    const groups = new Map<string, { supplier: { id: string; name: string; email: string | null }; byKey: Map<string, StockOrderGuideLine> }>();
+    const groupFor = (supplierId: string) => {
+      const supplier = supplierById.get(supplierId);
+      if (!supplier) return null; // archived supplier — nothing orderable from them
+      let group = groups.get(supplierId);
+      if (!group) {
+        group = { supplier, byKey: new Map() };
+        groups.set(supplierId, group);
+      }
+      return group;
+    };
+    const keyFor = (stockItemId: string | null, description: string) =>
+      stockItemId ?? `desc:${description.trim().toLowerCase()}`;
+
+    for (const row of priceList) {
+      const group = groupFor(row.supplierId);
+      if (!group) continue;
+      group.byKey.set(keyFor(row.stockItemId, row.description), {
+        stockItemId: row.stockItemId,
+        description: row.stockItem?.name ?? row.description,
+        unit: row.unit ?? row.stockItem?.unit ?? null,
+        onHand: null,
+        parLevel: null,
+        agreedCostCents: row.unitCostCents,
+        agreedEffectiveAt: row.effectiveAt.toISOString(),
+        lastPaidCents: null,
+        lastPurchasedAt: null,
+        priceMovement: null,
+        suggestedQuantity: 0
+      });
+    }
+
+    for (const [itemId, fact] of facts) {
+      if (!fact.supplierId) continue;
+      const group = groupFor(fact.supplierId);
+      if (!group) continue;
+      const existing = group.byKey.get(itemId);
+      if (existing) {
+        existing.lastPaidCents = fact.lastPriceCents;
+        existing.lastPurchasedAt = fact.lastPurchasedAt;
+        existing.priceMovement = fact.priceMovement;
+      } else {
+        group.byKey.set(itemId, {
+          stockItemId: itemId,
+          description: '',
+          unit: null,
+          onHand: null,
+          parLevel: null,
+          agreedCostCents: null,
+          agreedEffectiveAt: null,
+          lastPaidCents: fact.lastPriceCents,
+          lastPurchasedAt: fact.lastPurchasedAt,
+          priceMovement: fact.priceMovement,
+          suggestedQuantity: 0
+        });
+      }
+    }
+
+    // Names, units, on-hand, par and suggested quantities for every guide line
+    // that is a real catalogue item.
+    for (const group of groups.values()) {
+      for (const line of group.byKey.values()) {
+        if (!line.stockItemId) continue;
+        const item = itemById.get(line.stockItemId);
+        if (!item) continue;
+        const { onHand, parLevel, suggestedQuantity } = standing(item);
+        line.description = line.description || item.name;
+        line.unit = line.unit ?? item.unit;
+        line.onHand = onHand;
+        line.parLevel = parLevel;
+        line.suggestedQuantity = suggestedQuantity;
+      }
+    }
+
+    // Below par with nobody on record to buy it from. Shown rather than
+    // dropped: the stock still needs ordering, somebody just has to say from
+    // whom — and the moment one of their invoices is matched, the item moves
+    // under its supplier on its own.
+    const unassigned: StockOrderGuideLine[] = [];
+    for (const item of items) {
+      const fact = facts.get(item.id);
+      if (fact?.supplierId && supplierById.has(fact.supplierId)) continue;
+      const { onHand, parLevel, suggestedQuantity } = standing(item);
+      if (suggestedQuantity <= 0) continue;
+      unassigned.push({
+        stockItemId: item.id,
+        description: item.name,
+        unit: item.unit,
+        onHand,
+        parLevel,
+        agreedCostCents: null,
+        agreedEffectiveAt: null,
+        lastPaidCents: fact?.lastPriceCents ?? item.latestCostCents ?? null,
+        lastPurchasedAt: fact?.lastPurchasedAt ?? null,
+        priceMovement: fact?.priceMovement ?? null,
+        suggestedQuantity
+      });
+    }
+
+    const supplierGroups = [...groups.values()]
+      .map((group) => ({
+        supplier: group.supplier,
+        lines: [...group.byKey.values()]
+          .filter((line) => line.description)
+          .sort((a, b) => a.description.localeCompare(b.description))
+      }))
+      .filter((group) => group.lines.length > 0)
+      .sort((a, b) => a.supplier.name.localeCompare(b.supplier.name));
+    unassigned.sort((a, b) => a.description.localeCompare(b.description));
+
+    // A par derived from a count made in the wrong unit must not prefill
+    // 21,724 bottles of gin — same guard as the below-par suggestions.
+    holdBackImplausibleGuideSuggestions([
+      ...supplierGroups.flatMap((group) => group.lines),
+      ...unassigned
+    ]);
+
+    return { venue, suppliers: supplierGroups, unassigned, generatedAt: new Date().toISOString() };
+  },
+
+  /**
+   * One review, one send: raise a draft per supplier and (optionally) email
+   * each one, in a single request. Per-order failures come back as rows rather
+   * than failing the batch — four suppliers' orders should not die because a
+   * fifth had a bad line.
+   */
+  async createBatch(input: unknown, actor?: AuthUser | null) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    const data = stockPurchaseOrderBatchInputSchema.parse(input ?? {});
+    const venue = actorVenueScope(actor, data.venue ?? null);
+    if (!venue) throw new HttpError(400, 'Venue is required');
+
+    const results: Array<{
+      supplierName: string;
+      purchaseOrder: Awaited<ReturnType<typeof loadPo>> | null;
+      email: StockPurchaseOrderSendEmail | null;
+      error: string | null;
+    }> = [];
+    for (const order of data.orders) {
+      try {
+        const created = await this.create(
+          {
+            supplierId: order.supplierId ?? undefined,
+            supplierName: order.supplierName,
+            venue,
+            expectedAt: data.expectedAt || undefined,
+            notes: 'Raised from the order guide',
+            lines: order.lines
+          },
+          actor
+        );
+        if (data.send) {
+          const sent = await this.send(created.id, { message: data.message ?? '' }, actor);
+          results.push({ supplierName: order.supplierName, purchaseOrder: sent.purchaseOrder, email: sent.email, error: null });
+        } else {
+          results.push({ supplierName: order.supplierName, purchaseOrder: created, email: null, error: null });
+        }
+      } catch (error) {
+        results.push({
+          supplierName: order.supplierName,
+          purchaseOrder: null,
+          email: null,
+          error: error instanceof HttpError ? error.message : 'Could not raise this order.'
+        });
+      }
+    }
+    return { venue, results, generatedAt: new Date().toISOString() };
   },
 
   // Receive: set received quantities, lift on-hand, post movements, update status.
