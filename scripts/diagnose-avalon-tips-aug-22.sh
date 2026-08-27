@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Deliberately no -e, unlike the other scripts here: Section A leans on
+# grep -c and grep -rl, which exit non-zero when a count is zero, and that
+# is a RESULT worth printing rather than a reason to stop before the SQL.
 set -uo pipefail
 
 # Read-only diagnosis: why does Alma Avalon have no card-tip row for
