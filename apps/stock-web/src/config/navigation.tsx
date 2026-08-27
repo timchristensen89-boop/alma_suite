@@ -55,7 +55,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Purchasing',
     description: 'Invoices, purchase orders, deliveries, suppliers and price changes',
     icon: <IconInvoices />,
-    match: ['/purchase-orders', '/deliveries', '/suppliers', '/buying', '/price-movement']
+    match: ['/purchase-orders', '/payments', '/deliveries', '/suppliers', '/buying', '/price-movement']
   },
   {
     to: '/recipes',

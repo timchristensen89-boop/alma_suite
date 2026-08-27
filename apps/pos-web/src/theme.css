@@ -112,7 +112,7 @@ body {
 }
 .pos-shell { background: var(--pos-bg); color: var(--pos-text); font-family: var(--font-sans); }
 .pos-header { background: var(--pos-bg); border-bottom: 1px solid var(--pos-border-soft); color: var(--pos-text); padding: 12px 20px; gap: 10px; }
-.pos-header > strong { font-family: var(--font-display); font-weight: 500; font-size: 27px; letter-spacing: 0; text-transform: lowercase; color: var(--pos-text); }
+.pos-header .pos-header-name { font-family: var(--font-display); font-weight: 500; font-size: 27px; letter-spacing: 0; text-transform: lowercase; color: var(--pos-text); }
 .pos-wordmark-chip { font-size: 10px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; padding: 4px 10px; border-radius: 9999px; background: var(--pos-chip); color: var(--pos-text2); }
 .pos-crumb { color: var(--pos-text2); font-weight: 600; }
 .pos-search { background: var(--pos-card); border: 1px solid var(--pos-border); border-radius: 9999px; color: var(--pos-text); padding: 9px 16px; font-size: 13px; font-family: inherit; }
@@ -871,7 +871,9 @@ body:not(.pos-v2) .pos-cart .pos-meta-chips > button { border-color: rgba(255, 2
 .pos-cash-total .is-over strong { color: #b5772f; }
 .pos-cash-total .is-under strong { color: #b3402e; }
 
-/* Rail design: brand lives at the top of the rail; the header keeps the room */
+/* Rail design: brand lives at the top of the rail; the header keeps the room.
+   Wide screens only — below 700px the rail is hidden, so the header's own
+   brand is the only one there is. */
 .pos-rail-brand { cursor: pointer; }
 .pos-rail-brand strong { flex: 1; font-family: var(--font-display); font-size: 17px; font-weight: 500; letter-spacing: 0; text-transform: lowercase; color: #f8f6f1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The header hands the mark, the venue name and the chip to the rail — but
@@ -879,7 +881,7 @@ body:not(.pos-v2) .pos-cart .pos-meta-chips > button { border-color: rgba(255, 2
    takes all three back; see the masthead block at the phone breakpoint. */
 @media (min-width: 701px) {
   body.pos-v2 .pos-header .pos-mark,
-  body.pos-v2 .pos-header > strong,
+  body.pos-v2 .pos-header .pos-header-name,
   body.pos-v2 .pos-header .pos-wordmark-chip { display: none; }
 }
 
@@ -914,7 +916,7 @@ details.pos-list-section > summary.pos-list-head { margin-bottom: 6px; }
   .pos-floor-table strong { font-size: 9.5px; }
   .pos-floor-table small { font-size: 8px; }
   .pos-header { flex-wrap: wrap; row-gap: 6px; padding: 8px 10px; }
-  .pos-header > strong { font-size: 21px; }
+  .pos-header .pos-header-name { font-size: 21px; }
   .pos-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
   .pos-item { min-height: 78px; padding: 10px 11px; min-width: 0; }
   .pos-item span { font-size: calc(12.5px * var(--pos-text-scale, 1)); }
@@ -1033,7 +1035,7 @@ body:not(.pos-v2) .pos-cart .pos-order-note { border-left-color: rgba(255, 255, 
 
 /* ── Header: tighter, and the venue name carries it ───────────────────── */
 .pos-header { padding: 10px 16px; gap: 8px; align-items: center; }
-.pos-header > strong { font-size: 23px; line-height: 1; }
+.pos-header .pos-header-name { font-size: 23px; line-height: 1; }
 .pos-crumb { font-size: 13px; }
 .pos-search { padding: 8px 15px; font-size: 13px; min-width: 190px; }
 .pos-ghost { padding: 7px 14px; font-size: 10px; }
@@ -1111,7 +1113,7 @@ body.pos-v2 .pos-cart-foot { border-color: var(--pos-border); }
 /* ── Phones: reclaim every pixel the thumb doesn't need ───────────────── */
 @media (max-width: 700px) {
   .pos-header { padding: 8px 12px; }
-  .pos-header > strong { font-size: 19px; }
+  .pos-header .pos-header-name { font-size: 19px; }
   .pos-grid { padding: 10px 12px; gap: 7px; }
   .pos-item { min-height: 76px; padding: 10px 11px; }
   .pos-bills-page { padding: 12px; }
@@ -2184,14 +2186,19 @@ body.pos-v2 .pos-cart .pos-charge {
     height: auto;
     overflow: visible;
   }
-  .pos-shell {
+  /* Written as the same compound selector as the lock above — a bare
+     .pos-shell loses to `body.pos-v2 .pos-shell` on specificity, and with
+     the shell still overflow:hidden it becomes the sticky header's
+     scrollport: the header then rides up with the document instead of
+     pinning to the viewport. */
+  body.pos-v2 .pos-shell, .pos-shell {
     height: auto;
     min-height: 100dvh;
     overflow: visible;
   }
-  /* The header stops being sticky here — sticky inside a scrolling document
-     would park four rows of chrome over the menu the whole way down. */
-  .pos-header { position: static; }
+  /* The header used to stop being sticky here because it wrapped to four
+     rows of chrome. The nav redesign (end of this file) folds it down to a
+     compact two-row bar, so it stays sticky at every width. */
 }
 
 /* The bill's summary bar ("2 items · $44 — Hide bill") is the top edge of the
@@ -2338,3 +2345,187 @@ body.pos-v2 .pos-rail { flex-basis: calc(190px * var(--pos-text-scale, 1)); }
 
 /* ── Package items chip ── */
 .pos-pkg-chip.is-on { background: var(--pos-accent-bg); color: var(--pos-accent-fg); border-color: transparent; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TOP NAV REDESIGN — one bar, both surfaces.
+   The register header and the back office header share a shape now: brand,
+   context, actions. Wide screens keep the flat paper row they always had
+   (the group wrappers render as display:contents, so nothing moves on the
+   iPad till); phones get a compact two-row bar on solid ALMA green — the
+   rail is hidden there, so the green carries the brand, the same rule the
+   bill already follows. The long tail of actions lives in a dropdown, which
+   is what lets the bar stay small enough to be sticky everywhere.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Wide screens: the wrappers dissolve into the header's own flex row. */
+.pos-header-brand, .pos-header-context, .pos-header-actions { display: contents; }
+.pos-header-spacer { flex: 1 1 auto; }
+
+/* What each width shows: -wide only above 700px, -narrow only below. */
+@media (min-width: 701px) {
+  .pos-nav-narrow, .pos-nav-narrow-inline { display: none !important; }
+}
+@media (max-width: 700px) {
+  .pos-nav-wide, .pos-nav-wide-inline { display: none !important; }
+}
+
+/* ── The nav dropdown ── */
+.pos-nav-dd { position: relative; display: inline-flex; }
+.pos-nav-dd-backdrop { position: fixed; inset: 0; z-index: 39; background: transparent; }
+.pos-nav-dd-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40;
+  min-width: 236px; max-width: calc(100vw - 24px);
+  max-height: min(72dvh, 480px); overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 6px; display: flex; flex-direction: column; gap: 1px;
+  background: var(--pos-card); border: 1px solid var(--pos-border); border-radius: 16px;
+  box-shadow: 0 18px 44px rgba(31, 53, 36, 0.22);
+  animation: pos-dd-in 160ms var(--ease-out);
+}
+body.pos-dark .pos-nav-dd-panel { box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5); }
+@keyframes pos-dd-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pos-nav-dd-panel { animation: none; } }
+.pos-nav-dd-who {
+  padding: 8px 12px 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--pos-text3); flex: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pos-nav-dd-item {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  width: 100%; text-align: left; background: transparent; border: 0; border-radius: 10px;
+  color: var(--pos-text); font-family: inherit; font-size: 13.5px; font-weight: 600;
+  padding: 10px 12px; min-height: 40px; cursor: pointer; flex: none;
+}
+.pos-nav-dd-item:hover { background: var(--pos-hover); }
+.pos-nav-dd-item.is-on { background: var(--pos-accent-bg); color: var(--pos-accent-fg); }
+.pos-nav-dd-item em { font-style: normal; font-size: 11px; font-weight: 500; color: var(--pos-text3); flex: none; }
+.pos-nav-dd-item.is-on em { color: var(--pos-accent-fg); opacity: 0.7; }
+.pos-nav-dd-rule { height: 1px; background: var(--pos-border-soft); margin: 5px 10px; flex: none; }
+
+/* ── Phones: the register's bar goes green and stays put ── */
+@media (max-width: 700px) {
+  .pos-header {
+    position: sticky; top: 0; z-index: 30;
+    background: #1f3524; color: #f3efe6;
+    border-bottom: 0; box-shadow: 0 6px 18px rgba(31, 53, 36, 0.18);
+    display: flex; flex-wrap: wrap; align-items: center;
+    column-gap: 8px; row-gap: 8px;
+    padding: 9px 12px 10px;
+    padding-top: calc(9px + env(safe-area-inset-top));
+  }
+  body.pos-dark .pos-header { background: #10160f; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
+
+  /* Row 1: brand on the left, actions on the right. */
+  .pos-header-brand { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
+  .pos-header-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+  .pos-header-spacer { display: none; }
+  /* Row 2: what you're doing — sale context, then search. The chips scroll
+     inside the crumb; the search box itself never leaves the screen. */
+  .pos-header-context {
+    display: flex; align-items: center; gap: 6px;
+    flex-basis: 100%; order: 10; min-width: 0;
+  }
+
+  .pos-header .pos-mark { width: 26px; height: 26px; }
+  .pos-header .pos-header-name { color: #f3efe6; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pos-header .pos-wordmark-chip { display: none; }
+  /* Who's on the till moves into the dropdown's header line. */
+  .pos-header .pos-staff-chip { display: none; }
+
+  .pos-header .pos-ghost {
+    background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2);
+    color: #f3efe6; padding: 8px 12px; white-space: nowrap;
+  }
+  .pos-header .pos-ghost-active { background: #f3efe6; border-color: #f3efe6; color: #1f3524; }
+  .pos-header .pos-theme-btn { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); color: #f3efe6; }
+
+  .pos-header .pos-crumb {
+    color: rgba(243, 239, 230, 0.92); display: inline-flex; align-items: center; gap: 6px;
+    flex: 0 1 auto; max-width: 62%; white-space: nowrap; font-size: 12.5px;
+    overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .pos-header .pos-crumb::-webkit-scrollbar { display: none; }
+  .pos-header .pos-covers-chip, .pos-header .pos-type-chip {
+    margin-left: 0; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.16); color: #f3efe6;
+  }
+  .pos-header .pos-type-chip.is-away { border-color: rgba(240, 183, 172, 0.6); color: #f0b7ac; }
+  .pos-header .pos-guest-chip { margin-left: 0; background: rgba(255, 255, 255, 0.06); border-color: rgba(188, 211, 168, 0.55); color: #bcd3a8; }
+
+  .pos-header .pos-search {
+    flex: 1 1 130px; order: 0; min-width: 130px; width: auto;
+    background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.16); color: #f3efe6;
+  }
+  .pos-header .pos-search::placeholder { color: rgba(243, 239, 230, 0.55); }
+  .pos-header select {
+    background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); color: #f3efe6;
+    flex: 1 1 auto; min-width: 0;
+  }
+}
+
+/* ── Back office: the same green, at every width ── */
+.office-top {
+  position: sticky; top: 0; z-index: 30;
+  background: #1f3524; color: #f3efe6;
+  box-shadow: 0 6px 18px rgba(31, 53, 36, 0.18);
+}
+body.pos-dark .office-top { background: #10160f; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
+.office-top .office-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px 24px;
+  padding-top: calc(12px + env(safe-area-inset-top));
+}
+.office-top .office-header strong { color: #f3efe6; }
+.office-top .pos-wordmark-chip { background: rgba(255, 255, 255, 0.12); color: rgba(243, 239, 230, 0.85); }
+.office-top .office-back { color: #f3efe6; border-color: rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.08); white-space: nowrap; }
+.office-top .office-back:hover { background: rgba(255, 255, 255, 0.15); }
+/* Tabs: one row that scrolls sideways instead of wrapping into four. */
+.office-tabs {
+  flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  padding: 10px 24px 12px; gap: 6px;
+}
+.office-tabs::-webkit-scrollbar { display: none; }
+.office-tabs button {
+  flex: none; white-space: nowrap;
+  background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); color: rgba(243, 239, 230, 0.88);
+}
+.office-tabs button:hover { background: rgba(255, 255, 255, 0.15); }
+.office-tabs button.is-active { background: #f3efe6; border-color: #f3efe6; color: #1f3524; }
+/* Phones: the nine pills become one dropdown. */
+.office-tab-pick { display: none; position: relative; padding: 10px 12px 12px; }
+.office-tab-pick::after {
+  content: '▾'; position: absolute; right: 26px; top: 50%; transform: translateY(-58%);
+  color: rgba(243, 239, 230, 0.7); pointer-events: none; font-size: 12px;
+}
+.office-tab-pick select {
+  width: 100%; appearance: none; -webkit-appearance: none;
+  background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 12px;
+  color: #f3efe6; font-family: inherit; font-size: 14px; font-weight: 600;
+  padding: 11px 14px; outline: none; cursor: pointer;
+}
+/* Dropdown options render on the browser's own sheet — keep them readable. */
+.office-tab-pick select option, .pos-header select option { color: #1f3524; background: #fff; }
+
+/* ── Office → Printers: the bridge announces itself ── */
+.office-bridges { display: flex; flex-direction: column; gap: 8px; margin: 0 0 18px; }
+.office-bridge {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  border: 1px solid var(--pos-border-soft); border-radius: 12px;
+  background: var(--pos-card); padding: 10px 14px;
+  font-size: 12.5px; color: var(--pos-text2);
+}
+.office-bridge strong { color: var(--pos-text); font-size: 13px; }
+.office-bridge i { width: 9px; height: 9px; border-radius: 9999px; background: #b3402e; flex: none; }
+.office-bridge.is-on i { background: #4f6b47; box-shadow: 0 0 0 3px rgba(79, 107, 71, 0.18); }
+/* A bridge that has reported before and gone quiet is the alarm case. */
+.office-bridge:not(.is-on) { border-color: rgba(154, 58, 46, 0.4); }
+.office-bridge:not(.is-on) span { color: #9a3a2e; font-weight: 600; }
+@media (max-width: 700px) {
+  .office-tabs { display: none; }
+  .office-tab-pick { display: block; }
+  .office-top .office-header { padding: 10px 12px; padding-top: calc(10px + env(safe-area-inset-top)); }
+  .office-top .office-header strong { font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Same trim as the register: the wordmark chip gives its room to the title. */
+  .office-top .pos-wordmark-chip { display: none; }
+  .office-top .pos-mark { width: 26px; height: 26px; flex: none; }
+  .office-main { padding: 16px 12px 60px; }
+}
+

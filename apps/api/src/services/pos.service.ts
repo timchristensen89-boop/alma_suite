@@ -2510,6 +2510,44 @@ export const posService = {
       .map((row) => ({ id: row.id, name: row.name, venue: row.venue, printerIp: row.printerIp, matchKind: row.matchKind }));
   },
 
+  // The bridge announces itself once a minute: hostname + LAN IPs, one row
+  // per venue. Public like /print-poll (a bridge has no session), so the
+  // input is clamped hard — short strings only, addresses that parse.
+  async recordPrintBridgeHeartbeat(input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const venue = typeof body.venue === 'string' ? body.venue.trim().slice(0, 60) : '';
+    if (!venue) throw new HttpError(400, 'Name the venue.');
+    const clean = (value: unknown, max: number) =>
+      typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
+    const lanIps = Array.isArray(body.lanIps)
+      ? body.lanIps
+          .filter((ip): ip is string => typeof ip === 'string' && /^[0-9a-fA-F.:]{3,45}$/.test(ip))
+          .slice(0, 6)
+          .join(',')
+      : null;
+    const fields = { hostname: clean(body.hostname, 80), lanIps: lanIps || null, version: clean(body.version, 40), lastSeenAt: new Date() };
+    await prisma.posPrintBridge.upsert({ where: { venue }, create: { venue, ...fields }, update: fields });
+    return { ok: true };
+  },
+
+  // Office → Printers: is anything alive to drive this venue's printers, and
+  // where is it? Beats come every minute; three missed ones reads as offline.
+  async printBridgeStatus(venue: string | null) {
+    const rows = await prisma.posPrintBridge.findMany({
+      where: venue ? { venue } : undefined,
+      orderBy: { venue: 'asc' }
+    });
+    const now = Date.now();
+    return rows.map((row) => ({
+      venue: row.venue,
+      hostname: row.hostname,
+      lanIps: row.lanIps ? row.lanIps.split(',').filter(Boolean) : [],
+      version: row.version,
+      lastSeenAt: row.lastSeenAt.toISOString(),
+      online: now - row.lastSeenAt.getTime() < 3 * 60_000
+    }));
+  },
+
   // The cash drawer is wired to the receipt printer (RJ12), so opening it
   // means sending that printer a kick. Queued like any other print job, so it
   // goes through whatever is driving that station — bridge or i-printer.
