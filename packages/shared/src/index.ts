@@ -6141,6 +6141,11 @@ export type StockSupplierInvoice = {
   triagedBy: StockInvoiceAssignee | null;
   assignedTo: StockInvoiceAssignee | null;
   triageNotes: string | null;
+  paymentStatus: StockInvoicePaymentStatus;
+  amountPaidCents: number;
+  paidAt: string | null;
+  paymentReference: string | null;
+  paymentNotes: string | null;
   lines?: StockSupplierInvoiceLine[];
 };
 
@@ -6174,6 +6179,86 @@ export type StockInvoiceImportResult = {
   skipped: Array<{ invoice: string; rule: string }>;
   warnings: string[];
   invoices: StockSupplierInvoice[];
+};
+
+// ── Purchasing loop: PO send, order guide, invoice payments ──────────────
+// The FoodByUs-shaped workflow: order from a live per-supplier guide, the
+// send actually emails the supplier, invoice costs keep the guide's prices
+// current, and every bill tracks whether money has gone out against it.
+
+export const stockPurchaseOrderSendInputSchema = z.object({
+  // Override the destination for this send only; blank = the supplier's
+  // saved email address.
+  to: z.string().email('Enter a valid email address').optional().or(z.literal('')),
+  // A note above the order lines ("please deliver before 10am").
+  message: z.string().max(2000).optional().or(z.literal(''))
+});
+export type StockPurchaseOrderSendInput = z.infer<typeof stockPurchaseOrderSendInputSchema>;
+
+export type StockPurchaseOrderSendEmail = {
+  // NO_RECIPIENT: the supplier has no email and none was given — the order is
+  // still marked sent (it may go by phone), with the text handed back to copy.
+  status: 'SENT' | 'EMAIL_NOT_CONFIGURED' | 'NO_RECIPIENT';
+  to: string | null;
+  subject: string;
+  body: string;
+  sentAt: string | null;
+  warning: string | null;
+};
+
+export type StockOrderGuideLine = {
+  stockItemId: string | null;
+  description: string;
+  unit: string | null;
+  onHand: number | null;
+  parLevel: number | null;
+  /** The agreed/live price from the supplier price list (kept current by invoices). */
+  agreedCostCents: number | null;
+  agreedEffectiveAt: string | null;
+  /** What was actually last paid, from invoice history. */
+  lastPaidCents: number | null;
+  lastPurchasedAt: string | null;
+  priceMovement: number | null;
+  /** Whole purchase units to get back to par; 0 when at or above par. */
+  suggestedQuantity: number;
+};
+
+export type StockOrderGuidePayload = {
+  supplier: { id: string; name: string; email: string | null };
+  venue: string | null;
+  lines: StockOrderGuideLine[];
+  generatedAt: string;
+};
+
+export const stockInvoicePaymentStatusSchema = z.enum(['UNPAID', 'PARTIALLY_PAID', 'PAID']);
+export type StockInvoicePaymentStatus = z.infer<typeof stockInvoicePaymentStatusSchema>;
+
+export const stockInvoicePaymentInputSchema = z.object({
+  // Blank = the invoice's full total.
+  amountCents: z.preprocess(
+    (value) => (value === '' || value === null ? undefined : value),
+    z.coerce.number().int().positive('Payment amount must be greater than zero').optional()
+  ),
+  paidAt: z.string().optional().or(z.literal('')),
+  reference: z.string().max(200).optional().or(z.literal('')),
+  notes: z.string().max(1000).optional().or(z.literal(''))
+});
+export type StockInvoicePaymentInput = z.infer<typeof stockInvoicePaymentInputSchema>;
+
+export type StockPaymentsSummary = {
+  unpaidCount: number;
+  unpaidTotalCents: number;
+  overdueCount: number;
+  overdueTotalCents: number;
+  paidLast30DaysCents: number;
+  suppliers: Array<{
+    supplierId: string | null;
+    supplierName: string;
+    unpaidCount: number;
+    unpaidTotalCents: number;
+    oldestDueDate: string | null;
+  }>;
+  generatedAt: string;
 };
 
 // Invoice exclusion rules — skip non-supplier documents on import.

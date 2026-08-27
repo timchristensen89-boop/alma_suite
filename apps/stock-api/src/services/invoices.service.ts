@@ -17,9 +17,12 @@ import {
   stockInvoiceRipInputSchema,
   stockInvoiceOcrInputSchema,
   stockInvoicePasteLinesInputSchema,
+  stockInvoicePaymentInputSchema,
   parseInvoicePaste,
   reconcilePaste,
   type InvoiceExclusionRule,
+  type StockInvoicePaymentStatus,
+  type StockPaymentsSummary,
   type StockInvoiceApplyAllCostsResult,
   type StockInvoiceAssignee,
   type StockInvoiceAssigneesPayload,
@@ -233,6 +236,41 @@ function triageStatusValue(value: string): StockInvoiceTriageStatus {
     return value;
   }
   return 'PENDING';
+}
+
+function paymentStatusValue(value: string): StockInvoicePaymentStatus {
+  if (value === 'PAID' || value === 'PARTIALLY_PAID') return value;
+  return 'UNPAID';
+}
+
+// Applying an invoice cost is the one moment we KNOW what this supplier
+// charges today, so the supplier price list follows automatically. The list
+// held 0 rows in production precisely because it was a second catalogue to
+// maintain by hand next to the invoices already being processed — now the
+// invoices maintain it, and the order guide prices from it.
+async function syncPriceListFromLine(
+  tx: Prisma.TransactionClient,
+  supplierId: string | null | undefined,
+  line: { itemId: string | null; description: string; unit: string | null; unitAmountCents: number },
+  itemName?: string | null
+) {
+  if (!supplierId || !line.itemId || line.unitAmountCents <= 0) return;
+  await tx.supplierPriceListItem.upsert({
+    where: { supplierId_stockItemId: { supplierId, stockItemId: line.itemId } },
+    create: {
+      supplierId,
+      stockItemId: line.itemId,
+      description: itemName?.trim() || line.description,
+      unit: line.unit,
+      unitCostCents: line.unitAmountCents,
+      effectiveAt: new Date()
+    },
+    update: {
+      unitCostCents: line.unitAmountCents,
+      ...(line.unit ? { unit: line.unit } : {}),
+      effectiveAt: new Date()
+    }
+  });
 }
 
 function toAssigneePayload(row: AssigneeRow | null): StockInvoiceAssignee | null {
@@ -520,6 +558,11 @@ function toInvoicePayload(row: InvoiceRow): StockSupplierInvoice {
     triagedBy: toAssigneePayload(row.triagedBy ?? null),
     assignedTo: toAssigneePayload(row.assignedTo ?? null),
     triageNotes: row.triageNotes,
+    paymentStatus: paymentStatusValue(row.paymentStatus),
+    amountPaidCents: row.amountPaidCents,
+    paidAt: row.paidAt?.toISOString() ?? null,
+    paymentReference: row.paymentReference,
+    paymentNotes: row.paymentNotes,
     lines
   };
 }
@@ -739,10 +782,16 @@ export const invoicesService = {
     return { excluded: toExclude.length, rules: usable.length, sample: toExclude.slice(0, 10).map((x) => x.label) };
   },
 
-  async list(options?: { includeNoItem?: boolean }): Promise<StockInvoicesPayload> {
+  async list(options?: { includeNoItem?: boolean; unpaidOnly?: boolean }): Promise<StockInvoicesPayload> {
     const includeNoItem = options?.includeNoItem === true;
+    const unpaidOnly = options?.unpaidOnly === true;
     const invoices = await prisma.supplierInvoice.findMany({
-      where: includeNoItem ? undefined : { triageStatus: { not: 'NO_ITEM' } },
+      where: {
+        // Payments cares about every bill, matched to items or not — the
+        // triage split is about the stock catalogue, not money owed.
+        ...(includeNoItem || unpaidOnly ? {} : { triageStatus: { not: 'NO_ITEM' } }),
+        ...(unpaidOnly ? { paymentStatus: { not: 'PAID' } } : {})
+      },
       include: {
         ...invoiceInclude,
         lines: {
@@ -750,8 +799,8 @@ export const invoicesService = {
           orderBy: [{ lineNumber: 'asc' }, { createdAt: 'asc' }]
         }
       },
-      orderBy: [{ invoiceDate: 'desc' }, { importedAt: 'desc' }],
-      take: 100
+      orderBy: unpaidOnly ? [{ dueDate: 'asc' }, { invoiceDate: 'desc' }] : [{ invoiceDate: 'desc' }, { importedAt: 'desc' }],
+      take: unpaidOnly ? 500 : 100
     });
     return { invoices: invoices.map(toInvoicePayload) };
   },
@@ -1502,7 +1551,7 @@ export const invoicesService = {
   async applyLineCost(lineId: string): Promise<StockSupplierInvoiceLine> {
     const existing = await prisma.supplierInvoiceLine.findUnique({
       where: { id: lineId },
-      include: { item: { select: lineItemSelect } }
+      include: { item: { select: lineItemSelect }, invoice: { select: { supplierId: true } } }
     });
     if (!existing) throw new HttpError(404, 'Invoice line not found');
     if (!existing.itemId) throw new HttpError(400, 'Match this line to a stock item first');
@@ -1527,6 +1576,7 @@ export const invoicesService = {
           })
         }
       });
+      await syncPriceListFromLine(tx, existing.invoice?.supplierId, existing, matchedItem.name);
       return tx.supplierInvoiceLine.update({
         where: { id: lineId },
         data: { costAppliedAt: new Date() },
@@ -1581,6 +1631,7 @@ export const invoicesService = {
               })
             }
           });
+          await syncPriceListFromLine(tx, invoice.supplierId, line, line.item!.name);
           await tx.supplierInvoiceLine.update({ where: { id: line.id }, data: { costAppliedAt: new Date() } });
         }
       });
@@ -1593,6 +1644,115 @@ export const invoicesService = {
       skippedCount: skipped.length,
       skipped,
       invoice: await getInvoicePayload(invoiceId)
+    };
+  },
+
+  // ── Payments: matching bills to money actually going out ─────────────────
+
+  /**
+   * Record a payment against an invoice. Amount defaults to whatever is still
+   * owing, so the everyday case — paid in full — is one tap; a smaller amount
+   * records a part-payment and the invoice shows PARTIALLY_PAID until the
+   * rest lands. Reversible with markUnpaid, so no typed confirmation.
+   */
+  async recordPayment(invoiceId: string, input: unknown): Promise<StockSupplierInvoice> {
+    const data = stockInvoicePaymentInputSchema.parse(input ?? {});
+    const invoice = await prisma.supplierInvoice.findUnique({
+      where: { id: invoiceId },
+      select: { id: true, totalCents: true, amountPaidCents: true, paymentReference: true, paymentNotes: true }
+    });
+    if (!invoice) throw new HttpError(404, 'Invoice not found');
+    const owing = Math.max(0, invoice.totalCents - invoice.amountPaidCents);
+    const amount = data.amountCents ?? owing;
+    if (amount <= 0) throw new HttpError(400, 'This invoice is already fully paid.');
+    const paidAt = data.paidAt?.trim() ? new Date(data.paidAt) : new Date();
+    if (Number.isNaN(paidAt.getTime())) throw new HttpError(400, 'Invalid payment date');
+    const amountPaidCents = invoice.amountPaidCents + amount;
+    await prisma.supplierInvoice.update({
+      where: { id: invoiceId },
+      data: {
+        amountPaidCents,
+        paidAt,
+        paymentStatus: amountPaidCents >= invoice.totalCents ? 'PAID' : 'PARTIALLY_PAID',
+        ...(data.reference?.trim() ? { paymentReference: data.reference.trim() } : {}),
+        ...(data.notes?.trim() ? { paymentNotes: data.notes.trim() } : {})
+      }
+    });
+    return getInvoicePayload(invoiceId);
+  },
+
+  async markUnpaid(invoiceId: string): Promise<StockSupplierInvoice> {
+    const invoice = await prisma.supplierInvoice.findUnique({ where: { id: invoiceId }, select: { id: true } });
+    if (!invoice) throw new HttpError(404, 'Invoice not found');
+    await prisma.supplierInvoice.update({
+      where: { id: invoiceId },
+      data: { paymentStatus: 'UNPAID', amountPaidCents: 0, paidAt: null, paymentReference: null, paymentNotes: null }
+    });
+    return getInvoicePayload(invoiceId);
+  },
+
+  /**
+   * What's owed to whom right now. NO_ITEM invoices are included on purpose:
+   * a bill with nothing for the stock catalogue on it is still a bill that
+   * needs paying — the triage split is about item matching, not money.
+   */
+  async paymentsSummary(): Promise<StockPaymentsSummary> {
+    const now = new Date();
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const [unpaid, paidRecently] = await Promise.all([
+      prisma.supplierInvoice.findMany({
+        where: { paymentStatus: { not: 'PAID' } },
+        select: {
+          supplierId: true,
+          supplierName: true,
+          totalCents: true,
+          amountPaidCents: true,
+          dueDate: true
+        }
+      }),
+      prisma.supplierInvoice.aggregate({
+        where: { paymentStatus: 'PAID', paidAt: { gte: monthAgo } },
+        _sum: { amountPaidCents: true }
+      })
+    ]);
+
+    let unpaidTotalCents = 0;
+    let overdueCount = 0;
+    let overdueTotalCents = 0;
+    const bySupplier = new Map<string, StockPaymentsSummary['suppliers'][number]>();
+    for (const row of unpaid) {
+      const owing = Math.max(0, row.totalCents - row.amountPaidCents);
+      if (owing <= 0) continue;
+      unpaidTotalCents += owing;
+      const overdue = Boolean(row.dueDate && row.dueDate.getTime() < now.getTime());
+      if (overdue) {
+        overdueCount += 1;
+        overdueTotalCents += owing;
+      }
+      const key = row.supplierId ?? `name:${row.supplierName.trim().toLowerCase()}`;
+      const entry = bySupplier.get(key) ?? {
+        supplierId: row.supplierId,
+        supplierName: row.supplierName,
+        unpaidCount: 0,
+        unpaidTotalCents: 0,
+        oldestDueDate: null as string | null
+      };
+      entry.unpaidCount += 1;
+      entry.unpaidTotalCents += owing;
+      if (row.dueDate && (!entry.oldestDueDate || row.dueDate.toISOString() < entry.oldestDueDate)) {
+        entry.oldestDueDate = row.dueDate.toISOString();
+      }
+      bySupplier.set(key, entry);
+    }
+
+    return {
+      unpaidCount: unpaid.filter((row) => row.totalCents - row.amountPaidCents > 0).length,
+      unpaidTotalCents,
+      overdueCount,
+      overdueTotalCents,
+      paidLast30DaysCents: paidRecently._sum.amountPaidCents ?? 0,
+      suppliers: [...bySupplier.values()].sort((a, b) => b.unpaidTotalCents - a.unpaidTotalCents),
+      generatedAt: now.toISOString()
     };
   },
 

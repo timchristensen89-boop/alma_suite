@@ -48,11 +48,13 @@ function printSecretOk(provided: string): boolean {
 }
 
 posRouter.use((req, _res, next) => {
-  // The printers and the print-bridge poll these two endpoints with no session.
-  // They must present POS_PRINT_SECRET (?k=… or the x-alma-print-secret header);
-  // it is required in production (env.ts), so these endpoints are never open to
-  // an anonymous caller there. Empty is tolerated only in local dev.
-  const printPath = req.path.startsWith('/print-poll/') || req.path === '/print-stations';
+  // The printers and the print-bridge poll these endpoints with no session —
+  // polling, the station list, and the bridge's own heartbeat. They must
+  // present POS_PRINT_SECRET (?k=… or the x-alma-print-secret header); it is
+  // required in production (env.ts), so these endpoints are never open to an
+  // anonymous caller there. Empty is tolerated only in local dev.
+  const printPath =
+    req.path.startsWith('/print-poll/') || req.path === '/print-stations' || req.path === '/print-bridge/heartbeat';
   if (printPath) {
     const provided = typeof req.query.k === 'string' ? req.query.k : req.header('x-alma-print-secret') ?? '';
     if (!printSecretOk(provided)) return next(new HttpError(401, 'Print station credential required.'));
@@ -426,6 +428,26 @@ posRouter.get('/print-poll/:profileId', async (req, res, next) => {
     const result = await posService.printPoll(req.params.profileId, {});
     res.set('Content-Type', 'text/xml; charset=utf-8');
     res.send(result.xml);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// The bridge announces itself (hostname, LAN IPs) so the Office can show
+// whether dockets have a working path — and where the box driving them is.
+// The heartbeat is public like /print-poll; reading the status needs a
+// session like every other Office call.
+posRouter.post('/print-bridge/heartbeat', async (req, res, next) => {
+  try {
+    res.json(await posService.recordPrintBridgeHeartbeat(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get('/print-bridge/status', async (req, res, next) => {
+  try {
+    res.json(await posService.printBridgeStatus(req.query.venue ? String(req.query.venue) : null));
   } catch (err) {
     next(err);
   }

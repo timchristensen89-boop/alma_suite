@@ -70,6 +70,12 @@ printing after the first power cut — hence a service, not a login item.
 
 ## Checking it
 
+The bridge announces itself once a minute (hostname + LAN IPs), and
+**POS → Office → Printers** shows each venue's bridge: online or offline,
+what the machine is called, its address on the venue network, and when it
+last reported. No more hunting the Pi with `arp` — the Office tells you
+where it is.
+
 `PosPrintJob.status` tells you where a docket got to:
 
 - `QUEUED` — we have it, nothing has collected it (bridge down, or the station

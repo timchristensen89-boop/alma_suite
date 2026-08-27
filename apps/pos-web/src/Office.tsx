@@ -30,6 +30,24 @@ type Terminal = {
   pairedAt: string | null;
   lastUsedAt: string | null;
 };
+type BridgeStatus = {
+  venue: string;
+  hostname: string | null;
+  lanIps: string[];
+  version: string | null;
+  lastSeenAt: string;
+  online: boolean;
+};
+
+const agoLabel = (iso: string) => {
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (seconds < 90) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 90) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 36) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+};
 
 // The back office's nine sections, in one place: the pill row and the phone's
 // select both read from this, so they can never offer different sections.
@@ -76,6 +94,7 @@ export function Office() {
   const [specialDraft, setSpecialDraft] = useState({ name: '', price: '', kind: 'FOOD', venue: '' });
   const [terminalVenue, setTerminalVenue] = useState(VENUES[0]!);
   const [terminals, setTerminals] = useState<Terminal[]>([]);
+  const [bridges, setBridges] = useState<BridgeStatus[]>([]);
   const [terminalName, setTerminalName] = useState('');
   const [pairing, setPairing] = useState(false);
   const [qrItemSearch, setQrItemSearch] = useState('');
@@ -135,6 +154,20 @@ export function Office() {
     const timer = setInterval(() => void loadTerminals(terminalVenue), 4000);
     return () => clearInterval(timer);
   }, [tab, terminalVenue, loadTerminals]);
+
+  // The bridge heartbeats once a minute; poll while the Printers tab is open
+  // so "online" flips without a reload. Best-effort — an old API without the
+  // endpoint just shows nothing.
+  useEffect(() => {
+    if (tab !== 'printers') return;
+    const load = () =>
+      api<BridgeStatus[]>('/api/pos/print-bridge/status')
+        .then(setBridges)
+        .catch(() => setBridges([]));
+    void load();
+    const timer = setInterval(() => void load(), 15000);
+    return () => clearInterval(timer);
+  }, [tab]);
 
   async function pairTerminal() {
     setPairing(true);
@@ -231,32 +264,32 @@ export function Office() {
 
   return (
     <div className="office-shell">
-      <header className="office-header">
-        <img src={ALMA_MARK} alt="" className="pos-mark" />
-        <strong>Back office</strong>
-        <span className="pos-wordmark-chip">POS settings</span>
-        <span style={{ flex: 1 }} />
-        <a href="/" className="office-back">← Register</a>
-      </header>
-      {/* Nine sections. As pills on a phone they wrapped to four rows and ate
-          the screen before a single setting appeared — so on a phone they are
-          a select, which is one row and the control iOS already knows how to
-          present full-screen. Both are rendered and the breakpoint picks one:
-          no resize listener, and no chance of the two disagreeing about which
-          section is open. */}
-      <nav className="office-tabs">
-        {OFFICE_TABS.map(([key, label]) => (
-          <button key={key} type="button" className={tab === key ? 'is-active' : ''} onClick={() => setTab(key)}>
-            {label}
-          </button>
-        ))}
-      </nav>
-      <div className="office-tabs-select">
-        <label>
-          <span>Section</span>
+      {/* Sticky green top, matching the register's bar: brand row + tabs stay
+          put while the page scrolls. On phones the nine pills collapse into
+          one dropdown — the control iOS already knows how to present
+          full-screen. Both renders read OFFICE_TABS, so they can never
+          disagree about which sections exist. */}
+      <div className="office-top">
+        <header className="office-header">
+          <img src={ALMA_MARK} alt="" className="pos-mark" />
+          <strong>Back office</strong>
+          <span className="pos-wordmark-chip">POS settings</span>
+          <span style={{ flex: 1 }} />
+          <a href="/" className="office-back">← Register</a>
+        </header>
+        <nav className="office-tabs">
+          {OFFICE_TABS.map(([key, label]) => (
+            <button key={key} type="button" className={tab === key ? 'is-active' : ''} onClick={() => setTab(key)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+        <label className="office-tab-pick">
           <select value={tab} onChange={(event) => setTab(event.currentTarget.value as OfficeTab)}>
             {OFFICE_TABS.map(([key, label]) => (
-              <option key={key} value={key}>{label}</option>
+              <option key={key} value={key}>
+                {label}
+              </option>
             ))}
           </select>
         </label>
@@ -271,6 +304,29 @@ export function Office() {
               Each profile is a docket station: items route by kind (food / beverage) or by exact categories. Give a profile an
               IP when a physical Epson printer arrives — until then its station shows on the KDS.
             </p>
+            {/* The machine driving the printers announces itself once a minute,
+                so nobody has to hunt the Pi across the venue wifi. */}
+            {bridges.length > 0 ? (
+              <div className="office-bridges">
+                {bridges.map((bridge) => (
+                  <div key={bridge.venue} className={bridge.online ? 'office-bridge is-on' : 'office-bridge'}>
+                    <i />
+                    <strong>{bridge.venue}</strong>
+                    <span>
+                      {bridge.online ? 'Print bridge online' : 'Print bridge OFFLINE'}
+                      {bridge.hostname ? ` · ${bridge.hostname}` : ''}
+                      {bridge.lanIps.length > 0 ? ` · ${bridge.lanIps.join(', ')}` : ''}
+                      {` · seen ${agoLabel(bridge.lastSeenAt)}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="office-hint" style={{ marginBottom: 14 }}>
+                No print bridge has reported yet — run one (apps/print-bridge, a Pi at each venue) and it appears here with
+                its hostname and address.
+              </p>
+            )}
             {/* Grouped by venue: two venues each with a station called "Kitchen"
                 in one flat list is how Avalon's kitchen ended up pointing at
                 St Alma's printer. */}
