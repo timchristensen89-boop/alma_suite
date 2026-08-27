@@ -3,6 +3,7 @@ import type { AuthUser } from '@alma/shared';
 import { env } from '../env.js';
 import { authService } from '../services/auth.service.js';
 import { HttpError } from './http.js';
+import { isPublic } from './public-paths.js';
 import { DEVICE_PIN_SESSION_COOKIE, parseDevicePinSessionToken, parseSessionToken } from './session.js';
 
 declare module 'express-serve-static-core' {
@@ -11,62 +12,6 @@ declare module 'express-serve-static-core' {
     deviceUser?: AuthUser;
     pinUser?: AuthUser;
   }
-}
-
-// Publicly accessible paths — no session required.
-// Every API endpoint not listed here requires a valid session cookie.
-const PUBLIC_PATHS = new Set<string>([
-  '/',
-  '/health',
-  '/api/health',
-  '/api/auth/login',
-  '/api/auth/handoff/consume',
-  '/api/auth/me',
-  '/api/auth/logout',
-  '/api/auth/password-reset/request',
-  '/api/auth/password-reset/complete',
-  '/api/gift-cards/checkout',
-  '/api/gift-cards/public/config',
-  '/api/gift-cards/public/orders',
-  '/api/gift-cards/settings/public',
-  '/api/gift-cards/promo/quote',
-  '/api/device/home-summary',
-  '/api/device/pin-staff',
-  '/api/device/staff-pin-login',
-  '/api/integrations/square/callback',
-  '/api/integrations/xero/callback',
-  '/api/integrations/deputy/callback',
-  '/api/integrations/meta/callback'
-]);
-
-const PUBLIC_PREFIXES = [
-  // Guest QR table ordering — anonymous by design; the signed table token in
-  // the query/body is the auth, and the service throttles per IP.
-  '/api/qr/',
-  '/api/pos/print-poll/',
-  '/api/pos/print-stations',
-  '/api/gift-cards/session/',
-  '/api/gift-cards/print/',
-  '/api/gift-cards/qr/',
-  // Customer-designed card artwork, addressed by the (secret) card code —
-  // same trust model as /qr/ and /print/ above.
-  '/api/gift-cards/artwork/',
-  '/api/gift-cards/wallet/apple/',
-  '/api/gift-cards/wallet/google/',
-  '/api/staff/invites/by-token/',
-  '/api/reserve/public-widget/',
-  '/api/reserve/public/',
-  // Gift card artwork for the public buy page. Read-only image bytes the venue
-  // chose to publish, and the buy page is unauthenticated by definition — the
-  // whole point is that a stranger can use it. The service only ever serves
-  // the two known settings image fields, never an arbitrary key.
-  '/api/gift-cards/assets/',
-  '/api/public/venue-snapshot'
-];
-
-function isPublic(path: string) {
-  if (PUBLIC_PATHS.has(path)) return true;
-  return PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
 function hasEnabledAppAccess(user: AuthUser, appId: AuthUser['appAccess'][number]['appId']) {
@@ -155,6 +100,15 @@ function isStaffWriteAllowed(req: Request) {
   // the shift stays yours, and stays costed against you, until a manager
   // approves someone taking it. The service checks you own the shift.
   if (/^\/api\/staff\/me\/shifts\/[^/]+\/(offer-swap|cancel-swap)$/.test(req.path) && req.method === 'POST') return true;
+  // Burning your own calendar link is yours to do — a lost phone at 11pm
+  // shouldn't wait on a manager. The route only ever rotates the caller's own
+  // token; resetting somebody else's stays on the manager-guarded route.
+  if (req.path === '/api/staff/me/calendar/rotate' && req.method === 'POST') return true;
+  // Turning notifications on and off for your own phone. Both are writes by a
+  // non-manager, and without these the "Notifications" card answers "this is a
+  // manager-only action" to the person whose phone it is.
+  if (req.path === '/api/staff/me/push/subscribe' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/push/unsubscribe' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/unavailability' && req.method === 'POST') return true;
   if (/^\/api\/staff\/unavailability\/[^/]+$/.test(req.path) && req.method === 'DELETE') return true;
   if (req.path === '/api/staff/me/clock/in' && req.method === 'POST') return true;

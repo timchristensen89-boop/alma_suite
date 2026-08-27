@@ -14,6 +14,11 @@ import { recipesService } from '../src/services/recipes.service.js';
 import { stocktakesService } from '../src/services/stocktakes.service.js';
 import { suppliersService } from '../src/services/suppliers.service.js';
 
+// These cases write real rows; skip them when no database is configured (CI),
+// run them whenever DATABASE_URL is set. The pure schema-validation case below
+// always runs.
+const NO_DB = { skip: !process.env.DATABASE_URL };
+
 async function createItem(name: string, onHand: number, unit = 'ea') {
   return prisma.stockItem.create({
     data: {
@@ -41,7 +46,7 @@ async function cleanup(ids: { stocktakeIds?: string[]; itemIds?: string[] }) {
   }
 }
 
-test('submitted stocktakes do not affect balances until applied', async () => {
+test('submitted stocktakes do not affect balances until applied', NO_DB, async () => {
   const suffix = `ledger-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const item = await createItem(`Submitted balance ${suffix}`, 10, 'bottle');
   const stocktakeIds: string[] = [];
@@ -77,7 +82,7 @@ test('submitted stocktakes do not affect balances until applied', async () => {
   }
 });
 
-test('stocktake line value is computed server-side from item cost, ignoring the client value', async () => {
+test('stocktake line value is computed server-side from item cost, ignoring the client value', NO_DB, async () => {
   const suffix = `value-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const item = await prisma.stockItem.create({
     data: { name: `Olive oil ${suffix}`, unit: 'bottle', onHand: 0, parLevel: 0, avgCostCents: 150, status: 'ACTIVE' }
@@ -108,7 +113,7 @@ test('stocktake line value is computed server-side from item cost, ignoring the 
   }
 });
 
-test('applying submitted stocktakes creates movement deltas and updates balances once', async () => {
+test('applying submitted stocktakes creates movement deltas and updates balances once', NO_DB, async () => {
   const suffix = `ledger-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const itemA = await createItem(`Applied balance A ${suffix}`, 10, 'bottle');
   const itemB = await createItem(`Applied balance B ${suffix}`, 5, 'kg');
@@ -272,7 +277,7 @@ test('bulk destructive inputs require typed confirmation text', () => {
   );
 });
 
-test('recipes can use reusable production recipes without circular chains', async () => {
+test('recipes can use reusable production recipes without circular chains', NO_DB, async () => {
   const suffix = `nested-recipe-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const recipeIds: string[] = [];
 
@@ -382,7 +387,7 @@ test('recipes can use reusable production recipes without circular chains', asyn
   }
 });
 
-test('recipe costing rolls up stock item and prep recipe costs with missing-cost warnings', async () => {
+test('recipe costing rolls up stock item and prep recipe costs with missing-cost warnings', NO_DB, async () => {
   const suffix = `recipe-cost-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const itemIds: string[] = [];
   const recipeIds: string[] = [];
@@ -442,7 +447,7 @@ test('recipe costing rolls up stock item and prep recipe costs with missing-cost
   }
 });
 
-test('catalogue item deletion is blocked when records reference the item', async () => {
+test('catalogue item deletion is blocked when records reference the item', NO_DB, async () => {
   const suffix = `delete-guard-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const item = await createItem(`Referenced item ${suffix}`, 1, 'ea');
   const recipe = await prisma.recipe.create({
@@ -474,7 +479,7 @@ test('catalogue item deletion is blocked when records reference the item', async
   }
 });
 
-test('supplier deletion is blocked when imported invoices reference the supplier', async () => {
+test('supplier deletion is blocked when imported invoices reference the supplier', NO_DB, async () => {
   const suffix = `delete-guard-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const supplier = await prisma.supplier.create({
     data: {

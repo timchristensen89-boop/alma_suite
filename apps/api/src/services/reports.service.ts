@@ -3,6 +3,22 @@ import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { staffCostingRate, splitOvertimeHours, costForRate, weeklyFixedCostCents, salariedVenueAllocations, staffPayRateSelect } from '../lib/staff-pay-rates.js';
 import {
+  GST_RATE,
+  exGstCents,
+  PRICE_BANDS,
+  agingWines,
+  bottlePriceCents,
+  bucketBy,
+  isBottle,
+  marginCentsOf,
+  marginPercent,
+  poursizeLabel,
+  priceBand,
+  type PourFact,
+  type SaleFact,
+  type WineFact
+} from '../lib/wine-report.js';
+import {
   salesActualImportSchema,
   salesActualQuerySchema,
   reportsMenuProfitabilityQuerySchema,
@@ -18,6 +34,7 @@ import {
   type ReportsComplianceSummary,
   type ReportsContentSummary,
   type ReportsGiftCardSummary,
+  type WineReportPayload,
   type ReportsMarketingSummary,
   type ReportsOverviewPayload,
   type ReportsPrimeCostPayload,
@@ -30,6 +47,8 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { isSuspectRecipeCost } from '../lib/cogs-quality.js';
+import { allocatePackageRevenue } from '../lib/banquet-allocation.js';
+import { bestVenueDaySales, dedupedSalesByVenue, dedupedSalesCents } from '../lib/sales-day-totals.js';
 import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { mailService } from './mail.service.js';
 import { integrationService } from './integration.service.js';
@@ -934,12 +953,18 @@ async function recapPeriod(venue: string | null, start: Date, end: Date, label: 
   // COGS comes from the suite-wide canonical helper (ex-GST, finalised stock
   // purchases, stocktake-bounded with a purchases-only fallback) so the Recap
   // agrees with the Stock dashboard and Prime Cost report to the cent.
-  const [salesAgg, wageCents, cogs] = await Promise.all([
-    prisma.salesActualEntry.aggregate({ where: { serviceDate: { gte: start, lt: end }, ...(venue ? { venue } : {}) }, _sum: { salesCents: true } }),
+  const [salesRows, wageCents, cogs] = await Promise.all([
+    // One figure per venue-day, however many feeds reported it (POS close +
+    // Square/Lightspeed import + manual describe the same money) — a plain
+    // SUM double-counted every day two feeds covered.
+    prisma.salesActualEntry.findMany({
+      where: { serviceDate: { gte: start, lt: end }, ...(venue ? { venue } : {}) },
+      select: { venue: true, serviceDate: true, salesCents: true }
+    }),
     recapWageCents(venue, start, end),
     computeActualCogs({ venue, start, end })
   ]);
-  const salesCents = salesAgg._sum.salesCents ?? 0;
+  const salesCents = dedupedSalesCents(salesRows);
   const { cogsCents, purchasesCents, openingStockCents, closingStockCents, quality: stockQuality } = cogs;
   const primeCostCents = wageCents + cogsCents;
   const pct = (n: number) => (salesCents > 0 ? Math.round((n / salesCents) * 1000) / 10 : null);
@@ -1161,10 +1186,13 @@ export const reportsService = {
       return current;
     };
 
-    for (const entry of salesEntries) {
-      const row = rowFor(entry.venue);
-      row.salesCents += entry.salesCents;
-      row.salesDays.add(entry.serviceDate.toISOString().slice(0, 10));
+    // One figure per venue-day across feeds — same rule as the recap and the
+    // labour view; summing raw rows double-counted multi-source days.
+    for (const [key, cents] of bestVenueDaySales(salesEntries)) {
+      const at = key.lastIndexOf('|');
+      const row = rowFor(key.slice(0, at));
+      row.salesCents += cents;
+      row.salesDays.add(key.slice(at + 1));
     }
     // Cumulative weekly hours per staff for overtime (salaried full-timers >45h/wk).
     const actualWeekHours = new Map<string, number>();
@@ -1622,16 +1650,14 @@ export const reportsService = {
       orderBy: [{ serviceDate: 'asc' }, { venue: 'asc' }, { source: 'asc' }]
     });
 
-    const byVenue = Array.from(
-      entries.reduce((map, entry) => {
-        const current = map.get(entry.venue) ?? { venue: entry.venue, salesCents: 0, days: new Set<string>() };
-        current.salesCents += entry.salesCents;
-        current.days.add(entry.serviceDate.toISOString().slice(0, 10));
-        map.set(entry.venue, current);
-        return map;
-      }, new Map<string, { venue: string; salesCents: number; days: Set<string> }>())
-        .values()
-    ).map((row) => ({ venue: row.venue, salesCents: row.salesCents, days: row.days.size }));
+    // The rows below list every feed's entry (each labelled with its source);
+    // the venue totals take ONE figure per venue-day — two feeds reporting the
+    // same night describe the same money, and summing them inflated the total.
+    const byVenue = Array.from(dedupedSalesByVenue(entries)).map(([venue, row]) => ({
+      venue,
+      salesCents: row.salesCents,
+      days: row.days
+    }));
 
     return {
       entries: entries.map((entry) => ({
@@ -1708,6 +1734,554 @@ export const reportsService = {
   // tasting/grazing course, a "BB " prefix is a bottomless component. Each
   // component costs one portion of its mapped recipe (batch cost / portions),
   // so a partly-mapped menu still rolls up — and the gaps are surfaced.
+  // ── Banquets ──────────────────────────────────────────────────────────
+  // What a set menu is actually worth, per dish.
+  //
+  // A banquet sells for one price and the dishes ring at $0, so no dish has a
+  // price of its own to report on. This shares each table's package revenue
+  // across the dishes that table was served, in proportion to what those
+  // dishes fetch a la carte — the market fish carries more of the $99 than the
+  // orzo does, because that is what the two are worth. Against per-portion
+  // cost, that gives a margin per dish that survives the mix changing nightly.
+  //
+  // Reads what the register recorded (PosOrderLine.packagedBy), not item names
+  // in an imported Square export, which is what menuCostOfGoods above does for
+  // the pre-suite history.
+  async banquets(input: unknown, actor?: AuthUser) {
+    const data = salesActualQuerySchema.parse(input);
+    const start = parseDate(data.start, 'Banquet report start date');
+    const end = parseDate(data.end, 'Banquet report end date');
+    if (end <= start) throw new HttpError(400, 'Banquet report end date must be after the start date');
+    const venueScope = salesVenueScope(actor, data.venue);
+
+    const rawOrders = await prisma.posOrder.findMany({
+      where: {
+        status: 'PAID',
+        training: false,
+        // The trading day, not the clock: a Saturday function that settles at
+        // 00:20 belongs to Saturday.
+        serviceDate: { gte: start, lt: end },
+        ...(venueScope ? { venue: venueScope } : {})
+      },
+      select: {
+        id: true,
+        venue: true,
+        orderNumber: true,
+        serviceDate: true,
+        tableLabel: true,
+        payments: { select: { amountCents: true, tipCents: true } },
+        lines: {
+          select: {
+            recipeId: true,
+            name: true,
+            quantity: true,
+            unitPriceCents: true,
+            totalCents: true,
+            packagedBy: true,
+            notes: true
+          }
+        }
+      }
+    });
+
+    // A bill refunded IN FULL is not banquet revenue — its lines still carry
+    // their prices, so counting it booked the function and the refund never
+    // subtracted. Partial refunds and order-level discounts stay counted at
+    // line value (the split across dishes would be a guess); full write-offs
+    // are the case that actually distorts the report.
+    const orders = rawOrders.filter(
+      (order) => order.payments.reduce((sum, payment) => sum + payment.amountCents + payment.tipCents, 0) > 0
+    );
+
+    const recipeIds = [...new Set(orders.flatMap((order) => order.lines.map((line) => line.recipeId).filter((id): id is string => Boolean(id))))];
+    const recipes = recipeIds.length
+      ? await prisma.recipe.findMany({
+          where: { id: { in: recipeIds } },
+          select: { id: true, title: true, kind: true, salePriceCents: true, estimatedCost: true, portionSize: true, yieldQuantity: true }
+        })
+      : [];
+    const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
+
+    // A component is one portion of its recipe, not the whole batch.
+    const costPerPortionCents = (recipeId: string | null): number | null => {
+      const recipe = recipeId ? recipeById.get(recipeId) : null;
+      if (!recipe || recipe.estimatedCost == null || recipe.estimatedCost <= 0) return null;
+      const portions =
+        recipe.portionSize && recipe.portionSize > 0 && recipe.yieldQuantity && recipe.yieldQuantity > 0
+          ? recipe.yieldQuantity / recipe.portionSize
+          : recipe.yieldQuantity && recipe.yieldQuantity > 0
+            ? recipe.yieldQuantity
+            : 1;
+      return Math.round((recipe.estimatedCost * 100) / portions);
+    };
+
+    type DishRow = {
+      recipeId: string | null;
+      name: string;
+      servings: number;
+      allocatedRevenueCents: number;
+      supplementRevenueCents: number;
+      costCents: number;
+      costed: boolean;
+      alaCarteCents: number | null;
+      menus: Set<string>;
+    };
+    const dishes = new Map<string, DishRow>();
+    type MenuRow = {
+      recipeId: string | null;
+      name: string;
+      tables: number;
+      covers: number;
+      revenueCents: number;
+      costCents: number;
+      fullyCosted: boolean;
+    };
+    const menus = new Map<string, MenuRow>();
+    const nights = new Map<string, { date: string; tables: number; covers: number; revenueCents: number; costCents: number }>();
+
+    let tables = 0;
+    let covers = 0;
+    let packageRevenueCents = 0;
+    let supplementRevenueCents = 0;
+    let costCents = 0;
+    // Dishes with no a la carte price can't be weighted, and dishes with no
+    // recipe cost make the margin look better than it is. Both are counted and
+    // reported rather than quietly folded in.
+    const unpriced = new Set<string>();
+    const uncosted = new Set<string>();
+
+    for (const order of orders) {
+      const packageLines = order.lines.filter((line) => recipeById.get(line.recipeId ?? '')?.kind === 'SET_MENU');
+      if (packageLines.length === 0) continue;
+      const included = order.lines.filter(
+        (line) =>
+          line.packagedBy ||
+          // Banquets rung before the picker existed: a $0 line carrying the
+          // package note, on a bill that has a set menu on it.
+          (line.unitPriceCents === 0 && line.notes?.includes('Included in package'))
+      );
+      if (included.length === 0) continue;
+
+      const orderPackageRevenue = packageLines.reduce((sum, line) => sum + line.totalCents, 0);
+      const orderCovers = packageLines.reduce((sum, line) => sum + line.quantity, 0);
+      // The split itself lives in lib/banquet-allocation.ts, pure and tested:
+      // shares by a la carte value, in whole cents, adding back up to exactly
+      // what the table paid.
+      const shares = allocatePackageRevenue(
+        orderPackageRevenue,
+        included.map((line) => ({
+          quantity: line.quantity,
+          alaCarteCents: recipeById.get(line.recipeId ?? '')?.salePriceCents ?? null
+        }))
+      );
+
+      tables += 1;
+      covers += orderCovers;
+      packageRevenueCents += orderPackageRevenue;
+
+      let orderCost = 0;
+      for (const [index, line] of included.entries()) {
+        const recipe = line.recipeId ? recipeById.get(line.recipeId) : null;
+        if (recipe && (recipe.salePriceCents ?? 0) <= 0) unpriced.add(recipe.title);
+        const share = shares[index] ?? 0;
+        const unitCost = costPerPortionCents(line.recipeId);
+        if (unitCost === null && recipe) uncosted.add(recipe.title);
+        const lineCost = (unitCost ?? 0) * line.quantity;
+        orderCost += lineCost;
+        supplementRevenueCents += line.totalCents;
+
+        const key = line.recipeId ?? `name:${line.name}`;
+        const row = dishes.get(key) ?? {
+          recipeId: line.recipeId,
+          name: recipe?.title ?? line.name,
+          servings: 0,
+          allocatedRevenueCents: 0,
+          supplementRevenueCents: 0,
+          costCents: 0,
+          costed: unitCost !== null,
+          alaCarteCents: recipe?.salePriceCents ?? null,
+          menus: new Set<string>()
+        };
+        row.servings += line.quantity;
+        row.allocatedRevenueCents += share;
+        row.supplementRevenueCents += line.totalCents;
+        row.costCents += lineCost;
+        if (unitCost === null) row.costed = false;
+        for (const packageLine of packageLines) {
+          row.menus.add(recipeById.get(packageLine.recipeId ?? '')?.title ?? packageLine.name);
+        }
+        dishes.set(key, row);
+      }
+      costCents += orderCost;
+
+      for (const packageLine of packageLines) {
+        const key = packageLine.recipeId ?? `name:${packageLine.name}`;
+        const row = menus.get(key) ?? {
+          recipeId: packageLine.recipeId,
+          name: recipeById.get(packageLine.recipeId ?? '')?.title ?? packageLine.name,
+          tables: 0,
+          covers: 0,
+          revenueCents: 0,
+          costCents: 0,
+          fullyCosted: true
+        };
+        row.tables += 1;
+        row.covers += packageLine.quantity;
+        row.revenueCents += packageLine.totalCents;
+        // One package on the bill takes the table's whole cost; several share
+        // it by their revenue, which is the only split the data supports.
+        row.costCents += orderPackageRevenue > 0 ? orderCost * (packageLine.totalCents / orderPackageRevenue) : orderCost;
+        menus.set(key, row);
+      }
+
+      const dateKey = (order.serviceDate ?? start).toISOString().slice(0, 10);
+      const night = nights.get(dateKey) ?? { date: dateKey, tables: 0, covers: 0, revenueCents: 0, costCents: 0 };
+      night.tables += 1;
+      night.covers += orderCovers;
+      night.revenueCents += orderPackageRevenue;
+      night.costCents += orderCost;
+      nights.set(dateKey, night);
+    }
+
+    const revenueCents = packageRevenueCents + supplementRevenueCents;
+    const round = (value: number) => Math.round(value);
+    // Margins are EX-GST on both sides, same convention as the wine report:
+    // revenue rings GST-inclusive at the till, recipe costs come off the
+    // stocktake ex-GST, and comparing them raw counted the GST as margin —
+    // about nine points high. The revenueCents columns stay inclusive on
+    // purpose (they reconcile against the day's takings); only the margin
+    // arithmetic strips the GST.
+    const marginPercent = (revenue: number, cost: number) => {
+      if (revenue <= 0) return null;
+      const net = exGstCents(revenue);
+      return net > 0 ? Math.round(((net - cost) / net) * 1000) / 10 : null;
+    };
+    const marginCents = (revenue: number, cost: number) => round(exGstCents(revenue) - cost);
+
+    return {
+      range: { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) },
+      venue: venueScope,
+      totals: {
+        tables,
+        covers,
+        packageRevenueCents,
+        supplementRevenueCents,
+        revenueCents,
+        costCents: round(costCents),
+        marginCents: marginCents(revenueCents, costCents),
+        marginPercent: marginPercent(revenueCents, costCents),
+        revenuePerCoverCents: covers > 0 ? Math.round(revenueCents / covers) : 0,
+        costPerCoverCents: covers > 0 ? Math.round(costCents / covers) : 0
+      },
+      // Named so the page can say plainly which numbers are soft and why.
+      gaps: {
+        unpricedDishes: [...unpriced].sort(),
+        uncostedDishes: [...uncosted].sort()
+      },
+      dishes: [...dishes.values()]
+        .map((row) => {
+          const dishRevenue = row.allocatedRevenueCents + row.supplementRevenueCents;
+          return {
+            recipeId: row.recipeId,
+            name: row.name,
+            servings: row.servings,
+            sharePercent: covers > 0 ? Math.round((row.servings / covers) * 1000) / 10 : null,
+            alaCarteCents: row.alaCarteCents,
+            allocatedRevenueCents: round(row.allocatedRevenueCents),
+            supplementRevenueCents: row.supplementRevenueCents,
+            revenueCents: round(dishRevenue),
+            costCents: round(row.costCents),
+            marginCents: marginCents(dishRevenue, row.costCents),
+            marginPercent: marginPercent(dishRevenue, row.costCents),
+            costed: row.costed,
+            menus: [...row.menus].sort()
+          };
+        })
+        .sort((a, b) => b.servings - a.servings),
+      menus: [...menus.values()]
+        .map((row) => ({
+          recipeId: row.recipeId,
+          name: row.name,
+          tables: row.tables,
+          covers: row.covers,
+          revenueCents: row.revenueCents,
+          costCents: round(row.costCents),
+          marginCents: marginCents(row.revenueCents, row.costCents),
+          marginPercent: marginPercent(row.revenueCents, row.costCents),
+          costPerCoverCents: row.covers > 0 ? Math.round(row.costCents / row.covers) : 0
+        }))
+        .sort((a, b) => b.revenueCents - a.revenueCents),
+      nights: [...nights.values()]
+        .map((night) => ({
+          ...night,
+          costCents: round(night.costCents),
+          marginCents: marginCents(night.revenueCents, night.costCents)
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date))
+    };
+  },
+
+  // What the wine list is doing: grape, region, price band, pour size, margin,
+  // and what has gone quiet.
+  //
+  // Sales come from BOTH registers. The suite's own POS only started ringing
+  // wine on 2026-08-20, so every night before that lives in the imported Square
+  // and Lightspeed rows, matched to a recipe. Reading one and not the other
+  // would either lose the history or lose today. Both feed the same shape and
+  // the payload says how much came from where.
+  async wines(input: unknown, actor?: AuthUser): Promise<WineReportPayload> {
+    const data = salesActualQuerySchema.parse(input);
+    const start = parseDate(data.start, 'Wine report start date');
+    const end = parseDate(data.end, 'Wine report end date');
+    if (end <= start) throw new HttpError(400, 'Wine report end date must be after the start date');
+    const venueScope = salesVenueScope(actor, data.venue);
+
+    const [catalogue, orders, imported] = await Promise.all([
+      prisma.wine.findMany({
+        where: { status: 'ACTIVE', ...(venueScope ? { venue: venueScope } : {}) },
+        include: {
+          pours: {
+            include: {
+              recipe: {
+                select: { id: true, status: true, salePriceCents: true, estimatedCost: true, portionSize: true, yieldQuantity: true }
+              }
+            }
+          }
+        }
+      }),
+      prisma.posOrder.findMany({
+        where: {
+          status: 'PAID',
+          training: false,
+          serviceDate: { gte: start, lt: end },
+          ...(venueScope ? { venue: venueScope } : {})
+        },
+        select: {
+          serviceDate: true,
+          venue: true,
+          lines: { select: { recipeId: true, quantity: true, totalCents: true, isGiftCard: true } }
+        }
+      }),
+      prisma.salesItemActualEntry.findMany({
+        where: {
+          serviceDate: { gte: start, lt: end },
+          recipeId: { not: null },
+          ...(venueScope ? { venue: venueScope } : {})
+        },
+        select: { recipeId: true, quantity: true, netSalesCents: true, serviceDate: true, venue: true }
+      })
+    ]);
+
+    // The cost of ONE pour, the same way the rest of the suite costs a recipe:
+    // estimatedCost is the batch, portions divide it. Wine is normally one
+    // portion per recipe, but a carafe recipe entered as a yield would not be.
+    const pourCostCents = (recipe: { estimatedCost: number | null; portionSize: number | null; yieldQuantity: number | null }) => {
+      if (recipe.estimatedCost == null || recipe.estimatedCost <= 0) return null;
+      const portions =
+        recipe.portionSize && recipe.portionSize > 0 && recipe.yieldQuantity && recipe.yieldQuantity > 0
+          ? recipe.yieldQuantity / recipe.portionSize
+          : recipe.yieldQuantity && recipe.yieldQuantity > 0
+            ? recipe.yieldQuantity
+            : 1;
+      return Math.round((recipe.estimatedCost * 100) / portions);
+    };
+
+    const wines: WineFact[] = catalogue.map((row) => ({
+      id: row.id,
+      venue: row.venue,
+      name: [row.vintage ?? 'NV', row.producer, row.cuvee ? `'${row.cuvee}'` : ''].filter(Boolean).join(' ').trim(),
+      grape: row.grape,
+      region: row.region,
+      origin: row.origin,
+      vintage: row.vintage,
+      section: row.section,
+      limitedStock: row.limitedStock,
+      sommelierPour: row.sommelierPour,
+      pours: row.pours
+        .filter((pour) => pour.recipe.status === 'ACTIVE')
+        .map(
+          (pour): PourFact => ({
+            recipeId: pour.recipeId,
+            ml: pour.ml,
+            salePriceCents: pour.recipe.salePriceCents,
+            costCents: pourCostCents(pour.recipe)
+          })
+        )
+    }));
+
+    // recipeId -> the wine and pour it belongs to, so a sale of any pour finds
+    // its bottle. A recipe that is not a linked pour is not wine and is skipped.
+    const pourByRecipe = new Map<string, { wine: WineFact; pour: PourFact }>();
+    for (const wine of wines) for (const pour of wine.pours) pourByRecipe.set(pour.recipeId, { wine, pour });
+
+    const day = (date: Date) => date.toISOString().slice(0, 10);
+    const sales: SaleFact[] = [];
+    // Venue-days the register itself rang wine on. The same night can ALSO
+    // arrive as imported Square/Lightspeed rows — counting both is the same
+    // sale twice, so the register wins per venue+day and imports only fill
+    // the nights the register has nothing for (the pre-2026-08-20 history,
+    // and Avalon while it rings on Lightspeed). Same POS-first rule as tips.
+    const registerWineDays = new Set<string>();
+    for (const order of orders) {
+      // The serviceDate filter already excludes these, but a sale with no
+      // trading day has no place on a dated report either way.
+      if (!order.serviceDate) continue;
+      const date = day(order.serviceDate);
+      for (const line of order.lines) {
+        if (!line.recipeId || line.isGiftCard) continue;
+        if (!pourByRecipe.has(line.recipeId)) continue;
+        registerWineDays.add(`${order.venue}::${date}`);
+        sales.push({
+          recipeId: line.recipeId,
+          quantity: line.quantity,
+          revenueCents: line.totalCents,
+          date,
+          source: 'register'
+        });
+      }
+    }
+    for (const entry of imported) {
+      if (!entry.recipeId || !pourByRecipe.has(entry.recipeId)) continue;
+      const date = day(entry.serviceDate);
+      if (registerWineDays.has(`${entry.venue}::${date}`)) continue;
+      sales.push({
+        recipeId: entry.recipeId,
+        quantity: entry.quantity,
+        // Imported rows carry EX-GST netSalesCents; every other revenue figure
+        // in this report is till-inclusive, and marginPercent strips GST once
+        // for the lot. Mixing the two bases meant the imported half was
+        // GST-reduced twice and the headline GP read low. Gross it back up so
+        // one basis (inclusive) enters the rollup everywhere.
+        revenueCents: Math.round(entry.netSalesCents * (1 + GST_RATE)),
+        date,
+        source: 'imported'
+      });
+    }
+
+    const lines = sales.flatMap((sale) => {
+      const found = pourByRecipe.get(sale.recipeId);
+      return found ? [{ wine: found.wine, pour: found.pour, sale }] : [];
+    });
+
+    const revenueCents = lines.reduce((sum, line) => sum + line.sale.revenueCents, 0);
+    const quantity = lines.reduce((sum, line) => sum + line.sale.quantity, 0);
+    const bottles = lines.filter((line) => isBottle(line.pour.ml)).reduce((sum, line) => sum + line.sale.quantity, 0);
+    const costedRevenueCents = lines
+      .filter((line) => line.pour.costCents !== null)
+      .reduce((sum, line) => sum + line.sale.revenueCents, 0);
+    const costCents = lines
+      .filter((line) => line.pour.costCents !== null)
+      .reduce((sum, line) => sum + (line.pour.costCents ?? 0) * line.sale.quantity, 0);
+
+    // Which wines belong in which bucket, sold or not — so a grape that is on
+    // the list and never moves still has a row saying it never moves.
+    const membership = (keyOf: (wine: WineFact) => string | null) => {
+      const map = new Map<string, Set<string>>();
+      for (const wine of wines) {
+        const key = keyOf(wine);
+        if (!key) continue;
+        const set = map.get(key) ?? new Set<string>();
+        set.add(wine.id);
+        map.set(key, set);
+      }
+      return map;
+    };
+
+    const bandOf = (wine: WineFact) => priceBand(bottlePriceCents(wine))?.id ?? null;
+    const bandLabel = new Map(PRICE_BANDS.map((band) => [band.id as string, band.label as string]));
+
+    const byPourSize = new Map<string, Set<string>>();
+    for (const wine of wines) {
+      for (const pour of wine.pours) {
+        const key = String(pour.ml);
+        const set = byPourSize.get(key) ?? new Set<string>();
+        set.add(wine.id);
+        byPourSize.set(key, set);
+      }
+    }
+
+    const soldInWindow = new Map<string, number>();
+    const lastSoldAt = new Map<string, string>();
+    for (const line of lines) {
+      soldInWindow.set(line.wine.id, (soldInWindow.get(line.wine.id) ?? 0) + line.sale.quantity);
+      const seen = lastSoldAt.get(line.wine.id);
+      if (!seen || line.sale.date > seen) lastSoldAt.set(line.wine.id, line.sale.date);
+    }
+
+    // A wine last sold BEFORE the window still has a last-sold date worth
+    // showing, so "never sold" means never, not "not in these four weeks".
+    const everRecipeIds = [...pourByRecipe.keys()];
+    const [everOrders, everImported] = everRecipeIds.length
+      ? await Promise.all([
+          prisma.posOrderLine.findMany({
+            where: { recipeId: { in: everRecipeIds }, order: { status: 'PAID', training: false, serviceDate: { lt: start } } },
+            select: { recipeId: true, order: { select: { serviceDate: true } } },
+            orderBy: { order: { serviceDate: 'desc' } },
+            take: 5000
+          }),
+          prisma.salesItemActualEntry.findMany({
+            where: { recipeId: { in: everRecipeIds }, serviceDate: { lt: start } },
+            select: { recipeId: true, serviceDate: true },
+            orderBy: { serviceDate: 'desc' },
+            take: 5000
+          })
+        ])
+      : [[], []];
+    const noteEarlier = (recipeId: string | null, date: Date | null) => {
+      if (!date) return;
+      const found = recipeId ? pourByRecipe.get(recipeId) : null;
+      if (!found) return;
+      const iso = day(date);
+      const seen = lastSoldAt.get(found.wine.id);
+      if (!seen || iso > seen) lastSoldAt.set(found.wine.id, iso);
+    };
+    for (const row of everOrders) noteEarlier(row.recipeId, row.order.serviceDate);
+    for (const row of everImported) noteEarlier(row.recipeId, row.serviceDate);
+
+    const asOf = day(new Date(end.getTime() - 86_400_000));
+    const uncosted = wines.filter((wine) => wine.pours.length > 0 && wine.pours.every((pour) => pour.costCents === null));
+    const unpriced = wines.filter((wine) => bottlePriceCents(wine) === null);
+
+    return {
+      range: { start: data.start, end: data.end },
+      venue: venueScope ?? null,
+      totals: {
+        winesOnList: wines.length,
+        poursSellable: wines.reduce((sum, wine) => sum + wine.pours.length, 0),
+        quantity,
+        bottles,
+        glasses: quantity - bottles,
+        revenueCents,
+        costedRevenueCents,
+        uncostedRevenueCents: revenueCents - costedRevenueCents,
+        costCents,
+        marginCents: marginCentsOf(costedRevenueCents, costCents),
+        marginPercent: marginPercent(costedRevenueCents, costCents),
+        registerRevenueCents: lines
+          .filter((line) => line.sale.source === 'register')
+          .reduce((sum, line) => sum + line.sale.revenueCents, 0),
+        importedRevenueCents: lines
+          .filter((line) => line.sale.source === 'imported')
+          .reduce((sum, line) => sum + line.sale.revenueCents, 0)
+      },
+      gaps: {
+        uncostedWines: uncosted.map((wine) => `${wine.venue} · ${wine.name}`),
+        unpricedWines: unpriced.map((wine) => `${wine.venue} · ${wine.name}`)
+      },
+      byGrape: bucketBy(lines, membership((wine) => wine.grape), (line) => (line.wine.grape ? { key: line.wine.grape, label: line.wine.grape } : null), revenueCents),
+      byRegion: bucketBy(lines, membership((wine) => wine.region), (line) => (line.wine.region ? { key: line.wine.region, label: line.wine.region } : null), revenueCents),
+      byOrigin: bucketBy(lines, membership((wine) => wine.origin), (line) => (line.wine.origin ? { key: line.wine.origin, label: line.wine.origin } : null), revenueCents),
+      byBand: bucketBy(lines, membership(bandOf), (line) => {
+        const id = bandOf(line.wine);
+        return id ? { key: id, label: bandLabel.get(id) ?? id } : null;
+      }, revenueCents).map((row) => ({ ...row, label: bandLabel.get(row.key) ?? row.label })),
+      byPourSize: bucketBy(lines, byPourSize, (line) => ({ key: String(line.pour.ml), label: poursizeLabel(line.pour.ml) }), revenueCents)
+        .map((row) => ({ ...row, label: poursizeLabel(Number(row.key)) }))
+        .sort((a, b) => Number(a.key) - Number(b.key)),
+      aging: agingWines(wines, soldInWindow, lastSoldAt, asOf)
+    };
+  },
+
   async menuCostOfGoods(input: unknown, actor?: AuthUser) {
     const data = salesActualQuerySchema.parse(input);
     const start = parseDate(data.start, 'Menu COGS start date');

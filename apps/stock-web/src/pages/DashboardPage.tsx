@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { StockCostOfGoodsPayload, StockDashboardPayload } from '@alma/shared';
-import { AlmaHomeBubble, Badge, Card, EmptyState, ProduceIcon, Select, Spinner, StatCard } from '@alma/ui';
+import { Badge, Card, EmptyState, PageHeader, Select, Spinner, StatCard } from '@alma/ui';
 import { IconInvoices, IconItems, IconRecipes, IconStocktake, IconSuppliers } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
@@ -103,14 +103,10 @@ export function DashboardPage() {
 
   return (
     <div className="page-stack">
-      <AlmaHomeBubble
-        app="stock"
-        appName="Stock"
-        appIcon={<ProduceIcon />}
-        eyebrow="Stock dashboard"
-        description="Pantries, suppliers, and the orders board across both venues. Re-order suggestions update every hour."
-        statusLabel={activeVenue ? activeVenue.toUpperCase() : 'All venues'}
-        statusHint={(() => {
+      <PageHeader
+        eyebrow="Stock"
+        title="Stock dashboard"
+        description={(() => {
           if (loading) return 'Loading stock signals…';
           if (error) return 'Could not refresh the stock dashboard.';
           const low = dashboard?.summary.lowStockItems ?? 0;
@@ -123,43 +119,63 @@ export function DashboardPage() {
           if (parts.length === 0) return 'Everything is on the shelf and stocktakes are clear.';
           return `${parts.join(' · ')}.`;
         })()}
-        statusDot={(dashboard?.summary.outOfStockItems ?? 0) > 0 ? 'terracotta' : (dashboard?.summary.lowStockItems ?? 0) > 0 ? 'amber' : 'forest'}
         actions={
-          <>
-            <Link className="alma-home-bubble-btn alma-home-bubble-btn--primary" to="/stocktake">
-              Take stock →
-            </Link>
-            <Link className="alma-home-bubble-btn alma-home-bubble-btn--ghost" to="/items">
-              Catalogue
-            </Link>
-          </>
+          <div className="stock-dashboard-headeractions">
+            {venueOptions.length > 0 ? (
+              <Select
+                label="Venue"
+                value={selectedVenue}
+                onChange={(event) => setSelectedVenue(event.currentTarget.value)}
+                options={venueOptions}
+              />
+            ) : null}
+            <Link className="btn btn-sm" to="/stocktake">Take stock</Link>
+          </div>
         }
       />
 
-      <Card title="Stock scope" subtitle="Operational inventory signals, low-stock items, and stocktakes waiting for review.">
-        {venueOptions.length > 0 ? (
-          <div className="stock-filter-toolbar stock-dashboard-toolbar">
-            <Select
-              label="Venue scope"
-              value={selectedVenue}
-              onChange={(event) => setSelectedVenue(event.currentTarget.value)}
-              options={venueOptions}
-            />
-            <p className="subtle">
-              {activeVenue
-                ? `Showing venue stock signals for ${activeVenue}.`
-                : dashboard?.scope.admin
-                  ? 'Showing venue stock signals across all configured venues.'
-                  : 'Venue-scoped managers only see their permitted venue.'}
-            </p>
-          </div>
-        ) : null}
-        <p className="subtle">
-          Stock item balances are changed only through ledger-backed approval,
-          correction, or reversal flows. Submitting a stocktake keeps it ready
-          for review.
-        </p>
-      </Card>
+      {/* The money first: what the venues sold, what the food cost, and what
+          is left — over the last 30 days, before the operational counts. */}
+      <div className="stat-grid">
+        <StatCard
+          label="Sales (30d)"
+          value={cogs ? formatMoney(cogs.netSalesCents) : '—'}
+          hint={activeVenue ? `Net sales · ${activeVenue}` : 'Net sales · all venues'}
+        />
+        <StatCard
+          label="Food & drink cost (30d)"
+          value={cogs ? formatMoney(cogs.actualCogsCents) : '—'}
+          hint={
+            cogs?.cogsPercentOfSales != null
+              ? `${formatPercent(cogs.cogsPercentOfSales)} of sales`
+              : 'Actual supplier purchases'
+          }
+        />
+        <StatCard
+          label="Gross profit (30d)"
+          value={cogs && cogs.netSalesCents > 0 ? formatMoney(cogs.netSalesCents - cogs.actualCogsCents) : '—'}
+          hint={
+            cogs && cogs.netSalesCents > 0
+              ? `${formatPercent(((cogs.netSalesCents - cogs.actualCogsCents) / cogs.netSalesCents) * 100)} GP after actual COGS`
+              : 'Needs sales in the window'
+          }
+          tone={
+            cogs && cogs.netSalesCents > 0 && (cogs.netSalesCents - cogs.actualCogsCents) / cogs.netSalesCents < 0.6
+              ? 'warning'
+              : undefined
+          }
+        />
+        <StatCard
+          label="Cost vs theoretical"
+          value={cogs ? formatMoney(cogs.varianceCents) : '—'}
+          hint={
+            cogs?.variancePercent != null
+              ? `${formatPercent(cogs.variancePercent)} vs recipe cost of what sold`
+              : 'Actual − theoretical'
+          }
+          tone={cogs?.variancePercent != null && Math.abs(cogs.variancePercent) > 15 ? 'warning' : undefined}
+        />
+      </div>
 
       {error ? <EmptyState icon={<IconItems size={24} />} title="Stock dashboard unavailable" description={error} /> : null}
       {loading ? <Spinner label="Loading stock dashboard" /> : null}
@@ -326,35 +342,14 @@ export function DashboardPage() {
           />
         ) : (
           <>
+            {/* Sales, actual COGS, GP and variance lead the page now — this
+                card keeps the recipe-side detail behind them. */}
             <div className="stat-grid">
               <StatCard
                 icon={<IconRecipes size={18} />}
                 label="Theoretical COGS"
                 value={formatMoney(cogs.theoreticalCogsCents)}
-                hint={
-                  cogs.cogsPercentOfSales != null
-                    ? `${formatPercent(cogs.cogsPercentOfSales)} of ${formatMoney(cogs.netSalesCents)} sales`
-                    : `${cogs.dishMargin.mappedRecipes} dishes mapped`
-                }
-              />
-              <StatCard
-                icon={<IconInvoices size={18} />}
-                label="Actual COGS"
-                value={formatMoney(cogs.actualCogsCents)}
-                hint="Supplier purchases in window"
-              />
-              <StatCard
-                icon={<IconSuppliers size={18} />}
-                label="Variance"
-                value={formatMoney(cogs.varianceCents)}
-                hint={cogs.variancePercent != null ? `${formatPercent(cogs.variancePercent)} vs theoretical` : 'Actual − theoretical'}
-                tone={
-                  cogs.variancePercent == null
-                    ? 'neutral'
-                    : Math.abs(cogs.variancePercent) > 15
-                      ? 'warning'
-                      : 'positive'
-                }
+                hint={`Recipe cost of what sold · ${cogs.dishMargin.mappedRecipes} dishes mapped`}
               />
               <StatCard
                 icon={<IconItems size={18} />}

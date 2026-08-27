@@ -1955,11 +1955,11 @@ tbody tr.row-detail:hover {
 
 .dish-margin-row {
   display: grid;
-  /* Dish / Venue / Cost / Sell / Margin / Sold / Revenue / Contribution / Status */
+  /* Dish / Venue / Cost / Sell / Margin / Sold / Revenue / Contribution / Menu class / Status */
   grid-template-columns:
     minmax(180px, 2.2fr) minmax(80px, 1fr) minmax(70px, 0.8fr) minmax(80px, 0.9fr)
     minmax(110px, 1.1fr) minmax(80px, 0.8fr) minmax(100px, 1fr) minmax(100px, 1fr)
-    minmax(110px, 1fr);
+    minmax(96px, 0.9fr) minmax(110px, 1fr);
   gap: 12px;
   align-items: center;
   padding: 11px 14px;
@@ -3428,3 +3428,181 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 @media (max-width: 860px) {
   .dish-margin-recipe-link { opacity: 1; }
 }
+
+/* ── Set menu courses ────────────────────────────────────────────────────
+   Tonight's menu is a wall of dish pills: lit = on offer, dim = off. It is the
+   only part of this page anyone touches during service, so it reads at a
+   glance and every pill saves itself on the tap. */
+.setmenu-tonight { display: flex; flex-direction: column; gap: 14px; }
+.setmenu-tonight-course { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.setmenu-tonight-name { min-width: 130px; font-weight: 700; display: flex; flex-direction: column; }
+.setmenu-tonight-name small { font-weight: 500; opacity: 0.6; }
+.setmenu-tonight-dishes { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; }
+.setmenu-tonight-dishes button {
+  background: transparent; border: 1px dashed currentColor; border-radius: 9999px; opacity: 0.45;
+  color: inherit; font: inherit; font-size: 13px; padding: 8px 14px; cursor: pointer;
+}
+.setmenu-tonight-dishes button.is-on { background: #1F3524; border: 1px solid #1F3524; color: #F3EFE6; opacity: 1; font-weight: 600; }
+.setmenu-tonight-dishes button:disabled { cursor: default; }
+.setmenu-course-edit { border-top: 1px solid rgba(31,53,36,0.12); padding-top: 14px; margin-top: 14px; }
+.setmenu-course-head { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }
+
+/* ── Wine list ───────────────────────────────────────────────────────────
+   One card per wine, opening into its detail. The pour prices sit on the
+   closed row because "which of these has no price" is the question this page
+   gets opened for, and the answer should not need a click. */
+.wine-page { display: flex; flex-direction: column; gap: 12px; }
+.wine-controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+.wine-summary { margin-top: 12px; }
+.wine-card { padding: 0; }
+.wine-head {
+  width: 100%; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px 18px;
+  align-items: center; background: none; border: 0; color: inherit; font: inherit;
+  text-align: left; padding: 14px 18px; cursor: pointer;
+}
+.wine-head:hover { background: rgba(31,53,36,0.03); }
+.wine-title { display: flex; gap: 9px; align-items: baseline; flex-wrap: wrap; font-size: 15px; }
+.wine-vintage { opacity: 0.55; font-variant-numeric: tabular-nums; }
+.wine-sub { grid-column: 1; font-size: 13px; opacity: 0.65; }
+.wine-marks { margin-left: 8px; letter-spacing: 2px; }
+.wine-pours { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 8px; }
+.wine-pour {
+  display: flex; flex-direction: column; align-items: center; min-width: 68px;
+  border: 1px solid rgba(31,53,36,0.14); border-radius: 10px; padding: 5px 9px;
+}
+.wine-pour small { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; opacity: 0.6; }
+.wine-pour b { font-variant-numeric: tabular-nums; }
+.wine-pour.is-unpriced { border-color: rgba(154,58,46,0.5); }
+.wine-edit { display: flex; flex-direction: column; gap: 14px; padding: 4px 18px 18px; border-top: 1px solid rgba(31,53,36,0.08); }
+.wine-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.wine-marks-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.wine-marks-edit button {
+  background: transparent; border: 1px solid rgba(31,53,36,0.18); border-radius: 9999px;
+  color: inherit; font: inherit; font-size: 12.5px; padding: 6px 12px; cursor: pointer;
+}
+.wine-marks-edit button.is-on { background: #1F3524; border-color: #1F3524; color: #F3EFE6; font-weight: 600; }
+.wine-toggle { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.wine-pours-edit { display: flex; flex-direction: column; gap: 8px; }
+.wine-link { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+
+/* Dietary picker — a claim about a plate, so it reads as a checklist rather
+   than as chips you flick through. The three kinds are coloured apart because
+   they mean genuinely different things: "suits" and "on ask" let a dish IN,
+   "contains" rules it OUT, and mixing those up is how somebody gets hurt. */
+.dietary-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.dietary-tag {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 13px; border-radius: 9999px; cursor: pointer;
+  border: 1px solid var(--line, rgba(31, 53, 36, 0.18));
+  font-size: 14px; line-height: 1;
+}
+.dietary-tag input { margin: 0; }
+.dietary-tag.is-on { border-color: currentColor; font-weight: 600; }
+.dietary-tag.is-suits.is-on { color: #1f6b3f; background: rgba(31, 107, 63, 0.09); }
+.dietary-tag.is-onAsk.is-on { color: #7c5a11; background: rgba(124, 90, 17, 0.10); }
+/* Contains is the only one that means "do not serve this to them". */
+.dietary-tag.is-contains.is-on { color: #93301f; background: rgba(147, 48, 31, 0.10); }
+
+/* Weekday pricing (price windows) on the dish form. */
+.price-window-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 10px; border: 1px solid var(--border, #e3e0d8); border-radius: 10px; margin-bottom: 8px;
+}
+.price-window-main { display: flex; flex-direction: column; gap: 2px; }
+.price-window-main small { color: var(--muted, #6b7280); }
+.price-window-actions { display: flex; gap: 8px; align-items: center; }
+.price-window-add { border: 1px dashed var(--border, #e3e0d8); border-radius: 10px; padding: 10px; margin: 8px 0; display: flex; flex-direction: column; gap: 10px; }
+.price-window-days { display: flex; flex-wrap: wrap; gap: 6px; }
+.price-window-days button {
+  border: 1px solid var(--border, #e3e0d8); background: transparent; border-radius: 9999px;
+  padding: 6px 12px; font-size: 13px; cursor: pointer;
+}
+.price-window-days button.is-on { background: #1f3524; color: #f3efe6; border-color: #1f3524; }
+.price-window-only { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.price-window-only input { margin-top: 2px; }
+
+/* Stock dashboard header: venue picker + take-stock beside the title. */
+.stock-dashboard-headeractions { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.stock-dashboard-headeractions .btn { white-space: nowrap; }
+
+/* Crash guard fallback. */
+.app-crash { position: fixed; inset: 0; display: grid; place-items: center; background: #f7f5ef; color: #21262b; padding: 24px; z-index: 9999; }
+.app-crash-panel { max-width: 420px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.app-crash-panel h1 { font-size: 20px; margin: 0; }
+.app-crash-panel p { margin: 0; color: #5a6069; line-height: 1.5; }
+.app-crash-panel button { min-height: 48px; border-radius: 12px; border: 0; background: #1f3524; color: #f3efe6; font-size: 15px; font-weight: 700; cursor: pointer; }
+
+/* ── Menu lab (what-if COGS simulator on Dish margins) ───────────────────── */
+.menu-lab {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 14px 0;
+  background: var(--color-surface-muted);
+}
+.menu-lab-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.menu-lab-lead span { display: block; font-size: 13px; color: var(--color-text-muted); max-width: 640px; }
+.menu-lab-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.menu-lab-redistribute {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  max-width: 720px;
+}
+.menu-lab-redistribute input { margin-top: 3px; }
+.menu-lab-changes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.menu-lab-chip {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.menu-lab-chip:hover { border-color: #dc2626; color: #991b1b; }
+.menu-lab-chip-reset { font-weight: 600; }
+.menu-lab-hint { margin-top: 10px; }
+.menu-lab-rowactions { display: flex; gap: 6px; margin-top: 4px; align-items: center; flex-wrap: wrap; }
+.menu-lab-rowactions button {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: 8px;
+  padding: 2px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.menu-lab-rowactions button:hover { border-color: var(--color-primary, #1f3d2b); }
+.menu-lab-rowstate { font-size: 12px; color: var(--color-text-muted); }
+.dish-margin-row.is-lab-removed { opacity: 0.45; }
+.dish-margin-row.is-lab-removed .dish-margin-title strong { text-decoration: line-through; }
+.dish-margin-row.is-lab-changed { box-shadow: inset 3px 0 0 #2563eb; }
+.menu-lab-dialog-note { margin: 0 0 10px; font-size: 13px; }
+.menu-lab-picklist { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.menu-lab-picklist button {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.menu-lab-picklist button:hover { border-color: var(--color-primary, #1f3d2b); }
+.menu-lab-picklist span { color: var(--color-text-muted); white-space: nowrap; }

@@ -93,6 +93,8 @@ const RegisterAuditPage = lazy(() => import('./pages/RegisterAuditPage').then((m
 const SupplierSpendPage = lazy(() => import('./pages/SupplierSpendPage').then((m) => ({ default: m.SupplierSpendPage })));
 const ForecastModulePage = lazy(() => import('./pages/ForecastModulePage').then((m) => ({ default: m.ForecastModulePage })));
 const SalesEntryPage = lazy(() => import('./pages/SalesEntryPage').then((m) => ({ default: m.SalesEntryPage })));
+const BanquetReportPage = lazy(() => import('./pages/BanquetReportPage').then((m) => ({ default: m.BanquetReportPage })));
+const WineReportPage = lazy(() => import('./pages/WineReportPage').then((m) => ({ default: m.WineReportPage })));
 
 
 type SuiteSummary = {
@@ -239,6 +241,8 @@ type ReportSectionId =
   | 'content'
   | 'gift-cards'
   | 'register-audit'
+  | 'banquets'
+  | 'wines'
   | 'exports';
 
 type ReportNavItem = {
@@ -386,6 +390,22 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     title: 'Gift Card Reports',
     description: 'Pending gift card orders, value, fulfilment, and payment readiness.',
     icon: <IconGift />,
+    group: 'more'
+  },
+  {
+    id: 'wines',
+    label: 'Wine',
+    title: 'Wine',
+    description: 'What the list actually sells — by grape, region, price band and pour size — at what margin, and what has gone quiet.',
+    icon: <IconReceipt />,
+    group: 'more'
+  },
+  {
+    id: 'banquets',
+    label: 'Banquets',
+    title: 'Banquets',
+    description: 'What a set menu is really worth: package revenue shared across the dishes each table was served, against the cost of cooking them.',
+    icon: <IconReceipt />,
     group: 'more'
   },
   {
@@ -1580,10 +1600,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
   const activeStaff = data.staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
   const staffById = useMemo(() => new Map(activeStaff.map((member) => [member.id, member])), [activeStaff]);
-  const tipsByStaffId = useMemo(
-    () => new Map(((data.tips?.paidEntitlements.length ? data.tips.paidEntitlements : data.tips?.entitlements) ?? []).map((row) => [row.staffProfileId, row.amountCents])),
-    [data.tips]
-  );
+  // Summed, not keyed: tips pool per venue, so somebody who worked both venues
+  // has a line in each pool. Keying by id would keep only the last one and
+  // under-report their week.
+  const tipsByStaffId = useMemo(() => {
+    const rows = (data.tips?.paidEntitlements.length ? data.tips.paidEntitlements : data.tips?.entitlements) ?? [];
+    const totals = new Map<string, number>();
+    for (const row of rows) totals.set(row.staffProfileId, (totals.get(row.staffProfileId) ?? 0) + row.amountCents);
+    return totals;
+  }, [data.tips]);
   const venues = useMemo(
     () =>
       Array.from(
@@ -1888,7 +1913,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       `Sales variance: ${actualSalesCents ? formatCurrency(forecastSalesVarianceCents) : 'not available'}`,
       `Planned roster wages: ${formatCurrency(publishedForecastTotals.rosterCostCents || forecastTotals.plannedCostCents)}`,
       `Actual timesheet wages: ${formatCurrency(actualWageCostCents)}`,
-      `Tips pool: ${data.tips ? formatCurrency(data.tips.allocatablePoolCents ?? data.tips.tipPoolCents) : 'not loaded'}`,
+      `Tips pool: ${data.tips ? formatCurrency(data.tips.tipPoolCents) : 'not loaded'}`,
       `Actual wage percentage: ${actualWagePercent ? `${actualWagePercent.toFixed(1)}%` : 'not available'}`,
       '',
       ...venuePerformanceRows.map((row) =>
@@ -3445,7 +3470,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {(() => {
             const labourPct = primeTotals?.wagePercent ?? null;
             const incomplete = labourPct != null && labourPct > 120;
-            const tipsPoolCents = data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0;
+            // Every venue's pool, summed. Each was split inside its own venue.
+            const tipsPoolCents = data.tips?.tipPoolCents ?? 0;
             const payroll = wageTotals.approvedCostCents + tipsPoolCents;
             const tone = incomplete || labourPct == null
               ? 'neutral'
@@ -3482,7 +3508,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 <div className="ov-prime-col">
                   <span className="ov-prime-label">Payroll total</span>
                   <span className="ov-prime-col-value">{formatCurrency(payroll)}</span>
-                  <span className="ov-prime-col-hint">Approved wages + {formatCurrency(tipsPoolCents)} tips pool (after breakage deduction)</span>
+                  <span className="ov-prime-col-hint">Approved wages + {formatCurrency(tipsPoolCents)} tips pool (each venue pooled separately)</span>
                 </div>
               </section>
             );
@@ -4678,6 +4704,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         return renderContentSection();
       case 'gift-cards':
         return renderGiftCardsSection();
+      case 'banquets':
+        return <BanquetReportPage />;
+      case 'wines':
+        return <WineReportPage />;
       case 'register-audit':
         return <RegisterAuditPage />;
       case 'exports':

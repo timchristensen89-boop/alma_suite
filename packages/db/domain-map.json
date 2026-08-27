@@ -210,7 +210,8 @@
     "IntegrationWebhookEvent": "integrations",
     "Venue": "shared",
     "AppSettings": "shared",
-    "AlmaTask": "shared"
+    "AlmaTask": "shared",
+    "LoyaltyLedgerEntry": "reserve"
   },
   "seams": [
     {

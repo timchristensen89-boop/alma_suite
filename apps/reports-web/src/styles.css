@@ -2812,3 +2812,25 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
 .audit-table th { text-align: left; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-subtle); padding: 6px 8px; border-bottom: 1px solid rgba(31, 53, 36, 0.12); }
 .audit-table td { padding: 7px 8px; border-bottom: 1px solid rgba(31, 53, 36, 0.06); }
 .report-panel h3 { margin: 0 0 8px; font-size: 14px; }
+
+/* ── Banquets ────────────────────────────────────────────────────────────
+   Money first, then the dish-by-dish table it comes from. Uncosted rows are
+   dimmed rather than hidden: their margin is wrong, and pretending otherwise
+   is how a report stops being trusted. */
+.banquet-report { display: flex; flex-direction: column; gap: 18px; }
+.banquet-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 16px; }
+.banquet-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+.banquet-totals > div { display: flex; flex-direction: column; gap: 2px; }
+.banquet-totals span { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.6; }
+.banquet-totals strong { font-size: 26px; font-weight: 700; }
+.banquet-totals small { opacity: 0.65; }
+.banquet-gaps { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+.banquet-gaps p { margin: 0; font-size: 13.5px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.banquet-table { width: 100%; border-collapse: collapse; }
+.banquet-table th, .banquet-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid rgba(31,53,36,0.08); vertical-align: top; }
+.banquet-table th.num, .banquet-table td.num { text-align: right; white-space: nowrap; }
+.banquet-table tr.is-uncosted { opacity: 0.7; }
+.banquet-dish-menus { display: block; font-size: 11.5px; opacity: 0.55; }
+/* The wine report reuses the banquet table; this is the one thing it adds —
+   a quiet second line under a cell (the vintage's age, the date it last sold). */
+.wine-aging-note { display: block; font-size: 11.5px; opacity: 0.55; font-weight: 400; }

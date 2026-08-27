@@ -101,6 +101,13 @@ import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import { LoginPage } from './LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
 import { api, apiBlob, apiQueued, createSuiteHandoffUrl, flushQueue, queuedRequestCount } from './lib/api';
+import {
+  currentEndpoint,
+  disablePush,
+  enablePush,
+  pushReadiness,
+  type PushReadiness
+} from './lib/push.js';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import {
@@ -332,9 +339,9 @@ const NAV_ITEMS = [
     // labour-cost workflow in one place.
     to: '/roster',
     label: 'Roster & pay',
-    description: 'Roster, leave, timesheets and tips',
+    description: 'Roster, leave, timesheets, tips and labour',
     icon: <IconCalendarClock />,
-    match: ['/leave', '/timesheets', '/tips']
+    match: ['/leave', '/timesheets', '/tips', '/labour']
   },
   {
     // People hub: profiles, invites, approvals and HR records.
@@ -386,10 +393,262 @@ const TODAY_TABS: HubTab[] = [
 // selector and form the labour-cost workflow.
 const ROSTER_PAY_TABS: HubTab[] = [
   { to: '/roster', label: 'Roster' },
+  // Managers work shifts too. Without this they reach the roster they BUILD
+  // and never the one they are ON — which also put their own calendar feed
+  // and roster notifications out of reach entirely, since both live on the
+  // personal page.
+  { to: '/my-roster', label: 'My shifts' },
   { to: '/leave', label: 'Leave' },
   { to: '/timesheets', label: 'Timesheets' },
-  { to: '/tips', label: 'Tips' }
+  { to: '/tips', label: 'Tips' },
+  { to: '/labour', label: 'Labour' }
 ];
+
+
+// ── Labour vs takings ────────────────────────────────────────────────────
+// The week's roster priced against the week's ACTUAL takings (the roster
+// board compares against forecast). Per person: rostered hours vs contract,
+// the salary-headroom band (contract → 45, already paid for), and real
+// overtime past 45 in dollars. Contract hours are editable inline — this
+// page is where they matter, so this page is where they're set.
+type LabourWeekPayload = {
+  weekStart: string;
+  venues: string[];
+  days: Array<{
+    date: string;
+    byVenue: Array<{
+      venue: string;
+      salesCents: number | null;
+      rosteredHours: number;
+      estCostCents: number;
+      openHours: number;
+      labourPct: number | null;
+    }>;
+  }>;
+  people: Array<{
+    staffProfileId: string;
+    name: string;
+    employmentType: string;
+    contractedWeeklyHours: number | null;
+    rosteredHours: number;
+    headroomHours: number;
+    overtimeHours: number;
+    overAgreedHours: number;
+    overtimeCostCents: number;
+    estWeekCostCents: number;
+    rateKnown: boolean;
+  }>;
+  totals: { salesCents: number; estCostCents: number; overtimeCostCents: number };
+};
+
+function labourMondayOf(offsetWeeks = 0): string {
+  const now = new Date();
+  now.setDate(now.getDate() - ((now.getDay() + 6) % 7) + offsetWeeks * 7);
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function labourMoney(cents: number) {
+  return (cents / 100).toLocaleString('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 });
+}
+
+const LABOUR_TYPE_LABEL: Record<string, string> = {
+  FULL_TIME: 'Full-time',
+  PART_TIME: 'Part-time',
+  CASUAL: 'Casual'
+};
+
+function LabourPage() {
+  const [weekStart, setWeekStart] = useState(() => labourMondayOf());
+  const [data, setData] = useState<LabourWeekPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await api<LabourWeekPayload>(`/api/staff/labour-week?weekStart=${weekStart}`));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load the labour week.');
+    } finally {
+      setLoading(false);
+    }
+  }, [weekStart]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function saveContract(staffProfileId: string) {
+    const raw = drafts[staffProfileId];
+    if (raw === undefined) return;
+    setSavingId(staffProfileId);
+    try {
+      await api(`/api/staff/${staffProfileId}/contracted-hours`, {
+        method: 'PUT',
+        body: JSON.stringify({ contractedWeeklyHours: raw.trim() === '' ? null : Number(raw) })
+      });
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[staffProfileId];
+        return next;
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save contracted hours.');
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  const weekEndLabel = (() => {
+    const end = new Date(`${weekStart}T12:00:00`);
+    end.setDate(end.getDate() + 6);
+    return end.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+  })();
+  const weekStartLabel = new Date(`${weekStart}T12:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+  const labourPct =
+    data && data.totals.salesCents > 0 ? (data.totals.estCostCents / data.totals.salesCents) * 100 : null;
+  const pctTone = (pct: number | null) => (pct == null ? '' : pct > 45 ? 'is-danger' : pct > 32 ? 'is-warning' : 'is-good');
+
+  return (
+    <div className="labour-page">
+      <PageHeader
+        eyebrow="Staff · Labour"
+        title="Labour vs takings"
+        description="The rostered week priced against what the venues actually took. Contract hours are editable in the table — headroom is what a salary already covers; overtime past 45 is real money."
+      />
+      <div className="labour-weeknav">
+        <Button type="button" size="sm" variant="secondary" onClick={() => setWeekStart((current) => {
+          const d = new Date(`${current}T12:00:00`);
+          d.setDate(d.getDate() - 7);
+          return d.toISOString().slice(0, 10);
+        })}>
+          ‹ Previous
+        </Button>
+        <strong>{weekStartLabel} – {weekEndLabel}</strong>
+        <Button type="button" size="sm" variant="secondary" onClick={() => setWeekStart((current) => {
+          const d = new Date(`${current}T12:00:00`);
+          d.setDate(d.getDate() + 7);
+          return d.toISOString().slice(0, 10);
+        })}>
+          Next ›
+        </Button>
+        <Button type="button" size="sm" variant="secondary" onClick={() => setWeekStart(labourMondayOf())}>This week</Button>
+      </div>
+
+      {error ? <p className="error-text">{error}</p> : null}
+      {loading && !data ? <Spinner label="Pricing the week…" /> : null}
+
+      {data ? (
+        <>
+          <div className="stats-grid">
+            <StatCard label="Actual takings" value={labourMoney(data.totals.salesCents)} hint="sum of best-known daily totals" loading={loading} />
+            <StatCard label="Rostered labour (est)" value={labourMoney(data.totals.estCostCents)} hint="published shifts at costing rates" loading={loading} />
+            <StatCard label="Labour %" value={labourPct == null ? '—' : `${labourPct.toFixed(1)}%`} hint="of actual takings, not forecast" loading={loading} />
+            <StatCard label="Overtime premium" value={labourMoney(data.totals.overtimeCostCents)} hint="the extra cost of hours past 45" loading={loading} />
+          </div>
+
+          <Card title="People" subtitle="Rostered against contract. Headroom = hours a salary already covers (contract → 45). Overtime = past 45, priced at the costing engine's OT rate.">
+            <div className="labour-table-wrap">
+              <table className="labour-table">
+                <thead>
+                  <tr>
+                    <th>Person</th>
+                    <th>Type</th>
+                    <th>Contract h</th>
+                    <th>Rostered</th>
+                    <th>Headroom</th>
+                    <th>Overtime</th>
+                    <th>OT cost</th>
+                    <th>Week est.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.people.map((person) => {
+                    const draft = drafts[person.staffProfileId];
+                    const contractValue = draft ?? (person.contractedWeeklyHours == null ? '' : String(person.contractedWeeklyHours));
+                    return (
+                      <tr key={person.staffProfileId} className={person.overtimeHours > 0 ? 'is-ot' : ''}>
+                        <td>{person.name}{person.rateKnown ? '' : ' *'}</td>
+                        <td>{LABOUR_TYPE_LABEL[person.employmentType] ?? person.employmentType}</td>
+                        <td>
+                          <input
+                            className="labour-contract-input"
+                            inputMode="numeric"
+                            placeholder={person.employmentType === 'CASUAL' ? '—' : 'h'}
+                            value={contractValue}
+                            disabled={savingId === person.staffProfileId}
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
+                              setDrafts((current) => ({ ...current, [person.staffProfileId]: value }));
+                            }}
+                            onBlur={() => void saveContract(person.staffProfileId)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') event.currentTarget.blur();
+                            }}
+                          />
+                        </td>
+                        <td><strong>{person.rosteredHours}h</strong></td>
+                        <td>{person.headroomHours > 0 ? `${person.headroomHours}h free` : person.overAgreedHours > 0 ? `+${person.overAgreedHours}h over agreed` : '—'}</td>
+                        <td className={person.overtimeHours > 0 ? 'labour-ot' : ''}>{person.overtimeHours > 0 ? `+${person.overtimeHours}h` : '—'}</td>
+                        <td className={person.overtimeCostCents > 0 ? 'labour-ot' : ''}>{person.overtimeCostCents > 0 ? labourMoney(person.overtimeCostCents) : '—'}</td>
+                        <td>{labourMoney(person.estWeekCostCents)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {data.people.some((person) => !person.rateKnown) ? (
+              <p className="subtle">* no costing rate on file — hours counted, dollars understated. Set their pay profile.</p>
+            ) : null}
+          </Card>
+
+          <Card title="Day by day" subtitle="Estimated rostered cost against each day's actual takings. Green under 32%, amber to 45%, red past it. Days with no takings yet show hours only.">
+            <div className="labour-table-wrap">
+              <table className="labour-table">
+                <thead>
+                  <tr>
+                    <th>Venue</th>
+                    {data.days.map((day) => (
+                      <th key={day.date}>{new Date(`${day.date}T12:00:00`).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric' })}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.venues.map((venue) => (
+                    <tr key={venue}>
+                      <td><strong>{venue}</strong></td>
+                      {data.days.map((day) => {
+                        const cell = day.byVenue.find((entry) => entry.venue === venue);
+                        if (!cell || (cell.rosteredHours === 0 && cell.salesCents == null)) return <td key={day.date}>—</td>;
+                        return (
+                          <td key={day.date} className={`labour-daycell ${pctTone(cell.labourPct)}`}>
+                            <strong>{cell.salesCents == null ? 'no takings yet' : labourMoney(cell.salesCents)}</strong>
+                            <span>{cell.rosteredHours}h · {labourMoney(cell.estCostCents)}</span>
+                            {cell.labourPct != null ? <em>{cell.labourPct.toFixed(0)}%</em> : null}
+                            {cell.openHours > 0 ? <small>{cell.openHours}h unfilled</small> : null}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 
 // People hub — profiles, onboarding invites and approvals. HR is appended at
 // render time only when the viewer has HR access.
@@ -1218,6 +1477,44 @@ function StaffHome({
   const [reonboardMessage, setReonboardMessage] = useState<string | null>(null);
   const [reonboardError, setReonboardError] = useState<string | null>(null);
 
+  // The numbers a manager opens this page FOR, loaded up front: this week's
+  // labour against takings (the labour-week feed the Labour page uses) and
+  // how many timesheets are sitting in the approval queue. Quiet failure —
+  // a broken feed shows an em dash, never blocks the register of people.
+  const [labour, setLabour] = useState<LabourWeekPayload | null>(null);
+  const [approvalQueue, setApprovalQueue] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void api<LabourWeekPayload>(`/api/staff/labour-week?weekStart=${labourMondayOf()}`)
+      .then((data) => {
+        if (!cancelled) setLabour(data);
+      })
+      .catch(() => undefined);
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+    void api<Array<{ id: string }>>(
+      `/api/staff/timesheets?status=SUBMITTED&start=${start.toISOString().slice(0, 10)}`
+    )
+      .then((rows) => {
+        if (!cancelled) setApprovalQueue(rows.length);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const todayKey = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  })();
+  const today = labour?.days.find((day) => day.date === todayKey) ?? null;
+  const todayHours = today ? today.byVenue.reduce((sum, venue) => sum + venue.rosteredHours + venue.openHours, 0) : null;
+  const todayCostCents = today ? today.byVenue.reduce((sum, venue) => sum + venue.estCostCents, 0) : null;
+  const weekLabourPct =
+    labour && labour.totals.salesCents > 0
+      ? Math.round((labour.totals.estCostCents / labour.totals.salesCents) * 1000) / 10
+      : null;
+
   function openProfile(id: string, section = 'personal') {
     onSelect(id);
     navigate(`/staff/${id}/${section}`);
@@ -1257,52 +1554,98 @@ function StaffHome({
 
   return (
     <div className="page-stack staff-settings-page">
-      <AlmaHomeBubble
-        app="staff"
-        appName="Staff"
-        appIcon={<PeopleIcon />}
-        eyebrow="People command"
-        description="Rosters, pay, contracts, certifications. Where the team and the working week meet."
-        statusLabel="Week 25–31 May"
-        statusHint={(() => {
-          if (loading) return 'Loading the staff register…';
-          if (readinessActionCount === 0) {
-            return `${activeStaff.length} active profile${activeStaff.length === 1 ? '' : 's'}. Register is ready for daily use.`;
-          }
-          const bits: string[] = [];
-          if (pending.length > 0) bits.push(`${pending.length} pending onboarding`);
-          if (expiringSoon.length > 0) bits.push(`${expiringSoon.length} expiring record${expiringSoon.length === 1 ? '' : 's'}`);
-          if (missingPayRate.length > 0) bits.push(`${missingPayRate.length} missing pay rate`);
-          return bits.length > 0 ? bits.join(' · ') : `${readinessActionCount} readiness item${readinessActionCount === 1 ? '' : 's'} need review`;
-        })()}
-        statusDot={readinessActionCount === 0 ? 'forest' : 'amber'}
+      <PageHeader
+        eyebrow="Staff"
+        title="People command"
+        description={
+          loading
+            ? 'Loading the staff register…'
+            : readinessActionCount === 0
+              ? `${activeStaff.length} active staff. Register is ready for daily use.`
+              : `${readinessActionCount} readiness item${readinessActionCount === 1 ? '' : 's'} need review below.`
+        }
         actions={
           <>
-            <NavLink to="/brief" className="alma-home-bubble-btn alma-home-bubble-btn--primary">
-              Daily brief →
-            </NavLink>
-            <NavLink to="/readiness" className="alma-home-bubble-btn alma-home-bubble-btn--ghost">
-              Today's readiness
-            </NavLink>
-            <NavLink to="/roster" className="alma-home-bubble-btn alma-home-bubble-btn--ghost">
-              Roster
-            </NavLink>
+            <NavLink to="/brief" className="btn btn-sm">Daily brief</NavLink>
+            <NavLink to="/roster" className="btn btn-ghost btn-sm">Roster</NavLink>
+            <NavLink to="/timesheets" className="btn btn-ghost btn-sm">Timesheets</NavLink>
           </>
         }
       />
 
+      {/* The numbers first: what today costs, how the week is tracking
+          against takings, and what is waiting on a manager. */}
       <div className="stats-grid staff-settings-stats">
-        <NavLink to="/profiles" className="stat-card-link" aria-label="Open staff profiles">
-          <StatCard label="Staff profiles" value={staff.length} hint="Shared records" loading={loading} />
+        <NavLink to="/roster" className="stat-card-link" aria-label="Open the roster">
+          <StatCard
+            label="Rostered today"
+            value={todayHours == null ? '—' : `${Math.round(todayHours * 10) / 10}h`}
+            hint={todayCostCents == null ? 'Roster feed unavailable' : `≈ ${labourMoney(todayCostCents)} labour today`}
+            loading={labour === null && todayHours === null}
+          />
         </NavLink>
+        <NavLink to="/labour" className="stat-card-link" aria-label="Open labour vs takings">
+          <StatCard
+            label="Labour this week"
+            value={labour ? labourMoney(labour.totals.estCostCents) : '—'}
+            hint={
+              labour && labour.totals.overtimeCostCents > 0
+                ? `incl. ${labourMoney(labour.totals.overtimeCostCents)} overtime`
+                : 'Rostered cost, Mon–Sun'
+            }
+          />
+        </NavLink>
+        <NavLink to="/labour" className="stat-card-link" aria-label="Open labour vs takings">
+          <StatCard
+            label="Takings this week"
+            value={labour ? labourMoney(labour.totals.salesCents) : '—'}
+            hint={weekLabourPct != null ? `Labour is ${weekLabourPct}% of takings` : 'No takings recorded yet this week'}
+            tone={weekLabourPct != null && weekLabourPct > 35 ? 'warning' : undefined}
+          />
+        </NavLink>
+        <NavLink to="/timesheets" className="stat-card-link" aria-label="Open timesheets awaiting approval">
+          <StatCard
+            label="Awaiting approval"
+            value={approvalQueue == null ? '—' : approvalQueue}
+            hint="Submitted timesheets, last 30 days"
+            tone={(approvalQueue ?? 0) > 0 ? 'warning' : 'positive'}
+          />
+        </NavLink>
+      </div>
+
+      <div className="stats-grid staff-settings-stats">
         <NavLink to="/profiles" className="stat-card-link" aria-label="Open active staff profiles">
-          <StatCard label="Active" value={activeStaff.length} hint="Not archived" loading={loading} />
+          <StatCard label="Active staff" value={activeStaff.length} hint={`${staff.length} profiles on record`} loading={loading} />
         </NavLink>
         <NavLink to="/approvals" className="stat-card-link" aria-label="Open pending onboarding approvals">
-          <StatCard label="Pending onboarding" value={pending.length} hint="Invite created" loading={loading} />
+          <StatCard
+            label="Pending onboarding"
+            value={pending.length}
+            hint="Invite created, not finished"
+            loading={loading}
+            tone={pending.length > 0 ? 'warning' : 'positive'}
+          />
         </NavLink>
         <NavLink to="/hr" className="stat-card-link" aria-label="Open expiring staff records">
-          <StatCard label="Expiring records" value={expiringSoon.length} hint="Next 30 days" loading={loading} />
+          <StatCard
+            label="Expiring records"
+            value={expiringSoon.length}
+            hint="Visas, certificates — next 30 days"
+            loading={loading}
+            tone={expiringSoon.length > 0 ? 'warning' : 'positive'}
+          />
+        </NavLink>
+        <NavLink to="/roster" className="stat-card-link" aria-label="Open the roster">
+          <StatCard
+            label="On the roster this week"
+            value={labour ? labour.people.length : '—'}
+            hint={
+              labour && labour.people.some((person) => !person.rateKnown)
+                ? `${labour.people.filter((person) => !person.rateKnown).length} without a known pay rate`
+                : 'Everyone rostered has a pay rate'
+            }
+            tone={labour && labour.people.some((person) => !person.rateKnown) ? 'warning' : undefined}
+          />
         </NavLink>
       </div>
 
@@ -2605,6 +2948,10 @@ function StaffMemberRosterPage() {
 
       <OpenShiftsCard onClaimApproved={loadRoster} refreshKey={swapRefresh} />
 
+      <MyCalendarCard />
+
+      <NotificationsCard />
+
       <Card title="Upcoming shifts" subtitle="Upcoming rostered shifts and confirmations." padding="none">
         {loading ? <Spinner label="Loading roster…" /> : null}
         {!loading && upcoming.length === 0 ? <EmptyState title="No upcoming shifts" description="Published shifts will appear here once they’re assigned." /> : null}
@@ -2777,6 +3124,249 @@ function ShiftClaimsPanel({ onDecided }: { onDecided: () => Promise<void> }) {
 // Shifts published with nobody on them. Staff put their hand up here; a
 // manager decides. Hidden entirely when there is nothing open, so the roster
 // page doesn't carry a permanently empty box.
+/**
+ * "Put my shifts on my phone."
+ *
+ * A subscription, not a download. The list above is right today; the
+ * subscription is still right after a manager moves a shift on Thursday, which
+ * is the whole reason this exists. The download is kept as a fallback for
+ * anyone whose calendar app will not take a feed.
+ *
+ * The link is a credential — anybody holding it can read this person's shifts —
+ * so it is not shown in full until asked for, and it can be reset from here if
+ * a phone goes missing.
+ */
+function MyCalendarCard() {
+  const [links, setLinks] = useState<{ feedUrl: string; subscribeUrl: string; issuedAt: string | null } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [revealed, setRevealed] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setLinks(await api<{ feedUrl: string; subscribeUrl: string; issuedAt: string | null }>('/api/staff/me/calendar'));
+    } catch {
+      setError('Could not get your calendar link.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function copy() {
+    if (!links) return;
+    try {
+      await navigator.clipboard.writeText(links.feedUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard refused — the link is on screen to copy by hand.
+      setRevealed(true);
+    }
+  }
+
+  async function reset() {
+    setResetting(true);
+    setError(null);
+    try {
+      const next = await api<{ feedUrl: string; subscribeUrl: string }>('/api/staff/me/calendar/rotate', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      setLinks({ ...next, issuedAt: new Date().toISOString() });
+      setRevealed(true);
+    } catch {
+      setError('Could not reset the link.');
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  return (
+    <Card
+      title="My shifts on my phone"
+      subtitle="Add it once. When a shift moves, your calendar moves with it."
+    >
+      {loading ? <Spinner label="Getting your link…" /> : null}
+      {error ? <p className="error-text">{error}</p> : null}
+      {links ? (
+        <>
+          <div className="staff-calendar-actions">
+            {/* webcal:// so iOS and macOS subscribe rather than importing a
+                snapshot that goes stale the first time a shift changes. */}
+            <Button type="button" onClick={() => window.location.assign(links.subscribeUrl)}>
+              Add to my calendar
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void copy()}>
+              {copied ? 'Link copied' : 'Copy link'}
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => window.open(links.feedUrl, '_blank', 'noopener')}>
+              Download this week
+            </Button>
+          </div>
+          <p className="subtle staff-calendar-hint">
+            On an iPhone, tap <strong>Add to my calendar</strong>. On Android or a computer, tap{' '}
+            <strong>Copy link</strong> and paste it into Google Calendar under <em>Other calendars → From URL</em>.
+          </p>
+          <details className="staff-calendar-secret" open={revealed}>
+            <summary>Show the link, and reset it if you have lost your phone</summary>
+            <p className="staff-calendar-url">{links.feedUrl}</p>
+            <p className="subtle">
+              Anyone with this link can see your shifts — don't post it anywhere. Resetting it stops the old one
+              working straight away, and you'll need to add the calendar again on every device.
+            </p>
+            <Button type="button" size="sm" variant="danger" disabled={resetting} onClick={() => void reset()}>
+              {resetting ? 'Resetting…' : 'Reset my link'}
+            </Button>
+          </details>
+        </>
+      ) : null}
+    </Card>
+  );
+}
+
+/**
+ * Turning roster notifications on for the phone in your hand.
+ *
+ * Per device, not per person: the browser subscription belongs to this
+ * browser on this handset, so someone who works off a phone and an iPad turns
+ * it on twice, and losing one device does not silence the other.
+ */
+function NotificationsCard() {
+  const [state, setState] = useState<{ configured: boolean; publicKey: string; devices: number } | null>(null);
+  const [thisDeviceOn, setThisDeviceOn] = useState(false);
+  const [readiness, setReadiness] = useState<PushReadiness>({ state: 'ready' });
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setReadiness(pushReadiness());
+      const [config, endpoint] = await Promise.all([
+        api<{ configured: boolean; publicKey: string; devices: number }>('/api/staff/me/push'),
+        currentEndpoint()
+      ]);
+      setState(config);
+      // The browser's subscription belongs to the DEVICE; on a shared handset
+      // it may still be registered to whoever signed in before. "On here" is
+      // only true when the server says this endpoint is on THIS account —
+      // otherwise the badge lies while the pushes go to the previous owner.
+      if (endpoint) {
+        const status = await api<{ thisDevice: boolean }>('/api/staff/me/push/status', {
+          method: 'POST',
+          body: JSON.stringify({ endpoint })
+        }).catch(() => ({ thisDevice: true }));
+        setThisDeviceOn(status.thisDevice);
+      } else {
+        setThisDeviceOn(false);
+      }
+    } catch {
+      setError('Could not check your notification settings.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function turnOn() {
+    if (!state) return;
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      const result = await enablePush(state.publicKey);
+      setState({ ...state, devices: result.devices });
+      setThisDeviceOn(true);
+      setNote('This device will now buzz when a roster is published.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not turn notifications on.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function turnOff() {
+    if (!state) return;
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      const result = await disablePush();
+      setState({ ...state, devices: result.devices });
+      setThisDeviceOn(false);
+      setNote('Turned off for this device.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not turn notifications off.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Nothing to offer until the server has keys. Showing a button that cannot
+  // work is worse than showing nothing at all.
+  if (!loading && state && !state.configured) return null;
+
+  const otherDevices = state ? Math.max(0, state.devices - (thisDeviceOn ? 1 : 0)) : 0;
+
+  return (
+    <Card
+      title="Tell me when the roster drops"
+      subtitle="A notification on this device the moment your shifts are published."
+    >
+      {loading ? <Spinner label="Checking this device…" /> : null}
+      {error ? <p className="error-text">{error}</p> : null}
+
+      {!loading && readiness.state === 'needs-install' ? (
+        <p className="subtle">
+          {readiness.reason} Tap <strong>Share</strong> then <strong>Add to Home Screen</strong>, open ALMA Staff
+          from the new icon, and this button will work.
+        </p>
+      ) : null}
+      {!loading && (readiness.state === 'unsupported' || readiness.state === 'blocked') ? (
+        <p className="subtle">{readiness.reason}</p>
+      ) : null}
+
+      {!loading && readiness.state === 'ready' && state ? (
+        <>
+          <div className="staff-calendar-actions">
+            {thisDeviceOn ? (
+              <Button type="button" variant="secondary" disabled={busy} onClick={() => void turnOff()}>
+                {busy ? 'Turning off…' : 'Turn off on this device'}
+              </Button>
+            ) : (
+              <Button type="button" disabled={busy} onClick={() => void turnOn()}>
+                {busy ? 'Turning on…' : 'Notify me on this device'}
+              </Button>
+            )}
+            <Badge tone={thisDeviceOn ? 'positive' : 'warning'}>{thisDeviceOn ? 'On here' : 'Off here'}</Badge>
+          </div>
+          {note ? <p className="subtle">{note}</p> : null}
+          <p className="subtle staff-calendar-hint">
+            {otherDevices > 0
+              ? `Also on ${otherDevices} other device${otherDevices === 1 ? '' : 's'}. `
+              : ''}
+            You'll still get the email either way — this just gets to you faster.
+          </p>
+        </>
+      ) : null}
+    </Card>
+  );
+}
+
 function OpenShiftsCard({ onClaimApproved, refreshKey = 0 }: { onClaimApproved: () => Promise<void>; refreshKey?: number }) {
   const [shifts, setShifts] = useState<StaffOpenShift[]>([]);
   const [loading, setLoading] = useState(true);
@@ -5046,6 +5636,364 @@ function staffPayloadFromDraft(draft: StaffDraft) {
   };
 }
 
+type XeroLinkOptions = {
+  staff: string;
+  venue: string | null;
+  organisations: Array<{
+    tenantId: string;
+    tenantName: string | null;
+    suggested: boolean;
+    linkedXeroEmployeeId: string | null;
+    linkedSyncedAt: string | null;
+    employees: Array<{ id: string; name: string; status: string | null }>;
+  }>;
+};
+
+// What Xero's own copy of a person says, next to what the profile says.
+// `value` never crosses the wire — the apply re-reads Xero and writes only
+// what it sees there itself, so this is a display, not a payload.
+type XeroPullPreview = {
+  staff: string;
+  tenantId: string;
+  tenantName: string | null;
+  xeroEmployeeId: string;
+  employeeName: string;
+  employeeStatus: string | null;
+  fields: Array<{
+    key: string;
+    label: string;
+    current: string | null;
+    incoming: string | null;
+    differs: boolean;
+    recommended: boolean;
+    note?: string;
+  }>;
+  held: { bankAccount: boolean; superFund: boolean; taxDeclaration: boolean };
+  leave: Array<{ name: string; units: number | null; unit: string }>;
+  warnings: string[];
+};
+
+// The profile page's Xero panel: one card per connected organisation, each
+// with "push this profile there" and "link to the employee already there".
+// Both companies are always shown — a manager can push someone to either,
+// whatever the venue field says.
+function StaffXeroPanel({ staffId, onChanged }: { staffId: string; onChanged?: () => void }) {
+  const [options, setOptions] = useState<XeroLinkOptions | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTone, setMessageTone] = useState<'success' | 'error'>('success');
+  const [picks, setPicks] = useState<Record<string, string>>({});
+  const [pull, setPull] = useState<XeroPullPreview | null>(null);
+  const [take, setTake] = useState<Record<string, boolean>>({});
+
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const data = await api<XeroLinkOptions>(`/api/staff/${staffId}/xero-link-options`);
+      setOptions(data);
+      setPicks(Object.fromEntries(data.organisations.map((org) => [org.tenantId, org.linkedXeroEmployeeId ?? ''])));
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not reach Xero.');
+    }
+  }, [staffId]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  function report(text: string, tone: 'success' | 'error') {
+    setMessage(text);
+    setMessageTone(tone);
+  }
+
+  async function push(tenantId: string) {
+    setBusy(`push:${tenantId}`);
+    setMessage(null);
+    try {
+      const result = await api<{
+        organisations: Array<{ tenantName: string | null; action: string }>;
+        warnings: string[];
+      }>(`/api/staff/${staffId}/push-to-xero`, { method: 'POST', body: JSON.stringify({ tenantId }) });
+      const done = result.organisations.map((org) => `${org.tenantName ?? 'Xero'}: ${org.action}`).join(' · ');
+      report([done, ...result.warnings].join(' — '), 'success');
+      await load();
+    } catch (err) {
+      report(err instanceof Error ? err.message : 'Could not push to Xero.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Read their record in one organisation and show what differs. Ticks the
+  // fields worth taking by default, and leaves the judgement calls — their
+  // login address, a rate for someone paid outside Xero — for a person.
+  async function loadPull(tenantId: string) {
+    setBusy(`pull:${tenantId}`);
+    setMessage(null);
+    try {
+      const preview = await api<XeroPullPreview>(
+        `/api/staff/${staffId}/xero-pull?tenantId=${encodeURIComponent(tenantId)}`
+      );
+      setPull(preview);
+      setTake(Object.fromEntries(preview.fields.filter((field) => field.recommended).map((field) => [field.key, true])));
+    } catch (err) {
+      setPull(null);
+      report(err instanceof Error ? err.message : 'Could not read them from Xero.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function applyPull() {
+    if (!pull) return;
+    const fields = Object.entries(take).filter(([, on]) => on).map(([key]) => key);
+    if (fields.length === 0) return;
+    setBusy('pull:apply');
+    setMessage(null);
+    try {
+      const result = await api<{
+        applied: Array<{ key: string; label: string; value: string | null }>;
+        skipped: Array<{ key: string; why: string }>;
+        message?: string;
+      }>(`/api/staff/${staffId}/xero-pull`, {
+        method: 'POST',
+        body: JSON.stringify({ tenantId: pull.tenantId, fields })
+      });
+      report(
+        result.applied.length > 0
+          ? `Took ${result.applied.map((entry) => `${entry.label.toLowerCase()} → ${entry.value ?? 'blank'}`).join(', ')}.`
+          : result.message ?? 'Nothing changed.',
+        'success'
+      );
+      setPull(null);
+      setTake({});
+      onChanged?.();
+    } catch (err) {
+      report(err instanceof Error ? err.message : 'Could not save what Xero had.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function link(tenantId: string, xeroEmployeeId: string | null) {
+    setBusy(`link:${tenantId}`);
+    setMessage(null);
+    try {
+      const result = await api<{ tenantName: string | null; linked: boolean; employeeName?: string }>(
+        `/api/staff/${staffId}/xero-link`,
+        { method: 'POST', body: JSON.stringify({ tenantId, xeroEmployeeId }) }
+      );
+      report(
+        result.linked
+          ? `Linked to ${result.employeeName || 'the selected employee'} in ${result.tenantName ?? 'Xero'}.`
+          : `Unlinked from ${result.tenantName ?? 'Xero'}.`,
+        'success'
+      );
+      await load();
+    } catch (err) {
+      report(err instanceof Error ? err.message : 'Could not update the Xero link.', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (loadError) {
+    return (
+      <div className="xero-panel">
+        <ActionFeedback message={loadError} tone="error" />
+        <div>
+          <Button type="button" variant="secondary" onClick={() => void load()}>Try again</Button>
+        </div>
+      </div>
+    );
+  }
+  if (!options) return <Spinner label="Asking Xero for its employee lists..." />;
+
+  const takeCount = Object.values(take).filter(Boolean).length;
+
+  return (
+    <div className="xero-panel">
+      {options.organisations.map((org) => {
+        const linkedEmployee = org.employees.find((employee) => employee.id === org.linkedXeroEmployeeId) ?? null;
+        const pick = picks[org.tenantId] ?? '';
+        const pickChanged = pick !== (org.linkedXeroEmployeeId ?? '');
+        return (
+          <section key={org.tenantId} className="xero-org">
+            <div className="xero-org-head">
+              <span className="xero-org-title">
+                {org.tenantName ?? 'Xero organisation'}
+                {org.suggested ? <Badge tone="info">their venue</Badge> : null}
+              </span>
+              {org.linkedXeroEmployeeId ? (
+                <Badge tone="positive">Linked{linkedEmployee ? ` · ${linkedEmployee.name}` : ''}</Badge>
+              ) : (
+                <Badge tone="warning">Not linked</Badge>
+              )}
+            </div>
+            <div className="xero-org-actions">
+              <Select
+                label="Link to Xero employee"
+                value={pick}
+                onChange={(event) => {
+                  const chosen = event.currentTarget.value;
+                  setPicks((current) => ({ ...current, [org.tenantId]: chosen }));
+                }}
+                options={[
+                  { label: org.employees.length ? 'Pick an employee…' : 'No employees in this organisation', value: '' },
+                  ...org.employees.map((employee) => ({
+                    label: employee.status && employee.status !== 'ACTIVE' ? `${employee.name} (${employee.status.toLowerCase()})` : employee.name,
+                    value: employee.id
+                  }))
+                ]}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy !== null || !pickChanged || !pick}
+                onClick={() => void link(org.tenantId, pick)}
+              >
+                {busy === `link:${org.tenantId}` ? 'Linking…' : 'Link'}
+              </Button>
+              {org.linkedXeroEmployeeId ? (
+                <Button type="button" variant="secondary" disabled={busy !== null} onClick={() => void link(org.tenantId, null)}>
+                  Unlink
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                disabled={busy !== null}
+                title={`Create or update their employee record in ${org.tenantName ?? 'this organisation'} from this profile`}
+                onClick={() => void push(org.tenantId)}
+              >
+                {busy === `push:${org.tenantId}` ? 'Pushing…' : `Push to ${org.tenantName ?? 'Xero'}`}
+              </Button>
+              {org.linkedXeroEmployeeId ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy !== null}
+                  title={`Read their record in ${org.tenantName ?? 'this organisation'} and show what differs`}
+                  onClick={() => void loadPull(org.tenantId)}
+                >
+                  {busy === `pull:${org.tenantId}` ? 'Reading…' : 'Pull from Xero'}
+                </Button>
+              ) : null}
+            </div>
+            {pull && pull.tenantId === org.tenantId ? (
+              <div className="xero-pull">
+                <div className="xero-pull-head">
+                  <strong>{pull.employeeName}</strong>
+                  <span className="subtle">
+                    in {pull.tenantName ?? 'Xero'}
+                    {pull.employeeStatus && pull.employeeStatus.toUpperCase() !== 'ACTIVE'
+                      ? ` · ${pull.employeeStatus.toLowerCase()}`
+                      : ''}
+                  </span>
+                </div>
+                {pull.warnings.map((warning) => (
+                  <p key={warning} className="xero-pull-warning">{warning}</p>
+                ))}
+                {pull.fields.some((field) => field.differs) ? (
+                  <>
+                    <table className="xero-pull-table">
+                      <thead>
+                        <tr>
+                          <th aria-label="Take" />
+                          <th>Field</th>
+                          <th>On the profile</th>
+                          <th>In Xero</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pull.fields.map((field) => (
+                          <tr key={field.key} className={field.differs ? undefined : 'xero-pull-same'}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(take[field.key])}
+                                disabled={!field.differs}
+                                aria-label={`Take ${field.label} from Xero`}
+                                onChange={(event) => {
+                                  // Read it here: React clears `currentTarget`
+                                  // once the handler returns, and the updater
+                                  // below runs after that.
+                                  const ticked = event.currentTarget.checked;
+                                  setTake((current) => ({ ...current, [field.key]: ticked }));
+                                }}
+                              />
+                            </td>
+                            <td>
+                              {field.label}
+                              {field.note ? <div className="subtle">{field.note}</div> : null}
+                            </td>
+                            <td>{field.current ?? <span className="subtle">not set</span>}</td>
+                            <td>
+                              {field.differs ? <strong>{field.incoming}</strong> : <span className="subtle">same</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="xero-pull-actions">
+                      <Button type="button" disabled={busy !== null || takeCount === 0} onClick={() => void applyPull()}>
+                        {busy === 'pull:apply'
+                          ? 'Saving…'
+                          : takeCount === 1
+                            ? 'Take 1 field'
+                            : `Take ${takeCount} fields`}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={busy !== null}
+                        onClick={() => {
+                          setPull(null);
+                          setTake({});
+                        }}
+                      >
+                        Close
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="subtle">Everything Xero holds already matches this profile.</p>
+                )}
+                <p className="subtle">
+                  Held in Xero and never copied back:{' '}
+                  {[
+                    pull.held.taxDeclaration ? 'tax declaration' : null,
+                    pull.held.bankAccount ? 'bank account' : null,
+                    pull.held.superFund ? 'super fund' : null
+                  ]
+                    .filter(Boolean)
+                    .join(', ') || 'none of them are set over there yet — push the profile to set them up'}
+                  .
+                </p>
+                {pull.leave.length > 0 ? (
+                  <p className="subtle">
+                    Leave:{' '}
+                    {pull.leave
+                      .map((row) => `${row.name} ${row.units === null ? '—' : row.units.toFixed(2)} ${row.unit.toLowerCase()}`)
+                      .join(' · ')}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+        );
+      })}
+      <p className="subtle">
+        Push sends their profile (contact, bank, tax, super) into that company's payroll — it matches an existing
+        employee by name before ever creating one. Link just points this profile at an employee record that already
+        exists, without changing anything in Xero. Pull reads their record the other way — it shows what differs and
+        writes only the fields you tick. Tax file numbers, bank accounts and super are never read back; they travel
+        outward only.
+      </p>
+      <ActionFeedback message={message} tone={messageTone} />
+    </div>
+  );
+}
+
 function StaffModal({
   open,
   title,
@@ -5569,6 +6517,11 @@ function StaffProfileWorkspacePage({
   const selected = staff.find((item) => item.id === staffId) ?? null;
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [payrollModalOpen, setPayrollModalOpen] = useState(false);
+  const [xeroModalOpen, setXeroModalOpen] = useState(false);
+  // A pull writes to the profile behind the modal. Refreshing it right away
+  // remounts the panel and wipes the "here is what I took" line before anyone
+  // has read it, so the refresh waits until the modal is closed.
+  const [xeroPulled, setXeroPulled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
@@ -6542,6 +7495,9 @@ function StaffProfileWorkspacePage({
                 ) : (
                   <Button type="button" onClick={() => setProfileModalOpen(true)}>Edit profile</Button>
                 )}
+                {canManageProfileAccess ? (
+                  <Button type="button" variant="secondary" onClick={() => setXeroModalOpen(true)}>Xero</Button>
+                ) : null}
                 {canManageProfileAccess && !member.isAdmin ? (
                   <Button type="button" variant="danger" disabled={saving} onClick={() => void archiveStaff()}>Archive staff</Button>
                 ) : null}
@@ -6559,6 +7515,20 @@ function StaffProfileWorkspacePage({
       </div>
       <StaffModal open={profileModalOpen} title={`Edit ${staffFullName(member)}`} subtitle="Profile edits stay in a modal so the staff workspace remains in place." onClose={() => setProfileModalOpen(false)}>
         <StaffProfileForm mode="edit" initial={member} roleTemplates={roleTemplates} onSaved={(saved) => void handleProfileSaved(saved)} onCancel={() => setProfileModalOpen(false)} />
+      </StaffModal>
+      <StaffModal
+        open={xeroModalOpen}
+        title={`Xero — ${staffFullName(member)}`}
+        subtitle="Push this profile into either company's payroll, link it to the employee record already there, or pull that record's details back onto this profile."
+        onClose={() => {
+          setXeroModalOpen(false);
+          if (xeroPulled) {
+            setXeroPulled(false);
+            void reload();
+          }
+        }}
+      >
+        {xeroModalOpen ? <StaffXeroPanel staffId={member.id} onChanged={() => setXeroPulled(true)} /> : null}
       </StaffModal>
     </div>
   );
@@ -7576,6 +8546,40 @@ function AccessPage({
                         );
                       })}
                     </div>
+                    {/* Training till. Admin-only, and deliberately not one of
+                        the POS permission chips above — those widen what
+                        somebody may approve, this decides whether their sales
+                        are real. The API refuses it from a non-admin too; this
+                        just doesn't offer what would be refused. */}
+                    {user?.isAdmin || user?.role === 'ADMIN' ? (
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                          <input
+                            type="checkbox"
+                            defaultChecked={Boolean(
+                              (selected as unknown as { trainingOnly?: boolean })?.trainingOnly
+                            )}
+                            onChange={(event) => {
+                              if (!selected) return;
+                              const next = event.currentTarget.checked;
+                              void api(`/api/staff/${selected.id}`, {
+                                method: 'PATCH',
+                                body: JSON.stringify({ trainingOnly: next })
+                              })
+                                .then(() => reload())
+                                .catch(() => setMessage('Could not change the training setting.'));
+                            }}
+                          />
+                          <strong>Training till</strong>
+                        </label>
+                        <span className="subtle" style={{ display: 'block', marginTop: 4 }}>
+                          Every bill this account opens is a practice sale — no takings, no drawer, no reports, nothing
+                          to the kitchen — and card terminals and gift cards are refused on it. The register shows it and
+                          offers no way to switch it off. Use it for a new starter learning the till, or for an App
+                          Review tester.
+                        </span>
+                      </div>
+                    ) : null}
                     <Input label="Start date" type="date" value={profileDraft.startDate} onChange={(event) => updateProfile('startDate', event.currentTarget.value)} />
                     <Input label="Date of birth" type="date" value={profileDraft.dateOfBirth} onChange={(event) => updateProfile('dateOfBirth', event.currentTarget.value)} />
                   </div>
@@ -12364,7 +13368,9 @@ function RosterPage({
     setMessage(null);
     setMessageTarget('publish');
     try {
-      await api('/api/staff/roster/publish', {
+      const published = await api<{
+        notified?: { emailed: number; pushed?: number; skipped: Array<{ name: string; reason: string }> };
+      }>('/api/staff/roster/publish', {
         method: 'POST',
         body: JSON.stringify({
           start: weekStart.toISOString(),
@@ -12398,7 +13404,24 @@ function RosterPage({
       });
       await refreshBoard(weekStart, weekEnd);
       setPublishPreviewOpen(false);
-      setMessage('Draft roster published.');
+      // Say who was actually told. A roster that silently misses somebody is
+      // the failure this is meant to prevent, so the skipped names are named.
+      const notified = published?.notified;
+      const pushed = notified?.pushed ?? 0;
+      if (!notified || (notified.emailed === 0 && pushed === 0 && notified.skipped.length === 0)) {
+        setMessage('Draft roster published.');
+      } else {
+        const emailed = `${notified.emailed} ${notified.emailed === 1 ? 'person' : 'people'} emailed their shifts and calendar link`;
+        // Devices, not people: one person can have the app on a phone and a
+        // tablet, and saying "3 people notified" when it was one person's
+        // three devices would overstate the reach.
+        const buzzed = pushed > 0 ? `, buzzed ${pushed} device${pushed === 1 ? '' : 's'}` : '';
+        setMessage(
+          notified.skipped.length === 0
+            ? `Published — ${emailed}${buzzed}.`
+            : `Published — ${emailed}${buzzed}. Not told: ${notified.skipped.map((row) => `${row.name} (${row.reason})`).join(', ')}.`
+        );
+      }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not publish roster.');
     } finally {
@@ -15550,7 +16573,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   const [manualStaffId, setManualStaffId] = useState('');
   const [manualHours, setManualHours] = useState('');
   const [manualNotes, setManualNotes] = useState('');
-  const [breakagePerDay, setBreakagePerDay] = useState('30');
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [adjustments, setAdjustments] = useState<Record<string, { adjustment: string; excluded: boolean; notes: string }>>({});
   const [summary, setSummary] = useState<StaffTipsSummary | null>(null);
@@ -15573,7 +16595,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     })();
   }, []);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
-  const breakageCentsPerDay = useMemo(() => Math.round((Number(breakagePerDay) || 0) * 100), [breakagePerDay]);
   const venueOptions = useMemo(
     () => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]).map((value) => ({ label: value, value })),
     [staff]
@@ -15586,8 +16607,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       const query = new URLSearchParams({
         start: weekStart.toISOString(),
         end: weekEnd.toISOString(),
-        venue,
-        breakageCentsPerDay: String(breakageCentsPerDay)
+        venue
       });
       setSummary(await api<StaffTipsSummary>(`/api/staff/tips?${query.toString()}`));
     } catch (err) {
@@ -15595,7 +16615,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     } finally {
       setLoading(false);
     }
-  }, [breakageCentsPerDay, venue, weekEnd, weekStart]);
+  }, [venue, weekEnd, weekStart]);
 
   useEffect(() => {
     if (!venue && venueOptions[0]) setVenue(venueOptions[0].value);
@@ -15660,7 +16680,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   }, [adjustments, summary?.entitlements]);
 
   const totalPayoutCents = reviewedRows.reduce((sum, row) => sum + row.finalAmountCents, 0);
-  const payoutVarianceCents = totalPayoutCents - (summary?.allocatablePoolCents ?? 0);
+  const payoutVarianceCents = totalPayoutCents - (summary?.tipPoolCents ?? 0);
   const lockedRows = summary?.paidEntitlements ?? [];
   const hasPaidRun = lockedRows.length > 0;
 
@@ -15886,7 +16906,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     try {
       const result = await api<{ csv: string }>('/api/staff/tips/export/csv', {
         method: 'POST',
-        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay, adjustments: adjustmentPayload })
+        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, adjustments: adjustmentPayload })
       });
       downloadTextFile(`alma-tips-${venue}-${toDateInput(weekStart)}.csv`, result.csv);
       setMessage('Tips CSV exported.');
@@ -15920,7 +16940,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
           start: weekStart.toISOString(),
           end: weekEnd.toISOString(),
           venue,
-          breakageCentsPerDay,
           ...(abaAccountKey ? { accountKey: abaAccountKey } : {})
         })
       });
@@ -15940,7 +16959,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       return;
     }
     if (payoutVarianceCents !== 0) {
-      setMessage(`Final payout must balance to the allocatable pool (after breakage) before marking paid. Current variance is ${formatCents(payoutVarianceCents)}.`);
+      setMessage(`Final payout must balance to the tip pool before marking paid. Current variance is ${formatCents(payoutVarianceCents)}.`);
       return;
     }
     if (!window.confirm(`Mark ${formatCents(totalPayoutCents)} tips paid for ${venue}? This creates the approved tip run used by Reports payroll export.`)) {
@@ -15951,7 +16970,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     try {
       await api('/api/staff/tips/mark-paid', {
         method: 'POST',
-        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay, notes: payoutNotes, adjustments: adjustmentPayload })
+        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, notes: payoutNotes, adjustments: adjustmentPayload })
       });
       setMessage('Tips approved and paid. You can now export ABA or CSV.');
       setPayoutNotes('');
@@ -16020,7 +17039,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       />
 
       {/* Tips week navigator — same editorial style as the roster board so
-          the two pages feel like one tool. Venue + breakage live below. */}
+          the two pages feel like one tool. The venue picker lives below. */}
       <div className="alma-roster-header alma-roster-header--tight">
         <div className="alma-roster-header-titles">
           <span className="alma-roster-eyebrow">Staff · Tips</span>
@@ -16087,44 +17106,58 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         </div>
       </div>
 
-      {/* Venue + breakage controls live just below the week selector. */}
-      <TipsSection title="Review settings" summary={`${venue || 'Choose venue'} · $${breakagePerDay || 0}/day breakage`}>
+      {/* Venue picker lives just below the week selector. Tips pool per venue,
+          so this choice decides whose money is on screen — nothing on this page
+          is ever a group total. */}
+      <TipsSection title="Review settings" summary={venue || 'Choose venue'}>
         <Card padding="tight">
           <div className="tips-controls-row">
             <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
-            <Input label="Breakage/day ($)" type="number" min="0" step="1" value={breakagePerDay} onChange={(event) => setBreakagePerDay(event.currentTarget.value)} style={{ width: 130 }} />
           </div>
+          <p className="subtle" style={{ marginTop: 8, marginBottom: 0 }}>
+            Each venue's tips are split between the people who worked that venue. Switch venues to review the other pool.
+          </p>
         </Card>
       </TipsSection>
 
       {/* Summary stats */}
-      <TipsSection title="Summary" summary={`${formatCents(summary?.allocatablePoolCents ?? 0)} allocatable · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
+      <TipsSection title="Summary" summary={`${formatCents(summary?.tipPoolCents ?? 0)} to split · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
         <div className="stats-grid">
-          <StatCard label="Breakage" value={formatCents(summary?.breakageCents ?? 0)} hint={`$${breakagePerDay}/day × ${summary?.tradingDays ?? 0} days`} loading={loading} />
-          <StatCard label="Allocatable pool" value={formatCents(summary?.allocatablePoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
+          <StatCard label="Tip pool" value={formatCents(summary?.tipPoolCents ?? 0)} hint={`Cash + card at ${venue || 'this venue'}`} loading={loading} />
           <StatCard label="Final payout" value={formatCents(totalPayoutCents)} hint={payoutVarianceCents === 0 ? 'Balances to pool' : `${formatCents(Math.abs(payoutVarianceCents))} ${payoutVarianceCents > 0 ? 'over' : 'under'}`} loading={loading} />
           <StatCard label="Approved hours" value={roundHours(summary?.approvedHours ?? 0)} hint="Used for allocation" loading={loading} />
           <StatCard label="Run status" value={hasPaidRun ? 'Locked' : 'Waiting'} hint={hasPaidRun ? 'Payroll export ready' : 'Approve at the bottom'} loading={loading} />
         </div>
       </TipsSection>
 
+      {/* Hours with no venue are in nobody's pool. Say so loudly — the whole
+          point of naming them is that someone is otherwise quietly unpaid. */}
+      {summary?.unassigned?.length ? (
+        <Card padding="tight">
+          <p className="error-text" style={{ margin: 0 }}>
+            {summary.unassigned.length === 1 ? '1 person has' : `${summary.unassigned.length} people have`} approved hours with no venue,
+            so they are in no tip pool: {summary.unassigned.map((row) => `${row.name} (${roundHours(row.approvedHours)}h)`).join(', ')}.
+            Set the venue on their timesheet or their staff profile, then refresh.
+          </p>
+        </Card>
+      ) : null}
+
       {loading ? <Spinner label="Loading tips..." /> : null}
       {message && !messageTarget ? <p className={message.includes('Could') || message.includes('Choose') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
       {/* Per-day breakdown */}
       {(summary?.cardEntries.length || summary?.cashEntries.length) ? (
-        <TipsSection title="Daily breakdown" summary={`Square + cash less $${breakagePerDay}/day breakage`}>
-          <Card title="Daily breakdown" subtitle={`Square + cash tips minus $${breakagePerDay} breakage per trading day.`}>
+        <TipsSection title="Daily breakdown" summary="Card + cash, night by night">
+          <Card title="Daily breakdown" subtitle={`Card and cash tips taken at ${venue || 'this venue'}, night by night.`}>
             <div className="table-scroll">
               <table className="report-table">
                 <thead>
                   <tr>
                     <th>Date</th>
                     <th>Day</th>
-                    <th>Square tips</th>
+                    <th>Card tips</th>
                     <th>Cash tips</th>
-                    <th>− Breakage</th>
-                    <th>= Allocatable</th>
+                    <th>Total</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -16146,15 +17179,13 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
                       .sort(([a], [b]) => a.localeCompare(b))
                       .map(([date, row]) => {
                         const dayName = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
-                        const allocatable = Math.max(0, row.square + row.cash - breakageCentsPerDay);
                         return (
                           <tr key={date}>
                             <td>{date}</td>
                             <td>{dayName}</td>
                             <td>{formatCents(row.square)}</td>
                             <td>{row.cash ? formatCents(row.cash) : <span className="subtle">—</span>}</td>
-                            <td className="subtle">−{formatCents(breakageCentsPerDay)}</td>
-                            <td><strong>{formatCents(allocatable)}</strong></td>
+                            <td><strong>{formatCents(row.square + row.cash)}</strong></td>
                           </tr>
                         );
                       });
@@ -16165,8 +17196,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
                     <td colSpan={2}><strong>Total</strong></td>
                     <td><strong>{formatCents(summary?.squareTipsCents ?? 0)}</strong></td>
                     <td><strong>{formatCents(summary?.cashTipsCents ?? 0)}</strong></td>
-                    <td className="subtle">−{formatCents(summary?.breakageCents ?? 0)}</td>
-                    <td><strong>{formatCents(summary?.allocatablePoolCents ?? 0)}</strong></td>
+                    <td><strong>{formatCents(summary?.tipPoolCents ?? 0)}</strong></td>
                   </tr>
                 </tfoot>
               </table>
@@ -16446,7 +17476,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
 
       {/* Payroll status + entitlements */}
       <TipsSection title="Staff entitlements" summary={`${reviewedRows.length} staff · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
-        <Card title="Staff entitlements" subtitle={`Tip pool after $${breakagePerDay}/day breakage deduction, split by approved hours. Review and adjust before locking.`} padding="none" className="tips-entitlements-card">
+        <Card title="Staff entitlements" subtitle={`${venue || 'This venue'}'s tip pool split by approved hours. Review and adjust before locking.`} padding="none" className="tips-entitlements-card">
         <div className="tips-status-bar">
           <div className={`tips-status-panel ${hasPaidRun ? 'is-locked' : ''}`}>
             <span>
@@ -16569,7 +17599,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       ) : null}
 
       <TipsSection title="Approve and pay" summary={hasPaidRun ? 'Export the approved run' : 'Final payroll approval'}>
-        <Card title={hasPaidRun ? 'Approved run exports' : 'Approve and pay'} subtitle={hasPaidRun ? 'Export the locked tip run for bank payment or payroll records.' : 'Approve once the final payout balances to the allocatable pool.'}>
+        <Card title={hasPaidRun ? 'Approved run exports' : 'Approve and pay'} subtitle={hasPaidRun ? 'Export the locked tip run for bank payment or payroll records.' : 'Approve once the final payout balances to the tip pool.'}>
           <div className="tips-approval-footer">
             <div>
               <strong>{hasPaidRun ? 'Ready to export' : 'Waiting for review'}</strong>
@@ -17846,6 +18876,10 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   const [clockSessions, setClockSessions] = useState<StaffClockSession[]>([]);
   // Submit-new-timesheet modal visibility.
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  // Manual adjustment: the row being edited, and its form. The API has let
+  // managers correct hours up to APPROVED for a while — this is the door.
+  const [editEntry, setEditEntry] = useState<Timesheet | null>(null);
+  const [editForm, setEditForm] = useState({ workDate: '', start: '', end: '', breakMinutes: '0', venue: '', area: '', notes: '' });
   // Explorer rail selection (all / a venue / a staff member).
   const [selection, setSelection] = useState<TimesheetSelection>({ type: 'all' });
   // Week review is a tall table and a manager reviewing one person doesn't
@@ -18377,6 +19411,75 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     }
   }
 
+  function openEdit(entry: Timesheet) {
+    const toTimeInput = (iso: string) => {
+      const at = new Date(iso);
+      return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+    };
+    setEditForm({
+      workDate: toDateInput(new Date(entry.workDate)),
+      start: toTimeInput(entry.clockInAt),
+      end: toTimeInput(entry.clockOutAt),
+      breakMinutes: String(entry.breakMinutes ?? 0),
+      venue: entry.venue ?? '',
+      area: entry.area ?? '',
+      notes: entry.notes ?? ''
+    });
+    setEditEntry(entry);
+  }
+
+  async function saveEdit() {
+    if (!editEntry) return;
+    setMessageTarget(`edit:${editEntry.id}`);
+    const range = shiftTimeRange(editForm.workDate, editForm.start, editForm.end);
+    if (!range) {
+      setMessage('Could not read those times — check the date and both clock times.');
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api(`/api/staff/timesheets/${editEntry.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          workDate: `${editForm.workDate}T00:00:00`,
+          clockInAt: range.startsAt.toISOString(),
+          clockOutAt: range.endsAt.toISOString(),
+          breakMinutes: Number(editForm.breakMinutes) || 0,
+          venue: editForm.venue,
+          area: editForm.area,
+          notes: editForm.notes
+        })
+      });
+      setEditEntry(null);
+      setMessage('Timesheet updated.');
+      await loadTimesheets();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update the timesheet.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // EXPORTED means a draft already sits in Xero. Unlocking re-arms the row for
+  // the next push; the server's audit note (and the confirm here) both say the
+  // stale draft must be deleted in Xero first, or the employee gets two.
+  async function unexportEntry(entry: Timesheet) {
+    if (!window.confirm('Unlock this shift for re-push? Delete its old draft timesheet in Xero first, or the employee ends up with two.')) return;
+    setMessageTarget(`unexport:${entry.id}`);
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api(`/api/staff/timesheets/${entry.id}/unexport`, { method: 'POST', body: JSON.stringify({}) });
+      setMessage('Unlocked — it will go with the next push to Xero.');
+      await loadTimesheets();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not unlock the timesheet.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function renderSubmitFields() {
     return (
       <>
@@ -18542,12 +19645,13 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               <div key={entry.id} className="timesheet-row">
                 <div className="timesheet-row-when">
                   <strong>{new Date(entry.workDate).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</strong>
-                  <span>{timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)}</span>
+                  <span>{timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)}{entry.breakMinutes ? ` · ${entry.breakMinutes}m break` : ''}</span>
                 </div>
                 <span className="timesheet-row-hours">{roundHours(timesheetHours(entry))}</span>
                 <span className="timesheet-row-area subtle">{entry.area || '—'}</span>
                 <div className="timesheet-row-badges">
                   <Badge tone={timesheetTone(entry.status)} dot>{entry.status}</Badge>
+                  {entry.isLeave ? <Badge tone="info">{entry.leaveKind ?? 'Leave'}</Badge> : null}
                   <Badge tone={entry.paymentMethod === 'CASH' ? 'warning' : 'muted'}>
                     {entry.paymentMethod === 'CASH' ? (entry.cashPaidAt ? 'Cash paid' : 'Cash') : 'Xero'}
                   </Badge>
@@ -18571,6 +19675,16 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   {isManagerView && entry.status === 'APPROVED' && entry.paymentMethod === 'CASH' && !entry.cashPaidAt ? (
                     <Button type="button" size="sm" disabled={saving} onClick={() => void markCashPaid(entry.id)}>
                       Cash paid
+                    </Button>
+                  ) : null}
+                  {isManagerView && entry.status !== 'EXPORTED' ? (
+                    <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => openEdit(entry)}>
+                      Edit
+                    </Button>
+                  ) : null}
+                  {isManagerView && entry.status === 'EXPORTED' ? (
+                    <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void unexportEntry(entry)}>
+                      Unlock re-push
                     </Button>
                   ) : null}
                   {isManagerView && entry.status !== 'EXPORTED' ? (
@@ -18936,6 +20050,40 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                 })()}
               </tfoot>
             </table>
+          </div>
+        </div>
+      ) : null}
+
+      {editEntry ? (
+        <div className="timesheet-modal-overlay" role="dialog" aria-modal="true" onClick={() => setEditEntry(null)}>
+          <div className="timesheet-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="timesheet-modal-head">
+              <strong>
+                Adjust — {editEntry.staffProfile ? `${editEntry.staffProfile.firstName} ${editEntry.staffProfile.lastName}` : 'timesheet'}
+              </strong>
+              <button type="button" className="timesheet-modal-close" aria-label="Close" onClick={() => setEditEntry(null)}>
+                ×
+              </button>
+            </header>
+            <div className="timesheet-modal-body">
+              <div className="form-grid">
+                <Input label="Date worked" type="date" value={editForm.workDate} onChange={(event) => setEditForm({ ...editForm, workDate: event.currentTarget.value })} hint="The day the shift STARTED — weekend rates follow this." />
+                <Input label="Clock in" type="time" value={editForm.start} onChange={(event) => setEditForm({ ...editForm, start: event.currentTarget.value })} />
+                <Input label="Clock out" type="time" value={editForm.end} onChange={(event) => setEditForm({ ...editForm, end: event.currentTarget.value })} hint="An end at or before the start rolls to the next day." />
+                <Input label="Break minutes" type="number" value={editForm.breakMinutes} onChange={(event) => setEditForm({ ...editForm, breakMinutes: event.currentTarget.value })} hint="Unpaid break, taken off the paid hours." />
+                <Select label="Venue" value={editForm.venue} onChange={(event) => setEditForm({ ...editForm, venue: event.currentTarget.value })} options={[{ label: '(none)', value: '' }, { label: 'St Alma', value: 'St Alma' }, { label: 'Alma Avalon', value: 'Alma Avalon' }]} hint="Decides which company's payroll pays the shift." />
+                <Input label="Area" value={editForm.area} onChange={(event) => setEditForm({ ...editForm, area: event.currentTarget.value })} />
+                <Input label="Notes" value={editForm.notes} onChange={(event) => setEditForm({ ...editForm, notes: event.currentTarget.value })} />
+              </div>
+              {editEntry.status === 'APPROVED' ? (
+                <p className="subtle">This shift is already approved — your change takes effect as approved, no re-approval dance.</p>
+              ) : null}
+              <div className="toolbar-right">
+                <Button type="button" variant="secondary" onClick={() => setEditEntry(null)}>Cancel</Button>
+                <Button type="button" disabled={saving} onClick={() => void saveEdit()}>Save adjustment</Button>
+                <ActionFeedback message={messageTarget === `edit:${editEntry.id}` ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
@@ -20236,6 +21384,7 @@ function StaffShell() {
           <Route path="/device" element={<DeviceHomePage />} />
           <Route path="/" element={<StaffMemberHome staff={staff} loading={loading} reload={reload} />} />
           <Route path="/roster" element={<StaffMemberRosterPage />} />
+          <Route path="/my-roster" element={<StaffMemberRosterPage />} />
           <Route path="/clock" element={<StaffMemberClockPage />} />
           <Route path="/availability" element={<StaffMemberAvailabilityPage />} />
           <Route path="/leave" element={<StaffMemberLeavePage />} />
@@ -20274,6 +21423,7 @@ function StaffShell() {
           <Route path="/staff/:staffId" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/staff/:staffId/:section" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/roster" element={<HubLayout tabs={ROSTER_PAY_TABS}><RosterPage staff={staff} roster={roster} reload={reload} /></HubLayout>} />
+          <Route path="/my-roster" element={<HubLayout tabs={ROSTER_PAY_TABS}><StaffMemberRosterPage /></HubLayout>} />
           <Route path="/leave" element={<HubLayout tabs={ROSTER_PAY_TABS}><LeaveCalendarPage staff={staff} /></HubLayout>} />
           <Route path="/noticeboard" element={<NoticeboardPage />} />
           <Route path="/handbook" element={<StaffHandbookPage />} />
@@ -20286,6 +21436,7 @@ function StaffShell() {
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<HubLayout tabs={ROSTER_PAY_TABS}><TimesheetsPage staff={staff} roster={roster} /></HubLayout>} />
           <Route path="/tips" element={<HubLayout tabs={ROSTER_PAY_TABS}><TipsPage staff={staff} /></HubLayout>} />
+          <Route path="/labour" element={<HubLayout tabs={ROSTER_PAY_TABS}><LabourPage /></HubLayout>} />
           <Route path="/communications" element={<CommunicationsPage staff={staff} reload={reload} />} />
           <Route path="/hr" element={canOpenHr ? <HubLayout tabs={peopleTabsFor(canOpenHr)}><HrOverviewPage records={hrRecords} loading={hrLoading} /></HubLayout> : <Navigate to="/" replace />} />
           <Route path="/hr/contracts" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="CONTRACT" mode="contracts" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />

@@ -1,6 +1,15 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { loadStripeTerminal, type Terminal, type Reader } from '@stripe/terminal-js';
-import { api, clearApiTokens, consumeSuiteHandoffToken, messageForError, setApiAuthToken, setApiPinToken } from './api';
+import { api, clearApiTokens, consumeSuiteHandoffToken, messageForError, openSuiteApp, setApiAuthToken, setApiPinToken } from './api';
+import { POS_SURFACES, SUITE_APP_LINKS } from './suiteApps';
+// Dietary vocabulary, shared with Stock and the booking parser so a guest's
+// requirement and a dish's label are the same words rather than two sets that
+// nearly match.
+import { answerableGuestTags, dietaryKind, dietaryLabel, dietaryShort, dishAnswersGuest, guestTagIsAllergy, menuForDay, parseDishDietary } from '@alma/shared';
+
+// Lazy: jsQR is ~130KB the till never needs until somebody actually taps
+// "Scan the card" — the register's first paint shouldn't carry it.
+const ScanSheet = lazy(() => import('./ScanSheet').then((module) => ({ default: module.ScanSheet })));
 // Lazy: the board editor is a management surface a till only opens to
 // rearrange tiles — it has no business in the register's startup chunk.
 const BoardEditor = lazy(() => import('./BoardEditor').then((m) => ({ default: m.BoardEditor })));
@@ -23,15 +32,25 @@ import {
   textScaleValue,
   TEXT_SCALE_KEY,
   type TextScale,
+  MAX_FOLDER_DEPTH,
+  folderAtPath,
+  folderPathToken,
   paginatePins,
+  parseFolderPath,
   pinDisplay,
+  updateFolderAtPath,
   visibleTabTokens,
+  childNavGroups,
+  groupSubtreeCats,
+  type FolderPin,
   type HomeConfig,
   type MenuCategory,
   type MenuItem,
   type Pin,
   type TabsConfig
 } from './board';
+// The A mark and the fish, inlined into the bundle rather than fetched.
+import { ALMA_MARK, ALMA_FISH } from './brand';
 
 // ── ALMA POS v2 ─────────────────────────────────────────────────────────────
 // Home screen (open tables/tabs + quick sale + day glance) → order screen
@@ -51,7 +70,63 @@ type OrderLine = {
   seat?: number | null;
   modifiers?: Array<{ name: string; priceCents: number }> | null;
   notes?: string | null;
+  // The set menu that paid for this line — set on the $0 dishes a banquet
+  // rings, so the bill can group them and the report can tell them from comps.
+  packagedBy?: string | null;
   sentAt?: string | null;
+  // Server-built voucher line (syncGiftCardLines). Never cooked, never fired,
+  // never editable here — the cart shows it in its own block, off the courses.
+  isGiftCard?: boolean;
+};
+// What the register needs to run a banquet, shipped with the menu.
+type SetMenuOption = {
+  id: string;
+  recipeId: string;
+  title: string;
+  /** Charged on top of the package price, per guest. 0 = included. */
+  supplementCents: number;
+  salePriceCents: number | null;
+};
+type SetMenuCourse = {
+  id: string;
+  name: string;
+  posCourse: string | null;
+  /** Choices each guest makes here. covers x pick = what the table owes. */
+  pick: number;
+  /** One serve feeds this many. NULL = one each. */
+  perGuests: number | null;
+  options: SetMenuOption[];
+};
+// What the register needs to sell a wine. Price comes off the recipe each pour
+// points at, so a pour is a sellable item in its own right.
+type RegisterWinePour = { recipeId: string; ml: number; priceCents: number; title: string; printName: string | null };
+type RegisterWine = {
+  id: string;
+  venue: string;
+  name: string;
+  producer: string;
+  cuvee: string | null;
+  grape: string | null;
+  region: string | null;
+  origin: string | null;
+  vintage: number | null;
+  section: string | null;
+  styleBand: string | null;
+  /** 's' seafood & ceviche, 'r' rich & grilled, 'v' vegetables & cheese. */
+  pairsWith: string[];
+  tastingNote: string | null;
+  sommelierPour: boolean;
+  limitedStock: boolean;
+  serveChilled: boolean;
+  pours: RegisterWinePour[];
+};
+type SetMenuPlan = {
+  recipeId: string;
+  title: string;
+  salePriceCents: number | null;
+  /** Nobody chooses these — bread for the table, greens between four. */
+  fixed: Array<{ name: string; printName: string | null; recipeId: string | null; quantity: number; perGuests: number | null }>;
+  courses: SetMenuCourse[];
 };
 type Payment = { method: string; amountCents: number; tipCents: number; createdAt?: string };
 type OrderGuest = {
@@ -63,6 +138,20 @@ type OrderGuest = {
   tags: string[];
   allergyNotes: string | null;
   dietaryNotes: string | null;
+  loyaltyCode?: string | null;
+  loyaltyPoints?: number;
+  loyaltyJoinedAt?: string | null;
+};
+type LoyaltyMember = {
+  guestId: string;
+  code: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  points: number;
+  creditCents: number;
+  pointValueCents: number;
+  minRedeemPoints: number;
 };
 type GuestProfile = OrderGuest & {
   lastVisitAt: string | null;
@@ -77,10 +166,17 @@ type ModifierGroup = { id: string; name: string; required: boolean; maxSelect: n
  * Read once per call — used by the state initialisers so the register paints
  * a usable grid before the first network round trip completes.
  */
-function readMenuCache(): { categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] } | null {
+type MenuPayload = {
+  categories: MenuCategory[];
+  eightySix?: string[];
+  modifierGroups?: ModifierGroup[];
+  setMenus?: SetMenuPlan[];
+  wines?: RegisterWine[];
+};
+function readMenuCache(): MenuPayload | null {
   try {
     const cached = localStorage.getItem('alma.pos.menuCache');
-    return cached ? (JSON.parse(cached) as { categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] }) : null;
+    return cached ? (JSON.parse(cached) as MenuPayload) : null;
   } catch {
     return null;
   }
@@ -173,6 +269,27 @@ type DaySummary = {
   methods: Record<string, { count: number; amountCents: number; tipCents: number }>;
   topItems: Array<{ name: string; quantity: number; totalCents: number }>;
 };
+
+/**
+ * Owns the raw keystrokes so typing re-renders THIS input alone — the
+ * register only hears the 120ms-debounced term it actually filters by.
+ * Before this, every character re-evaluated the whole ~3,300-line render.
+ */
+const PosSearchBox = memo(function PosSearchBox({ onTerm }: { onTerm: (term: string) => void }) {
+  const [value, setValue] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => onTerm(value), 120);
+    return () => clearTimeout(timer);
+  }, [value, onTerm]);
+  return (
+    <input
+      className="pos-search"
+      placeholder="Search menu…"
+      value={value}
+      onChange={(event) => setValue(event.currentTarget.value)}
+    />
+  );
+});
 
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
 // Set when we send someone to Alma Home to sign in. If they come back still
@@ -296,6 +413,10 @@ function paidCents(order: Order) {
   return order.payments.reduce((sum, payment) => sum + payment.amountCents, 0);
 }
 
+// The wine list is its own view rather than a category of tiles, so it needs a
+// token the board will never produce.
+const WINE_TAB = '__wine__';
+
 function defaultCourse(_kind: string) {
   return 'NOW';
 }
@@ -304,8 +425,12 @@ type StaffOption = { id: string; name: string; roleTitle: string; hasPin: boolea
 type AuthShape =
   | 'loading'
   | null
-  | { kind: 'staff'; name: string }
-  | { kind: 'device'; staffName: string | null; staffList: StaffOption[] };
+  // `trainingOnly` is a practice account. It comes from the server on every
+  // /api/auth/me, and on a shared device it is already the OR of the till and
+  // the PIN — the client only reads it. Nothing here can clear it, which is
+  // the entire difference from the localStorage switch it replaces.
+  | { kind: 'staff'; name: string; trainingOnly: boolean }
+  | { kind: 'device'; staffName: string | null; staffList: StaffOption[]; trainingOnly: boolean };
 
 export function App() {
   const [me, setMe] = useState<AuthShape>('loading');
@@ -317,14 +442,46 @@ export function App() {
   // previously read only when the fetch FAILED, so a normal online open
   // stared at an empty grid for the full auth+menu waterfall.
   const [rawMenu, setRawMenu] = useState<MenuCategory[]>(() => readMenuCache()?.categories ?? []);
+  // Set menus that ask a question, keyed by the tile's recipeId. A menu with
+  // no courses isn't here, so its tile keeps ringing as a plain priced item.
+  const [setMenuPlans, setSetMenuPlans] = useState<Map<string, SetMenuPlan>>(
+    () => new Map((readMenuCache()?.setMenus ?? []).map((plan) => [plan.recipeId, plan]))
+  );
+  const [allWines, setAllWines] = useState<RegisterWine[]>(() => readMenuCache()?.wines ?? []);
+  // The weekday the register prices by — device-local, the same convention
+  // as the offline weekend surcharge, and re-checked each minute so Taco
+  // Tuesday ends when Tuesday does, even on a register nobody reloads.
+  const [priceDay, setPriceDay] = useState<number>(() => new Date().getDay());
+  useEffect(() => {
+    const tick = window.setInterval(() => {
+      setPriceDay((current) => {
+        const day = new Date().getDay();
+        return day === current ? current : day;
+      });
+    }, 60_000);
+    return () => window.clearInterval(tick);
+  }, []);
   // Each venue sells its own menu: St Alma items at St Alma, Avalon's at
   // Avalon. Unassigned items and Functions / Pop-up see everything.
   const menu = useMemo(() => {
-    if (venue !== 'St Alma' && venue !== 'Alma Avalon') return rawMenu;
-    return rawMenu
-      .map((category) => ({ ...category, items: category.items.filter((item) => !item.venue || item.venue === venue) }))
-      .filter((category) => category.items.length > 0);
-  }, [rawMenu, venue]);
+    const venueMenu =
+      venue !== 'St Alma' && venue !== 'Alma Avalon'
+        ? rawMenu
+        : rawMenu
+            .map((category) => ({
+              ...category,
+              items: category.items
+                .filter((item) => !item.venue || item.venue === venue)
+                // Shared (venue-null) recipes price per register via the override
+                // map; venue-tagged ones arrive with it already applied.
+                .map((item) => (item.venuePrices?.[venue] != null ? { ...item, priceCents: item.venuePrices[venue] } : item))
+            }))
+            .filter((category) => category.items.length > 0);
+    // Taco Tuesday bakes LAST, so a weekday window beats a per-venue
+    // override, and a dish outside its window (the Tuesday-only taco board)
+    // is not on the board at all today.
+    return menuForDay(venueMenu, priceDay).filter((category) => category.items.length > 0);
+  }, [rawMenu, venue, priceDay]);
   const [kindByRecipe, setKindByRecipe] = useState<Map<string, string>>(() => {
     const kinds = new Map<string, string>();
     for (const category of readMenuCache()?.categories ?? []) {
@@ -361,9 +518,17 @@ export function App() {
   const [merging, setMerging] = useState<Order[] | null>(null);
   const [editLayout, setEditLayout] = useState(false);
   const [activeCategory, setActiveCategory] = useState('');
-  const [search, setSearch] = useState('');
   const [newTable, setNewTable] = useState<null | { label: string; covers: string }>(null);
-  const [charge, setCharge] = useState<null | { stage: 'pay' | 'tip' | 'method' | 'cash' | 'split' | 'gift'; tipCents: number; amountCents: number | null }>(null);
+  const [charge, setCharge] = useState<null | { stage: 'pay' | 'tip' | 'method' | 'cash' | 'split' | 'gift' | 'loyalty'; tipCents: number; amountCents: number | null }>(null);
+  // Loyalty at the charge screen: the handle being typed, and the join
+  // mini-form when the phone isn't a member yet.
+  const [loyalty, setLoyalty] = useState<{ handle: string; joinName: string; joining: boolean; working: boolean; member: LoyaltyMember | null }>({
+    handle: '',
+    joinName: '',
+    joining: false,
+    working: false,
+    member: null
+  });
   // `external` = the code isn't ours (an old Gift Up card, say) — we can
   // still take it, recorded as an outside tender against the number.
   const [gift, setGift] = useState<{
@@ -378,6 +543,9 @@ export function App() {
   }>({ code: '', balanceCents: null, checking: false, take: '' });
   // Cards already put against this bill, so staff can see what's been taken.
   const [giftApplied, setGiftApplied] = useState<Array<{ code: string; amountCents: number; remainingCents: number | null }>>([]);
+  // The camera sheet on the gift tender — scan the wallet pass or printed
+  // card instead of typing the code mid-service.
+  const [giftScan, setGiftScan] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [tendered, setTendered] = useState('');
   const [receipt, setReceipt] = useState<Order | null>(null);
@@ -397,7 +565,19 @@ export function App() {
   const [courses, setCourses] = useState<string[]>(FALLBACK_COURSES);
   // Course the next tapped item lands in (null = automatic food/drinks pick).
   const [targetCourse, setTargetCourse] = useState<string | null>(null);
-  const [training, setTraining] = useState(() => localStorage.getItem('alma.pos.training') === '1');
+  // Training has two sources and they are not equal.
+  //
+  // `trainingSwitch` is the old one: a per-device opt-in a manager flips to
+  // practise on a real till. It stays, because it is useful.
+  //
+  // `trainingLocked` is the account saying so, and it wins. It cannot be
+  // switched off here, and the server does not believe this client anyway —
+  // createOrder ORs the account's flag in regardless of what we send. The UI
+  // below is honesty about a decision already made server-side, not the
+  // decision itself.
+  const [trainingSwitch, setTrainingSwitch] = useState(() => localStorage.getItem('alma.pos.training') === '1');
+  const trainingLocked = me !== 'loading' && me !== null && me.trainingOnly;
+  const training = trainingSwitch || trainingLocked;
   const [managerGate, setManagerGate] = useState<null | { message: string; pin: string; retry: (pin: string) => void }>(null);
   const [pinSearch, setPinSearch] = useState('');
   const [deviceLanding, setDeviceLanding] = useState(() => localStorage.getItem('alma.pos.deviceLanding') ?? '');
@@ -651,11 +831,16 @@ export function App() {
     document.addEventListener('pointercancel', onUp);
   }
 
-  function folderItemPointerDown(event: React.PointerEvent, folderIndex: number, itemIndex: number) {
+  function folderItemPointerDown(event: React.PointerEvent, path: number[], itemIndex: number) {
     if (!boardEdit) return;
     event.preventDefault();
     let from = itemIndex;
     let moved = false;
+    // The id, not the index: reorders shuffle indices mid-drag, and a drop
+    // into a subfolder must move THIS dish wherever it ended up.
+    const draggedId = folderAtPath(homeRef.current.pins, path)?.items[itemIndex] ?? null;
+    // Hovering a subfolder tile: computer-style — drop moves the item INSIDE.
+    const dropSub = { index: null as number | null };
     const held = event.currentTarget as HTMLElement;
     held.classList.add('is-dragging');
     const box = held.getBoundingClientRect();
@@ -671,9 +856,21 @@ export function App() {
     };
     placeGhost(event.clientX, event.clientY);
     document.body.appendChild(ghost);
+    const clearDropTargets = () =>
+      document.querySelectorAll('.pos-item-pin.is-drop-target').forEach((el) => el.classList.remove('is-drop-target'));
     const onMove = (nativeEvent: PointerEvent) => {
       placeGhost(nativeEvent.clientX, nativeEvent.clientY);
-      const target = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY)?.closest('[data-fitem-index]');
+      const under = document.elementFromPoint(nativeEvent.clientX, nativeEvent.clientY);
+      const sub = under?.closest('[data-fsub-index]');
+      if (draggedId && sub) {
+        dropSub.index = Number(sub.getAttribute('data-fsub-index'));
+        clearDropTargets();
+        sub.classList.add('is-drop-target');
+        return;
+      }
+      dropSub.index = null;
+      clearDropTargets();
+      const target = under?.closest('[data-fitem-index]');
       if (!target) return;
       const over = Number(target.getAttribute('data-fitem-index'));
       if (Number.isNaN(over) || over === from) return;
@@ -682,16 +879,15 @@ export function App() {
       // updater runs later — so freeze it before calling setHome.
       const start = from;
       from = over;
-      setHome((current) => {
-        const pins = current.pins.map((pin, i) => {
-          if (i !== folderIndex || pin.t !== 'f') return pin;
-          const items = [...pin.items];
+      setHome((current) => ({
+        ...current,
+        pins: updateFolderAtPath(current.pins, path, (folder) => {
+          const items = [...folder.items];
           const [dragged] = items.splice(start, 1);
           items.splice(over, 0, dragged!);
-          return { ...pin, items };
-        });
-        return { ...current, pins };
-      });
+          return { ...folder, items };
+        })
+      }));
     };
     const onUp = () => {
       document.removeEventListener('pointermove', onMove);
@@ -699,6 +895,30 @@ export function App() {
       document.removeEventListener('pointercancel', onUp);
       ghost.remove();
       held.classList.remove('is-dragging');
+      clearDropTargets();
+      if (draggedId && dropSub.index !== null) {
+        const subIndex = dropSub.index;
+        dragMoved.current = true;
+        setHome((current) => {
+          const pins = updateFolderAtPath(current.pins, path, (folder) => {
+            const child = folder.folders?.[subIndex];
+            if (!child) return folder;
+            return {
+              ...folder,
+              items: folder.items.filter((id) => id !== draggedId),
+              folders: (folder.folders ?? []).map((candidate, i) =>
+                i === subIndex && !candidate.items.includes(draggedId)
+                  ? { ...candidate, items: [...candidate.items, draggedId] }
+                  : candidate
+              )
+            };
+          });
+          const next = { ...current, pins };
+          setTimeout(() => saveBoard(next), 0);
+          return next;
+        });
+        return;
+      }
       if (moved) {
         dragMoved.current = true;
         saveBoard(homeRef.current);
@@ -741,7 +961,8 @@ export function App() {
     return MarkStable;
   }, [iconStyle, iconOverridesForMark]);
 
-  const [renaming, setRenaming] = useState<null | { kind: 'pin' | 'group'; key: number | string; value: string }>(null);
+  // 'sub' renames a nested folder; its key is the folder-path token.
+  const [renaming, setRenaming] = useState<null | { kind: 'pin' | 'group' | 'sub'; key: number | string; value: string }>(null);
   const homeRef = useRef(home);
   homeRef.current = home;
   const orderIdRef = useRef<string | null>(null);
@@ -763,6 +984,24 @@ export function App() {
     return () => window.removeEventListener('alma-native-ready', onReady);
   }, []);
   const [lockScreen, setLockScreen] = useState(false);
+  // The suite app switcher: which apps a till can hop to, session carried
+  // across by a one-time handoff token.
+  const [appsOpen, setAppsOpen] = useState(false);
+  const [appsBusy, setAppsBusy] = useState<string | null>(null);
+  // The "?" tour. Auto-opens the first time each operator lands on a signed-in
+  // register (flagged per name in localStorage, so it shows once per person
+  // per device) — that the home board follows you is the one thing nobody
+  // guesses on their own.
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpOperator = me === 'loading' || !me ? '' : me.kind === 'staff' ? me.name : me.staffName ?? '';
+  const helpSeenKey = helpOperator ? `alma.pos.helpSeen.${helpOperator.toLowerCase()}` : null;
+  useEffect(() => {
+    if (helpSeenKey && localStorage.getItem(helpSeenKey) !== '1') setHelpOpen(true);
+  }, [helpSeenKey]);
+  function closeHelp() {
+    if (helpSeenKey) localStorage.setItem(helpSeenKey, '1');
+    setHelpOpen(false);
+  }
   const [lockPin, setLockPin] = useState('');
   const [switchSheet, setSwitchSheet] = useState<null | { pin: string }>(null);
   const [noteSheet, setNoteSheet] = useState<null | { value: string }>(null);
@@ -773,9 +1012,36 @@ export function App() {
   const [coversEdit, setCoversEdit] = useState<string>('');
   const [coversOpen, setCoversOpen] = useState(false);
   const [openFolder, setOpenFolder] = useState<Pin | null>(null);
-  const [folderDraft, setFolderDraft] = useState<null | { name: string; c: string; items: string[]; search: string }>(null);
+  // One sheet, three jobs: no `at`/`into` = new folder on the home board;
+  // `at` = new subfolder inside the folder at that path; `into` = add items
+  // to the existing folder at that path (name/colour hidden).
+  const [folderDraft, setFolderDraft] = useState<null | { name: string; c: string; items: string[]; search: string; at?: number[]; into?: number[] }>(null);
   const [customise, setCustomise] = useState(false);
+  // Package mode: while ON, every item tapped lands at $0 with an
+  // "Included in package" note — the set-menu line carries the money, the
+  // kitchen still gets real dishes on real courses. Turns itself off when
+  // the sale closes so it can't bleed into the next bill.
+  const [pkgMode, setPkgMode] = useState(false);
+  useEffect(() => {
+    if (!order) setPkgMode(false);
+  }, [order]);
+  // The banquet picker. `step` counts through the plan's courses; -1 is the
+  // covers question that opens it. `picks` is courseId -> recipeId -> heads,
+  // which is the whole state of the sheet — everything else is derived.
+  const [banquet, setBanquet] = useState<null | {
+    plan: SetMenuPlan;
+    covers: number;
+    step: number;
+    picks: Record<string, Record<string, number>>;
+  }>(null);
   const [wastage, setWastage] = useState<null | { search: string; recipeId: string; itemName: string; quantity: string; reason: string }>(null);
+  // Selling a gift card at the till. The server side of this has existed for a
+  // while — PosGiftCardSale, GST-free face value, issued and emailed when the
+  // bill settles, cancelled if the bill is refunded — with no way to reach it
+  // from the register. This is that way.
+  const [giftSale, setGiftSale] = useState<
+    null | { amountDollars: string; recipientName: string; recipientEmail: string; code: string; physical: boolean; saving: boolean }
+  >(null);
   const [lineAction, setLineAction] = useState<null | { lineId: string; name: string; kind: 'COMP' | 'PRICE_CHANGE'; reason: string; price: string }>(null);
   const [discounting, setDiscounting] = useState<null | { mode: 'percent' | 'amount'; value: string; reason: string }>(null);
   // One chooser for everything you do TO a bill (discount, comp, split,
@@ -827,7 +1093,16 @@ export function App() {
 
   const refreshAuth = useCallback(async () => {
     try {
-      const res = await api<{ user: { id: string; firstName?: string; lastName?: string; accountType?: string; deviceAccount?: boolean } | null }>('/api/auth/me');
+      const res = await api<{
+        user: {
+          id: string;
+          firstName?: string;
+          lastName?: string;
+          accountType?: string;
+          trainingOnly?: boolean;
+          deviceAccount?: boolean;
+        } | null;
+      }>('/api/auth/me');
       const user = res.user;
       if (!user) {
         setMe(null);
@@ -840,9 +1115,13 @@ export function App() {
         const staffName = list.activeUser
           ? `${list.activeUser.firstName ?? ''} ${list.activeUser.lastName ?? ''}`.trim() || null
           : null;
-        setMe({ kind: 'device', staffName, staffList: list.staff });
+        setMe({ kind: 'device', staffName, staffList: list.staff, trainingOnly: user.trainingOnly === true });
       } else {
-        setMe({ kind: 'staff', name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Staff' });
+        setMe({
+          kind: 'staff',
+          name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Staff',
+          trainingOnly: user.trainingOnly === true
+        });
       }
     } catch {
       setMe(null);
@@ -958,13 +1237,19 @@ export function App() {
     void (async () => {
       try {
         void api<Array<{ name: string }>>('/api/pos/courses')
-          .then((rows) => setCourses(rows.map((row) => row.name)))
+          // An empty list is not an answer, it is a bad reply: the API seeds
+          // the cycle on first read, so it never legitimately has none. Keep
+          // the fallback rather than leaving the register with no courses to
+          // fire on.
+          .then((rows) => { if (rows.length > 0) setCourses(rows.map((row) => row.name)); })
           .catch(() => undefined);
         void api<Record<string, string[]>>('/api/pos/adjust-reasons').then(setReasons).catch(() => undefined);
-        const res = await api<{ categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] }>('/api/pos/menu');
+        const res = await api<MenuPayload>('/api/pos/menu');
         setRawMenu(res.categories);
         setEightySix(new Set(res.eightySix ?? []));
         setModifierGroups(res.modifierGroups ?? []);
+        setSetMenuPlans(new Map((res.setMenus ?? []).map((plan) => [plan.recipeId, plan])));
+        setAllWines(res.wines ?? []);
         setOffline(false);
         localStorage.setItem('alma.pos.menuCache', JSON.stringify(res));
         void api<Array<{ kind: string; percent: number; weekdays: string }>>('/api/pos/rules')
@@ -981,10 +1266,12 @@ export function App() {
         // Offline: run on the cached menu so quick sales keep flowing.
         const cached = localStorage.getItem('alma.pos.menuCache');
         if (cached && isNetworkError(err)) {
-          const res = JSON.parse(cached) as { categories: MenuCategory[]; eightySix?: string[]; modifierGroups?: ModifierGroup[] };
+          const res = JSON.parse(cached) as MenuPayload;
           setRawMenu(res.categories);
           setEightySix(new Set(res.eightySix ?? []));
           setModifierGroups(res.modifierGroups ?? []);
+          setSetMenuPlans(new Map((res.setMenus ?? []).map((plan) => [plan.recipeId, plan])));
+          setAllWines(res.wines ?? []);
           setOffline(true);
         } else {
           setError(messageForError(err, 'Could not load the menu.'));
@@ -1241,7 +1528,7 @@ export function App() {
       const stamp = new Date().toISOString();
       setOrder((current) =>
         current
-          ? { ...current, lines: current.lines.map((line) => ((line.course ?? 'NOW') === name && !(line as { sentAt?: string | null }).sentAt ? { ...line, sentAt: stamp } : line)) }
+          ? { ...current, lines: current.lines.map((line) => (!line.isGiftCard && (line.course ?? 'NOW') === name && !(line as { sentAt?: string | null }).sentAt ? { ...line, sentAt: stamp } : line)) }
           : current
       );
       setInfo(`${name} fired to the kitchen.`);
@@ -1256,17 +1543,28 @@ export function App() {
     const groups = new Map<string, Array<{ line: Order['lines'][number]; index: number }>>();
     for (const name of courses) groups.set(name, []);
     (order?.lines ?? []).forEach((line, index) => {
+      // A gift-card line is never cooked: grouped under NOW it read as a
+      // course with food waiting, and its 🔥 flip-flopped forever because
+      // /send rightly refuses to stamp it. It gets its own block below.
+      if (line.isGiftCard) return;
       const key = line.course ?? courses[0] ?? 'NOW';
       groups.set(key, [...(groups.get(key) ?? []), { line, index }]);
     });
     return [...groups.entries()];
   }, [order, courses]);
+  const giftLines = useMemo(
+    () => (order?.lines ?? []).map((line, index) => ({ line, index })).filter((entry) => entry.line.isGiftCard),
+    [order]
+  );
 
   // Bill lines grouped under their course, in service order.
   const courseGroups = useMemo(() => {
     const groups = new Map<string, Array<{ line: Order['lines'][number]; index: number }>>();
     (order?.lines ?? []).forEach((line, index) => {
-      const key = line.course ?? 'Mains';
+      // Null course = NOW, the same default the cart, the fire filter and
+      // the docket all use — three different defaults here once meant a
+      // line could show under one course and fire under another.
+      const key = line.course ?? 'NOW';
       groups.set(key, [...(groups.get(key) ?? []), { line, index }]);
     });
     const rank = (name: string) => {
@@ -1279,6 +1577,9 @@ export function App() {
   // The category tab bar, honouring the user's saved order/hidden/groups.
   const tabsConfig: TabsConfig = home.categories ?? { order: [], hidden: [], groups: [] };
   const visibleTabs = useMemo(() => visibleTabTokens(menu.map((category) => category.name), tabsConfig), [menu, tabsConfig]);
+  // The two tabs that bring their own search bar. Anywhere else the header
+  // search is the only one there is, so it stays.
+  const pageOwnsSearch = activeCategory === WINE_TAB || activeCategory === '__all__';
 
   // Nav editing (reorder, group, hide, rename) lives ONLY in the board
   // editor now — the register just reads this config. Board TILES are still
@@ -1295,6 +1596,17 @@ export function App() {
         return { ...pin, label: value || undefined };
       });
       const next = { ...current, pins };
+      setTimeout(() => saveBoard(next), 0);
+      return next;
+    });
+  }
+
+  function commitSubRename(path: number[], rawValue: string) {
+    const value = rawValue.trim().slice(0, 40);
+    setRenaming(null);
+    if (!value) return;
+    setHome((current) => {
+      const next = { ...current, pins: updateFolderAtPath(current.pins, path, (folder) => ({ ...folder, name: value })) };
       setTimeout(() => saveBoard(next), 0);
       return next;
     });
@@ -1333,8 +1645,8 @@ export function App() {
         return homeRef.current.categories?.groups.some((group) => group.name === name) ? current : HOME_TAB;
       }
       if (current.startsWith('__folder__')) {
-        const at = Number(current.slice('__folder__'.length));
-        return homeRef.current.pins[at]?.t === 'f' ? current : HOME_TAB;
+        const path = parseFolderPath(current);
+        return path && folderAtPath(homeRef.current.pins, path) ? current : HOME_TAB;
       }
       return current;
     });
@@ -1346,6 +1658,35 @@ export function App() {
   // Measure how many standard tiles fit without scrolling; big/wide tiles
   // count as 4/2 slots. Under-estimating is safe (a roomier page), scrolling
   // away is not.
+  const [searchTerm, setSearchTerm] = useState('');
+  // The chip rows on Full menu and Wine cost about a hundred pixels of list.
+  // Worth it while you are narrowing, dead weight once you know what you are
+  // looking for — so they fold, and the choice sticks to the device. Nothing
+  // is lost while they are folded: the tally and Clear stay on the search
+  // line, so a filter left on is still visible.
+  const [chipsOpen, setChipsOpen] = useState(() => {
+    try {
+      return localStorage.getItem('alma.pos.filterChips') !== 'off';
+    } catch {
+      return true;
+    }
+  });
+  const toggleChips = useCallback(() => {
+    setChipsOpen((open) => {
+      try {
+        localStorage.setItem('alma.pos.filterChips', open ? 'off' : 'on');
+      } catch {
+        /* private browsing — the fold still works, it just won't be remembered */
+      }
+      return !open;
+    });
+  }, []);
+  // Switching to Full menu or Wine takes the header search off screen. Its
+  // term has to go with it — a filter still running behind a box you can no
+  // longer see reads as a page with items missing.
+  useEffect(() => {
+    if (pageOwnsSearch && searchTerm) setSearchTerm('');
+  }, [pageOwnsSearch, searchTerm]);
   useEffect(() => {
     const el = boardPagerRef.current;
     if (!el) return;
@@ -1378,7 +1719,7 @@ export function App() {
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [activeCategory, design, view, search, textScale]);
+  }, [activeCategory, design, view, searchTerm, textScale]);
 
   const pinPages = useMemo(
     // Trailing action tiles (Edit this page / the edit-mode set) render on
@@ -1395,11 +1736,6 @@ export function App() {
 
   // The grid reads a debounced term so a fast typist isn't re-filtering and
   // re-rendering hundreds of tiles on every character.
-  const [searchTerm, setSearchTerm] = useState('');
-  useEffect(() => {
-    const timer = setTimeout(() => setSearchTerm(search), 120);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   const visibleItems = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -1530,9 +1866,30 @@ export function App() {
     }
     return map;
   }, [rawMenu]);
+  // The explicit twin link, when the backfill has run: canonical group id →
+  // this venue's member. Falls back to title matching for unlinked recipes.
+  const visibleByCanonical = useMemo(() => {
+    const map = new Map<string, MenuItem>();
+    for (const category of menu) {
+      for (const item of category.items) {
+        map.set(item.canonicalId ?? item.recipeId, item);
+      }
+    }
+    return map;
+  }, [menu]);
+  const canonicalByRecipeAllVenues = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const category of rawMenu) {
+      for (const item of category.items) map.set(item.recipeId, item.canonicalId ?? item.recipeId);
+    }
+    return map;
+  }, [rawMenu]);
   function resolvePinItem(recipeId: string): MenuItem | undefined {
     const direct = itemByRecipe.get(recipeId);
     if (direct) return direct;
+    const canonical = canonicalByRecipeAllVenues.get(recipeId);
+    const viaLink = canonical ? visibleByCanonical.get(canonical) : undefined;
+    if (viaLink) return viaLink;
     const title = titleByRecipeAllVenues.get(recipeId);
     return title ? visibleByTitle.get(title) : undefined;
   }
@@ -1540,6 +1897,13 @@ export function App() {
   categoryOfRef.current = categoryByRecipe;
   function categoryOf(item: MenuItem): string {
     return categoryOfRef.current.get(item.recipeId) ?? '';
+  }
+
+  // What a folder tile's count means: distinct dishes THIS venue can open,
+  // subfolders included — a folder may hold both venues' copies of a wine.
+  function folderDishCount(folder: FolderPin): number {
+    const gather = (f: FolderPin): string[] => [...f.items, ...(f.folders ?? []).flatMap(gather)];
+    return new Set(gather(folder).map((id) => resolvePinItem(id)?.recipeId).filter(Boolean)).size;
   }
 
   function addItem(item: MenuItem) {
@@ -1567,6 +1931,11 @@ export function App() {
       setError(`${item.title} is 86'd (sold out).`);
       return;
     }
+    const plan = setMenuPlans.get(item.recipeId);
+    if (plan && plan.courses.length > 0) {
+      openBanquet(plan);
+      return;
+    }
     const category = categoryOf(item).toLowerCase();
     const groups = modifierGroups.filter((group) => group.categories.includes(category));
     if (groups.length > 0) {
@@ -1576,17 +1945,444 @@ export function App() {
     void addItemDirect(item, [], '');
   }
 
+  // ── The wine list ─────────────────────────────────────────────────────
+  // Food is a grid because a grid works: forty dishes, tapped by sight. Wine
+  // is not like that — the guest asks for a grape, a region or a number, never
+  // for a tile. So wine gets a list with the pour prices on the row, and the
+  // filters that answer the three questions actually asked at the table.
+  const wines = useMemo(
+    () => allWines.filter((wine) => wine.venue === venue),
+    [allWines, venue]
+  );
+
+  // Colour comes off the menu's own section headings, because the printed list
+  // is already organised by grape — "Riesling" says white without being told.
+  const wineColour = (wine: RegisterWine): string => {
+    const section = (wine.section ?? '').toLowerCase();
+    if (/skin|orange/.test(section)) return 'orange';
+    if (/bubbl|sparkling|champagne/.test(section)) return 'sparkling';
+    if (/ros/.test(section)) return 'rose';
+    if (/sweet|fortified|muscat/.test(section)) return 'fortified';
+    if (/riesling|chardonnay|sauvignon|semillon|white/.test(section)) return 'white';
+    return 'red';
+  };
+  const WINE_COLOURS = [
+    { id: 'white', label: 'White' },
+    { id: 'red', label: 'Red' },
+    { id: 'rose', label: 'Rosé' },
+    { id: 'sparkling', label: 'Sparkling' },
+    { id: 'orange', label: 'Skin contact' },
+    { id: 'fortified', label: 'Fortified' }
+  ];
+  // Bands as a guest says them, not in even steps.
+  const WINE_BANDS = [
+    { id: 'u80', label: 'Under $80', test: (cents: number) => cents < 8000 },
+    { id: '80-120', label: '$80–120', test: (cents: number) => cents >= 8000 && cents < 12000 },
+    { id: '120-200', label: '$120–200', test: (cents: number) => cents >= 12000 && cents < 20000 },
+    { id: '200+', label: '$200+', test: (cents: number) => cents >= 20000 }
+  ];
+  const WINE_PAIRS = [
+    { id: 's', label: '○ Seafood' },
+    { id: 'r', label: '△ Rich & grilled' },
+    { id: 'v', label: '◇ Veg & cheese' }
+  ];
+  const WINE_MARK: Record<string, string> = { s: '○', r: '△', v: '◇' };
+  // The printed list's running order, so the register and the list in the
+  // guest's hand are organised the same way.
+  const WINE_SECTIONS = [
+    'Bubbles', 'White', 'Riesling', 'Sauvignon Blanc & Semillon', 'Chardonnay', 'Other whites',
+    'Skin contact & orange', 'Rosé', 'Red', 'Pinot Noir', 'Shiraz', 'Cabernet & Bordeaux blends',
+    'Other reds', 'Mexican wine', 'Sweet & fortified'
+  ];
+  const WINE_BANDS_ORDER = [
+    'Crisp & refreshing', 'Aromatic & textural', 'Mineral & complex',
+    'Light & juicy', 'Medium-bodied & versatile', 'Full-bodied & bold'
+  ];
+  const rankIn = (list: string[], value: string | null) => {
+    const index = list.indexOf(value ?? '');
+    return index === -1 ? list.length : index;
+  };
+
+  const [wineFilters, setWineFilters] = useState<{
+    q: string;
+    pour: 'any' | 'glass' | 'bottle';
+    colours: string[];
+    band: string | null;
+    pairs: string[];
+    open: string | null;
+  }>({ q: '', pour: 'any', colours: [], band: null, pairs: [], open: null });
+
+  /**
+   * Filters for the full menu, which is the same idea as the wine list applied
+   * to everything else: the tiles stay the fast way to ring a dish somebody
+   * already knows, and this is the page you open to answer "what have we got".
+   *
+   * Deliberately NOT the wine filters. Grape and price band are what you ask a
+   * wine list; a food menu gets asked what section it is in, whether it comes
+   * out of the kitchen or the bar, and whether it is still on. The API already
+   * labels every category FOOD, BEVERAGE or SET_MENU (pos.service kindBucket),
+   * so the kitchen/bar split is read rather than guessed.
+   *
+   * There is no dietary filter, because no dietary data exists to filter on —
+   * Recipe has no allergen or dietary field, and the `dietary` column in the
+   * schema belongs to PosOrder: it is the GUEST's requirement on a booking,
+   * not a property of a dish. Inventing one here would put a confident-looking
+   * "GF" on a plate nobody had checked.
+   */
+  const [menuFilters, setMenuFilters] = useState<{
+    q: string;
+    kind: 'any' | 'FOOD' | 'BEVERAGE' | 'SET_MENU';
+    avail: 'any' | 'on' | 'off';
+    /** A guest requirement, in the booking parser's own vocabulary. */
+    diet: string | null;
+  }>({ q: '', kind: 'any', avail: 'any', diet: null });
+
+  /**
+   * Does this dish survive the full-menu filters? Every term must appear
+   * somewhere in the title, so "fish taco" narrows rather than widening the
+   * way an OR would.
+   */
+  const menuMatch = (item: MenuItem, categoryKind: string) => {
+    if (menuFilters.kind !== 'any' && categoryKind !== menuFilters.kind) return false;
+    if (menuFilters.diet) {
+      const verdict = dishAnswersGuest(item.dietary ?? [], menuFilters.diet);
+      if (guestTagIsAllergy(menuFilters.diet)) {
+        // An allergy can only ever rule dishes OUT — nothing in the tag
+        // vocabulary is a positive "checked, allergen-free" claim, so the
+        // best any dish can be is "not marked as containing it". Drop the
+        // marked ones, keep the rest, and the note under the chips says
+        // plainly that unmarked is unverified, not safe.
+        if (verdict === 'no') return false;
+      } else {
+        // A diet: 'yes' and 'ask' only. A dish nobody has tagged is UNKNOWN,
+        // and an unknown dish must never be offered to somebody who asked for
+        // gluten free — that is the whole reason this filter exists rather
+        // than the floor guessing from the title.
+        if (verdict !== 'yes' && verdict !== 'ask') return false;
+      }
+    }
+    const off = eightySix.has(item.recipeId);
+    if (menuFilters.avail === 'on' && off) return false;
+    if (menuFilters.avail === 'off' && !off) return false;
+    const terms = menuFilters.q.toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return true;
+    const hay = `${item.title} ${item.printTitle ?? ''}`.toLowerCase();
+    return terms.every((term) => hay.includes(term));
+  };
+
+  const menuFiltersOn =
+    menuFilters.q.trim() !== '' || menuFilters.kind !== 'any' || menuFilters.avail !== 'any' || menuFilters.diet !== null;
+
+  /** How many dishes survive the filters — the bar's count and the empty state
+      read the same number rather than each working it out. */
+  const menuShownCount = useMemo(() => {
+    // Count exactly the categories the Full menu RENDERS — the visible tabs
+    // plus every folder's subtree. Counting all of `menu` overstated the
+    // number whenever a category was nav-hidden, and made a search that only
+    // matched an unrendered dish show a count over a blank list.
+    const shownCats = new Set<string>();
+    for (const token of visibleTabs) {
+      if (token.startsWith('g:')) for (const name of groupSubtreeCats(tabsConfig, token.slice(2))) shownCats.add(name);
+      else shownCats.add(token);
+    }
+    return menu.reduce(
+      (sum, category) =>
+        shownCats.has(category.name)
+          ? sum + category.items.filter((item) => !item.variantOf && menuMatch(item, category.kind)).length
+          : sum,
+      0
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menu, menuFilters, eightySix, visibleTabs, tabsConfig]);
+
+  /** Cheapest way to buy the whole bottle, or the dearest pour if there is none. */
+  const wineFrom = (wine: RegisterWine) =>
+    wine.pours.find((pour) => pour.ml >= 700)?.priceCents ?? Math.max(...wine.pours.map((pour) => pour.priceCents));
+  const winePoured = (wine: RegisterWine) => wine.pours.some((pour) => pour.ml < 700);
+  const wineOff = (wine: RegisterWine) => wine.pours.every((pour) => eightySix.has(pour.recipeId));
+
+  const sortedWines = useMemo(
+    () =>
+      wines.slice().sort(
+        (a, b) =>
+          rankIn(WINE_SECTIONS, a.section) - rankIn(WINE_SECTIONS, b.section) ||
+          rankIn(WINE_BANDS_ORDER, a.styleBand) - rankIn(WINE_BANDS_ORDER, b.styleBand) ||
+          wineFrom(a) - wineFrom(b)
+      ),
+    [wines]
+  );
+
+  const shownWines = useMemo(() => {
+    const band = WINE_BANDS.find((entry) => entry.id === wineFilters.band);
+    const terms = wineFilters.q.toLowerCase().split(/\s+/).filter(Boolean);
+    return sortedWines.filter((wine) => {
+      // Search covers everything a guest might say — the grape and the region
+      // as readily as the label, and the tasting note for "something chalky".
+      if (terms.length > 0) {
+        const hay = `${wine.name} ${wine.grape ?? ''} ${wine.region ?? ''} ${wine.origin ?? ''} ${wine.section ?? ''} ${wine.styleBand ?? ''} ${wine.tastingNote ?? ''} ${wine.vintage ?? 'NV'}`.toLowerCase();
+        if (!terms.every((term) => hay.includes(term))) return false;
+      }
+      if (wineFilters.pour === 'glass' && !winePoured(wine)) return false;
+      if (wineFilters.pour === 'bottle' && winePoured(wine)) return false;
+      if (wineFilters.colours.length > 0 && !wineFilters.colours.includes(wineColour(wine))) return false;
+      if (band && !band.test(wineFrom(wine))) return false;
+      if (wineFilters.pairs.length > 0 && !wine.pairsWith.some((mark) => wineFilters.pairs.includes(mark))) return false;
+      return true;
+    });
+  }, [sortedWines, wineFilters, eightySix]);
+
+  // What a sommelier does in their head, for when the bottle is gone or it is
+  // over their number: same grape first, then same region, then same country,
+  // nearest by price — and never something that has run out.
+  function similarWines(wine: RegisterWine) {
+    return wines
+      .filter((other) => other.id !== wine.id && !wineOff(other) && (other.grape === wine.grape || other.region === wine.region || other.origin === wine.origin))
+      .map((other) => ({
+        wine: other,
+        why: other.grape === wine.grape ? 'Same grape' : other.region === wine.region ? 'Same region' : `Also ${other.origin ?? ''}`,
+        rank: (other.grape === wine.grape ? 0 : other.region === wine.region ? 1 : 2) * 1e7 + Math.abs(wineFrom(other) - wineFrom(wine))
+      }))
+      .sort((a, b) => a.rank - b.rank)
+      .slice(0, 3);
+  }
+
+  // A pour is an ordinary catalogue item, so selling one goes through the same
+  // path as any tile: modifiers, course defaults, the optimistic first tap.
+  function addWinePour(wine: RegisterWine, pour: RegisterWinePour) {
+    if (eightySix.has(pour.recipeId)) {
+      setError(`${wine.name} is 86'd (sold out).`);
+      return;
+    }
+    void addItemDirect(
+      { recipeId: pour.recipeId, title: pour.title, printTitle: pour.printName, priceCents: pour.priceCents, venue: wine.venue },
+      [],
+      ''
+    );
+  }
+
+  // ── Banquet picker ────────────────────────────────────────────────────
+  // A set menu is one price for a table, but the kitchen needs the dishes and
+  // the reporting needs the mix. So the register asks: how many covers, then
+  // course by course, how many of each. Everything below is derived from
+  // `picks` — how many are spoken for, what's left, whether we can move on.
+
+  // Courses worth a screen. A course offering exactly one dish is not a
+  // question — it gets filled for the whole table at commit. (Unless that one
+  // dish is 86'd, in which case service needs to see it rather than have the
+  // register quietly ring something the kitchen cannot cook.)
+  // What the kitchen actually plates for this many guests. A course with no
+  // perGuests is one serve each; "shared between 4" rounds up, because half a
+  // board of fries is not a thing anyone can send.
+  function banquetPortions(course: SetMenuCourse, heads: number): number {
+    if (!course.perGuests || course.perGuests <= 1) return heads;
+    return Math.ceil(heads / course.perGuests);
+  }
+
+  // Which course a banquet dish FIRES on, which is not the same thing as what
+  // the course is called. The firing order set in Stock wins. A course name is
+  // only accepted when it is a course the register actually cycles through -
+  // the seeded courses are named after their dish, and taking those at face
+  // value gave a table of four fourteen one-dish "courses" on the fire screen.
+  function courseFiresOn(course: SetMenuCourse): string {
+    if (course.posCourse) return course.posCourse;
+    return courses.includes(course.name) ? course.name : 'NOW';
+  }
+
+  function askableCourses(plan: SetMenuPlan): SetMenuCourse[] {
+    return plan.courses.filter(
+      (course) => course.options.length !== 1 || eightySix.has(course.options[0]!.recipeId)
+    );
+  }
+
+  function openBanquet(plan: SetMenuPlan) {
+    setBanquet({
+      // The table's covers if service has already set them: the common case is
+      // a booked function where the number is known before anyone orders.
+      covers: order?.covers && order.covers > 0 ? order.covers : 0,
+      plan,
+      step: -1,
+      picks: {}
+    });
+  }
+
+  // Heads spoken for in a course, and how many that course still owes.
+  function banquetChosen(courseId: string): number {
+    return Object.values(banquet?.picks[courseId] ?? {}).reduce((sum, count) => sum + count, 0);
+  }
+  function banquetOwed(course: SetMenuCourse, covers: number): number {
+    return covers * course.pick;
+  }
+
+  function banquetPick(course: SetMenuCourse, recipeId: string, delta: number) {
+    setBanquet((current) => {
+      if (!current) return current;
+      const forCourse = current.picks[course.id] ?? {};
+      const owed = banquetOwed(course, current.covers);
+      const spoken = Object.values(forCourse).reduce((sum, count) => sum + count, 0);
+      // Never past what the table owes — a miscount here is a wrong docket.
+      const room = delta > 0 ? Math.min(delta, owed - spoken) : delta;
+      const next = Math.max(0, (forCourse[recipeId] ?? 0) + room);
+      return {
+        ...current,
+        picks: { ...current.picks, [course.id]: { ...forCourse, [recipeId]: next } }
+      };
+    });
+  }
+
+  // "Rest get this" — the one tap that finishes a course. Eleven of the
+  // eighteen are spoken for, everyone else is having the chicken.
+  function banquetFill(course: SetMenuCourse, recipeId: string) {
+    setBanquet((current) => {
+      if (!current) return current;
+      const forCourse = current.picks[course.id] ?? {};
+      const spoken = Object.values(forCourse).reduce((sum, count) => sum + count, 0);
+      const left = banquetOwed(course, current.covers) - spoken;
+      if (left <= 0) return current;
+      return {
+        ...current,
+        picks: { ...current.picks, [course.id]: { ...forCourse, [recipeId]: (forCourse[recipeId] ?? 0) + left } }
+      };
+    });
+  }
+
+  // The package line carries the money; every dish under it rings at $0 (or
+  // at its supplement) with `packagedBy` pointing back at the menu. That stamp
+  // is what lets the bill group them and the banquet report tell an included
+  // dish from a comped one.
+  function commitBanquet() {
+    if (!banquet) return;
+    const { plan, covers, picks } = banquet;
+    const lines: OrderLine[] = [
+      {
+        recipeId: plan.recipeId,
+        name: plan.title,
+        printName: null,
+        unitPriceCents: plan.salePriceCents ?? 0,
+        quantity: covers,
+        // Explicitly NOW rather than null: the cart groups a course-less line
+        // under NOW but labels its chip "Mains", and a bill that disagrees
+        // with itself is the kind of small wrongness staff stop trusting.
+        course: 'NOW',
+        modifiers: null,
+        notes: null
+      }
+    ];
+    // Fixed components: nobody chose them, but the kitchen still plates them.
+    // perGuests = shared between N, so eighteen covers want five boards of
+    // bread between four, not eighteen.
+    for (const component of plan.fixed) {
+      const quantity = component.perGuests && component.perGuests > 0
+        ? Math.ceil(covers / component.perGuests)
+        : Math.max(1, Math.round(component.quantity * covers));
+      if (quantity <= 0) continue;
+      lines.push({
+        recipeId: component.recipeId,
+        name: component.name,
+        printName: component.printName,
+        unitPriceCents: 0,
+        quantity,
+        course: targetCourse ?? defaultCourse('FOOD'),
+        modifiers: null,
+        notes: null,
+        packagedBy: plan.recipeId
+      });
+    }
+    const asked = new Set(askableCourses(plan).map((course) => course.id));
+    for (const course of plan.courses) {
+      for (const option of course.options) {
+        // One dish, no question asked: everyone is having it.
+        const heads = asked.has(course.id)
+          ? picks[course.id]?.[option.recipeId] ?? 0
+          : covers * course.pick;
+        if (heads <= 0) continue;
+        // Heads are what the guests want; portions are what the kitchen
+        // plates. A side shared between four sends two boards to a table of
+        // eight, the same rule the fixed components above already follow.
+        const portions = banquetPortions(course, heads);
+        lines.push({
+          recipeId: option.recipeId,
+          name: option.title,
+          printName: null,
+          // A supplement is real money on the bill — the eye fillet upgrade
+          // is charged per guest who took it, on top of the package. On a
+          // shared course it is charged per SERVE, because upgrading a board
+          // eight people share is one upgrade, not eight.
+          unitPriceCents: option.supplementCents,
+          quantity: portions,
+          course: courseFiresOn(course),
+          modifiers: null,
+          notes: null,
+          packagedBy: plan.recipeId
+        });
+      }
+    }
+    setBanquet(null);
+    // Everything the banquet touches opens, so service sees it land.
+    setCourseOpen((current) => {
+      const next = { ...current };
+      for (const line of lines) next[line.course ?? 'NOW'] = true;
+      return next;
+    });
+    void addLines(lines, covers);
+  }
+
+  // Add several lines in one go — what the banquet picker commits. No
+  // optimistic path here on purpose: the picker has already taken a few
+  // seconds, and a table this size wants its covers on the order as well.
+  async function addLines(lines: OrderLine[], covers?: number) {
+    if (lines.length === 0) return;
+    if (order && (order.id.startsWith('local-') || order.id.startsWith('pending-'))) {
+      // A sale whose server order doesn't exist yet: merge locally and let the
+      // creation loop re-PUT the lot, exactly as a tile tap would.
+      void pushLines([...order.lines, ...lines]);
+      return;
+    }
+    setBusy(true);
+    try {
+      let target = order;
+      if (!target) {
+        target = await api<Order>('/api/pos/orders', {
+          method: 'POST',
+          body: JSON.stringify({
+            venue,
+            openedByName: operatorName || undefined,
+            training: training || undefined,
+            ...(covers ? { covers } : {})
+          })
+        });
+      } else if (covers && !target.covers) {
+        // The picker just asked how many are eating; the docket header and
+        // every covers-based report want that same number.
+        target = await api<Order>(`/api/pos/orders/${target.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ covers })
+        });
+      }
+      const updated = await api<Order>(`/api/pos/orders/${target.id}/lines`, {
+        method: 'PUT',
+        body: JSON.stringify({ lines: [...target.lines, ...lines] })
+      });
+      setOrder(updated);
+      setOpenFolder(null);
+      setOffline(false);
+    } catch (err) {
+      setError(messageForError(err, 'Could not add the set menu.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function addItemDirect(item: MenuItem, modifiers: Array<{ name: string; priceCents: number }>, notes: string) {
     const delta = modifiers.reduce((sum, modifier) => sum + modifier.priceCents, 0);
     const line: OrderLine = {
       recipeId: item.recipeId,
       name: item.title,
       printName: item.printTitle || null,
-      unitPriceCents: item.priceCents + delta,
+      unitPriceCents: pkgMode ? 0 : item.priceCents + delta,
       quantity: 1,
       course: targetCourse ?? defaultCourse(kindByRecipe.get(item.recipeId) ?? 'FOOD'),
       modifiers: modifiers.length ? modifiers : null,
-      notes: notes || null
+      notes: pkgMode ? [notes, 'Included in package'].filter(Boolean).join(' · ') : notes || null
     };
     // The course the item lands in opens so you see it arrive.
     setCourseOpen((current) => ({ ...current, [line.course ?? 'NOW']: true }));
@@ -1661,12 +2457,15 @@ export function App() {
       return;
     }
     // Modifier'd lines never merge — each configuration is its own line.
-    const existing = modifiers.length === 0 && !notes
+    // Package lines DO stack (same dish, same auto-note): a banquet's four
+    // barramundi should read 4× on the docket, not four lines of one.
+    const existing = modifiers.length === 0 && (!notes || pkgMode)
       ? order.lines.find(
           (candidate) =>
             candidate.recipeId === item.recipeId &&
             !candidate.modifiers &&
-            !candidate.notes &&
+            (candidate.notes ?? null) === (line.notes ?? null) &&
+            candidate.unitPriceCents === line.unitPriceCents &&
             !(candidate as { sentAt?: string | null }).sentAt &&
             (candidate.course ?? null) === (line.course ?? null)
         )
@@ -1765,6 +2564,67 @@ export function App() {
       setError(messageForError(err, 'Could not open the order.'));
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * Put a gift card on the bill.
+   *
+   * The card is NOT created here. It becomes real when the bill is paid —
+   * that is where the server activates it, emails the recipient and, if the
+   * bill is later refunded in full, cancels it again. Selling the card and
+   * taking the money are the same transaction, which is the point: the guest
+   * pays for it on the same screen as everything else, and nobody has to
+   * remember to go and issue it afterwards.
+   *
+   * A gift card also needs a bill to sit on, so a walk-in buying nothing else
+   * gets one opened for them.
+   */
+  async function addGiftCardToBill() {
+    if (!giftSale) return;
+    const dollars = Number(giftSale.amountDollars);
+    if (!Number.isFinite(dollars) || dollars < 5 || dollars > 1000) {
+      setError('A gift card is between $5 and $1000.');
+      return;
+    }
+    if (giftSale.recipientEmail.trim() && !giftSale.recipientEmail.includes('@')) {
+      setError('That email address looks wrong — check it before charging.');
+      return;
+    }
+    setGiftSale({ ...giftSale, saving: true });
+    setError(null);
+    try {
+      let target = order;
+      // A pending- draft is display-only and has no server id to hang a sale
+      // on, so it cannot take one either.
+      if (!target || target.id.startsWith('pending-')) {
+        target = await api<Order>('/api/pos/orders', {
+          method: 'POST',
+          body: JSON.stringify({ venue, openedByName: operatorName || undefined, training: training || undefined })
+        });
+      }
+      const updated = await api<Order>(`/api/pos/orders/${target.id}/gift-cards`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amountCents: Math.round(dollars * 100),
+          code: giftSale.physical ? giftSale.code.trim().toUpperCase() || undefined : undefined,
+          recipientName: giftSale.recipientName.trim() || undefined,
+          recipientEmail: giftSale.recipientEmail.trim() || undefined
+        })
+      });
+      setOrder(updated);
+      setGiftSale(null);
+      setView('register');
+      setInfo(
+        giftSale.physical
+          ? `$${dollars} card on the bill — write ${giftSale.code.trim().toUpperCase() || 'the number'} on the physical card. It goes live when the bill is paid.`
+          : giftSale.recipientEmail.trim()
+            ? `$${dollars} card on the bill — emailed to ${giftSale.recipientEmail.trim()} once the bill is paid.`
+            : `$${dollars} card on the bill. It goes live when the bill is paid.`
+      );
+    } catch (err) {
+      setError(messageForError(err, 'Could not add the gift card.'));
+      setGiftSale((current) => (current ? { ...current, saving: false } : current));
     }
   }
 
@@ -2114,6 +2974,95 @@ export function App() {
     }
   }
 
+  // Put a member on the bill (or take them off). Attaching is what makes the
+  // points happen — earn fires at settle for whoever is attached, whatever
+  // tender pays the bill.
+  async function attachLoyalty(handle: string) {
+    if (!order || loyalty.working) return;
+    setLoyalty((current) => ({ ...current, working: true }));
+    setError(null);
+    try {
+      const result = await api<{ member: LoyaltyMember; order: Order }>(`/api/pos/orders/${order.id}/loyalty`, {
+        method: 'POST',
+        body: JSON.stringify({ handle })
+      });
+      setOrder(result.order);
+      setLoyalty({ handle: '', joinName: '', joining: false, working: false, member: result.member });
+      setInfo(`${result.member.firstName || 'Member'} on the bill — ${result.member.points} points (${money(result.member.creditCents)}).`);
+    } catch (err) {
+      setLoyalty((current) => ({ ...current, working: false }));
+      const message = messageForError(err, 'Could not find that member.');
+      if (/join them first/i.test(message)) {
+        // Not a member yet: flip straight into the join mini-form with the
+        // phone number already in place.
+        setLoyalty((current) => ({ ...current, joining: true, working: false }));
+      } else {
+        setError(message);
+      }
+    }
+  }
+
+  async function joinLoyaltyAndAttach() {
+    if (!order || loyalty.working) return;
+    setLoyalty((current) => ({ ...current, working: true }));
+    setError(null);
+    try {
+      const joined = await api<{ member: LoyaltyMember; alreadyMember: boolean }>('/api/pos/loyalty/join', {
+        method: 'POST',
+        body: JSON.stringify({ phone: loyalty.handle, firstName: loyalty.joinName, venue })
+      });
+      const result = await api<{ member: LoyaltyMember; order: Order }>(`/api/pos/orders/${order.id}/loyalty`, {
+        method: 'POST',
+        body: JSON.stringify({ handle: joined.member.code })
+      });
+      setOrder(result.order);
+      setLoyalty({ handle: '', joinName: '', joining: false, working: false, member: result.member });
+      setInfo(
+        joined.alreadyMember
+          ? `${result.member.firstName || 'Member'} was already a member — on the bill with ${result.member.points} points.`
+          : `${result.member.firstName || 'New member'} joined — points start with this bill.`
+      );
+    } catch (err) {
+      setLoyalty((current) => ({ ...current, working: false }));
+      setError(messageForError(err, 'Could not join them up.'));
+    }
+  }
+
+  async function takeLoyaltyPayment(appliesCents: number, coversAll: boolean) {
+    if (!order || !charge || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const amountCents = Math.max(1, appliesCents);
+      const tipCents = coversAll ? charge.tipCents : 0;
+      const result = await api<Order & { status: string; loyaltyPointsRemaining?: number | null; loyaltyPointsEarned?: number | null }>(
+        `/api/pos/orders/${order.id}/pay`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ method: 'LOYALTY', amountCents, tipCents })
+        }
+      );
+      const remaining = result.loyaltyPointsRemaining ?? null;
+      if (result.status === 'PAID') {
+        collectIssuedGiftCards(result.id);
+        setReceipt(result);
+        setOrder(null);
+        setCharge(null);
+        setGiftApplied([]);
+        void refreshOpenOrders();
+        setInfo(remaining !== null ? `Paid with points — ${remaining} left on the account.` : 'Paid with points.');
+      } else {
+        setOrder(result);
+        setCharge({ ...charge, amountCents: null });
+        setInfo(`${money(amountCents)} taken in points${remaining !== null ? ` · ${remaining} points left` : ''}. Pay the rest another way.`);
+      }
+    } catch (err) {
+      setError(messageForError(err, 'Points payment failed.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveOrderMeta(meta: { notes?: string; dietary?: Array<{ tag: string; seat: number | null }> }) {
     if (!order) return;
     try {
@@ -2330,6 +3279,37 @@ export function App() {
     go();
   };
 
+  // One balance check for both roads into the gift tender: the typed code
+  // and the camera scan. A miss keeps the outside-card path open — old
+  // Gift Up cards are still out there.
+  function checkGiftCard(raw?: string) {
+    const codeValue = (raw ?? gift.code).trim().toUpperCase();
+    if (!codeValue) return;
+    setGift({ code: codeValue, balanceCents: null, checking: true, take: '' });
+    void api<{ code: string; balanceCents: number; recipientName?: string | null }>(
+      `/api/pos/gift-card?code=${encodeURIComponent(codeValue)}`
+    )
+      .then((card) => {
+        const outstanding = (charge?.amountCents ?? balance) + (charge?.tipCents ?? 0);
+        // Default to whichever runs out first, then let staff type over it.
+        const suggested = Math.min(card.balanceCents, Math.max(0, outstanding));
+        setGift({
+          code: card.code,
+          balanceCents: card.balanceCents,
+          checking: false,
+          take: (suggested / 100).toFixed(2),
+          holder: card.recipientName ?? null
+        });
+      })
+      .catch((err) => {
+        // Not an ALMA card. Old Gift Up cards are still out there, so offer
+        // to take it as an outside card with the number recorded against the
+        // payment rather than turning the guest away.
+        setGift({ code: codeValue, balanceCents: null, checking: false, external: true, take: '' });
+        setError(messageForError(err, 'Could not find that gift card.'));
+      });
+  }
+
   return (
     <div className="pos-shell">
       {design === 'rail' ? (
@@ -2342,7 +3322,7 @@ export function App() {
               void refreshOpenOrders();
             }}
           >
-            <img src="/brand/alma-a-mark.png" alt="" />
+            <img src={ALMA_MARK} alt="" />
             <strong>{venueIdentity.businessName.toLowerCase()}</strong>
             <span>POS</span>
           </div>
@@ -2365,6 +3345,26 @@ export function App() {
           >
             Bills
           </button>
+          {/* An action, not a view — dropped glasses don't wait for someone
+              to remember which board the wastage pin lives on. */}
+          <button
+            type="button"
+            className="pos-rail-item"
+            onClick={() => setWastage({ search: '', recipeId: '', itemName: '', quantity: '1', reason: '' })}
+          >
+            Wastage
+          </button>
+          {/* Also an action: somebody at the counter buying a card is not on a
+              table and has nothing to add to a board. */}
+          <button
+            type="button"
+            className="pos-rail-item"
+            onClick={() =>
+              setGiftSale({ amountDollars: '', recipientName: '', recipientEmail: '', code: '', physical: false, saving: false })
+            }
+          >
+            Gift card
+          </button>
           {/* The nav is READ-ONLY here — it is arranged in the board editor,
               so a busy service can't reorder it by accident. */}
           <div className="pos-rail-eyebrow">
@@ -2380,6 +3380,15 @@ export function App() {
             <button type="button" className={activeCategory === '__all__' && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'} onClick={() => { setView('register'); setActiveCategory('__all__'); }}>
               Full menu
             </button>
+            {wines.length > 0 ? (
+              <button
+                type="button"
+                className={activeCategory === WINE_TAB && view === 'register' ? 'pos-rail-item is-on' : 'pos-rail-item'}
+                onClick={() => { setView('register'); setActiveCategory(WINE_TAB); }}
+              >
+                Wine <span className="pos-rail-count">{wines.length}</span>
+              </button>
+            ) : null}
             {visibleTabs.map((token) => {
               const isGroup = token.startsWith('g:');
               const groupName = isGroup ? token.slice(2) : null;
@@ -2394,7 +3403,7 @@ export function App() {
                     setActiveCategory(target);
                   }}
                 >
-                  {isGroup ? <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} /> : <Mark name={token} />}
+                  {isGroup ? (hasMark(groupName ?? '') ? <Mark name={groupName ?? ''} /> : <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />) : <Mark name={token} />}
                   {isGroup ? groupName : token}
                 </button>
               );
@@ -2437,7 +3446,7 @@ export function App() {
             wrappers (display: contents) so the iPad row is unchanged; phones
             stack them into a two-row sticky green bar. */}
         <div className="pos-header-brand">
-          <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" onClick={() => { setOrder(null); setView('register'); void refreshOpenOrders(); }} />
+          <img src={ALMA_MARK} alt="" className="pos-mark" onClick={() => { setOrder(null); setView('register'); void refreshOpenOrders(); }} />
           <strong className="pos-header-name" onClick={() => { setOrder(null); setView('register'); void refreshOpenOrders(); }} style={{ cursor: 'pointer' }}>
             {venueIdentity.businessName.toLowerCase()}
           </strong>
@@ -2478,6 +3487,17 @@ export function App() {
             >
               {orderTypeOf(order) === 'TAKEAWAY' ? '🥡 Takeaway' : '🍽 Dine in'}
             </button>
+            {/* While ON, tapped items land at $0 with an "Included in
+                package" note — ring the set menu first, then the dishes. */}
+            <button
+              type="button"
+              className={`pos-covers-chip pos-pkg-chip${pkgMode ? ' is-on' : ''}`}
+              title="Items added while this is on go on the bill at $0 — for dishes and drinks included in a set menu or package"
+              disabled={busy}
+              onClick={() => setPkgMode(!pkgMode)}
+            >
+              {pkgMode ? '◉ Package items · $0' : '○ Package items'}
+            </button>
             {order.guest ? (
               <button
                 type="button"
@@ -2501,12 +3521,35 @@ export function App() {
             ))}
           </select>
         )}
-        {view === 'register' ? (
-          <input className="pos-search" placeholder="Search menu…" value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
+        {/* One search bar, never two. Full menu and Wine each carry their own
+            search — richer than this one (a wine is found by grape, region or
+            a word from the note; a dish by what it suits) and sitting right
+            above the list it filters. Showing this as well was two boxes
+            competing for the same job and a row of screen nobody got back. */}
+        {view === 'register' && !pageOwnsSearch ? (
+          <PosSearchBox onTerm={setSearchTerm} />
         ) : null}
         </div>
         <span className="pos-header-spacer" />
         <div className="pos-header-actions">
+        <button
+          type="button"
+          className="pos-theme-btn pos-help-btn"
+          title="How this register works"
+          onClick={() => setHelpOpen(true)}
+        >
+          ?
+        </button>
+        <button
+          type="button"
+          className="pos-theme-btn"
+          title="Other ALMA apps"
+          onClick={() => setAppsOpen(true)}
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+            {[5, 12, 19].flatMap((y) => [5, 12, 19].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="2.1" />))}
+          </svg>
+        </button>
         {operatorName ? (
           <button
             type="button"
@@ -2696,13 +3739,19 @@ export function App() {
       ) : null}
       {training ? (
         <div
-          className="pos-training"
-          onClick={() => {
-            setTraining(false);
-            localStorage.setItem('alma.pos.training', '0');
-          }}
+          className={trainingLocked ? 'pos-training is-locked' : 'pos-training'}
+          onClick={
+            trainingLocked
+              ? undefined
+              : () => {
+                  setTrainingSwitch(false);
+                  localStorage.setItem('alma.pos.training', '0');
+                }
+          }
         >
-          TRAINING MODE — sales don't count, nothing reaches the kitchen. Tap to end.
+          {trainingLocked
+            ? "TRAINING TILL — sales don't count, nothing reaches the kitchen. This account is practice only."
+            : "TRAINING MODE — sales don't count, nothing reaches the kitchen. Tap to end."}
         </div>
       ) : null}
       {offline || queue.length > 0 ? (
@@ -2749,14 +3798,22 @@ export function App() {
             setBillActions(true);
           }}
           onReinstate={(row) => {
-            void api<Order>(`/api/pos/orders/${row.id}/reopen`, { method: 'POST' })
-              .then((reopened) => {
-                setOrder(reopened);
-                setView('register');
-                void refreshOpenOrders();
-                setInfo(`${reopened.tableLabel ? `Table ${reopened.tableLabel}` : `#${reopened.orderNumber}`} is open again — the payment stays on it.`);
-              })
-              .catch((err) => setError(messageForError(err, 'Could not reinstate that bill.')));
+            const attempt = (pin?: string) => {
+              void api<Order>(`/api/pos/orders/${row.id}/reopen`, { method: 'POST', body: JSON.stringify({ managerPin: pin }) })
+                .then((reopened) => {
+                  setManagerGate(null);
+                  setOrder(reopened);
+                  setView('register');
+                  void refreshOpenOrders();
+                  setInfo(`${reopened.tableLabel ? `Table ${reopened.tableLabel}` : `#${reopened.orderNumber}`} is open again — the payment stays on it.`);
+                })
+                .catch((err) => {
+                  const message = messageForError(err, 'Could not reinstate that bill.');
+                  if (/manager/i.test(message)) setManagerGate({ message, pin: '', retry: attempt });
+                  else setError(message);
+                });
+            };
+            attempt();
           }}
           onRefund={(row) => {
             const refunded = row.payments
@@ -2818,7 +3875,7 @@ export function App() {
       ) : view === 'bills' || view === 'board' ? null : (
         <div className="pos-body">
           <div className="pos-menu">
-            {!search ? (
+            {!searchTerm ? (
               <nav className="pos-tabs">
                 <button
                   type="button"
@@ -2842,6 +3899,15 @@ export function App() {
                 >
                   Full menu
                 </button>
+                {wines.length > 0 ? (
+                  <button
+                    type="button"
+                    className={activeCategory === WINE_TAB ? 'is-active' : ''}
+                    onClick={() => setActiveCategory(WINE_TAB)}
+                  >
+                    Wine
+                  </button>
+                ) : null}
                 {/* Read-only: the tab bar is arranged in the board editor. */}
                 {visibleTabs.map((token) => {
                   const isGroup = token.startsWith('g:');
@@ -2854,7 +3920,7 @@ export function App() {
                       className={`${active ? 'is-active' : ''} ${isGroup ? 'is-group' : ''}`}
                       onClick={() => setActiveCategory(isGroup ? `__group__${groupName}` : token)}
                     >
-                      {isGroup ? <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} /> : <Mark name={token} />}
+                      {isGroup ? (hasMark(groupName ?? '') ? <Mark name={groupName ?? ''} /> : <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />) : <Mark name={token} />}
                       {isGroup ? groupName : token}
                     </button>
                   );
@@ -2866,16 +3932,369 @@ export function App() {
                 ) : null}
               </nav>
             ) : null}
-            {(activeCategory === '__all__' && !search) ||
-            (tabsConfig.looks?.[activeCategory] === 'list' && menu.some((category) => category.name === activeCategory) && !search) ? (
+            {activeCategory === WINE_TAB ? (
+              (() => {
+                const chip = (
+                  key: string,
+                  label: string,
+                  on: boolean,
+                  count: number,
+                  toggle: () => void,
+                  // Colour chips wear the colour they filter for, so the chip
+                  // and the wines it finds are recognisably the same thing.
+                  colour?: string
+                ) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className="pos-wine-chip"
+                    data-colour={colour}
+                    aria-pressed={on}
+                    disabled={count === 0}
+                    onClick={toggle}
+                  >
+                    {label}
+                    <span className="pos-wine-n">{count}</span>
+                  </button>
+                );
+                const countIf = (test: (wine: RegisterWine) => boolean) => wines.filter(test).length;
+                // Nothing to clear, no Clear button. On an iPad the filter bar
+                // is competing with the list for the same screen, and a button
+                // that does nothing is the first thing that should go.
+                const filtersOn =
+                  wineFilters.q.trim() !== '' ||
+                  wineFilters.pour !== 'any' ||
+                  wineFilters.colours.length > 0 ||
+                  wineFilters.band !== null ||
+                  wineFilters.pairs.length > 0;
+                let section: string | null = null;
+                let styleBand: string | null = null;
+                return (
+                  <div className="pos-wine">
+                    <div className="pos-wine-filters">
+                      {/* Search, tally and Clear share one line. Each had its
+                          own row before, and on a 270px column that cost two
+                          rows of wine for a word and a button. */}
+                      <div className="pos-wine-find">
+                        <input
+                          className="pos-wine-search"
+                          type="search"
+                          value={wineFilters.q}
+                          placeholder="Grape, region, producer, or a word from the note"
+                          onChange={(event) => setWineFilters({ ...wineFilters, q: event.currentTarget.value, open: null })}
+                        />
+                        <span className="pos-wine-count">
+                          {shownWines.length === wines.length
+                            ? `${wines.length} wines`
+                            : `${shownWines.length} of ${wines.length}`}
+                        </span>
+                        {filtersOn ? (
+                          <button
+                            type="button"
+                            className="pos-wine-clear"
+                            onClick={() => setWineFilters({ q: '', pour: 'any', colours: [], band: null, pairs: [], open: null })}
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="pos-wine-fold"
+                          aria-expanded={chipsOpen}
+                          onClick={toggleChips}
+                        >
+                          {chipsOpen ? 'Fewer filters' : 'Filters'}
+                        </button>
+                      </div>
+                      {chipsOpen ? (
+                      <>
+                      <div className="pos-wine-chips">
+                        <span className="pos-wine-label">Pour</span>
+                        {chip('any', 'Everything', wineFilters.pour === 'any', wines.length, () =>
+                          setWineFilters({ ...wineFilters, pour: 'any', open: null })
+                        )}
+                        {chip('glass', 'By the glass', wineFilters.pour === 'glass', countIf(winePoured), () =>
+                          setWineFilters({ ...wineFilters, pour: 'glass', open: null })
+                        )}
+                        {chip('bottle', 'Bottle only', wineFilters.pour === 'bottle', countIf((wine) => !winePoured(wine)), () =>
+                          setWineFilters({ ...wineFilters, pour: 'bottle', open: null })
+                        )}
+                      </div>
+                      <div className="pos-wine-chips">
+                        <span className="pos-wine-label">Colour</span>
+                        {WINE_COLOURS.map((colour) =>
+                          chip(
+                            colour.id,
+                            colour.label,
+                            wineFilters.colours.includes(colour.id),
+                            countIf((wine) => wineColour(wine) === colour.id),
+                            () =>
+                              setWineFilters({
+                                ...wineFilters,
+                                colours: wineFilters.colours.includes(colour.id)
+                                  ? wineFilters.colours.filter((id) => id !== colour.id)
+                                  : [...wineFilters.colours, colour.id],
+                                open: null
+                              }),
+                            colour.id
+                          )
+                        )}
+                      </div>
+                      <div className="pos-wine-chips">
+                        <span className="pos-wine-label">Price</span>
+                        {WINE_BANDS.map((band) =>
+                          chip(
+                            band.id,
+                            band.label,
+                            wineFilters.band === band.id,
+                            countIf((wine) => band.test(wineFrom(wine))),
+                            () => setWineFilters({ ...wineFilters, band: wineFilters.band === band.id ? null : band.id, open: null })
+                          )
+                        )}
+                        {WINE_PAIRS.map((pair) =>
+                          chip(
+                            pair.id,
+                            pair.label,
+                            wineFilters.pairs.includes(pair.id),
+                            countIf((wine) => wine.pairsWith.includes(pair.id)),
+                            () =>
+                              setWineFilters({
+                                ...wineFilters,
+                                pairs: wineFilters.pairs.includes(pair.id)
+                                  ? wineFilters.pairs.filter((id) => id !== pair.id)
+                                  : [...wineFilters.pairs, pair.id],
+                                open: null
+                              })
+                          )
+                        )}
+                      </div>
+                      </>
+                      ) : null}
+                    </div>
+                    <div className="pos-wine-rows">
+                      {shownWines.length === 0 ? (
+                        <p className="pos-wine-empty">Nothing on the list matches that. Clear a filter and try again.</p>
+                      ) : null}
+                      {shownWines.map((wine) => {
+                        const rows = [];
+                        if (wine.section !== section || wine.styleBand !== styleBand) {
+                          section = wine.section;
+                          styleBand = wine.styleBand;
+                          rows.push(
+                            <div key={`h-${wine.id}`} className="pos-wine-group" data-colour={wineColour(wine)}>
+                              {section ?? 'Wine'}
+                              {styleBand ? <span className="pos-wine-band">{styleBand}</span> : null}
+                            </div>
+                          );
+                        }
+                        const off = wineOff(wine);
+                        rows.push(
+                          <div key={wine.id} className={`pos-wine-row${off ? ' is-86' : ''}`} data-colour={wineColour(wine)}>
+                            <span className="pos-wine-main">
+                              <span className="pos-wine-name">
+                                <span className="pos-wine-vintage">{wine.vintage ?? 'NV'}</span>
+                                {wine.name}
+                                {off ? <span className="pos-wine-tag is-out">86'd</span> : null}
+                                {wine.sommelierPour ? <span className="pos-wine-tag is-som">Sommelier</span> : null}
+                                {wine.limitedStock ? <span className="pos-wine-tag is-ltd">Limited</span> : null}
+                                {wine.serveChilled ? <span className="pos-wine-tag">Serve chilled</span> : null}
+                              </span>
+                              <span className="pos-wine-meta">
+                                {[wine.grape, [wine.region, wine.origin].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
+                                {wine.pairsWith.length > 0 ? (
+                                  <span className="pos-wine-marks"> {wine.pairsWith.map((mark) => WINE_MARK[mark]).join(' ')}</span>
+                                ) : null}
+                              </span>
+                              {wine.tastingNote ? <span className="pos-wine-note">{wine.tastingNote}</span> : null}
+                            </span>
+                            <span className="pos-wine-pours">
+                              {wine.pours.map((pour) => (
+                                <button
+                                  key={pour.recipeId}
+                                  type="button"
+                                  className="pos-wine-pour"
+                                  disabled={eightySix.has(pour.recipeId)}
+                                  onClick={() => addWinePour(wine, pour)}
+                                >
+                                  <span className="pos-wine-size">{pour.ml >= 700 ? 'Bottle' : `${pour.ml} mL`}</span>
+                                  <span className="pos-wine-price">{money(pour.priceCents)}</span>
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                className="pos-wine-like"
+                                onClick={() =>
+                                  setWineFilters({ ...wineFilters, open: wineFilters.open === wine.id ? null : wine.id })
+                                }
+                              >
+                                Like<br />this
+                              </button>
+                            </span>
+                          </div>
+                        );
+                        if (wineFilters.open === wine.id) {
+                          const near = similarWines(wine);
+                          rows.push(
+                            <div key={`s-${wine.id}`} className="pos-wine-similar">
+                              <span className="pos-wine-similar-head">Instead of {wine.name}</span>
+                              {near.length === 0 ? (
+                                <span className="pos-wine-meta">Nothing else on the list is close to it.</span>
+                              ) : null}
+                              {near.map(({ wine: other, why }) => (
+                                <span key={other.id} className="pos-wine-similar-row">
+                                  <span className="pos-wine-similar-name">
+                                    {other.name} — {other.grape ?? other.section}, {other.region}
+                                  </span>
+                                  <span className="pos-wine-meta">{why}</span>
+                                  <span className="pos-wine-meta">{money(wineFrom(other))}</span>
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        }
+                        return rows;
+                      })}
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (activeCategory === '__all__' && !searchTerm) ||
+            (tabsConfig.looks?.[activeCategory] === 'list' && menu.some((category) => category.name === activeCategory) && !searchTerm) ? (
               <div className="pos-list">
+                {activeCategory === '__all__' ? (() => {
+                  // Counts come from the same rows the list will render, so a
+                  // chip never offers a filter that finds nothing.
+                  const all = menu.flatMap((category) =>
+                    category.items.filter((item) => !item.variantOf).map((item) => ({ item, kind: category.kind }))
+                  );
+                  const countIf = (test: (entry: { item: MenuItem; kind: string }) => boolean) => all.filter(test).length;
+                  const shown = menuShownCount;
+                  const chip = (key: string, label: string, on: boolean, count: number, toggle: () => void) => (
+                    <button key={key} type="button" className="pos-wine-chip" aria-pressed={on} disabled={count === 0 && !on} onClick={toggle}>
+                      {label}
+                      <span className="pos-wine-n">{count}</span>
+                    </button>
+                  );
+                  return (
+                    <div className="pos-wine-filters pos-menu-filters">
+                      <div className="pos-wine-find">
+                        <input
+                          className="pos-wine-search"
+                          placeholder="Search the menu…"
+                          value={menuFilters.q}
+                          onChange={(event) => setMenuFilters({ ...menuFilters, q: event.currentTarget.value })}
+                        />
+                        <span className="pos-wine-count">
+                          {shown} item{shown === 1 ? '' : 's'}
+                        </span>
+                        {menuFiltersOn ? (
+                          <button
+                            type="button"
+                            className="pos-wine-clear"
+                            onClick={() => setMenuFilters({ q: '', kind: 'any', avail: 'any', diet: null })}
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="pos-wine-fold"
+                          aria-expanded={chipsOpen}
+                          onClick={toggleChips}
+                        >
+                          {chipsOpen ? 'Fewer filters' : 'Filters'}
+                        </button>
+                      </div>
+                      {chipsOpen ? (
+                      <>
+                      <div className="pos-wine-chips">
+                        <span className="pos-wine-label">Where</span>
+                        {chip('k-any', 'Everything', menuFilters.kind === 'any', all.length, () =>
+                          setMenuFilters({ ...menuFilters, kind: 'any' })
+                        )}
+                        {chip('k-food', 'Kitchen', menuFilters.kind === 'FOOD', countIf((entry) => entry.kind === 'FOOD'), () =>
+                          setMenuFilters({ ...menuFilters, kind: 'FOOD' })
+                        )}
+                        {chip('k-bev', 'Bar', menuFilters.kind === 'BEVERAGE', countIf((entry) => entry.kind === 'BEVERAGE'), () =>
+                          setMenuFilters({ ...menuFilters, kind: 'BEVERAGE' })
+                        )}
+                        {countIf((entry) => entry.kind === 'SET_MENU') > 0
+                          ? chip('k-set', 'Set menus', menuFilters.kind === 'SET_MENU', countIf((entry) => entry.kind === 'SET_MENU'), () =>
+                              setMenuFilters({ ...menuFilters, kind: 'SET_MENU' })
+                            )
+                          : null}
+                      </div>
+                      {/* Only what the kitchen has actually marked. A venue
+                          that has not walked the menu yet gets no row here
+                          rather than a row that finds nothing. */}
+                      {all.some((entry) => (entry.item.dietary ?? []).length > 0) ? (
+                        <div className="pos-wine-chips">
+                          <span className="pos-wine-label">Suits</span>
+                          {chip('d-any', 'Anyone', menuFilters.diet === null, all.length, () =>
+                            setMenuFilters({ ...menuFilters, diet: null })
+                          )}
+                          {answerableGuestTags().map((tag) =>
+                            chip(
+                              `d-${tag}`,
+                              tag,
+                              menuFilters.diet === tag,
+                              countIf((entry) => {
+                                const verdict = dishAnswersGuest(entry.item.dietary ?? [], tag);
+                                // An allergy chip counts what it will SHOW: everything
+                                // not marked as containing the allergen (none of which
+                                // is thereby safe — the caveat below says so). A diet
+                                // chip counts real yes/ask claims only.
+                                return guestTagIsAllergy(tag) ? verdict !== 'no' : verdict === 'yes' || verdict === 'ask';
+                              }),
+                              () => setMenuFilters({ ...menuFilters, diet: menuFilters.diet === tag ? null : tag })
+                            )
+                          )}
+                        </div>
+                      ) : null}
+                      {/* Only worth showing once something is actually 86'd. */}
+                      {countIf((entry) => eightySix.has(entry.item.recipeId)) > 0 ? (
+                        <div className="pos-wine-chips">
+                          <span className="pos-wine-label">On now</span>
+                          {chip('a-any', 'Everything', menuFilters.avail === 'any', all.length, () =>
+                            setMenuFilters({ ...menuFilters, avail: 'any' })
+                          )}
+                          {chip('a-on', 'Available', menuFilters.avail === 'on', countIf((entry) => !eightySix.has(entry.item.recipeId)), () =>
+                            setMenuFilters({ ...menuFilters, avail: 'on' })
+                          )}
+                          {chip('a-off', "86'd", menuFilters.avail === 'off', countIf((entry) => eightySix.has(entry.item.recipeId)), () =>
+                            setMenuFilters({ ...menuFilters, avail: 'off' })
+                          )}
+                        </div>
+                      ) : null}
+                      </>
+                      ) : null}
+                      {menuFilters.diet ? (
+                        guestTagIsAllergy(menuFilters.diet) ? (
+                          <p className="pos-menu-caveat">
+                            Hiding dishes marked as containing it. <strong>Everything left is unverified, not safe</strong> —
+                            nothing on the menu is checked allergen-free. Always tell the kitchen about a{' '}
+                            <strong>{menuFilters.diet.toLowerCase()}</strong>.
+                          </p>
+                        ) : (
+                          <p className="pos-menu-caveat">
+                            Showing dishes the kitchen has marked <strong>{menuFilters.diet}</strong>. Anything not marked is
+                            hidden because nobody has checked it — not because it is unsuitable. Ask the kitchen.
+                          </p>
+                        )
+                      ) : null}
+                    </div>
+                  );
+                })() : null}
                 {(activeCategory === '__all__'
                   ? visibleTabs
                       .map((token) => {
                         if (token.startsWith('g:')) {
                           const folderName = token.slice(2);
-                          const group = tabsConfig.groups.find((candidate) => candidate.name === folderName);
-                          const cats = (group?.cats ?? [])
+                          // The whole subtree: a dish filed into a SUB-folder
+                          // still belongs to this section on the Full menu —
+                          // before this it rendered nowhere while the header
+                          // count still included it.
+                          const cats = groupSubtreeCats(tabsConfig, folderName)
                             .map((name) => menu.find((category) => category.name === name))
                             .filter((category): category is MenuCategory => Boolean(category));
                           return { token, folderName, cats };
@@ -2890,9 +4309,29 @@ export function App() {
                 ).map(({ token, folderName, cats }) => {
                   const qtyOf = (recipeId: string) =>
                     (order?.lines ?? []).filter((line) => line.recipeId === recipeId).reduce((sum, line) => sum + line.quantity, 0);
-                  const collapsible = activeCategory === '__all__' && !search;
-                  const total = cats.reduce((sum, category) => sum + category.items.filter((item) => !item.variantOf).length, 0);
-                  if (total === 0 && !boardEdit) return null;
+                  // A search stays open: a match hidden inside a collapsed
+                  // <details> is a match nobody finds. Text, dietary and
+                  // availability filters are searches. The WHERE filter
+                  // (kind — Kitchen/Bar/Set menus) is a scope, not a search:
+                  // browsing Kitchen's sections you still want to fold the
+                  // ones you are not working, so those stay collapsible.
+                  const searching =
+                    Boolean(searchTerm) ||
+                    menuFilters.q.trim() !== '' ||
+                    menuFilters.diet !== null ||
+                    menuFilters.avail !== 'any';
+                  const collapsible = activeCategory === '__all__' && !searching;
+                  const total = cats.reduce(
+                    (sum, category) =>
+                      sum +
+                      category.items.filter(
+                        (item) => !item.variantOf && (activeCategory !== '__all__' || menuMatch(item, category.kind))
+                      ).length,
+                    0
+                  );
+                  // Nothing left after filtering is not an empty section, it is
+                  // a section this search does not concern.
+                  if (total === 0 && (menuFiltersOn || !boardEdit)) return null;
                   return (
                     <details key={token} className="pos-list-section" {...(collapsible ? {} : { open: true })}>
                       <summary
@@ -2901,7 +4340,9 @@ export function App() {
                           if (!collapsible) event.preventDefault();
                         }}
                       >
-                        {folderName ? (
+                        {folderName && hasMark(folderName) ? (
+                          <Mark name={folderName} className="pos-nav-icon pos-list-icon" />
+                        ) : folderName ? (
                           <i className="pos-nav-icon pos-list-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />
                         ) : hasMark(token) ? (
                           <Mark name={token} className="pos-nav-icon pos-list-icon" />
@@ -2915,7 +4356,9 @@ export function App() {
                       </summary>
                       <div className="pos-list-card">
                         {cats.map((category) => {
-                          const rows = category.items.filter((item) => !item.variantOf);
+                          const rows = category.items.filter(
+                            (item) => !item.variantOf && (activeCategory !== '__all__' || menuMatch(item, category.kind))
+                          );
                           if (rows.length === 0) return null;
                           return (
                             <div key={category.name} className="pos-list-subgroup">
@@ -2932,6 +4375,15 @@ export function App() {
                                   >
                                     <i className={`pos-list-dot ${hueClass(hueForCategory(category.name))}`} />
                                     <span>{item.title}</span>
+                                    {(item.dietary ?? []).length > 0 ? (
+                                      <span className="pos-list-diet">
+                                        {parseDishDietary(item.dietary ?? []).map((id) => (
+                                          <i key={id} data-kind={dietaryKind(id)} title={dietaryLabel(id)}>
+                                            {dietaryShort(id)}
+                                          </i>
+                                        ))}
+                                      </span>
+                                    ) : null}
                                     {quantity > 0 ? <em>×{quantity}</em> : null}
                                     <b>{eightySix.has(item.recipeId) ? "86'd" : money(item.priceCents)}</b>
                                     <u>＋</u>
@@ -2945,6 +4397,14 @@ export function App() {
                     </details>
                   );
                 })}
+                {activeCategory === '__all__' && menuFiltersOn && menuShownCount === 0 ? (
+                  <p className="pos-menu-none">
+                    Nothing on the menu matches that.
+                    <button type="button" onClick={() => setMenuFilters({ q: '', kind: 'any', avail: 'any', diet: null })}>
+                      Clear the filters
+                    </button>
+                  </p>
+                ) : null}
                 {activeCategory === '__all__' ? (
                   <button
                     type="button"
@@ -2956,7 +4416,7 @@ export function App() {
                   </button>
                 ) : null}
               </div>
-            ) : !search && activeCategory === HOME_TAB ? (
+            ) : !searchTerm && activeCategory === HOME_TAB ? (
               <div className="pos-home-wrap">
               <div
                 className="pos-board-pager"
@@ -3131,9 +4591,10 @@ export function App() {
                               {hasMark(pin.name) ? <Mark name={pin.name} className="pos-tile-icon" /> : <i className="pos-tile-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />}
                               {pinDisplay(pin, pin.name).main}
                             </span>
-                            {/* Count what this venue can actually open — distinct
-                                dishes, since a folder may hold both venues' copies. */}
-                            <small>{new Set(pin.items.map((id) => resolvePinItem(id)?.recipeId).filter(Boolean)).size} items</small>
+                            <small>
+                              {pin.folders?.length ? `${pin.folders.length} folder${pin.folders.length === 1 ? '' : 's'} · ` : ''}
+                              {folderDishCount(pin)} items
+                            </small>
                           </>
                         )}
                       </button>
@@ -3238,23 +4699,119 @@ export function App() {
                 </div>
               ) : null}
               </div>
-            ) : !search && activeCategory.startsWith('__folder__') ? (
+            ) : !searchTerm && activeCategory.startsWith('__folder__') ? (
               <div className="pos-grid pos-grid-home">
-                <button type="button" className="pos-item pos-item-edit" onClick={() => setActiveCategory(HOME_TAB)}>
-                  <span>← Back</span>
-                  <small>home</small>
-                </button>
                 {(() => {
-                  const folderIndex = Number(activeCategory.slice('__folder__'.length));
-                  const pin = home.pins[folderIndex];
-                  if (!pin || pin.t !== 'f') return null;
+                  // Path token: `__folder__3` = root pin 3, `__folder__3.0`
+                  // = its first subfolder — Back walks up one level at a time.
+                  const path = parseFolderPath(activeCategory) ?? [];
+                  const pin = folderAtPath(home.pins, path);
+                  const parentToken = path.length > 1 ? folderPathToken(path.slice(0, -1)) : HOME_TAB;
+                  const parentName = path.length > 1 ? folderAtPath(home.pins, path.slice(0, -1))?.name ?? 'back' : 'home';
+                  const back = (
+                    <button key="back" type="button" className="pos-item pos-item-edit" onClick={() => setActiveCategory(parentToken)}>
+                      <span>← Back</span>
+                      <small>{parentName}</small>
+                    </button>
+                  );
+                  if (!pin) return back;
+                  const patchFolder = (update: (folder: FolderPin) => FolderPin | null) => {
+                    const board = { ...home, pins: updateFolderAtPath(home.pins, path, update) };
+                    setHome(board);
+                    saveBoard(board);
+                    return board;
+                  };
+                  const subTiles = (pin.folders ?? []).map((sub, subIndex) => {
+                    const subToken = folderPathToken([...path, subIndex]);
+                    const subRenaming = renaming?.kind === 'sub' && renaming.key === subToken;
+                    return (
+                      <button
+                        key={`sub-${subIndex}`}
+                        type="button"
+                        data-fsub-index={subIndex}
+                        className={`pos-item pos-item-pin ${hueClass(sub.c ?? pin.c)} ${boardEdit ? 'is-editing' : ''}`}
+                        style={hueStyle(sub.c ?? pin.c)}
+                        onClick={() => {
+                          if (dragMoved.current) {
+                            dragMoved.current = false;
+                            return;
+                          }
+                          if (subRenaming) return;
+                          setActiveCategory(subToken);
+                        }}
+                      >
+                        {boardEdit ? (
+                          <>
+                            <i
+                              className="pos-pin-x pos-pin-act"
+                              title="Dissolve — its items move up into this folder"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                patchFolder((folder) => {
+                                  const child = folder.folders?.[subIndex];
+                                  if (!child) return folder;
+                                  const folders = [
+                                    ...(folder.folders ?? []).filter((_, i) => i !== subIndex),
+                                    ...(child.folders ?? [])
+                                  ];
+                                  const rebuilt: FolderPin = {
+                                    ...folder,
+                                    items: [...folder.items, ...child.items.filter((id) => !folder.items.includes(id))],
+                                    folders
+                                  };
+                                  if (!folders.length) delete rebuilt.folders;
+                                  return rebuilt;
+                                });
+                              }}
+                            >
+                              ✕
+                            </i>
+                            <i
+                              className="pos-pin-rename pos-pin-act"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setRenaming({ kind: 'sub', key: subToken, value: sub.name });
+                              }}
+                            >
+                              ✎
+                            </i>
+                          </>
+                        ) : null}
+                        {subRenaming ? (
+                          <input
+                            className="pos-pin-rename-input"
+                            autoFocus
+                            defaultValue={renaming.value}
+                            onClick={(event) => event.stopPropagation()}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onBlur={(event) => commitSubRename([...path, subIndex], event.currentTarget.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') commitSubRename([...path, subIndex], event.currentTarget.value);
+                              if (event.key === 'Escape') setRenaming(null);
+                            }}
+                          />
+                        ) : (
+                          <>
+                            <span className={pinDisplay(sub, sub.name).cls}>
+                              {hasMark(sub.name) ? <Mark name={sub.name} className="pos-tile-icon" /> : <i className="pos-tile-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />}
+                              {pinDisplay(sub, sub.name).main}
+                            </span>
+                            <small>
+                              {sub.folders?.length ? `${sub.folders.length} folder${sub.folders.length === 1 ? '' : 's'} · ` : ''}
+                              {folderDishCount(sub)} items
+                            </small>
+                          </>
+                        )}
+                      </button>
+                    );
+                  });
                   // A folder often holds BOTH venues' ids for the same wine —
                   // resolved to this venue's twin they'd render twice. Show
                   // each dish once; edit mode stays raw so the stray copy can
                   // still be seen and removed.
                   const seenResolved = new Set<string>();
                   const asList = pin.look === 'list' && !boardEdit;
-                  return pin.items.map((recipeId, itemIndex) => {
+                  const itemTiles = pin.items.map((recipeId, itemIndex) => {
                     const item = resolvePinItem(recipeId);
                     if (!item) return null;
                     if (!boardEdit) {
@@ -3284,7 +4841,7 @@ export function App() {
                         data-fitem-index={itemIndex}
                         className={`pos-item pos-item-pin ${hueClass(pin.c)} ${boardEdit ? 'is-editing' : ''} ${eightySix.has(item.recipeId) ? 'is-86d' : ''}`}
                         style={hueStyle(pin.c)}
-                                                onPointerDown={boardEdit ? (event) => folderItemPointerDown(event, folderIndex, itemIndex) : undefined}
+                        onPointerDown={boardEdit ? (event) => folderItemPointerDown(event, path, itemIndex) : undefined}
                         onClick={() => {
                           if (boardEdit) {
                             if (dragMoved.current) dragMoved.current = false;
@@ -3317,16 +4874,7 @@ export function App() {
                               title="Remove from this folder"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                const board = {
-                                  ...home,
-                                  pins: home.pins.map((candidate, i) =>
-                                    i === folderIndex && candidate.t === 'f'
-                                      ? { ...candidate, items: candidate.items.filter((candidateId) => candidateId !== recipeId) }
-                                      : candidate
-                                  )
-                                };
-                                setHome(board);
-                                saveBoard(board);
+                                patchFolder((folder) => ({ ...folder, items: folder.items.filter((candidateId) => candidateId !== recipeId) }));
                               }}
                             >
                               ✕
@@ -3338,9 +4886,41 @@ export function App() {
                       </button>
                     );
                   });
+                  const editTiles = boardEdit ? (
+                    <>
+                      {path.length < MAX_FOLDER_DEPTH ? (
+                        <button
+                          key="new-sub"
+                          type="button"
+                          className="pos-item pos-item-edit"
+                          onClick={() => setFolderDraft({ name: '', c: '#4f8f6b', items: [], search: '', at: [...path] })}
+                        >
+                          <span>📁 New folder</span>
+                          <small>inside {pin.name}</small>
+                        </button>
+                      ) : null}
+                      <button
+                        key="add-items"
+                        type="button"
+                        className="pos-item pos-item-edit"
+                        onClick={() => setFolderDraft({ name: pin.name, c: pin.c ?? '#4f8f6b', items: [], search: '', into: [...path] })}
+                      >
+                        <span>＋ Add items</span>
+                        <small>search the menu</small>
+                      </button>
+                    </>
+                  ) : null;
+                  return (
+                    <>
+                      {back}
+                      {subTiles}
+                      {itemTiles}
+                      {editTiles}
+                    </>
+                  );
                 })()}
               </div>
-            ) : !search && activeCategory.startsWith('__group__') ? (
+            ) : !searchTerm && activeCategory.startsWith('__group__') ? (
               <div className="pos-grid-groups">
                 {(() => {
                   const group = tabsConfig.groups.find((candidate) => candidate.name === activeCategory.slice('__group__'.length));
@@ -3350,7 +4930,47 @@ export function App() {
                   const asList = group.look === 'list';
                   const qtyOf = (recipeId: string) =>
                     (order?.lines ?? []).filter((line) => line.recipeId === recipeId).reduce((sum, line) => sum + line.quantity, 0);
-                  return group.cats.map((catName) => {
+                  // Sub-folders of this folder open into their own page; a
+                  // nested folder gets a way back to the one it sits inside.
+                  const subFolders = childNavGroups(tabsConfig, group.name);
+                  const backTo = group.parent ? `__group__${group.parent}` : '__all__';
+                  return (
+                    <>
+                      <button type="button" className="pos-group-back" onClick={() => setActiveCategory(backTo)}>
+                        ‹ {group.parent ?? 'Full menu'}
+                      </button>
+                      {subFolders.length > 0 ? (
+                        <div className="pos-group-subfolders">
+                          {subFolders.map((sub) => {
+                            // The whole subtree, variant children folded
+                            // under their parent — the same way every other
+                            // surface counts a menu.
+                            const count = groupSubtreeCats(tabsConfig, sub.name).reduce(
+                              (sum, catName) =>
+                                sum +
+                                (menu.find((candidate) => candidate.name === catName)?.items.filter((item) => !item.variantOf).length ?? 0),
+                              0
+                            );
+                            return (
+                              <button
+                                key={sub.name}
+                                type="button"
+                                className="pos-group-subfolder"
+                                onClick={() => setActiveCategory(`__group__${sub.name}`)}
+                              >
+                                {hasMark(sub.name) ? (
+                                  <Mark name={sub.name} className="pos-nav-icon" />
+                                ) : (
+                                  <i className="pos-nav-icon" dangerouslySetInnerHTML={{ __html: iconSvg('folder', iconStyle === 'off' ? 'line' : iconStyle) }} />
+                                )}
+                                <span>{sub.name}</span>
+                                <small>{count} item{count === 1 ? '' : 's'}</small>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      {group.cats.map((catName) => {
                     const category = menu.find((candidate) => candidate.name === catName);
                     if (!category) return null;
                     return (
@@ -3358,7 +4978,10 @@ export function App() {
                         <h3 className="pos-group-head">{catName}</h3>
                         {asList ? (
                           <div className="pos-list-rows">
-                            {category.items.map((item) => {
+                            {/* Variant children (a wine's pours, the grilled
+                                twin) fold under their parent tile, as on
+                                every other surface. */}
+                            {category.items.filter((item) => !item.variantOf).map((item) => {
                               const quantity = qtyOf(item.recipeId);
                               return (
                                 <button
@@ -3378,7 +5001,7 @@ export function App() {
                           </div>
                         ) : (
                           <div className="pos-grid">
-                            {category.items.map((item) => (
+                            {category.items.filter((item) => !item.variantOf).map((item) => (
                               <button
                                 key={item.recipeId}
                                 type="button"
@@ -3393,7 +5016,9 @@ export function App() {
                         )}
                       </section>
                     );
-                  });
+                      })}
+                    </>
+                  );
                 })()}
               </div>
             ) : (
@@ -3426,7 +5051,7 @@ export function App() {
                     <small>{eightySix.has(item.recipeId) ? "86'd — sold out" : money(item.priceCents)}</small>
                   </button>
                 ))}
-                {visibleItems.length === 0 ? <p className="pos-muted">No items{search ? ' match' : ''}.</p> : null}
+                {visibleItems.length === 0 ? <p className="pos-muted">No items{searchTerm ? ' match' : ''}.</p> : null}
               </div>
             )}
           </div>
@@ -3477,7 +5102,7 @@ export function App() {
               ) : null}
               {(order?.lines ?? []).length === 0 && !targetCourse ? (
                 <div className="pos-cart-empty">
-                  <img src="/brand/alma-fish.png" alt="" className="pos-fish-empty" />
+                  <img src={ALMA_FISH} alt="" className="pos-fish-empty" />
                   <p className="pos-muted">Tap a course, then tap items — they land in that course.</p>
                 </div>
               ) : null}
@@ -3548,7 +5173,7 @@ export function App() {
                     </span>
                     <span className="pos-line-chips">
                       <button type="button" className="pos-course" onClick={() => cycleCourse(index)}>
-                        {line.course ?? 'Mains'}
+                        {line.course ?? 'NOW'}
                       </button>
                       <button type="button" className="pos-course" onClick={() => cycleSeat(index)}>
                         {line.seat ? `S${line.seat}` : 'S–'}
@@ -3567,11 +5192,35 @@ export function App() {
                     <b>{line.quantity}</b>
                     <button type="button" onClick={() => bumpQty(index, 1)}>+</button>
                   </span>
-                  <span className="pos-line-total">{money(line.unitPriceCents * line.quantity)}</span>
+                  <span className="pos-line-total">
+                    {line.unitPriceCents === 0 && (line.packagedBy || line.notes?.includes('Included in package'))
+                      ? 'incl.'
+                      : money(line.unitPriceCents * line.quantity)}
+                  </span>
                 </div>
               )) : null}
                 </div>
               ))}
+              {giftLines.length > 0 ? (
+                <div className="pos-course-group is-open">
+                  <div className="pos-course-head pos-course-head-static">
+                    <span>Gift cards</span>
+                    <small>
+                      {giftLines.reduce((sum, entry) => sum + entry.line.quantity, 0)} item
+                      {giftLines.length === 1 && giftLines[0]!.line.quantity === 1 ? '' : 's'}
+                    </small>
+                  </div>
+                  {giftLines.map(({ line, index }) => (
+                    <div key={`${line.recipeId ?? 'gift'}-${index}`} className="pos-line">
+                      <span className="pos-line-main">
+                        <span className="pos-line-name">{line.name}</span>
+                        {line.notes ? <small className="pos-line-mods">{line.notes}</small> : null}
+                      </span>
+                      <span className="pos-line-total">{money(line.unitPriceCents * line.quantity)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="pos-cart-foot">
               <div className="pos-sumline">
@@ -3874,10 +5523,29 @@ export function App() {
                       disabled={busy}
                       onClick={() => {
                         setGift({ code: '', balanceCents: null, checking: false, take: '' });
+                        setGiftScan(false);
                         setCharge({ ...charge, stage: 'gift' });
                       }}
                     >
                       Gift card
+                    </button>
+                  ) : null}
+                  {!order.id.startsWith('local-') ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setLoyalty({ handle: '', joinName: '', joining: false, working: false, member: null });
+                        setCharge({ ...charge, stage: 'loyalty' });
+                        const code = order.guest?.loyaltyCode;
+                        if (code) {
+                          void api<LoyaltyMember>(`/api/pos/loyalty/member?handle=${encodeURIComponent(code)}`)
+                            .then((member) => setLoyalty((current) => ({ ...current, member })))
+                            .catch(() => undefined);
+                        }
+                      }}
+                    >
+                      {order.guest?.loyaltyCode ? `Points · ${order.guest.firstName}` : 'Loyalty'}
                     </button>
                   ) : null}
                 </div>
@@ -3886,10 +5554,25 @@ export function App() {
             {charge.stage === 'gift' && order ? (
               <>
                 <h2>Gift card — {money((charge.amountCents ?? balance) + charge.tipCents)}</h2>
+                {gift.balanceCents === null && !gift.checking ? (
+                  <button type="button" className="pos-charge" disabled={busy} onClick={() => setGiftScan(true)}>
+                    ▣ Scan the card
+                  </button>
+                ) : null}
+                {giftScan ? (
+                  <Suspense fallback={null}>
+                    <ScanSheet
+                      onCode={(scanned) => {
+                        setGiftScan(false);
+                        checkGiftCard(scanned);
+                      }}
+                      onClose={() => setGiftScan(false)}
+                    />
+                  </Suspense>
+                ) : null}
                 <input
                   className="pos-tender"
-                  autoFocus
-                  placeholder="Card code (e.g. ALMA-XXXX-XXXX)"
+                  placeholder="Or type the code (e.g. ALMA-XXXX-XXXX)"
                   value={gift.code}
                   onChange={(event) => setGift({ code: event.currentTarget.value.toUpperCase(), balanceCents: null, checking: false, take: '' })}
                 />
@@ -3899,32 +5582,7 @@ export function App() {
                     type="button"
                     className="pos-charge"
                     disabled={busy || gift.checking || gift.code.trim().length < 4}
-                    onClick={() => {
-                      setGift({ ...gift, checking: true });
-                      void api<{ code: string; balanceCents: number; recipientName?: string | null }>(
-                        `/api/pos/gift-card?code=${encodeURIComponent(gift.code.trim())}`
-                      )
-                        .then((card) => {
-                          const outstanding = (charge?.amountCents ?? balance) + (charge?.tipCents ?? 0);
-                          // Default to whichever runs out first, then let staff type over it.
-                          const suggested = Math.min(card.balanceCents, Math.max(0, outstanding));
-                          setGift({
-                            code: card.code,
-                            balanceCents: card.balanceCents,
-                            checking: false,
-                            take: (suggested / 100).toFixed(2),
-                            holder: card.recipientName ?? null
-                          });
-                        })
-                        .catch((err) => {
-                          // Not an ALMA card. Old Gift Up cards are still out
-                          // there, so offer to take it as an outside card with
-                          // the number recorded against the payment rather than
-                          // turning the guest away.
-                          setGift({ ...gift, checking: false, external: true, take: '' });
-                          setError(messageForError(err, 'Could not find that gift card.'));
-                        });
-                    }}
+                    onClick={() => checkGiftCard()}
                   >
                     {gift.checking ? 'Checking…' : 'Check balance'}
                   </button>
@@ -4025,6 +5683,104 @@ export function App() {
                     ))}
                   </div>
                 ) : null}
+              </>
+            ) : null}
+            {charge.stage === 'loyalty' && order ? (
+              <>
+                <h2>Points — {money((charge.amountCents ?? balance) + charge.tipCents)}</h2>
+                {order.guest?.loyaltyCode ? (
+                  loyalty.member ? (
+                    (() => {
+                      const member = loyalty.member;
+                      const outstanding = (charge.amountCents ?? balance) + charge.tipCents;
+                      const minCents = member.minRedeemPoints * member.pointValueCents;
+                      const usable = Math.min(member.creditCents, outstanding);
+                      const belowMin = member.creditCents < minCents;
+                      return (
+                        <>
+                          <p className="pos-change">
+                            {member.firstName} {member.lastName} · {member.points} points = {money(member.creditCents)}
+                          </p>
+                          {belowMin ? (
+                            <p className="pos-muted">
+                              Redemptions start at {member.minRedeemPoints} points ({money(minCents)}) — {member.points} so far. The
+                              points still build on this bill.
+                            </p>
+                          ) : (
+                            <button
+                              type="button"
+                              className="pos-charge"
+                              disabled={busy || usable < 1}
+                              onClick={() => void takeLoyaltyPayment(usable, usable >= outstanding)}
+                            >
+                              {usable >= outstanding
+                                ? `Pay ${money(outstanding)} with points`
+                                : `Use all ${money(usable)} of points`}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="pos-ghost"
+                            disabled={busy}
+                            onClick={() => {
+                              void api<Order>(`/api/pos/orders/${order.id}/loyalty`, { method: 'DELETE' })
+                                .then((updatedOrder) => {
+                                  setOrder(updatedOrder);
+                                  setLoyalty({ handle: '', joinName: '', joining: false, working: false, member: null });
+                                })
+                                .catch((err) => setError(messageForError(err, 'Could not take them off.')));
+                            }}
+                          >
+                            Different member
+                          </button>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <p className="pos-muted">Fetching their points…</p>
+                  )
+                ) : (
+                  <>
+                    <p className="pos-muted">
+                      Phone number or LOY- code. Points build on every bill their name is on — whatever way it is paid.
+                    </p>
+                    <input
+                      className="pos-tender"
+                      inputMode="tel"
+                      placeholder="Phone or LOY-XXXXXX"
+                      value={loyalty.handle}
+                      onChange={(event) => setLoyalty((current) => ({ ...current, handle: event.currentTarget.value, joining: false }))}
+                    />
+                    {loyalty.joining ? (
+                      <>
+                        <p className="pos-muted">Not a member yet — first name and they are in.</p>
+                        <input
+                          className="pos-tender"
+                          placeholder="First name"
+                          value={loyalty.joinName}
+                          onChange={(event) => setLoyalty((current) => ({ ...current, joinName: event.currentTarget.value }))}
+                        />
+                        <button
+                          type="button"
+                          className="pos-charge"
+                          disabled={loyalty.working || loyalty.joinName.trim().length === 0}
+                          onClick={() => void joinLoyaltyAndAttach()}
+                        >
+                          {loyalty.working ? 'Joining…' : 'Join and put on the bill'}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="pos-charge"
+                        disabled={loyalty.working || loyalty.handle.trim().length < 4}
+                        onClick={() => void attachLoyalty(loyalty.handle)}
+                      >
+                        {loyalty.working ? 'Looking…' : 'Find member'}
+                      </button>
+                    )}
+                  </>
+                )}
               </>
             ) : null}
             {charge.stage === 'cash' ? (
@@ -4140,6 +5896,12 @@ export function App() {
               Paid — {receipt.tableLabel ? `Table ${receipt.tableLabel}` : `order #${receipt.orderNumber}`}
             </h2>
             {receipt.changeCents ? <p className="pos-change">Change due: {money(receipt.changeCents)}</p> : null}
+            {(receipt as Order & { loyaltyPointsEarned?: number | null }).loyaltyPointsEarned ? (
+              <p className="pos-change">
+                ★ {(receipt as Order & { loyaltyPointsEarned?: number | null }).loyaltyPointsEarned} points earned
+                {receipt.guest?.firstName ? ` for ${receipt.guest.firstName}` : ''}
+              </p>
+            ) : null}
             <div className="pos-receipt-lines">
               {receipt.lines.map((line, index) => (
                 <div key={index}>
@@ -4305,13 +6067,21 @@ export function App() {
                           type="button"
                           className="pos-ghost"
                           onClick={() => {
-                            void api<Order>(`/api/pos/orders/${row.id}/reopen`, { method: 'POST' })
-                              .then((reopened) => {
-                                setOrder(reopened);
-                                setBills(null);
-                                setView('register');
-                              })
-                              .catch((err) => setError(messageForError(err, 'Could not reopen.')));
+                            const attempt = (pin?: string) => {
+                              void api<Order>(`/api/pos/orders/${row.id}/reopen`, { method: 'POST', body: JSON.stringify({ managerPin: pin }) })
+                                .then((reopened) => {
+                                  setManagerGate(null);
+                                  setOrder(reopened);
+                                  setBills(null);
+                                  setView('register');
+                                })
+                                .catch((err) => {
+                                  const message = messageForError(err, 'Could not reopen.');
+                                  if (/manager/i.test(message)) setManagerGate({ message, pin: '', retry: attempt });
+                                  else setError(message);
+                                });
+                            };
+                            attempt();
                           }}
                         >
                           Reopen
@@ -4327,7 +6097,25 @@ export function App() {
                           Refund
                         </button>
                       </>
-                    ) : null}
+                    ) : (() => {
+                      // An OPEN bill paid past its total (edited down after a
+                      // payment) owes the guest change — offer the refund here,
+                      // pre-filled with exactly the overpayment.
+                      const takenAll = row.payments.reduce((sum, payment) => sum + payment.amountCents + payment.tipCents, 0);
+                      const overCents = takenAll - (row.totalCents + row.tipCents);
+                      return row.status === 'OPEN' && overCents > 0 ? (
+                        <button
+                          type="button"
+                          className="pos-ghost"
+                          onClick={() => {
+                            setBills(null);
+                            setRefunding({ order: row, amount: String(overCents / 100), reason: '', method: 'REFUND' });
+                          }}
+                        >
+                          Refund {money(overCents)} over
+                        </button>
+                      ) : null;
+                    })()}
                     <button
                       type="button"
                       className="pos-ghost"
@@ -4710,28 +6498,167 @@ export function App() {
         </div>
       ) : null}
 
+      {helpOpen ? (
+        <div className="pos-modal" role="dialog" onClick={closeHelp}>
+          <div className="pos-modal-panel pos-help-panel" onClick={(event) => event.stopPropagation()}>
+            <h2>Welcome to ALMA POS</h2>
+            <p className="pos-help-lead">
+              {helpOperator ? `Hi ${helpOperator.split(' ')[0]} — here` : 'Here'}&apos;s the 30-second tour. Everything is
+              already set up; this is just how it works.
+            </p>
+            <div className="pos-help-list">
+              <div className="pos-help-item">
+                <strong>★ Home is YOUR board</strong>
+                <span>
+                  It&apos;s saved to your name, not to this till. Sign into any register at either venue and your board
+                  comes with you — and changes you make only ever change yours.
+                </span>
+              </div>
+              <div className="pos-help-item">
+                <strong>✎ Make it yours</strong>
+                <span>
+                  The last tile on Home is “✎ Edit this page”: drag tiles around, recolour them, remove them. “＋ Add
+                  pins” searches the whole menu, and 📁 folders keep it tidy — folders can even live inside folders.
+                </span>
+              </div>
+              <div className="pos-help-item">
+                <strong>Search beats browsing</strong>
+                <span>Mid-rush, type a few letters into “Search menu…” up top and tap the dish — no tab-hunting.</span>
+              </div>
+              <div className="pos-help-item">
+                <strong>Sale · Tables · Bills</strong>
+                <span>
+                  Sale is the register. Tables is every open bill on the floor — yours and everyone else&apos;s. Bills is
+                  the history: reprints, refunds, finding that table from earlier.
+                </span>
+              </div>
+              <div className="pos-help-item">
+                <strong>Loyalty</strong>
+                <span>
+                  On the charge screen, Loyalty joins a guest up with just a phone number, and their points pay bills like a
+                  gift card. Points build on every bill their name is on, however it is paid.
+                </span>
+              </div>
+              <div className="pos-help-item">
+                <strong>Clock-in kiosk</strong>
+                <span>
+                  Open <em>alma-pos.web.app/#clock</em> on a wall tablet (signed in as this venue) and staff clock in, out and
+                  breaks with their PIN — no Deputy needed.
+                </span>
+              </div>
+              <div className="pos-help-item">
+                <strong>The rest of ALMA</strong>
+                <span>The nine dots up top hop to Staff, Stock, Gift cards and the other apps — already signed in.</span>
+              </div>
+            </div>
+            <a
+              className="pos-help-support"
+              href={`mailto:timchristensen89+almapos@gmail.com?subject=${encodeURIComponent(`ALMA POS support — ${venue}`)}&body=${encodeURIComponent(`Hi — I need a hand with ALMA POS.\n\nWhat happened:\n\n\nWhat I expected:\n\n\n— ${operatorName || 'someone'} on the ${venue} till`)}`}
+            >
+              <strong>✉ Stuck? Email support</strong>
+              <span>Opens an email straight to ALMA&apos;s developer — just say what happened.</span>
+            </a>
+            <p className="pos-help-foot">Tap ? in the top bar any time to read this again.</p>
+            <button type="button" className="pos-help-go" onClick={closeHelp}>
+              Got it — let&apos;s go
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {appsOpen ? (
+        <div className="pos-modal" role="dialog" onClick={() => setAppsOpen(false)}>
+          <div className="pos-modal-panel" onClick={(event) => event.stopPropagation()}>
+            <h2>ALMA apps</h2>
+            <p className="pos-apps-group">This register</p>
+            <div className="pos-apps-list">
+              {POS_SURFACES.map((surface) => (
+                <button
+                  key={surface.id}
+                  type="button"
+                  onClick={() => {
+                    setAppsOpen(false);
+                    if (surface.ownWindow) {
+                      // A named window, so tapping Live twice raises the one
+                      // that's already open instead of stacking a second.
+                      const opened = window.open(
+                        `${window.location.origin}${window.location.pathname}${surface.hash}`,
+                        `alma-${surface.id}`
+                      );
+                      // Popup blocked, or a phone that has no second window to
+                      // give: fall through to the ordinary navigation rather
+                      // than leaving the tap doing nothing. Live's own header
+                      // knows which case it is in and offers the way back.
+                      if (opened) {
+                        opened.focus();
+                        return;
+                      }
+                    }
+                    // main.tsx reloads on hashchange, so this IS the navigation.
+                    window.location.hash = surface.hash;
+                  }}
+                >
+                  <strong>{surface.label}</strong>
+                  <small>{surface.hint}</small>
+                </button>
+              ))}
+            </div>
+            <p className="pos-apps-group">The suite</p>
+            <div className="pos-apps-list">
+              {SUITE_APP_LINKS.map((app) => (
+                <button
+                  key={app.id}
+                  type="button"
+                  disabled={appsBusy !== null}
+                  onClick={() => {
+                    setAppsBusy(app.id);
+                    void openSuiteApp(app.href).finally(() => setAppsBusy(null));
+                  }}
+                >
+                  <strong>{app.label}{appsBusy === app.id ? ' …' : ''}</strong>
+                  <small>{app.hint}</small>
+                </button>
+              ))}
+            </div>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setAppsOpen(false)}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {folderDraft ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
-            <h2>New folder</h2>
-            <input
-              className="pos-tender"
-              placeholder="Folder name (e.g. Happy hour, Kids)"
-              value={folderDraft.name}
-              onChange={(event) => setFolderDraft({ ...folderDraft, name: event.currentTarget.value })}
-            />
-            <span className="pos-swatches pos-swatches-row">
-              {['#4f8f6b', '#7f9ac4', '#d9a05a', '#c4655a', '#a98ac4', '#9aa4ab'].map((colour) => (
-                <button
-                  key={colour}
-                  type="button"
-                  className={`pos-swatch ${folderDraft.c === colour ? 'is-on' : ''}`}
-                  style={{ background: colour }}
-                  title={colour}
-                  onClick={() => setFolderDraft({ ...folderDraft, c: colour })}
+            <h2>
+              {folderDraft.into
+                ? `Add items to ${folderAtPath(home.pins, folderDraft.into)?.name ?? 'folder'}`
+                : folderDraft.at
+                  ? `New folder in ${folderAtPath(home.pins, folderDraft.at)?.name ?? 'folder'}`
+                  : 'New folder'}
+            </h2>
+            {folderDraft.into ? null : (
+              <>
+                <input
+                  className="pos-tender"
+                  placeholder="Folder name (e.g. Happy hour, Kids)"
+                  value={folderDraft.name}
+                  onChange={(event) => setFolderDraft({ ...folderDraft, name: event.currentTarget.value })}
                 />
-              ))}
-            </span>
+                <span className="pos-swatches pos-swatches-row">
+                  {['#4f8f6b', '#7f9ac4', '#d9a05a', '#c4655a', '#a98ac4', '#9aa4ab'].map((colour) => (
+                    <button
+                      key={colour}
+                      type="button"
+                      className={`pos-swatch ${folderDraft.c === colour ? 'is-on' : ''}`}
+                      style={{ background: colour }}
+                      title={colour}
+                      onClick={() => setFolderDraft({ ...folderDraft, c: colour })}
+                    />
+                  ))}
+                </span>
+              </>
+            )}
             <input
               className="pos-tender"
               placeholder="Search items to add…"
@@ -4765,21 +6692,44 @@ export function App() {
             <button
               type="button"
               className="pos-charge"
-              disabled={!folderDraft.name.trim() || folderDraft.items.length === 0}
+              disabled={
+                folderDraft.into
+                  ? folderDraft.items.length === 0
+                  : // A subfolder may start empty (drag items in from its
+                    // parent later); a root folder still needs at least one.
+                    !folderDraft.name.trim() || (!folderDraft.at && folderDraft.items.length === 0)
+              }
               onClick={() => {
-                const next = {
-                  ...home,
-                  pins: [...home.pins, { t: 'f' as const, name: folderDraft.name.trim(), c: folderDraft.c, items: folderDraft.items }]
-                };
+                const draft = folderDraft;
+                let next: HomeConfig;
+                if (draft.into) {
+                  next = {
+                    ...home,
+                    pins: updateFolderAtPath(home.pins, draft.into, (folder) => ({
+                      ...folder,
+                      items: [...folder.items, ...draft.items.filter((id) => !folder.items.includes(id))]
+                    }))
+                  };
+                } else if (draft.at) {
+                  const child: FolderPin = { t: 'f', name: draft.name.trim(), c: draft.c, items: draft.items };
+                  next = {
+                    ...home,
+                    pins: updateFolderAtPath(home.pins, draft.at, (folder) => ({ ...folder, folders: [...(folder.folders ?? []), child] }))
+                  };
+                } else {
+                  next = {
+                    ...home,
+                    pins: [...home.pins, { t: 'f' as const, name: draft.name.trim(), c: draft.c, items: draft.items }]
+                  };
+                }
                 setHome(next);
                 setFolderDraft(null);
-                void api('/api/pos/homescreen', {
-                  method: 'PUT',
-                  body: JSON.stringify({ userKey, buttons: next.buttons, pins: next.pins, updatedBy: operatorName })
-                }).catch(() => undefined);
+                saveBoard(next);
               }}
             >
-              Create folder ({folderDraft.items.length} items)
+              {folderDraft.into
+                ? `Add ${folderDraft.items.length} item${folderDraft.items.length === 1 ? '' : 's'}`
+                : `Create folder (${folderDraft.items.length} items)`}
             </button>
             <button type="button" className="pos-ghost pos-modal-close" onClick={() => setFolderDraft(null)}>
               Cancel
@@ -4788,6 +6738,182 @@ export function App() {
         </div>
       ) : null}
 
+      {banquet ? (
+        (() => {
+          const { plan, covers, step, picks } = banquet;
+          const asking = askableCourses(plan);
+          const course = step >= 0 ? asking[step] ?? null : null;
+          const owed = course ? banquetOwed(course, covers) : 0;
+          const chosen = course ? banquetChosen(course.id) : 0;
+          const left = owed - chosen;
+          const last = step === asking.length - 1;
+          return (
+            <div className="pos-modal" role="dialog">
+              <div className="pos-modal-panel pos-banquet">
+                <div className="pos-banquet-head">
+                  <h2>{plan.title}</h2>
+                  {covers > 0 ? (
+                    <span className="pos-banquet-covers">
+                      {covers} {covers === 1 ? 'cover' : 'covers'}
+                      {plan.salePriceCents ? ` · ${money(plan.salePriceCents)} each` : ''}
+                    </span>
+                  ) : null}
+                </div>
+
+                {course === null ? (
+                  // How many are eating. Everything after this counts against
+                  // it, so it is the one thing worth a screen of its own.
+                  <div className="pos-banquet-covers-step">
+                    <p className="pos-muted">How many are eating?</p>
+                    <div className="pos-banquet-quick">
+                      {[2, 4, 6, 8, 10, 12, 15, 18, 20, 25, 30, 40].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          className={covers === n ? 'is-on' : ''}
+                          onClick={() => setBanquet({ ...banquet, covers: n })}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="pos-banquet-stepper">
+                      <button type="button" onClick={() => setBanquet({ ...banquet, covers: Math.max(0, covers - 1) })}>
+                        −
+                      </button>
+                      <input
+                        className="pos-tender"
+                        inputMode="numeric"
+                        value={covers > 0 ? String(covers) : ''}
+                        placeholder="0"
+                        onChange={(event) => {
+                          const value = Number(event.currentTarget.value.replace(/\D/g, ''));
+                          setBanquet({ ...banquet, covers: Number.isFinite(value) ? Math.min(200, value) : 0 });
+                        }}
+                      />
+                      <button type="button" onClick={() => setBanquet({ ...banquet, covers: Math.min(200, covers + 1) })}>
+                        +
+                      </button>
+                    </div>
+                    {plan.fixed.length > 0 ? (
+                      <p className="pos-banquet-fixed">
+                        Everyone gets: {plan.fixed.map((component) => component.name).join(' · ')}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <>
+                    <p className="pos-muted pos-banquet-ask">
+                      {course.name} — {course.pick === 1 ? 'one each' : `${course.pick} each`}
+                      {course.perGuests && course.perGuests > 1
+                        ? `, shared between ${course.perGuests}`
+                        : ''}
+                    </p>
+                    <div className="pos-banquet-options">
+                      {course.options.map((option) => {
+                        const heads = picks[course.id]?.[option.recipeId] ?? 0;
+                        const off = eightySix.has(option.recipeId);
+                        return (
+                          <div key={option.id} className={`pos-banquet-option${heads > 0 ? ' is-on' : ''}${off ? ' is-86' : ''}`}>
+                            <button
+                              type="button"
+                              className="pos-banquet-option-main"
+                              disabled={off || left <= 0}
+                              onClick={() => banquetPick(course, option.recipeId, 1)}
+                            >
+                              <span className="pos-banquet-option-name">{option.title}</span>
+                              <span className="pos-banquet-option-meta">
+                                {off
+                                  ? "86'd"
+                                  : option.supplementCents > 0
+                                    ? `+${money(option.supplementCents)}`
+                                    : option.salePriceCents
+                                      ? `${money(option.salePriceCents)} à la carte`
+                                      : ''}
+                              </span>
+                              {heads > 0 ? <span className="pos-banquet-count">{heads}</span> : null}
+                              {heads > 0 && banquetPortions(course, heads) !== heads ? (
+                                <span className="pos-banquet-portions">
+                                  {banquetPortions(course, heads)} to plate
+                                </span>
+                              ) : null}
+                            </button>
+                            <button
+                              type="button"
+                              className="pos-banquet-less"
+                              aria-label={`One fewer ${option.title}`}
+                              disabled={heads <= 0}
+                              onClick={() => banquetPick(course, option.recipeId, -1)}
+                            >
+                              −
+                            </button>
+                            <button
+                              type="button"
+                              className="pos-banquet-rest"
+                              disabled={off || left <= 0}
+                              onClick={() => banquetFill(course, option.recipeId)}
+                            >
+                              Rest get this
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                <p className={`pos-banquet-progress${course && left === 0 ? ' is-done' : ''}`}>
+                  {course === null
+                    ? covers > 0
+                      ? asking.length === 0
+                        ? 'Nothing to choose — ring it and go'
+                        : `${asking.length} ${asking.length === 1 ? 'course' : 'courses'} to choose`
+                      : 'Set the number of covers to start'
+                    : left === 0
+                      ? `All ${owed} chosen`
+                      : `${chosen} of ${owed} chosen · ${left} to go`}
+                </p>
+
+                <div className="pos-banquet-actions">
+                  <button
+                    type="button"
+                    className="pos-ghost"
+                    onClick={() => (step <= -1 ? setBanquet(null) : setBanquet({ ...banquet, step: step - 1 }))}
+                  >
+                    {step <= -1 ? 'Cancel' : 'Back'}
+                  </button>
+                  <button
+                    type="button"
+                    className="pos-charge"
+                    // The guard that stops half-counted tables reaching the
+                    // kitchen: you cannot move on until the heads add up.
+                    disabled={busy || (course === null ? covers <= 0 : left !== 0)}
+                    onClick={() => {
+                      if (course === null) {
+                        // A menu with nothing to choose is just an order —
+                        // ring it and be done.
+                        if (asking.length === 0) commitBanquet();
+                        else setBanquet({ ...banquet, step: 0 });
+                        return;
+                      }
+                      if (last) commitBanquet();
+                      else setBanquet({ ...banquet, step: step + 1 });
+                    }}
+                  >
+                    {course === null
+                      ? asking.length === 0
+                        ? 'Add to bill'
+                        : 'Start'
+                      : last
+                        ? 'Add to bill'
+                        : `Next: ${asking[step + 1]?.name ?? ''}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()
+      ) : null}
       {modSheet ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
@@ -4921,6 +7047,93 @@ export function App() {
         </div>
       ) : null}
 
+      {giftSale ? (
+        <div className="pos-modal" role="dialog">
+          <div className="pos-modal-panel">
+            <h2>Sell a gift card</h2>
+
+            <div className="pos-reason-list" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {[50, 100, 150, 200, 250].map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  className={Number(giftSale.amountDollars) === amount ? 'pos-chip is-on' : 'pos-chip'}
+                  onClick={() => setGiftSale({ ...giftSale, amountDollars: String(amount) })}
+                >
+                  ${amount}
+                </button>
+              ))}
+            </div>
+            <input
+              className="pos-tender"
+              inputMode="decimal"
+              placeholder="Or another amount"
+              value={giftSale.amountDollars}
+              onChange={(event) => setGiftSale({ ...giftSale, amountDollars: event.currentTarget.value })}
+            />
+
+            <input
+              className="pos-tender"
+              placeholder="Who is it for? (optional)"
+              value={giftSale.recipientName}
+              onChange={(event) => setGiftSale({ ...giftSale, recipientName: event.currentTarget.value })}
+            />
+            <input
+              className="pos-tender"
+              type="email"
+              inputMode="email"
+              autoCapitalize="off"
+              autoCorrect="off"
+              placeholder="Their email — we send the card here"
+              value={giftSale.recipientEmail}
+              onChange={(event) => setGiftSale({ ...giftSale, recipientEmail: event.currentTarget.value })}
+            />
+
+            <label className="pos-check-row">
+              <input
+                type="checkbox"
+                checked={giftSale.physical}
+                onChange={(event) => setGiftSale({ ...giftSale, physical: event.currentTarget.checked, code: '' })}
+              />
+              They are taking a physical card
+            </label>
+            {giftSale.physical ? (
+              <>
+                <input
+                  className="pos-tender"
+                  placeholder="Card number — leave blank and we'll make one up"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  value={giftSale.code}
+                  onChange={(event) => setGiftSale({ ...giftSale, code: event.currentTarget.value.toUpperCase() })}
+                />
+                <p className="pos-hint">
+                  Type the number already printed on the card, or leave it blank and write the number we generate onto a
+                  blank one. Either way the card only goes live once the bill is paid.
+                </p>
+              </>
+            ) : null}
+
+            <p className="pos-hint">
+              This goes on the bill now and is charged like anything else. The card itself is created, and the email
+              sent, the moment the bill is paid — never before, so an abandoned sale cannot leave a live card behind.
+            </p>
+
+            <button
+              type="button"
+              className="pos-charge"
+              disabled={giftSale.saving || !giftSale.amountDollars.trim()}
+              onClick={() => void addGiftCardToBill()}
+            >
+              {giftSale.saving ? 'Adding…' : `Add $${giftSale.amountDollars.trim() || '0'} to the bill`}
+            </button>
+            <button type="button" className="pos-ghost pos-modal-close" onClick={() => setGiftSale(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {wastage ? (
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
@@ -4946,6 +7159,16 @@ export function App() {
                       {item.title}
                     </button>
                   ))}
+                {/* Most real wastage is not a menu tile — a dropped tray of
+                    prep, a blown keg, tomorrow's fish. The typed name is a
+                    valid item; matching a tile only adds the recipe link. */}
+                <button
+                  type="button"
+                  className="pos-wastage-freetext"
+                  onClick={() => setWastage({ ...wastage, recipeId: '', itemName: wastage.search.trim() })}
+                >
+                  Use “{wastage.search.trim()}” as typed
+                </button>
               </div>
             ) : null}
             <input
@@ -4956,7 +7179,15 @@ export function App() {
               onChange={(event) => setWastage({ ...wastage, quantity: event.currentTarget.value })}
             />
             <div className="pos-reason-list">
-              {(reasons.WASTAGE ?? []).map((reason) => (
+              {/* The reason list comes from the API; offline that map is
+                  empty and the button dead-locked. This fallback mirrors the
+                  server's ADJUST_REASONS.WASTAGE seed VERBATIM — the server
+                  validates the reason against that list, so an invented
+                  fallback would record nothing. */}
+              {(reasons.WASTAGE?.length
+                ? reasons.WASTAGE
+                : ['Dropped / spilled', 'Kitchen error', 'Wrong order', 'Expired / off', 'Customer return', 'Over-prepped', 'Training']
+              ).map((reason) => (
                 <button
                   key={reason}
                   type="button"
@@ -5277,7 +7508,7 @@ export function App() {
       {lockScreen ? (
         <div className="pos-modal pos-lock" role="dialog">
           <div className="pos-modal-panel">
-            <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" />
+            <img src={ALMA_MARK} alt="" className="pos-mark" />
             <h2>Register locked</h2>
             <p className="pos-muted">Idle for a minute — the bill is saved. Enter your staff code to keep going.</p>
             <input
@@ -5614,6 +7845,16 @@ export function App() {
                 <span>Change an item price</span>
                 <em>override one line's price</em>
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBillActions(false);
+                  setWastage({ search: '', recipeId: '', itemName: '', quantity: '1', reason: '' });
+                }}
+              >
+                <span>Record wastage</span>
+                <em>dropped, spilled or binned — comes off stock, not this bill</em>
+              </button>
             </div>
 
             <p className="pos-actions-head">This bill</p>
@@ -5752,7 +7993,7 @@ export function App() {
         <div className="pos-modal" role="dialog">
           <div className="pos-modal-panel">
             <h2>{variantSheet.title}</h2>
-            <p className="pos-muted">Which pour?</p>
+            <p className="pos-muted">Which one?</p>
             <div className="pos-variant-list">
               {(variantSheet.variants ?? []).map((option) => (
                 <button
@@ -5761,7 +8002,16 @@ export function App() {
                   className={eightySix.has(option.recipeId) ? 'is-86d' : ''}
                   onClick={() => {
                     setVariantSheet(null);
-                    addItem({ recipeId: option.recipeId, title: option.title, priceCents: option.priceCents, venue: option.venue });
+                    // printTitle rides along so the kitchen sees the
+                    // preparation ("Battered Barramundi Taco"), not the
+                    // parent tile's name.
+                    addItem({
+                      recipeId: option.recipeId,
+                      title: option.title,
+                      printTitle: option.printTitle ?? null,
+                      priceCents: option.priceCents,
+                      venue: option.venue
+                    });
                   }}
                 >
                   <span>{option.label}</span>
@@ -6068,21 +8318,29 @@ export function App() {
             </details>
             <details className="pos-acc">
               <summary>
-                Training <small>{training ? 'ON' : 'off'}</small>
+                Training <small>{trainingLocked ? 'ON — this account' : training ? 'ON' : 'off'}</small>
               </summary>
               <div className="pos-acc-body">
-                <label className="pos-check-row">
-                  <input
-                    type="checkbox"
-                    checked={training}
-                    onChange={() => {
-                      const next = !training;
-                      setTraining(next);
-                      localStorage.setItem('alma.pos.training', next ? '1' : '0');
-                    }}
-                  />
-                  Training mode — practice sales that never post
-                </label>
+                {trainingLocked ? (
+                  <p className="pos-hint">
+                    This account is a training till. Every bill it opens is a practice sale — no takings, no drawer, no
+                    reports, nothing to the kitchen — and card terminals and gift cards are switched off on it. It cannot
+                    be turned off from here; an admin changes it on the staff profile.
+                  </p>
+                ) : (
+                  <label className="pos-check-row">
+                    <input
+                      type="checkbox"
+                      checked={trainingSwitch}
+                      onChange={() => {
+                        const next = !trainingSwitch;
+                        setTrainingSwitch(next);
+                        localStorage.setItem('alma.pos.training', next ? '1' : '0');
+                      }}
+                    />
+                    Training mode — practice sales that never post
+                  </label>
+                )}
               </div>
             </details>
             <button
@@ -7149,7 +9407,7 @@ function SignIn({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
   return (
     <div className="pos-center">
       <div className="pos-signin">
-        <img src="/brand/alma-a-mark.png" alt="" className="pos-mark pos-signin-mark" />
+        <img src={ALMA_MARK} alt="" className="pos-mark pos-signin-mark" />
         <h1>ALMA POS</h1>
         {bounced ? (
           <>

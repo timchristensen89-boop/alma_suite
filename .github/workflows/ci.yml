@@ -1,9 +1,10 @@
 name: CI
 
+# Manual-only while the Actions minutes are exhausted: every pull_request/push
+# run was failing at queue time and emailing a failure notice. Restore the
+# pull_request + push triggers when minutes are topped up.
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 # Cancel duplicate runs for the same PR / push (saves Actions minutes).
 concurrency:
@@ -45,6 +46,85 @@ jobs:
 
       - name: Typecheck all packages
         run: pnpm typecheck
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Same prerequisites as the typecheck job: the Prisma client and the
+      # internal type declarations the test files import through @alma/*.
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Build internal type declarations
+        run: pnpm --filter @alma/shared --filter @alma/db build
+
+      # The pure suites — no database required. The seven DB-bound stocktake
+      # cases self-skip without DATABASE_URL (see the test file); everything
+      # else must pass. ~900 cases, well under a minute.
+      # One line on purpose: with `>-`, continuation lines indented deeper
+      # than the first are kept literal, so the step ran `pnpm --filter X`
+      # with no command and died with "Unknown option: 'recursive'".
+      - name: Run tests
+        run: pnpm --filter @alma/api --filter @alma/stock-api --filter @alma/stock-web --filter @alma/ui --filter @alma/db test
+
+  frontend-build:
+    name: Frontend builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Build internal type declarations
+        run: pnpm --filter @alma/shared --filter @alma/db build
+
+      # Every user-facing app must BUILD on every PR — typecheck alone missed
+      # per-app tsconfig differences and vite-level breakage, so a merge could
+      # pass CI and still fail on the deploy machine. Production env vars come
+      # from each app's committed .env.production or its example.
+      - name: Prime production env for apps without a committed one
+        run: |
+          for app in apps/*/; do
+            if [ -f "$app/.env.production.example" ] && [ ! -f "$app/.env.production" ]; then
+              cp "$app/.env.production.example" "$app/.env.production"
+            fi
+          done
+
+      # One line for the same reason as the test step above.
+      - name: Build the frontends
+        run: pnpm --filter @alma/pos-web --filter @alma/staff-web --filter @alma/giftcards-web --filter @alma/reserve-web --filter @alma/stock-web build
 
   domain-boundaries:
     name: Domain boundary guard (warn)

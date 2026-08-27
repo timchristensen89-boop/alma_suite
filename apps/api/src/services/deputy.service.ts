@@ -21,6 +21,7 @@ import type { AuthUser } from '@alma/shared';
 import type { IntegrationConnection } from '@prisma/client';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
+import { deputyBreakMinutes, deputyIsLeave, deputyWorkDate } from '../lib/deputy-timesheet.js';
 import {
   decryptIntegrationSecret,
   encryptIntegrationSecret
@@ -1084,6 +1085,10 @@ type DeputyTimesheet = {
   TotalTime?: number;
   Cost?: number;
   OperationalUnit?: number;
+  // Deputy files approved leave as timesheets too: IsLeave with the rule that
+  // granted it. See ../lib/deputy-timesheet.ts for why these matter.
+  IsLeave?: boolean | number;
+  LeaveRule?: number | null;
   IsInProgress?: boolean;
   Discarded?: boolean;
   TimeApproved?: boolean | number;
@@ -1097,12 +1102,6 @@ type TimesheetSyncOptions = {
   lookbackDays?: number;
   lookforwardDays?: number;
 };
-
-// Deputy reports Mealbreak in seconds on the Timesheet resource.
-function coerceBreakMinutes(value: number | string | undefined): number {
-  const seconds = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(seconds) ? Math.max(0, Math.round(seconds / 60)) : 0;
-}
 
 export async function syncTimesheets(
   connection: IntegrationConnection,
@@ -1144,6 +1143,28 @@ export async function syncTimesheets(
   let updated = 0;
   const skipped: Array<{ id: number; reason: string }> = [];
   const staffCandidates = await loadStaffCandidates();
+
+  // The leave rule's name ("Annual Leave", "Personal/Carer's Leave") is the
+  // only human-readable thing Deputy knows about a leave timesheet. Fetched
+  // once, and only when this window actually contains leave; a failure just
+  // means rows say "Leave" instead of which kind.
+  let leaveRuleNames: Map<number, string> | null = null;
+  const leaveKindFor = async (ruleId: number | null | undefined): Promise<string> => {
+    if (ruleId == null) return 'Leave';
+    if (!leaveRuleNames) {
+      try {
+        const rules = await apiPost<Array<{ Id: number; Name?: string }>>(connection, '/resource/LeaveRule/QUERY', { max: 500 });
+        leaveRuleNames = new Map(
+          (Array.isArray(rules) ? rules : [])
+            .filter((rule) => rule?.Id != null)
+            .map((rule) => [rule.Id, (rule.Name ?? '').trim()])
+        );
+      } catch {
+        leaveRuleNames = new Map();
+      }
+    }
+    return leaveRuleNames.get(ruleId) || 'Leave';
+  };
 
   for (const ts of Array.isArray(sheets) ? sheets : []) {
     if (ts.Discarded) {
@@ -1193,32 +1214,49 @@ export async function syncTimesheets(
     }
 
     const deputyTimesheetId = `deputy-${ts.Id}`;
-    const breakMinutes = coerceBreakMinutes(ts.Mealbreak);
+    const breakMinutes = deputyBreakMinutes(ts);
+    const isLeave = deputyIsLeave(ts);
+    const leaveKind = isLeave ? await leaveKindFor(ts.LeaveRule) : null;
     const approved = Boolean(ts.TimeApproved);
     const noteParts = [
       'Deputy sync: timesheet',
       `Deputy timesheet id: ${ts.Id}`,
+      isLeave ? `Leave: ${leaveKind}` : null,
       typeof ts.TotalTime === 'number' ? `Deputy hours: ${ts.TotalTime}` : null,
       typeof ts.Cost === 'number' && ts.Cost > 0 ? `Deputy cost: ${ts.Cost}` : null
     ].filter(Boolean);
+
+    const existing = await prisma.timesheet.findUnique({
+      where: { deputyTimesheetId },
+      select: { id: true, status: true }
+    });
+    // EXPORTED is OUR bookkeeping — the Xero push wrote a draft — and Deputy
+    // knows nothing about it. Writing the Deputy status over it made every
+    // pushed week eligible to push again after the nightly sync, which is how
+    // an employee ends up with competing drafts. A shift UN-approved in
+    // Deputy still downgrades: that is a person disputing hours, and it must
+    // block the next push until re-approved.
+    const status =
+      existing?.status === 'EXPORTED' && approved ? 'EXPORTED' : approved ? 'APPROVED' : 'SUBMITTED';
 
     const data = {
       staffProfileId: profile.id,
       venue: venue || null,
       area: area || null,
       roleTitle: area || profile.roleTitle,
-      workDate: clockInAt,
+      // The DAY worked, pinned in the venue's zone — not the raw clock-in
+      // instant, whose UTC date is the day before for a weekend morning and
+      // pushed those hours to the wrong award rate. clockInAt/clockOutAt keep
+      // the real times.
+      workDate: deputyWorkDate(clockInAt),
       clockInAt,
       clockOutAt,
       breakMinutes,
-      status: (approved ? 'APPROVED' : 'SUBMITTED') as 'APPROVED' | 'SUBMITTED',
+      isLeave,
+      leaveKind,
+      status: status as 'APPROVED' | 'SUBMITTED' | 'EXPORTED',
       notes: noteParts.join(' | ')
     };
-
-    const existing = await prisma.timesheet.findUnique({
-      where: { deputyTimesheetId },
-      select: { id: true }
-    });
     await prisma.timesheet.upsert({
       where: { deputyTimesheetId },
       create: { deputyTimesheetId, ...data },
@@ -1380,6 +1418,8 @@ export const deputyService = {
         venue: null,
         accountType: 'HUMAN',
         isAdmin: true,
+        // A scheduled job is never a training till.
+        trainingOnly: false,
         role: 'ADMIN',
         appAccess: []
       } as AuthUser,

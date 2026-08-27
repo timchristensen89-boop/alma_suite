@@ -4,6 +4,7 @@ import { HttpError } from '../lib/http.js';
 import { integrationService } from '../services/integration.service.js';
 import { shiftTaskService } from '../services/shift-task.service.js';
 import { staffService } from '../services/staff.service.js';
+import { pushService } from '../services/push.service.js';
 
 export const staffRouter = Router();
 
@@ -165,17 +166,67 @@ staffRouter.post('/profiles', requireManager, async (req, res, next) => {
   }
 });
 
-// Push a staff member into Xero Payroll — into BOTH companies when their
-// venue is "Both", because Freshwater and Avalon are separate payrolls.
+// Push a staff member into Xero Payroll. No body: into every company their
+// venue implies (BOTH when the venue says so — Freshwater and Avalon are
+// separate payrolls). With a tenantId in the body: exactly that company,
+// whatever the venue field says.
 staffRouter.post('/:id/push-to-xero', requireManager, async (req, res, next) => {
   try {
     const { pushStaffToXero } = await import('../services/integration.service.js');
-    res.json(await pushStaffToXero(String(req.params.id)));
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const tenantId = typeof body.tenantId === 'string' && body.tenantId ? body.tenantId : undefined;
+    res.json(await pushStaffToXero(String(req.params.id), { tenantId }));
   } catch (error) {
     next(error);
   }
 });
 
+// The employees in every connected Xero organisation, plus this profile's
+// current links — what the profile page's Xero panel renders.
+staffRouter.get('/:id/xero-link-options', requireManager, async (req, res, next) => {
+  try {
+    const { xeroEmployeeLinkOptions } = await import('../services/integration.service.js');
+    res.json(await xeroEmployeeLinkOptions(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Link (xeroEmployeeId set) or unlink (null) this profile to an employee
+// record in one organisation, without pushing anything into Xero.
+staffRouter.post('/:id/xero-link', requireManager, async (req, res, next) => {
+  try {
+    const { linkStaffToXeroEmployee } = await import('../services/integration.service.js');
+    res.json(await linkStaffToXeroEmployee(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+// What Xero's copy of this person says, next to what the profile says.
+// Reads only — nothing is written until the POST below names the fields.
+staffRouter.get('/:id/xero-pull', requireManager, async (req, res, next) => {
+  try {
+    const { xeroEmployeePullPreview } = await import('../services/integration.service.js');
+    const tenantId = typeof req.query.tenantId === 'string' && req.query.tenantId ? req.query.tenantId : undefined;
+    res.json(await xeroEmployeePullPreview(String(req.params.id), { tenantId }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Take the chosen fields from Xero onto the profile. The body carries field
+// KEYS, not values — the service re-reads Xero and writes only what it sees
+// there itself.
+staffRouter.post('/:id/xero-pull', requireManager, async (req, res, next) => {
+  try {
+    const { applyXeroEmployeePull } = await import('../services/integration.service.js');
+    res.json(await applyXeroEmployeePull(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
 staffRouter.post('/merge', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');
@@ -517,7 +568,7 @@ staffRouter.post('/me/leave', async (req, res, next) => {
 });
 
 // Invite endpoints — declared BEFORE /:id so /invites isn't read as an id
-staffRouter.get('/invites', async (_req, res, next) => {
+staffRouter.get('/invites', requireManager, async (_req, res, next) => {
   try {
     res.json(await staffService.listInvites());
   } catch (error) {
@@ -742,6 +793,122 @@ staffRouter.get('/roster-board', requireManager, async (req, res, next) => {
 // Read-only published team roster — visible to every authenticated user
 // (staff included) so they can see a copy of the live roster. Published
 // shifts only, venue-scoped. No manager guard.
+/*
+ * A staff member's calendar feed.
+ *
+ * Unauthenticated on purpose: Apple Calendar and Google Calendar cannot carry
+ * a session when they poll a subscription, so the token in the path is the
+ * credential. That is not a property of this handler — authMiddleware gates
+ * every route in the app, so this path is also listed in lib/public-paths.ts,
+ * and it 401s to every calendar client in the company if that entry is
+ * removed. It is 32 random bytes and rotatable, and the service returns
+ * the same flat 404 for a malformed token as for one that does not exist, so
+ * this cannot be used to probe for valid tokens.
+ */
+staffRouter.get('/calendar/:token.ics', async (req, res, next) => {
+  try {
+    const { ics, filename } = await staffService.calendarFeed(String(req.params.token ?? ''));
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    // inline, not attachment: a subscribing client should read it, not offer
+    // to save it. A browser hitting the same URL still downloads it.
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    // Clients poll this on their own schedule; a cached copy would show a
+    // roster that has since been amended.
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.send(ics);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// The signed-in staff member's own links, for the "My calendar" panel.
+staffRouter.get('/me/calendar', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to get your calendar link.');
+    res.json(await staffService.calendarLinks(req.user.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Lost phone, or someone leaving: burn the old link and issue a new one.
+staffRouter.post('/me/calendar/rotate', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to reset your calendar link.');
+    const { links } = await staffService.rotateCalendarToken(req.user.id);
+    res.json(links);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/*
+ * Push notifications for this staff member's own phone.
+ *
+ * GET carries the VAPID public key as well as the current device count, so the
+ * app makes one call to render the whole card. The key is public by definition
+ * — it goes to every browser that subscribes — and serving it rather than
+ * baking it into the bundle means rotating the pair is an env change and a
+ * restart, not a frontend rebuild.
+ */
+staffRouter.get('/me/push', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to manage notifications.');
+    const { configured, publicKey } = pushService.config();
+    res.json({ configured, publicKey, devices: await pushService.deviceCount(req.user.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Is this browser's subscription registered to THIS account? POST because a
+// push endpoint is a long URL that has no place in a query string or a log.
+staffRouter.post('/me/push/status', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to manage notifications.');
+    const body = (req.body ?? {}) as { endpoint?: string };
+    res.json({ thisDevice: await pushService.ownsEndpoint(req.user.id, String(body.endpoint ?? '')) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/push/subscribe', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to turn on notifications.');
+    const body = (req.body ?? {}) as { subscription?: unknown };
+    const saved = await pushService.subscribe(
+      req.user.id,
+      body.subscription as never,
+      req.header('user-agent')
+    );
+    res.status(201).json({ ...saved, devices: await pushService.deviceCount(req.user.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/push/unsubscribe', async (req, res, next) => {
+  try {
+    if (!req.user?.id) throw new HttpError(401, 'Sign in to turn off notifications.');
+    const body = (req.body ?? {}) as { endpoint?: string };
+    const removed = await pushService.unsubscribe(req.user.id, String(body.endpoint ?? ''));
+    res.json({ ...removed, devices: await pushService.deviceCount(req.user.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// A manager resetting somebody else's, for the same reasons.
+staffRouter.post('/:id/calendar/rotate', requireManager, async (req, res, next) => {
+  try {
+    const { links } = await staffService.rotateCalendarToken(String(req.params.id));
+    res.json(links);
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/roster/published', async (req, res, next) => {
   try {
     const start = typeof req.query.start === 'string' ? req.query.start : undefined;
@@ -904,6 +1071,14 @@ staffRouter.post('/timesheets/:id/cash-paid', requireManager, async (req, res, n
   }
 });
 
+staffRouter.post('/timesheets/:id/unexport', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.unexportTimesheet(String(req.params.id), req.user!));
+  } catch (err) {
+    next(err);
+  }
+});
+
 staffRouter.post('/timesheets/export/xero', requireManager, async (req, res, next) => {
   try {
     const result = await staffService.exportTimesheetsForXero(req.body, req.user);
@@ -1006,8 +1181,7 @@ staffRouter.get('/tips', requireManager, async (req, res, next) => {
     res.json(await staffService.getTipsSummary({
       start: typeof req.query.start === 'string' ? req.query.start : '',
       end: typeof req.query.end === 'string' ? req.query.end : '',
-      venue: typeof req.query.venue === 'string' ? req.query.venue : '',
-      breakageCentsPerDay: typeof req.query.breakageCentsPerDay === 'string' ? req.query.breakageCentsPerDay : undefined
+      venue: typeof req.query.venue === 'string' ? req.query.venue : ''
     }));
   } catch (error) {
     next(error);
@@ -1179,6 +1353,29 @@ staffRouter.put('/:id/app-access', requireManager, async (req, res, next) => {
 staffRouter.patch('/:id/role-template', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.applyRoleTemplate(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Agreed weekly hours for the labour view — 38, 24, or NULL for casuals.
+staffRouter.put('/:id/contracted-hours', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.setContractedHours(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// One week of roster against one week of actual takings — contract deltas,
+// the salary-headroom band, overtime past 45, and labour % per venue-day.
+staffRouter.get('/labour-week', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.labourWeek({
+      weekStart: typeof req.query.weekStart === 'string' ? req.query.weekStart : undefined
+    }, req.user));
   } catch (error) {
     next(error);
   }

@@ -12,7 +12,6 @@
     "dev:stock-web": "pnpm --filter @alma/stock-web dev",
     "dev:staff": "concurrently \"pnpm --filter @alma/api dev\" \"pnpm --filter @alma/staff-web dev\"",
     "dev:staff-web": "pnpm --filter @alma/staff-web dev",
-    "dev:staff-api": "pnpm --filter @alma/staff-api dev",
     "check:boundaries": "node scripts/check-domain-boundaries.mjs",
     "dev:reports": "concurrently \"pnpm --filter @alma/api dev\" \"pnpm --filter @alma/stock-api dev\" \"pnpm --filter @alma/reports-web dev\"",
     "dev:reports-web": "pnpm --filter @alma/reports-web dev",
@@ -48,7 +47,8 @@
     "build": "pnpm -r --if-present build",
     "start": "pnpm --filter @alma/api start",
     "typecheck": "pnpm -r --if-present typecheck",
-    "lint": "pnpm -r --if-present lint"
+    "lint": "pnpm -r --if-present lint",
+    "deploy:check": "node scripts/frontends-deploy-check.mjs"
   },
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.10",

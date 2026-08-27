@@ -33,6 +33,9 @@
           "source": "**",
           "destination": "/index.html"
         }
+      ],
+      "predeploy": [
+        "node scripts/frontends-deploy-check.mjs stamp"
       ]
     },
     {
@@ -68,6 +71,9 @@
           "source": "**",
           "destination": "/index.html"
         }
+      ],
+      "predeploy": [
+        "node scripts/frontends-deploy-check.mjs stamp"
       ]
     },
     {
@@ -103,6 +109,9 @@
           "source": "**",
           "destination": "/index.html"
         }
+      ],
+      "predeploy": [
+        "node scripts/frontends-deploy-check.mjs stamp"
       ]
     },
     {
@@ -138,6 +147,9 @@
           "source": "**",
           "destination": "/index.html"
         }
+      ],
+      "predeploy": [
+        "node scripts/frontends-deploy-check.mjs stamp"
       ]
     },
     {
@@ -173,6 +185,9 @@
           "source": "**",
           "destination": "/index.html"
         }
+      ],
+      "predeploy": [
+        "node scripts/frontends-deploy-check.mjs stamp"
       ]
     },
     {
@@ -208,6 +223,9 @@
           "source": "**",
           "destination": "/index.html"
         }
+      ],
+      "predeploy": [
+        "node scripts/frontends-deploy-check.mjs stamp"
       ]
     },
     {
@@ -243,6 +261,9 @@
           "source": "**",
           "destination": "/index.html"
         }
+      ],
+      "predeploy": [
+        "node scripts/frontends-deploy-check.mjs stamp"
       ]
     },
     {
@@ -278,6 +299,9 @@
           "source": "**",
           "destination": "/index.html"
         }
+      ],
+      "predeploy": [
+        "node scripts/frontends-deploy-check.mjs stamp"
       ]
     },
     {
@@ -313,6 +337,9 @@
           "source": "**",
           "destination": "/index.html"
         }
+      ],
+      "predeploy": [
+        "node scripts/frontends-deploy-check.mjs stamp"
       ]
     },
     {
@@ -348,6 +375,9 @@
           "source": "**",
           "destination": "/index.html"
         }
+      ],
+      "predeploy": [
+        "node scripts/frontends-deploy-check.mjs stamp"
       ]
     },
     {
@@ -383,6 +413,9 @@
           "source": "**",
           "destination": "/index.html"
         }
+      ],
+      "predeploy": [
+        "node scripts/frontends-deploy-check.mjs stamp"
       ]
     }
   ]

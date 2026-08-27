@@ -106,6 +106,15 @@ if (isProduction) {
   if (localOrigin) {
     throw new Error(`Production CORS origin must not be localhost: ${localOrigin}`);
   }
+  // The kitchen/till print endpoints answer with no session — the print
+  // secret is their only credential. With it empty they are open to anyone on
+  // the venue wifi: drain dockets and receipts mid-service, read live bill
+  // contents and printer LAN IPs. Refuse to boot without it, like JWT_SECRET.
+  // Set POS_PRINT_SECRET here, in the print-bridge, and on any Epson station
+  // URL (?k=…) together, or printing stops.
+  if (!process.env.POS_PRINT_SECRET) {
+    throw new Error('POS_PRINT_SECRET is required in production — it is the only credential on the public print endpoints');
+  }
 }
 
 export const env = {
@@ -115,8 +124,33 @@ export const env = {
   corsOrigin: isProduction ? configuredCorsOrigins : configuredCorsOrigins.length > 0 ? configuredCorsOrigins : localCorsOrigins,
   sessionSecret,
   suiteAuthSecret: process.env.SUITE_AUTH_SECRET ?? sessionSecret,
+  // Shared secret the kitchen printers / print-bridge present on the public
+  // print-poll and print-station endpoints. Required in production (guarded
+  // above); empty is only tolerated in local dev, where the endpoints stay
+  // open for convenience.
+  posPrintSecret: process.env.POS_PRINT_SECRET ?? '',
+  // Error monitoring is opt-in: set SENTRY_DSN and restart. Empty means the
+  // Sentry SDK is never imported at all.
+  sentryDsn: process.env.SENTRY_DSN ?? '',
   isProduction,
   sessionCookieName: 'alma.sid',
+  /**
+   * Web push (VAPID).
+   *
+   * The public key is not a secret — it ships to every browser that
+   * subscribes — but it is served from the API at runtime rather than baked
+   * into the staff bundle, so rotating the pair is an env change and a
+   * restart rather than a frontend rebuild.
+   *
+   * `subject` must be a mailto: or https: URL identifying us; push services
+   * reject a VAPID header without one and some of them email it when a
+   * sending pattern looks wrong.
+   */
+  webPush: {
+    publicKey: process.env.VAPID_PUBLIC_KEY ?? '',
+    privateKey: process.env.VAPID_PRIVATE_KEY ?? '',
+    subject: process.env.VAPID_SUBJECT ?? 'mailto:tim@almagroup.com.au'
+  },
   sessionMaxAgeMs: 30 * 24 * 60 * 60 * 1000,
   websiteMenu: {
     githubToken: process.env.WEBSITE_MENU_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? '',

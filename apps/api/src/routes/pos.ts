@@ -1,7 +1,11 @@
+import { timingSafeEqual } from 'node:crypto';
 import express, { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { prisma } from '@alma/db';
+import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { mailService } from '../services/mail.service.js';
+import { loyaltyService } from '../services/loyalty.service.js';
 import { posService } from '../services/pos.service.js';
 import { posTerminalService } from '../services/pos-terminal.service.js';
 
@@ -11,12 +15,51 @@ import { posTerminalService } from '../services/pos-terminal.service.js';
 // the unguessable station cuid in the path is the credential.
 export const posRouter = Router();
 
+// A full manager or admin login approves money-reversing actions on its own;
+// a floor-staff or device-PIN session must enter a manager PIN. (Refunds
+// require one from every session and check it in the service regardless.)
+function needsManagerPin(req: { user?: { role?: string; isAdmin?: boolean } | null }): boolean {
+  const user = req.user;
+  if (!user) return true;
+  return user.role !== 'MANAGER' && user.role !== 'ADMIN' && !user.isAdmin;
+}
+
+// The money-reversing endpoints all accept a manager PIN in the body, and a
+// PIN has no per-account lockout to lean on here (a failed try does not say
+// WHOSE PIN it was guessing). This is the brute-force bound: generous for a
+// venue's real refunds/voids, fatal to an automated 4-digit sweep. Per IP.
+const managerPinLimiter = rateLimit({
+  windowMs: 5 * 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many attempts — wait a few minutes and try again.' }
+});
+
+// Constant-time check of the print-station secret. Production refuses to boot
+// without one (env.ts), so an empty expected only happens in local dev.
+function printSecretOk(provided: string): boolean {
+  const expected = env.posPrintSecret;
+  if (!expected) return true; // dev only — prod always has a secret configured
+  if (!provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 posRouter.use((req, _res, next) => {
-  if (req.path.startsWith('/print-poll/')) return next();
-  // The print bridge reads its station list the same way a printer polls.
-  if (req.path === '/print-stations') return next();
-  // …and announces itself the same way: outbound-only, no session to carry.
-  if (req.path === '/print-bridge/heartbeat') return next();
+  // The printers and the print-bridge poll these endpoints with no session —
+  // polling, the station list, and the bridge's own heartbeat. They must
+  // present POS_PRINT_SECRET (?k=… or the x-alma-print-secret header); it is
+  // required in production (env.ts), so these endpoints are never open to an
+  // anonymous caller there. Empty is tolerated only in local dev.
+  const printPath =
+    req.path.startsWith('/print-poll/') || req.path === '/print-stations' || req.path === '/print-bridge/heartbeat';
+  if (printPath) {
+    const provided = typeof req.query.k === 'string' ? req.query.k : req.header('x-alma-print-secret') ?? '';
+    if (!printSecretOk(provided)) return next(new HttpError(401, 'Print station credential required.'));
+    return next();
+  }
   if (!req.user && !req.deviceUser) return next(new HttpError(401, 'Sign in the register first.'));
   next();
 });
@@ -148,15 +191,15 @@ posRouter.post('/orders/:id/merge', async (req, res, next) => {
   }
 });
 
-posRouter.post('/orders/:id/reopen', async (req, res, next) => {
+posRouter.post('/orders/:id/reopen', managerPinLimiter, async (req, res, next) => {
   try {
-    res.json(await posService.reopenOrder(String(req.params.id)));
+    res.json(await posService.reopenOrder(String(req.params.id), req.body, needsManagerPin(req)));
   } catch (error) {
     next(error);
   }
 });
 
-posRouter.post('/orders/:id/refund', async (req, res, next) => {
+posRouter.post('/orders/:id/refund', managerPinLimiter, async (req, res, next) => {
   try {
     res.json(await posService.refundOrder(String(req.params.id), req.body, !req.user && Boolean(req.deviceUser)));
   } catch (error) {
@@ -174,7 +217,7 @@ posRouter.patch('/tables/:id/position', async (req, res, next) => {
 
 posRouter.post('/orders', async (req, res, next) => {
   try {
-    res.status(201).json(await posService.createOrder(req.body));
+    res.status(201).json(await posService.createOrder(req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -281,7 +324,7 @@ posRouter.get('/orders/:id/refundable-cards', async (req, res, next) => {
   }
 });
 
-posRouter.post('/orders/:id/terminal-refund', async (req, res, next) => {
+posRouter.post('/orders/:id/terminal-refund', managerPinLimiter, async (req, res, next) => {
   try {
     res.json(await posTerminalService.startRefund(String(req.params.id), req.body));
   } catch (error) {
@@ -297,7 +340,7 @@ posRouter.get('/terminal-refunds/:refundId', async (req, res, next) => {
   }
 });
 
-posRouter.post('/orders/:id/payments/:paymentId/undo', async (req, res, next) => {
+posRouter.post('/orders/:id/payments/:paymentId/undo', managerPinLimiter, async (req, res, next) => {
   try {
     res.json(await posService.undoPayment(String(req.params.id), String(req.params.paymentId), req.body));
   } catch (err) {
@@ -305,9 +348,9 @@ posRouter.post('/orders/:id/payments/:paymentId/undo', async (req, res, next) =>
   }
 });
 
-posRouter.post('/orders/:id/void', async (req, res, next) => {
+posRouter.post('/orders/:id/void', managerPinLimiter, async (req, res, next) => {
   try {
-    res.json(await posService.voidOrder(String(req.params.id), req.body, !req.user && Boolean(req.deviceUser)));
+    res.json(await posService.voidOrder(String(req.params.id), req.body, needsManagerPin(req)));
   } catch (error) {
     next(error);
   }
@@ -591,6 +634,73 @@ posRouter.delete('/menu-hides/:id', async (req, res, next) => {
 posRouter.get('/gift-card', async (req, res, next) => {
   try {
     res.json(await posService.giftCardBalance(String(req.query.code ?? '')));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Loyalty ────────────────────────────────────────────────────────────────
+// Staff-authenticated like every other POS route. Join and attach are
+// service-floor actions; settings, report and adjust live in the Office.
+posRouter.get('/loyalty/settings', async (_req, res, next) => {
+  try {
+    res.json(await loyaltyService.settings());
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.put('/loyalty/settings', async (req, res, next) => {
+  try {
+    res.json(await loyaltyService.updateSettings(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/loyalty/join', async (req, res, next) => {
+  try {
+    res.json(await loyaltyService.join(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get('/loyalty/member', async (req, res, next) => {
+  try {
+    res.json(await loyaltyService.memberByHandle(String(req.query.handle ?? '')));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get('/loyalty/report', async (_req, res, next) => {
+  try {
+    res.json(await loyaltyService.report());
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/loyalty/adjust', async (req, res, next) => {
+  try {
+    res.json(await loyaltyService.adjust({ ...(req.body ?? {}), createdBy: req.user?.email ?? req.deviceUser?.firstName ?? null }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.post('/orders/:id/loyalty', async (req, res, next) => {
+  try {
+    res.json(await posService.attachLoyalty(req.params.id, String(req.body?.handle ?? '')));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.delete('/orders/:id/loyalty', async (req, res, next) => {
+  try {
+    res.json(await posService.detachLoyalty(req.params.id));
   } catch (err) {
     next(err);
   }

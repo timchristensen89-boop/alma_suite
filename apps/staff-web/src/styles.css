@@ -9212,3 +9212,124 @@ html[data-theme='dark'] .alma-taskbar-sheet { background: var(--color-elevated, 
   .ts-review-table tfoot tr { background: var(--color-surface, #f8f6f1); border-bottom: 0; }
   .ts-review-table tfoot td:empty { display: none; }
 }
+
+/* ── Staff profile · Xero panel ─────────────────────────────────────────
+   One card per connected organisation: link picker + push button. */
+.xero-panel { display: grid; gap: 14px; }
+.xero-org {
+  display: grid; gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+}
+.xero-org-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.xero-org-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.xero-org-actions { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.xero-org-actions .field { flex: 1 1 240px; min-width: 0; }
+@media (max-width: 700px) {
+  .xero-org-actions { align-items: stretch; flex-direction: column; }
+  .xero-org-actions button { width: 100%; }
+}
+
+/* The pull review: what Xero holds beside what the profile holds. Rows that
+   already agree stay visible but recede — seeing that a field matches is
+   worth as much as seeing that it doesn't. */
+.xero-pull {
+  display: grid; gap: 10px;
+  padding: 12px 14px;
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+.xero-pull-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.xero-pull-warning {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-warning-soft, #fff6e5);
+  color: var(--color-text);
+  font-size: 13px;
+}
+.xero-pull-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.xero-pull-table th {
+  text-align: left; font-weight: 600; padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+.xero-pull-table td { padding: 7px 8px; border-bottom: 1px solid var(--color-border-subtle, rgba(0,0,0,0.06)); vertical-align: top; }
+.xero-pull-table td:first-child, .xero-pull-table th:first-child { width: 28px; }
+.xero-pull-table input[type='checkbox'] { width: 18px; height: 18px; }
+.xero-pull-same td { opacity: 0.55; }
+.xero-pull-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 700px) {
+  /* Never drop a column here — the two values side by side ARE the feature.
+     Let the table scroll inside its own card instead. */
+  .xero-pull { overflow-x: auto; }
+  .xero-pull-table { min-width: 480px; }
+  .xero-pull-actions button { flex: 1 1 auto; }
+}
+
+/* ── Labour vs takings ─────────────────────────────────────────────────
+   Contract deltas, the salary-headroom band, and real OT against actual
+   takings. Wide tables scroll inside their wrap, never the page. */
+.labour-page { display: flex; flex-direction: column; gap: 16px; }
+.labour-weeknav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.labour-weeknav strong { font-size: 15px; min-width: 130px; text-align: center; }
+.labour-table-wrap { overflow-x: auto; }
+.labour-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.labour-table th { text-align: left; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #64705f; padding: 6px 10px; border-bottom: 1px solid rgba(20, 36, 26, 0.12); white-space: nowrap; }
+.labour-table td { padding: 8px 10px; border-bottom: 1px solid rgba(20, 36, 26, 0.07); vertical-align: top; }
+.labour-table tr.is-ot td { background: rgba(179, 38, 46, 0.05); }
+.labour-ot { color: #b3262e; font-weight: 700; }
+.labour-contract-input { width: 58px; padding: 4px 6px; border: 1px solid rgba(20, 36, 26, 0.2); border-radius: 8px; font: inherit; }
+.labour-daycell { min-width: 108px; }
+.labour-daycell strong { display: block; font-size: 13px; }
+.labour-daycell span { display: block; font-size: 11.5px; color: #64705f; }
+.labour-daycell em { font-style: normal; font-weight: 800; font-size: 12px; }
+.labour-daycell small { display: block; color: #b3262e; font-size: 10.5px; }
+.labour-daycell.is-good em { color: #2f6b3c; }
+.labour-daycell.is-warning em { color: #9a6b1f; }
+.labour-daycell.is-danger em { color: #b3262e; }
+
+/* ------------------------------------------------------------------ */
+/* Calendar subscription                                               */
+/* ------------------------------------------------------------------ */
+
+.staff-calendar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.staff-calendar-hint { margin: 0 0 0.9rem; line-height: 1.5; }
+
+.staff-calendar-secret summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+/*
+ * The URL is a credential, and it is long. Wrapped rather than truncated so it
+ * can be read off the screen and typed in by hand when the clipboard is not
+ * available — which on a locked-down work phone is often.
+ */
+.staff-calendar-url {
+  margin: 0.6rem 0;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* Crash guard fallback. */
+.app-crash { position: fixed; inset: 0; display: grid; place-items: center; background: #f7f5ef; color: #21262b; padding: 24px; z-index: 9999; }
+.app-crash-panel { max-width: 420px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.app-crash-panel h1 { font-size: 20px; margin: 0; }
+.app-crash-panel p { margin: 0; color: #5a6069; line-height: 1.5; }
+.app-crash-panel button { min-height: 48px; border-radius: 12px; border: 0; background: #1f3524; color: #f3efe6; font-size: 15px; font-weight: 700; cursor: pointer; }

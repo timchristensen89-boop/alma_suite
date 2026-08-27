@@ -25,6 +25,12 @@ import {
   reserveAreaInputSchema,
   reserveAreaUpdateInputSchema,
   googleReserveIntegrationSettingInputSchema,
+  nextDayKey,
+  venueDayBounds,
+  venueDayKey,
+  venueInstant,
+  venueTimeLabel,
+  venueWeekday,
   type AuthUser,
   type ReserveGuest,
   type ReserveArea,
@@ -53,6 +59,7 @@ import {
 import Stripe from 'stripe';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
+import { enquiryService } from './enquiry.service.js';
 import { createReservationManageToken, reservationManageUrl, verifyReservationManageToken } from '../lib/reservation-manage-token.js';
 import { mailService } from './mail.service.js';
 import { integrationService } from './integration.service.js';
@@ -282,10 +289,6 @@ function addMinutes(value: Date, minutes: number) {
   return new Date(value.getTime() + minutes * 60 * 1000);
 }
 
-function formatSlotLabel(value: Date) {
-  return value.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-}
-
 function cleanText(value?: string | null) {
   return value?.trim() || null;
 }
@@ -295,12 +298,26 @@ function jsonObject(value: Prisma.JsonValue | null | undefined): Record<string, 
   return value as Record<string, unknown>;
 }
 
-function parseRuleTime(date: Date, time: string, label: string) {
-  const match = time.match(/^(\d{2}):(\d{2})$/);
-  if (!match) throw new HttpError(400, `${label} is invalid`);
-  const parsed = new Date(date);
-  parsed.setHours(Number(match[1]), Number(match[2]), 0, 0);
-  return parsed;
+/**
+ * A service date from the public widget, as the venue's calendar day.
+ *
+ * Accepts a plain YYYY-MM-DD (what the date picker sends) or a full instant
+ * (what an older client might), and reads the latter in the venue's zone —
+ * `toISOString().slice(0, 10)` on a Sydney evening names yesterday.
+ */
+function venueServiceDay(value: string, label = 'Service date') {
+  const raw = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) throw new HttpError(400, `${label} is invalid`);
+  return venueDayKey(parsed);
+}
+
+/** An availability rule's stored `HH:MM`, resolved in the venue's zone. */
+function venueRuleInstant(day: string, time: string, label: string) {
+  const instant = venueInstant(day, time);
+  if (!instant) throw new HttpError(400, `${label} is invalid`);
+  return instant;
 }
 
 function isAdminActor(actor?: AuthUser | null) {
@@ -643,9 +660,16 @@ async function ensureRuleVenue(ruleId: string | null | undefined, venue: string)
 }
 
 async function listPublicSlots(input: ReturnType<typeof reservePublicAvailabilityInputSchema.parse>) {
-  const serviceDate = startOfDay(parseDate(input.date, 'Service date'));
-  const nextDay = endOfDay(serviceDate);
-  const weekday = serviceDate.getDay();
+  // Everything here is the VENUE's day and the VENUE's wall clock, never the
+  // server's. The API containers run UTC, so the old `setHours(18, 0)` turned a
+  // 6pm rule into 6pm UTC — four or five in the morning in Sydney — and that
+  // instant is exactly what the widget hands back to book. The weekday matters
+  // just as much: read off a UTC instant it can name the wrong day either side
+  // of midnight, and a Sunday rule would open on a Saturday night.
+  const day = venueServiceDay(input.date);
+  const bounds = venueDayBounds(day);
+  const weekday = venueWeekday(day);
+  if (!bounds || weekday === null) throw new HttpError(400, 'Service date is invalid');
   const ruleWhere: Prisma.ReserveAvailabilityRuleWhereInput = {
     venue: input.venue.trim(),
     active: true,
@@ -662,7 +686,7 @@ async function listPublicSlots(input: ReturnType<typeof reservePublicAvailabilit
     prisma.reserveReservation.findMany({
       where: {
         venue: input.venue.trim(),
-        startsAt: { gte: serviceDate, lt: nextDay },
+        startsAt: { gte: bounds.gte, lt: bounds.lt },
         status: { in: ['PENDING', 'CONFIRMED', 'SEATED'] }
       },
       select: {
@@ -677,8 +701,8 @@ async function listPublicSlots(input: ReturnType<typeof reservePublicAvailabilit
     prisma.reserveBlackout.findMany({
       where: {
         venue: input.venue.trim(),
-        startAt: { lt: nextDay },
-        endAt: { gt: serviceDate }
+        startAt: { lt: bounds.lt },
+        endAt: { gt: bounds.gte }
       }
     })
   ]);
@@ -688,8 +712,16 @@ async function listPublicSlots(input: ReturnType<typeof reservePublicAvailabilit
     if (!rule.daysOfWeek.includes(weekday)) continue;
     if (input.servicePeriod && rule.servicePeriod && input.servicePeriod !== rule.servicePeriod) continue;
 
-    const ruleStart = parseRuleTime(serviceDate, rule.startTime, 'Availability start time');
-    const ruleEnd = parseRuleTime(serviceDate, rule.endTime, 'Availability end time');
+    const ruleStart = venueRuleInstant(day, rule.startTime, 'Availability start time');
+    let ruleEnd = venueRuleInstant(day, rule.endTime, 'Availability end time');
+    // A service that closes at or after midnight ends on the NEXT venue day —
+    // "18:00 to 00:00" means until midnight, not a window of zero length that
+    // silently offers nothing.
+    if (ruleEnd <= ruleStart) {
+      const next = nextDayKey(day);
+      const rolled = next ? venueInstant(next, rule.endTime) : null;
+      if (rolled) ruleEnd = rolled;
+    }
 
     for (let cursor = new Date(ruleStart); cursor < ruleEnd; cursor = addMinutes(cursor, rule.intervalMinutes)) {
       const slotEnd = addMinutes(cursor, rule.defaultDurationMinutes);
@@ -714,7 +746,7 @@ async function listPublicSlots(input: ReturnType<typeof reservePublicAvailabilit
       slots.push({
         startsAt: cursor.toISOString(),
         endsAt: slotEnd.toISOString(),
-        label: formatSlotLabel(cursor),
+        label: venueTimeLabel(cursor),
         capacityRemaining,
         availabilityRuleId: rule.id,
         servicePeriod: rule.servicePeriod
@@ -1526,62 +1558,29 @@ export const reserveService = {
     const data = reservePublicAvailabilityInputSchema.parse(input);
     return {
       venue: data.venue.trim(),
-      serviceDate: startOfDay(parseDate(data.date, 'Service date')).toISOString(),
+      serviceDate: (venueDayBounds(venueServiceDay(data.date))?.gte ?? new Date(NaN)).toISOString(),
       partySize: data.partySize,
       slots: await listPublicSlots(data)
     };
   },
 
-  // Function / event enquiry — emails the venue team without creating a
-  // reservation. No new DB table for v1; we just send the enquiry through.
+  // Function / event enquiry from the public booking widget. The enquiry is
+  // persisted and the venue still gets its email; enquiryService owns both,
+  // so the website's catering form lands in the same inbox by the same path.
   async recordFunctionEnquiry(input: unknown) {
     if (!input || typeof input !== 'object') {
       throw new HttpError(400, 'Function enquiry payload required');
     }
-    const data = input as Record<string, unknown>;
-    const venue = typeof data.venue === 'string' ? data.venue.trim() : '';
-    const contactName = typeof data.contactName === 'string' ? data.contactName.trim() : '';
-    const email = typeof data.email === 'string' ? data.email.trim() : '';
-    const phone = typeof data.phone === 'string' ? data.phone.trim() : '';
-    const eventType = typeof data.eventType === 'string' ? data.eventType.trim() : '';
-    const eventDate = typeof data.eventDate === 'string' ? data.eventDate.trim() : '';
-    const partySize = typeof data.partySize === 'string' ? Number(data.partySize) : Number(data.partySize ?? 0);
-    const notes = typeof data.notes === 'string' ? data.notes.trim() : '';
-
-    if (!venue || !contactName || !email) {
-      throw new HttpError(400, 'Venue, contact name, and email are required');
-    }
-
-    if (mailService.isConfigured()) {
-      try {
-        const settings = await prisma.appSettings.findUnique({ where: { id: 'singleton' } });
-        const recipient = settings?.notifyEmail?.trim();
-        if (recipient) {
-          await mailService.sendAlert({
-            to: recipient,
-            subject: `[Function enquiry] ${venue} — ${eventType || 'enquiry'} for ${partySize || '?'} guests`,
-            title: `New function enquiry: ${eventType || 'event'} at ${venue}`,
-            body: [
-              `${contactName} (${email}${phone ? ` · ${phone}` : ''}) is asking about a function at ${venue}.`,
-              '',
-              eventDate ? `Preferred date: ${new Date(eventDate).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}` : 'No date specified.',
-              `Party size: ${partySize || 'not specified'}`,
-              eventType ? `Event type: ${eventType}` : '',
-              '',
-              notes ? `Notes:\n${notes}` : 'No additional notes.'
-            ].filter(Boolean).join('\n'),
-            venue,
-            severity: 'info',
-            ctaUrl: email ? `mailto:${email}` : undefined,
-            ctaLabel: 'Reply to enquiry'
-          });
-        }
-      } catch (err) {
-        console.error('[reserve] Failed to send function enquiry email', err);
-      }
-    }
-
-    return { received: true, venue, contactName, partySize };
+    const { enquiry } = await enquiryService.capture(input as Record<string, unknown>, {
+      source: 'public-widget',
+      enquiryType: 'function'
+    });
+    return {
+      received: true,
+      venue: enquiry.venue,
+      contactName: enquiry.contactName,
+      partySize: enquiry.partySize ?? 0
+    };
   },
 
   async publicBook(input: unknown) {

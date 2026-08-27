@@ -100,6 +100,10 @@ function Register() {
   } = useStripeTerminal();
 
   useEffect(() => {
+    // Starting the Terminal SDK is what makes the OS treat this as a payment
+    // app — it is also what triggers the location prompt. With Tap to Pay off
+    // there is nothing to initialise for, so it stays asleep.
+    if (!TAP_TO_PAY_ENABLED) return;
     void initialize();
   }, [initialize]);
 

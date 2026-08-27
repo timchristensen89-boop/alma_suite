@@ -85,6 +85,45 @@ recipesRouter.patch('/categories/:id', async (req, res, next) => {
   }
 });
 
+// ── Price windows (Taco Tuesday etc.) ────────────────────────────────────
+// The whole write path for weekday pricing — the register/QR read the rows
+// live, so a manager edits here instead of anyone running a script.
+
+recipesRouter.get('/:id/price-windows', async (req, res, next) => {
+  try {
+    res.json(await recipesService.listPriceWindows(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+recipesRouter.post('/:id/price-windows', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.status(201).json(await recipesService.createPriceWindow(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+recipesRouter.patch('/price-windows/:windowId', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await recipesService.updatePriceWindow(String(req.params.windowId), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+recipesRouter.delete('/price-windows/:windowId', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await recipesService.deletePriceWindow(String(req.params.windowId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 recipesRouter.get('/:id/cost', async (req, res, next) => {
   try {
     res.json(await recipesService.cost(String(req.params.id)));
@@ -150,6 +189,34 @@ recipesRouter.post('/set-menus/add-component', async (req, res, next) => {
   try {
     requireStockManager(req.user);
     res.json(await recipesService.addComponentToSetMenus(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// The courses a guest chooses from. Registered above '/:id' so the literal
+// path wins — '/set-menu-options/x' would otherwise match ':id'.
+recipesRouter.patch('/set-menu-options/:id/availability', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await recipesService.setSetMenuOptionAvailability(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+recipesRouter.get('/:id/courses', async (req, res, next) => {
+  try {
+    res.json(await recipesService.setMenuCourses(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+recipesRouter.put('/:id/courses', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await recipesService.saveSetMenuCourses(String(req.params.id), req.body));
   } catch (error) {
     next(error);
   }

@@ -141,8 +141,10 @@ input, select { font: inherit; }
 
 @media print {
   body * { visibility: hidden; }
-  #pos-receipt, #pos-receipt *, #pos-bill, #pos-bill *, #pos-docket, #pos-docket *, #pos-close, #pos-close * { visibility: visible; }
-  #pos-receipt, #pos-bill, #pos-docket, #pos-close { position: absolute; inset: 0; background: #fff; color: #000; border: 0; }
+  /* #qr-print is the table-QR sheet — it predates this whitelist and was
+     printing blank pages until it joined the list. */
+  #pos-receipt, #pos-receipt *, #pos-bill, #pos-bill *, #pos-docket, #pos-docket *, #pos-close, #pos-close *, #qr-print, #qr-print * { visibility: visible; }
+  #pos-receipt, #pos-bill, #pos-docket, #pos-close, #qr-print { position: absolute; inset: 0; background: #fff; color: #000; border: 0; }
   #pos-bill .pos-muted { color: #333; }
   .pos-choice-row, .pos-modal-close { display: none !important; }
 }
@@ -316,10 +318,20 @@ input, select { font: inherit; }
 /* KDS */
 .kds-shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; background: #101214; }
 .kds-header { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--pos-panel); border-bottom: 1px solid var(--pos-line); }
-.kds-header select { background: var(--pos-raise); color: var(--pos-text); border: 1px solid var(--pos-line); border-radius: 10px; padding: 8px 10px; }
+/* --pos-raise is only ever defined as a dark charcoal (#262b31, :root) with no
+   light-theme value, so on the cream KDS header these controls painted dark
+   and their --pos-text label painted dark on top of it. --pos-card is defined
+   in both themes, which is what these needed all along. */
+.kds-header select { background: var(--pos-card); color: var(--pos-text); border: 1px solid var(--pos-border); border-radius: 10px; padding: 8px 10px; }
 .kds-stations { display: flex; gap: 6px; }
-.kds-stations button { background: var(--pos-raise); border: 1px solid var(--pos-line); color: var(--pos-muted); border-radius: 9999px; padding: 8px 16px; font-weight: 700; }
-.kds-stations button.is-active { background: var(--pos-accent); border-color: var(--pos-accent); color: #fff; }
+/* The station you are NOT on still has to be readable — it is the tap that
+   moves the pass between Kitchen and Bar. It was --pos-muted on --pos-raise,
+   which is dark-on-dark in the light theme and unreadable either way. */
+.kds-stations button { background: var(--pos-card); border: 1px solid var(--pos-border); color: var(--pos-text); border-radius: 9999px; padding: 8px 16px; font-weight: 700; }
+/* Hard-coded #fff worked on the light theme's dark-green accent and failed on
+   the dark theme's pale sage one — the station you were actually on was the
+   unreadable one. --pos-bg inverts with the accent, so it contrasts in both. */
+.kds-stations button.is-active { background: var(--pos-accent); border-color: var(--pos-accent); color: var(--pos-bg); }
 .kds-count { color: var(--pos-muted); font-weight: 700; }
 .kds-error { background: var(--pos-danger); color: #fff; padding: 8px 14px; font-weight: 600; }
 .kds-allday { display: flex; gap: 16px; overflow-x: auto; padding: 8px 14px; border-bottom: 1px solid var(--pos-line); color: var(--pos-muted); white-space: nowrap; }
@@ -339,7 +351,48 @@ input, select { font: inherit; }
 .kds-ticket.is-warn .kds-age { color: #d9a05a; }
 .kds-ticket.is-late .kds-age { color: var(--pos-danger); }
 .kds-server { color: var(--pos-muted); }
-.kds-course em { display: block; font-style: normal; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--pos-muted); margin: 6px 0 2px; }
+/* Course headings, colour-coded and readable from the pass.
+   Every heading used to be var(--pos-muted) at 10.5px — the same faint grey
+   whether it said NOW or Course 3 — so telling one course from the next meant
+   reading the words on a screen a metre away.
+
+   Two palettes, because a KDS ticket is var(--pos-panel): cream (#f1ebe3) in
+   the light theme and near-black (#10160f) in the dark one. A single set
+   cannot serve both — the first version of this was picked for the dark shell
+   and left NOW nearly invisible on a cream ticket.
+
+   Both palettes avoid amber and red: those already mean how late the ticket
+   is (.is-warn / .is-late), and a course wearing one would read as urgency.
+
+   The bar down the left does most of the work — it is visible peripherally,
+   before anyone focuses on the text. */
+.kds-course { border-left: 3px solid var(--kds-course, var(--pos-line)); padding-left: 8px; margin: 8px 0 2px; }
+.kds-course em {
+  display: block; font-style: normal;
+  font-size: 12.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--kds-course, var(--pos-muted));
+  margin: 0 0 3px;
+}
+
+/* Light ticket: deep, saturated inks. NOW is the darkest — it is not one
+   course among several, it is what goes down the moment the table sits. */
+.kds-course[data-course='now']   { --kds-course: #1f3524; }
+.kds-course[data-course='c1']    { --kds-course: #1d5f96; }
+.kds-course[data-course='c2']    { --kds-course: #6b3fa0; }
+.kds-course[data-course='c3']    { --kds-course: #0f6f6a; }
+.kds-course[data-course='c4']    { --kds-course: #a83a70; }
+.kds-course[data-course='c5']    { --kds-course: #3d4b9e; }
+.kds-course[data-course='c6']    { --kds-course: #7a3f7a; }
+.kds-course[data-course='other'] { --kds-course: var(--pos-muted); }
+
+/* Dark ticket: the same hues lifted until they carry on near-black. */
+body.pos-dark .kds-course[data-course='now'] { --kds-course: #f0e6d2; }
+body.pos-dark .kds-course[data-course='c1']  { --kds-course: #6fb3e0; }
+body.pos-dark .kds-course[data-course='c2']  { --kds-course: #b490e6; }
+body.pos-dark .kds-course[data-course='c3']  { --kds-course: #5fc9c3; }
+body.pos-dark .kds-course[data-course='c4']  { --kds-course: #e88fc0; }
+body.pos-dark .kds-course[data-course='c5']  { --kds-course: #8fa0e0; }
+body.pos-dark .kds-course[data-course='c6']  { --kds-course: #c9a6d8; }
 .kds-line b { display: block; font-size: 15px; }
 .kds-line small { display: block; color: var(--pos-muted); }
 .kds-note { color: #d9a05a !important; }
@@ -347,7 +400,7 @@ input, select { font: inherit; }
 .kds-empty { margin: auto; color: var(--pos-muted); font-size: 18px; }
 .kds-recent { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--pos-line); }
 .kds-recent-label { color: var(--pos-muted); font-weight: 700; }
-.kds-recent button { background: var(--pos-raise); border: 1px solid var(--pos-line); color: var(--pos-text); border-radius: 10px; padding: 8px 14px; font-weight: 700; }
+.kds-recent button { background: var(--pos-card); border: 1px solid var(--pos-border); color: var(--pos-text); border-radius: 10px; padding: 8px 14px; font-weight: 700; }
 
 /* fusion */
 .pos-till-toggle { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--pos-muted); }
@@ -361,6 +414,7 @@ input, select { font: inherit; }
 
 /* training banner */
 .pos-training { background: #d9a05a; color: #241d10; padding: 8px 14px; font-weight: 800; font-size: 13px; letter-spacing: 0.04em; cursor: pointer; }
+.pos-training.is-locked { cursor: default; }
 
 /* course chips in the bill */
 .pos-course-pick { display: flex; flex-wrap: wrap; gap: 5px; padding-bottom: 8px; border-bottom: 1px solid var(--pos-line, #262b31); margin-bottom: 8px; }
@@ -397,6 +451,15 @@ input, select { font: inherit; }
 .live-venue-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .live-venue-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
 .live-total { font-size: 22px; font-weight: 800; color: #7fc79a; }
+/* The way out. Live used to be a one-way door: open it on a phone mid-service
+   and the only way back to the register was the browser's own back button,
+   which on an installed app shell is not there at all. */
+.live-back {
+  font: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+  padding: 8px 13px; border-radius: 9999px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--pos-border, #262b31);
+  background: var(--pos-card, transparent); color: inherit;
+}
 .live-stats { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; font-size: 12px; color: #8b939e; }
 .live-stats b { color: #e8ebee; }
 .live-open { color: #d9a05a; }
@@ -516,8 +579,28 @@ input, select { font: inherit; }
 /* A tab folder opened from the nav: its categories stacked as sections.
    flex+min-height+overflow make it a real screen — without them the stack
    ran past the viewport with no way to scroll. */
-.pos-grid-groups { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0 20px; }
+/* Same side gutter as the Full menu's .pos-list wrapper — with none, the
+   list rows and section heads sat flush against the nav rail. */
+.pos-grid-groups { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; overflow-y: auto; padding: 4px 18px 48px; }
 .pos-group-head { margin: 0 0 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pos-muted, #8b939e); }
+/* Sub-folders inside a folder's page: a way back up, then a row of the
+   child folders you can drill into before the folder's own categories. */
+.pos-group-back {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--pos-line); background: transparent; color: var(--pos-muted);
+  border-radius: 9999px; font-size: 12px; font-weight: 700; padding: 5px 13px 5px 10px;
+}
+.pos-group-back:hover { color: var(--pos-text); border-color: var(--pos-accent); }
+.pos-group-subfolders { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.pos-group-subfolder {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  background: var(--pos-panel); border: 1px solid var(--pos-line); border-radius: 14px;
+  padding: 14px; min-height: 78px; color: var(--pos-text); text-align: left;
+}
+.pos-group-subfolder:hover { border-color: var(--pos-accent); background: var(--pos-raise); }
+.pos-group-subfolder .pos-nav-icon { width: 22px; height: 22px; }
+.pos-group-subfolder span { font-weight: 700; font-size: 14px; }
+.pos-group-subfolder small { color: var(--pos-muted); font-size: 11px; }
 @media (prefers-reduced-motion: reduce) { .pos-tabs button.is-tab-edit { animation: none; } }
 
 /* QR guest: dietary chips + calling the floor */
@@ -535,3 +618,341 @@ input, select { font: inherit; }
 /* A folder shown as a list keeps the folder view's grid container — each row
    claims the full row and paints like the Full menu's list. */
 .pos-list-row--fill { grid-column: 1 / -1; min-height: 0; background: var(--pos-card); border: 1px solid var(--pos-border-soft); border-radius: 12px; }
+
+/* ── Banquet picker ───────────────────────────────────────────────────────
+   A set menu asks two questions: how many are eating, then course by course,
+   who is having what. Tiles are thumb-sized because this runs mid-service on
+   a table of twenty, and the count badge is the thing the eye comes back to. */
+.pos-banquet { max-width: 640px; width: 100%; }
+.pos-banquet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pos-banquet-covers { font-size: 14px; font-weight: 700; color: var(--pos-accent, #4f6b47); }
+.pos-banquet-ask { margin: 2px 0 0; font-size: 15px; font-weight: 700; }
+.pos-banquet-covers-step { display: flex; flex-direction: column; gap: 12px; }
+.pos-banquet-quick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.pos-banquet-quick button {
+  background: var(--pos-card, #fff); border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); border-radius: 12px;
+  color: inherit; font: inherit; font-size: 18px; font-weight: 700; padding: 14px 0; cursor: pointer;
+}
+.pos-banquet-quick button.is-on { background: var(--pos-accent-bg, #1f3524); border-color: var(--pos-accent-bg, #1f3524); color: var(--pos-accent-fg, #f8f6f1); }
+.pos-banquet-stepper { display: flex; align-items: center; gap: 10px; }
+.pos-banquet-stepper input { flex: 1; text-align: center; font-size: 26px; font-weight: 800; }
+.pos-banquet-stepper > button {
+  width: 58px; height: 58px; border-radius: 14px; background: var(--pos-card, #fff);
+  border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); color: inherit; font-size: 26px; cursor: pointer;
+}
+.pos-banquet-fixed { margin: 0; font-size: 13px; color: var(--pos-muted, #8b939e); }
+
+.pos-banquet-options { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto; }
+.pos-banquet-option { display: flex; gap: 8px; align-items: stretch; }
+.pos-banquet-option-main {
+  flex: 1; display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
+  background: var(--pos-card, #fff); border: 1px solid var(--pos-border, rgba(31,53,36,0.16));
+  border-radius: 14px; color: inherit; font: inherit; padding: 14px 16px; min-height: 60px;
+}
+.pos-banquet-option.is-on .pos-banquet-option-main { border-color: var(--pos-accent, #4f6b47); border-width: 2px; }
+.pos-banquet-option.is-86 { opacity: 0.45; }
+.pos-banquet-option-name { flex: 1; font-size: 16px; font-weight: 700; }
+.pos-banquet-option-meta { font-size: 12.5px; color: var(--pos-muted, #8b939e); white-space: nowrap; }
+/* The number of heads on this dish — the one figure service scans for. */
+.pos-banquet-count {
+  min-width: 38px; height: 38px; padding: 0 8px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--pos-accent-bg, #1f3524); color: var(--pos-accent-fg, #f8f6f1); font-size: 19px; font-weight: 800;
+}
+/* Both controls are full-height siblings of the tile, not stacked chips: this
+   is tapped mid-service on a moving iPad, so nothing here is under a thumb. */
+.pos-banquet-less, .pos-banquet-rest {
+  background: var(--pos-panel, #f1ebe3); border: 1px solid var(--pos-border-soft, rgba(31,53,36,0.1));
+  border-radius: 14px; color: inherit; font: inherit; cursor: pointer; min-height: 60px;
+}
+.pos-banquet-less { width: 56px; font-size: 24px; }
+.pos-banquet-rest { width: 92px; font-size: 13px; font-weight: 700; line-height: 1.15; padding: 0 8px; }
+.pos-banquet-less:disabled, .pos-banquet-rest:disabled { opacity: 0.3; cursor: default; }
+
+/* Reads as a running count, and turns green the moment the table adds up. */
+.pos-banquet-progress { margin: 0; font-size: 14px; font-weight: 700; color: var(--pos-muted, #8b939e); text-align: center; }
+.pos-banquet-progress.is-done { color: var(--pos-accent, #4f6b47); }
+.pos-banquet-actions { display: flex; gap: 10px; }
+.pos-banquet-actions > button { flex: 1; }
+.pos-banquet-actions > .pos-charge { flex: 2; }
+
+@media (max-width: 560px) {
+  .pos-banquet-quick { grid-template-columns: repeat(4, 1fr); }
+  .pos-banquet-options { max-height: 40vh; }
+}
+
+/* ── The wine list ───────────────────────────────────────────────────────
+   Not a grid. Wine is asked for by grape, region or price, so it reads as a
+   list with the pour prices on the row — the thing you read is the thing you
+   press. Sticky filters, because on a hundred wines you scroll and still want
+   to narrow. */
+.pos-wine {
+  display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 0;
+  /* Inset like every other view — .pos-grid is 12px, and without this the
+     search box and the section headings sit flush against both edges. */
+  padding-inline: 12px;
+  /* A wine row reads left to right: name, then the price you press. Left to
+     stretch, a 1100px column puts them a whole screen apart. Capped and
+     centred, they stay in one glance. Below this width it does nothing. */
+  width: 100%; max-width: 860px; margin-inline: auto;
+}
+/* Space is the luxury on a register: every millimetre this bar keeps is a
+   millimetre of list nobody can see. Padding and gaps are trimmed to where
+   the next step would start to feel cramped and stop there — the chips keep
+   their 29px target untouched, because a filter you have to aim at is worse
+   than a filter that costs a few pixels. The rest of the height is given
+   back by folding the chip rows away entirely (.pos-wine-fold). */
+.pos-wine-filters {
+  display: flex; flex-direction: column; gap: 5px; padding: 7px 0 6px;
+  border-bottom: 1px solid var(--pos-border-soft, rgba(31,53,36,0.08));
+  position: sticky; top: 0; background: var(--pos-bg, #faf8f3); z-index: 3;
+}
+/* The full menu wears the wine bar's layout on purpose: same sticky header,
+   same swipe-don't-wrap chip rows. It is the same job — a long list you narrow
+   — and two bars that behaved differently would be worse than one that does
+   not. Only the filters differ, because a menu gets asked different questions
+   than a wine list. */
+.pos-menu-filters { /* shares every rule above with .pos-wine-filters */ }
+/* Dietary marks on a menu row. Small, because they are a reference not a
+   decision — the row is still a button that rings the dish. "Contains" is the
+   only one coloured like a warning, because it is the only one that means do
+   not serve this to them. */
+.pos-list-diet { display: inline-flex; gap: 4px; margin-left: 8px; }
+.pos-list-diet i {
+  font-style: normal; font-size: 9.5px; font-weight: 800; letter-spacing: 0.06em;
+  padding: 2px 5px; border-radius: 4px; text-transform: uppercase;
+  background: rgba(31, 53, 36, 0.08); color: var(--pos-text2, inherit); opacity: 0.75;
+}
+.pos-list-diet i[data-kind='contains'] { background: rgba(147, 48, 31, 0.14); color: #93301f; opacity: 1; }
+.pos-list-diet i[data-kind='onAsk'] { background: rgba(124, 90, 17, 0.13); color: #7c5a11; }
+
+/* The caveat under a dietary filter. It is the most important sentence on the
+   page — it is what stops a hidden dish being read as an unsafe dish. */
+.pos-menu-caveat {
+  margin: 2px 0 0; font-size: 12px; line-height: 1.45; opacity: 0.7;
+  border-left: 2px solid rgba(147, 48, 31, 0.4); padding-left: 8px;
+}
+
+.pos-menu-none {
+  margin: 24px auto; text-align: center; opacity: 0.7; font-size: 15px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.pos-menu-none button {
+  font: inherit; font-size: 14px; font-weight: 700; padding: 8px 16px; border-radius: 9999px;
+  border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); background: var(--pos-card, #fff); color: inherit; cursor: pointer;
+}
+.pos-wine-search {
+  font: inherit; font-size: 14.5px; padding: 9px 13px; border-radius: 10px;
+  border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); background: var(--pos-card, #fff); color: inherit;
+}
+/* One line per group, swiped rather than wrapped.
+   Wrapping was what actually ate the screen: six colours and four price bands
+   in a 270px column became three lines each, so the filter bar ran to 402px of
+   an iPad's 1180px before a single wine was visible. Nothing is hidden — a
+   half-cut chip at the right edge is the cue that the row keeps going. */
+.pos-wine-chips {
+  display: flex; gap: 5px; align-items: center;
+  flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.pos-wine-chips::-webkit-scrollbar { display: none; }
+.pos-wine-chip, .pos-wine-chips > * { flex: none; }
+/* Pinned so you can always see which row you are swiping. It needs the bar's
+   own background or the chips scroll under the word. */
+.pos-wine-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700;
+  opacity: 0.45; min-width: 42px;
+  position: sticky; left: 0; z-index: 1; padding-right: 2px;
+  background: var(--pos-bg, #faf8f3);
+}
+/* Raised off the page rather than drawn on it. Transparent with a hairline
+   border, these read as labels on the warm background instead of things to
+   press — the same reason the pour buttons sit on --pos-card. */
+.pos-wine-chip {
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 6px 11px;
+  border-radius: 9999px; border: 1px solid var(--pos-border, rgba(31,53,36,0.16));
+  background: var(--pos-card, #fff); color: inherit;
+  box-shadow: 0 1px 2px rgba(31, 53, 36, 0.06);
+}
+.pos-wine-chip[aria-pressed="true"] {
+  background: var(--pos-accent-bg, #1f3524); border-color: var(--pos-accent-bg, #1f3524);
+  color: var(--pos-accent-fg, #f8f6f1); box-shadow: none;
+}
+.pos-wine-chip:disabled { opacity: 0.28; cursor: default; box-shadow: none; }
+
+/* ── Wine by colour ──────────────────────────────────────────────────────
+   The colour chip wears the colour it filters for, the section heading is
+   banded in it, and every row carries it as a stripe down its left edge. One
+   token set, three places, so a scroll down the list reads as blocks of
+   colour and the filter that finds them is recognisably the same thing. */
+.pos-wine-chip[data-colour] {
+  background: var(--wine-bg); border-color: var(--wine-bd); color: var(--wine-fg);
+}
+.pos-wine-chip[data-colour][aria-pressed="true"] {
+  /* Pressed still means filled and dark — the colour says WHICH filter, the
+     fill says whether it is on, and those two must not fight. */
+  background: var(--pos-accent-bg, #1f3524); color: var(--pos-accent-fg, #f8f6f1);
+  /* Pressed fills dark like every other chip row, and keeps its colour as the
+     ring — an inset shadow on a full pill renders as a sliver, which reads as
+     a glitch rather than as a state. */
+  border-color: var(--wine-fg); box-shadow: none;
+}
+[data-colour="white"] { --wine-bg: var(--wine-white-bg); --wine-fg: var(--wine-white-fg); --wine-bd: var(--wine-white-bd); }
+[data-colour="red"] { --wine-bg: var(--wine-red-bg); --wine-fg: var(--wine-red-fg); --wine-bd: var(--wine-red-bd); }
+[data-colour="rose"] { --wine-bg: var(--wine-rose-bg); --wine-fg: var(--wine-rose-fg); --wine-bd: var(--wine-rose-bd); }
+[data-colour="sparkling"] { --wine-bg: var(--wine-sparkling-bg); --wine-fg: var(--wine-sparkling-fg); --wine-bd: var(--wine-sparkling-bd); }
+[data-colour="orange"] { --wine-bg: var(--wine-orange-bg); --wine-fg: var(--wine-orange-fg); --wine-bd: var(--wine-orange-bd); }
+[data-colour="fortified"] { --wine-bg: var(--wine-fortified-bg); --wine-fg: var(--wine-fortified-fg); --wine-bd: var(--wine-fortified-bd); }
+.pos-wine-n { font-weight: 500; opacity: 0.5; margin-left: 4px; font-variant-numeric: tabular-nums; }
+/* Search, tally and Clear on one line. The search takes what is left after
+   the other two, which are both as wide as their own text and no wider. */
+.pos-wine-find { display: flex; align-items: center; gap: 8px; }
+.pos-wine-find .pos-wine-search { flex: 1 1 auto; min-width: 0; }
+.pos-wine-clear {
+  font: inherit; font-size: 12px; font-weight: 700; background: none; border: 0;
+  color: var(--pos-accent, #4f6b47); cursor: pointer; padding: 6px 4px; flex: none; white-space: nowrap;
+}
+.pos-wine-count { font-size: 11.5px; opacity: 0.45; flex: none; white-space: nowrap; }
+/* Folds the chip rows away. Sits with Clear rather than above the rows it
+   hides, because the search line is the one thing that never folds. */
+.pos-wine-fold {
+  font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  padding: 6px 10px; border-radius: 9999px; flex: none; white-space: nowrap;
+  border: 1px solid var(--pos-border, rgba(31,53,36,0.16));
+  background: none; color: var(--pos-accent, #4f6b47);
+}
+.pos-wine-fold[aria-expanded="false"] {
+  background: var(--pos-card, #fff);
+}
+
+.pos-wine-rows { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
+.pos-wine-group {
+  position: sticky; top: 0; z-index: 1; padding: 6px 12px;
+  background: var(--wine-bg, var(--pos-panel, #f1ebe3)); color: var(--wine-fg, inherit);
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border-left: 4px solid var(--wine-fg, transparent);
+}
+.pos-wine-band { font-weight: 600; letter-spacing: 0.05em; text-transform: none; opacity: 0.7; margin-left: 8px; }
+.pos-wine-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-bottom: 1px solid var(--pos-border-soft, rgba(31,53,36,0.08));
+  /* The stripe is the whole point of the colour on a row: it survives being
+     scrolled past at speed, where a tinted background would just make the
+     text harder to read. */
+  border-left: 4px solid var(--wine-fg, transparent);
+  /* Wraps rather than overflows. The cart takes a fixed 360px, so on an iPad
+     held upright this column is barely 270px — and an unwrapped row pushed
+     the pour buttons underneath the cart, where they could be read but not
+     pressed. Now the prices drop below the name instead. */
+  flex-wrap: wrap; row-gap: 8px;
+}
+.pos-wine-row.is-86 { opacity: 0.4; }
+/* A basis rather than 0, so the name keeps a readable measure and the row
+   wraps once it cannot have one. */
+.pos-wine-main { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pos-wine-name { font-size: 14.5px; font-weight: 700; line-height: 1.3; }
+.pos-wine-vintage { font-weight: 500; opacity: 0.55; font-variant-numeric: tabular-nums; margin-right: 6px; }
+.pos-wine-meta { font-size: 12.5px; opacity: 0.6; }
+.pos-wine-marks { letter-spacing: 2px; color: var(--pos-accent, #4f6b47); }
+.pos-wine-note { font-size: 12px; opacity: 0.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pos-wine-tag {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 5px; background: var(--pos-chip, #efe8dc); opacity: 0.75; margin-left: 6px;
+}
+.pos-wine-tag.is-out { color: var(--pos-danger, #9a3a2e); opacity: 1; }
+.pos-wine-tag.is-som { color: var(--pos-accent, #4f6b47); opacity: 1; }
+.pos-wine-tag.is-ltd { color: #8a6a1f; opacity: 1; }
+
+.pos-wine-pours { display: flex; gap: 5px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
+.pos-wine-pour {
+  font: inherit; cursor: pointer; border-radius: 11px; padding: 8px 10px; min-width: 70px; min-height: 52px;
+  border: 1px solid var(--pos-border, rgba(31,53,36,0.16)); background: var(--pos-card, #fff); color: inherit;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15;
+}
+.pos-wine-pour:disabled { opacity: 0.3; cursor: default; }
+.pos-wine-size { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; font-weight: 700; }
+.pos-wine-price { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pos-wine-like {
+  font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; min-width: 52px; min-height: 52px;
+  background: transparent; border: 1px dashed var(--pos-border, rgba(31,53,36,0.16));
+  border-radius: 11px; color: inherit; opacity: 0.65;
+}
+.pos-wine-similar {
+  padding: 8px 12px 12px; background: var(--pos-panel, #f1ebe3);
+  border-bottom: 1px solid var(--pos-border-soft, rgba(31,53,36,0.08));
+  display: flex; flex-direction: column; gap: 5px;
+}
+.pos-wine-similar-head { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; opacity: 0.6; }
+.pos-wine-similar-row { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
+.pos-wine-similar-name { flex: 1; min-width: 0; font-weight: 600; }
+.pos-wine-empty { padding: 40px 16px; text-align: center; opacity: 0.6; font-size: 14px; }
+.pos-rail-count { opacity: 0.5; font-variant-numeric: tabular-nums; margin-left: 6px; font-size: 12px; }
+
+@media (max-width: 720px) {
+  .pos-wine-note { display: none; }
+  .pos-wine-pour { min-width: 62px; padding: 8px 7px; }
+}
+
+/* Crash guard: the screen a broken register shows instead of white. */
+.pos-crash { position: fixed; inset: 0; display: grid; place-items: center; background: var(--pos-bg, #14171a); color: var(--pos-text, #f2efe8); padding: 24px; z-index: 9999; }
+.pos-crash-panel { max-width: 420px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.pos-crash-panel h1 { font-size: 22px; margin: 0; }
+.pos-crash-panel p { margin: 0; color: var(--pos-muted, rgba(242,239,232,0.55)); line-height: 1.5; }
+.pos-crash-panel small { color: var(--pos-muted, rgba(242,239,232,0.55)); }
+.pos-crash-primary { min-height: 56px; border-radius: 14px; border: 0; background: var(--pos-accent, #4f8f6b); color: #fff; font-size: 16px; font-weight: 700; }
+.pos-crash-secondary { min-height: 44px; border-radius: 12px; border: 1px solid var(--pos-line, rgba(255,255,255,0.08)); background: transparent; color: var(--pos-text, #f2efe8); }
+
+/* ── Clock-in kiosk (#clock) ─────────────────────────────────────────────── */
+.clock-kiosk {
+  min-height: 100dvh;
+  background: var(--forest, #1f3d2b);
+  color: var(--cream, #f5efe4);
+  display: flex;
+  flex-direction: column;
+  padding: 22px clamp(16px, 4vw, 48px) 32px;
+  gap: 20px;
+  font-family: inherit;
+  user-select: none;
+}
+.clock-head { display: flex; align-items: center; gap: 16px; }
+.clock-mark { width: 44px; height: 44px; object-fit: contain; }
+.clock-head strong { display: block; font-size: 34px; line-height: 1; }
+.clock-head span { opacity: 0.75; font-size: 15px; }
+.clock-main { display: flex; gap: clamp(20px, 5vw, 64px); flex: 1; align-items: flex-start; flex-wrap: wrap; }
+.clock-pad { flex: 1 1 300px; max-width: 420px; }
+.clock-dots { font-size: 30px; letter-spacing: 10px; min-height: 42px; margin: 0 0 8px; }
+.clock-error { color: #ffb4a2; margin: 0 0 8px; }
+.clock-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.clock-keys button {
+  font-size: 30px;
+  padding: 18px 0;
+  border-radius: 16px;
+  border: 1px solid rgba(245, 239, 228, 0.25);
+  background: rgba(245, 239, 228, 0.08);
+  color: inherit;
+}
+.clock-keys button:active { background: rgba(245, 239, 228, 0.22); }
+.clock-keys .clock-go { background: var(--cream, #f5efe4); color: var(--forest, #1f3d2b); font-weight: 700; }
+.clock-keys .clock-go:disabled { opacity: 0.35; }
+.clock-onnow { flex: 1 1 260px; max-width: 420px; }
+.clock-onnow h2 { margin: 0 0 10px; font-size: 18px; opacity: 0.8; }
+.clock-row { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 8px; font-size: 17px; }
+.clock-row span:last-child { opacity: 0.7; }
+.clock-row-break span:last-child { color: #ffd58a; opacity: 1; }
+.clock-muted { opacity: 0.6; }
+.clock-actions { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; max-width: 560px; }
+.clock-actions h1 { margin: 0; font-size: 40px; }
+.clock-status { margin: 0; font-size: 19px; opacity: 0.85; }
+.clock-buttons { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
+.clock-primary,
+.clock-secondary {
+  font-size: 24px;
+  padding: 20px 34px;
+  border-radius: 18px;
+  border: none;
+}
+.clock-primary { background: var(--cream, #f5efe4); color: var(--forest, #1f3d2b); font-weight: 700; }
+.clock-secondary { background: rgba(245, 239, 228, 0.14); color: inherit; border: 1px solid rgba(245, 239, 228, 0.3); }
+.clock-ghost { background: none; border: none; color: inherit; opacity: 0.6; font-size: 15px; padding: 8px 0; text-decoration: underline; }
+.clock-done { flex: 1; display: flex; align-items: center; }
+.clock-done p { font-size: 34px; max-width: 640px; line-height: 1.3; }

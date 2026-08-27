@@ -5,6 +5,19 @@ import { HttpError } from '../lib/http.js';
 import { squareTerminalContext, squareTerminalGet, squareTerminalPost } from './integration.service.js';
 import { env } from '../env.js';
 import { posService, stripeForVenue } from './pos.service.js';
+import {
+  effectivePriceCents,
+  menuForDay,
+  offeredOnDay,
+  venueDayKey,
+  venueWeekday,
+  type PriceWindow
+} from '@alma/shared';
+
+/** Today's weekday where the restaurant stands, not where the server runs. */
+function venueWeekdayNow(): number {
+  return venueWeekday(venueDayKey(new Date())) ?? new Date().getDay();
+}
 
 const stripe = env.stripe.secretKey ? new Stripe(env.stripe.secretKey) : null;
 
@@ -171,10 +184,28 @@ export const qrOrderService = {
   async context(token: string) {
     const { venue, tableLabel } = parseToken(token);
     const menu = (await posService.registerMenu()) as {
-      categories: Array<{ name: string; items: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null }> }>;
+      categories: Array<{
+        name: string;
+        kind: string;
+        items: Array<{
+          recipeId: string;
+          title: string;
+          priceCents: number;
+          venue: string | null;
+          description?: string;
+          dietary?: string[];
+          variantOf?: string;
+          priceWindows?: PriceWindow[];
+        }>;
+      }>;
       eightySix?: string[];
     };
     const eightySix = new Set(menu.eightySix ?? []);
+    // Taco Tuesday, baked: the guest page gets today's prices as plain
+    // numbers, and dishes outside their window (the Tuesday-only taco board)
+    // simply do not exist today. Same arithmetic the register runs against
+    // its own day.
+    const dayMenu = menuForDay(menu.categories, venueWeekdayNow());
     // What guests may order is curated separately from what staff sell. The
     // register menu has already had its own hides applied; these are the
     // guest-only ones on top.
@@ -186,18 +217,41 @@ export const qrOrderService = {
     const qrHiddenCats = new Set(
       qrHides.filter((hide) => hide.kind === 'QR_CATEGORY').map((hide) => hide.key.toLowerCase())
     );
+    // Say it before they order: the same weekend/holiday surcharge the
+    // register applies is charged at checkout, so the page must show it.
+    const surcharge = await posService.currentSurcharge();
     return {
       venue,
       tableLabel,
-      categories: menu.categories
+      ...(surcharge ? { surcharge } : {}),
+      categories: dayMenu
         .filter((category) => !qrHiddenCats.has(category.name.toLowerCase()))
         .map((category) => ({
           name: category.name,
+          // Kitchen or bar, and whether it is a set menu. The guest page needs
+          // it to offer "food / drinks" the way the register's full menu does,
+          // and to put the banquets first.
+          kind: category.kind,
           items: category.items
             .filter((item) => !eightySix.has(item.recipeId))
             .filter((item) => !qrHiddenItems.has(item.recipeId))
             .filter((item) => !item.venue || item.venue === venue)
-            .map((item) => ({ recipeId: item.recipeId, title: item.title, priceCents: item.priceCents }))
+            // A variant row (the 250mL of a wine, say) belongs under its
+            // parent at the register, not as its own line on a guest menu.
+            .filter((item) => !item.variantOf)
+            .map((item) => ({
+              recipeId: item.recipeId,
+              title: item.title,
+              priceCents: item.priceCents,
+              // The menu's own line, and only that. This shape is a whitelist
+              // rather than a spread on purpose: `Recipe.notes` is internal —
+              // prep steps, supplier gripes, "use the older tray first" — and
+              // a guest page is the last place it should be able to surface.
+              ...(item.description ? { description: item.description } : {}),
+              // Empty means nobody has checked, never "no allergens" — the
+              // guest page has to say that, not imply the dish is safe.
+              dietary: item.dietary ?? []
+            }))
         }))
         .filter((category) => category.items.length > 0)
     };
@@ -232,19 +286,69 @@ export const qrOrderService = {
     });
 
     // Server-side pricing — the client's prices are never trusted.
-    const [recipes, eightySixed] = await Promise.all([
+    const [recipes, eightySixed, windowRows, venuePriceRows, hides] = await Promise.all([
       prisma.recipe.findMany({
         where: { id: { in: wanted.map((line) => line.recipeId) }, status: 'ACTIVE', isPrepRecipe: false, salePriceCents: { gt: 0 } },
-        select: { id: true, title: true, kind: true, category: true, salePriceCents: true }
+        select: { id: true, title: true, kind: true, category: true, salePriceCents: true, venue: true }
       }),
-      prisma.pos86.findMany({ where: { recipeId: { in: wanted.map((line) => line.recipeId) } }, select: { recipeId: true } })
+      prisma.pos86.findMany({ where: { recipeId: { in: wanted.map((line) => line.recipeId) } }, select: { recipeId: true } }),
+      prisma.posPriceWindow.findMany({
+        where: { recipeId: { in: wanted.map((line) => line.recipeId) }, active: true },
+        orderBy: { createdAt: 'asc' },
+        select: { recipeId: true, weekdays: true, priceCents: true, onlyWindow: true }
+      }),
+      // The venue's own price for a dish, when it differs from the base — the
+      // menu was SHOWN with this number (context → registerMenu bakes it), so
+      // the charge must be the same number. Pricing off salePriceCents alone
+      // silently billed a different figure than the page displayed.
+      prisma.recipeVenuePrice.findMany({
+        where: { recipeId: { in: wanted.map((line) => line.recipeId) } },
+        select: { recipeId: true, venue: true, salePriceCents: true }
+      }),
+      // The same hides the guest menu applies: a dish hidden from the register
+      // or from QR is not orderable by knowing its recipeId.
+      prisma.posMenuHide.findMany({ select: { kind: true, key: true } })
     ]);
     const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
     const soldOut = new Set(eightySixed.map((row) => row.recipeId));
+    const venuePriceByRecipe = new Map<string, number>();
+    for (const row of venuePriceRows) {
+      if (row.venue === venue) venuePriceByRecipe.set(row.recipeId, row.salePriceCents);
+    }
+    const hiddenItems = new Set(hides.filter((hide) => hide.kind === 'ITEM' || hide.kind === 'QR_ITEM').map((hide) => hide.key));
+    // Taco Tuesday, repriced with the same arithmetic the menu was shown
+    // with. A dish outside its window (the Tuesday-only board on a Wednesday)
+    // is as unavailable as one that was archived.
+    const weekday = venueWeekdayNow();
+    const windowsByRecipe = new Map<string, PriceWindow[]>();
+    for (const row of windowRows) {
+      const list = windowsByRecipe.get(row.recipeId) ?? [];
+      list.push(row);
+      windowsByRecipe.set(row.recipeId, list);
+    }
+    // The same price the guest was SHOWN: the venue override when the dish is
+    // venue-tagged (registerMenu applies it by the recipe's venue; shared
+    // dishes stay on the base price), then today's window on top of that base.
+    const priceToday = (recipeId: string): number => {
+      const recipe = recipeById.get(recipeId)!;
+      const base = (recipe.venue ? venuePriceByRecipe.get(recipeId) : undefined) ?? recipe.salePriceCents ?? 0;
+      return effectivePriceCents(base, windowsByRecipe.get(recipeId), weekday);
+    };
     for (const line of wanted) {
-      if (!recipeById.has(line.recipeId)) throw new HttpError(400, 'An item on your order is no longer available.');
+      const recipe = recipeById.get(line.recipeId);
+      if (!recipe) throw new HttpError(400, 'An item on your order is no longer available.');
+      // The guards the guest MENU applies, re-applied at submit — a recipeId
+      // is not an entitlement to order what the page never offered:
+      //  - a dish hidden from the register or from QR ordering;
+      //  - the other venue's dish, which would fire to a kitchen that does
+      //    not make it and land another company's food on this bill.
+      if (hiddenItems.has(line.recipeId)) throw new HttpError(400, 'An item on your order is no longer available.');
+      if (recipe.venue && recipe.venue !== venue) throw new HttpError(400, 'An item on your order is no longer available.');
+      if (!offeredOnDay(windowsByRecipe.get(line.recipeId), weekday)) {
+        throw new HttpError(400, 'An item on your order is no longer available.');
+      }
       if (soldOut.has(line.recipeId)) {
-        throw new HttpError(409, `${recipeById.get(line.recipeId)!.title} has just sold out — please adjust your order.`);
+        throw new HttpError(409, `${recipe.title} has just sold out — please adjust your order.`);
       }
     }
 
@@ -252,11 +356,15 @@ export const qrOrderService = {
     // send the guest to Square; confirmPaid turns it into real lines once the
     // money is in. An abandoned checkout leaves a dead row here rather than
     // phantom items on a table that a server has to notice and strip out.
-    const totalCents = wanted.reduce(
-      (sum, line) => sum + (recipeById.get(line.recipeId)!.salePriceCents ?? 0) * line.quantity,
-      0
-    );
-    if (totalCents <= 0) throw new HttpError(400, 'That order came to nothing — please order with your server.');
+    const goodsCents = wanted.reduce((sum, line) => sum + priceToday(line.recipeId) * line.quantity, 0);
+    if (goodsCents <= 0) throw new HttpError(400, 'That order came to nothing — please order with your server.');
+    // The register's weekend/holiday surcharge, applied here too. When these
+    // lines land on the table's bill, recomputeOrder adds the bill-side
+    // surcharge on them — charging it at checkout is what makes the guest's
+    // payment cover that share instead of leaving the table under-paid.
+    const surcharge = await posService.currentSurcharge();
+    const surchargeCents = surcharge ? Math.round((goodsCents * surcharge.percent) / 100) : 0;
+    const totalCents = goodsCents + surchargeCents;
 
     const pending = await prisma.posQrPendingOrder.create({
       data: {
@@ -271,7 +379,7 @@ export const qrOrderService = {
           return {
             recipeId: recipe.id,
             name: recipe.title,
-            unitPriceCents: recipe.salePriceCents ?? 0,
+            unitPriceCents: priceToday(recipe.id),
             quantity: line.quantity,
             notes: line.notes
           };

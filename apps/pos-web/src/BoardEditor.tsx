@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  BRIGHT_PALETTE,
+  HUE_NAMES,
   HOME_TAB,
   HUE_DOTS,
   MGMT_KEYS,
@@ -9,6 +9,7 @@ import {
   ICON_STYLES,
   TEXT_SCALES,
   type TextScale,
+  folderItemCount,
   hueClass,
   hueStyle,
   iconKeyFor,
@@ -18,6 +19,7 @@ import {
   paginatePins,
   pinDisplay,
   visibleTabTokens,
+  childNavGroups,
   type HomeConfig,
   type IconStyle,
   type MenuCategory,
@@ -52,6 +54,15 @@ const SIZES: Array<{ key: undefined | 'w' | 'b'; label: string; hint: string }> 
   { key: 'b', label: 'Big', hint: '4 slots' }
 ];
 
+const HUE_LABELS: Record<string, string> = {
+  terra: 'Terracotta',
+  amber: 'Amber',
+  moss: 'Moss green',
+  slate: 'Slate blue',
+  shell: 'Shell pink',
+  cocoa: 'Cocoa'
+};
+
 const LABEL_STYLES: Array<{ key: undefined | 'sh' | 'hs' | 'big'; tag: string; label: string }> = [
   { key: undefined, tag: 'Aa', label: 'Standard' },
   { key: 'sh', tag: 'AB', label: 'Short' },
@@ -76,7 +87,7 @@ export function BoardEditor({
   const [tab, setTab] = useState<'board' | 'nav'>('board');
   const [selected, setSelected] = useState<number | null>(null);
   const [page, setPage] = useState(0);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(true);
   const [addSearch, setAddSearch] = useState('');
   const [folderSearch, setFolderSearch] = useState('');
   const [navSelected, setNavSelected] = useState<string | null>(null);
@@ -90,12 +101,22 @@ export function BoardEditor({
   const pins = home.pins;
   const tabsConfig: TabsConfig = home.categories ?? { order: [], hidden: [], groups: [] };
   const iconOverrides = tabsConfig.icons ?? {};
-  function setIcon(name: string, key: string | null) {
+  function setIcon(token: string, key: string | null) {
+    // Overrides are keyed by PLAIN name — a group's mark is looked up by its
+    // name everywhere, so the 'g:' token must never be the storage key. The
+    // token key is also deleted to clean up boards saved before this fix.
+    const name = token.startsWith('g:') ? token.slice(2) : token;
     const icons = { ...iconOverrides };
+    delete icons[token];
     // null = back to the automatic match; '' = deliberately no mark.
     if (key === null) delete icons[name];
     else icons[name] = key;
     commitTabs({ ...tabsConfig, icons });
+  }
+
+  function iconOverrideFor(token: string): string | undefined {
+    const name = token.startsWith('g:') ? token.slice(2) : token;
+    return iconOverrides[name] ?? iconOverrides[token];
   }
 
   const allItems = useMemo(() => menu.flatMap((category) => category.items), [menu]);
@@ -155,7 +176,7 @@ export function BoardEditor({
     return itemById.get(pin.id)?.title ?? 'Item no longer on the menu';
   }
   function pinKind(pin: Pin): string {
-    return pin.t === 'f' ? `Folder · ${pin.items.length} items` : pin.t === 'm' ? 'Management' : money(itemById.get(pin.id)?.priceCents);
+    return pin.t === 'f' ? `Folder · ${folderItemCount(pin)} items` : pin.t === 'm' ? 'Management' : money(itemById.get(pin.id)?.priceCents);
   }
   function pageOf(index: number) {
     return pages.findIndex((entries) => entries.some((entry) => entry.index === index));
@@ -258,21 +279,47 @@ export function BoardEditor({
     const value = raw.trim().slice(0, 30);
     if (!value || value === oldName) return;
     if (tabsConfig.groups.some((group) => group.name === value)) return;
+    // The mark override is keyed by plain name — a rename must carry it
+    // over, or the folder silently loses its chosen icon.
+    const icons = { ...(tabsConfig.icons ?? {}) };
+    if (Object.prototype.hasOwnProperty.call(icons, oldName)) {
+      icons[value] = icons[oldName]!;
+      delete icons[oldName];
+    }
     commitTabs({
       ...tabsConfig,
+      ...(tabsConfig.icons ? { icons } : Object.keys(icons).length ? { icons } : {}),
       order: (tabsConfig.order.length ? tabsConfig.order : tokens).map((token) => (token === `g:${oldName}` ? `g:${value}` : token)),
-      groups: tabsConfig.groups.map((group) => (group.name === oldName ? { ...group, name: value } : group))
+      // A rename must follow through to any sub-folder that names this one
+      // as its parent, or the children fall out of the tree.
+      groups: tabsConfig.groups.map((group) =>
+        group.name === oldName
+          ? { ...group, name: value }
+          : group.parent === oldName
+            ? { ...group, parent: value }
+            : group
+      )
     });
     setNavSelected(`g:${value}`);
   }
-  // Removing the folder keeps its categories — they return to the nav in place.
+  // Removing the folder keeps its categories — they return to the nav in
+  // place (a top-level folder) or at the end (a sub-folder, which is not in
+  // the order). Its own sub-folders rise to sit under its parent.
   function dissolveNavFolder(name: string) {
-    const cats = tabsConfig.groups.find((group) => group.name === name)?.cats ?? [];
+    const victim = tabsConfig.groups.find((group) => group.name === name);
+    const cats = victim?.cats ?? [];
+    const grandparent = victim?.parent;
     const base = tabsConfig.order.length ? tabsConfig.order : tokens;
+    const token = `g:${name}`;
+    const wasTopLevel = base.includes(token);
     commitTabs({
       ...tabsConfig,
-      order: base.flatMap((token) => (token === `g:${name}` ? cats : [token])),
-      groups: tabsConfig.groups.filter((group) => group.name !== name)
+      order: wasTopLevel
+        ? base.flatMap((entry) => (entry === token ? cats : [entry]))
+        : [...base, ...cats.filter((cat) => !base.includes(cat))],
+      groups: tabsConfig.groups
+        .filter((group) => group.name !== name)
+        .map((group) => (group.parent === name ? { ...group, parent: grandparent } : group))
     });
     setNavSelected(null);
   }
@@ -282,6 +329,32 @@ export function BoardEditor({
     while (tabsConfig.groups.some((group) => group.name === name)) name = `New folder ${n++}`;
     commitTabs({ ...tabsConfig, order: [...tokens, `g:${name}`], groups: [...tabsConfig.groups, { name, cats: [] }] });
     setNavSelected(`g:${name}`);
+  }
+  // A sub-folder lives inside its parent's page, so it stays out of the
+  // top-level order — the parent is the only place it shows.
+  function newNavSubFolder(parentName: string) {
+    let name = 'Sub-folder';
+    let n = 2;
+    while (tabsConfig.groups.some((group) => group.name === name)) name = `Sub-folder ${n++}`;
+    commitTabs({ ...tabsConfig, groups: [...tabsConfig.groups, { name, cats: [], parent: parentName }] });
+    // Keep the parent open so the new sub-folder appears inside it.
+    setNavSelected(`g:${parentName}`);
+  }
+  // Nest a folder under another (parent named) or promote it back to the top
+  // level (parent null). A nested folder drops out of the tab order; a
+  // promoted one rejoins it at the end.
+  function nestNavFolder(childName: string, parentName: string | null) {
+    if (parentName === childName) return;
+    const base = tabsConfig.order.length ? tabsConfig.order : tokens;
+    const token = `g:${childName}`;
+    const cleaned = base.filter((entry) => entry !== token);
+    commitTabs({
+      ...tabsConfig,
+      order: parentName ? cleaned : [...cleaned, token],
+      groups: tabsConfig.groups.map((group) =>
+        group.name === childName ? { ...group, parent: parentName ?? undefined } : group
+      )
+    });
   }
 
   // Same drawn marks as the register, so the preview tells the truth.
@@ -309,6 +382,12 @@ export function BoardEditor({
           </button>
         </div>
         <span className="pos-be-who">{operatorName ? `${operatorName}'s layout` : 'This layout'} · saves as you go</span>
+        {/* The two appearance pickers travel together. On anything wider than
+            a phone this wrapper is display:contents, so the header is exactly
+            the row it has always been; on a phone it becomes one flex item and
+            the pair wraps onto its own line as a unit instead of the marks
+            being squeezed to a stub beside the tabs. */}
+        <div className="pos-be-look">
         <span className="pos-be-iconpick" title="Food-group marks on the nav and the board">
           {ICON_STYLES.map((option) => (
             <button
@@ -343,6 +422,7 @@ export function BoardEditor({
             </button>
           ))}
         </span>
+        </div>
         <button type="button" className="pos-be-add" disabled={!undo} onClick={undoLast}>
           ↶ Undo
         </button>
@@ -366,75 +446,106 @@ export function BoardEditor({
                 <div className="pos-be-addpanel">
                   <input
                     className="pos-be-search"
-                    placeholder="Search the menu…"
+                    placeholder="Search categories and dishes…"
                     value={addSearch}
                     onChange={(event) => setAddSearch(event.currentTarget.value)}
                   />
-                  {addSearch.trim() ? (
-                    <div className="pos-be-chips">
-                      {allItems
-                        .filter((item) => !item.variantOf)
-                        .filter((item) => item.title.toLowerCase().includes(addSearch.trim().toLowerCase()))
-                        .filter((item) => !pinnedIds.has(item.recipeId))
-                        .slice(0, 30)
-                        .map((item) => (
-                          <button key={item.recipeId} type="button" onClick={() => addPin({ t: 'i', id: item.recipeId })}>
-                            ＋ {item.title}
-                          </button>
-                        ))}
-                    </div>
-                  ) : (
-                    <>
-                      <p className="pos-be-hint">Best sellers here</p>
-                      <div className="pos-be-chips">
-                        {topSellers
-                          .filter((recipeId) => !pinnedIds.has(recipeId))
+                  {(() => {
+                    const term = addSearch.trim().toLowerCase();
+                    // Every category, always — one already on the board says
+                    // so and jumps to its tile, instead of silently vanishing
+                    // from the list (which read as "you can't add Tacos").
+                    const categories = menu.filter((category) => !term || category.name.toLowerCase().includes(term));
+                    const dishes = (term
+                      ? allItems
+                          .filter((item) => !item.variantOf)
+                          .filter((item) => item.title.toLowerCase().includes(term))
+                          .slice(0, 20)
+                      : topSellers
                           .map((recipeId) => itemById.get(recipeId))
                           .filter((item): item is MenuItem => Boolean(item))
-                          .slice(0, 12)
-                          .map((item) => (
-                            <button key={item.recipeId} type="button" onClick={() => addPin({ t: 'i', id: item.recipeId })}>
-                              ＋ {item.title}
-                            </button>
+                          .slice(0, 8)
+                    ).filter((item) => !pinnedIds.has(item.recipeId));
+                    return (
+                      <>
+                        <p className="pos-be-hint">Whole categories — one tap puts it on Home as a folder</p>
+                        <ul className="pos-be-addrows">
+                          {categories.map((category) => {
+                            const existingAt = pins.findIndex((pin) => pin.t === 'f' && pin.name === category.name);
+                            return (
+                              <li key={category.name}>
+                                <Mark name={category.name} folder />
+                                <span className="pos-be-addname">
+                                  {category.name}
+                                  <em>{category.items.length} items</em>
+                                </span>
+                                {existingAt >= 0 ? (
+                                  <button type="button" className="pos-be-onboard" onClick={() => setSelected(existingAt)}>
+                                    On the board ✓
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="pos-be-addbtn"
+                                    onClick={() =>
+                                      addPin({
+                                        t: 'f',
+                                        name: category.name,
+                                        items: category.items.filter((item) => !item.variantOf).map((item) => item.recipeId).slice(0, 40)
+                                      })
+                                    }
+                                  >
+                                    ＋ Add
+                                  </button>
+                                )}
+                              </li>
+                            );
+                          })}
+                          {categories.length === 0 ? <li className="pos-be-empty">No category matches that.</li> : null}
+                        </ul>
+                        <p className="pos-be-hint">{term ? 'Single dishes' : 'Best sellers — single dish tiles'}</p>
+                        <ul className="pos-be-addrows">
+                          {dishes.map((item) => (
+                            <li key={item.recipeId}>
+                              <span className="pos-be-addname">
+                                {item.title}
+                                <em>{money(item.priceCents)}</em>
+                              </span>
+                              <button type="button" className="pos-be-addbtn" onClick={() => addPin({ t: 'i', id: item.recipeId })}>
+                                ＋ Add
+                              </button>
+                            </li>
                           ))}
-                        {topSellers.length === 0 ? <span className="pos-be-hint">No sales history yet.</span> : null}
-                      </div>
-                    </>
-                  )}
-                  <p className="pos-be-hint">Folders</p>
-                  <div className="pos-be-chips">
-                    <button type="button" onClick={() => addPin({ t: 'f', name: 'New folder', items: [] })}>
-                      ＋ Empty folder
-                    </button>
-                    {menu
-                      .filter((category) => !pins.some((pin) => pin.t === 'f' && pin.name === category.name))
-                      .map((category) => (
-                        <button
-                          key={category.name}
-                          type="button"
-                          onClick={() =>
-                            addPin({
-                              t: 'f',
-                              name: category.name,
-                              items: category.items.filter((item) => !item.variantOf).map((item) => item.recipeId).slice(0, 40)
-                            })
-                          }
-                        >
-                          📁 {category.name} ({category.items.length})
-                        </button>
-                      ))}
-                  </div>
-                  <p className="pos-be-hint">Management</p>
-                  <div className="pos-be-chips">
-                    {MGMT_KEYS.filter((key) => !pins.some((pin) => pin.t === 'm' && pin.key === key)).map((key) => (
-                      <button key={key} type="button" onClick={() => addPin({ t: 'm', key })}>
-                        ⚙ {MGMT_LABELS[key]}
-                      </button>
-                    ))}
-                    {MGMT_KEYS.every((key) => pins.some((pin) => pin.t === 'm' && pin.key === key)) ? (
-                      <span className="pos-be-hint">All on the board.</span>
-                    ) : null}
-                  </div>
+                          {dishes.length === 0 ? (
+                            <li className="pos-be-empty">{term ? 'No dish matches that.' : 'No sales history yet — search to add dishes.'}</li>
+                          ) : null}
+                        </ul>
+                        <p className="pos-be-hint">More</p>
+                        <ul className="pos-be-addrows">
+                          <li>
+                            <span className="pos-be-addname">
+                              Empty folder
+                              <em>name it, then drag dishes in</em>
+                            </span>
+                            <button type="button" className="pos-be-addbtn" onClick={() => addPin({ t: 'f', name: 'New folder', items: [] })}>
+                              ＋ Add
+                            </button>
+                          </li>
+                          {MGMT_KEYS.filter((key) => !pins.some((pin) => pin.t === 'm' && pin.key === key)).map((key) => (
+                            <li key={key}>
+                              <span className="pos-be-addname">
+                                {MGMT_LABELS[key]}
+                                <em>management tile</em>
+                              </span>
+                              <button type="button" className="pos-be-addbtn" onClick={() => addPin({ t: 'm', key })}>
+                                ＋ Add
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    );
+                  })()}
                 </div>
               ) : null}
 
@@ -578,7 +689,7 @@ export function BoardEditor({
                           />
                           {display.main}
                         </span>
-                        {pin.d === 'big' ? null : <small>{pin.t === 'f' ? `${pin.items.length} items` : pinKind(pin)}</small>}
+                        {pin.d === 'big' ? null : <small>{pin.t === 'f' ? `${folderItemCount(pin)} items` : pinKind(pin)}</small>}
                       </button>
                     );
                   })}
@@ -643,19 +754,27 @@ export function BoardEditor({
 
                     <div className="pos-be-field">
                       <span>Colour</span>
-                      <div className="pos-be-swatches">
-                        {BRIGHT_PALETTE.map((colour) => (
-                          <button
-                            key={colour || 'none'}
-                            type="button"
-                            className={(selectedPin.c ?? '') === colour ? 'is-on' : ''}
-                            style={colour ? { background: HUE_DOTS[colour] ?? colour } : undefined}
-                            title={colour || 'No colour'}
-                            onClick={() => patchPin(selected!, { c: colour || undefined })}
-                          >
-                            {colour ? '' : '∅'}
-                          </button>
-                        ))}
+                      <div className="pos-be-colour">
+                        <i
+                          className="pos-be-colourdot"
+                          style={selectedPin.c ? { background: HUE_DOTS[selectedPin.c] ?? selectedPin.c } : undefined}
+                        />
+                        <select
+                          className="pos-be-select"
+                          value={HUE_NAMES.includes(selectedPin.c ?? '') ? selectedPin.c! : selectedPin.c ? '__custom' : ''}
+                          onChange={(event) => {
+                            const value = event.currentTarget.value;
+                            if (value !== '__custom') patchPin(selected!, { c: value || undefined });
+                          }}
+                        >
+                          <option value="">No colour</option>
+                          {HUE_NAMES.map((hue) => (
+                            <option key={hue} value={hue}>
+                              {HUE_LABELS[hue] ?? hue}
+                            </option>
+                          ))}
+                          {selectedPin.c && !HUE_NAMES.includes(selectedPin.c) ? <option value="__custom">Custom colour</option> : null}
+                        </select>
                       </div>
                     </div>
 
@@ -911,6 +1030,55 @@ export function BoardEditor({
                             ))}
                             {(group?.cats.length ?? 0) === 0 ? <li className="pos-be-empty">Empty — file categories in below.</li> : null}
                           </ol>
+                          <div className="pos-be-subfolders">
+                            <div className="pos-be-subfoldhead">
+                              <span className="pos-be-hint">Sub-folders</span>
+                              <button type="button" className="pos-be-add" onClick={() => newNavSubFolder(groupName!)}>
+                                ＋ Sub-folder
+                              </button>
+                            </div>
+                            {childNavGroups(tabsConfig, groupName!).map((child) => (
+                              <div key={child.name} className="pos-be-subfolder">
+                                <div className="pos-be-subfoldtop">
+                                  <Mark name={child.name} folder />
+                                  <input
+                                    className="pos-be-search"
+                                    defaultValue={child.name}
+                                    placeholder="Sub-folder name"
+                                    onBlur={(event) => renameNavFolder(child.name, event.currentTarget.value)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === 'Enter') renameNavFolder(child.name, event.currentTarget.value);
+                                    }}
+                                  />
+                                  <button type="button" className="pos-be-x" title="Move it back to the top-level nav" onClick={() => nestNavFolder(child.name, null)}>
+                                    Un-nest
+                                  </button>
+                                  <button type="button" className="pos-be-x" title="Remove the sub-folder, keep its categories" onClick={() => dissolveNavFolder(child.name)}>
+                                    Ungroup
+                                  </button>
+                                </div>
+                                <ol>
+                                  {child.cats.map((cat, catIndex) => (
+                                    <li key={cat}>
+                                      <span className="pos-be-move">
+                                        <button type="button" disabled={catIndex === 0} onClick={() => moveWithinNavFolder(child.name, catIndex, -1)}>
+                                          ▲
+                                        </button>
+                                        <button type="button" disabled={catIndex === child.cats.length - 1} onClick={() => moveWithinNavFolder(child.name, catIndex, 1)}>
+                                          ▼
+                                        </button>
+                                      </span>
+                                      <em>{cat}</em>
+                                      <button type="button" className="pos-be-x" title="Take out of the sub-folder" onClick={() => releaseFromNavFolder(child.name, cat)}>
+                                        ⤴
+                                      </button>
+                                    </li>
+                                  ))}
+                                  {child.cats.length === 0 ? <li className="pos-be-empty">Empty — file a category in from its row.</li> : null}
+                                </ol>
+                              </div>
+                            ))}
+                          </div>
                         </li>
                       ) : null}
                       {!isGroup && navSelected === token ? (
@@ -946,7 +1114,7 @@ export function BoardEditor({
                           <div className="pos-be-markpick">
                             <button
                               type="button"
-                              className={!(token in iconOverrides) ? 'is-on' : ''}
+                              className={iconOverrideFor(token) === undefined ? 'is-on' : ''}
                               title="Match it automatically"
                               onClick={() => setIcon(token, null)}
                             >
@@ -954,7 +1122,7 @@ export function BoardEditor({
                             </button>
                             <button
                               type="button"
-                              className={iconOverrides[token] === '' ? 'is-on' : ''}
+                              className={iconOverrideFor(token) === '' ? 'is-on' : ''}
                               title="No mark on this one"
                               onClick={() => setIcon(token, '')}
                             >
@@ -964,7 +1132,7 @@ export function BoardEditor({
                               <button
                                 key={key}
                                 type="button"
-                                className={iconOverrides[token] === key ? 'is-on' : ''}
+                                className={iconOverrideFor(token) === key ? 'is-on' : ''}
                                 title={key}
                                 onClick={() => setIcon(token, key)}
                                 dangerouslySetInnerHTML={{ __html: iconSvg(key, iconStyle === 'off' ? 'line' : iconStyle) }}
@@ -979,7 +1147,7 @@ export function BoardEditor({
                           <div className="pos-be-chips">
                             {tabsConfig.groups.map((candidate) => (
                               <button key={candidate.name} type="button" onClick={() => fileIntoNavFolder(token, candidate.name)}>
-                                📁 {candidate.name}
+                                📁 {candidate.parent ? `${candidate.parent} › ${candidate.name}` : candidate.name}
                               </button>
                             ))}
                           </div>

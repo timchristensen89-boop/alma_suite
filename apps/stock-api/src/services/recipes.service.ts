@@ -22,9 +22,13 @@ import {
   type RecipeLine,
   type RecipeStatus,
   type RecipeWithLines,
+  parseDishDietary,
   type RecipesPayload,
   type RecipesSummary,
   type SetMenuComponentOption,
+  setMenuCoursesSaveInputSchema,
+  setMenuOptionAvailabilityInputSchema,
+  type SetMenuCourse,
   type StockCostOfGoodsPayload
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
@@ -172,6 +176,8 @@ function toRecipePayload(row: RecipeRow): Recipe {
     legacyId: row.legacyId,
     title: row.title,
     printTitle: row.printTitle,
+    guestDescription: row.guestDescription,
+    dietary: parseDishDietary(row.dietary),
     kind: row.kind,
     category: row.category,
     subcategory: row.subcategory,
@@ -204,6 +210,7 @@ function toLinePayload(row: RecipeLineRow): RecipeLine {
     cost: row.cost,
     wastePercent: row.wastePercent,
     perGuests: row.perGuests,
+    costingOnly: row.costingOnly,
     itemId: row.itemId,
     item: row.item ?? null,
     subRecipeId: row.subRecipeId,
@@ -219,6 +226,8 @@ function toRecipeWithLinesPayload(row: RecipeWithLinesRow): RecipeWithLines {
     legacyId: row.legacyId,
     title: row.title,
     printTitle: row.printTitle,
+    guestDescription: row.guestDescription,
+    dietary: parseDishDietary(row.dietary),
     kind: row.kind,
     category: row.category,
     subcategory: row.subcategory,
@@ -1170,6 +1179,8 @@ export const recipesService = {
         wastePercent: num(line.wastePercent) ?? 0,
         cost: num(line.cost),
         perGuests: num(line.perGuests),
+        // Counted by the costing, never served. See set-menu-plan.ts.
+        costingOnly: line.costingOnly === true,
         itemId,
         subRecipeId,
         item: itemId ? itemMap.get(itemId) ?? null : null,
@@ -1273,6 +1284,97 @@ export const recipesService = {
       added += 1;
     }
     return { added, skipped, menus: menus.map((menu) => ({ id: menu.id, title: menu.title })) };
+  },
+
+  // ── The choosing part of a set menu ──────────────────────────────────
+  // Fixed components stay as RecipeLine rows; these are the courses a guest
+  // picks from, which is what the register asks and the banquet report reads.
+  async setMenuCourses(recipeId: string): Promise<SetMenuCourse[]> {
+    const rows = await prisma.setMenuCourse.findMany({
+      where: { setMenuRecipeId: recipeId },
+      orderBy: { sortOrder: 'asc' },
+      include: {
+        options: {
+          orderBy: { sortOrder: 'asc' },
+          include: { recipe: { select: { title: true, salePriceCents: true, estimatedCost: true } } }
+        }
+      }
+    });
+    return rows.map((course) => ({
+      id: course.id,
+      name: course.name,
+      posCourse: course.posCourse,
+      pick: course.pick,
+      perGuests: course.perGuests,
+      sortOrder: course.sortOrder,
+      options: course.options.map((option) => ({
+        id: option.id,
+        recipeId: option.recipeId,
+        title: option.recipe.title,
+        supplementCents: option.supplementCents,
+        available: option.available,
+        salePriceCents: option.recipe.salePriceCents,
+        estimatedCost: option.recipe.estimatedCost,
+        sortOrder: option.sortOrder
+      }))
+    }));
+  },
+
+  // Replace the whole course structure in one save, the same way the line
+  // editor works. Courses are recreated rather than diffed — nothing hangs off
+  // a course id (what a table was served lives on PosOrderLine), so there is
+  // no history to preserve here.
+  async saveSetMenuCourses(recipeId: string, input: unknown): Promise<SetMenuCourse[]> {
+    const data = setMenuCoursesSaveInputSchema.parse(input);
+    const menu = await prisma.recipe.findUnique({ where: { id: recipeId }, select: { id: true, kind: true } });
+    if (!menu) throw new HttpError(404, 'Set menu not found');
+    if (menu.kind !== 'SET_MENU') throw new HttpError(400, 'Courses can only be added to a set menu');
+    // A course that offers the menu itself would have the register recursing.
+    const optionIds = [...new Set(data.courses.flatMap((course) => course.options.map((option) => option.recipeId)))];
+    if (optionIds.includes(recipeId)) throw new HttpError(400, 'A set menu cannot be one of its own choices');
+    if (optionIds.length > 0) {
+      const found = await prisma.recipe.findMany({ where: { id: { in: optionIds } }, select: { id: true } });
+      const known = new Set(found.map((row) => row.id));
+      const missing = optionIds.filter((id) => !known.has(id));
+      if (missing.length > 0) throw new HttpError(400, 'One of the chosen dishes no longer exists');
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.setMenuCourse.deleteMany({ where: { setMenuRecipeId: recipeId } });
+      for (const [index, course] of data.courses.entries()) {
+        await tx.setMenuCourse.create({
+          data: {
+            setMenuRecipeId: recipeId,
+            name: course.name.trim(),
+            posCourse: course.posCourse?.trim() || null,
+            pick: course.pick,
+            perGuests: course.perGuests ?? null,
+            sortOrder: index,
+            options: {
+              create: course.options.map((option, optionIndex) => ({
+                recipeId: option.recipeId,
+                supplementCents: option.supplementCents,
+                available: option.available,
+                sortOrder: optionIndex
+              }))
+            }
+          }
+        });
+      }
+    });
+    return this.setMenuCourses(recipeId);
+  },
+
+  // Tonight's menu changes far more often than the menu does, so turning one
+  // dish on or off is a single call and never a full save.
+  async setSetMenuOptionAvailability(optionId: string, input: unknown) {
+    const data = setMenuOptionAvailabilityInputSchema.parse(input);
+    const option = await prisma.setMenuOption.findUnique({
+      where: { id: optionId },
+      select: { id: true, course: { select: { setMenuRecipeId: true } } }
+    });
+    if (!option) throw new HttpError(404, 'That choice is no longer on the menu');
+    await prisma.setMenuOption.update({ where: { id: optionId }, data: { available: data.available } });
+    return { id: optionId, available: data.available, setMenuRecipeId: option.course.setMenuRecipeId };
   },
 
   // The parent → child "serves" tree: child recipes that draw a portion from this
@@ -1433,6 +1535,10 @@ export const recipesService = {
       data: {
         title: data.title.trim(),
         printTitle: normaliseOptionalText(data.printTitle) ?? null,
+        guestDescription: normaliseOptionalText(data.guestDescription) ?? null,
+        // Parsed on the way in, so an unknown tag is dropped at the door
+        // rather than stored and shown to the floor as a claim.
+        dietary: parseDishDietary(data.dietary ?? []),
         kind: normaliseOptionalText(data.kind) ?? null,
         category: normaliseOptionalText(data.category) ?? null,
         subcategory: normaliseOptionalText(data.subcategory) ?? null,
@@ -1459,6 +1565,7 @@ export const recipesService = {
                 cost: line.cost ?? null,
                 wastePercent: applyDefaultWastage({ wastePercent: line.wastePercent }).wastePercent,
                 perGuests: line.perGuests ?? null,
+                costingOnly: line.costingOnly === true,
                 itemId: normaliseOptionalText(line.itemId) ?? null,
                 subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
               }))
@@ -1523,6 +1630,10 @@ export const recipesService = {
       data: {
         ...(data.title !== undefined && { title: data.title.trim() }),
         ...(data.printTitle !== undefined && { printTitle: normaliseOptionalText(data.printTitle) }),
+        ...(data.guestDescription !== undefined && {
+          guestDescription: normaliseOptionalText(data.guestDescription)
+        }),
+        ...(data.dietary !== undefined && { dietary: parseDishDietary(data.dietary) }),
         ...(data.kind !== undefined && { kind: normaliseOptionalText(data.kind) }),
         ...(data.category !== undefined && {
           category: normaliseOptionalText(data.category)
@@ -1580,6 +1691,7 @@ export const recipesService = {
               cost: line.cost ?? null,
               wastePercent: line.wastePercent ?? null,
               perGuests: line.perGuests ?? null,
+              costingOnly: line.costingOnly === true,
               itemId: normaliseOptionalText(line.itemId) ?? null,
               subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
             }))
@@ -1615,5 +1727,95 @@ export const recipesService = {
       where: { id: { in: uniqueIds } }
     });
     return { deleted: result.count };
+  },
+
+  // ── Price windows ──────────────────────────────────────────────────────
+  // Weekday pricing on a dish (Taco Tuesday at $5; a Tuesday-only board).
+  // The register, the QR menu and QR ordering all read these rows live —
+  // this editor is the whole write path, so a manager can change a window
+  // without anyone running a script against the database.
+
+  async listPriceWindows(recipeId: string) {
+    const recipe = await prisma.recipe.findUnique({ where: { id: recipeId }, select: { id: true } });
+    if (!recipe) throw new HttpError(404, 'Recipe not found');
+    return prisma.posPriceWindow.findMany({ where: { recipeId }, orderBy: { createdAt: 'asc' } });
+  },
+
+  async createPriceWindow(recipeId: string, input: unknown) {
+    const recipe = await prisma.recipe.findUnique({
+      where: { id: recipeId },
+      select: { id: true, salePriceCents: true }
+    });
+    if (!recipe) throw new HttpError(404, 'Recipe not found');
+    const data = parsePriceWindowInput(input, { partial: false });
+    // partial:false guarantees the three required fields threw if absent.
+    return prisma.posPriceWindow.create({
+      data: {
+        recipeId,
+        label: data.label!,
+        weekdays: data.weekdays!,
+        priceCents: data.priceCents!,
+        onlyWindow: data.onlyWindow ?? false,
+        ...(data.active !== undefined ? { active: data.active } : {})
+      }
+    });
+  },
+
+  async updatePriceWindow(windowId: string, input: unknown) {
+    const existing = await prisma.posPriceWindow.findUnique({ where: { id: windowId } });
+    if (!existing) throw new HttpError(404, 'Price window not found');
+    const data = parsePriceWindowInput(input, { partial: true });
+    return prisma.posPriceWindow.update({ where: { id: windowId }, data });
+  },
+
+  async deletePriceWindow(windowId: string) {
+    const existing = await prisma.posPriceWindow.findUnique({ where: { id: windowId }, select: { id: true } });
+    if (!existing) throw new HttpError(404, 'Price window not found');
+    await prisma.posPriceWindow.delete({ where: { id: windowId } });
+    return { deleted: true };
   }
 };
+
+/**
+ * Validate a price-window write. Strict on purpose: these rows change what
+ * the register CHARGES, so a malformed weekday list or a $0 price must be
+ * refused here, not discovered on a Tuesday night.
+ */
+function parsePriceWindowInput(
+  input: unknown,
+  options: { partial: boolean }
+): { label?: string; weekdays?: string; priceCents?: number; onlyWindow?: boolean; active?: boolean } {
+  const body = (input ?? {}) as Record<string, unknown>;
+  const out: { label?: string; weekdays?: string; priceCents?: number; onlyWindow?: boolean; active?: boolean } = {};
+
+  if (body.label !== undefined || !options.partial) {
+    const label = String(body.label ?? '').trim().slice(0, 60);
+    if (!label) throw new HttpError(400, 'Give the window a label — it is how reports say why a line rang at this price.');
+    out.label = label;
+  }
+
+  if (body.weekdays !== undefined || !options.partial) {
+    // Accepted as an array of JS weekday numbers (0=Sun..6=Sat) or the csv
+    // the row stores. Stored as csv, the same shape PosRule uses.
+    const raw = Array.isArray(body.weekdays)
+      ? body.weekdays
+      : String(body.weekdays ?? '').split(',').filter(Boolean);
+    const days = [...new Set(raw.map((entry) => Number(entry)))].filter(
+      (day) => Number.isInteger(day) && day >= 0 && day <= 6
+    );
+    if (days.length === 0) throw new HttpError(400, 'Pick at least one day for the window.');
+    out.weekdays = days.sort((a, b) => a - b).join(',');
+  }
+
+  if (body.priceCents !== undefined || !options.partial) {
+    const priceCents = Number(body.priceCents);
+    if (!Number.isInteger(priceCents) || priceCents < 1) {
+      throw new HttpError(400, 'The window price must be at least 1 cent — the register hides $0 dishes.');
+    }
+    out.priceCents = priceCents;
+  }
+
+  if (body.onlyWindow !== undefined) out.onlyWindow = Boolean(body.onlyWindow);
+  if (body.active !== undefined) out.active = Boolean(body.active);
+  return out;
+}

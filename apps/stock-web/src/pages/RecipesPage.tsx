@@ -4,21 +4,26 @@ import type {
   RecipeCreateInput,
   RecipeCostLine,
   RecipeCostPayload,
+  RecipeLine,
   RecipeLineInput,
   RecipeUpdateInput,
   RecipeWithLines,
   RecipesPayload,
   RecipesSummary,
   SetMenuComponentOption,
+  SetMenuCourse,
   StockItem,
   StockItemsPayload
 } from '@alma/shared';
+// Values, not types — the import above is type-only.
+import { DISH_DIETARY, parseDishDietary } from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { IconChevronDown, IconRecipes } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
+import { orphanedComponents } from '../lib/setMenuOrphans';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
 import { PortionsBuilder } from '../features/recipes/PortionsBuilder';
@@ -42,6 +47,10 @@ type RecipeLineDraft = {
 type RecipeDraft = {
   title: string;
   printTitle: string;
+  /** The line a guest reads on the QR menu. Never `notes`, which is internal. */
+  guestDescription: string;
+  /** DISH_DIETARY ids. Empty = nobody has checked, NOT "no allergens". */
+  dietary: string[];
   kind: string;
   category: string;
   subcategory: string;
@@ -764,6 +773,27 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
                   </div>
                 ) : null}
                 {detail && detail.id === recipe.id && detail.kind === 'SET_MENU' ? (
+                  <SetMenuCoursesPanel
+                    menuId={detail.id}
+                    canManage={canManage}
+                    allRecipes={data?.recipes ?? []}
+                    components={detail.lines}
+                    onComponentsChanged={async () => {
+                      try {
+                        const [full, refreshedCost] = await Promise.all([
+                          api<RecipeWithLines>(`/api/recipes/${recipe.id}`),
+                          api<RecipeCostPayload>(`/api/recipes/${recipe.id}/cost`)
+                        ]);
+                        setDetail(full);
+                        setCostDetail(refreshedCost);
+                      } catch {
+                        /* refresh failure is non-fatal */
+                      }
+                      void load();
+                    }}
+                  />
+                ) : null}
+                {detail && detail.id === recipe.id && detail.kind === 'SET_MENU' ? (
                   <SetMenuComponentsPanel
                     menuId={detail.id}
                     canManage={canManage}
@@ -1114,6 +1144,8 @@ function emptyRecipeDraft(): RecipeDraft {
   return {
     title: '',
     printTitle: '',
+    guestDescription: '',
+    dietary: [],
     kind: 'FOOD',
     category: '',
     subcategory: '',
@@ -1147,6 +1179,8 @@ function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
   return {
     title: recipe.title,
     printTitle: recipe.printTitle ?? '',
+    guestDescription: recipe.guestDescription ?? '',
+    dietary: parseDishDietary(recipe.dietary),
     kind: normaliseRecipeKindForForm(recipe),
     category: recipe.category ?? '',
     subcategory: recipe.subcategory ?? '',
@@ -1294,6 +1328,8 @@ function RecipeForm({
     const payload: RecipeCreateInput = {
       title: draft.title.trim(),
       printTitle: draft.printTitle.trim(),
+      guestDescription: draft.guestDescription.trim(),
+      dietary: draft.dietary,
       kind: draft.kind.trim(),
       // A recipe is a production (prep/batch) recipe when created in the
       // production view OR explicitly flagged via the toggle in the item editor.
@@ -1372,6 +1408,59 @@ function RecipeForm({
           <Input label="Sale price" type="number" step="0.01" value={draft.salePrice} onChange={(event) => update('salePrice', event.currentTarget.value)} />
         )}
       </div>
+      {/* Guest description. Its own row because it is prose, and next to
+          Dietary because these two are the only fields on this form a GUEST
+          ever reads. `Notes`, further down, is the opposite: internal, and it
+          is never sent to the QR menu. */}
+      <div className="form-grid">
+        <Input
+          label="Guest description"
+          value={draft.guestDescription}
+          maxLength={240}
+          onChange={(event) => update('guestDescription', event.currentTarget.value)}
+          placeholder="Pipian mole, pepitas"
+          hint="Shown under the dish on the QR menu — the menu's own line, word for word. Leave blank and the guest sees the dish name alone. Not the same as Notes, which stays internal."
+        />
+      </div>
+      {/* Dietary — a claim about a plate, so it is deliberately plain
+          checkboxes rather than something clever. Nothing here is inferred:
+          a dish is only gluten free because somebody ticked it.
+
+          Empty is NOT a claim. An unticked dish reads as "nobody has checked"
+          everywhere it is used, never as "free of everything" — the register's
+          filter excludes unmarked dishes rather than offering them. */}
+      <fieldset className="form-fieldset">
+        <legend>Dietary</legend>
+        <p className="form-hint">
+          Only tick what the kitchen has actually confirmed. Anything left unticked shows on the register as
+          &ldquo;not checked&rdquo;, which is the honest answer — it is never read as safe.
+          The two <strong>Contains</strong> tags carry the allergy filters: they are the only thing that HIDES a dish
+          from a nut or shellfish allergy, so tick them on every dish that has the allergen — prawns, octopus and other
+          shellfish included — even though the printed menu has no mark for it.
+        </p>
+        <div className="dietary-picker">
+          {DISH_DIETARY.map((tag) => {
+            const on = draft.dietary.includes(tag.id);
+            return (
+              <label key={tag.id} className={`dietary-tag is-${tag.kind} ${on ? 'is-on' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={(event) =>
+                    update(
+                      'dietary',
+                      event.currentTarget.checked
+                        ? parseDishDietary([...draft.dietary, tag.id])
+                        : draft.dietary.filter((id) => id !== tag.id)
+                    )
+                  }
+                />
+                <span>{tag.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
       {pageMode === 'production' ? null : (
         <div className="recipe-venue-prices">
           <span className="recipe-venue-prices-label">Per-venue prices (optional)</span>
@@ -1434,6 +1523,9 @@ function RecipeForm({
         <p className="recipe-costing-note">
           Production recipes are reusable prep or batch items. Add them to item recipes as production recipe ingredient lines once the batch is saved.
         </p>
+      ) : null}
+      {pageMode !== 'production' && mode === 'edit' && initial ? (
+        <PriceWindowsEditor recipeId={initial.id} basePriceLabel={draft.salePrice ? `$${draft.salePrice}` : 'the sale price'} />
       ) : null}
       <div className="form-grid three">
         <Select label="Category" value={draft.category} onChange={(event) => update('category', event.currentTarget.value)} options={categoryOptions} />
@@ -1558,6 +1650,7 @@ type EditableLineDraft = {
   unit: string;
   wastePercent: string;
   perGuests: string;
+  costingOnly: boolean;
 };
 
 function lineToDraft(line: RecipeWithLines['lines'][number]): EditableLineDraft {
@@ -1568,7 +1661,8 @@ function lineToDraft(line: RecipeWithLines['lines'][number]): EditableLineDraft 
     quantity: line.quantity != null ? String(line.quantity) : '',
     unit: line.unit ?? '',
     wastePercent: line.wastePercent != null ? String(line.wastePercent) : '',
-    perGuests: line.perGuests != null ? String(line.perGuests) : ''
+    perGuests: line.perGuests != null ? String(line.perGuests) : '',
+    costingOnly: line.costingOnly === true
   };
 }
 
@@ -1720,7 +1814,8 @@ function RecipeLinesTable({
         quantity: '',
         unit: '',
         wastePercent: '',
-        perGuests: ''
+        perGuests: '',
+        costingOnly: false
       }
     ]);
     setDirty(true);
@@ -1743,6 +1838,10 @@ function RecipeLinesTable({
           if (line.subRecipeId) out.subRecipeId = line.subRecipeId;
           if (line.wastePercent.trim()) out.wastePercent = Number(line.wastePercent);
           if (line.perGuests.trim()) out.perGuests = Number(line.perGuests);
+          // Always sent, not only when true: PATCH replaces the whole line
+          // list, so omitting a cleared checkbox would leave the old value
+          // standing and the dish would silently stay off the docket.
+          out.costingOnly = line.costingOnly;
           return out;
         });
       const updated = await api<RecipeWithLines>(`/api/recipes/${detail.id}`, {
@@ -1814,6 +1913,7 @@ function RecipeLinesTable({
             <th>{isSetMenu ? 'Qty pp' : 'Qty'}</th>
             <th>Unit</th>
             {isSetMenu ? <th>Shared between</th> : null}
+            {isSetMenu ? <th>Cost only</th> : null}
             <th>Line cost</th>
             <th>Source</th>
             <th aria-label="Delete" />
@@ -1906,6 +2006,24 @@ function RecipeLinesTable({
                     </select>
                   </td>
                 ) : null}
+                {isSetMenu ? (
+                  <td>
+                    {/* The third state. A banquet's price carries what the
+                        table drinks on average, and no kitchen can plate an
+                        average — so it is counted here and never printed. */}
+                    <label
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                      title="Counted in the cost, never sent to a bill or a docket — use it for the drinks allowance."
+                    >
+                      <input
+                        type="checkbox"
+                        checked={draft.costingOnly}
+                        onChange={(event) => updateDraft(index, { costingOnly: event.currentTarget.checked })}
+                      />
+                      Cost only
+                    </label>
+                  </td>
+                ) : null}
                 <td>{formatCurrencyCents(costLine?.lineCostCents ?? null)}</td>
                 <td>
                   <Badge tone={costLine?.source === 'MISSING' || !costLine ? 'warning' : 'positive'}>
@@ -1968,6 +2086,548 @@ function RecipeLinesTable({
 // the POS-side components of set menus. This panel lists them with their
 // mapped recipe's cost so they can be dropped onto this menu — or every menu —
 // as costed lines, shared between 1/2/4 guests.
+// The choosing part of a set menu: which courses a guest picks from, and what
+// is on offer tonight. Two jobs, deliberately separated — flipping a dish on
+// or off happens most services and saves itself on the tap; changing the shape
+// of the menu is rarer and saves as a whole.
+// The course cycle the register fires on. posService.listCourses seeds exactly
+// these names and pos-web falls back to them, so a course picked here already
+// has a column on the fire screen. It was a free-text box until a banquet came
+// out as a dozen one-dish courses, each named after its own dish.
+const POS_COURSE_NAMES = ['NOW', 'Course 1', 'Course 2', 'Course 3', 'Course 4', 'Course 5', 'Course 6'];
+
+type CourseDraft = {
+  id: string | null;
+  name: string;
+  posCourse: string;
+  pick: string;
+  /** Blank = one serve each. "4" = one serve between four. */
+  perGuests: string;
+  options: Array<{ id: string | null; recipeId: string; title: string; supplement: string; available: boolean }>;
+};
+
+function toDrafts(courses: SetMenuCourse[]): CourseDraft[] {
+  return courses.map((course) => ({
+    id: course.id,
+    name: course.name,
+    posCourse: course.posCourse ?? '',
+    pick: String(course.pick),
+    perGuests: course.perGuests ? String(course.perGuests) : '',
+    options: course.options.map((option) => ({
+      id: option.id,
+      recipeId: option.recipeId,
+      title: option.title,
+      supplement: option.supplementCents ? (option.supplementCents / 100).toFixed(2) : '',
+      available: option.available
+    }))
+  }));
+}
+
+function SetMenuCoursesPanel({
+  menuId,
+  canManage,
+  allRecipes,
+  components,
+  onComponentsChanged
+}: {
+  menuId: string;
+  canManage: boolean;
+  allRecipes: Recipe[];
+  /** The set menu's own component lines — what it is costed as containing. */
+  components: RecipeLine[];
+  onComponentsChanged: () => void | Promise<void>;
+}) {
+  const [courses, setCourses] = useState<SetMenuCourse[] | null>(null);
+  const [drafts, setDrafts] = useState<CourseDraft[]>([]);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  // Removing a course does NOT remove the dish. Courses and components are two
+  // records of the same dish: while the course exists it suppresses the
+  // component and the table is asked, and the moment it goes the component
+  // comes back as a fixed inclusion — on every bill, fired to the kitchen,
+  // nobody having chosen it. That is the "I removed it and it still prints"
+  // report, and it is invisible from this panel, so these two pieces of state
+  // make it visible and offer to finish the job.
+  const [pendingRemoval, setPendingRemoval] = useState<
+    { index: number; courseName: string; orphans: Array<{ subRecipeId: string; name: string }> } | null
+  >(null);
+  const [componentsToDrop, setComponentsToDrop] = useState<string[]>([]);
+  const [componentsToQuiet, setComponentsToQuiet] = useState<string[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const rows = await api<SetMenuCourse[]>(`/api/recipes/${menuId}/courses`);
+        if (!live) return;
+        setCourses(rows);
+        setDrafts(toDrafts(rows));
+        setDirty(false);
+        setError(null);
+      } catch (err) {
+        if (live) setError(err instanceof ApiError ? err.message : 'Could not load the courses');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [menuId]);
+
+  const dishOptions = useMemo(
+    () => [
+      { label: 'Choose a dish…', value: '' },
+      ...allRecipes
+        .filter((recipe) => recipe.id !== menuId && !recipe.isPrepRecipe && recipe.kind !== 'SET_MENU' && recipe.status === 'ACTIVE')
+        .map((recipe) => ({
+          label: `${recipe.title}${recipe.venue ? ` (${recipe.venue})` : ''}`,
+          value: recipe.id
+        }))
+    ],
+    [allRecipes, menuId]
+  );
+
+  function patchCourse(index: number, patch: Partial<CourseDraft>) {
+    setDrafts((current) => current.map((draft, i) => (i === index ? { ...draft, ...patch } : draft)));
+    setDirty(true);
+  }
+
+  function addOption(index: number, recipeId: string) {
+    if (!recipeId) return;
+    const dish = allRecipes.find((recipe) => recipe.id === recipeId);
+    setDrafts((current) =>
+      current.map((draft, i) =>
+        i !== index || draft.options.some((option) => option.recipeId === recipeId)
+          ? draft
+          : {
+              ...draft,
+              options: [
+                ...draft.options,
+                { id: null, recipeId, title: dish?.title ?? 'Dish', supplement: '', available: true }
+              ]
+            }
+      )
+    );
+    setDirty(true);
+  }
+
+  // Tonight's menu. A saved option saves itself the moment it is tapped —
+  // this is the thing that changes most services, and nobody should have to
+  // find a Save button to take a sold-out dish off the register.
+  async function toggleTonight(optionId: string, available: boolean) {
+    setNote(null);
+    // Paint first: the register picks this up on its next menu poll either way.
+    setCourses((current) =>
+      current
+        ? current.map((course) => ({
+            ...course,
+            options: course.options.map((option) => (option.id === optionId ? { ...option, available } : option))
+          }))
+        : current
+    );
+    try {
+      await api(`/api/recipes/set-menu-options/${optionId}/availability`, {
+        method: 'PATCH',
+        body: JSON.stringify({ available })
+      });
+    } catch (err) {
+      setNote(err instanceof ApiError ? err.message : 'Could not update tonight\u2019s menu');
+      const rows = await api<SetMenuCourse[]>(`/api/recipes/${menuId}/courses`).catch(() => null);
+      if (rows) setCourses(rows);
+    }
+  }
+
+  async function save() {
+    // A course with no name used to be silently FILTERED OUT of the save —
+    // the person lost the course and every dish picked into it, with the
+    // success note claiming all was well. Refuse loudly instead.
+    const unnamed = drafts.filter((draft) => !draft.name.trim());
+    if (unnamed.length > 0) {
+      setNote(
+        unnamed.length === 1
+          ? 'One course has no name — name it (or remove it with its ✕) before saving, or it would be deleted along with its dishes.'
+          : `${unnamed.length} courses have no name — name them (or remove them) before saving, or they would be deleted along with their dishes.`
+      );
+      return;
+    }
+    setSaving(true);
+    setNote(null);
+    try {
+      const rows = await api<SetMenuCourse[]>(`/api/recipes/${menuId}/courses`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          courses: drafts
+            .map((draft) => ({
+              name: draft.name.trim(),
+              posCourse: draft.posCourse.trim() || null,
+              pick: Number(draft.pick) || 1,
+              // Blank means one each, which is not the same as "shared
+              // between 1" — send null so the register keeps its default.
+              perGuests: Number(draft.perGuests) > 1 ? Number(draft.perGuests) : null,
+              options: draft.options.map((option) => ({
+                recipeId: option.recipeId,
+                supplementCents: option.supplement.trim() ? Math.round(Number(option.supplement) * 100) : 0,
+                available: option.available
+              }))
+            }))
+        })
+      });
+      // Then, and only then, the components the user chose to remove with
+      // their course. Courses first because that save is the one that can be
+      // rejected; if it throws we have not already stripped the recipe.
+      if (componentsToDrop.length > 0 || componentsToQuiet.length > 0) {
+        const keep = components
+          .filter((line) => !(line.subRecipeId && componentsToDrop.includes(line.subRecipeId)))
+          .map((line) => ({
+            ...line,
+            costingOnly:
+              line.costingOnly || Boolean(line.subRecipeId && componentsToQuiet.includes(line.subRecipeId))
+          }));
+        await api<RecipeWithLines>(`/api/recipes/${menuId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            // Every field carried through, not just the ones this panel cares
+            // about: PATCH replaces the whole line list, so anything omitted
+            // here is deleted. A component that points at a stock item rather
+            // than a sub-recipe would lose its itemId and its cost, and the
+            // menu's margin would move without anybody touching a price.
+            lines: keep.map((line) => ({
+              ingredientName: line.ingredientName,
+              quantity: line.quantity ?? undefined,
+              unit: line.unit ?? undefined,
+              cost: line.cost ?? undefined,
+              wastePercent: line.wastePercent ?? undefined,
+              perGuests: line.perGuests ?? undefined,
+              costingOnly: line.costingOnly,
+              itemId: line.itemId ?? undefined,
+              subRecipeId: line.subRecipeId ?? undefined
+            }))
+          })
+        });
+        setComponentsToDrop([]);
+        setComponentsToQuiet([]);
+        await onComponentsChanged();
+      }
+      setCourses(rows);
+      setDrafts(toDrafts(rows));
+      setDirty(false);
+      setNote('Saved — the register picks this up on its next menu refresh.');
+    } catch (err) {
+      setNote(err instanceof ApiError ? err.message : 'Could not save the courses');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const tonightRows = (courses ?? []).filter((course) => course.options.length > 0);
+
+  return (
+    <div className="card stock-portions-card">
+      <div className="recipe-lines-toolbar" style={{ marginBottom: 12 }}>
+        <strong>Courses the guest chooses</strong>
+        <span style={{ flex: 1 }} />
+        <Button type="button" size="sm" variant="secondary" onClick={() => setEditing((value) => !value)}>
+          {editing ? 'Done editing' : 'Edit courses'}
+        </Button>
+      </div>
+
+      {error ? <p className="error-text">{error}</p> : null}
+      {note ? <p className="subtle">{note}</p> : null}
+
+      {/* The question this panel could not previously answer: what happens to
+          the dishes when the course goes. */}
+      {pendingRemoval ? (
+        <div className="card" style={{ borderColor: '#b5772f', padding: 14, marginBottom: 12 }}>
+          <strong>Removing “{pendingRemoval.courseName}” does not remove the food.</strong>
+          <p className="subtle" style={{ marginTop: 6 }}>
+            {pendingRemoval.orphans.length === 1 ? 'This dish is' : 'These dishes are'} also listed as{' '}
+            {pendingRemoval.orphans.length === 1 ? 'a component' : 'components'} of this set menu. With the course gone
+            nobody is asked about {pendingRemoval.orphans.length === 1 ? 'it' : 'them'} any more — so{' '}
+            {pendingRemoval.orphans.length === 1 ? 'it goes' : 'they go'} on every bill automatically and fire to the
+            kitchen unchosen.
+          </p>
+          <ul style={{ margin: '8px 0 12px 18px' }}>
+            {pendingRemoval.orphans.map((orphan) => (
+              <li key={orphan.subRecipeId}>{orphan.name}</li>
+            ))}
+          </ul>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setComponentsToDrop((current) => [
+                  ...current,
+                  ...pendingRemoval.orphans.map((orphan) => orphan.subRecipeId)
+                ]);
+                setDrafts((current) => current.filter((_, i) => i !== pendingRemoval.index));
+                setDirty(true);
+                setPendingRemoval(null);
+              }}
+            >
+              Remove the course and {pendingRemoval.orphans.length === 1 ? 'the dish' : 'these dishes'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                // Usually the right answer for a banquet: the menu is still
+                // priced to include this, the kitchen just stops being told
+                // about it. Same switch as the drinks allowance.
+                setComponentsToQuiet((current) => [
+                  ...current,
+                  ...pendingRemoval.orphans.map((orphan) => orphan.subRecipeId)
+                ]);
+                setDrafts((current) => current.filter((_, i) => i !== pendingRemoval.index));
+                setDirty(true);
+                setPendingRemoval(null);
+              }}
+            >
+              Keep the cost, stop serving {pendingRemoval.orphans.length === 1 ? 'it' : 'them'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setDrafts((current) => current.filter((_, i) => i !== pendingRemoval.index));
+                setDirty(true);
+                setPendingRemoval(null);
+              }}
+            >
+              Everyone gets {pendingRemoval.orphans.length === 1 ? 'it' : 'them'}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setPendingRemoval(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {componentsToDrop.length > 0 || componentsToQuiet.length > 0 ? (
+        <p className="subtle">
+          When you save:{' '}
+          {componentsToDrop.length > 0
+            ? `${componentsToDrop.length} ${componentsToDrop.length === 1 ? 'dish' : 'dishes'} removed from this menu’s components`
+            : ''}
+          {componentsToDrop.length > 0 && componentsToQuiet.length > 0 ? ', and ' : ''}
+          {componentsToQuiet.length > 0
+            ? `${componentsToQuiet.length} kept in the cost but no longer served`
+            : ''}
+          .
+        </p>
+      ) : null}
+
+      {courses === null ? <Spinner label="Loading courses" /> : null}
+
+      {courses !== null && tonightRows.length === 0 && !editing ? (
+        <p className="subtle">
+          No courses yet. Add one and the register will ask the table who is having what — until then this menu rings as a
+          plain price.
+        </p>
+      ) : null}
+
+      {/* Tonight's menu: one tap per dish, saved immediately. */}
+      {!editing && tonightRows.length > 0 ? (
+        <div className="setmenu-tonight">
+          {tonightRows.map((course) => (
+            <div key={course.id} className="setmenu-tonight-course">
+              <span className="setmenu-tonight-name">
+                {course.name}
+                <small>
+                  {course.pick === 1 ? 'one each' : `${course.pick} each`}
+                  {course.perGuests && course.perGuests > 1 ? `, shared between ${course.perGuests}` : ''}
+                </small>
+              </span>
+              <div className="setmenu-tonight-dishes">
+                {course.options.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={option.available ? 'is-on' : ''}
+                    disabled={!canManage}
+                    onClick={() => void toggleTonight(option.id, !option.available)}
+                  >
+                    {option.title}
+                    {option.supplementCents > 0 ? ` +${formatCurrency(option.supplementCents / 100)}` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          <p className="subtle">Tap a dish to take it off tonight, tap again to put it back.</p>
+        </div>
+      ) : null}
+
+      {editing ? (
+        <>
+          {drafts.map((draft, index) => (
+            <div key={index} className="setmenu-course-edit">
+              <div className="setmenu-course-head">
+                <Input
+                  label="Course"
+                  value={draft.name}
+                  placeholder="Entrée"
+                  onChange={(event) => patchCourse(index, { name: event.currentTarget.value })}
+                />
+                <Input
+                  label="Each guest picks"
+                  type="number"
+                  min={1}
+                  max={9}
+                  value={draft.pick}
+                  onChange={(event) => patchCourse(index, { pick: event.currentTarget.value })}
+                />
+                <Input
+                  label="Shared between"
+                  type="number"
+                  min={2}
+                  max={40}
+                  placeholder="Not shared"
+                  value={draft.perGuests}
+                  onChange={(event) => patchCourse(index, { perGuests: event.currentTarget.value })}
+                />
+                <Select
+                  label="Fires as (POS course)"
+                  value={draft.posCourse}
+                  onChange={(event) => patchCourse(index, { posCourse: event.currentTarget.value })}
+                  options={[
+                    { value: '', label: 'Not set - the register decides' },
+                    // A name typed in before this was a dropdown stays
+                    // selectable, so opening the editor can never quietly
+                    // change when a course fires.
+                    ...(draft.posCourse && !POS_COURSE_NAMES.includes(draft.posCourse)
+                      ? [{ value: draft.posCourse, label: draft.posCourse }]
+                      : []),
+                    ...POS_COURSE_NAMES.map((name) => ({ value: name, label: name }))
+                  ]}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={!canManage}
+                  onClick={() => {
+                    // Which dishes stop being asked about and start being
+                    // given to everyone? The rule is in setMenuOrphans.ts with
+                    // its tests — the cases that matter are a dish two courses
+                    // both serve (not stranded) and a component with no dish
+                    // behind it (nothing to strand).
+                    const orphans = orphanedComponents(drafts, index, components, componentsToDrop);
+                    if (orphans.length === 0) {
+                      setDrafts((current) => current.filter((_, i) => i !== index));
+                      setDirty(true);
+                      return;
+                    }
+                    setPendingRemoval({ index, courseName: draft.name.trim() || 'this course', orphans });
+                  }}
+                >
+                  Remove course
+                </Button>
+              </div>
+              <table className="recipe-lines-table">
+                <thead>
+                  <tr>
+                    <th>Dish</th>
+                    <th>Supplement</th>
+                    <th>On the menu</th>
+                    <th aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {draft.options.map((option, optionIndex) => (
+                    <tr key={`${option.recipeId}-${optionIndex}`}>
+                      <td>{option.title}</td>
+                      <td>
+                        <input
+                          className="recipe-line-input recipe-line-input-narrow"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={option.supplement}
+                          onChange={(event) =>
+                            patchCourse(index, {
+                              options: draft.options.map((row, i) =>
+                                i === optionIndex ? { ...row, supplement: event.currentTarget.value } : row
+                              )
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={option.available}
+                          onChange={(event) =>
+                            patchCourse(index, {
+                              options: draft.options.map((row, i) =>
+                                i === optionIndex ? { ...row, available: event.currentTarget.checked } : row
+                              )
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="cell-actions">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={!canManage}
+                          onClick={() =>
+                            patchCourse(index, { options: draft.options.filter((_, i) => i !== optionIndex) })
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                  {draft.options.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="subtle">
+                        Nothing to choose from yet.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+              <Select
+                label="Add a dish to this course"
+                value=""
+                options={dishOptions}
+                disabled={!canManage}
+                onChange={(event) => addOption(index, event.currentTarget.value)}
+              />
+            </div>
+          ))}
+          <div className="recipe-lines-toolbar">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={!canManage}
+              onClick={() => {
+                setDrafts((current) => [
+                  ...current,
+                  { id: null, name: '', posCourse: '', pick: '1', perGuests: '', options: [] }
+                ]);
+                setDirty(true);
+              }}
+            >
+              Add course
+            </Button>
+            <span style={{ flex: 1 }} />
+            <Button type="button" size="sm" disabled={!canManage || !dirty || saving} onClick={() => void save()}>
+              {saving ? 'Saving…' : 'Save courses'}
+            </Button>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function SetMenuComponentsPanel({
   menuId,
   canManage,
@@ -2112,5 +2772,209 @@ function SetMenuComponentsPanel({
         )
       ) : null}
     </div>
+  );
+}
+
+
+// ── Weekday pricing (price windows) ──────────────────────────────────────
+// Taco Tuesday at $5; a Tuesday-only board. These rows are read LIVE by the
+// register, the QR menu and QR ordering — saving here changes what the till
+// charges on those days, no script and no deploy. Edits apply immediately
+// (they are separate rows, not part of the recipe's Save).
+function PriceWindowsEditor({ recipeId, basePriceLabel }: { recipeId: string; basePriceLabel: string }) {
+  type PriceWindow = {
+    id: string;
+    label: string;
+    weekdays: string;
+    priceCents: number;
+    onlyWindow: boolean;
+    active: boolean;
+  };
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const { user } = useAuth();
+  const canEdit = canManageStock(user);
+  const [rows, setRows] = useState<PriceWindow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState<{ label: string; days: number[]; price: string; onlyWindow: boolean }>({
+    label: '',
+    days: [],
+    price: '',
+    onlyWindow: false
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    api<PriceWindow[]>(`/api/recipes/${recipeId}/price-windows`)
+      .then((data) => {
+        if (!cancelled) setRows(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load weekday pricing.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [recipeId]);
+
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the change.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const dayLabel = (csv: string) => {
+    const days = csv.split(',').filter(Boolean).map(Number);
+    if (days.length === 7) return 'Every day';
+    return days.map((day) => DAYS[day] ?? '?').join(' · ');
+  };
+
+  return (
+    <fieldset className="form-fieldset">
+      <legend>Weekday pricing</legend>
+      <p className="form-hint">
+        A different price on chosen days — the register, QR menu and QR ordering all apply it themselves on the
+        day (Taco Tuesday is these). &ldquo;Only offered on these days&rdquo; hides the dish everywhere on every
+        other day, for boards that exist one day a week. Changes here are live immediately; the rest of the
+        week the dish sells at {basePriceLabel}.
+      </p>
+      {error ? <p className="error-text">{error}</p> : null}
+      {rows === null && !error ? <Spinner label="Loading weekday pricing…" /> : null}
+      {rows !== null && rows.length === 0 && !adding ? (
+        <p className="form-hint">No weekday pricing on this dish.</p>
+      ) : null}
+      {(rows ?? []).map((row) => (
+        <div key={row.id} className="price-window-row">
+          <span className="price-window-main">
+            <strong>{row.label}</strong>
+            <small>
+              {dayLabel(row.weekdays)} · ${(row.priceCents / 100).toFixed(2)}
+              {row.onlyWindow ? ' · only offered on these days' : ''}
+              {row.active ? '' : ' · OFF'}
+            </small>
+          </span>
+          {canEdit ? (
+            <span className="price-window-actions">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    const updated = await api<PriceWindow>(`/api/recipes/price-windows/${row.id}`, {
+                      method: 'PATCH',
+                      body: JSON.stringify({ active: !row.active })
+                    });
+                    setRows((current) => (current ?? []).map((entry) => (entry.id === row.id ? updated : entry)));
+                  })
+                }
+              >
+                {row.active ? 'Turn off' : 'Turn on'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="danger"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    await api(`/api/recipes/price-windows/${row.id}`, { method: 'DELETE' });
+                    setRows((current) => (current ?? []).filter((entry) => entry.id !== row.id));
+                  })
+                }
+              >
+                Remove
+              </Button>
+            </span>
+          ) : null}
+        </div>
+      ))}
+      {canEdit && adding ? (
+        <div className="price-window-add">
+          <div className="form-grid">
+            <Input
+              label="Label"
+              value={draft.label}
+              placeholder="Taco Tuesday"
+              onChange={(event) => setDraft({ ...draft, label: event.currentTarget.value })}
+            />
+            <Input
+              label="Price on those days ($)"
+              type="number"
+              step="0.01"
+              value={draft.price}
+              onChange={(event) => setDraft({ ...draft, price: event.currentTarget.value })}
+            />
+          </div>
+          <div className="price-window-days">
+            {DAYS.map((name, day) => (
+              <button
+                key={name}
+                type="button"
+                className={draft.days.includes(day) ? 'is-on' : ''}
+                onClick={() =>
+                  setDraft({
+                    ...draft,
+                    days: draft.days.includes(day) ? draft.days.filter((d) => d !== day) : [...draft.days, day]
+                  })
+                }
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+          <label className="price-window-only">
+            <input
+              type="checkbox"
+              checked={draft.onlyWindow}
+              onChange={(event) => setDraft({ ...draft, onlyWindow: event.currentTarget.checked })}
+            />
+            <span>Only offered on these days — hidden from the register and QR menu the rest of the week</span>
+          </label>
+          <div className="price-window-actions">
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const priceCents = Math.round(Number(draft.price) * 100);
+                  const created = await api<PriceWindow>(`/api/recipes/${recipeId}/price-windows`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      label: draft.label,
+                      weekdays: draft.days,
+                      priceCents,
+                      onlyWindow: draft.onlyWindow
+                    })
+                  });
+                  setRows((current) => [...(current ?? []), created]);
+                  setDraft({ label: '', days: [], price: '', onlyWindow: false });
+                  setAdding(false);
+                })
+              }
+            >
+              Add window
+            </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {canEdit && !adding ? (
+        <Button type="button" size="sm" variant="secondary" onClick={() => setAdding(true)}>
+          + Add weekday pricing
+        </Button>
+      ) : null}
+    </fieldset>
   );
 }

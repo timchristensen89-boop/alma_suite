@@ -1,6 +1,8 @@
 import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CardArtGallery } from './cardArt/Gallery';
 import { CounterApp } from './CounterApp';
+import { DonationsPage } from './DonationsPage';
+import { ScanSheet } from './ScanSheet';
 import { CustomCardDesigner, type CustomCardDesignerHandle } from './CustomCardDesigner';
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
 import {
@@ -17,8 +19,11 @@ import {
   type GiftCardPromoCode,
   type GiftCardPromoQuote,
   type GiftCardPublicConfig,
+  type GiftCardRedemptionInput,
   type GiftCardPublic,
   type GiftCardReport,
+  type GiftCardPurchaseReport,
+  type GiftCardPurchaseRow,
   type GiftCardSettings
 } from '@alma/shared';
 import { DEFAULT_GIFT_CARD_DESIGN, GIFT_CARD_DESIGN_META, GiftCardArt, isGiftCardDesign, resolveGiftCardDesign } from './giftCardArt';
@@ -53,6 +58,7 @@ import { SuiteSignOutButton } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import {
+  IconGift,
   IconKeyRound,
   IconReceipt,
   IconScan,
@@ -87,6 +93,16 @@ const GIFTCARD_NAV_ITEMS = [
     label: 'Reporting',
     description: 'Who redeemed what, where',
     icon: <ChartIcon />
+  },
+  {
+    href: '/donations#donations',
+    label: 'Donations',
+    description: 'The twelve a year, and what they cost',
+    icon: <IconGift />,
+    // Giving one away spends one of twelve for the whole group, and the policy
+    // is the director's. The API refuses everyone else outright; this keeps the
+    // door out of their way rather than letting them walk into a 403.
+    ownerOnly: true
   },
   {
     href: '/redeem#redeem',
@@ -168,6 +184,20 @@ function giftCardAppleWalletUrl(code: string) {
 
 function giftCardGoogleWalletUrl(code: string) {
   return `${API_BASE_URL}${apiPath(`/api/gift-cards/wallet/google/${encodeURIComponent(code)}`)}`;
+}
+
+// The customer's rendered artwork, served by card code (public — the code is
+// the credential). Used to show a card exactly as the buyer designed it.
+function giftCardArtworkUrl(code: string) {
+  return `${API_BASE_URL}${apiPath(`/api/gift-cards/artwork/${encodeURIComponent(code)}`)}`;
+}
+
+// A friendly design label for a stored `design` string.
+function designLabel(design: string): string {
+  if (design === 'custom') return 'Custom artwork';
+  if (design === 'default') return 'Default';
+  if (isGiftCardDesign(design)) return GIFT_CARD_DESIGN_META[design].label;
+  return design;
 }
 
 function WalletButtons({ card, wallet, onMessage }: { card: GiftCardPublic; wallet?: WalletConfig | null; onMessage?: (message: string | null) => void }) {
@@ -1458,7 +1488,18 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
-function SidebarNav() {
+/** Tim, by the address he signs in with. Mirrors the API's GIFT_CARD_OWNER_EMAIL. */
+const GIFT_CARD_OWNER_EMAIL = 'tim@almagroup.com.au';
+
+export function isGiftCardOwner(user?: { email?: string | null } | null) {
+  return user?.email?.toLowerCase() === GIFT_CARD_OWNER_EMAIL;
+}
+
+function SidebarNav({ isOwner }: { isOwner: boolean }) {
+  const navItems = useMemo(
+    () => GIFTCARD_NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner),
+    [isOwner]
+  );
   const navRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
@@ -1466,6 +1507,7 @@ function SidebarNav() {
   const sectionFromLocation = useCallback(() => {
     if (window.location.pathname.startsWith('/orders')) return '/orders#recent';
     if (window.location.pathname.startsWith('/reporting')) return '/reporting#report';
+    if (window.location.pathname.startsWith('/donations')) return '/donations#donations';
     if (window.location.pathname.startsWith('/admin')) return '/admin#settings';
     if (window.location.pathname.startsWith('/activate')) return '/activate#activate';
     return '/redeem#redeem';
@@ -1483,7 +1525,7 @@ function SidebarNav() {
     };
   }, [sectionFromLocation]);
 
-  const active = GIFTCARD_NAV_ITEMS.find((item) => item.href === activeHref) ?? GIFTCARD_NAV_ITEMS[2]!;
+  const active = navItems.find((item) => item.href === activeHref) ?? navItems[0]!;
 
   return (
     <div ref={navRef} className="mobile-nav-layer">
@@ -1505,7 +1547,7 @@ function SidebarNav() {
         className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
       >
         <li className="sidebar-nav-section">Gift Cards</li>
-        {GIFTCARD_NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <li key={item.href}>
             <a
               href={item.href}
@@ -1539,6 +1581,10 @@ type ReportRangeKey = (typeof REPORT_RANGES)[number]['key'];
 function GiftCardReporting() {
   const [rangeKey, setRangeKey] = useState<ReportRangeKey>('month');
   const [venue, setVenue] = useState('all');
+  // Off by default: a test card is not money, and counting it in the liability
+  // would be wrong. On when you are checking the till flow actually works —
+  // a redemption you cannot see looks exactly like one that never happened.
+  const [includeTest, setIncludeTest] = useState(false);
   // Venue options come from the unfiltered response and then stay put, so
   // picking a venue doesn't collapse the dropdown to a single entry.
   const [venueOptions, setVenueOptions] = useState<string[]>([]);
@@ -1564,6 +1610,7 @@ function GiftCardReporting() {
     const params = new URLSearchParams({ to: range.to });
     if (range.from) params.set('from', range.from);
     if (venue !== 'all') params.set('venue', venue);
+    if (includeTest) params.set('includeTest', 'true');
     api<GiftCardReport>(`/api/gift-cards/report?${params.toString()}`)
       .then((next) => {
         if (cancelled) return;
@@ -1584,7 +1631,7 @@ function GiftCardReporting() {
     return () => {
       cancelled = true;
     };
-  }, [range, venue]);
+  }, [range, venue, includeTest]);
 
   const rangeLabel = REPORT_RANGES.find((item) => item.key === rangeKey)?.label ?? '';
   const summary = report?.summary;
@@ -1618,7 +1665,24 @@ function GiftCardReporting() {
               ...venueOptions.map((name) => ({ label: name, value: name }))
             ]}
           />
+          <label className="giftcards-report-testtoggle">
+            <input
+              type="checkbox"
+              checked={includeTest}
+              onChange={(event) => setIncludeTest(event.currentTarget.checked)}
+            />
+            <span>Include test cards</span>
+          </label>
         </div>
+        {includeTest ? (
+          <p className="error-text giftcards-report-testnote">
+            Test cards are in these figures. They are not real money — turn this off before reading the numbers as takings.
+          </p>
+        ) : (
+          <p className="subtle giftcards-report-testnote">
+            Test cards are left out. Turn them on above if you are checking that a redemption reaches this page.
+          </p>
+        )}
       </Card>
 
       {error ? <p className="error-text">{error}</p> : null}
@@ -1675,6 +1739,7 @@ function GiftCardReporting() {
             <div key={row.id} className="giftcards-report-row">
               <div className="giftcards-report-row-main">
                 <strong>{row.code}</strong>
+                {row.testMode ? <span className="giftcards-report-testtag">Test</span> : null}
                 <span className="subtle">
                   {row.recipientName || row.purchaserName}
                   {row.notes ? ` · ${row.notes}` : ''}
@@ -1699,6 +1764,300 @@ function GiftCardReporting() {
         {report?.truncated ? (
           <p className="subtle">Showing the latest 500 redemptions — narrow the period or venue to see older ones.</p>
         ) : null}
+      </Card>
+    </>
+  );
+}
+
+const PURCHASE_SOURCES: Array<{ key: string; label: string }> = [
+  { key: 'all', label: 'All sources' },
+  { key: 'ONLINE', label: 'Website' },
+  { key: 'COUNTER', label: 'Counter (POS)' },
+  { key: 'PHYSICAL', label: 'Physical card' },
+  { key: 'GIFTUP', label: 'GiftUp import' },
+  { key: 'TEST', label: 'Test cards' }
+];
+const SOURCE_LABEL: Record<string, string> = {
+  ONLINE: 'Website',
+  COUNTER: 'Counter',
+  PHYSICAL: 'Physical',
+  GIFTUP: 'GiftUp',
+  TEST: 'Test'
+};
+
+function purchasesCsv(rows: GiftCardPurchaseRow[]): string {
+  const head = [
+    'Code', 'Status', 'Purchased', 'Source', 'Tender', 'Sold by', 'Value', 'Discount', 'Paid', 'Balance', 'Redeemed',
+    'Purchaser', 'Purchaser email', 'Recipient', 'Recipient email', 'Message', 'Design', 'Promo', 'Scheduled delivery',
+    'Emailed', 'Email error', 'Last redeemed', 'Redemptions', 'Cancelled', 'Cancel reason', 'Expires', 'Stripe payment'
+  ];
+  const cents = (value: number | null) => (value == null ? '' : (value / 100).toFixed(2));
+  const cell = (value: string | number | null | undefined) => {
+    const text = value == null ? '' : String(value);
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const lines = rows.map((row) =>
+    [
+      row.code, row.status, row.purchasedAt, SOURCE_LABEL[row.source] ?? row.source, row.tender, row.soldByName,
+      cents(row.initialValueCents), cents(row.discountCents), cents(row.amountPaidCents), cents(row.balanceCents), cents(row.redeemedCents),
+      row.purchaserName, row.purchaserEmail, row.recipientName, row.recipientEmail, row.message, row.design, row.promoCode, row.scheduledDeliveryAt,
+      row.emailedAt, row.emailError, row.lastRedeemedAt, row.redemptionCount, row.cancelledAt, row.cancelReason, row.expiresAt, row.stripePaymentIntentId
+    ]
+      .map(cell)
+      .join(',')
+  );
+  return [head.join(','), ...lines].join('\n');
+}
+
+function GiftCardPurchases() {
+  const [rangeKey, setRangeKey] = useState<ReportRangeKey>('all');
+  const [source, setSource] = useState('all');
+  const [query, setQuery] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [report, setReport] = useState<GiftCardPurchaseReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [resendingCode, setResendingCode] = useState<string | null>(null);
+  const [resendMsg, setResendMsg] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  async function resendVoucher(code: string) {
+    setResendingCode(code);
+    setResendMsg(null);
+    try {
+      await api(`/api/gift-cards/cards/${encodeURIComponent(code)}/resend`, { method: 'POST', body: JSON.stringify({}) });
+      setResendMsg(`Voucher resent for ${code}.`);
+      setReloadKey((key) => key + 1);
+    } catch (err) {
+      setResendMsg(err instanceof Error ? err.message : `Could not resend ${code}.`);
+    } finally {
+      setResendingCode(null);
+    }
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(query.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const range = useMemo(() => {
+    const now = new Date();
+    if (rangeKey === 'all') return { from: null as string | null, to: now.toISOString() };
+    const from = new Date(now);
+    if (rangeKey === 'month') from.setDate(1);
+    if (rangeKey === 'week') from.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    if (rangeKey === '30d') from.setDate(now.getDate() - 30);
+    from.setHours(0, 0, 0, 0);
+    return { from: from.toISOString(), to: now.toISOString() };
+  }, [rangeKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams({ to: range.to });
+    if (range.from) params.set('from', range.from);
+    if (source !== 'all') params.set('source', source);
+    if (debounced) params.set('query', debounced);
+    api<GiftCardPurchaseReport>(`/api/gift-cards/report/purchases?${params.toString()}`)
+      .then((next) => {
+        if (!cancelled) setReport(next);
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not load the purchases report.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [range, source, debounced, reloadKey]);
+
+  const rangeLabel = REPORT_RANGES.find((item) => item.key === rangeKey)?.label ?? '';
+  const summary = report?.summary;
+  const when = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+
+  function exportCsv() {
+    if (!report) return;
+    const blob = new Blob([purchasesCsv(report.purchases)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `alma-gift-card-purchases-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <>
+      <Card
+        title="Purchases"
+        subtitle="Every card sold — when, how, by whom, for whom, and what has happened to it since. Tap a row for the full record. Imported GiftUp cards show their original GiftUp purchase date."
+        action={
+          <Button type="button" size="sm" variant="secondary" disabled={!report || report.purchases.length === 0} onClick={exportCsv}>
+            Export CSV
+          </Button>
+        }
+      >
+        <div className="giftcards-report-filters">
+          <div className="giftcards-report-ranges" role="group" aria-label="Purchase period">
+            {REPORT_RANGES.map((item) => (
+              <Button
+                key={item.key}
+                type="button"
+                size="sm"
+                variant={rangeKey === item.key ? 'primary' : 'secondary'}
+                onClick={() => setRangeKey(item.key)}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+          <Select
+            label="Source"
+            value={source}
+            onChange={(event) => setSource(event.currentTarget.value)}
+            options={PURCHASE_SOURCES.map((item) => ({ label: item.label, value: item.key }))}
+          />
+          <Input label="Search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Code, name, email" />
+        </div>
+      </Card>
+
+      {error ? <p className="error-text">{error}</p> : null}
+      {loading && !report ? <Spinner label="Loading purchases…" /> : null}
+
+      {summary ? (
+        <div className="stats-grid">
+          <StatCard label={`Cards sold · ${rangeLabel}`} value={String(summary.cardCount)} hint={`${formatCents(summary.soldCents)} face value`} loading={loading} />
+          <StatCard label="Paid" value={formatCents(summary.paidCents)} hint="what buyers actually paid (after promos)" loading={loading} />
+          <StatCard label="Redeemed so far" value={formatCents(summary.redeemedCents)} hint="drawn down from these cards" loading={loading} />
+          <StatCard label="Still outstanding" value={formatCents(summary.outstandingCents)} hint="liability from these cards" loading={loading} />
+        </div>
+      ) : null}
+
+      {report && report.bySource.length > 1 ? (
+        <Card title="By source" subtitle={`How the cards in ${rangeLabel.toLowerCase()} were sold.`}>
+          <div className="giftcards-report-venues">
+            {report.bySource.map((row) => (
+              <div key={row.source} className="giftcards-report-venue">
+                <strong>{SOURCE_LABEL[row.source] ?? row.source}</strong>
+                <b>{formatCents(row.soldCents)}</b>
+                <span className="subtle">{row.cardCount} card{row.cardCount === 1 ? '' : 's'}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
+      {report && (report.popular.byDesign.length > 0 || report.popular.byValue.length > 0) ? (
+        <Card title="Popular choices" subtitle={`What buyers picked in ${rangeLabel.toLowerCase()}.`}>
+          <div className="giftcards-popular">
+            <div className="giftcards-popular-col">
+              <h4>Most popular designs</h4>
+              {report.popular.byDesign.slice(0, 6).map((row) => (
+                <div key={row.design} className="giftcards-popular-row">
+                  <span className="giftcards-popular-swatch">
+                    {row.design === 'custom' ? (
+                      <span className="giftcards-popular-custom">✎</span>
+                    ) : (
+                      <GiftCardArt design={resolveGiftCardDesign(row.design)} amount={100} chrome={false} />
+                    )}
+                  </span>
+                  <span className="giftcards-popular-label">{designLabel(row.design)}</span>
+                  <b>{row.count}</b>
+                </div>
+              ))}
+            </div>
+            <div className="giftcards-popular-col">
+              <h4>Most chosen amounts</h4>
+              {report.popular.byValue.slice(0, 6).map((row) => (
+                <div key={row.valueCents} className="giftcards-popular-row giftcards-popular-row--value">
+                  <span className="giftcards-popular-label">{formatCents(row.valueCents)}</span>
+                  <b>{row.count}</b>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
+      <Card title="Purchase log" subtitle="Newest first.">
+        {report && report.purchases.length === 0 && !loading ? (
+          <EmptyState title="No cards in this window" description="Change the period, source or search above." />
+        ) : null}
+        <div className="giftcards-report-log">
+          {(report?.purchases ?? []).map((row) => {
+            const isOpen = open === row.code;
+            return (
+              <div key={row.code} className={`giftcards-report-row ${isOpen ? 'is-open' : ''}`}>
+                <button type="button" className="giftcards-purchase-row" onClick={() => setOpen(isOpen ? null : row.code)}>
+                  <div className="giftcards-report-row-main">
+                    <strong>{row.code}</strong>
+                    <span className="subtle">
+                      {row.purchaserName}
+                      {row.recipientName ? ` → ${row.recipientName}` : ''}
+                    </span>
+                  </div>
+                  <div className="giftcards-report-row-meta">
+                    <b>{formatCents(row.initialValueCents)}</b>
+                    <span>{formatCents(row.balanceCents)} left</span>
+                    <span>{SOURCE_LABEL[row.source] ?? row.source}{row.tender && row.source !== 'ONLINE' ? ` · ${row.tender}` : ''}</span>
+                    <Badge tone={statusTone(row.status)}>{row.status.replace('_', ' ')}</Badge>
+                    <span className="subtle">{when(row.purchasedAt)}</span>
+                  </div>
+                </button>
+                {isOpen ? (
+                  <dl className="giftcards-purchase-detail">
+                    <dt>Purchased</dt><dd>{when(row.purchasedAt)}</dd>
+                    <dt>Source</dt><dd>{SOURCE_LABEL[row.source] ?? row.source}{row.tender ? ` · ${row.tender}` : ''}{row.soldByName ? ` · sold by ${row.soldByName}` : ''}</dd>
+                    <dt>Purchaser</dt><dd>{row.purchaserName} · {row.purchaserEmail}</dd>
+                    <dt>Recipient</dt><dd>{row.recipientName || '—'}{row.recipientEmail ? ` · ${row.recipientEmail}` : ''}</dd>
+                    <dt>Message</dt><dd>{row.message || '—'}</dd>
+                    <dt>Value</dt><dd>{formatCents(row.initialValueCents)}{row.discountCents ? ` (${formatCents(row.discountCents)} promo${row.promoCode ? ` ${row.promoCode}` : ''})` : ''} · paid {row.amountPaidCents == null ? '—' : formatCents(row.amountPaidCents)}</dd>
+                    <dt>Balance</dt><dd>{formatCents(row.balanceCents)} left · {formatCents(row.redeemedCents)} redeemed across {row.redemptionCount} redemption{row.redemptionCount === 1 ? '' : 's'}{row.lastRedeemedAt ? ` · last ${when(row.lastRedeemedAt)}` : ''}</dd>
+                    <dt>Design</dt>
+                    <dd>
+                      <span className="giftcards-detail-art">
+                        {row.design === 'custom' ? (
+                          <img src={giftCardArtworkUrl(row.code)} alt="Custom gift card artwork" loading="lazy" />
+                        ) : row.design ? (
+                          <GiftCardArt design={resolveGiftCardDesign(row.design)} amount={Math.round(row.initialValueCents / 100)} code={row.code} chrome={false} />
+                        ) : null}
+                      </span>
+                      <span>{row.design ? designLabel(row.design) : '—'}</span>
+                    </dd>
+                    <dt>Delivery</dt><dd>{row.scheduledDeliveryAt ? `scheduled ${when(row.scheduledDeliveryAt)}` : 'immediate'} · {row.emailedAt ? `emailed ${when(row.emailedAt)}` : 'not emailed'}{row.emailError ? ` · error: ${row.emailError}` : ''}</dd>
+                    {row.status === 'ACTIVE' && (row.purchaserEmail || row.recipientEmail) ? (
+                      <>
+                        <dt>Resend</dt>
+                        <dd>
+                          <button
+                            type="button"
+                            className="alma-giftcards-btn alma-giftcards-btn--ghost"
+                            disabled={resendingCode === row.code}
+                            onClick={() => void resendVoucher(row.code)}
+                          >
+                            {resendingCode === row.code ? 'Sending…' : 'Resend voucher email'}
+                          </button>
+                          {resendMsg && open === row.code ? (
+                            <span className={resendMsg.startsWith('Voucher resent') ? 'subtle' : 'alma-giftcards-error'}> {resendMsg}</span>
+                          ) : null}
+                        </dd>
+                      </>
+                    ) : null}
+                    <dt>Expires</dt><dd>{row.expiresAt ? when(row.expiresAt) : 'never'}</dd>
+                    {row.cancelledAt ? <><dt>Cancelled</dt><dd>{when(row.cancelledAt)}{row.cancelReason ? ` · ${row.cancelReason}` : ''}</dd></> : null}
+                    {row.stripePaymentIntentId ? <><dt>Stripe</dt><dd>{row.stripePaymentIntentId}</dd></> : null}
+                  </dl>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+        {report?.truncated ? <p className="subtle">Showing the latest 1,000 cards — narrow the period, source or search to see older ones.</p> : null}
       </Card>
     </>
   );
@@ -1961,6 +2320,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [refundNote, setRefundNote] = useState('');
+  const [scanOpen, setScanOpen] = useState(false);
 
   const giftCards = data?.giftCards ?? [];
   const selectedFromList = useMemo(
@@ -1993,17 +2353,21 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     setCode(scannedCode.toUpperCase());
   }, []);
 
-  async function lookup(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function lookupCode(value: string) {
     setMessage(null);
     setMessageTarget('lookup');
     try {
-      setSelectedCard(await api<GiftCard>(`/api/gift-cards/cards/${encodeURIComponent(code.trim())}`));
+      setSelectedCard(await api<GiftCard>(`/api/gift-cards/cards/${encodeURIComponent(value.trim())}`));
       setMessage('Balance loaded.');
     } catch (error) {
       setSelectedCard(null);
       setMessage(error instanceof Error ? error.message : 'Gift card not found.');
     }
+  }
+
+  async function lookup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await lookupCode(code);
   }
 
   async function redeem(event: FormEvent<HTMLFormElement>) {
@@ -2030,14 +2394,10 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       return;
     }
     try {
+      const body: GiftCardRedemptionInput = { code, amountCents, venue, notes };
       const updated = await api<GiftCard>('/api/gift-cards/redeem', {
         method: 'POST',
-        body: JSON.stringify({
-          code,
-          amountCents,
-          venue,
-          notes
-        })
+        body: JSON.stringify(body)
       });
       setSelectedCard(updated);
       setAmount('');
@@ -2098,9 +2458,11 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       ? 'orders'
       : currentPath.startsWith('/reporting')
         ? 'reporting'
-        : currentPath.startsWith('/activate')
-          ? 'activate'
-          : 'redeem';
+        : currentPath.startsWith('/donations')
+          ? 'donations'
+          : currentPath.startsWith('/activate')
+            ? 'activate'
+            : 'redeem';
   const pageCopy = {
     redeem: {
       eyebrow: 'Daily workflow',
@@ -2117,6 +2479,12 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       title: 'Redemption reporting',
       description: 'Every redemption — which card, how much, at which venue, and who rang it through. View only.'
     },
+    donations: {
+      eyebrow: 'Donations & sponsorship',
+      title: 'The twelve a year',
+      description:
+        'Vouchers not cash, twelve a year, $150–$200 each. The policy, the button, and what the programme actually costs.'
+    },
     admin: {
       eyebrow: 'Setup',
       title: 'Gift card setup',
@@ -2132,7 +2500,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   return (
     <AppShell
       brand={<ProductLogo appId="giftcards" size="md" showBrandMark={false} />}
-      sidebar={<SidebarNav />}
+      sidebar={<SidebarNav isOwner={isGiftCardOwner(user)} />}
       topBar={
         <TopBar
           title="ALMA Gift Cards"
@@ -2239,12 +2607,26 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
               const issuedLastMonth = giftCards.filter((c) => !c.testMode && c.paidAt && new Date(c.paidAt) >= prevMonthStart && new Date(c.paidAt) < prevMonthEnd);
               const issuedThisCents = issuedThisMonth.reduce((s, c) => s + c.initialValueCents, 0);
               const issuedLastCents = issuedLastMonth.reduce((s, c) => s + c.initialValueCents, 0);
-              const redeemedThisCents = giftCards.reduce((sum, c) => {
-                return sum + c.redemptions.filter((r) => new Date(r.createdAt) >= monthStart).reduce((s, r) => s + r.amountCents, 0);
-              }, 0);
-              const redeemedLastCents = giftCards.reduce((sum, c) => {
-                return sum + c.redemptions.filter((r) => new Date(r.createdAt) >= prevMonthStart && new Date(r.createdAt) < prevMonthEnd).reduce((s, r) => s + r.amountCents, 0);
-              }, 0);
+              // Test cards out, the same as issued above. They were in this
+              // half of the dashboard and not the other, so redeeming a test
+              // card moved the redeemed figure without ever having moved the
+              // issued one — the two columns were counting different things.
+              // Dated by redeemedAt, which is what the field means.
+              const realCards = giftCards.filter((c) => !c.testMode);
+              const redeemedBetween = (start: Date, end: Date | null) =>
+                realCards.reduce(
+                  (sum, c) =>
+                    sum +
+                    c.redemptions
+                      .filter((r) => {
+                        const at = new Date(r.redeemedAt);
+                        return at >= start && (end === null || at < end);
+                      })
+                      .reduce((s, r) => s + r.amountCents, 0),
+                  0
+                );
+              const redeemedThisCents = redeemedBetween(monthStart, null);
+              const redeemedLastCents = redeemedBetween(prevMonthStart, prevMonthEnd);
               const outstandingCents = data?.totals.activeBalanceCents ?? 0;
               const issuedDelta = issuedLastCents > 0 ? ((issuedThisCents - issuedLastCents) / issuedLastCents) * 100 : null;
               const redeemedDelta = redeemedLastCents > 0 ? ((redeemedThisCents - redeemedLastCents) / redeemedLastCents) * 100 : null;
@@ -2401,9 +2783,20 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                   message={messageTarget === 'lookup' ? message : null}
                   tone={message?.includes('not') || message?.includes('Could') ? 'error' : 'success'}
                 />
+                <Button type="button" variant="secondary" onClick={() => setScanOpen(true)}>▣ Scan card</Button>
                 <Button type="submit">Check balance</Button>
               </div>
             </form>
+            {scanOpen ? (
+              <ScanSheet
+                onCode={(scanned) => {
+                  setScanOpen(false);
+                  setCode(scanned);
+                  void lookupCode(scanned);
+                }}
+                onClose={() => setScanOpen(false)}
+              />
+            ) : null}
             {card ? (
               <form className="giftcards-form" onSubmit={(event) => void redeem(event)}>
                 <div className="giftcards-balance-card">
@@ -2497,7 +2890,22 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           </Card>
         ) : null}
 
-        {activeGiftCardPage === 'reporting' ? <GiftCardReporting /> : null}
+        {activeGiftCardPage === 'reporting' ? <><GiftCardReporting /><GiftCardPurchases /></> : null}
+        {activeGiftCardPage === 'donations' ? (
+          isGiftCardOwner(user) ? (
+            <DonationsPage />
+          ) : (
+            // Typing the URL is the only way to land here without the nav item.
+            // Say so plainly rather than rendering a page whose every request
+            // will 403.
+            <Card title="Donations" subtitle="Not your call to make.">
+              <p className="subtle">
+                Donations and sponsorship are handled by Tim. If someone has asked the venue for a raffle prize, send
+                it to him rather than promising anything — there are only twelve a year across both venues.
+              </p>
+            </Card>
+          )
+        ) : null}
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
         {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
       </div>
@@ -2642,10 +3050,20 @@ export function App() {
   // nearly repeated that story — every staff route needs a line here.)
   const isActivatePath = window.location.pathname.startsWith('/activate');
   const isReportingPath = window.location.pathname.startsWith('/reporting');
+  const isDonationsPath = window.location.pathname.startsWith('/donations');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
   if (isArtPath) return <CardArtGallery />;
   if (isCounterPath) return <CounterApp />;
-  if (!isRedeemPath && !isOrdersPath && !isAdminPath && !isActivatePath && !isReportingPath) return <PublicGiftCardShop />;
+  if (
+    !isRedeemPath &&
+    !isOrdersPath &&
+    !isAdminPath &&
+    !isActivatePath &&
+    !isReportingPath &&
+    !isDonationsPath
+  ) {
+    return <PublicGiftCardShop />;
+  }
   return <GiftCardAdminApp />;
 }

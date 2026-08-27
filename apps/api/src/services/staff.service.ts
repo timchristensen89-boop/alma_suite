@@ -12,6 +12,9 @@ import {
   describeCertificationBlock,
   expiredCertificationsForShift,
   normaliseOnboardingSettings,
+  buildRosterCalendar,
+  rosterPushNotification,
+  webcalUrl,
   rosterShiftInputSchema,
   rosterPublishInputSchema,
   rosterShiftUpdateInputSchema,
@@ -83,14 +86,30 @@ import type {
   StaffLeaveType
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
-import { staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
+import { bestVenueDaySales } from '../lib/sales-day-totals.js';
+import { env } from '../env.js';
+import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
+import { allocateTipsByVenue, posFirstCardEntries } from '../lib/tips-allocation.js';
 import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { configuredSuperRateFraction } from './settings.service.js';
 import { authService } from './auth.service.js';
 import { communicationsService } from './communications.service.js';
 import { mailService } from './mail.service.js';
+import { pushService } from './push.service.js';
 import { handbookDocumentService } from './handbook-document.service.js';
 import { createThread } from './messaging.service.js';
+
+export type RosterCalendarLinks = {
+  /** https — what Google Calendar wants pasted in, and what a browser downloads. */
+  feedUrl: string;
+  /** webcal:// — iOS and macOS hand this straight to Calendar as a subscription. */
+  subscribeUrl: string;
+};
+
+function calendarLinksFor(token: string): RosterCalendarLinks {
+  const feedUrl = `${env.publicApiUrl.replace(/\/+$/, '')}/api/staff/calendar/${token}.ics`;
+  return { feedUrl, subscribeUrl: webcalUrl(feedUrl) };
+}
 
 function generateToken() {
   return randomBytes(24).toString('base64url');
@@ -2249,6 +2268,14 @@ export const staffService = {
       throw new HttpError(403, 'Managers cannot move staff profiles outside their venue.');
     }
 
+    // Training-only is a financial control, not a preference. Setting it stops
+    // a real person's sales counting toward takings; clearing it hands a live
+    // till to whoever was meant to be practising. Either direction is an admin
+    // decision, the same as isAdmin itself.
+    if (data.trainingOnly !== undefined && actor && !actor.isAdmin && actor.role !== 'ADMIN') {
+      throw new HttpError(403, 'Only an Alma admin can put an account on a training till, or take it off one.');
+    }
+
     if (email && email !== existing.email) {
       const conflict = await prisma.staffProfile.findUnique({ where: { email } });
       if (conflict) {
@@ -2273,6 +2300,7 @@ export const staffService = {
         }),
         ...onboardingDetailUpdateData(data),
         ...(data.posPermissions !== undefined && { posPermissions: data.posPermissions }),
+        ...(data.trainingOnly !== undefined && { trainingOnly: data.trainingOnly }),
         ...(data.notes !== undefined && { notes: data.notes || null })
     };
 
@@ -3815,13 +3843,22 @@ export const staffService = {
     }
 
     const scopedVenue = scopeVenueForActor(undefined, actor);
+    // A PERSON's roster is every shift of theirs, wherever it is — someone
+    // homed at St Alma covering an Avalon Saturday must see that shift in
+    // the app exactly as the publish email, push and calendar feed already
+    // show it. The venue scope is for the venue-wide board query only;
+    // applied to a self-scoped query it silently hid the cross-venue shift
+    // (and miscounted upcoming/pending), so the app contradicted the email.
+    const personScoped = Boolean(staffProfileId) || actor?.role === 'STAFF';
 
     const rows = await prisma.rosterShift.findMany({
       where: {
         startsAt: { lt: endDate },
         endsAt: { gt: startDate },
         ...(staffProfileId ? { staffProfileId } : actor?.role === 'STAFF' ? { staffProfileId: actor.id } : {}),
-        ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
+        ...(!personScoped && scopedVenue
+          ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] }
+          : {})
       },
       orderBy: [{ startsAt: 'asc' }],
       include: {
@@ -3975,6 +4012,19 @@ export const staffService = {
    * drafts to staff would have people claiming shifts that may not survive to
    * publication. Only future shifts, and only their own venue.
    */
+  /** "Fri 29 Aug, 5:00 pm — Alma Avalon" — how a shift reads in a push. */
+  _swapShiftLabel(shift: { startsAt: Date; venue: string | null }): string {
+    const when = shift.startsAt.toLocaleString('en-AU', {
+      timeZone: 'Australia/Sydney',
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+    return shift.venue ? `${when} — ${shift.venue}` : when;
+  },
+
   async listOpenShifts(actor?: AuthUser) {
     if (!actor) throw new HttpError(401, 'Not authenticated');
     const venue = actor.role === 'STAFF' ? actor.venue : scopeVenueForActor(undefined, actor);
@@ -4054,6 +4104,10 @@ export const staffService = {
     if (shift.staffProfileId !== actor.id) throw new HttpError(403, 'That is not your shift.');
     if (!shift.offeredAt) throw new HttpError(409, 'That shift is not offered.');
 
+    const waiting = await prisma.rosterShiftClaim.findMany({
+      where: { rosterShiftId: shiftId, status: 'PENDING' },
+      select: { staffProfileId: true }
+    });
     await prisma.$transaction([
       prisma.rosterShift.update({
         where: { id: shiftId },
@@ -4064,6 +4118,16 @@ export const staffService = {
         data: { status: 'DECLINED', decidedAt: new Date() }
       })
     ]);
+    for (const pending of waiting) {
+      void pushService
+        .sendToStaff(pending.staffProfileId, {
+          title: 'Shift no longer available',
+          body: `${this._swapShiftLabel(shift)} was taken back down by its holder.`,
+          url: '/roster',
+          tag: `swap-decision-${shiftId}`
+        })
+        .catch(() => undefined);
+    }
     return { ok: true };
   },
 
@@ -4103,11 +4167,25 @@ export const staffService = {
     // for a shift that can never be given to them.
     await assertCertifiedForShift(actor.id, shift.startsAt);
 
-    return prisma.rosterShiftClaim.upsert({
+    const claim = await prisma.rosterShiftClaim.upsert({
       where: { rosterShiftId_staffProfileId: { rosterShiftId: shiftId, staffProfileId: actor.id } },
       create: { rosterShiftId: shiftId, staffProfileId: actor.id, note, status: 'PENDING' },
       update: { status: 'PENDING', note, decidedAt: null, decidedByUserId: null }
     });
+    // A swap has a person waiting on the other end — tell them somebody put
+    // their hand up. Best-effort: the claim stands whether or not a push
+    // lands, and managers see it in their queue either way.
+    if (shift.offeredAt && shift.staffProfileId && shift.staffProfileId !== actor.id) {
+      void pushService
+        .sendToStaff(shift.staffProfileId, {
+          title: 'Someone wants your shift',
+          body: `${actor.firstName} put their hand up for ${this._swapShiftLabel(shift)}. A manager still has to approve it.`,
+          url: '/roster',
+          tag: `swap-claim-${shiftId}`
+        })
+        .catch(() => undefined);
+    }
+    return claim;
   },
 
   /** Take your hand back down. */
@@ -4193,6 +4271,14 @@ export const staffService = {
         where: { id: claimId },
         data: { status: 'DECLINED', decidedAt: new Date(), decidedByUserId: actor?.id ?? null }
       });
+      void pushService
+        .sendToStaff(claim.staffProfileId, {
+          title: 'Shift request declined',
+          body: `${this._swapShiftLabel(claim.rosterShift)} went another way this time.`,
+          url: '/roster',
+          tag: `swap-decision-${claim.rosterShiftId}`
+        })
+        .catch(() => undefined);
       return { ok: true, approved: false };
     }
 
@@ -4254,6 +4340,26 @@ export const staffService = {
         where: { rosterShiftId: claim.rosterShiftId, staffProfileId: { not: claim.staffProfileId } }
       })
     ]);
+    const label = this._swapShiftLabel(claim.rosterShift);
+    void pushService
+      .sendToStaff(claim.staffProfileId, {
+        title: isSwap ? 'The shift is yours' : 'Shift filled — it\'s yours',
+        body: `${label} is now on your roster.`,
+        url: '/roster',
+        tag: `swap-decision-${claim.rosterShiftId}`
+      })
+      .catch(() => undefined);
+    const previousHolderId = claim.rosterShift.staffProfileId;
+    if (isSwap && previousHolderId && previousHolderId !== claim.staffProfileId) {
+      void pushService
+        .sendToStaff(previousHolderId, {
+          title: 'Your shift swap went through',
+          body: `${label} has been taken — it is off your roster.`,
+          url: '/roster',
+          tag: `swap-decision-${claim.rosterShiftId}`
+        })
+        .catch(() => undefined);
+    }
     return { ok: true, approved: true, swapped: isSwap };
   },
 
@@ -4597,6 +4703,118 @@ export const staffService = {
     return { renamed: result.count };
   },
 
+
+  /* ---------------------------------------------------------------- */
+  /* Calendar feed                                                     */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * The secret in this person's calendar URL, minted on first ask.
+   *
+   * 32 bytes of base64url — a calendar client cannot carry a login when it
+   * polls, so the token is the whole credential and has to be long enough that
+   * guessing is hopeless. Idempotent: asking twice gives the same link, so a
+   * staff member re-opening the page does not silently break the subscription
+   * already on their phone.
+   */
+  async ensureCalendarToken(staffProfileId: string): Promise<string> {
+    const existing = await prisma.staffProfile.findUnique({
+      where: { id: staffProfileId },
+      select: { calendarToken: true }
+    });
+    if (!existing) throw new HttpError(404, 'Staff profile not found');
+    if (existing.calendarToken) return existing.calendarToken;
+
+    const token = randomBytes(32).toString('base64url');
+    await prisma.staffProfile.update({
+      where: { id: staffProfileId },
+      data: { calendarToken: token, calendarTokenIssuedAt: new Date() }
+    });
+    return token;
+  },
+
+  /**
+   * Burn the old link and issue a new one — for a lost phone, or a person
+   * leaving. Anything subscribed to the old URL stops updating immediately,
+   * which is the point.
+   */
+  async rotateCalendarToken(staffProfileId: string): Promise<{ token: string; links: RosterCalendarLinks }> {
+    const token = randomBytes(32).toString('base64url');
+    await prisma.staffProfile.update({
+      where: { id: staffProfileId },
+      data: { calendarToken: token, calendarTokenIssuedAt: new Date() }
+    });
+    return { token, links: calendarLinksFor(token) };
+  },
+
+  async calendarLinks(staffProfileId: string): Promise<RosterCalendarLinks & { issuedAt: string | null }> {
+    const token = await this.ensureCalendarToken(staffProfileId);
+    const profile = await prisma.staffProfile.findUnique({
+      where: { id: staffProfileId },
+      select: { calendarTokenIssuedAt: true }
+    });
+    return {
+      ...calendarLinksFor(token),
+      issuedAt: profile?.calendarTokenIssuedAt ? profile.calendarTokenIssuedAt.toISOString() : null
+    };
+  },
+
+  /**
+   * Serve one person's calendar, addressed only by the token.
+   *
+   * DRAFT shifts are excluded: a draft is the manager's working copy and
+   * putting it on somebody's phone would have them turn up to a shift that was
+   * never actually given to them. Cancelled ones ARE included so the feed can
+   * tell the phone to strike them out — a subscription only learns about a
+   * removal if it is told.
+   *
+   * The window is deliberately wide backwards as well as forwards: a client
+   * that re-syncs and finds last week missing may quietly delete history.
+   */
+  async calendarFeed(token: string): Promise<{ ics: string; filename: string }> {
+    const clean = String(token || '').replace(/\.ics$/i, '').trim();
+    if (!clean || clean.length < 20) throw new HttpError(404, 'No calendar here.');
+
+    const profile = await prisma.staffProfile.findUnique({
+      where: { calendarToken: clean },
+      select: { id: true, firstName: true, lastName: true }
+    });
+    if (!profile) throw new HttpError(404, 'No calendar here.');
+
+    const now = new Date();
+    const from = new Date(now);
+    from.setMonth(from.getMonth() - 3);
+    const to = new Date(now);
+    to.setMonth(to.getMonth() + 12);
+
+    const shifts = await prisma.rosterShift.findMany({
+      where: {
+        staffProfileId: profile.id,
+        status: { in: ['PUBLISHED', 'COMPLETED', 'CANCELLED'] },
+        startsAt: { gte: from, lte: to }
+      },
+      orderBy: { startsAt: 'asc' },
+      select: {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+        venue: true,
+        area: true,
+        roleTitle: true,
+        notes: true,
+        breakMinutes: true,
+        updatedAt: true,
+        status: true
+      }
+    });
+
+    const staffName = `${profile.firstName} ${profile.lastName}`.trim();
+    return {
+      ics: buildRosterCalendar({ shifts, staffName, now }),
+      filename: `alma-shifts-${profile.firstName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`
+    };
+  },
+
   async publishRoster(input: unknown, publishedById?: string, actor?: AuthUser) {
     const data = rosterPublishInputSchema.parse(input);
     const startDate = new Date(data.start);
@@ -4609,15 +4827,43 @@ export const staffService = {
     }
     const scopedVenue = scopeVenueForActor(data.venue || undefined, actor);
 
-    await prisma.rosterShift.updateMany({
-      where: {
-        status: 'DRAFT',
-        startsAt: { lt: endDate },
-        endsAt: { gt: startDate },
-        ...(scopedVenue ? { venue: scopedVenue } : {})
-      },
-      data: { status: 'PUBLISHED' }
+    const draftWhere = {
+      status: 'DRAFT' as const,
+      startsAt: { lt: endDate },
+      endsAt: { gt: startDate },
+      ...(scopedVenue ? { venue: scopedVenue } : {})
+    };
+
+    /*
+     * Read who is about to be told BEFORE flipping the status.
+     *
+     * updateMany hands back a count, not rows, and the instant it runs these
+     * shifts are indistinguishable from ones published last week — so this is
+     * the only moment the "newly published" set exists. It is also what makes
+     * a second publish harmless: the drafts are gone, so nobody is emailed
+     * twice about the same week.
+     *
+     * Open shifts (staffProfileId null) are nobody's to be told about.
+     */
+    const newlyPublished = await prisma.rosterShift.findMany({
+      where: { ...draftWhere, staffProfileId: { not: null } },
+      orderBy: { startsAt: 'asc' },
+      select: {
+        id: true,
+        staffProfileId: true,
+        startsAt: true,
+        endsAt: true,
+        venue: true,
+        area: true,
+        roleTitle: true,
+        breakMinutes: true,
+        notes: true
+      }
     });
+
+    await prisma.rosterShift.updateMany({ where: draftWhere, data: { status: 'PUBLISHED' } });
+
+    const notified = await this.notifyPublishedShifts(newlyPublished);
 
     if (data.forecast) {
       await prisma.rosterForecastSnapshot.deleteMany({
@@ -4647,7 +4893,163 @@ export const staffService = {
       });
     }
 
-    return this.listRoster(startDate.toISOString(), endDate.toISOString(), undefined, actor);
+    // An object, not the bare array this used to return: listRoster hands back
+    // an array, and spreading one into an object silently turns it into
+    // {"0": shift, "1": shift} — legal TypeScript, nonsense over the wire.
+    const shifts = await this.listRoster(startDate.toISOString(), endDate.toISOString(), undefined, actor);
+    return { shifts, notified };
+  },
+
+  /**
+   * Tell each rostered person what they are on, and hand them their calendar.
+   *
+   * One email per person covering all their shifts, not one per shift. Sent in
+   * parallel and individually caught: a bounced address is a thing to report,
+   * never a reason to fail a publish that has already happened. The counts come
+   * back so the manager sees who actually got told.
+   */
+  async notifyPublishedShifts(
+    shifts: ReadonlyArray<{
+      id: string;
+      staffProfileId: string | null;
+      startsAt: Date;
+      endsAt: Date;
+      venue: string | null;
+      area: string | null;
+      roleTitle: string | null;
+      breakMinutes: number | null;
+      notes: string | null;
+    }>
+  ): Promise<{
+    emailed: number;
+    pushed: number;
+    skipped: Array<{ name: string; reason: string }>;
+  }> {
+    const byStaff = new Map<string, typeof shifts[number][]>();
+    for (const shift of shifts) {
+      if (!shift.staffProfileId) continue;
+      const list = byStaff.get(shift.staffProfileId) ?? [];
+      list.push(shift);
+      byStaff.set(shift.staffProfileId, list);
+    }
+    if (byStaff.size === 0) return { emailed: 0, pushed: 0, skipped: [] };
+
+    const staff = await prisma.staffProfile.findMany({
+      where: { id: { in: [...byStaff.keys()] } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        employmentStatus: true,
+        calendarToken: true
+      }
+    });
+
+    const skipped: Array<{ name: string; reason: string }> = [];
+    const sendable: Array<{ profile: (typeof staff)[number]; token: string }> = [];
+    // Push is a separate list from email on purpose: somebody with no address
+    // on file may still have the app on their phone, and that is exactly the
+    // person most at risk of never learning they are rostered.
+    const pushable: Array<(typeof staff)[number]> = [];
+
+    for (const profile of staff) {
+      const name = `${profile.firstName} ${profile.lastName}`.trim();
+      // Employment is checked before contact details. A terminated person with
+      // no address is not "missing an email" — they are gone, and reporting the
+      // address as the problem sends a manager off to fix the wrong thing.
+      if (profile.employmentStatus === 'TERMINATED' || profile.employmentStatus === 'ARCHIVED') {
+        skipped.push({ name, reason: `${profile.employmentStatus.toLowerCase()} — not notified` });
+        continue;
+      }
+      pushable.push(profile);
+      if (!profile.email) {
+        // Worth saying out loud: a roster that silently misses someone is the
+        // failure this feature exists to prevent.
+        skipped.push({ name, reason: 'no email address on file' });
+        continue;
+      }
+      sendable.push({ profile, token: profile.calendarToken ?? '' });
+    }
+
+    // Mint any missing tokens first, so the email always carries a working link.
+    for (const entry of sendable) {
+      if (!entry.token) entry.token = await this.ensureCalendarToken(entry.profile.id);
+    }
+
+    const results = await Promise.allSettled(
+      sendable.map(async (entry) => {
+        const mine = byStaff.get(entry.profile.id) ?? [];
+        const outcome = await mailService.sendRosterPublished({
+          to: entry.profile.email!,
+          firstName: entry.profile.firstName,
+          shifts: mine.map((shift) => ({
+            startsAt: shift.startsAt.toISOString(),
+            endsAt: shift.endsAt.toISOString(),
+            venue: shift.venue,
+            area: shift.area,
+            roleTitle: shift.roleTitle,
+            breakMinutes: shift.breakMinutes
+          })),
+          ...calendarLinksFor(entry.token)
+        });
+        // 'skipped' means mail is not configured at all, which is a system
+        // state rather than this person's fault — but it still means they were
+        // not told, so it is reported the same way.
+        if (outcome.status !== 'sent') {
+          throw new Error(outcome.status === 'failed' ? outcome.reason : `not sent: ${outcome.reason}`);
+        }
+        return entry.profile.id;
+      })
+    );
+
+    let emailed = 0;
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        emailed += 1;
+        return;
+      }
+      const profile = sendable[index]!.profile;
+      const name = `${profile.firstName} ${profile.lastName}`.trim();
+      const reason = result.reason instanceof Error ? result.reason.message : 'email failed';
+      console.error(`[roster] could not email ${name}: ${reason}`);
+      skipped.push({ name, reason });
+    });
+
+    // Push after email, and never in a way that can fail the publish. A phone
+    // that is off, uninstalled or out of battery is normal; the email and the
+    // app itself are still carrying the news.
+    let pushed = 0;
+    const pushResults = await Promise.allSettled(
+      pushable.map(async (profile) => {
+        const mine = byStaff.get(profile.id) ?? [];
+        if (mine.length === 0) return 0;
+        const { title, body } = rosterPushNotification(
+          mine.map((shift) => ({
+            startsAt: shift.startsAt,
+            endsAt: shift.endsAt,
+            venue: shift.venue,
+            area: shift.area,
+            roleTitle: shift.roleTitle
+          }))
+        );
+        const outcome = await pushService.sendToStaff(profile.id, { title, body, url: '/roster' });
+        return outcome.sent;
+      })
+    );
+    for (const result of pushResults) {
+      if (result.status === 'fulfilled') {
+        pushed += result.value;
+      } else {
+        const reason = result.reason instanceof Error ? result.reason.message : 'push failed';
+        console.error(`[roster] push failed: ${reason}`);
+      }
+    }
+
+    console.info(
+      `[roster] published shifts for ${byStaff.size} staff — emailed ${emailed}, pushed to ${pushed} device(s), skipped ${skipped.length}`
+    );
+    return { emailed, pushed, skipped };
   },
 
   async listRosterForecastSnapshots(input: { start?: string; end?: string; venue?: string }, actor?: AuthUser) {
@@ -5091,6 +5493,55 @@ export const staffService = {
     });
 
     return sessions.map(toClockSessionPayload);
+  },
+
+  /**
+   * The wall kiosk's one verb. The device session proves which venue's wall
+   * the tablet hangs on; the person is proven per punch by their PIN (already
+   * resolved by the caller). Reuses the same clockIn/out/break flows the
+   * staff app uses, so timesheets cannot tell the difference.
+   */
+  async kioskPunch(actor: AuthUser, input: unknown) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const action = typeof body.action === 'string' ? body.action : 'status';
+    if (action === 'in') await this.clockIn(actor, {});
+    else if (action === 'out') await this.clockOut(actor, {});
+    else if (action === 'break-start') await this.startBreak(actor, {});
+    else if (action === 'break-end') await this.endBreak(actor, {});
+    else if (action !== 'status') throw new HttpError(400, 'Unknown kiosk action.');
+    const session = await prisma.staffClockSession.findFirst({
+      where: { staffProfileId: actor.id, status: 'OPEN', clockOutAt: null },
+      orderBy: [{ clockInAt: 'desc' }],
+      select: { id: true, venue: true, clockInAt: true, currentBreakStartedAt: true, accumulatedBreakMinutes: true }
+    });
+    return {
+      staff: { id: actor.id, firstName: actor.firstName, lastName: actor.lastName, roleTitle: actor.roleTitle || null },
+      session: session
+        ? {
+            clockInAt: session.clockInAt,
+            venue: session.venue,
+            onBreak: Boolean(session.currentBreakStartedAt),
+            breakStartedAt: session.currentBreakStartedAt,
+            breakMinutes: session.accumulatedBreakMinutes
+          }
+        : null
+    };
+  },
+
+  /** Who is on the floor right now — the kiosk's idle screen. */
+  async kioskOnNow(venue: string | null) {
+    const sessions = await prisma.staffClockSession.findMany({
+      where: { status: 'OPEN', clockOutAt: null, ...(venue ? { venue } : {}) },
+      orderBy: [{ clockInAt: 'asc' }],
+      include: { staffProfile: { select: { firstName: true, lastName: true, roleTitle: true } } }
+    });
+    return sessions.map((session) => ({
+      id: session.id,
+      name: `${session.staffProfile.firstName} ${session.staffProfile.lastName}`.trim(),
+      roleTitle: session.roleTitle ?? session.staffProfile.roleTitle ?? null,
+      clockInAt: session.clockInAt,
+      onBreak: Boolean(session.currentBreakStartedAt)
+    }));
   },
 
   async clockIn(actor: AuthUser, input: unknown) {
@@ -5979,6 +6430,36 @@ export const staffService = {
     });
   },
 
+  // A pushed week that Xero must receive again. EXPORTED means "a draft
+  // timesheet exists in Xero for these hours" — but when the hours were wrong
+  // when they went (the break-less Deputy imports) or got corrected after, the
+  // draft is stale and the row is locked. Unlocking puts it back to APPROVED
+  // so the next push re-sends it; the stale draft has to be deleted in Xero
+  // by hand, which is why the audit note says so in as many words. Manager
+  // venue scoping is the same as every other timesheet action.
+  async unexportTimesheet(id: string, actor: AuthUser) {
+    const existing = await assertActorCanAccessTimesheet(id, actor);
+    if (!existing) throw new HttpError(404, 'Timesheet not found');
+    if (existing.status !== 'EXPORTED') {
+      throw new HttpError(400, 'Only exported timesheets can be unlocked for re-push.');
+    }
+    return prisma.timesheet.update({
+      where: { id },
+      data: {
+        status: 'APPROVED',
+        xeroTimesheetId: null,
+        notes: [existing.notes, 'Unlocked for re-push — delete the old draft timesheet in Xero before pushing again.']
+          .filter(Boolean)
+          .join(' | ')
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, email: true }
+        }
+      }
+    });
+  },
+
   async exportTimesheetsForXero(input: unknown, actor?: AuthUser) {
     const data = timesheetExportInputSchema.parse(input);
     const startDate = parseDate(data.start, 'Export start date');
@@ -5986,13 +6467,17 @@ export const staffService = {
     // 'all' means every venue, not a venue called "all" — without this the
     // export runs clean and produces an empty CSV.
     const scopedVenue = scopeVenueForActor(data.venue && data.venue !== 'all' ? data.venue : undefined, actor);
+    const exportScope = {
+      status: 'APPROVED' as const,
+      paymentMethod: { not: 'CASH' },
+      workDate: { gte: startDate, lt: endDate },
+      ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
+    };
+    // Same rule as the API push: leave is paid through a Xero leave
+    // application, so exporting it as ordinary hours pays the week twice.
+    const leaveExcluded = await prisma.timesheet.count({ where: { ...exportScope, isLeave: true } });
     const entries = await prisma.timesheet.findMany({
-      where: {
-        status: 'APPROVED',
-        paymentMethod: { not: 'CASH' },
-        workDate: { gte: startDate, lt: endDate },
-        ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
-      },
+      where: { ...exportScope, isLeave: false },
       orderBy: [{ workDate: 'asc' }, { clockInAt: 'asc' }],
       include: {
         staffProfile: {
@@ -6029,6 +6514,7 @@ export const staffService = {
     return {
       exportBatchId,
       count: entries.length,
+      leaveExcluded,
       markedExported: data.markExported,
       csv: toXeroCsv(rows),
       rows
@@ -6040,7 +6526,13 @@ export const staffService = {
     const startDate = parseDate(data.start, 'Tips start date');
     const endDate = parseDate(data.end, 'Tips end date');
     const venue = data.venue || 'All venues';
-    const venueWhere = data.venue ? { venue: data.venue } : {};
+    // A timesheet saved without a venue still belongs to somebody, and that
+    // somebody has a venue on their profile. Matching the Xero export's rule
+    // here is what stops a shift with a blank venue quietly costing its owner
+    // their share of the week's tips.
+    const venueWhere = data.venue
+      ? { OR: [{ venue: data.venue }, { venue: null, staffProfile: { venue: data.venue } }] }
+      : {};
 
     const [cashEntries, cardEntries, timesheets, paidRuns, manualHoursEntries] = await Promise.all([
       prisma.staffTipCashEntry.findMany({
@@ -6060,6 +6552,9 @@ export const staffService = {
       prisma.timesheet.findMany({
         where: {
           status: { in: ['APPROVED', 'EXPORTED'] },
+          // Tips are earned on the floor. A week of annual leave is pay, not
+          // service, and must not dilute everyone else's share.
+          isLeave: false,
           workDate: { gte: startDate, lt: endDate },
           ...venueWhere
         },
@@ -6126,76 +6621,65 @@ export const staffService = {
       );
     }
 
-    const cashTipsCents = cashEntries.reduce((sum, entry) => sum + entry.amountCents, 0);
-    const squareTipsCents = cardEntries.reduce((sum, entry) => sum + entry.amountCents, 0);
-    const tipPoolCents = cashTipsCents + squareTipsCents;
-    const breakageCentsPerDay = data.breakageCentsPerDay ?? 3000;
-    const tradingDaySet = new Set([
-      ...cashEntries.map((e) => e.serviceDate.toISOString().slice(0, 10)),
-      ...cardEntries.map((e) => e.serviceDate.toISOString().slice(0, 10))
-    ]);
-    const tradingDays = tradingDaySet.size;
-    const breakageCents = tradingDays * breakageCentsPerDay;
-    const allocatablePoolCents = Math.max(0, tipPoolCents - breakageCents);
-    const byStaff = new Map<string, {
+    // Hours are gathered per person *per venue*. Somebody who did Thursday at
+    // Avalon and Saturday at St Alma has a share of each venue's pool, sized by
+    // what they worked there — not one merged share of a merged pot.
+    const byStaffVenue = new Map<string, {
       staffProfileId: string;
       name: string;
       roleTitle: string | null;
       venue: string | null;
       approvedHours: number;
     }>();
+    const keyOf = (staffProfileId: string, venue: string | null) => `${staffProfileId}::${venue ?? ''}`;
 
     // A manual-hours entry (incl. a Deputy import) is the authoritative hours
-    // for that person/week — skip their timesheet rows so the two don't
-    // double-count in the pool.
-    const manualStaffIds = new Set(manualHoursEntries.map((entry) => entry.staffProfileId));
+    // for that person at that venue for the week — skip their timesheet rows
+    // for the same venue so the two don't double-count. Their shifts at the
+    // *other* venue still stand: a Deputy import for St Alma says nothing
+    // about what they worked at Avalon.
+    const manualKeys = new Set(manualHoursEntries.map((entry) => keyOf(entry.staffProfileId, entry.venue)));
     for (const timesheet of timesheets) {
-      if (manualStaffIds.has(timesheet.staffProfileId)) continue;
+      const timesheetVenue = timesheet.venue ?? timesheet.staffProfile.venue;
+      if (manualKeys.has(keyOf(timesheet.staffProfileId, timesheetVenue))) continue;
       const hours = timesheetHours(timesheet);
       if (hours <= 0) continue;
-      const existing = byStaff.get(timesheet.staffProfileId) ?? {
+      const key = keyOf(timesheet.staffProfileId, timesheetVenue);
+      const existing = byStaffVenue.get(key) ?? {
         staffProfileId: timesheet.staffProfileId,
         name: `${timesheet.staffProfile.firstName} ${timesheet.staffProfile.lastName}`,
         roleTitle: timesheet.roleTitle ?? timesheet.staffProfile.roleTitle,
-        venue: timesheet.venue ?? timesheet.staffProfile.venue,
+        venue: timesheetVenue,
         approvedHours: 0
       };
       existing.approvedHours += hours;
-      byStaff.set(timesheet.staffProfileId, existing);
+      byStaffVenue.set(key, existing);
     }
 
     // Inject manual hours entries into the allocation pool
     for (const entry of manualHoursEntries) {
-      const existing = byStaff.get(entry.staffProfileId) ?? {
+      const key = keyOf(entry.staffProfileId, entry.venue);
+      const existing = byStaffVenue.get(key) ?? {
         staffProfileId: entry.staffProfileId,
         name: `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}`,
         roleTitle: entry.staffProfile.roleTitle,
-        venue: entry.staffProfile.venue,
+        venue: entry.venue,
         approvedHours: 0
       };
       existing.approvedHours += entry.hours;
-      byStaff.set(entry.staffProfileId, existing);
+      byStaffVenue.set(key, existing);
     }
 
-    const approvedHours = Array.from(byStaff.values()).reduce((sum, row) => sum + row.approvedHours, 0);
-    let allocatedCents = 0;
-    const entitlements = Array.from(byStaff.values())
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((row, index, rows) => {
-        const isLast = index === rows.length - 1;
-        const amountCents = approvedHours > 0
-          ? isLast
-            ? allocatablePoolCents - allocatedCents
-            : Math.round((row.approvedHours / approvedHours) * allocatablePoolCents)
-          : 0;
-        allocatedCents += amountCents;
-        return {
-          ...row,
-          approvedHours: Math.round(row.approvedHours * 100) / 100,
-          amountCents,
-          paymentMethod: 'CASH' as const
-        };
-      });
+    // POS is the source of truth for card tips: for any venue+day the register
+    // recorded a tip on, the Square/Lightspeed import rows for that venue+day
+    // are dropped so the same tips are not paid twice. (posFirstCardEntries.)
+    const dedupedCardEntries = posFirstCardEntries(cardEntries);
+    const allocation = allocateTipsByVenue({
+      cashEntries,
+      cardEntries: dedupedCardEntries,
+      hours: Array.from(byStaffVenue.values())
+    });
+    const { cashTipsCents, squareTipsCents, tipPoolCents, tradingDays, approvedHours, entitlements } = allocation;
 
     return {
       start: startDate.toISOString(),
@@ -6204,18 +6688,20 @@ export const staffService = {
       cashTipsCents,
       squareTipsCents,
       tipPoolCents,
-      breakageCentsPerDay,
-      breakageCents,
-      allocatablePoolCents,
       tradingDays,
-      approvedHours: Math.round(approvedHours * 100) / 100,
+      approvedHours,
+      venues: allocation.venues,
+      unassigned: allocation.unassigned,
       paidRuns: paidRuns.map((run) => ({
         id: run.id,
         paidAt: run.paidAt.toISOString(),
         tipPoolCents: run.tipPoolCents,
         lineCount: run.lines.length
       })),
-      paidEntitlements: (paidRuns[0]?.lines ?? []).map((line) => ({
+      // Every locked run in range, not just the first. Scoped to a venue there
+      // is at most one; unscoped there is one per venue, and taking [0] there
+      // silently reported half the group's paid tips.
+      paidEntitlements: paidRuns.flatMap((run) => run.lines).map((line) => ({
         staffProfileId: line.staffProfileId,
         name: `${line.staffProfile.firstName} ${line.staffProfile.lastName}`,
         roleTitle: line.staffProfile.roleTitle,
@@ -6231,7 +6717,7 @@ export const staffService = {
         amountCents: entry.amountCents,
         notes: entry.notes
       })),
-      cardEntries: cardEntries.map((entry) => ({
+      cardEntries: dedupedCardEntries.map((entry) => ({
         id: entry.id,
         serviceDate: entry.serviceDate.toISOString(),
         venue: entry.venue,
@@ -6280,6 +6766,208 @@ export const staffService = {
   async deleteTipCardEntry(id: string) {
     await prisma.staffTipCardEntry.delete({ where: { id } });
     return { deleted: true };
+  },
+
+  // ── Labour vs takings ──────────────────────────────────────────────────
+
+  // Agreed weekly hours (38, 24, …) — the yardstick the labour view measures
+  // rostered hours against. Casuals leave it NULL.
+  async setContractedHours(staffProfileId: string, input: unknown, actor: AuthUser) {
+    await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    const raw = (input as Record<string, unknown> | null)?.contractedWeeklyHours;
+    const hours = raw === null || raw === undefined || raw === '' ? null : Number(raw);
+    if (hours !== null && (!Number.isFinite(hours) || hours < 0 || hours > 80)) {
+      throw new HttpError(400, 'Contracted hours must be between 0 and 80.');
+    }
+    const contractedWeeklyHours = hours === null ? null : Math.round(hours);
+    await prisma.staffProfile.update({ where: { id: staffProfileId }, data: { contractedWeeklyHours } });
+    return { contractedWeeklyHours };
+  },
+
+  // One week of roster against one week of actual takings.
+  //
+  // Per person: rostered hours against contract, the salary-headroom band
+  // (contract → 45, already paid for on a salary), and real overtime past 45
+  // costed at the costing engine's OT rate. Per day/venue: rostered hours and
+  // estimated cost against the day's actual sales — the actuals the
+  // Lightspeed feed lands daily, where the roster board only knows the
+  // forecast. OT premiums live in the person table and week totals, not
+  // smeared across days.
+  async labourWeek(input: { weekStart?: string }, _actor: AuthUser) {
+    const sydneyDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' });
+    const startKey = input.weekStart && /^\d{4}-\d{2}-\d{2}$/.test(input.weekStart)
+      ? input.weekStart
+      : (() => {
+          // Default: Monday of the current Sydney week.
+          const todayKey = sydneyDay.format(new Date());
+          const today = new Date(`${todayKey}T12:00:00Z`);
+          today.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
+          return today.toISOString().slice(0, 10);
+        })();
+    // Sydney midnights expressed in UTC; each shift is then attributed to its
+    // Sydney-local calendar day, so DST slack in the bounds doesn't matter.
+    const windowStart = new Date(`${startKey}T00:00:00+10:00`);
+    const windowEnd = new Date(windowStart.getTime() + 7 * 24 * 3_600_000);
+    const dayKeys: string[] = Array.from({ length: 7 }, (_, i) =>
+      new Date(new Date(`${startKey}T12:00:00Z`).getTime() + i * 24 * 3_600_000).toISOString().slice(0, 10)
+    );
+
+    const [shifts, sales] = await Promise.all([
+      prisma.rosterShift.findMany({
+        where: {
+          startsAt: { gte: windowStart, lt: windowEnd },
+          status: { in: ['PUBLISHED', 'COMPLETED'] }
+        },
+        select: {
+          staffProfileId: true,
+          venue: true,
+          startsAt: true,
+          endsAt: true,
+          breakMinutes: true,
+          staffProfile: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              contractedWeeklyHours: true,
+              ...staffPayRateSelect
+            }
+          }
+        }
+      }),
+      prisma.salesActualEntry.findMany({
+        where: {
+          serviceDate: { gte: new Date(`${startKey}T00:00:00Z`), lte: new Date(`${dayKeys[6]}T00:00:00Z`) }
+        },
+        select: { venue: true, serviceDate: true, salesCents: true }
+      })
+    ]);
+
+    // A day's takings can arrive from more than one feed (POS close, emailed
+    // Lightspeed summary, manual entry). They describe the same money, so the
+    // best-known figure per venue-day is the MAX, never the sum — the shared
+    // rule every report now reads (lib/sales-day-totals).
+    const salesByVenueDay = bestVenueDaySales(sales);
+
+    type PersonAgg = {
+      staffProfileId: string;
+      name: string;
+      employmentType: string;
+      contractedWeeklyHours: number | null;
+      rosteredHours: number;
+      rateKnown: boolean;
+      ordinaryRateCents: number;
+      overtimeRateCents: number;
+    };
+    const people = new Map<string, PersonAgg>();
+    const dayVenue = new Map<string, { rosteredHours: number; estCostCents: number; openHours: number }>();
+    const normaliseType = (value: string | null | undefined) =>
+      (value ?? '').toUpperCase().replace(/[\s-]+/g, '_');
+
+    for (const shift of shifts) {
+      const hours = Math.max(
+        0,
+        (shift.endsAt.getTime() - shift.startsAt.getTime()) / 3_600_000 - shift.breakMinutes / 60
+      );
+      const dateKey = sydneyDay.format(shift.startsAt);
+      const venue = shift.venue ?? 'Unassigned venue';
+      const dvKey = `${dateKey}|${venue}`;
+      const agg = dayVenue.get(dvKey) ?? { rosteredHours: 0, estCostCents: 0, openHours: 0 };
+
+      if (!shift.staffProfile) {
+        agg.openHours += hours;
+        dayVenue.set(dvKey, agg);
+        continue;
+      }
+
+      const profile = shift.staffProfile;
+      let person = people.get(profile.id);
+      if (!person) {
+        const rate = staffCostingRate(profile);
+        const employmentType = normaliseType(profile.payProfile?.employmentType ?? profile.employmentType) || 'CASUAL';
+        person = {
+          staffProfileId: profile.id,
+          name: `${profile.firstName} ${profile.lastName}`.trim(),
+          employmentType,
+          contractedWeeklyHours:
+            profile.contractedWeeklyHours ?? (employmentType === 'FULL_TIME' ? 38 : null),
+          rosteredHours: 0,
+          rateKnown: rate.ordinaryRateCents !== null,
+          ordinaryRateCents: rate.ordinaryRateCents ?? 0,
+          overtimeRateCents: rate.overtimeRateCents ?? Math.round((rate.ordinaryRateCents ?? 0) * 1.5)
+        };
+        people.set(profile.id, person);
+      }
+      person.rosteredHours += hours;
+      agg.rosteredHours += hours;
+      agg.estCostCents += Math.round(hours * person.ordinaryRateCents);
+      dayVenue.set(dvKey, agg);
+    }
+
+    const round1 = (value: number) => Math.round(value * 10) / 10;
+    const peopleRows = [...people.values()]
+      .map((person) => {
+        const isFullTime = person.employmentType === 'FULL_TIME';
+        const contract = person.contractedWeeklyHours;
+        // Overtime past 45 applies to anyone; the salary-headroom band
+        // (contract → 45, already paid for) only makes sense for full-timers.
+        const overtimeHours = Math.max(0, person.rosteredHours - FULL_TIME_ORDINARY_WEEKLY_HOURS);
+        const headroomHours =
+          isFullTime && contract !== null
+            ? Math.max(0, Math.min(person.rosteredHours, FULL_TIME_ORDINARY_WEEKLY_HOURS) - contract)
+            : 0;
+        const overAgreedHours =
+          !isFullTime && contract !== null ? Math.max(0, person.rosteredHours - contract) : 0;
+        const overtimeCostCents = Math.round(
+          overtimeHours * Math.max(0, person.overtimeRateCents - person.ordinaryRateCents)
+        );
+        const estWeekCostCents = Math.round(
+          Math.min(person.rosteredHours, FULL_TIME_ORDINARY_WEEKLY_HOURS) * person.ordinaryRateCents +
+            overtimeHours * person.overtimeRateCents
+        );
+        return {
+          staffProfileId: person.staffProfileId,
+          name: person.name,
+          employmentType: person.employmentType,
+          contractedWeeklyHours: contract,
+          rosteredHours: round1(person.rosteredHours),
+          headroomHours: round1(headroomHours),
+          overtimeHours: round1(overtimeHours),
+          overAgreedHours: round1(overAgreedHours),
+          overtimeCostCents,
+          estWeekCostCents,
+          rateKnown: person.rateKnown
+        };
+      })
+      .sort((a, b) => b.overtimeHours - a.overtimeHours || b.rosteredHours - a.rosteredHours);
+
+    const venues = [...new Set([...dayVenue.keys()].map((key) => key.split('|')[1]!))].sort();
+    const days = dayKeys.map((date) => ({
+      date,
+      byVenue: venues.map((venue) => {
+        const agg = dayVenue.get(`${date}|${venue}`) ?? { rosteredHours: 0, estCostCents: 0, openHours: 0 };
+        const salesCents = salesByVenueDay.get(`${venue}|${date}`) ?? null;
+        return {
+          venue,
+          salesCents,
+          rosteredHours: round1(agg.rosteredHours),
+          estCostCents: agg.estCostCents,
+          openHours: round1(agg.openHours),
+          labourPct:
+            salesCents && salesCents > 0 ? Math.round((agg.estCostCents / salesCents) * 1000) / 10 : null
+        };
+      })
+    }));
+
+    const totals = {
+      salesCents: [...salesByVenueDay.entries()]
+        .filter(([key]) => dayKeys.includes(key.split('|')[1]!))
+        .reduce((sum, [, cents]) => sum + cents, 0),
+      estCostCents: peopleRows.reduce((sum, row) => sum + row.estWeekCostCents, 0),
+      overtimeCostCents: peopleRows.reduce((sum, row) => sum + row.overtimeCostCents, 0)
+    };
+
+    return { weekStart: startKey, days, people: peopleRows, totals, venues };
   },
 
   async bulkDeleteTipEntries(input: unknown) {
@@ -6562,7 +7250,7 @@ export const staffService = {
         venue: data.venue,
         weekStart: startDate,
         weekEnd: endDate,
-        tipPoolCents: summary.allocatablePoolCents,
+        tipPoolCents: summary.tipPoolCents,
         notes: data.notes || null,
         paidById: paidById ?? null,
         lines: {
@@ -6612,8 +7300,15 @@ export const staffService = {
   },
 
   async listInvites() {
+    // The token is the credential that lets someone set a password on the new
+    // hire's account — it must never travel in a list. Select the rest.
     return prisma.staffInvite.findMany({
-      orderBy: [{ createdAt: 'desc' }]
+      orderBy: [{ createdAt: 'desc' }],
+      select: {
+        id: true, email: true, note: true, expiresAt: true, completedAt: true,
+        staffProfileId: true, remindersSent: true, managerAlertAt: true,
+        createdAt: true, updatedAt: true
+      }
     });
   },
 

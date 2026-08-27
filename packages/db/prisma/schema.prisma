@@ -628,6 +628,12 @@ model StaffProfile {
   email                        String?                    @unique
   phone                        String?
   venue                        String?
+  /// Secret in the URL of this person's calendar feed. Apple and Google
+  /// Calendar cannot carry a login when they poll a subscription, so the token
+  /// IS the credential — long, random, and rotatable by the holder or a
+  /// manager if a phone goes missing. Null until they first ask for the link.
+  calendarToken                String?                    @unique
+  calendarTokenIssuedAt        DateTime?
   employmentStatus             String                     @default("ACTIVE")
   accountType                  StaffAccountType           @default(HUMAN)
   startDate                    DateTime?
@@ -641,6 +647,9 @@ model StaffProfile {
   emergencyContactRelationship String?
   emergencyContactPhone        String?
   employmentType               String?
+  // Agreed weekly hours for FT/PT (e.g. 38, 24). The labour view measures
+  // rostered hours against this; NULL means not set (casuals never set it).
+  contractedWeeklyHours        Int?
   payType                      String?
   payRateCents                 Int?
   payAward                     String?
@@ -677,6 +686,19 @@ model StaffProfile {
   pinLockedUntil               DateTime?
   // POS abilities for non-managers: {refunds, voids, discounts, till, office}.
   posPermissions               Json                       @default("{}")
+  /// A practice account. Everything it opens at the register is a training
+  /// sale — no takings, no drawer, no reports, nothing to the kitchen.
+  ///
+  /// It lives HERE, on the account, rather than in the browser, because the
+  /// old training switch was `alma.pos.training` in localStorage: a per-DEVICE
+  /// toggle that starts OFF. Hand someone a login and they get a live till on
+  /// their own phone regardless of what you meant. This flag travels with the
+  /// account instead, is forced on server-side at order creation, and cannot
+  /// be turned off from the till.
+  ///
+  /// Two uses, one mechanism: a new starter you want on a real-looking register
+  /// that cannot cost you anything, and an App Review demo login.
+  trainingOnly                 Boolean                    @default(false)
   pinLastFailedAt              DateTime?
   isAdmin                      Boolean                    @default(false)
   lastLoginAt                  DateTime?
@@ -710,6 +732,7 @@ model StaffProfile {
   ownedAlmaTasks               AlmaTask[]                 @relation("AlmaTaskOwner")
   completedAlmaTasks           AlmaTask[]                 @relation("AlmaTaskCompletedBy")
   dismissedAlmaTasks           AlmaTask[]                 @relation("AlmaTaskDismissedBy")
+  pushSubscriptions            StaffPushSubscription[]
 
   @@index([venue])
   @@index([accountType, venue])
@@ -1443,6 +1466,12 @@ model ReserveGuest {
   noShowCount         Int                          @default(0)
   lastVisitAt         DateTime?
   firstVisitAt        DateTime?
+  // Loyalty: a member is a guest with these set. Points are cached here for
+  // fast reads at the register; LoyaltyLedgerEntry is the audit trail and the
+  // two only ever move in the same transaction.
+  loyaltyCode         String?                      @unique
+  loyaltyJoinedAt     DateTime?
+  loyaltyPoints       Int                          @default(0)
   createdAt           DateTime                     @default(now())
   updatedAt           DateTime                     @updatedAt
   reservations        ReserveReservation[]
@@ -1451,11 +1480,35 @@ model ReserveGuest {
   tagAssignments      GuestTagAssignment[]
   automationRuns      MarketingAutomationRun[]
   campaignRecipients  MarketingCampaignRecipient[]
+  enquiries           ReserveEnquiry[]
+  loyaltyLedger       LoyaltyLedgerEntry[]
 
   @@index([venue])
   @@index([lastName, firstName])
   @@index([email])
   @@index([phone])
+}
+
+// @domain: reserve | home: suite
+// One signed movement of loyalty points. EARN rows carry earnKey = the POS
+// order id, so a replayed settle can never award twice; REDEEM rows are
+// written in the same transaction as the conditional balance decrement.
+model LoyaltyLedgerEntry {
+  id         String       @id @default(cuid())
+  guestId    String
+  venue      String?
+  kind       String // EARN | REDEEM | ADJUST
+  points     Int // signed: EARN positive, REDEEM negative
+  orderCents Int?
+  posOrderId String?
+  earnKey    String?      @unique
+  note       String?
+  createdBy  String?
+  createdAt  DateTime     @default(now())
+  guest      ReserveGuest @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@index([guestId, createdAt])
+  @@index([posOrderId])
 }
 
 // @domain: reserve | home: suite
@@ -1700,6 +1753,111 @@ model ReserveWaitlistEntry {
 
   @@index([venue, status, windowStartsAt])
   @@index([status, createdAt])
+}
+
+/// NEW and GUEST_REPLIED are the two that want a human: nobody has answered
+/// yet, or the guest has come back and is waiting on us.
+enum ReserveEnquiryStatus {
+  NEW
+  REPLIED
+  GUEST_REPLIED
+  BOOKED
+  CLOSED
+}
+
+enum ReserveEnquiryMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+/// A function, catering or event enquiry, and everything said about it since.
+///
+/// Enquiries used to be an email and nothing else: recordFunctionEnquiry sent
+/// the venue an alert with a mailto: link, so the conversation lived in
+/// somebody's mail client and no other part of the suite knew the enquiry
+/// existed. Two large groups could be promised the same Saturday with nothing
+/// noticing. This is the record that stops that.
+///
+/// It arrives from the booking widget's function panel or the website's
+/// catering form (`source` says which), and ends as a ReserveReservation.
+// @domain: reserve | home: suite
+model ReserveEnquiry {
+  id String @id @default(cuid())
+
+  // Where it came from. externalRef is the sending system's own id (the
+  // website keeps its own enquiry row), so a retried forward lands once.
+  source      String  @default("public-widget")
+  enquiryType String  @default("function")
+  externalRef String? @unique
+
+  contactName String
+  email       String?
+  phone       String?
+
+  // What they are asking for. The website's catering form already collects
+  // event type, date and party size; its email only carried them buried in
+  // the message body, where nothing could read them.
+  venue     String
+  eventType String?
+  eventDate DateTime?
+  partySize Int?
+  notes     String?
+
+  status           ReserveEnquiryStatus @default(NEW)
+  lastGuestReplyAt DateTime?
+  lastStaffReplyAt DateTime?
+  closedAt         DateTime?
+  // The subject the conversation runs under, so every reply stays in one
+  // thread in the guest's mail client.
+  emailSubject     String?
+
+  // Filled in as the enquiry turns into a real booking.
+  guestId       String?
+  reservationId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guest    ReserveGuest?           @relation(fields: [guestId], references: [id], onDelete: SetNull)
+  messages ReserveEnquiryMessage[]
+
+  // The inbox lists by status and age; the clash check asks "what else is on
+  // this date at this venue"; staff look people up by email.
+  @@index([status, createdAt])
+  @@index([venue, eventDate])
+  @@index([email])
+}
+
+/// One message in an enquiry conversation, in either direction.
+// @domain: reserve | home: suite
+model ReserveEnquiryMessage {
+  id            String                         @id @default(cuid())
+  enquiryId     String
+  direction     ReserveEnquiryMessageDirection
+  body          String
+  // The guest's name inbound, the staff member's name outbound.
+  authorName    String?
+  authorStaffId String?
+
+  // Email plumbing. messageId is this message's RFC 5322 Message-ID (the
+  // provider's id for messages we sent); inReplyTo is what it answered.
+  // Together they are how an inbound reply finds the enquiry it belongs to.
+  messageId      String? @unique
+  inReplyTo      String?
+  deliveryStatus String?
+  deliveryError  String?
+
+  // How an INBOUND reply found its thread: 'message-id' (the client quoted
+  // our Message-ID back — exact) or 'sender-address' (best-effort match on
+  // the From address, which anyone can spoof). The inbox shows a caution on
+  // the weaker kind so a manager verifies before acting on what it asks.
+  matchedBy String?
+
+  createdAt DateTime @default(now())
+
+  enquiry ReserveEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+
+  @@index([enquiryId, createdAt])
 }
 
 // @domain: reserve | home: suite
@@ -2064,6 +2222,7 @@ model GiftCard {
   promoCode               GiftCardPromoCode?   @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   redemptions             GiftCardRedemption[]
   customArtwork           GiftCardArtwork?
+  donation                GiftCardDonation?
 
   @@index([status])
   @@index([purchaserEmail])
@@ -2086,6 +2245,51 @@ model GiftCardArtwork {
   data       Bytes
   createdAt  DateTime @default(now())
   giftCard   GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+}
+
+// A voucher given away under the donation and sponsorship policy — a raffle
+// prize, an auction lot, a school fete. Its own table rather than more columns
+// on GiftCard, because a donation carries a whole second story (who asked, what
+// for, whether they agreed to name us) that no ordinary card query wants to
+// carry, and because the annual cap is a property of this table.
+//
+// @domain: giftcards | home: suite
+model GiftCardDonation {
+  id                   String    @id @default(cuid())
+  giftCardId           String    @unique
+  // The calendar year the allocation is drawn from, and which of that year's
+  // twelve this is. The unique pair below is the cap: the database refuses a
+  // thirteenth, so two managers cannot both take number twelve.
+  year                 Int
+  sequence             Int
+  organisation         String
+  cause                String?
+  contactName          String?
+  contactEmail         String?
+  // Which venue's voucher it is. The cap is group-wide; this is for reporting.
+  venue                String
+  eventDate            DateTime?
+  // The five policy criteria, stored as answered rather than recomputed, so a
+  // later change to the policy never rewrites history.
+  local                Boolean   @default(false)
+  bringsPeopleIn       Boolean   @default(false)
+  named                Boolean   @default(false)
+  existingRelationship Boolean   @default(false)
+  dgrEndorsed          Boolean   @default(false)
+  score                Int       @default(0)
+  // Where the promised listing was confirmed. Filed with the invoice, this is
+  // what supports treating the voucher as sponsorship rather than a gift.
+  listingEvidence      String?
+  notes                String?
+  approvedById         String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  giftCard             GiftCard  @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+
+  @@unique([year, sequence])
+  @@index([year])
+  @@index([organisation])
+  @@index([venue])
 }
 
 // @domain: giftcards | home: suite
@@ -2145,6 +2349,14 @@ model Timesheet {
   clockInAt          DateTime
   clockOutAt         DateTime
   breakMinutes       Int             @default(0)
+  /// Deputy leave timesheets (annual, sick, ...) import with this set. Leave
+  /// is pay without floor time: the Xero ordinary-hours push and the tips
+  /// pool both leave these rows out — Xero pays leave through leave
+  /// applications, and nobody on leave worked the shifts that earned the
+  /// week's tips. The timesheet list still shows them, badged.
+  isLeave            Boolean         @default(false)
+  /// The Deputy leave rule's name ("Annual Leave", "Personal/Carer's Leave").
+  leaveKind          String?
   notes              String?
   status             TimesheetStatus @default(DRAFT)
   submittedAt        DateTime?
@@ -2278,6 +2490,9 @@ model AppSettings {
   // ABA (direct-entry) bank-file details for paying staff tips, set in-app via
   // Settings. Read by staff.service buildAbaConfig (with env-var fallback).
   tipsAbaSettings          Json      @default("{}")
+  // Loyalty programme knobs: { active, pointsPerDollar, pointValueCents,
+  // minRedeemPoints }. Read/written by loyalty.service.ts.
+  loyaltySettings          Json      @default("{}")
   // Loaded replacement tracking — stores LoadedCutoverCheck statuses + notes
   // keyed by check id, plus comparison data and free-text notes per section.
   // See loaded-replacement.service.ts for the shape.
@@ -2965,7 +3180,35 @@ model Recipe {
   isPrepRecipe       Boolean                   @default(false)
   status             String                    @default("ACTIVE")
   estimatedCost      Float                     @default(0)
+  /// INTERNAL. Kitchen and back-office notes — prep reminders, supplier
+  /// quirks, "use the small pan". Never shown to a guest; the QR menu reads
+  /// `guestDescription` instead, precisely so that writing freely in here
+  /// stays safe.
   notes              String?
+  /// What a GUEST reads under the dish name on the QR menu.
+  ///
+  /// Separate from `notes` on purpose: one is written for the kitchen and the
+  /// other is published to whoever scans the code on the table. Seeded from
+  /// the printed menus' own descriptions, which are already the guest-facing
+  /// copy and already signed off — "Corn chips, wakame", "Pico de gallo,
+  /// guacachile, three pieces".
+  ///
+  /// NULL means no copy yet, and the menu simply shows the dish name.
+  guestDescription   String?
+  // What this dish is, dietary-wise: a list of DISH_DIETARY ids
+  // (packages/shared/src/dietary.ts) — 'gf', 'vgn', 'nuts' and so on.
+  //
+  // Empty means NOBODY HAS CHECKED, not "no allergens". Everything that reads
+  // this must treat an empty list as unknown; dishAnswersGuest is the one
+  // place that decides, and it is tested for exactly this.
+  dietary            Json                      @default("[]")
+  /// The venue-twin link. The catalogue is duplicated per venue (each venue
+  /// carries its own copy of the same dish under a different id); twins point
+  /// at ONE canonical member of their group (which keeps this null). Nothing
+  /// merges — sales history, costing and per-venue prices stay put — but the
+  /// POS and mappings resolve cross-venue references through this instead of
+  /// fragile title matching. Backfilled by scripts/link-recipe-twins.ts.
+  canonicalId        String?
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
   lines              RecipeLine[]              @relation("RecipeLines")
@@ -2974,10 +3217,14 @@ model Recipe {
   itemSales          SalesItemActualEntry[]
   squareMenuMappings SquareMenuRecipeMapping[]
   venuePrices        RecipeVenuePrice[]
+  setMenuCourses     SetMenuCourse[]
+  offeredOn          SetMenuOption[]
+  winePour           WinePour?
 
   @@index([title])
   @@index([category])
   @@index([isPrepRecipe])
+  @@index([canonicalId])
   @@index([status])
 }
 
@@ -3131,6 +3378,22 @@ model RecipeLine {
   wastePercent   Float?
   // Set-menu lines: this component is shared between N guests (cost ÷ N per person).
   perGuests      Float?
+  /// Costed, never served.
+  ///
+  /// A banquet's price has to carry things the kitchen never plates — the
+  /// allowance for what a table drinks, most obviously. Those belong in the
+  /// margin and nowhere else: an "average drinks" line on a docket is an
+  /// instruction to make something that does not exist.
+  ///
+  /// Until this existed a set menu component had only two possible lives. A
+  /// course could serve it, so the table was asked; or nothing did, and the
+  /// register put it on every bill and fired it to the kitchen. There was no
+  /// way to say "count this and stay quiet", which is why a drinks allowance
+  /// could not be costed without printing.
+  ///
+  /// The costing reads every line regardless. This changes the SERVICE side
+  /// only: stillFixed drops these, so they never reach a bill or a docket.
+  costingOnly    Boolean    @default(false)
   itemId         String?
   subRecipeId    String?
   createdAt      DateTime   @default(now())
@@ -3142,6 +3405,137 @@ model RecipeLine {
   @@index([recipeId])
   @@index([itemId])
   @@index([subRecipeId])
+}
+
+// @domain: stock | home: suite
+// What a wine is, past a name and a price.
+//
+// A wine in the catalogue is a Recipe like anything else, and a Recipe has a
+// title and a price and nothing else — so "a Riesling under $90 from the Clare"
+// is a question the register cannot answer, and the same wine appears as three
+// separate items because each pour size is its own row ("BenMarco Malbec
+// 150mL", "…250mL", "…750mL").
+//
+// This is the wine as the list in the guest's hand describes it: one bottle,
+// its grape and where it comes from, what it tastes like, what it goes with —
+// with the pour sizes hanging off it as WinePour rows. Money stays entirely on
+// the Recipe each pour points at; nothing here prices anything.
+model Wine {
+  id            String     @id @default(cuid())
+  venue         String
+  producer      String
+  /// The bit in quotes on the list — 'Polish Hill', 'Valle de Uco'. Often none.
+  cuvee         String?
+  /// As printed: one grape, or the blend spelled out ("Grenache Shiraz Mourvedre").
+  grape         String?
+  region        String?
+  /// The list writes a state for Australian wine and a country for imports —
+  /// SA, VIC, FRA, ITA. Kept exactly as printed, because that is how the floor
+  /// says it.
+  origin        String?
+  /// NULL = non-vintage.
+  vintage       Int?
+  /// The menu's own heading: Riesling, Chardonnay, Other reds, Bubbles.
+  section       String?
+  /// The menu's sub-heading: "Crisp & refreshing", "Full-bodied & bold".
+  styleBand     String?
+  /// The printed pairing marks: 's' seafood & ceviche, 'r' rich & grilled,
+  /// 'v' vegetables & cheese.
+  pairsWith     String[]
+  tastingNote   String?
+  /// The premium by-the-glass tier the list sets apart.
+  sommelierPour Boolean    @default(false)
+  /// The list's "**": on hand now, not reliably re-orderable.
+  limitedStock  Boolean    @default(false)
+  serveChilled  Boolean    @default(false)
+  /// Running order inside the section, so the register lists it the way the
+  /// printed menu does.
+  sortOrder     Int        @default(0)
+  status        String     @default("ACTIVE")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  pours         WinePour[]
+
+  @@index([venue, section, sortOrder])
+  @@index([grape])
+  @@index([region])
+}
+
+// @domain: stock | home: suite
+// One pour size of a wine, pointing at the POS item that carries its price.
+// 150 and 250 for a glass, 750 for the bottle; 60 and 375 for the fortified.
+// The price is NOT here on purpose — it lives on the Recipe, where the till,
+// the reports and the venue overrides already read it.
+model WinePour {
+  id        String @id @default(cuid())
+  wineId    String
+  /// Unique: a POS item is one pour of one wine, never shared.
+  recipeId  String @unique
+  ml        Int
+  sortOrder Int    @default(0)
+  wine      Wine   @relation(fields: [wineId], references: [id], onDelete: Cascade)
+  recipe    Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([wineId, ml])
+  @@index([wineId])
+}
+
+// @domain: stock | home: suite
+// A course inside a set menu that somebody has to CHOOSE from — "one entrée
+// each, from these three". The parts nobody chooses (bread for the table,
+// the greens between four) stay as RecipeLine rows on the set menu itself;
+// only the decisions live here.
+//
+// Deliberately not RecipeLine rows: a pick-one-of-three has no single cost to
+// fold into estimatedCost, because what a banquet costs depends on what the
+// tables actually picked. That's recorded per sale on PosOrderLine, and the
+// banquet report reads it back from there.
+model SetMenuCourse {
+  id              String          @id @default(cuid())
+  setMenuRecipeId String
+  name            String
+  /// Which POS course these dishes fire on — matches PosOrderLine.course, so
+  /// banquet dishes group with everything else on the fire screen and the
+  /// dockets. NULL = the register's default for the dish's kind.
+  posCourse       String?
+  /// How many each guest picks from this course. 1 = one each (the normal
+  /// case); 2 = two entrées each. covers x pick = what the table owes before
+  /// the picker will let service move on.
+  pick            Int             @default(1)
+  /// One serve feeds this many guests — the shared sides and the whole fish.
+  /// The register divides by it, so a side shared between 4 prints 2 portions
+  /// for a table of 8 rather than 8. NULL = one serve each, the normal case.
+  /// Mirrors RecipeLine.perGuests, which is where the costing already says it.
+  perGuests       Int?
+  sortOrder       Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  setMenu         Recipe          @relation(fields: [setMenuRecipeId], references: [id], onDelete: Cascade)
+  options         SetMenuOption[]
+
+  @@index([setMenuRecipeId, sortOrder])
+}
+
+// @domain: stock | home: suite
+// One dish offered under a course. `available` is tonight's menu — the kitchen
+// turns options on and off as the week changes, and the register only offers
+// what is on. Editing this never rewrites history: what a table was served is
+// on their PosOrderLine rows, not here.
+model SetMenuOption {
+  id              String        @id @default(cuid())
+  courseId        String
+  recipeId        String
+  /// Charged on top of the package price, per guest who picks it — the eye
+  /// fillet upgrade. 0 (the normal case) rings at $0 and prints "incl.".
+  supplementCents Int           @default(0)
+  available       Boolean       @default(true)
+  sortOrder       Int           @default(0)
+  createdAt       DateTime      @default(now())
+  course          SetMenuCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  recipe          Recipe        @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, recipeId])
+  @@index([recipeId])
 }
 
 // @domain: stock | home: suite
@@ -4858,6 +5252,12 @@ model PosOrderLine {
   // discount, never sent to the kitchen. Rebuilt from PosGiftCardSale, so
   // a client line edit can never lose or duplicate it.
   isGiftCard     Boolean   @default(false)
+  // The set menu this line was included in — the recipeId of the package that
+  // paid for it. Set on the $0 dish lines a banquet rings, NULL on everything
+  // sold on its own. Stamped here rather than inferred from a $0 price or a
+  // note, so the banquet report can tell an included dish from a comp, and so
+  // it survives the line rewrite every bill edit does.
+  packagedBy     String?
   // Set when the line's course has been FIRED to its printer profile.
   sentAt         DateTime?
   // Who called it away. With sentAt this is the kitchen-performance trail:
@@ -4869,6 +5269,7 @@ model PosOrderLine {
 
   @@index([orderId])
   @@index([recipeId])
+  @@index([packagedBy])
 }
 
 // A gift card being SOLD on a bill. The card itself is only issued when the
@@ -5313,4 +5714,64 @@ model StaffXeroEmployee {
   @@unique([staffProfileId, tenantId])
   @@index([tenantId])
   @@index([xeroEmployeeId])
+}
+
+/// One browser, on one device, that has agreed to be told when a roster drops.
+///
+/// Keyed by endpoint because that is what the browser gives us and what the
+/// push service accepts — a person legitimately has several (phone, iPad,
+/// the desktop they do admin on), and reinstalling the app produces a new
+/// one rather than reusing the old.
+///
+/// Rows are deleted, never soft-disabled, when the push service says the
+/// endpoint is gone (404/410). A dead endpoint is not a state worth keeping:
+/// it can never come back, and the browser mints a fresh row on re-subscribe.
+model StaffPushSubscription {
+  id             String       @id @default(cuid())
+  staffProfileId String
+  staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  /// The push service URL. Unique across everyone: if a device is handed to
+  /// another staff member and they subscribe, the row moves to them rather
+  /// than the old owner keeping a feed of somebody else's shifts.
+  endpoint       String       @unique
+  /// The subscription's public key and auth secret, base64url as the browser
+  /// gave them. Used to encrypt each payload to that device.
+  p256dh         String
+  auth           String
+  /// What asked for it, so a manager chasing "I'm not getting them" can see
+  /// whether the phone ever registered at all.
+  userAgent      String?
+  createdAt      DateTime     @default(now())
+  lastSuccessAt  DateTime?
+  /// Consecutive send failures that were not a hard "gone". Enough of them and
+  /// it is worth a human look, but they do not stop us trying.
+  failureCount   Int          @default(0)
+
+  @@index([staffProfileId])
+}
+
+// @domain: pos | home: suite
+// A price a dish takes on particular weekdays — Taco Tuesday rings the tacos
+// at $5 without anybody re-keying prices on the day. The register applies the
+// window at render/ring time (device-local day, so an offline register stays
+// right), and the QR flow applies it server-side in the venue's timezone —
+// QR prices are never trusted from the client.
+//
+// onlyWindow makes the window the dish's ONLY life: outside it the dish is
+// not offered at all (the "Try them all" taco board exists on Tuesdays and
+// nowhere else). A dish with no windows sells all week at its normal price.
+model PosPriceWindow {
+  id         String   @id @default(cuid())
+  recipeId   String
+  // Shown nowhere yet — carried so a report can say WHY a line rang at $5.
+  label      String
+  // csv of JS weekday numbers 0-6, same shape as PosRule.weekdays.
+  weekdays   String
+  priceCents Int
+  onlyWindow Boolean  @default(false)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([recipeId])
 }

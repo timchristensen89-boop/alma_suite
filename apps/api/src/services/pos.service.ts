@@ -3,10 +3,18 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
+import { parseDishDietary, type AuthUser, type PriceWindow } from '@alma/shared';
 import { nswHolidayName } from '../lib/nsw-holidays.js';
+import { courseDishIds, stillFixed } from '../lib/set-menu-plan.js';
 import { mailService } from './mail.service.js';
 import { authService } from './auth.service.js';
 import { giftCardService } from './gift-card.service.js';
+import { loyaltyService } from './loyalty.service.js';
+import { isTrainingSafeTender, orderIsTraining } from '../lib/training-till.js';
+
+/** Every tender the register accepts. LOYALTY spends a member's points and,
+    like gift cards, moves real value — so it is never training-safe. */
+const POS_PAYMENT_METHODS = ['CASH', 'CARD_EXTERNAL', 'STRIPE_TERMINAL', 'SQUARE_TERMINAL', 'GIFT_CARD', 'LOYALTY', 'ONLINE'];
 
 const stripe = env.stripe?.secretKey ? new Stripe(env.stripe.secretKey) : null;
 
@@ -15,7 +23,7 @@ export const ADJUST_REASONS: Record<string, string[]> = {
   DISCOUNT: ['Service recovery', 'Regular guest', 'Staff meal', 'Marketing promo', 'Manager goodwill'],
   COMP: ['Service recovery', 'Kitchen error', 'Long wait', 'Spillage / return', 'Manager comp'],
   PRICE_CHANGE: ['Menu price wrong', 'Happy hour manual', 'Damaged item', 'Manager override'],
-  WASTAGE: ['Spillage', 'Kitchen error', 'Expired', 'Customer return', 'Training']
+  WASTAGE: ['Dropped / spilled', 'Kitchen error', 'Wrong order', 'Expired / off', 'Customer return', 'Over-prepped', 'Training']
 };
 
 function requireReason(kind: string, reason: string) {
@@ -182,8 +190,22 @@ export function stripeForVenue(venue: string | null | undefined): Stripe | null 
   return stripeByVenue.get(slug) ?? stripe;
 }
 
+// A failed manager-PIN try cannot be pinned to one account (it is compared
+// against every manager), so per-profile lockout cannot carry this. A small
+// in-process sliding window backstops the per-IP route limiter: past this
+// many failures in the window, the whole gate cools off — real service never
+// gets near it, and a sweep from rotating IPs dies here anyway.
+const recentPinFailures: number[] = [];
+const PIN_FAILURE_WINDOW_MS = 10 * 60_000;
+const PIN_FAILURE_WINDOW_LIMIT = 25;
+
 async function verifyManagerPin(pin: string, permission?: string): Promise<string> {
   if (!/^\d{4,8}$/.test(pin)) throw new HttpError(403, 'Manager PIN required.');
+  const now = Date.now();
+  while (recentPinFailures.length && recentPinFailures[0]! < now - PIN_FAILURE_WINDOW_MS) recentPinFailures.shift();
+  if (recentPinFailures.length >= PIN_FAILURE_WINDOW_LIMIT) {
+    throw new HttpError(429, 'Too many PIN attempts — the manager gate is cooling off for a few minutes.');
+  }
   const managers = await prisma.staffProfile.findMany({
     where: {
       accountType: 'HUMAN',
@@ -201,6 +223,7 @@ async function verifyManagerPin(pin: string, permission?: string): Promise<strin
     if (profile.pinLockedUntil && profile.pinLockedUntil.getTime() > Date.now()) continue;
     if (await authService.comparePin(pin, profile.pinHash!)) return `${profile.firstName} ${profile.lastName}`.trim();
   }
+  recentPinFailures.push(now);
   throw new HttpError(403, 'That PIN does not belong to a manager.');
 }
 
@@ -491,10 +514,9 @@ async function issuePendingGiftCards(orderId: string, method: string, venue: str
   return issued;
 }
 
-async function postPosActuals(venue: string) {
+async function postPosActuals(venue: string, serviceDate: Date = sydneyTodayUtcMidnight()) {
   const setting = await prisma.posVenueSetting.findUnique({ where: { venue } });
   if (!setting?.postToReports) return;
-  const serviceDate = sydneyTodayUtcMidnight();
   const orders = await prisma.posOrder.findMany({
     where: { venue, serviceDate, status: 'PAID', training: false },
     include: { payments: true, lines: { where: { isGiftCard: true }, select: { totalCents: true } } }
@@ -514,10 +536,25 @@ async function postPosActuals(venue: string) {
   const netIncCents = Math.max(0, totalIncCents - refunds);
   const exGstCents = Math.round((netIncCents * 10) / 11);
   const covers = orders.reduce((sum, order) => sum + (order.covers ?? 0), 0);
-  const cardTips = orders
-    .flatMap((order) => order.payments)
-    .filter((payment) => payment.method !== 'CASH' && payment.tipCents > 0)
-    .reduce((sum, payment) => sum + payment.tipCents, 0);
+  // Card tips in: non-cash rows with a positive tip, as ever. Reversals ride
+  // as NEGATIVE tipCents on refund rows and count WHATEVER medium the money
+  // physically went back in — the pool is no longer owed the tip either way.
+  // Summing only the positive ones left a refunded bill's tip in the pool
+  // forever, paid to staff out of money the guest took home.
+  const cardTips = Math.max(
+    0,
+    orders
+      .flatMap((order) => order.payments)
+      .reduce(
+        (sum, payment) =>
+          payment.tipCents < 0
+            ? sum + payment.tipCents
+            : payment.method !== 'CASH'
+              ? sum + payment.tipCents
+              : sum,
+        0
+      )
+  );
   const source = 'alma-pos';
   const externalId = `${source}:${venue}:${serviceDate.toISOString().slice(0, 10)}`;
   await prisma.salesActualEntry.upsert({
@@ -533,20 +570,26 @@ async function postPosActuals(venue: string) {
     },
     update: { salesCents: exGstCents, coversCount: covers || null }
   });
-  if (cardTips > 0) {
+  {
     const importKey = `alma-pos:${venue}:${serviceDate.toISOString().slice(0, 10)}`;
-    await prisma.staffTipCardEntry.upsert({
-      where: { importKey },
-      create: {
-        venue,
-        serviceDate,
-        amountCents: cardTips,
-        source: 'alma-pos',
-        importKey,
-        notes: 'Card tips taken on ALMA POS.'
-      },
-      update: { amountCents: cardTips }
-    });
+    if (cardTips > 0) {
+      await prisma.staffTipCardEntry.upsert({
+        where: { importKey },
+        create: {
+          venue,
+          serviceDate,
+          amountCents: cardTips,
+          source: 'alma-pos',
+          importKey,
+          notes: 'Card tips taken on ALMA POS.'
+        },
+        update: { amountCents: cardTips }
+      });
+    } else {
+      // The day's tips netted back to zero (refunds) — a stale row here
+      // would still pay the pool out of money the guest took home.
+      await prisma.staffTipCardEntry.updateMany({ where: { importKey }, data: { amountCents: 0 } });
+    }
   }
 }
 
@@ -633,7 +676,7 @@ function str(value: unknown): string {
 const ORDER_INCLUDE = {
   lines: { orderBy: { createdAt: 'asc' as const } },
   payments: { orderBy: { createdAt: 'asc' as const } },
-  guest: { select: { id: true, firstName: true, lastName: true, totalVisits: true, totalSpendCents: true, tags: true, allergyNotes: true, dietaryNotes: true } }
+  guest: { select: { id: true, firstName: true, lastName: true, totalVisits: true, totalSpendCents: true, tags: true, allergyNotes: true, dietaryNotes: true, loyaltyCode: true, loyaltyPoints: true, loyaltyJoinedAt: true } }
 };
 
 type LineInput = {
@@ -649,6 +692,9 @@ type LineInput = {
   seat?: number | null;
   modifiers?: Array<{ name: string; priceCents: number }> | null;
   notes?: string | null;
+  // The set menu that paid for this line — set on the $0 dishes a banquet
+  // rings, NULL on anything sold on its own.
+  packagedBy?: string | null;
   isGiftCard?: boolean;
 };
 
@@ -674,6 +720,7 @@ function parseLines(raw: unknown): LineInput[] {
             .slice(0, 12)
         : null,
       notes: str(row.notes) ? str(row.notes).slice(0, 200) : null,
+      packagedBy: str(row.packagedBy) || null,
       isGiftCard: row.isGiftCard === true
     };
   });
@@ -698,12 +745,49 @@ async function applyRefund(input: {
   requireReason('COMP', reason);
   const order = await prisma.posOrder.findUnique({ where: { id: orderId }, include: { payments: true } });
   if (!order) throw new HttpError(404, 'Bill not found.');
-  if (order.status !== 'PAID') throw new HttpError(400, 'Only paid bills can be refunded.');
   const paid = order.payments.reduce((sum, payment) => sum + payment.amountCents + payment.tipCents, 0);
-  const amountCents = input.amountCents ?? paid;
-  if (amountCents > paid) throw new HttpError(400, `Only ${(paid / 100).toFixed(2)} was paid on this bill.`);
+  // An OPEN bill can still owe the GUEST money: part-paid, then edited down
+  // (an 86'd main taken off after the payment), so more was taken than the
+  // bill now totals. The charge screen sends people here for exactly that
+  // case — refusing every non-PAID bill was a dead end with the guest
+  // waiting, where the only escape was undoing their real payment. Allow the
+  // refund, capped at the overpayment so it can never quietly become a comp.
+  // Against total + tip: a tip is money the guest MEANT to hand over, not an
+  // overpayment to hand back.
+  const overpaidCents = paid - (order.totalCents + order.tipCents);
+  if (order.status !== 'PAID' && !(order.status === 'OPEN' && overpaidCents > 0)) {
+    throw new HttpError(400, 'Only paid bills — or an open bill paid past its total — can be refunded.');
+  }
+  const refundable = order.status === 'PAID' ? paid : overpaidCents;
+  const amountCents = input.amountCents ?? refundable;
+  if (amountCents > refundable) {
+    throw new HttpError(
+      400,
+      order.status === 'PAID'
+        ? `Only ${(paid / 100).toFixed(2)} was paid on this bill.`
+        : `This open bill is only ${(overpaidCents / 100).toFixed(2)} over — refund at most that, or settle the bill first.`
+    );
+  }
+  // A FULL refund hands the tip back too — and the tip pool must see that.
+  // The reversal rides as negative tipCents on a non-cash row (whatever
+  // medium the money physically went back in), because the day's card-tip
+  // total is computed from non-cash tipCents; without this, a refunded
+  // bill's tip stayed in the staff pool and the venue paid it twice.
+  const cardTipCents = order.payments
+    .filter((payment) => payment.method !== 'CASH' && payment.tipCents > 0)
+    .reduce((sum, payment) => sum + payment.tipCents, 0);
+  const tipReturnCents = amountCents >= paid ? Math.min(cardTipCents, amountCents) : 0;
+  // One row, the chosen medium: amount + tip still sums to -amountCents, so
+  // the drawer (cash refunds), the paid total and the day repost all stay
+  // exact — only the tip portion is now labelled as the tip going back.
   await prisma.posPayment.create({
-    data: { orderId, method, amountCents: -amountCents, tipCents: 0, reference: 'refund' }
+    data: {
+      orderId,
+      method,
+      amountCents: -(amountCents - tipReturnCents),
+      tipCents: -tipReturnCents,
+      reference: 'refund'
+    }
   });
   await prisma.posAdjustment.create({
     data: {
@@ -753,14 +837,85 @@ async function applyRefund(input: {
       }
     });
   }
-  await postPosActuals(order.venue).catch(() => undefined);
+  await postPosActuals(order.venue, order.serviceDate ?? undefined).catch(() => undefined);
   const refunded = await posService.getOrder(orderId);
   return { ...refunded, giftCardNotes: giftNotes };
 }
 
 export { applyRefund, requireReason, verifyManagerPin };
 
+// ── Homescreen pin sanitizing ────────────────────────────────────────────
+// Pins are rich objects ({t:'i',id} items / {t:'f',name,items} folders) —
+// pass through with a shallow shape check; legacy string pins upgrade.
+// label = display-only rename (dockets/KDS keep the recipe title);
+// s = tile size ('w' wide, 'b' big; absent = standard); look = how a
+// folder shows its items (square tiles or full-menu list rows).
+// Exported pure so the shape rules can be exercised without a database.
+export type SavedPinExtras = { c?: string; label?: string; s?: 'w' | 'b'; d?: 'sh' | 'hs' | 'big'; look?: 'tiles' | 'list' };
+export type SavedFolder = SavedPinExtras & { t: 'f'; name: string; items: string[]; folders?: SavedFolder[] };
+export type SavedPin = ({ t: 'i'; id: string } & SavedPinExtras) | ({ t: 'm'; key: string } & SavedPinExtras) | SavedFolder;
+
+export function sanitizeHomescreenPins(raw: unknown): SavedPin[] {
+  const pinExtrasOf = (row: Record<string, unknown>): SavedPinExtras => ({
+    ...(typeof row.c === 'string' ? { c: row.c } : {}),
+    ...(typeof row.label === 'string' && row.label.trim() ? { label: row.label.trim().slice(0, 40) } : {}),
+    ...(row.s === 'w' || row.s === 'b' ? { s: row.s } : {}),
+    ...(row.d === 'sh' || row.d === 'hs' || row.d === 'big' ? { d: row.d } : {}),
+    ...(row.look === 'tiles' || row.look === 'list' ? { look: row.look } : {})
+  });
+  // Folders nest (Wine → Red → By the glass): the same shape at every
+  // level, three levels deep at most so a hostile payload can't recurse.
+  const sanitizeFolder = (row: Record<string, unknown>, depth: number): SavedFolder | null => {
+    if (typeof row.name !== 'string' || !Array.isArray(row.items)) return null;
+    const folders =
+      depth < 3 && Array.isArray(row.folders)
+        ? (row.folders as unknown[])
+            .map((child) =>
+              child && typeof child === 'object' ? sanitizeFolder(child as Record<string, unknown>, depth + 1) : null
+            )
+            .filter((child): child is SavedFolder => child !== null)
+            .slice(0, 12)
+        : [];
+    return {
+      t: 'f',
+      name: row.name.slice(0, 40),
+      items: (row.items as unknown[]).map(String).slice(0, 40),
+      ...(folders.length ? { folders } : {}),
+      ...pinExtrasOf(row)
+    };
+  };
+  return (Array.isArray(raw) ? (raw as unknown[]) : [])
+    .map((pin): SavedPin | null => {
+      if (typeof pin === 'string') return { t: 'i', id: pin };
+      if (pin && typeof pin === 'object') {
+        const row = pin as Record<string, unknown>;
+        if (row.t === 'i' && typeof row.id === 'string') {
+          return { t: 'i', id: row.id, ...pinExtrasOf(row) };
+        }
+        // Management actions are pins too, so they move and size like the rest.
+        if (row.t === 'm' && typeof row.key === 'string') {
+          return { t: 'm', key: row.key.slice(0, 40), ...pinExtrasOf(row) };
+        }
+        if (row.t === 'f') return sanitizeFolder(row, 1);
+      }
+      return null;
+    })
+    .filter((pin): pin is SavedPin => pin !== null)
+    .slice(0, 24);
+}
+
 export const posService = {
+  /**
+   * The surcharge in force right now (Sydney) — weekend or public-holiday.
+   * The QR guest flow reads this so a phone order pays the same 10%/15% the
+   * register applies; without it every weekend QR round leaked the surcharge
+   * and left the table's bill under-collected by exactly that share.
+   */
+  async currentSurcharge(): Promise<{ label: string; percent: number } | null> {
+    const { surcharge } = await applicableRules();
+    return surcharge ? { label: surcharge.label, percent: surcharge.percent } : null;
+  },
+
   // The sellable menu, grouped for the register grid: active non-prep recipes
   // with a price, plus set menus. Categories keep the recipe's own category.
   async registerMenu() {
@@ -769,17 +924,58 @@ export const posService = {
     const hiddenCats = new Set(hides.filter((hide) => hide.kind === 'CATEGORY').map((hide) => hide.key.toLowerCase()));
     const recipes = await prisma.recipe.findMany({
       where: { status: 'ACTIVE', isPrepRecipe: false, salePriceCents: { gt: 0 } },
-      select: { id: true, title: true, printTitle: true, kind: true, category: true, venue: true, salePriceCents: true },
+      select: { id: true, title: true, printTitle: true, guestDescription: true, kind: true, category: true, venue: true, salePriceCents: true, canonicalId: true, dietary: true },
       orderBy: [{ category: 'asc' }, { title: 'asc' }]
     });
+    // Per-venue price overrides. RecipeVenuePrice is maintained by the Square
+    // sync and editable in Stock, but the register never read it — venue
+    // prices could drift from what Square was actually charging. A recipe
+    // that is venue-tagged gets its own venue's override applied directly;
+    // the full map still ships so a shared (venue-null) recipe can price per
+    // register at the client.
+    const venuePriceRows = await prisma.recipeVenuePrice.findMany({
+      select: { recipeId: true, venue: true, salePriceCents: true }
+    });
+    const venuePriceMap = new Map<string, Record<string, number>>();
+    for (const row of venuePriceRows) {
+      const entry = venuePriceMap.get(row.recipeId) ?? {};
+      entry[row.venue] = row.salePriceCents;
+      venuePriceMap.set(row.recipeId, entry);
+    }
     type RegisterItem = {
       recipeId: string;
       title: string;
       printTitle?: string | null;
+      /**
+       * The menu's own line under the dish name, for guests. `Recipe.notes` is
+       * internal and is deliberately not selected here — nothing on this path
+       * should be able to leak it onto a table's phone.
+       */
+      description?: string;
+      /** DISH_DIETARY ids. Empty = nobody has checked, NOT "no allergens". */
+      dietary?: string[];
       priceCents: number;
       venue: string | null;
+      canonicalId?: string | null;
+      venuePrices?: Record<string, number>;
       variantOf?: string;
-      variants?: Array<{ recipeId: string; title: string; priceCents: number; venue: string | null; label: string }>;
+      variants?: Array<{
+        recipeId: string;
+        title: string;
+        printTitle?: string | null;
+        priceCents: number;
+        venue: string | null;
+        label: string;
+        priceWindows?: PriceWindow[];
+      }>;
+      /**
+       * Weekday price windows (Taco Tuesday), shipped raw rather than baked:
+       * the register caches this payload across days, so it applies the
+       * window against ITS day at render and ring time. The QR flow bakes
+       * them server-side instead — @alma/shared's price-window arithmetic is
+       * the one implementation both run.
+       */
+      priceWindows?: PriceWindow[];
     };
     const byCategory = new Map<string, { name: string; kind: string; items: RegisterItem[] }>();
     const itemRefs = new Map<string, RegisterItem>();
@@ -792,12 +988,21 @@ export const posService = {
         kind: recipe.kind === 'SET_MENU' ? 'SET_MENU' : kindBucket(recipe.kind, recipe.category),
         items: []
       };
+      const overrides = venuePriceMap.get(recipe.id);
       const item: RegisterItem = {
         recipeId: recipe.id,
         title: recipe.title,
         printTitle: recipe.printTitle,
-        priceCents: recipe.salePriceCents ?? 0,
-        venue: recipe.venue
+        priceCents:
+          (recipe.venue ? overrides?.[recipe.venue] : undefined) ?? recipe.salePriceCents ?? 0,
+        venue: recipe.venue,
+        canonicalId: recipe.canonicalId ?? null,
+        ...(recipe.guestDescription?.trim() ? { description: recipe.guestDescription.trim() } : {}),
+        // Parsed rather than passed through: the column is free-form JSON, and
+        // a tag the vocabulary does not know must not reach the floor looking
+        // like a claim about a plate.
+        ...(parseDishDietary(recipe.dietary).length > 0 ? { dietary: parseDishDietary(recipe.dietary) } : {}),
+        ...(overrides ? { venuePrices: overrides } : {})
       };
       group.items.push(item);
       itemRefs.set(recipe.id, item);
@@ -808,23 +1013,101 @@ export const posService = {
       if (b.name === 'Set Menus') return 1;
       return a.name.localeCompare(b.name);
     });
-    const [eightySix, modifierGroups, variantLinks] = await Promise.all([
+    // Everything the banquet picker needs, shipped with the menu so tapping a
+    // set menu opens instantly instead of waiting on a second request.
+    const setMenuIds = recipes.filter((recipe) => recipe.kind === 'SET_MENU').map((recipe) => recipe.id);
+    const [eightySix, modifierGroups, variantLinks, priceWindowRows, setMenuLines, setMenuCourses, wineRows] = await Promise.all([
       prisma.pos86.findMany({ select: { recipeId: true } }),
       prisma.posModifierGroup.findMany({
         where: { active: true },
         include: { options: { where: { active: true }, orderBy: { sortOrder: 'asc' } } },
         orderBy: { sortOrder: 'asc' }
       }),
-      prisma.posVariantLink.findMany({ orderBy: [{ parentRecipeId: 'asc' }, { sortOrder: 'asc' }] })
+      prisma.posVariantLink.findMany({ orderBy: [{ parentRecipeId: 'asc' }, { sortOrder: 'asc' }] }),
+      prisma.posPriceWindow.findMany({
+        where: { active: true },
+        orderBy: { createdAt: 'asc' },
+        select: { recipeId: true, label: true, weekdays: true, priceCents: true, onlyWindow: true }
+      }),
+      setMenuIds.length
+        ? prisma.recipeLine.findMany({
+            where: { recipeId: { in: setMenuIds } },
+            orderBy: { position: 'asc' },
+            select: {
+              recipeId: true,
+              ingredientName: true,
+              quantity: true,
+              perGuests: true,
+              // Costed but never served — stillFixed drops these, so a drinks
+              // allowance stays out of the bill and off the docket.
+              costingOnly: true,
+              subRecipeId: true,
+              subRecipe: { select: { title: true, printTitle: true } }
+            }
+          })
+        : Promise.resolve([]),
+      setMenuIds.length
+        ? prisma.setMenuCourse.findMany({
+            where: { setMenuRecipeId: { in: setMenuIds } },
+            orderBy: { sortOrder: 'asc' },
+            include: {
+              options: {
+                // Tonight's menu only — an option that is switched off should
+                // not be a tile someone can tap by mistake.
+                where: { available: true },
+                orderBy: { sortOrder: 'asc' },
+                include: { recipe: { select: { title: true, salePriceCents: true, estimatedCost: true } } }
+              }
+            }
+          })
+        : Promise.resolve([]),
+      // Wine sells differently from everything else: the guest asks for a
+      // grape, a region or a number, never for a tile. The register lists it
+      // instead of gridding it, which needs the detail alongside the price.
+      prisma.wine.findMany({
+        where: { status: 'ACTIVE', pours: { some: {} } },
+        orderBy: [{ venue: 'asc' }, { sortOrder: 'asc' }],
+        include: {
+          pours: {
+            orderBy: { ml: 'asc' },
+            include: { recipe: { select: { id: true, title: true, printTitle: true, salePriceCents: true, status: true } } }
+          }
+        }
+      })
     ]);
+    // Weekday price windows (Taco Tuesday). Attached BEFORE the variants fold
+    // so each option carries its own recipe's windows into the sheet.
+    const windowsByRecipe = new Map<string, PriceWindow[]>();
+    for (const row of priceWindowRows) {
+      const list = windowsByRecipe.get(row.recipeId) ?? [];
+      list.push({ weekdays: row.weekdays, priceCents: row.priceCents, onlyWindow: row.onlyWindow, label: row.label });
+      windowsByRecipe.set(row.recipeId, list);
+    }
+    for (const [recipeId, windows] of windowsByRecipe) {
+      const item = itemRefs.get(recipeId);
+      if (item) item.priceWindows = windows;
+    }
     // Variants: children fold under their parent's tile on the register (the
     // QR menu keeps the flat rows). A self-row labels the parent option.
     const variantsByParent = new Map<string, NonNullable<RegisterItem['variants']>>();
+    const variantOption = (item: RegisterItem, label: string): NonNullable<RegisterItem['variants']>[number] => ({
+      recipeId: item.recipeId,
+      title: item.title,
+      // The docket name rides along: a variant is added straight from the
+      // sheet, and dropping printTitle there would send the tile name to the
+      // kitchen instead of the preparation ("Barramundi Taco" for a battered
+      // one).
+      printTitle: item.printTitle ?? null,
+      priceCents: item.priceCents,
+      venue: item.venue,
+      label,
+      ...(item.priceWindows ? { priceWindows: item.priceWindows } : {})
+    });
     for (const link of variantLinks) {
       const child = itemRefs.get(link.childRecipeId);
       if (!child) continue;
       const list = variantsByParent.get(link.parentRecipeId) ?? [];
-      list.push({ recipeId: child.recipeId, title: child.title, priceCents: child.priceCents, venue: child.venue, label: link.label });
+      list.push(variantOption(child, link.label));
       variantsByParent.set(link.parentRecipeId, list);
       if (link.childRecipeId !== link.parentRecipeId) child.variantOf = link.parentRecipeId;
     }
@@ -832,12 +1115,90 @@ export const posService = {
       const parent = itemRefs.get(parentId);
       if (!parent) continue;
       if (!options.some((option) => option.recipeId === parentId)) {
-        options.unshift({ recipeId: parent.recipeId, title: parent.title, priceCents: parent.priceCents, venue: parent.venue, label: 'Standard' });
+        options.unshift(variantOption(parent, 'Standard'));
       }
       parent.variants = options;
     }
+    // A set menu with no courses is just a priced tile — the picker only opens
+    // for menus that actually ask a question, so the existing $0 package flow
+    // keeps working untouched for the ones nobody has set up yet.
+    const setMenus = setMenuIds
+      .map((recipeId) => {
+        const recipe = itemRefs.get(recipeId);
+        const menuCourses = setMenuCourses.filter((course) => course.setMenuRecipeId === recipeId);
+        const coursedRecipeIds = courseDishIds(menuCourses);
+        const courses = menuCourses
+          .map((course) => ({
+            id: course.id,
+            name: course.name,
+            posCourse: course.posCourse,
+            pick: course.pick,
+            perGuests: course.perGuests,
+            sortOrder: course.sortOrder,
+            options: course.options.map((option) => ({
+              id: option.id,
+              recipeId: option.recipeId,
+              title: option.recipe.title,
+              supplementCents: option.supplementCents,
+              available: option.available,
+              salePriceCents: option.recipe.salePriceCents,
+              estimatedCost: option.recipe.estimatedCost,
+              sortOrder: option.sortOrder
+            }))
+          }));
+        return {
+          recipeId,
+          title: recipe?.title ?? '',
+          salePriceCents: recipe?.priceCents ?? null,
+          // A component that has become a course is NOT also a fixed line —
+          // see set-menu-plan.ts for why, and what it costs to get wrong.
+          fixed: stillFixed(setMenuLines.filter((line) => line.recipeId === recipeId), coursedRecipeIds)
+            .map((line) => ({
+              name: line.subRecipe?.title ?? line.ingredientName,
+              printName: line.subRecipe?.printTitle ?? null,
+              recipeId: line.subRecipeId,
+              quantity: line.quantity ?? 1,
+              perGuests: line.perGuests
+            })),
+          courses
+        };
+      })
+      .filter((plan) => plan.courses.length > 0 || plan.fixed.length > 0);
+    // A pour with no price cannot be sold, and a wine with no sellable pour is
+    // not on the list — both are reported in Stock, not papered over here.
+    const wines = wineRows
+      .map((wine) => ({
+        id: wine.id,
+        venue: wine.venue,
+        name: `${wine.producer}${wine.cuvee ? ` '${wine.cuvee}'` : ''}`,
+        producer: wine.producer,
+        cuvee: wine.cuvee,
+        grape: wine.grape,
+        region: wine.region,
+        origin: wine.origin,
+        vintage: wine.vintage,
+        section: wine.section,
+        styleBand: wine.styleBand,
+        pairsWith: wine.pairsWith,
+        tastingNote: wine.tastingNote,
+        sommelierPour: wine.sommelierPour,
+        limitedStock: wine.limitedStock,
+        serveChilled: wine.serveChilled,
+        pours: wine.pours
+          .filter((pour) => pour.recipe.status === 'ACTIVE' && pour.recipe.salePriceCents !== null)
+          .map((pour) => ({
+            recipeId: pour.recipe.id,
+            ml: pour.ml,
+            priceCents: pour.recipe.salePriceCents as number,
+            title: pour.recipe.title,
+            printName: pour.recipe.printTitle
+          }))
+      }))
+      .filter((wine) => wine.pours.length > 0);
     return {
       categories,
+      wines,
+      setMenus,
       itemCount: recipes.length,
       eightySix: eightySix.map((row) => row.recipeId),
       modifierGroups: modifierGroups.map((group) => ({
@@ -887,7 +1248,9 @@ export const posService = {
       const success = /success\s*=\s*"?(true|1)/i.test(file);
       if (jobId) {
         await prisma.posPrintJob
-          .updateMany({ where: { id: jobId }, data: { status: success ? 'PRINTED' : 'FAILED', doneAt: new Date() } })
+          // Scope to the station polling: an anonymous caller must not be
+          // able to mark another station's jobs done or failed.
+          .updateMany({ where: { id: jobId, profileId }, data: { status: success ? 'PRINTED' : 'FAILED', doneAt: new Date() } })
           .catch(() => undefined);
       }
       return { xml: '<?xml version="1.0" encoding="UTF-8"?>\n<PrintResponseInfo Version="2.00"/>' };
@@ -1237,7 +1600,19 @@ export const posService = {
     return { deleted: true };
   },
 
-  async createOrder(input: unknown) {
+  /**
+   * Open a bill.
+   *
+   * `caller` is what makes training real. The flag used to arrive in the body,
+   * from `alma.pos.training` in the browser's localStorage — per device,
+   * defaulting to off, and asserted by the very client you are trying to
+   * restrict. A training account signing in on their own phone got a live
+   * till, which is exactly the case the flag exists to prevent.
+   *
+   * So the server decides. A training-only account cannot open a real bill,
+   * whatever the client sends, and the client has no way to ask for one.
+   */
+  async createOrder(input: unknown, caller?: AuthUser | null) {
     const body = (input ?? {}) as Record<string, unknown>;
     const venue = str(body.venue);
     if (!venue) throw new HttpError(400, 'venue is required.');
@@ -1284,7 +1659,7 @@ export const posService = {
         data: {
           venue,
           idempotencyKey,
-          training: body.training === true,
+          training: orderIsTraining(body.training, caller?.trainingOnly),
           openedByName: str(body.openedByName) || null,
           orderType: str(body.orderType).toUpperCase() === 'TAKEAWAY' ? 'TAKEAWAY' : 'DINE_IN',
           tableLabel,
@@ -1451,11 +1826,17 @@ export const posService = {
     const sourceId = str(body.sourceOrderId);
     if (!sourceId || sourceId === targetId) throw new HttpError(400, 'Pick a different bill to merge in.');
     const [target, source] = await Promise.all([
-      prisma.posOrder.findUnique({ where: { id: targetId }, select: { status: true, venue: true, tableLabel: true, orderNumber: true, covers: true } }),
-      prisma.posOrder.findUnique({ where: { id: sourceId }, select: { status: true, venue: true, tableLabel: true, orderNumber: true, covers: true } })
+      prisma.posOrder.findUnique({ where: { id: targetId }, select: { status: true, venue: true, training: true, tableLabel: true, orderNumber: true, covers: true } }),
+      prisma.posOrder.findUnique({ where: { id: sourceId }, select: { status: true, venue: true, training: true, tableLabel: true, orderNumber: true, covers: true } })
     ]);
     if (!target || !source) throw new HttpError(404, 'Bill not found.');
     if (target.status !== 'OPEN' || source.status !== 'OPEN') throw new HttpError(400, 'Both bills must be open to merge.');
+    // A merge reassigns lines AND payments. Across venues that would move
+    // recorded revenue between two companies (and two Stripe accounts); across
+    // the training flag it would move real money into or out of the training
+    // exclusion. Neither is ever intended.
+    if (target.venue !== source.venue) throw new HttpError(400, 'Those bills are at different venues — they can’t be merged.');
+    if (target.training !== source.training) throw new HttpError(400, 'A training bill and a real bill can’t be merged.');
     await prisma.$transaction([
       prisma.posOrderLine.updateMany({ where: { orderId: sourceId }, data: { orderId: targetId } }),
       prisma.posPayment.updateMany({ where: { orderId: sourceId }, data: { orderId: targetId } }),
@@ -1477,11 +1858,35 @@ export const posService = {
   },
 
   // Bring a paid bill back to the floor (adds more items, settles again).
-  async reopenOrder(id: string) {
-    const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true } });
+  async reopenOrder(id: string, input: unknown = {}, requireManager = false) {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const order = await prisma.posOrder.findUnique({
+      where: { id },
+      select: { status: true, venue: true, serviceDate: true, orderNumber: true, tableLabel: true }
+    });
     if (!order) throw new HttpError(404, 'Bill not found.');
     if (order.status !== 'PAID') throw new HttpError(400, 'Only paid bills can be reopened.');
+    // Reopening pulls a settled bill back off the books. Gate it like the other
+    // money-reversing actions — a manager PIN for a floor-staff session — and
+    // leave an audit row either way.
+    let approvedBy: string | null = null;
+    if (requireManager) approvedBy = await verifyManagerPin(str(body.managerPin), 'voids');
+    const settledDate = order.serviceDate;
     await prisma.posOrder.update({ where: { id }, data: { status: 'OPEN', paidAt: null, serviceDate: null } });
+    await prisma.posAdjustment.create({
+      data: {
+        venue: order.venue,
+        orderId: id,
+        kind: 'PAYMENT_UNDO',
+        reason: 'Bill reopened',
+        staffName: approvedBy ?? (str(body.staffName) || 'Register'),
+        itemName: `REOPEN ${order.tableLabel ? `table ${order.tableLabel}` : `#${order.orderNumber}`}`,
+        amountCents: 0
+      }
+    });
+    // The day it was settled on is now short one paid bill — recompute THAT
+    // day, not today, or its takings stay overstated forever.
+    if (settledDate) await postPosActuals(order.venue, settledDate).catch(() => undefined);
     return this.getOrder(id);
   },
 
@@ -1684,7 +2089,7 @@ export const posService = {
   async setLines(id: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const lines = parseLines(body.lines).filter((line) => !line.isGiftCard);
-    const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true } });
+    const order = await prisma.posOrder.findUnique({ where: { id }, select: { status: true, venue: true, training: true } });
     if (!order) throw new HttpError(404, 'Order not found.');
     if (order.status !== 'OPEN') throw new HttpError(400, `Order is ${order.status} — start a new sale.`);
 
@@ -1694,9 +2099,10 @@ export const posService = {
     // whole course to the kitchen.
     const existingLines = await prisma.posOrderLine.findMany({
       where: { orderId: id },
-      select: { id: true, sentAt: true }
+      select: { id: true, sentAt: true, unitPriceCents: true }
     });
     const sentById = new Map(existingLines.map((line) => [line.id, line.sentAt]));
+    const priorPriceById = new Map(existingLines.map((line) => [line.id, line.unitPriceCents]));
     await prisma.$transaction([
       prisma.posOrderLine.deleteMany({ where: { orderId: id } }),
       prisma.posOrderLine.createMany({
@@ -1712,6 +2118,7 @@ export const posService = {
           seat: line.seat,
           modifiers: (line.modifiers ?? undefined) as object[] | undefined,
           notes: line.notes,
+          packagedBy: line.packagedBy ?? null,
           sentAt: line.id ? sentById.get(line.id) ?? null : null
         }))
       })
@@ -1721,6 +2128,42 @@ export const posService = {
     // than trusted from the payload.
     await syncGiftCardLines(id);
     await recomputeOrder(id);
+
+    // Audit a comp rung at $0. A line at $0 that no set menu paid for
+    // (packagedBy null) whose dish normally has a price is a manager zeroing a
+    // sale — the register's package/$0 toggle does exactly this — so it leaves
+    // a PosAdjustment the way the explicit comp path does. Only NEWLY zeroed
+    // lines are recorded (a line already $0 on the prior save is not re-logged);
+    // training bills and set-menu inclusions are skipped.
+    if (!order.training) {
+      const newlyZeroed = lines.filter(
+        (line) =>
+          line.unitPriceCents === 0 &&
+          !line.packagedBy &&
+          line.recipeId &&
+          (!line.id || (priorPriceById.get(line.id) ?? 0) > 0)
+      );
+      if (newlyZeroed.length > 0) {
+        const recipes = await prisma.recipe.findMany({
+          where: { id: { in: [...new Set(newlyZeroed.map((line) => line.recipeId!))] } },
+          select: { id: true, salePriceCents: true }
+        });
+        const priceById = new Map(recipes.map((recipe) => [recipe.id, recipe.salePriceCents ?? 0]));
+        const staffName = str(body.staffName) || 'Register';
+        const rows = newlyZeroed
+          .filter((line) => (priceById.get(line.recipeId!) ?? 0) > 0)
+          .map((line) => ({
+            venue: order.venue ?? '',
+            orderId: id,
+            kind: 'COMP',
+            reason: 'Rung at $0 on the register',
+            staffName,
+            itemName: line.name,
+            amountCents: (priceById.get(line.recipeId!) ?? 0) * line.quantity
+          }));
+        if (rows.length > 0) await prisma.posAdjustment.createMany({ data: rows });
+      }
+    }
     return this.getOrder(id);
   },
 
@@ -1730,8 +2173,8 @@ export const posService = {
   async payOrder(id: string, input: unknown) {
     const body = (input ?? {}) as Record<string, unknown>;
     const method = str(body.method).toUpperCase();
-    if (!['CASH', 'CARD_EXTERNAL', 'STRIPE_TERMINAL', 'SQUARE_TERMINAL', 'GIFT_CARD', 'ONLINE'].includes(method)) {
-      throw new HttpError(400, 'method must be CASH, CARD_EXTERNAL, STRIPE_TERMINAL, SQUARE_TERMINAL, GIFT_CARD or ONLINE.');
+    if (!POS_PAYMENT_METHODS.includes(method)) {
+      throw new HttpError(400, `method must be one of ${POS_PAYMENT_METHODS.join(', ')}.`);
     }
     const tipCents = body.tipCents === undefined ? 0 : asInt(body.tipCents, 'tip', { min: 0, max: 500_000 });
 
@@ -1739,6 +2182,19 @@ export const posService = {
     if (!order) throw new HttpError(404, 'Order not found.');
     if (order.status !== 'OPEN') throw new HttpError(400, `Order is already ${order.status}.`);
     if (order.lines.length === 0) throw new HttpError(400, 'Add at least one item before charging.');
+
+    // A training bill may be tendered, because practising the charge screen is
+    // most of the point. What it may NOT do is move money that lives outside
+    // our own books: cash and "card on the standalone machine" are records we
+    // then exclude from takings, but a gift card is really debited and a
+    // terminal really charges somebody's card. Those are not reversible by
+    // marking a row `training`, so they are refused rather than filtered.
+    if (order.training && !isTrainingSafeTender(method)) {
+      throw new HttpError(
+        400,
+        'This is a training bill — practise with Cash or Card, which post nowhere. Gift cards and card terminals move real money and are switched off here.'
+      );
+    }
     if (order.payments.length === 0) {
       await recomputeOrder(id);
       order = (await prisma.posOrder.findUnique({ where: { id }, include: { lines: true, payments: true } }))!;
@@ -1750,6 +2206,11 @@ export const posService = {
       body.amountCents === undefined || body.amountCents === null
         ? balanceCents
         : asInt(body.amountCents, 'amount', { min: 1 });
+    // A payment is never negative. It only goes negative when the balance does
+    // — lines edited below what was already paid — and a negative payment would
+    // flip the bill to PAID as a refund with no manager PIN and no audit row.
+    // Over-collection is corrected through Refund, which has both.
+    if (amountCents < 0) throw new HttpError(400, 'This bill is already overpaid — use Refund to return money, not a payment.');
     if (amountCents > balanceCents) throw new HttpError(400, `Only ${(balanceCents / 100).toFixed(2)} is owing on this order.`);
 
     const dueCents = amountCents + tipCents;
@@ -1779,6 +2240,21 @@ export const posService = {
       )) as { balanceCents: number; code: string };
       giftCardRemainingCents = redeemed.balanceCents;
       giftReference = code;
+    }
+
+    // Loyalty points: same order of operations as the gift card — the points
+    // are debited atomically BEFORE the payment row exists, so a failed
+    // redemption (not enough points, programme off) leaves the bill untouched.
+    let loyaltyRedeemed: Awaited<ReturnType<typeof loyaltyService.redeemForOrder>> | null = null;
+    if (method === 'LOYALTY') {
+      if (!order.guestId) throw new HttpError(400, 'Attach the loyalty member to this bill before paying with points.');
+      loyaltyRedeemed = await loyaltyService.redeemForOrder({
+        guestId: order.guestId,
+        orderId: id,
+        amountCents: dueCents,
+        venue: order.venue
+      });
+      giftReference = loyaltyRedeemed.code;
     }
 
     const settled = amountCents >= balanceCents;
@@ -1816,7 +2292,21 @@ export const posService = {
     if (settled) {
       await postPosActuals(updated.venue).catch(() => undefined);
     }
-    return { ...updated, changeCents, giftCardRemainingCents, balanceCents: settled ? 0 : balanceCents - amountCents };
+    // Points accrue only when the bill settles, on what was actually consumed
+    // — earnForOrder excludes gift-card top-ups and the points-paid portion,
+    // and its earnKey makes a replayed settle award nothing twice.
+    let loyaltyPointsEarned: number | null = null;
+    if (settled) {
+      loyaltyPointsEarned = await loyaltyService.earnForOrder(updated).catch(() => null);
+    }
+    return {
+      ...updated,
+      changeCents,
+      giftCardRemainingCents,
+      loyaltyPointsEarned,
+      loyaltyPointsRemaining: loyaltyRedeemed?.member?.points ?? null,
+      balanceCents: settled ? 0 : balanceCents - amountCents
+    };
   },
 
   async voidOrder(id: string, input: unknown, requireManager = false) {
@@ -1947,8 +2437,9 @@ export const posService = {
         'That card was really charged — use Refund so the money goes back to the guest. Undo would only remove it from this bill.'
       );
     }
-    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, select: { venue: true, status: true, orderNumber: true, tableLabel: true, tipCents: true } });
+    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, select: { venue: true, status: true, serviceDate: true, orderNumber: true, tableLabel: true, tipCents: true } });
     if (!order) throw new HttpError(404, 'Bill not found.');
+    const settledDate = order.serviceDate;
     await prisma.posPayment.delete({ where: { id: paymentId } });
     await prisma.posOrder.update({
       where: { id: orderId },
@@ -1970,7 +2461,7 @@ export const posService = {
         amountCents: payment.amountCents
       }
     });
-    await postPosActuals(order.venue).catch(() => undefined);
+    await postPosActuals(order.venue, settledDate ?? undefined).catch(() => undefined);
     return this.getOrder(orderId);
   },
 
@@ -2084,6 +2575,26 @@ export const posService = {
     if (card.status !== 'ACTIVE') throw new HttpError(400, `That gift card is ${card.status.replace('_', ' ').toLowerCase()}.`);
     if (card.expiresAt && card.expiresAt < new Date()) throw new HttpError(400, 'That gift card has expired.');
     return { code: card.code, balanceCents: card.balanceCents, recipientName: card.recipientName ?? null };
+  },
+
+  // Put a loyalty member on the bill. The order's guestId is the same slot a
+  // reservation match uses — attaching by hand simply wins, which is right:
+  // the person standing at the till knows who is paying.
+  async attachLoyalty(orderId: string, handle: string) {
+    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, select: { status: true } });
+    if (!order) throw new HttpError(404, 'Order not found.');
+    if (order.status !== 'OPEN') throw new HttpError(400, `Order is ${order.status} — points attach before the bill settles.`);
+    const member = await loyaltyService.memberByHandle(handle);
+    await prisma.posOrder.update({ where: { id: orderId }, data: { guestId: member.guestId } });
+    return { member, order: await this.getOrder(orderId) };
+  },
+
+  async detachLoyalty(orderId: string) {
+    const order = await prisma.posOrder.findUnique({ where: { id: orderId }, select: { status: true } });
+    if (!order) throw new HttpError(404, 'Order not found.');
+    if (order.status !== 'OPEN') throw new HttpError(400, `Order is ${order.status}.`);
+    await prisma.posOrder.update({ where: { id: orderId }, data: { guestId: null } });
+    return this.getOrder(orderId);
   },
 
   // Add a gift card to the CURRENT BILL. It is not a card yet — just a line
@@ -2250,7 +2761,11 @@ export const posService = {
     // A gift card is not something anyone cooks.
     order.lines = order.lines.filter((line) => !line.isGiftCard);
     if (onlyLineIds) order.lines = order.lines.filter((line) => onlyLineIds.has(line.id));
-    if (fireCourses) order.lines = order.lines.filter((line) => fireCourses.includes(line.course ?? 'Mains'));
+    // A null course means "fires with NOW" EVERYWHERE — the cart buckets it
+    // under NOW and the docket prints it under NOW. This filter defaulted to
+    // 'Mains', so firing NOW showed those lines as sent on the register while
+    // the kitchen never got them.
+    if (fireCourses) order.lines = order.lines.filter((line) => fireCourses.includes(line.course ?? 'NOW'));
     if (order.lines.length === 0) return { dockets: [], sent: 0 };
     const [profiles, courses, recipeRows] = await Promise.all([
       this.listPrinterProfiles(),
@@ -2262,6 +2777,11 @@ export const posService = {
     ]);
     const recipeMeta = new Map(recipeRows.map((recipe) => [recipe.id, recipe]));
     const courseRank = new Map(courses.map((course, index) => [course.name, index]));
+    // A set menu line is the money, not a dish — what the kitchen cooks is the
+    // $0 lines underneath it. Printing it too would put "Sunday Banquet x18"
+    // on the pass above the same eighteen plates. It is still stamped as sent
+    // below, so it leaves the fire list with the course it belongs to.
+    const cookable = order.lines.filter((line) => recipeMeta.get(line.recipeId ?? '')?.kind !== 'SET_MENU');
 
     const dockets = profiles
       // A station belongs to its venue: St Alma's dockets must never come out
@@ -2269,7 +2789,7 @@ export const posService = {
       .filter((profile) => !profile.venue || profile.venue === order.venue)
       .map((profile) => {
         const categories = profile.categoriesCsv.split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
-        const lines = order.lines.filter((line) => {
+        const lines = cookable.filter((line) => {
           const meta = line.recipeId ? recipeMeta.get(line.recipeId) : null;
           // No recipe link: route by the line's course (Drinks → bar).
           const kind = meta ? kindBucket(meta.kind, meta.category) : line.course === 'Drinks' ? 'BEVERAGE' : 'FOOD';
@@ -2651,41 +3171,7 @@ export const posService = {
         if (value === 'w' || value === 'b') buttonSizes[key.slice(0, 40)] = value;
       }
     }
-    // Pins are rich objects ({t:'i',id} items / {t:'f',name,items} folders) —
-    // pass through with a shallow shape check; legacy string pins upgrade.
-    const pins = (Array.isArray(body.pins) ? (body.pins as unknown[]) : [])
-      .map((pin) => {
-        if (typeof pin === 'string') return { t: 'i', id: pin };
-        if (pin && typeof pin === 'object') {
-          const row = pin as Record<string, unknown>;
-          // label = display-only rename (dockets/KDS keep the recipe title);
-          // s = tile size ('w' wide, 'b' big; absent = standard).
-          const pinExtras = {
-            ...(typeof row.c === 'string' ? { c: row.c } : {}),
-            ...(typeof row.label === 'string' && row.label.trim() ? { label: row.label.trim().slice(0, 40) } : {}),
-            ...(row.s === 'w' || row.s === 'b' ? { s: row.s } : {}),
-            ...(row.d === 'sh' || row.d === 'hs' || row.d === 'big' ? { d: row.d } : {})
-          };
-          if (row.t === 'i' && typeof row.id === 'string') {
-            return { t: 'i', id: row.id, ...pinExtras };
-          }
-          // Management actions are pins too, so they move and size like the rest.
-          if (row.t === 'm' && typeof row.key === 'string') {
-            return { t: 'm', key: row.key.slice(0, 40), ...pinExtras };
-          }
-          if (row.t === 'f' && typeof row.name === 'string' && Array.isArray(row.items)) {
-            return {
-              t: 'f',
-              name: row.name.slice(0, 40),
-              items: (row.items as unknown[]).map(String).slice(0, 40),
-              ...pinExtras
-            };
-          }
-        }
-        return null;
-      })
-      .filter((pin): pin is NonNullable<typeof pin> => pin !== null)
-      .slice(0, 24);
+    const pins = sanitizeHomescreenPins(body.pins);
     const landingCategory = str(body.landingCategory) || null;
     // Category tab customisation: order + hidden + grouped tabs.
     let categories: object | null = null;
@@ -2710,7 +3196,8 @@ export const posService = {
             return {
               name: row.name.trim().slice(0, 30),
               cats: (row.cats as unknown[]).map(String).slice(0, 20),
-              ...(typeof row.c === 'string' ? { c: row.c } : {})
+              ...(typeof row.c === 'string' ? { c: row.c } : {}),
+              ...(row.look === 'tiles' || row.look === 'list' ? { look: row.look } : {})
             };
           })
           .filter((group): group is NonNullable<typeof group> => group !== null)

@@ -3151,3 +3151,198 @@ html[data-theme='dark'] .service-panel-tab-head strong { color: #BFE6C8; }
   font-variant-numeric: tabular-nums;
   color: var(--color-ink-forest);
 }
+
+/* ── Enquiries ─────────────────────────────────────────────────────────── */
+
+.enquiries {
+  display: grid;
+  gap: 16px;
+}
+
+.enquiries-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.enquiries-filters > * {
+  flex: 1 1 180px;
+}
+
+.enquiries-list {
+  display: grid;
+  gap: 8px;
+}
+
+.enquiries-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--color-line, rgba(0, 0, 0, 0.12));
+  border-radius: 12px;
+  background: var(--color-surface, #fff);
+  text-align: left;
+  cursor: pointer;
+}
+
+.enquiries-row:hover {
+  border-color: var(--color-ink-forest, #1f3a2e);
+}
+
+/* Waiting on us: the left edge is the only cue that survives a quick scan. */
+.enquiries-row.is-waiting {
+  border-left: 4px solid var(--color-ink-forest, #1f3a2e);
+}
+
+.enquiries-row.is-open {
+  border-color: var(--color-ink-forest, #1f3a2e);
+  box-shadow: 0 0 0 1px var(--color-ink-forest, #1f3a2e) inset;
+}
+
+.enquiries-row-main {
+  display: grid;
+  gap: 2px;
+}
+
+.enquiries-row-main span {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.enquiries-row-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.enquiries-clash {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(179, 38, 46, 0.08);
+  border: 1px solid rgba(179, 38, 46, 0.35);
+  font-size: 0.9rem;
+}
+
+.enquiries-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 0 0 14px;
+}
+
+.enquiries-facts dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+
+.enquiries-facts dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+
+.enquiries-thread {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.enquiries-message {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* Ours sit to the right, the guest's to the left — the same read as a phone. */
+.enquiries-message.is-out {
+  background: rgba(31, 58, 46, 0.09);
+  margin-left: 32px;
+}
+
+.enquiries-message.is-in {
+  margin-right: 32px;
+}
+
+.enquiries-message header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.enquiries-message p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.enquiries-failed {
+  display: block;
+  margin-top: 6px;
+  color: #b3262e;
+}
+
+/* A draft nobody wrote has to look like one. The dashed edge carries down the
+   reply box so the whole thing reads as "not yours yet" at a glance — a
+   suggestion mistaken for a colleague's words is a suggestion sent unread. */
+.enquiries-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 10px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--color-ink-forest, #1f3a2e);
+  border-radius: 10px 10px 0 0;
+  border-bottom: 0;
+  background: rgba(31, 58, 46, 0.05);
+  font-size: 0.88rem;
+}
+
+.enquiries-suggestion-tag {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.enquiries-suggestion p {
+  flex: 1 1 260px;
+  margin: 0;
+  opacity: 0.8;
+}
+
+.enquiries-suggestion-restore {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--color-ink-forest, #1f3a2e);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.enquiries-reply.is-suggested .field-control {
+  border-style: dashed;
+  border-color: var(--color-ink-forest, #1f3a2e);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.enquiries-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+}

@@ -4,6 +4,7 @@ import { integrationService } from '../services/integration.service.js';
 import { deputyService } from '../services/deputy.service.js';
 import { sevenroomsService } from '../services/sevenrooms.service.js';
 import { lightspeedInboundService } from '../services/lightspeed-inbound.service.js';
+import { enquiryService } from '../services/enquiry.service.js';
 
 export const integrationsRouter = Router();
 
@@ -499,6 +500,26 @@ export async function sevenroomsInboundEmailReceiver(req: Request, res: Response
 export async function lightspeedInboundEmailReceiver(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await lightspeedInboundService.handleInboundEmail(req));
+  } catch (error) {
+    next(error);
+  }
+}
+
+// A guest's reply to a function/catering enquiry, forwarded by the mailbox
+// poller. Token-guarded in the service; appends to the enquiry's thread.
+export async function enquiryInboundEmailReceiver(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await enquiryService.handleInboundEmail(req));
+  } catch (error) {
+    next(error);
+  }
+}
+
+// A new enquiry handed over by the website's own form handler. Token-guarded
+// in the service; idempotent on the website's own enquiry id.
+export async function enquiryForwardReceiver(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(201).json(await enquiryService.handleWebsiteForward(req));
   } catch (error) {
     next(error);
   }

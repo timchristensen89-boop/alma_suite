@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, messageForError } from './api';
 import { QrSheet } from './QrSheet';
+import { ALMA_MARK } from './brand';
 
 // ── POS back office — alma-pos.web.app/#office ─────────────────────────────
 // Register settings live here, out of the way of service: printer/docket
@@ -9,22 +10,6 @@ import { QrSheet } from './QrSheet';
 
 const VENUES = ['Alma Avalon', 'St Alma', 'Functions / Pop-up'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-// One list drives both tab renders: the pill strip on wide screens and the
-// dropdown on phones.
-const TABS = [
-  ['printers', 'Printers & dockets'],
-  ['terminals', 'Card terminals'],
-  ['qr', 'Table QR codes'],
-  ['menu', 'Menu visibility'],
-  ['modifiers', 'Modifiers'],
-  ['variants', 'Variants'],
-  ['specials', 'Specials'],
-  ['rules', 'Surcharges & discounts'],
-  ['identity', 'Venues & receipts']
-] as const;
-
-type OfficeTab = (typeof TABS)[number][0];
 
 type Profile = { id: string; name: string; venue?: string | null; matchKind: string; categoriesCsv: string; printerIp: string | null; active: boolean; sortOrder: number };
 type Rule = { id: string; kind: string; label: string; percent: number; weekdays: string; holidays: boolean; startMinute: number | null; endMinute: number | null; active: boolean };
@@ -63,6 +48,22 @@ const agoLabel = (iso: string) => {
   if (hours < 36) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
 };
+
+// The back office's nine sections, in one place: the pill row and the phone's
+// select both read from this, so they can never offer different sections.
+const OFFICE_TABS = [
+  ['printers', 'Printers & dockets'],
+  ['terminals', 'Card terminals'],
+  ['qr', 'Table QR codes'],
+  ['menu', 'Menu visibility'],
+  ['modifiers', 'Modifiers'],
+  ['variants', 'Variants'],
+  ['specials', 'Specials'],
+  ['rules', 'Surcharges & discounts'],
+  ['loyalty', 'Loyalty'],
+  ['identity', 'Venues & receipts']
+] as const;
+type OfficeTab = (typeof OFFICE_TABS)[number][0];
 
 export function Office() {
   const [tab, setTab] = useState<OfficeTab>('printers');
@@ -265,17 +266,19 @@ export function Office() {
     <div className="office-shell">
       {/* Sticky green top, matching the register's bar: brand row + tabs stay
           put while the page scrolls. On phones the nine pills collapse into
-          one dropdown. */}
+          one dropdown — the control iOS already knows how to present
+          full-screen. Both renders read OFFICE_TABS, so they can never
+          disagree about which sections exist. */}
       <div className="office-top">
         <header className="office-header">
-          <img src="/brand/alma-a-mark.png" alt="" className="pos-mark" />
+          <img src={ALMA_MARK} alt="" className="pos-mark" />
           <strong>Back office</strong>
           <span className="pos-wordmark-chip">POS settings</span>
           <span style={{ flex: 1 }} />
           <a href="/" className="office-back">← Register</a>
         </header>
         <nav className="office-tabs">
-          {TABS.map(([key, label]) => (
+          {OFFICE_TABS.map(([key, label]) => (
             <button key={key} type="button" className={tab === key ? 'is-active' : ''} onClick={() => setTab(key)}>
               {label}
             </button>
@@ -283,7 +286,7 @@ export function Office() {
         </nav>
         <label className="office-tab-pick">
           <select value={tab} onChange={(event) => setTab(event.currentTarget.value as OfficeTab)}>
-            {TABS.map(([key, label]) => (
+            {OFFICE_TABS.map(([key, label]) => (
               <option key={key} value={key}>
                 {label}
               </option>
@@ -1195,6 +1198,11 @@ export function Office() {
           </section>
         ) : null}
 
+        {tab === 'loyalty' ? (
+          <section>
+            <LoyaltySection />
+          </section>
+        ) : null}
         {tab === 'identity' ? (
           <section>
             <p className="office-lead">
@@ -1325,6 +1333,7 @@ export function Office() {
                     }}
                   />
                 </div>
+                <XeroDailySalesRow venue={identity.venue} />
                 <div className="office-row office-logo-row">
                   {identity.receiptLogo ? (
                     <img src={identity.receiptLogo} alt="" className="office-logo-thumb" />
@@ -1385,5 +1394,213 @@ export function Office() {
         ) : null}
       </main>
     </div>
+  );
+}
+
+// ── Daily sales → Xero ──────────────────────────────────────────────────────
+// The nightly job posts yesterday automatically for every venue with a Xero
+// organisation selected above. This row is the manual handle on the same
+// machinery: see whether a day went across, preview exactly what would post
+// (dry run — nothing written), and push or re-push a day by hand. Idempotent
+// on the server — pushing an already-posted day reports "Already posted"
+// instead of double-billing the books.
+type XeroDayStatus = {
+  configured: boolean;
+  connected: boolean;
+  post: { status: string; invoiceNumber: string | null; totalCents: number; detail: string | null } | null;
+  summary: { netIncCents: number; orderCount: number };
+};
+
+function sydneyYesterday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date(Date.now() - 24 * 60 * 60 * 1000));
+}
+
+function XeroDailySalesRow({ venue }: { venue: string }) {
+  const [date, setDate] = useState(sydneyYesterday);
+  const [status, setStatus] = useState<XeroDayStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    void api<XeroDayStatus>(`/api/pos/xero/status?venue=${encodeURIComponent(venue)}&serviceDate=${date}`)
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, [venue, date]);
+  useEffect(load, [load]);
+
+  const push = (dryRun: boolean) => {
+    setBusy(true);
+    setNote(null);
+    void api<{ skipped: boolean; reason?: string; invoiceNumber: string | null; preview?: { lineItems: Array<{ Description: string; UnitAmount: number }> } }>(
+      '/api/pos/xero/push',
+      { method: 'POST', body: JSON.stringify({ venue, serviceDate: date, dryRun }) }
+    )
+      .then((result) => {
+        if (result.preview) {
+          const lines = result.preview.lineItems.map((line) => `${line.Description}: $${line.UnitAmount.toFixed(2)}`).join(' · ');
+          setNote(`Would post ${result.invoiceNumber}: ${lines || 'no lines'}`);
+        } else if (result.skipped) {
+          setNote(result.reason ?? 'Nothing to do.');
+        } else {
+          setNote(`Posted ${result.invoiceNumber}.`);
+        }
+        load();
+      })
+      .catch((err) => setNote(messageForError(err, 'Could not reach Xero.')))
+      .finally(() => setBusy(false));
+  };
+
+  if (status && !status.configured) return null; // no organisation selected — the dropdown above explains
+  const posted = status?.post;
+  return (
+    <div className="office-row office-xero-day">
+      <span className="office-variant-opts">Daily sales → Xero</span>
+      <input type="date" className="office-input" value={date} max={sydneyYesterday()} onChange={(event) => setDate(event.currentTarget.value)} />
+      <span className="office-variant-opts">
+        {posted
+          ? posted.status === 'POSTED'
+            ? `Posted ${posted.invoiceNumber ?? ''} — $${(posted.totalCents / 100).toFixed(2)}`
+            : `Failed: ${posted.detail ?? 'unknown error'}`
+          : status
+            ? `Not posted — $${((status.summary?.netIncCents ?? 0) / 100).toFixed(2)} takings that day`
+            : '…'}
+      </span>
+      <button type="button" className="office-add" disabled={busy} onClick={() => push(true)}>
+        Preview
+      </button>
+      <button type="button" className="office-add" disabled={busy || posted?.status === 'POSTED'} onClick={() => push(false)}>
+        Post now
+      </button>
+      {note ? <span className="office-hint office-xero-note">{note}</span> : null}
+    </div>
+  );
+}
+
+// ── Loyalty ─────────────────────────────────────────────────────────────────
+// The programme's knobs and its cost, on one screen. The liability figure is
+// the honest number: every point out there is money the venues have promised
+// back, and it is shown in dollars, not points, for exactly that reason.
+type LoyaltyReport = {
+  settings: { active: boolean; pointsPerDollar: number; pointValueCents: number; minRedeemPoints: number };
+  memberCount: number;
+  pointsOutstanding: number;
+  liabilityCents: number;
+  topMembers: Array<{ id: string; firstName: string; lastName: string; loyaltyPoints: number; totalSpendCents: number; totalVisits: number }>;
+  recent: Array<{ id: string; kind: string; points: number; venue: string | null; note: string | null; createdAt: string; guestName: string; code: string | null }>;
+};
+
+function LoyaltySection() {
+  const [report, setReport] = useState<LoyaltyReport | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    void api<LoyaltyReport>('/api/pos/loyalty/report').then(setReport).catch(() => setReport(null));
+  }, []);
+  useEffect(load, [load]);
+
+  if (!report) return <p className="office-hint">Loading the programme…</p>;
+  const { settings } = report;
+  const backPercent = settings.pointsPerDollar * settings.pointValueCents;
+
+  const save = (patch: Partial<LoyaltyReport['settings']>) => {
+    setSaving(true);
+    void api<LoyaltyReport['settings']>('/api/pos/loyalty/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ ...settings, ...patch })
+    })
+      .then(() => {
+        setNote('Saved.');
+        load();
+      })
+      .catch((err) => setNote(messageForError(err, 'Could not save.')))
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <>
+      <p className="office-lead">
+        Points on spend, one balance across both venues. Guests earn {settings.pointsPerDollar}{' '}
+        {settings.pointsPerDollar === 1 ? 'point' : 'points'} per dollar and a point is worth{' '}
+        {settings.pointValueCents}c at the till — that is {backPercent}% back. Members join at the register (Charge →
+        Loyalty) with a phone number.
+      </p>
+      <div className="office-card office-card-col">
+        <strong>Programme</strong>
+        <div className="office-row">
+          <label className="office-check">
+            <input type="checkbox" checked={settings.active} disabled={saving} onChange={(event) => save({ active: event.currentTarget.checked })} />
+            {settings.active ? 'On — earning and redeeming live' : 'Off — nothing earns, nothing redeems'}
+          </label>
+        </div>
+        <div className="office-row">
+          <input
+            className="office-input"
+            defaultValue={String(settings.pointsPerDollar)}
+            placeholder="Points per $1"
+            onBlur={(event) => {
+              const value = Number(event.currentTarget.value);
+              if (Number.isFinite(value) && value >= 1 && value !== settings.pointsPerDollar) save({ pointsPerDollar: Math.round(value) });
+            }}
+          />
+          <input
+            className="office-input"
+            defaultValue={String(settings.pointValueCents)}
+            placeholder="Point value (cents)"
+            onBlur={(event) => {
+              const value = Number(event.currentTarget.value);
+              if (Number.isFinite(value) && value >= 1 && value !== settings.pointValueCents) save({ pointValueCents: Math.round(value) });
+            }}
+          />
+          <input
+            className="office-input"
+            defaultValue={String(settings.minRedeemPoints)}
+            placeholder="Min points to redeem"
+            onBlur={(event) => {
+              const value = Number(event.currentTarget.value);
+              if (Number.isFinite(value) && value >= 0 && value !== settings.minRedeemPoints) save({ minRedeemPoints: Math.round(value) });
+            }}
+          />
+        </div>
+        <p className="office-hint">
+          Points per dollar · what a point is worth in cents · smallest redemption. {settings.minRedeemPoints} points ={' '}
+          {((settings.minRedeemPoints * settings.pointValueCents) / 100).toFixed(2)} dollars off.
+          {note ? ` — ${note}` : ''}
+        </p>
+      </div>
+      <div className="office-card office-card-col">
+        <strong>Where it stands</strong>
+        <p className="office-hint">
+          {report.memberCount} members · {report.pointsOutstanding.toLocaleString()} points outstanding ·{' '}
+          <strong>${(report.liabilityCents / 100).toFixed(2)} owed back to guests</strong> at today's point value.
+        </p>
+        {report.topMembers.length > 0 ? (
+          <>
+            <p className="office-hint">Top balances:</p>
+            {report.topMembers.map((member) => (
+              <p key={member.id} className="office-hint">
+                {member.firstName} {member.lastName} — {member.loyaltyPoints.toLocaleString()} points · {member.totalVisits} visits · $
+                {(member.totalSpendCents / 100).toFixed(0)} lifetime
+              </p>
+            ))}
+          </>
+        ) : (
+          <p className="office-hint">No members yet — the join flow lives on the register's charge screen.</p>
+        )}
+      </div>
+      {report.recent.length > 0 ? (
+        <div className="office-card office-card-col">
+          <strong>Latest movement</strong>
+          {report.recent.map((entry) => (
+            <p key={entry.id} className="office-hint">
+              {new Date(entry.createdAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} · {entry.guestName} ·{' '}
+              {entry.kind === 'EARN' ? '+' : ''}
+              {entry.points} pts{entry.venue ? ` · ${entry.venue}` : ''}
+              {entry.note ? ` · ${entry.note}` : ''}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </>
   );
 }

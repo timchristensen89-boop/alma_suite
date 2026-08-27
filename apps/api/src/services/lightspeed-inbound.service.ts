@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
+import { totalTipsPerDay, type ParsedTipRow } from '../lib/tip-rows.js';
 
 // ── Lightspeed inbound-email item sales ──────────────────────────────────────
 // The Lightspeed (Kounta) API is a paid add-on, so item-level sales arrive the
@@ -175,6 +176,49 @@ function parseDaySummaries(csv: string): DaySummaryRow[] {
   return Array.from(out.values());
 }
 
+// What the imported row says about where its figure came from. Worth spelling
+// out: "3 rows" on a row that was summed and on a row that was a repeated total
+// mean very different things, and the difference is 3× someone's tips.
+function tipNote(day: { rows: number; repeated: boolean }): string {
+  return day.repeated
+    ? `Card tips from emailed Lightspeed report (day total repeated on ${day.rows} rows, counted once).`
+    : `Card tips from emailed Lightspeed report (${day.rows} rows).`;
+}
+
+// ── Tips columns, wherever they appear ──────────────────────────────────────
+// Plan B for tip pooling while the Lightspeed API stays a paid add-on: any
+// scheduled report whose CSV carries a tips/gratuity column feeds the same
+// StaffTipCardEntry rows the Square import writes. Column names are matched
+// loosely (Looker prefixes view names), the date carries forward across
+// Looker's split date/value rows, and rate/percentage columns are ignored.
+type EmailTipsRow = { venueRaw: string | null; dateKey: string | null; tipCents: number };
+
+export function parseTipsFromCsv(csv: string): { rows: EmailTipsRow[]; sawTipsColumn: boolean } {
+  const objects = csvObjects(csv);
+  if (objects.length === 0) return { rows: [], sawTipsColumn: false };
+  const keys = Object.keys(objects[0] ?? {});
+  const tipKeys = keys.filter((key) => /(^|_)tips?($|_)|gratuity/.test(key) && !/rate|percent/.test(key));
+  if (tipKeys.length === 0) return { rows: [], sawTipsColumn: false };
+  // One column only — summing "total_tips" and "card_tips" together would
+  // double-count, so the most total-looking column wins.
+  const tipKey = tipKeys.find((key) => /total/.test(key)) ?? tipKeys[0]!;
+  let carriedDate: string | null = null;
+  const rows: EmailTipsRow[] = [];
+  for (const row of objects) {
+    const dateRaw = pick(row, ['sales_data_sale_closed_date', 'sale_closed_date', 'business_date', 'trading_date', 'service_date', 'date', 'day']);
+    const dateKey = dateRaw ? parseDateToken(dateRaw) : null;
+    if (dateKey) carriedDate = dateKey;
+    const cents = moneyCents(row[tipKey] ?? null);
+    if (cents === null) continue;
+    rows.push({
+      venueRaw: pick(row, ['site', 'site_name', 'venue', 'venue_name', 'location', 'location_name']),
+      dateKey: dateKey ?? carriedDate,
+      tipCents: Math.max(0, cents)
+    });
+  }
+  return { rows, sawTipsColumn: true };
+}
+
 // Yesterday's date key in Sydney — a scheduled daily report covers the prior
 // trading day, so rows without their own date column land there.
 function yesterdaySydneyKey(): string {
@@ -225,6 +269,8 @@ export type LightspeedInboundResult = {
   itemRowsUpserted?: number;
   dayTotalsUpserted?: number;
   dayTotalsSkipped?: number;
+  tipDaysUpserted?: number;
+  tipCents?: number;
   warnings?: string[];
 };
 
@@ -438,6 +484,71 @@ export const lightspeedInboundService = {
       }
     }
 
+    // ── Tips → StaffTipCardEntry ───────────────────────────────────────────
+    // Summed per venue per day; today is skipped (the day isn't over), $0
+    // days are skipped, and a day the API sync (source 'lightspeed') already
+    // wrote is left alone so the two feeds can never double-count.
+    let tipDaysUpserted = 0;
+    let tipCentsImported = 0;
+    let sawTipsColumn = false;
+    const tipRows: ParsedTipRow[] = [];
+    for (const csv of csvTexts) {
+      const parsedTips = parseTipsFromCsv(csv);
+      if (!parsedTips.sawTipsColumn) continue;
+      sawTipsColumn = true;
+      for (const tipRow of parsedTips.rows) {
+        const venue = mapVenue(tipRow.venueRaw) ?? fallbackVenue;
+        const dateKey = tipRow.dateKey ?? fallbackDateKey;
+        if (dateKey >= todayKey) {
+          warnings.push(`Tips row for ${dateKey} skipped — the day isn't over yet. Set the report's date filter to "Yesterday".`);
+          continue;
+        }
+        tipRows.push({ venue, dateKey, tipCents: tipRow.tipCents });
+      }
+    }
+    // Not a plain sum: these reports repeat the day's tip total on every
+    // revenue-centre row, and adding those up pays staff a multiple of the
+    // money that was taken. See lib/tip-rows.ts.
+    const tipDays = totalTipsPerDay(tipRows);
+    for (const tipDay of tipDays) {
+      if (tipDay.cents <= 0) continue;
+      const serviceDate = new Date(`${tipDay.dateKey}T00:00:00Z`);
+      const apiRow = await prisma.staffTipCardEntry.findFirst({
+        where: { venue: tipDay.venue, serviceDate, source: 'lightspeed' },
+        select: { id: true }
+      });
+      if (apiRow) continue;
+      const importKey = `lightspeed-email:${tipDay.venue}:${tipDay.dateKey}`;
+      await prisma.staffTipCardEntry.upsert({
+        where: { importKey },
+        create: {
+          venue: tipDay.venue,
+          serviceDate,
+          amountCents: tipDay.cents,
+          source: 'lightspeed-email',
+          externalId: importKey,
+          importKey,
+          notes: tipNote(tipDay)
+        },
+        update: {
+          amountCents: tipDay.cents,
+          notes: tipNote(tipDay)
+        }
+      });
+      tipDaysUpserted += 1;
+      tipCentsImported += tipDay.cents;
+    }
+    for (const tipDay of tipDays) {
+      if (!tipDay.repeated) continue;
+      warnings.push(
+        `${tipDay.venue} ${tipDay.dateKey}: the tips column carried the same figure on all ${tipDay.rows} rows, ` +
+          'so it was read as the day total once rather than added up.'
+      );
+    }
+    if (sawTipsColumn && tipDays.length > 0 && tipCentsImported === 0 && tipDaysUpserted === 0) {
+      warnings.push('A tips column was found but every usable day summed to zero.');
+    }
+
     const source = 'lightspeed-item:email';
     const rows = Array.from(grouped.values());
     const UPSERT_BATCH_SIZE = 50;
@@ -529,6 +640,8 @@ export const lightspeedInboundService = {
           itemRowsUpserted: rows.length,
           dayTotalsUpserted,
           dayTotalsSkipped,
+          tipDaysUpserted,
+          tipCents: tipCentsImported,
           warnings: warnings.slice(0, 25)
         } as Prisma.InputJsonObject
       }
@@ -542,6 +655,8 @@ export const lightspeedInboundService = {
       itemRowsUpserted: rows.length,
       dayTotalsUpserted,
       dayTotalsSkipped,
+      tipDaysUpserted,
+      tipCents: tipCentsImported,
       warnings
     };
   }

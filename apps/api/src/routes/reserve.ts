@@ -3,6 +3,7 @@ import { requireManager } from '../lib/auth-middleware.js';
 import { HttpError } from '../lib/http.js';
 import { reserveService } from '../services/reserve.service.js';
 import { guestCrmService } from '../services/guest-crm.service.js';
+import { enquiryService } from '../services/enquiry.service.js';
 
 export const reserveRouter = Router();
 
@@ -349,6 +350,44 @@ reserveRouter.post('/public/book', async (req, res, next) => {
 reserveRouter.post('/public/function-enquiry', async (req, res, next) => {
   try {
     res.status(201).json(await reserveService.recordFunctionEnquiry(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Enquiries inbox ──────────────────────────────────────────────────────
+// Manager-only. The enquiry itself arrives publicly (above, or forwarded by
+// the website); everything that reads or answers one needs a manager.
+
+reserveRouter.get('/enquiries', requireManager, async (req, res, next) => {
+  try {
+    const q = (key: string) => (typeof req.query[key] === 'string' ? (req.query[key] as string) : undefined);
+    res.json(await enquiryService.list({ status: q('status'), venue: q('venue'), query: q('query') }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reserveRouter.get('/enquiries/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await enquiryService.get(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reserveRouter.post('/enquiries/:id/reply', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await enquiryService.reply(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reserveRouter.put('/enquiries/:id/status', requireManager, async (req, res, next) => {
+  try {
+    res.json(await enquiryService.setStatus(String(req.params.id), req.body));
   } catch (error) {
     next(error);
   }

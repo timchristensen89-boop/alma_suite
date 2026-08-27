@@ -5,6 +5,25 @@ import { marketingEngagementService } from '../services/marketing-engagement.ser
 
 export const marketingRouter = Router();
 
+// Public: the unsubscribe link in every campaign email footer. No session —
+// the token (a contact or guest cuid) is the secret, the same trust model as
+// a gift card code, and auth-middleware allowlists /api/marketing/public/.
+marketingRouter.get('/public/unsubscribe/:token', async (req, res, next) => {
+  try {
+    res.json(await marketingService.publicUnsubscribeState(String(req.params.token)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/public/unsubscribe/:token', async (req, res, next) => {
+  try {
+    res.json(await marketingService.publicUnsubscribe(String(req.params.token), req.body ?? {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
 marketingRouter.get('/overview', requireManager, async (req, res, next) => {
   try {
     res.json(await marketingService.overview(req.user!, {

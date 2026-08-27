@@ -1,0 +1,12 @@
+-- A practice account: everything it rings up at the register is a training
+-- sale, and the till cannot switch that off.
+--
+-- Training already existed and already worked — PosOrder."training" is
+-- excluded from takings, the drawer, staff sales, guest spend, the reports
+-- post and the kitchen dockets. The defect was WHERE the flag came from: the
+-- browser asserted it, out of localStorage, per device, defaulting to off. So
+-- a new starter or an App Review tester signing in on their own phone got a
+-- live till no matter what anybody intended.
+--
+-- This moves the decision onto the account, where the server can enforce it.
+ALTER TABLE "StaffProfile" ADD COLUMN "trainingOnly" BOOLEAN NOT NULL DEFAULT false;

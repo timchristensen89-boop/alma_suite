@@ -1,16 +1,43 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ALMA_MARK } from './brand';
+// The same dietary vocabulary the register and Stock use. A guest reading
+// "GF" here and a chef reading it on the docket have to mean the same thing.
+import { answerableGuestTags, dietaryKind, dietaryShort, dishAnswersGuest, guestTagIsAllergy, parseDishDietary } from '@alma/shared';
 
 // ── Guest QR ordering ───────────────────────────────────────────────────────
 // alma-pos.web.app/#o/<token>: the page a guest lands on after scanning the
 // QR at their table. Anonymous — the signed token IS the auth; all pricing is
 // re-done server-side. The round lands on the table's bill and fires to the
 // kitchen; the guest pays at the table or counter as usual.
+//
+// The menu reads the way the register's full menu does — everything open,
+// searchable, filterable — rather than as closed accordions. A menu a guest
+// has to open one drawer at a time is a menu most of them order two things
+// from.
+
+type GuestItem = {
+  recipeId: string;
+  title: string;
+  priceCents: number;
+  /**
+   * The printed menu's own line — "Pipian mole, pepitas". Guest-safe copy the
+   * kitchen has already signed off; the recipe's internal notes are a separate
+   * field the server never sends down this path.
+   */
+  description?: string;
+  /** DISH_DIETARY ids. Empty = nobody has checked, NOT "free from". */
+  dietary?: string[];
+};
 
 type GuestMenu = {
   venue: string;
   tableLabel: string;
-  categories: Array<{ name: string; items: Array<{ recipeId: string; title: string; priceCents: number }> }>;
+  /** The register's weekend/holiday surcharge, charged at checkout too. */
+  surcharge?: { label: string; percent: number } | null;
+  categories: Array<{ name: string; kind?: string; items: GuestItem[] }>;
 };
+
+type MenuFilter = { q: string; kind: 'any' | 'FOOD' | 'BEVERAGE' | 'SET_MENU'; diet: string | null };
 
 const API = 'https://api.almagroup.com.au';
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
@@ -19,11 +46,13 @@ export function GuestOrder({ token }: { token: string }) {
   const [menu, setMenu] = useState<GuestMenu | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cart, setCart] = useState<Map<string, number>>(new Map());
-  // The basket opens over the menu, which is right when you're finishing and
-  // wrong when you're still choosing — a table ordering a second round could
-  // not see past it. Collapsed leaves a one-line summary you can tap to open.
-  const [cartOpen, setCartOpen] = useState(true);
-  const [openCat, setOpenCat] = useState<string | null>(null);
+  // Collapsed by default, not open. The basket sits over the menu, so opening
+  // it the moment a first dish goes in covers everything a table has not
+  // ordered yet — which is the whole rest of the menu. A one-line summary you
+  // tap when you are ready to send is enough; the row you just added already
+  // shows it is in there.
+  const [cartOpen, setCartOpen] = useState(false);
+  const [filters, setFilters] = useState<MenuFilter>({ q: '', kind: 'any', diet: null });
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
   const [dietary, setDietary] = useState<string[]>([]);
@@ -120,16 +149,70 @@ export function GuestOrder({ token }: { token: string }) {
         if (!res.ok) throw new Error((await res.json().catch(() => null))?.message ?? 'This QR code did not work.');
         return res.json() as Promise<GuestMenu>;
       })
-      .then((next) => {
-        setMenu(next);
-        setOpenCat(next.categories[0]?.name ?? null);
-      })
+      .then(setMenu)
       .catch((err) => setError(err instanceof Error ? err.message : 'This QR code did not work.'));
   }, [token]);
 
   const items = useMemo(() => new Map((menu?.categories ?? []).flatMap((category) => category.items.map((item) => [item.recipeId, item] as const))), [menu]);
   const cartCount = [...cart.values()].reduce((sum, quantity) => sum + quantity, 0);
   const cartTotal = [...cart.entries()].reduce((sum, [recipeId, quantity]) => sum + (items.get(recipeId)?.priceCents ?? 0) * quantity, 0);
+  // The same arithmetic the server runs at submit — shown here so the button
+  // says exactly what the card will be charged, surcharge included.
+  const surcharge = menu?.surcharge ?? null;
+  const cartSurchargeCents = surcharge ? Math.round((cartTotal * surcharge.percent) / 100) : 0;
+  const cartGrandCents = cartTotal + cartSurchargeCents;
+
+  // Set menus first, always. They are the biggest order a table can place and
+  // the easiest decision to make — burying them under "S" in an alphabetical
+  // category list is the difference between a banquet and four small plates.
+  const sections = useMemo(() => {
+    const all = menu?.categories ?? [];
+    const setMenus = all.filter((category) => category.kind === 'SET_MENU');
+    const rest = all.filter((category) => category.kind !== 'SET_MENU');
+    return [...setMenus, ...rest];
+  }, [menu]);
+
+  const shown = useMemo(() => {
+    const term = filters.q.trim().toLowerCase();
+    return sections
+      .filter((category) => filters.kind === 'any' || (category.kind ?? 'FOOD') === filters.kind)
+      .map((category) => ({
+        ...category,
+        items: category.items.filter((item) => {
+          // Search what the guest can actually read. Someone typing "avocado"
+          // is looking at the words under the dish names, not the names.
+          if (term) {
+            const hay = `${item.title} ${item.description ?? ''} ${category.name}`.toLowerCase();
+            if (!hay.includes(term)) return false;
+          }
+          if (filters.diet) {
+            const verdict = dishAnswersGuest(item.dietary ?? [], filters.diet);
+            if (guestTagIsAllergy(filters.diet)) {
+              // An allergy filter can only rule dishes OUT — no tag in the
+              // vocabulary is a positive "checked allergen-free" claim, so
+              // everything left is unverified, and the caveat below tells the
+              // guest to speak to staff, always.
+              if (verdict === 'no') return false;
+            } else {
+              // A diet: 'yes' and 'ask' both stay — a dish the kitchen can
+              // adapt is one a guest should still see, with the caveat below.
+              if (verdict !== 'yes' && verdict !== 'ask') return false;
+            }
+          }
+          return true;
+        })
+      }))
+      .filter((category) => category.items.length > 0);
+  }, [sections, filters]);
+
+  const shownCount = shown.reduce((sum, category) => sum + category.items.length, 0);
+  const totalCount = sections.reduce((sum, category) => sum + category.items.length, 0);
+  const filtersOn = filters.q.trim() !== '' || filters.kind !== 'any' || filters.diet !== null;
+  const countIf = (test: (category: { kind?: string }) => boolean) =>
+    sections.filter(test).reduce((sum, category) => sum + category.items.length, 0);
+  // Only offer a dietary filter once the kitchen has actually marked dishes —
+  // a row of chips that all find nothing reads as "we have nothing for you".
+  const anyDietary = sections.some((category) => category.items.some((item) => (item.dietary ?? []).length > 0));
 
   function bump(recipeId: string, delta: number) {
     setCart((current) => {
@@ -214,10 +297,20 @@ export function GuestOrder({ token }: { token: string }) {
 
   return (
     <div className="qr-shell">
+      {/* The mark, top left, on the forest — the first thing a guest sees after
+          scanning is the venue, not a generic ordering page. Baked into the
+          bundle rather than fetched, so it is there before the menu is. */}
       <header className="qr-header">
-        <strong>ALMA</strong>
-        <span>
-          {menu ? `${menu.venue} · Table ${menu.tableLabel}` : 'Loading…'}
+        <img src={ALMA_MARK} alt="ALMA" className="qr-mark" />
+        <span className="qr-place">
+          {menu ? (
+            <>
+              <b>{menu.venue}</b>
+              <em>Table {menu.tableLabel}</em>
+            </>
+          ) : (
+            'Loading…'
+          )}
         </span>
         <span style={{ flex: 1 }} />
         {menu ? (
@@ -287,38 +380,139 @@ export function GuestOrder({ token }: { token: string }) {
       ) : null}
       {error ? <div className="qr-error">{error}</div> : null}
 
-      {(menu?.categories ?? []).map((category) => (
+      {/* Find-and-narrow, the same shape the register's full menu uses: search,
+          a live tally, and one swipeable row of chips per question. Sticky, so
+          it is still there four screens down a long list. */}
+      {menu ? (
+        <div className="qr-find">
+          <div className="qr-find-row">
+            <input
+              className="qr-search"
+              type="search"
+              value={filters.q}
+              placeholder="Search the menu…"
+              onChange={(event) => setFilters({ ...filters, q: event.currentTarget.value })}
+            />
+            <span className="qr-count">
+              {shownCount === totalCount ? `${totalCount} dishes` : `${shownCount} of ${totalCount}`}
+            </span>
+            {filtersOn ? (
+              <button type="button" className="qr-clear" onClick={() => setFilters({ q: '', kind: 'any', diet: null })}>
+                Clear
+              </button>
+            ) : null}
+          </div>
+          <div className="qr-chips">
+            {(
+              [
+                ['any', 'Everything', totalCount],
+                ['SET_MENU', 'Set menus', countIf((c) => c.kind === 'SET_MENU')],
+                ['FOOD', 'Food', countIf((c) => c.kind === 'FOOD')],
+                ['BEVERAGE', 'Drinks', countIf((c) => c.kind === 'BEVERAGE')]
+              ] as const
+            )
+              .filter(([, , count]) => count > 0)
+              .map(([key, label, count]) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={filters.kind === key}
+                  onClick={() => setFilters({ ...filters, kind: key })}
+                >
+                  {label}
+                  <span className="qr-n">{count}</span>
+                </button>
+              ))}
+          </div>
+          {anyDietary ? (
+            <div className="qr-chips">
+              <span className="qr-chips-label">Suits</span>
+              <button type="button" aria-pressed={filters.diet === null} onClick={() => setFilters({ ...filters, diet: null })}>
+                Anyone
+              </button>
+              {answerableGuestTags().map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  aria-pressed={filters.diet === tag}
+                  onClick={() => setFilters({ ...filters, diet: filters.diet === tag ? null : tag })}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {filters.diet ? (
+            guestTagIsAllergy(filters.diet) ? (
+              <p className="qr-caveat">
+                Hiding dishes marked as containing it. <strong>Everything still shown is unverified, not safe</strong> —
+                please tell your waiter about a {filters.diet.toLowerCase()} before ordering, every time.
+              </p>
+            ) : (
+              <p className="qr-caveat">
+                Showing what the kitchen has marked <strong>{filters.diet}</strong>. Anything unmarked is hidden because
+                nobody has checked it — not because it is unsuitable. Ask us and we will tell you properly.
+              </p>
+            )
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Open, all of it. The accordion this replaced showed one category at a
+          time and started with all of them shut, so most tables saw a list of
+          headings and ordered from the first drawer they opened. */}
+      {shown.map((category) => (
         <section key={category.name} className="qr-cat">
-          <button type="button" className="qr-cat-head" onClick={() => setOpenCat(openCat === category.name ? null : category.name)}>
+          <h2 className="qr-cat-head">
             {category.name}
-            <span>{openCat === category.name ? '−' : '+'}</span>
-          </button>
-          {openCat === category.name
-            ? category.items.map((item) => {
-                const quantity = cart.get(item.recipeId) ?? 0;
-                return (
-                  <div key={item.recipeId} className="qr-item">
-                    <span className="qr-item-name">
-                      {item.title}
-                      <small>{money(item.priceCents)}</small>
-                    </span>
-                    {quantity === 0 ? (
-                      <button type="button" className="qr-add" onClick={() => bump(item.recipeId, 1)}>
-                        Add
-                      </button>
-                    ) : (
-                      <span className="qr-stepper">
-                        <button type="button" onClick={() => bump(item.recipeId, -1)}>−</button>
-                        <b>{quantity}</b>
-                        <button type="button" onClick={() => bump(item.recipeId, 1)}>+</button>
+            <span>{category.items.length}</span>
+          </h2>
+          {category.items.map((item) => {
+            const quantity = cart.get(item.recipeId) ?? 0;
+            const marks = parseDishDietary(item.dietary).slice(0, 4);
+            return (
+              <div key={item.recipeId} className={quantity > 0 ? 'qr-item is-on' : 'qr-item'}>
+                <span className="qr-item-name">
+                  <span className="qr-item-title">
+                    {item.title}
+                    {marks.length ? (
+                      <span className="qr-item-diet">
+                        {marks.map((mark) => (
+                          <i key={mark} data-kind={dietaryKind(mark)}>
+                            {dietaryShort(mark)}
+                          </i>
+                        ))}
                       </span>
-                    )}
-                  </div>
-                );
-              })
-            : null}
+                    ) : null}
+                  </span>
+                  {item.description ? <em className="qr-item-desc">{item.description}</em> : null}
+                  <small>{money(item.priceCents)}</small>
+                </span>
+                {quantity === 0 ? (
+                  <button type="button" className="qr-add" onClick={() => bump(item.recipeId, 1)}>
+                    Add
+                  </button>
+                ) : (
+                  <span className="qr-stepper">
+                    <button type="button" aria-label={`One fewer ${item.title}`} onClick={() => bump(item.recipeId, -1)}>−</button>
+                    <b>{quantity}</b>
+                    <button type="button" aria-label={`One more ${item.title}`} onClick={() => bump(item.recipeId, 1)}>+</button>
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </section>
       ))}
+
+      {menu && shown.length === 0 ? (
+        <p className="qr-none">
+          Nothing matches that.{' '}
+          <button type="button" className="qr-paylink" onClick={() => setFilters({ q: '', kind: 'any', diet: null })}>
+            Show the whole menu
+          </button>
+        </p>
+      ) : null}
 
       {cartCount > 0 ? (
         <div className={cartOpen ? 'qr-cart' : 'qr-cart is-min'}>
@@ -329,7 +523,7 @@ export function GuestOrder({ token }: { token: string }) {
             onClick={() => setCartOpen((open) => !open)}
           >
             <span>
-              {cartCount} item{cartCount === 1 ? '' : 's'} · {money(cartTotal)}
+              {cartCount} item{cartCount === 1 ? '' : 's'} · {money(cartGrandCents)}
             </span>
             <em>{cartOpen ? '▾ hide' : '▴ show'}</em>
           </button>
@@ -361,8 +555,13 @@ export function GuestOrder({ token }: { token: string }) {
             </button>
           </div>
           {called ? <p className="qr-called">{called}</p> : null}
+          {surcharge && cartSurchargeCents > 0 ? (
+            <p className="qr-muted qr-surcharge">
+              {surcharge.label}: +{money(cartSurchargeCents)} — the same surcharge the venue applies to every bill today.
+            </p>
+          ) : null}
           <button type="button" className="qr-submit" disabled={busy} onClick={() => void submit()}>
-            {busy ? 'Taking you to payment…' : `Pay ${money(cartTotal)} · ${cartCount} item${cartCount === 1 ? '' : 's'}`}
+            {busy ? 'Taking you to payment…' : `Pay ${money(cartGrandCents)} · ${cartCount} item${cartCount === 1 ? '' : 's'}`}
           </button>
         </div>
       ) : null}

@@ -43,7 +43,10 @@ function decodePem(value: string) {
 }
 
 function requireActiveWalletCard(card: WalletGiftCard) {
-  if (!card.paidAt || card.status !== 'ACTIVE' || card.balanceCents <= 0) {
+  // Status governs, not paidAt — donation vouchers and comped counter cards
+  // are ACTIVE with paidAt deliberately null and belong in a wallet like any
+  // other live card.
+  if (card.status !== 'ACTIVE' || card.balanceCents <= 0) {
     throw new HttpError(404, 'Only paid active gift cards with a remaining balance can be added to Wallet.');
   }
 }
@@ -209,7 +212,14 @@ export const giftCardWalletService = {
       aud: 'google',
       typ: 'savetowallet',
       iat: Math.floor(Date.now() / 1000),
-      origins: config.origins.length ? config.origins : [webUrl()],
+      // `origins` restricts which WEB PAGES may use this JWT — and Google
+      // rejects link saves from anywhere else with the generic "Something
+      // went wrong. Try again or contact the pass issuer." Our save flows
+      // are links (the email button and the balance page), and an email tap
+      // arrives from Gmail's origin, not ours — so the claim is omitted
+      // unless GOOGLE_WALLET_ORIGINS is explicitly set (for a future
+      // embedded JS button, which does require it).
+      ...(config.origins.length ? { origins: config.origins } : {}),
       payload: {
         genericClasses: [
           {

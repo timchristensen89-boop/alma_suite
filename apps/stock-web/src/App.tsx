@@ -42,6 +42,7 @@ const InvoicesPage = lazy(() => import('./pages/InvoicesPage').then((m) => ({ de
 const DeliveriesPage = lazy(() => import('./pages/DeliveriesPage').then((m) => ({ default: m.DeliveriesPage })));
 const PurchaseOrdersPage = lazy(() => import('./pages/PurchaseOrdersPage').then((m) => ({ default: m.PurchaseOrdersPage })));
 const RecipesPage = lazy(() => import('./pages/RecipesPage').then((m) => ({ default: m.RecipesPage })));
+const WineListPage = lazy(() => import('./pages/WineListPage').then((m) => ({ default: m.WineListPage })));
 const DishMarginPage = lazy(() => import('./pages/DishMarginPage').then((m) => ({ default: m.DishMarginPage })));
 const BuyingPage = lazy(() => import('./pages/BuyingPage').then((m) => ({ default: m.BuyingPage })));
 const PriceMovementPage = lazy(() => import('./pages/PriceMovementPage').then((m) => ({ default: m.PriceMovementPage })));
@@ -82,6 +83,7 @@ const PURCHASING_TABS: HubTab[] = [
 const RECIPE_TABS: HubTab[] = [
   { to: '/recipes', label: 'Menu items', end: true },
   { to: '/recipes/prep', label: 'Prep recipes' },
+  { to: '/recipes/wine', label: 'Wine' },
   { to: '/recipes/margins', label: 'Margins' },
   { to: '/recipes/categories', label: 'Categories' }
 ];
@@ -337,6 +339,7 @@ function StockAppShell() {
         {/* Recipes hub */}
         <Route path="/recipes" element={<HubLayout tabs={RECIPE_TABS}><RecipesPage mode="item" /></HubLayout>} />
         <Route path="/recipes/prep" element={<HubLayout tabs={RECIPE_TABS}><RecipesPage mode="production" /></HubLayout>} />
+        <Route path="/recipes/wine" element={<HubLayout tabs={RECIPE_TABS}><WineListPage /></HubLayout>} />
         <Route path="/recipes/margins" element={<HubLayout tabs={RECIPE_TABS}><DishMarginPage /></HubLayout>} />
         <Route path="/recipes/categories" element={<HubLayout tabs={RECIPE_TABS}><SettingsPage section="recipe" /></HubLayout>} />
         {/* Old routes → keep bookmarks/deep-links working */}

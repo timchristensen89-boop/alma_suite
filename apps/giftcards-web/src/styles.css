@@ -3211,6 +3211,36 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   color: #1a2717;
 }
 
+/* Which venue is taking the redemption. Sits above the card lookup because
+   the API refuses the redemption without it. Wraps rather than scrolls — three
+   venues fit two rows on the narrowest counter iPad, and a venue you cannot
+   see is a venue nobody picks. */
+.counter-venues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.counter-venues button {
+  flex: 1 1 auto;
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid rgba(231, 205, 139, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 251, 238, 0.04);
+  color: #efe0cf;
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.counter-venues button.is-on {
+  background: #e7cd8b;
+  border-color: #e7cd8b;
+  color: #1a2717;
+  font-weight: 600;
+}
+
 .counter-field {
   display: flex;
   flex-direction: column;
@@ -3751,6 +3781,44 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   flex-wrap: wrap;
 }
 
+/* Test cards are off by default and the page says so either way — silence
+   here would leave you unable to tell "no redemptions" from "not shown". */
+.giftcards-report-testtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding-bottom: 6px;
+  white-space: nowrap;
+}
+
+.giftcards-report-testtoggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent, #2f5d3f);
+  cursor: pointer;
+}
+
+.giftcards-report-testnote {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+}
+
+/* On the row itself, not only in the header — scrolling the log, the badge is
+   the only thing between a test redemption and a real one. */
+.giftcards-report-testtag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(147, 48, 31, 0.13);
+  color: #93301f;
+}
+
 .giftcards-report-venues {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -3829,3 +3897,412 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
     text-align: left;
   }
 }
+
+/* Purchases report — expandable rows */
+.giftcards-purchase-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; background: transparent; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.giftcards-report-row.is-open { background: rgba(20, 36, 26, 0.03); }
+.giftcards-purchase-detail { display: grid; grid-template-columns: 120px 1fr; gap: 6px 14px; margin: 12px 0 4px; padding-top: 12px; border-top: 1px solid rgba(20, 36, 26, 0.1); font-size: 13px; }
+.giftcards-purchase-detail dt { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: #64705f; padding-top: 2px; }
+.giftcards-purchase-detail dd { margin: 0; overflow-wrap: anywhere; }
+/* The row is a flex container for the redemption log; a purchase row that
+   expands needs to stack its detail below the header, full width. */
+.giftcards-report-row.is-open,
+.giftcards-report-row:has(.giftcards-purchase-row) { flex-wrap: wrap; }
+.giftcards-purchase-detail { flex-basis: 100%; }
+
+/* ── Gift card QR scanner ──────────────────────────────────────────────
+   Full-screen camera sheet. The frame is drawn with a giant box-shadow so
+   everything outside the viewfinder dims without a second overlay div. */
+.gcscan { position: fixed; inset: 0; z-index: 80; background: #10160f; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+.gcscan-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.gcscan-frame { position: absolute; top: 50%; left: 50%; width: min(62vmin, 340px); height: min(62vmin, 340px); transform: translate(-50%, -50%); border: 3px solid rgba(245, 220, 206, 0.9); border-radius: 24px; box-shadow: 0 0 0 100vmax rgba(16, 22, 15, 0.45); pointer-events: none; }
+.gcscan-top { position: relative; z-index: 1; text-align: center; padding: max(18px, env(safe-area-inset-top)) 20px 0; color: #f5dcce; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55); }
+.gcscan-kicker { margin: 0; font-size: 19px; font-weight: 700; }
+.gcscan-note { margin: 6px 0 0; font-size: 13.5px; opacity: 0.92; max-width: 340px; }
+.gcscan-actions { position: relative; z-index: 1; display: flex; gap: 10px; padding: 0 20px max(20px, env(safe-area-inset-bottom)); width: min(100%, 480px); box-sizing: border-box; }
+.gcscan-actions button { flex: 1; min-height: 52px; border-radius: 14px; border: 1px solid rgba(245, 220, 206, 0.5); background: rgba(16, 22, 15, 0.55); color: #f5dcce; font-size: 15px; font-weight: 700; cursor: pointer; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+
+/* The counter's scan-first button sits above the keyboard path. */
+.counter-scanbtn { width: 100%; }
+
+/* ------------------------------------------------------------------ */
+/* Donations and sponsorship                                           */
+/* ------------------------------------------------------------------ */
+
+.donation-policy {
+  list-style: none;
+  counter-reset: donation-rule;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.donation-policy li {
+  counter-increment: donation-rule;
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  gap: 0.15rem 0.6rem;
+  align-items: baseline;
+}
+
+.donation-policy li::before {
+  content: counter(donation-rule);
+  grid-row: span 2;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  opacity: 0.45;
+}
+
+.donation-policy li strong { font-weight: 600; }
+.donation-policy li span { grid-column: 2; font-size: 0.9rem; opacity: 0.75; }
+
+.donation-why { margin-bottom: 1rem; }
+.donation-why h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+
+.donation-why-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.donation-why-table th,
+.donation-why-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  text-align: right;
+}
+
+.donation-why-table thead th,
+.donation-why-table tbody th { text-align: left; font-weight: 500; }
+.donation-why-table tbody td:last-child { font-weight: 600; }
+
+.donation-tax { margin-top: 0.75rem; font-size: 0.9rem; }
+.donation-tax summary { cursor: pointer; font-weight: 500; }
+.donation-tax p { margin: 0.6rem 0 0; opacity: 0.8; line-height: 1.5; }
+
+/* Allocation --------------------------------------------------------- */
+
+.donation-allocation {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.donation-allocation strong { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+.donation-allocation small { opacity: 0.7; }
+.donation-allocation.is-low { background: color-mix(in srgb, #c98a12 22%, transparent); }
+.donation-allocation.is-spent { background: color-mix(in srgb, #b23b3b 22%, transparent); }
+
+/* Twelve pips: the year at a glance, no counting required. */
+.donation-pips {
+  display: flex;
+  gap: 0.3rem;
+  margin: 0 0 1rem;
+}
+
+.donation-pips span {
+  width: 100%;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.donation-pips span.is-used { background: var(--giftcards-primary, #2f5d3f); }
+
+/* Issue form --------------------------------------------------------- */
+
+.donation-kicker {
+  margin: 1.1rem 0 0.5rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.donation-amounts { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.donation-amounts button,
+.donation-custom {
+  min-width: 5.5rem;
+  padding: 0.6rem 1rem;
+  border-radius: 0.6rem;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.donation-amounts button.is-on {
+  background: var(--giftcards-primary, #2f5d3f);
+  border-color: var(--giftcards-primary, #2f5d3f);
+  color: #fff;
+}
+
+.donation-custom { cursor: text; }
+
+.donation-criteria { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+
+.donation-criteria label {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  cursor: pointer;
+}
+
+.donation-criteria input { margin-top: 0.2rem; }
+.donation-criteria span { display: grid; gap: 0.1rem; }
+.donation-criteria small { opacity: 0.7; font-size: 0.85rem; }
+
+.donation-blockers,
+.donation-warnings {
+  list-style: none;
+  margin: 0.9rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.donation-blockers { background: color-mix(in srgb, #b23b3b 14%, transparent); }
+.donation-warnings { background: color-mix(in srgb, #c98a12 14%, transparent); }
+
+.donation-code {
+  font-size: clamp(1.8rem, 5vw, 2.6rem);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.donation-issued-value { font-size: 1.05rem; margin: 0 0 0.5rem; }
+.donation-conditions { opacity: 0.8; font-size: 0.9rem; margin: 0 0 0.75rem; }
+
+/* Register ----------------------------------------------------------- */
+
+.donation-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.donation-stat {
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.6rem;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  display: grid;
+  gap: 0.2rem;
+}
+
+.donation-stat.is-strong {
+  border-color: var(--giftcards-primary, #2f5d3f);
+  background: color-mix(in srgb, var(--giftcards-primary, #2f5d3f) 8%, transparent);
+}
+
+.donation-stat-label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.65; }
+.donation-stat-value { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.donation-stat small { opacity: 0.7; font-size: 0.82rem; }
+
+.donation-verdict {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  line-height: 1.5;
+}
+
+.donation-venues { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.35rem; font-size: 0.9rem; }
+.donation-venues li { display: flex; justify-content: space-between; gap: 1rem; }
+
+.donation-cell-note { display: block; opacity: 0.65; font-size: 0.82rem; }
+
+.donation-linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.donation-linkish.is-missing { opacity: 0.6; font-style: italic; }
+.donation-edit-row td { background: color-mix(in srgb, currentColor 5%, transparent); }
+
+/* Templates ---------------------------------------------------------- */
+
+.donation-templates {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.donation-templates article {
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+
+.donation-templates header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.donation-templates h4 { margin: 0; font-size: 0.9rem; }
+
+.donation-templates pre {
+  margin: 0;
+  padding: 0.75rem;
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+/* Counter iPad ------------------------------------------------------- */
+
+.counter-allocation {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.9rem;
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  margin-bottom: 1rem;
+}
+
+.counter-allocation strong { font-size: 2.4rem; font-variant-numeric: tabular-nums; line-height: 1; }
+.counter-allocation.is-low { background: color-mix(in srgb, #c98a12 25%, transparent); }
+.counter-allocation.is-spent { background: color-mix(in srgb, #b23b3b 25%, transparent); }
+
+.counter-criteria { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.counter-criteria button {
+  flex: 1 1 8rem;
+  min-height: 3rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.6rem;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  background: transparent;
+  color: inherit;
+  font-size: 0.95rem;
+}
+
+.counter-criteria button.is-on {
+  background: var(--giftcards-primary, #2f5d3f);
+  border-color: var(--giftcards-primary, #2f5d3f);
+  color: #fff;
+}
+
+/*
+ * Colours are literal here, not color-mix against currentColor. The counter
+ * shell is a dark green gradient with cream text, and mixing against that
+ * produced a muted brown panel that read as decoration — on a full Friday
+ * night this is the one thing on the screen that must not be skimmed.
+ */
+.counter-donation-note {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border-left: 5px solid #e7cd8b;
+  background: rgba(231, 205, 139, 0.16);
+  color: #f7ecdb;
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.counter-donation-note p { margin: 0 0 6px; }
+.counter-donation-note p:last-child { margin-bottom: 0; }
+.counter-donation-head { font-weight: 600; letter-spacing: 0.01em; }
+
+/* Solid, not a tint: the blackout has to survive a glance across the pass. */
+.counter-donation-note.is-blackout {
+  background: #8f1d1d;
+  border-left-color: #ffb4a6;
+  color: #ffe9e4;
+}
+
+.counter-donation-blackout { font-weight: 700; }
+.counter-donation-warn { opacity: 0.9; }
+
+/* Gift card artwork on lookup + popularity rankings */
+.counter-card-art {
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto 16px;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.counter-card-art img {
+  width: 100%;
+  display: block;
+  border-radius: 14px;
+}
+.giftcards-popular {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+@media (max-width: 560px) {
+  .giftcards-popular { grid-template-columns: 1fr; }
+}
+.giftcards-popular-col h4 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+}
+.giftcards-popular-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.giftcards-popular-row--value { justify-content: space-between; }
+.giftcards-popular-swatch {
+  width: 64px;
+  flex: none;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.giftcards-popular-custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 40px;
+  background: #efe9dd;
+  border-radius: 6px;
+  font-size: 1.1rem;
+}
+.giftcards-popular-label { flex: 1 1 auto; }
+.giftcards-popular-row b { font-variant-numeric: tabular-nums; }
+.giftcards-detail-art {
+  display: inline-block;
+  width: 120px;
+  vertical-align: middle;
+  margin-right: 10px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.giftcards-detail-art img { width: 100%; display: block; border-radius: 6px; }

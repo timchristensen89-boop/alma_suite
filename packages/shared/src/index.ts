@@ -1,3 +1,7 @@
+export * from './price-window.js';
+export * from './roster-calendar.js';
+export * from './donations.js';
+export * from './dietary.js';
 export * from './availability.js';
 export * from './shift-claims.js';
 export * from './rostering-guards.js';
@@ -609,6 +613,8 @@ export const staffLeaveRequestUpdateSchema = z.object({
 
 export const staffProfileCreateInputSchema = z.object({
   posPermissions: z.record(z.boolean()).optional(),
+  // A practice account. Admin-only to set — see staff.service.
+  trainingOnly: z.boolean().optional(),
   firstName: z.string().min(2),
   lastName: z.string().min(2),
   roleTemplateId: z.string().optional().or(z.literal('')),
@@ -1074,11 +1080,13 @@ export const timesheetExportInputSchema = z.object({
   markExported: z.boolean().default(false)
 });
 
+// Tips are always pooled per venue, never across the group. `venue` narrows
+// the page to one; leaving it off returns every venue's pool side by side,
+// still separately split — it is not a combined pot.
 export const tipsQuerySchema = z.object({
   start: z.string().min(4),
   end: z.string().min(4),
-  venue: z.string().optional().or(z.literal('')),
-  breakageCentsPerDay: z.coerce.number().int().nonnegative().default(3000)
+  venue: z.string().optional().or(z.literal(''))
 });
 
 export const salesActualQuerySchema = z.object({
@@ -2113,6 +2121,15 @@ export type AuthUser = {
   venue: string | null;
   accountType: z.infer<typeof staffAccountTypeSchema>;
   isAdmin: boolean;
+  /**
+   * A practice account: the register forces every order it opens to be a
+   * training sale, and offers no way to turn that off.
+   *
+   * On a shared-device session this is the OR of the device account and the
+   * person's PIN account — a training PIN on a live till and a live PIN on a
+   * training till both come out safe. Widening is the only safe direction.
+   */
+  trainingOnly: boolean;
   role: 'ADMIN' | 'MANAGER' | 'STAFF';
   appAccess: Array<Pick<StaffAppAccess, 'appId' | 'status' | 'role' | 'permissions'>>;
   deviceAccount?: {
@@ -4639,6 +4656,8 @@ export type GiftCardReportRedemption = {
   cardStatus: GiftCard['status'];
   recipientName: string | null;
   purchaserName: string;
+  /** A test card. Never counted unless the report was asked to include them. */
+  testMode: boolean;
   redeemedByName: string | null;
 };
 
@@ -4654,7 +4673,59 @@ export type GiftCardReport = {
   };
   byVenue: Array<{ venue: string; redemptionCount: number; redeemedCents: number }>;
   redemptions: GiftCardReportRedemption[];
+  /** Whether test cards were counted in this response. */
+  includeTest: boolean;
   /** True when the log hit its server-side cap and older rows in range were dropped. */
+  truncated: boolean;
+};
+
+/** One row per card sold: everything the ledger knows about the purchase. */
+export type GiftCardPurchaseRow = {
+  code: string;
+  status: GiftCard['status'];
+  purchasedAt: string;
+  /** ONLINE (storefront), COUNTER (POS/physical), or GIFTUP (imported). */
+  source: 'ONLINE' | 'COUNTER' | 'GIFTUP' | 'PHYSICAL' | 'TEST';
+  tender: string | null;
+  soldByName: string | null;
+  initialValueCents: number;
+  discountCents: number;
+  amountPaidCents: number | null;
+  balanceCents: number;
+  redeemedCents: number;
+  purchaserName: string;
+  purchaserEmail: string;
+  recipientName: string | null;
+  recipientEmail: string | null;
+  message: string | null;
+  design: string | null;
+  promoCode: string | null;
+  scheduledDeliveryAt: string | null;
+  emailedAt: string | null;
+  emailError: string | null;
+  lastRedeemedAt: string | null;
+  redemptionCount: number;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  expiresAt: string | null;
+  stripePaymentIntentId: string | null;
+};
+
+export type GiftCardPurchaseReport = {
+  range: { from: string | null; to: string };
+  summary: {
+    cardCount: number;
+    soldCents: number;
+    paidCents: number;
+    outstandingCents: number;
+    redeemedCents: number;
+  };
+  bySource: Array<{ source: string; cardCount: number; soldCents: number }>;
+  popular: {
+    byDesign: Array<{ design: string; count: number; soldCents: number }>;
+    byValue: Array<{ valueCents: number; count: number }>;
+  };
+  purchases: GiftCardPurchaseRow[];
   truncated: boolean;
 };
 
@@ -4669,6 +4740,8 @@ export type Timesheet = {
   clockInAt: string;
   clockOutAt: string;
   breakMinutes: number;
+  isLeave: boolean;
+  leaveKind: string | null;
   notes: string | null;
   status: TimesheetStatus;
   submittedAt: string | null;
@@ -4827,6 +4900,17 @@ export type StaffTipEntitlement = {
   paymentMethod: 'CASH';
 };
 
+export type StaffTipVenuePool = {
+  venue: string;
+  cashTipsCents: number;
+  squareTipsCents: number;
+  tipPoolCents: number;
+  tradingDays: number;
+  approvedHours: number;
+  staffCount: number;
+  allocatedCents: number;
+};
+
 export type StaffTipsSummary = {
   start: string;
   end: string;
@@ -4834,11 +4918,12 @@ export type StaffTipsSummary = {
   cashTipsCents: number;
   squareTipsCents: number;
   tipPoolCents: number;
-  breakageCentsPerDay: number;
-  breakageCents: number;
-  allocatablePoolCents: number;
   tradingDays: number;
   approvedHours: number;
+  /** One entry per venue that either took tips or worked hours this week. */
+  venues: StaffTipVenuePool[];
+  /** Hours with no venue on the timesheet or the profile — in nobody's pool. */
+  unassigned: Array<{ staffProfileId: string; name: string; approvedHours: number }>;
   paidRuns: Array<{
     id: string;
     paidAt: string;
@@ -6391,6 +6476,8 @@ export type RecipeLine = {
   cost: number | null;
   wastePercent: number | null;
   perGuests: number | null;
+  /** Counted by the costing, never served. See set-menu-plan.ts. */
+  costingOnly: boolean;
   itemId: string | null;
   item: { id: string; name: string; unit: string; countUnit: string | null; avgCostCents: number | null } | null;
   subRecipeId: string | null;
@@ -6432,6 +6519,13 @@ export type Recipe = {
   // Kitchen docket/KDS override name. NULL = dockets print `title`, same as
   // the register tile and guest receipts.
   printTitle: string | null;
+  /**
+   * The one line a GUEST reads under the dish name — the printed menu's own
+   * words. Distinct from `notes`, which is internal and must never be shown.
+   */
+  guestDescription: string | null;
+  /** DISH_DIETARY ids. Empty = nobody has checked, NOT "no allergens". */
+  dietary: string[];
   kind: string | null;
   category: string | null;
   subcategory: string | null;
@@ -6560,6 +6654,319 @@ export const setMenuAddComponentInputSchema = z.object({
 });
 export type SetMenuAddComponentInput = z.infer<typeof setMenuAddComponentInputSchema>;
 
+// ─── Set menu courses (the picker) ───────────────────────────────
+// A set menu's fixed components are RecipeLine rows on the menu itself. These
+// are the parts a guest chooses: "one entree each, from these three", where
+// the three change through the week. The register asks the question; what was
+// picked lands on PosOrderLine, which is what the banquet report reads back.
+
+export type SetMenuCourseOption = {
+  id: string;
+  recipeId: string;
+  title: string;
+  /** Charged on top of the package price, per guest. 0 = included. */
+  supplementCents: number;
+  /** Tonight's menu: off = not offered at the register. */
+  available: boolean;
+  /** A la carte price, which is how package revenue gets shared out. */
+  salePriceCents: number | null;
+  estimatedCost: number | null;
+  sortOrder: number;
+};
+
+export type SetMenuCourse = {
+  id: string;
+  name: string;
+  /** Matches PosOrderLine.course. NULL = the register's default. */
+  posCourse: string | null;
+  /** Choices each guest makes here. covers x pick = what the table owes. */
+  pick: number;
+  /**
+   * One serve feeds this many guests — the shared sides, the whole fish. The
+   * register divides by it, so a side shared between 4 sends 2 portions for a
+   * table of 8. NULL = one serve each.
+   */
+  perGuests: number | null;
+  sortOrder: number;
+  options: SetMenuCourseOption[];
+};
+
+// Everything the register needs to run a banquet without a second request.
+export type SetMenuPlan = {
+  recipeId: string;
+  title: string;
+  salePriceCents: number | null;
+  /** Nobody chooses these — bread for the table, greens between four. */
+  fixed: Array<{
+    name: string;
+    printName: string | null;
+    recipeId: string | null;
+    /** Per person, before perGuests is applied. */
+    quantity: number;
+    /** Shared between N guests: qty = ceil(covers / perGuests). */
+    perGuests: number | null;
+  }>;
+  courses: SetMenuCourse[];
+};
+
+export const setMenuCoursesSaveInputSchema = z.object({
+  courses: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(60),
+        posCourse: z.string().max(40).nullish(),
+        /** 1 = one each (the normal case); 2 = two entrees each. */
+        pick: z.coerce.number().int().min(1).max(9).default(1),
+        /** Shared between this many. Null/absent = one serve each. */
+        perGuests: z.coerce.number().int().min(2).max(40).nullish(),
+        options: z
+          .array(
+            z.object({
+              recipeId: z.string().min(1),
+              supplementCents: z.coerce.number().int().min(0).max(100_000).default(0),
+              available: z.coerce.boolean().default(true)
+            })
+          )
+          .max(40)
+          .default([])
+      })
+    )
+    .max(12)
+});
+export type SetMenuCoursesSaveInput = z.infer<typeof setMenuCoursesSaveInputSchema>;
+
+// Tonight's menu changes more often than the menu does, so flipping one dish
+// on or off is its own one-tap call rather than a full save.
+export const setMenuOptionAvailabilityInputSchema = z.object({
+  available: z.coerce.boolean()
+});
+
+// ─── Wine ────────────────────────────────────────────────────────
+// A wine as the printed list describes it, with its pour sizes pointing at the
+// POS items that carry the prices. Nothing here prices anything: `priceCents`
+// on a pour is read straight off the recipe, and is never written back.
+
+export type WinePourRow = {
+  id: string;
+  recipeId: string;
+  /** 150 and 250 for a glass, 750 for the bottle; 60 and 375 for fortified. */
+  ml: number;
+  recipeTitle: string;
+  /** The recipe's price, shown for context. Read-only here. */
+  priceCents: number | null;
+};
+
+export type WineRow = {
+  id: string;
+  venue: string;
+  producer: string;
+  cuvee: string | null;
+  grape: string | null;
+  region: string | null;
+  /** A state for Australian wine, a country for imports — as printed. */
+  origin: string | null;
+  vintage: number | null;
+  section: string | null;
+  styleBand: string | null;
+  /** 's' seafood & ceviche, 'r' rich & grilled, 'v' vegetables & cheese. */
+  pairsWith: string[];
+  tastingNote: string | null;
+  sommelierPour: boolean;
+  limitedStock: boolean;
+  serveChilled: boolean;
+  sortOrder: number;
+  status: string;
+  pours: WinePourRow[];
+};
+
+export type WineListPayload = {
+  wines: WineRow[];
+  venues: string[];
+  sections: string[];
+  grapes: string[];
+  /** Wine items in the register that no Wine claims — the ones still to link. */
+  unlinked: Array<{ recipeId: string; title: string; venue: string | null; priceCents: number | null }>;
+};
+
+export const wineUpdateInputSchema = z.object({
+  producer: z.string().min(1).max(120).optional(),
+  cuvee: z.string().max(120).nullish(),
+  grape: z.string().max(120).nullish(),
+  region: z.string().max(120).nullish(),
+  origin: z.string().max(40).nullish(),
+  vintage: z.coerce.number().int().min(1900).max(2100).nullish(),
+  section: z.string().max(60).nullish(),
+  styleBand: z.string().max(60).nullish(),
+  pairsWith: z.array(z.enum(['s', 'r', 'v'])).max(3).optional(),
+  tastingNote: z.string().max(600).nullish(),
+  sommelierPour: z.coerce.boolean().optional(),
+  limitedStock: z.coerce.boolean().optional(),
+  serveChilled: z.coerce.boolean().optional(),
+  status: z.enum(['ACTIVE', 'ARCHIVED']).optional()
+});
+export type WineUpdateInput = z.infer<typeof wineUpdateInputSchema>;
+
+// Linking a register item to a wine as one of its pour sizes. The size is the
+// only thing being decided — the price comes with the recipe.
+export const winePourLinkInputSchema = z.object({
+  recipeId: z.string().min(1),
+  ml: z.coerce.number().int().min(15).max(3000)
+});
+
+// What the register needs to sell a wine, shipped with the menu so opening the
+// wine list costs no round trip. Price comes off the recipe, as everywhere.
+export type RegisterWinePour = {
+  recipeId: string;
+  ml: number;
+  priceCents: number;
+  /** The catalogue title — what the bill and the docket will say. */
+  title: string;
+  printName: string | null;
+};
+
+export type RegisterWine = {
+  id: string;
+  venue: string;
+  /** Producer and cuvee joined the way the printed list sets them. */
+  name: string;
+  producer: string;
+  cuvee: string | null;
+  grape: string | null;
+  region: string | null;
+  origin: string | null;
+  vintage: number | null;
+  section: string | null;
+  styleBand: string | null;
+  pairsWith: string[];
+  tastingNote: string | null;
+  sommelierPour: boolean;
+  limitedStock: boolean;
+  serveChilled: boolean;
+  pours: RegisterWinePour[];
+};
+
+// What the banquet report answers: a set menu sells for one price and its
+// dishes ring at $0, so each table's package revenue is shared across the
+// dishes that table was served, in proportion to their a la carte value.
+export type BanquetDishRow = {
+  recipeId: string | null;
+  name: string;
+  /** Plates served across the range. */
+  servings: number;
+  /** Share of covers that chose this dish. */
+  sharePercent: number | null;
+  alaCarteCents: number | null;
+  allocatedRevenueCents: number;
+  /** Upgrades charged on top of the package. */
+  supplementRevenueCents: number;
+  revenueCents: number;
+  costCents: number;
+  marginCents: number;
+  marginPercent: number | null;
+  /** False when the dish has no recipe cost, so its margin reads high. */
+  costed: boolean;
+  menus: string[];
+};
+
+export type BanquetReportPayload = {
+  range: { start: string; end: string };
+  venue: string | null;
+  totals: {
+    tables: number;
+    covers: number;
+    packageRevenueCents: number;
+    supplementRevenueCents: number;
+    revenueCents: number;
+    costCents: number;
+    marginCents: number;
+    marginPercent: number | null;
+    revenuePerCoverCents: number;
+    costPerCoverCents: number;
+  };
+  /** Named plainly so the page can say which numbers are soft, and why. */
+  gaps: { unpricedDishes: string[]; uncostedDishes: string[] };
+  dishes: BanquetDishRow[];
+  menus: Array<{
+    recipeId: string | null;
+    name: string;
+    tables: number;
+    covers: number;
+    revenueCents: number;
+    costCents: number;
+    marginCents: number;
+    marginPercent: number | null;
+    costPerCoverCents: number;
+  }>;
+  nights: Array<{ date: string; tables: number; covers: number; revenueCents: number; costCents: number; marginCents: number }>;
+};
+
+// What the wine report answers: which grapes, regions, price bands and pour
+// sizes the list actually sells, at what margin, and what has gone quiet.
+//
+// Margin is over costedRevenueCents, never over revenueCents — a wine with no
+// cost recorded would otherwise read as pure profit and top every table. The
+// uncosted slice is carried alongside so a partial number is never mistaken
+// for a whole one.
+export type WineBucketRow = {
+  key: string;
+  label: string;
+  /** On the list in this bucket, whether or not it sold. */
+  wines: number;
+  bottles: number;
+  glasses: number;
+  quantity: number;
+  revenueCents: number;
+  costedRevenueCents: number;
+  costCents: number;
+  marginCents: number;
+  marginPercent: number | null;
+  sharePercent: number | null;
+};
+
+export type WineAgingRow = {
+  wineId: string;
+  venue: string;
+  name: string;
+  vintage: number | null;
+  /** Years since the vintage at the report's end date. NULL = non-vintage. */
+  vintageAge: number | null;
+  bottlePriceCents: number | null;
+  soldInWindow: number;
+  /** Last sale of any pour, from either register. NULL = never sold. */
+  lastSoldAt: string | null;
+  daysSinceSold: number | null;
+  limitedStock: boolean;
+};
+
+export type WineReportPayload = {
+  range: { start: string; end: string };
+  venue: string | null;
+  totals: {
+    winesOnList: number;
+    poursSellable: number;
+    quantity: number;
+    bottles: number;
+    glasses: number;
+    revenueCents: number;
+    costedRevenueCents: number;
+    uncostedRevenueCents: number;
+    costCents: number;
+    marginCents: number;
+    marginPercent: number | null;
+    /** Split by which till rang it, so the changeover window stays legible. */
+    registerRevenueCents: number;
+    importedRevenueCents: number;
+  };
+  /** Named plainly so the page can say which numbers are soft, and why. */
+  gaps: { uncostedWines: string[]; unpricedWines: string[] };
+  byGrape: WineBucketRow[];
+  byRegion: WineBucketRow[];
+  byOrigin: WineBucketRow[];
+  byBand: WineBucketRow[];
+  byPourSize: WineBucketRow[];
+  aging: WineAgingRow[];
+};
+
 export type RecipeIngredientOption = {
   id: string;
   type: 'STOCK_ITEM' | 'PREP_RECIPE';
@@ -6596,6 +7003,9 @@ export const recipeLineInputSchema = z.object({
   wastePercent: z.coerce.number().min(0).max(100).optional(),
   // Set menus: component shared between N guests (its cost ÷ N per person).
   perGuests: z.coerce.number().positive().optional(),
+  // Set menus: counted by the costing, never sent to a bill or a docket — the
+  // allowance for what a table drinks, which no kitchen can plate.
+  costingOnly: z.boolean().optional(),
   itemId: z.string().optional().or(z.literal('')),
   subRecipeId: z.string().optional().or(z.literal(''))
 }).refine((line) => !(line.itemId && line.subRecipeId), {
@@ -6620,6 +7030,18 @@ export const recipeVenuePriceInputSchema = z.object({
 export const recipeCreateInputSchema = z.object({
   title: z.string().min(2, 'Title is required'),
   printTitle: z.string().optional().or(z.literal('')),
+  // Guest-facing, so it is capped rather than silently truncated: a paragraph
+  // that arrives here is a mistake worth telling somebody about, not copy to
+  // cut off mid-word on a phone.
+  guestDescription: z
+    .string()
+    .max(240, 'Keep the guest description to a line, the way the menu prints it')
+    .optional()
+    .or(z.literal('')),
+  // Unknown tags are dropped rather than rejected: a save must not fail
+  // because a client sent a tag this build does not know, and a tag nobody
+  // recognises must never reach the floor looking like a claim about a plate.
+  dietary: z.array(z.string()).optional(),
   kind: z.string().optional().or(z.literal('')),
   category: z.string().optional().or(z.literal('')),
   subcategory: z.string().optional().or(z.literal('')),
