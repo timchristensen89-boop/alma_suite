@@ -1888,6 +1888,21 @@ body.pos-dark .office-top { background: #10160f; box-shadow: 0 6px 18px rgba(0, 
 }
 /* Dropdown options render on the browser's own sheet — keep them readable. */
 .office-tab-pick select option, .pos-header select option { color: #1f3524; background: #fff; }
+
+/* ── Office → Printers: the bridge announces itself ── */
+.office-bridges { display: flex; flex-direction: column; gap: 8px; margin: 0 0 18px; }
+.office-bridge {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  border: 1px solid var(--pos-border-soft); border-radius: 12px;
+  background: var(--pos-card); padding: 10px 14px;
+  font-size: 12.5px; color: var(--pos-text2);
+}
+.office-bridge strong { color: var(--pos-text); font-size: 13px; }
+.office-bridge i { width: 9px; height: 9px; border-radius: 9999px; background: #b3402e; flex: none; }
+.office-bridge.is-on i { background: #4f6b47; box-shadow: 0 0 0 3px rgba(79, 107, 71, 0.18); }
+/* A bridge that has reported before and gone quiet is the alarm case. */
+.office-bridge:not(.is-on) { border-color: rgba(154, 58, 46, 0.4); }
+.office-bridge:not(.is-on) span { color: #9a3a2e; font-weight: 600; }
 @media (max-width: 700px) {
   .office-tabs { display: none; }
   .office-tab-pick { display: block; }

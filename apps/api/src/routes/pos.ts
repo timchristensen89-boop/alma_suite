@@ -15,6 +15,8 @@ posRouter.use((req, _res, next) => {
   if (req.path.startsWith('/print-poll/')) return next();
   // The print bridge reads its station list the same way a printer polls.
   if (req.path === '/print-stations') return next();
+  // …and announces itself the same way: outbound-only, no session to carry.
+  if (req.path === '/print-bridge/heartbeat') return next();
   if (!req.user && !req.deviceUser) return next(new HttpError(401, 'Sign in the register first.'));
   next();
 });
@@ -383,6 +385,26 @@ posRouter.get('/print-poll/:profileId', async (req, res, next) => {
     const result = await posService.printPoll(req.params.profileId, {});
     res.set('Content-Type', 'text/xml; charset=utf-8');
     res.send(result.xml);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// The bridge announces itself (hostname, LAN IPs) so the Office can show
+// whether dockets have a working path — and where the box driving them is.
+// The heartbeat is public like /print-poll; reading the status needs a
+// session like every other Office call.
+posRouter.post('/print-bridge/heartbeat', async (req, res, next) => {
+  try {
+    res.json(await posService.recordPrintBridgeHeartbeat(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
+posRouter.get('/print-bridge/status', async (req, res, next) => {
+  try {
+    res.json(await posService.printBridgeStatus(req.query.venue ? String(req.query.venue) : null));
   } catch (err) {
     next(err);
   }

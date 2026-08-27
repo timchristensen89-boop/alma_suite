@@ -18,7 +18,12 @@
 // bought, point it at the same URL and delete this; nothing else changes.
 
 import net from 'node:net';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+
+// Bumped when the bridge itself changes, so the Office can tell an old
+// install from a current one without someone ssh-ing in to check.
+const BRIDGE_VERSION = '1.1.0';
 
 // Preferred: name the venue and let the bridge ask the API which stations to
 // serve and where they are. Change a printer's IP in Office -> Printers and
@@ -66,6 +71,30 @@ async function refreshStations() {
 }
 
 const INTERVAL_MS = Number(process.env.ALMA_POLL_MS ?? 5000);
+
+// ── Heartbeat ──────────────────────────────────────────────────────────────
+// Once a minute the bridge tells the API it exists — hostname and LAN IPs —
+// so Office → Printers can say "bridge online at 192.168.1.42" instead of
+// someone hunting the Pi across the venue wifi with arp.
+function lanAddresses() {
+  return Object.values(os.networkInterfaces())
+    .flat()
+    .filter((iface) => iface && !iface.internal && iface.family === 'IPv4')
+    .map((iface) => iface.address);
+}
+
+async function heartbeat() {
+  if (!VENUE) return; // static-station mode has no venue to report under
+  try {
+    await fetch(`${API}/api/pos/print-bridge/heartbeat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ venue: VENUE, hostname: os.hostname(), lanIps: lanAddresses(), version: BRIDGE_VERSION })
+    });
+  } catch {
+    // Offline: the next beat lands when the network is back.
+  }
+}
 
 // Physical page setup, in printer dots. A docket printed hard against the
 // edge is hard to read and hard to tear straight, so leave a margin both
@@ -280,10 +309,15 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   console.log(`[bridge] ALMA print bridge running${VENUE ? ` for ${VENUE}` : ''}`);
   await refreshStations();
   for (const station of stations) console.log(`[bridge]   ${station.name ?? station.host} -> ${station.host}:${station.port}`);
+  await heartbeat();
   await tick();
   setInterval(() => {
     void tick();
   }, INTERVAL_MS);
-  // Pick up printer changes made in the Office without a restart.
-  if (VENUE) setInterval(() => void refreshStations(), 60_000);
+  // Pick up printer changes made in the Office without a restart, and keep
+  // announcing this machine so the Office knows the bridge is alive.
+  if (VENUE) {
+    setInterval(() => void refreshStations(), 60_000);
+    setInterval(() => void heartbeat(), 60_000);
+  }
 }

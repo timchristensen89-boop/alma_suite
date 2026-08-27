@@ -45,6 +45,24 @@ type Terminal = {
   pairedAt: string | null;
   lastUsedAt: string | null;
 };
+type BridgeStatus = {
+  venue: string;
+  hostname: string | null;
+  lanIps: string[];
+  version: string | null;
+  lastSeenAt: string;
+  online: boolean;
+};
+
+const agoLabel = (iso: string) => {
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (seconds < 90) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 90) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 36) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+};
 
 export function Office() {
   const [tab, setTab] = useState<OfficeTab>('printers');
@@ -75,6 +93,7 @@ export function Office() {
   const [specialDraft, setSpecialDraft] = useState({ name: '', price: '', kind: 'FOOD', venue: '' });
   const [terminalVenue, setTerminalVenue] = useState(VENUES[0]!);
   const [terminals, setTerminals] = useState<Terminal[]>([]);
+  const [bridges, setBridges] = useState<BridgeStatus[]>([]);
   const [terminalName, setTerminalName] = useState('');
   const [pairing, setPairing] = useState(false);
   const [qrItemSearch, setQrItemSearch] = useState('');
@@ -134,6 +153,20 @@ export function Office() {
     const timer = setInterval(() => void loadTerminals(terminalVenue), 4000);
     return () => clearInterval(timer);
   }, [tab, terminalVenue, loadTerminals]);
+
+  // The bridge heartbeats once a minute; poll while the Printers tab is open
+  // so "online" flips without a reload. Best-effort — an old API without the
+  // endpoint just shows nothing.
+  useEffect(() => {
+    if (tab !== 'printers') return;
+    const load = () =>
+      api<BridgeStatus[]>('/api/pos/print-bridge/status')
+        .then(setBridges)
+        .catch(() => setBridges([]));
+    void load();
+    const timer = setInterval(() => void load(), 15000);
+    return () => clearInterval(timer);
+  }, [tab]);
 
   async function pairTerminal() {
     setPairing(true);
@@ -268,6 +301,29 @@ export function Office() {
               Each profile is a docket station: items route by kind (food / beverage) or by exact categories. Give a profile an
               IP when a physical Epson printer arrives — until then its station shows on the KDS.
             </p>
+            {/* The machine driving the printers announces itself once a minute,
+                so nobody has to hunt the Pi across the venue wifi. */}
+            {bridges.length > 0 ? (
+              <div className="office-bridges">
+                {bridges.map((bridge) => (
+                  <div key={bridge.venue} className={bridge.online ? 'office-bridge is-on' : 'office-bridge'}>
+                    <i />
+                    <strong>{bridge.venue}</strong>
+                    <span>
+                      {bridge.online ? 'Print bridge online' : 'Print bridge OFFLINE'}
+                      {bridge.hostname ? ` · ${bridge.hostname}` : ''}
+                      {bridge.lanIps.length > 0 ? ` · ${bridge.lanIps.join(', ')}` : ''}
+                      {` · seen ${agoLabel(bridge.lastSeenAt)}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="office-hint" style={{ marginBottom: 14 }}>
+                No print bridge has reported yet — run one (apps/print-bridge, a Pi at each venue) and it appears here with
+                its hostname and address.
+              </p>
+            )}
             {/* Grouped by venue: two venues each with a station called "Kitchen"
                 in one flat list is how Avalon's kitchen ended up pointing at
                 St Alma's printer. */}
