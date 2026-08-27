@@ -147,7 +147,7 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     features: [
       { name: 'The guide builds itself', desc: 'Lines come from your invoices and price lists — anything ever bought or priced is on the list, at what you actually pay.' },
       { name: 'Shorts prefilled', desc: 'Below-par items arrive with a suggested quantity; "Only what\'s short" narrows the guide to them.' },
-      { name: 'No supplier on file', desc: 'Below-par items nobody has bought through the app yet sit in their own group — order them anyway and pick the supplier at review.' },
+      { name: 'No supplier on file', desc: 'Below-par items nobody has bought through the app yet sit in their own group. Pick a supplier right on the line — the item files itself under them for good — or leave it and choose one at review.' },
       { name: 'One-off orders', desc: 'The typed-by-hand form lives at the bottom of Build order for new suppliers and odd requests.' }
     ],
     tips: [
