@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Alma Venue iPad</title>
+    <script type="module" crossorigin src="/assets/index--mCuBC0d.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DHS6q8zn.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Venue iPad sits on the service floor — default to dark so it isn't a
+      // glaring white panel. Set before paint (no flash); the toggle can still
+      // switch a given device to light if someone wants it.
+      try {
+        var t = localStorage.getItem('alma.theme');
+        document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+        if (!t) localStorage.setItem('alma.theme', 'dark');
+      } catch (e) { document.documentElement.setAttribute('data-theme', 'dark'); }
+    </script>
+  </body>
+</html>
