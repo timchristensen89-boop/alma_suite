@@ -78,14 +78,11 @@ jobs:
       # The pure suites — no database required. The seven DB-bound stocktake
       # cases self-skip without DATABASE_URL (see the test file); everything
       # else must pass. ~900 cases, well under a minute.
+      # One line on purpose: with `>-`, continuation lines indented deeper
+      # than the first are kept literal, so the step ran `pnpm --filter X`
+      # with no command and died with "Unknown option: 'recursive'".
       - name: Run tests
-        run: >-
-          pnpm --filter @alma/api
-               --filter @alma/stock-api
-               --filter @alma/stock-web
-               --filter @alma/ui
-               --filter @alma/db
-               test
+        run: pnpm --filter @alma/api --filter @alma/stock-api --filter @alma/stock-web --filter @alma/ui --filter @alma/db test
 
   frontend-build:
     name: Frontend builds
@@ -125,14 +122,9 @@ jobs:
             fi
           done
 
+      # One line for the same reason as the test step above.
       - name: Build the frontends
-        run: >-
-          pnpm --filter @alma/pos-web
-               --filter @alma/staff-web
-               --filter @alma/giftcards-web
-               --filter @alma/reserve-web
-               --filter @alma/stock-web
-               build
+        run: pnpm --filter @alma/pos-web --filter @alma/staff-web --filter @alma/giftcards-web --filter @alma/reserve-web --filter @alma/stock-web build
 
   domain-boundaries:
     name: Domain boundary guard (warn)
