@@ -498,6 +498,32 @@ export function InvoicesPage() {
     }
   }
 
+  // Payment status lives on the Payments tab day to day; here it's a quick
+  // read plus the undo — a bill marked paid by mistake goes back to unpaid.
+  async function togglePayment(invoice: StockSupplierInvoice) {
+    const target = `payment:${invoice.id}`;
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to record payments.', 'error');
+      return;
+    }
+    setBusyTarget(target);
+    setFeedbackTarget(target);
+    setFeedbackMessage(null);
+    try {
+      const paid = invoice.paymentStatus === 'PAID';
+      const updated = await api<StockSupplierInvoice>(
+        `/api/invoices/${invoice.id}/${paid ? 'mark-unpaid' : 'record-payment'}`,
+        { method: 'POST', body: JSON.stringify({}) }
+      );
+      applyInvoiceUpdate(updated);
+      showFeedback(target, paid ? 'Set back to unpaid.' : 'Payment recorded in full.');
+    } catch (err) {
+      showFeedback(target, err instanceof ApiError ? err.message : 'Could not update the payment.', 'error');
+    } finally {
+      setBusyTarget(null);
+    }
+  }
+
   function applyInvoiceUpdate(updated: StockSupplierInvoice) {
     setPayload((current) => {
       const existing = current?.invoices ?? [];
@@ -1040,6 +1066,11 @@ export function InvoicesPage() {
                             <Badge tone={triageBadgeTone(invoice.triageStatus)} dot>
                               {TRIAGE_LABEL[invoice.triageStatus]}
                             </Badge>
+                            {invoice.paymentStatus !== 'UNPAID' ? (
+                              <Badge tone={invoice.paymentStatus === 'PAID' ? 'positive' : 'warning'}>
+                                {invoice.paymentStatus === 'PAID' ? 'Paid' : 'Part paid'}
+                              </Badge>
+                            ) : null}
                             {assignee ? (
                               <span className="subtle">Assigned: {assignee}</span>
                             ) : null}
@@ -1092,6 +1123,33 @@ export function InvoicesPage() {
                   />
                 </div>
               ) : null}
+              <div className="stock-invoice-doc-bar">
+                <Badge tone={selectedInvoice.paymentStatus === 'PAID' ? 'positive' : selectedInvoice.paymentStatus === 'PARTIALLY_PAID' ? 'warning' : 'muted'}>
+                  {selectedInvoice.paymentStatus === 'PAID'
+                    ? `Paid${selectedInvoice.paidAt ? ` ${formatDate(selectedInvoice.paidAt)}` : ''}`
+                    : selectedInvoice.paymentStatus === 'PARTIALLY_PAID'
+                      ? `Part paid — ${formatCurrency(selectedInvoice.amountPaidCents, selectedInvoice.currencyCode)} of ${formatCurrency(selectedInvoice.totalCents, selectedInvoice.currencyCode)}`
+                      : 'Unpaid'}
+                </Badge>
+                {selectedInvoice.paymentReference ? (
+                  <span className="subtle">Ref {selectedInvoice.paymentReference}</span>
+                ) : null}
+                {canManage ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={busyTarget === `payment:${selectedInvoice.id}`}
+                    onClick={() => void togglePayment(selectedInvoice)}
+                  >
+                    {selectedInvoice.paymentStatus === 'PAID' ? 'Mark unpaid' : 'Mark paid in full'}
+                  </Button>
+                ) : null}
+                <ActionFeedback
+                  message={feedbackTarget === `payment:${selectedInvoice.id}` ? feedbackMessage : null}
+                  tone={feedbackTone}
+                />
+              </div>
               <InvoicePasteLinesPanel
                 invoice={selectedInvoice}
                 canManage={canManage}

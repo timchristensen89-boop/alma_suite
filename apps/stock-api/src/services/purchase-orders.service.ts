@@ -4,9 +4,14 @@ import {
   orderQuantityToPar,
   IMPLAUSIBLE_COUNT_SHARE,
   IMPLAUSIBLE_COUNT_FLOOR_CENTS,
-  type AuthUser
+  stockPurchaseOrderSendInputSchema,
+  type AuthUser,
+  type StockOrderGuideLine,
+  type StockOrderGuidePayload,
+  type StockPurchaseOrderSendEmail
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { sendStockEmail } from '../lib/resend.js';
 import { itemsService } from './items.service.js';
 
 // Purchase-order lifecycle: DRAFT → SENT → PARTIALLY_RECEIVED / RECEIVED → MATCHED.
@@ -85,6 +90,62 @@ const poInclude = {
   lines: { include: { stockItem: { select: { id: true, name: true, unit: true, countUnit: true } } } },
   matchedInvoice: { select: { id: true, invoiceNumber: true, totalCents: true } }
 } satisfies Prisma.PurchaseOrderInclude;
+
+const AUD = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
+const QTY = new Intl.NumberFormat('en-AU', { maximumFractionDigits: 2 });
+
+// The email a supplier receives. Plain text on purpose: every wholesaler's
+// inbox can read it, nothing renders "creatively" on an old warehouse PC, and
+// the exact same text is what gets stored on the order and what the UI offers
+// for copy-paste when email isn't configured.
+function buildPurchaseOrderEmail(
+  po: {
+    supplierName: string;
+    venue: string | null;
+    reference: string | null;
+    expectedAt: Date | null;
+    notes: string | null;
+    subtotalCents: number;
+    lines: Array<{ description: string; orderedQuantity: number; unit: string | null; unitCostCents: number }>;
+  },
+  message?: string | null
+) {
+  const where = po.venue ?? 'Alma';
+  const subject = `Alma purchase order - ${where}${po.reference ? ` (${po.reference})` : ''}`;
+  const anyPrice = po.lines.some((line) => line.unitCostCents > 0);
+  const body = [
+    `Hi ${po.supplierName},`,
+    '',
+    `Please supply the following order for ${where}:`,
+    message?.trim() ? '' : null,
+    message?.trim() ? message.trim() : null,
+    '',
+    ...po.lines.map((line) => {
+      const qty = QTY.format(line.orderedQuantity);
+      const unit = line.unit ? ` ${line.unit}` : '';
+      // Our expected price rides along when we know it — the supplier seeing
+      // what we last paid is half of holding prices steady.
+      const price = line.unitCostCents > 0 ? ` @ ${AUD.format(line.unitCostCents / 100)}` : '';
+      return `- ${qty}${unit} x ${line.description}${price}`;
+    }),
+    '',
+    anyPrice && po.subtotalCents > 0 ? `Expected total: ${AUD.format(po.subtotalCents / 100)}` : null,
+    po.expectedAt
+      ? `Delivery needed by: ${po.expectedAt.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}`
+      : null,
+    po.reference ? `Our reference: ${po.reference}` : null,
+    po.notes?.trim() ? `Notes: ${po.notes.trim()}` : null,
+    '',
+    'Please reply to confirm.',
+    '',
+    'Thanks,',
+    'Alma Stock'
+  ]
+    .filter((line): line is string => line !== null)
+    .filter((line, index, values) => line || values[index - 1] !== '')
+    .join('\n');
+  return { subject, body };
+}
 
 async function resolveSupplierId(supplierId: string | null, supplierName: string): Promise<string | null> {
   if (supplierId) return supplierId;
@@ -409,6 +470,194 @@ export const purchaseOrdersService = {
       data: { status, ...(status === 'SENT' ? { orderedAt: new Date() } : {}) }
     });
     return loadPo(id, actor);
+  },
+
+  /**
+   * Send the order to the supplier — for real.
+   *
+   * "Send" used to be a status flip: production had the button, the supplier
+   * never received anything, and the actual ordering happened in a parallel
+   * unpersisted email path on the reorder screen. Now one action does both:
+   * the email goes out (Resend), and what was sent — address, subject, body —
+   * is stored on the order.
+   *
+   * Degrades instead of blocking: no supplier email, or email not configured,
+   * still marks the order SENT (it may go by phone) and hands back the exact
+   * text to copy, with a warning saying why it wasn't delivered.
+   */
+  async send(id: string, input: unknown, actor?: AuthUser | null) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    const data = stockPurchaseOrderSendInputSchema.parse(input ?? {});
+    const existing = await loadPo(id, actor);
+    if (existing.status !== 'DRAFT' && existing.status !== 'SENT') {
+      throw new HttpError(409, `A ${existing.status.toLowerCase().replace('_', ' ')} purchase order cannot be sent`);
+    }
+    const to = (data.to?.trim() || existing.supplier?.email || '').trim() || null;
+    const { subject, body } = buildPurchaseOrderEmail(existing, data.message ?? null);
+
+    let status: StockPurchaseOrderSendEmail['status'];
+    if (!to) {
+      status = 'NO_RECIPIENT';
+    } else {
+      status = (await sendStockEmail({ to, subject, body })) ? 'SENT' : 'EMAIL_NOT_CONFIGURED';
+    }
+    const delivered = status === 'SENT';
+    const now = new Date();
+    await prisma.purchaseOrder.update({
+      where: { id },
+      data: {
+        status: 'SENT',
+        orderedAt: existing.orderedAt ?? now,
+        sentSubject: subject,
+        sentBody: body,
+        ...(delivered ? { sentAt: now, sentTo: to } : {})
+      }
+    });
+
+    const email: StockPurchaseOrderSendEmail = {
+      status,
+      to,
+      subject,
+      body,
+      sentAt: delivered ? now.toISOString() : null,
+      warning: delivered
+        ? null
+        : status === 'NO_RECIPIENT'
+          ? 'The supplier has no email address — copy the order text below, and add their email on the Suppliers tab for next time.'
+          : 'Stock supplier email is not configured. Copy the order text, or add RESEND_API_KEY and STOCK_ORDER_EMAIL_FROM.'
+    };
+    return { purchaseOrder: await loadPo(id, actor), email };
+  },
+
+  /**
+   * The order guide: everything we buy from one supplier, priced and ready to
+   * order — the way FoodByUs presents a supplier's list.
+   *
+   * Two sources merge. The supplier price list carries the agreed price (kept
+   * current automatically whenever an invoice cost is applied), and invoice
+   * history carries what was actually last paid. An item can be in either or
+   * both; showing both prices side by side is the whole point — that gap is a
+   * price rise nobody has agreed to.
+   */
+  async orderGuide(actor: AuthUser | null | undefined, supplierId: string, requestedVenue?: string | null): Promise<StockOrderGuidePayload> {
+    const venue = actorVenueScope(actor, requestedVenue ?? null);
+    const supplier = await prisma.supplier.findUnique({
+      where: { id: supplierId },
+      select: { id: true, name: true, email: true }
+    });
+    if (!supplier) throw new HttpError(404, 'Supplier not found');
+
+    const [priceList, facts] = await Promise.all([
+      prisma.supplierPriceListItem.findMany({
+        where: { supplierId },
+        include: { stockItem: { select: { id: true, name: true, unit: true } } }
+      }),
+      itemsService.purchaseFacts()
+    ]);
+
+    const byKey = new Map<string, StockOrderGuideLine>();
+    const keyFor = (stockItemId: string | null, description: string) =>
+      stockItemId ?? `desc:${description.trim().toLowerCase()}`;
+
+    for (const row of priceList) {
+      const key = keyFor(row.stockItemId, row.description);
+      byKey.set(key, {
+        stockItemId: row.stockItemId,
+        description: row.stockItem?.name ?? row.description,
+        unit: row.unit ?? row.stockItem?.unit ?? null,
+        onHand: null,
+        parLevel: null,
+        agreedCostCents: row.unitCostCents,
+        agreedEffectiveAt: row.effectiveAt.toISOString(),
+        lastPaidCents: null,
+        lastPurchasedAt: null,
+        priceMovement: null,
+        suggestedQuantity: 0
+      });
+    }
+
+    // Items whose purchase history says this supplier is where they come from.
+    const historyItemIds: string[] = [];
+    for (const [itemId, fact] of facts) {
+      if (fact.supplierId !== supplierId) continue;
+      historyItemIds.push(itemId);
+      const key = keyFor(itemId, '');
+      const line = byKey.get(key);
+      if (line) {
+        line.lastPaidCents = fact.lastPriceCents;
+        line.lastPurchasedAt = fact.lastPurchasedAt;
+        line.priceMovement = fact.priceMovement;
+      } else {
+        byKey.set(key, {
+          stockItemId: itemId,
+          description: '',
+          unit: null,
+          onHand: null,
+          parLevel: null,
+          agreedCostCents: null,
+          agreedEffectiveAt: null,
+          lastPaidCents: fact.lastPriceCents,
+          lastPurchasedAt: fact.lastPurchasedAt,
+          priceMovement: fact.priceMovement,
+          suggestedQuantity: 0
+        });
+      }
+    }
+
+    // Names, units, on-hand, par and open orders for every item involved —
+    // the guide shows where each line stands, not just what it costs.
+    const itemIds = [...new Set([...priceList.map((row) => row.stockItemId), ...historyItemIds].filter((id): id is string => Boolean(id)))];
+    if (itemIds.length > 0) {
+      const [items, openOrderLines] = await Promise.all([
+        prisma.stockItem.findMany({
+          where: { id: { in: itemIds } },
+          select: {
+            id: true, name: true, unit: true, conversionFactor: true, parLevel: true, onHand: true,
+            venueStock: venue ? { where: { venue }, select: { onHand: true, parLevel: true } } : false
+          }
+        }),
+        prisma.purchaseOrderLine.findMany({
+          where: {
+            stockItemId: { in: itemIds },
+            purchaseOrder: { status: { in: ['DRAFT', 'SENT', 'PARTIALLY_RECEIVED'] }, ...(venue ? { venue } : {}) }
+          },
+          select: { stockItemId: true, orderedQuantity: true, receivedQuantity: true }
+        })
+      ]);
+      const onOrderByItem = new Map<string, number>();
+      for (const line of openOrderLines) {
+        if (!line.stockItemId) continue;
+        const outstanding = Math.max(0, line.orderedQuantity - (line.receivedQuantity ?? 0));
+        onOrderByItem.set(line.stockItemId, (onOrderByItem.get(line.stockItemId) ?? 0) + outstanding);
+      }
+      for (const item of items) {
+        const line = byKey.get(item.id);
+        if (!line) continue;
+        const venueRow = Array.isArray(item.venueStock) ? item.venueStock[0] : null;
+        const onHand = venueRow?.onHand ?? item.onHand;
+        const parLevel = venueRow?.parLevel ?? item.parLevel;
+        const factor = item.conversionFactor && item.conversionFactor > 0 ? item.conversionFactor : 1;
+        line.description = line.description || item.name;
+        line.unit = line.unit ?? item.unit;
+        line.onHand = onHand;
+        line.parLevel = parLevel;
+        line.suggestedQuantity =
+          parLevel && parLevel > 0
+            ? orderQuantityToPar({
+                onHand,
+                parLevel,
+                conversionFactor: factor,
+                onOrder: (onOrderByItem.get(item.id) ?? 0) * factor
+              })
+            : 0;
+      }
+    }
+
+    const lines = [...byKey.values()]
+      .filter((line) => line.description)
+      .sort((a, b) => a.description.localeCompare(b.description));
+
+    return { supplier, venue, lines, generatedAt: new Date().toISOString() };
   },
 
   // Receive: set received quantities, lift on-hand, post movements, update status.

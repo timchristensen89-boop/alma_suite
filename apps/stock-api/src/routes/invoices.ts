@@ -8,7 +8,17 @@ export const invoicesRouter = Router();
 invoicesRouter.get('/', async (req, res, next) => {
   try {
     const includeNoItem = req.query.includeNoItem === '1' || req.query.includeNoItem === 'true';
-    res.json(await invoicesService.list({ includeNoItem }));
+    const unpaidOnly = req.query.unpaid === '1' || req.query.unpaid === 'true';
+    res.json(await invoicesService.list({ includeNoItem, unpaidOnly }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// What's owed to whom right now (registered before '/:id').
+invoicesRouter.get('/payments-summary', async (_req, res, next) => {
+  try {
+    res.json(await invoicesService.paymentsSummary());
   } catch (error) {
     next(error);
   }
@@ -157,6 +167,26 @@ invoicesRouter.post('/:id/mark-no-item', async (req, res, next) => {
     const user = req.user;
     if (!user) throw new HttpError(401, 'Sign in to triage invoices');
     res.json(await invoicesService.markNoItem(String(req.params.id), user.id, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Payment matching: money going out against this bill. Reversible via
+// mark-unpaid, so no typed confirmation.
+invoicesRouter.post('/:id/record-payment', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.recordPayment(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+invoicesRouter.post('/:id/mark-unpaid', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.markUnpaid(String(req.params.id)));
   } catch (error) {
     next(error);
   }

@@ -3196,6 +3196,13 @@ model PurchaseOrder {
   subtotalCents    Int                 @default(0)
   matchedInvoiceId String?
   createdById      String?
+  // What was actually emailed when the order went out. "Send" used to be a
+  // status flip and nothing more; now it delivers, and the record of what
+  // went where lives on the order (audit, resend, "did the supplier get it").
+  sentAt           DateTime?
+  sentTo           String?
+  sentSubject      String?
+  sentBody         String?
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   supplier         Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
@@ -3268,6 +3275,14 @@ model SupplierInvoice {
   triagedByStaffProfileId  String?
   assignedToStaffProfileId String?
   triageNotes              String?
+  // Payment matching: whether money has actually gone out against this bill.
+  // `status` above is whatever the source system said and is never
+  // interpreted; these fields are ours. UNPAID | PARTIALLY_PAID | PAID.
+  paymentStatus            String                   @default("UNPAID")
+  amountPaidCents          Int                      @default(0)
+  paidAt                   DateTime?
+  paymentReference         String?
+  paymentNotes             String?
   importedAt               DateTime                 @default(now())
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
@@ -3285,6 +3300,7 @@ model SupplierInvoice {
   @@index([invoiceNumber])
   @@index([triageStatus])
   @@index([assignedToStaffProfileId])
+  @@index([paymentStatus])
 }
 
 // The original uploaded invoice file (PDF/photo) kept so a manager can open it

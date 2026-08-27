@@ -59,6 +59,9 @@ app.use('/stock-api/api/auth', authRouter);
 app.use('/stock-api/api/communications', communicationsRouter);
 app.use('/stock-api/api/notifications', notificationsRouter);
 app.use('/stock-api/api/operations', operationsRouter);
+// purchase-orders was missing from the /stock-api prefix set — a client
+// reaching the API through that prefix got 404s for ordering only.
+app.use('/stock-api/api/purchase-orders', purchaseOrdersRouter);
 app.use('/stock-api/api/items', itemsRouter);
 app.use('/stock-api/api/stocktake', stocktakeRouter);
 app.use('/stock-api/api/suppliers', suppliersRouter);
