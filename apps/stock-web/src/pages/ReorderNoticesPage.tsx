@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type {
   StockMenuParRecommendation,
   StockMenuParRecommendationsPayload,
-  StockReorderNoticesPayload,
-  StockSupplierOrderEmailResult
+  StockReorderNoticesPayload
 } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } from '@alma/ui';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -35,18 +35,6 @@ function qualityTone(quality: StockMenuParRecommendation['dataQuality']): 'posit
   return 'muted';
 }
 
-type OrderLine = {
-  stockItemId: string;
-  name: string;
-  supplierId: string;
-  supplierName: string;
-  supplierEmail: string;
-  venue: string;
-  quantity: string;
-  unit: string;
-  note: string;
-};
-
 export function ReorderNoticesPage() {
   useDocumentTitle('Below par');
   const [data, setData] = useState<StockReorderNoticesPayload | null>(null);
@@ -60,9 +48,7 @@ export function ReorderNoticesPage() {
   const [savingPar, setSavingPar] = useState(false);
   const { user } = useAuth();
   const canManage = canManageStock(user);
-  const [orderLines, setOrderLines] = useState<OrderLine[]>([]);
-  const [emailingSupplier, setEmailingSupplier] = useState<string | null>(null);
-  const [emailResult, setEmailResult] = useState<StockSupplierOrderEmailResult | null>(null);
+  const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
 
   async function load(venue = selectedVenue) {
@@ -86,8 +72,6 @@ export function ReorderNoticesPage() {
 
   useEffect(() => {
     setRecommendations(null);
-    setOrderLines([]);
-    setEmailResult(null);
   }, [selectedVenue]);
 
   const venueOptions = [
@@ -100,15 +84,6 @@ export function ReorderNoticesPage() {
     low: data?.lowStockItems.length ?? 0,
     menuReady: recommendations?.summary.readyToOrder ?? 0
   }), [data, recommendations]);
-
-  const groupedOrderLines = useMemo(() => {
-    const groups = new Map<string, OrderLine[]>();
-    for (const line of orderLines) {
-      const key = `${line.supplierId || line.supplierName}:${line.supplierEmail}`;
-      groups.set(key, [...(groups.get(key) ?? []), line]);
-    }
-    return Array.from(groups.entries()).map(([key, lines]) => ({ key, lines }));
-  }, [orderLines]);
 
   async function updateNotice(id: string, status: 'RESOLVED' | 'DISMISSED') {
     setSavingId(id);
@@ -158,7 +133,6 @@ export function ReorderNoticesPage() {
 
   async function loadRecommendations() {
     setRecommendationsLoading(true);
-    setEmailResult(null);
     try {
       const query = selectedVenue ? `?venue=${encodeURIComponent(selectedVenue)}` : '';
       const payload = await api<StockMenuParRecommendationsPayload>(`/api/operations/menu-par-recommendations${query}`);
@@ -168,63 +142,6 @@ export function ReorderNoticesPage() {
       setError(err instanceof ApiError ? err.message : 'Could not load menu par recommendations.');
     } finally {
       setRecommendationsLoading(false);
-    }
-  }
-
-  function transferToOrderSheet() {
-    if (!recommendations) return;
-    const lines = recommendations.recommendations
-      .filter((item) => item.suggestedOrderQuantity > 0 && item.supplier?.email)
-      .map((item) => ({
-        stockItemId: item.stockItemId,
-        name: item.name,
-        supplierId: item.supplier?.id ?? '',
-        supplierName: item.supplier?.name ?? 'Supplier',
-        supplierEmail: item.supplier?.email ?? '',
-        venue: item.venue,
-        quantity: String(item.suggestedOrderQuantity),
-        unit: item.unit,
-        note: `Menu-linked par review for ${item.venue}`
-      }));
-    setOrderLines(lines);
-    setEmailResult(null);
-  }
-
-  function updateOrderLine(index: number, field: 'quantity' | 'note', value: string) {
-    setOrderLines((current) => current.map((line, lineIndex) => lineIndex === index ? { ...line, [field]: value } : line));
-  }
-
-  function removeOrderLine(index: number) {
-    setOrderLines((current) => current.filter((_, lineIndex) => lineIndex !== index));
-  }
-
-  async function emailSupplier(group: { key: string; lines: OrderLine[] }) {
-    const first = group.lines[0];
-    if (!first) return;
-    setEmailingSupplier(group.key);
-    setEmailResult(null);
-    try {
-      const result = await api<StockSupplierOrderEmailResult>('/api/operations/supplier-order-email', {
-        method: 'POST',
-        body: JSON.stringify({
-          venue: selectedVenue || data?.scope.venue || first.venue || 'Alma',
-          supplierId: first.supplierId,
-          supplierName: first.supplierName,
-          supplierEmail: first.supplierEmail,
-          lines: group.lines.map((line) => ({
-            stockItemId: line.stockItemId,
-            name: line.name,
-            quantity: Number(line.quantity),
-            unit: line.unit,
-            note: line.note
-          }))
-        })
-      });
-      setEmailResult(result);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not send supplier order email.');
-    } finally {
-      setEmailingSupplier(null);
     }
   }
 
@@ -295,8 +212,8 @@ export function ReorderNoticesPage() {
             {recommendationsLoading ? 'Reviewing...' : 'Review six-month sales'}
           </Button>
           {recommendations ? (
-            <Button type="button" variant="secondary" onClick={transferToOrderSheet} disabled={!recommendations.summary.readyToOrder}>
-              Transfer to order sheet
+            <Button type="button" variant="secondary" onClick={() => navigate('/purchase-orders')}>
+              Order these on the Ordering tab
             </Button>
           ) : null}
         </div>
@@ -368,56 +285,6 @@ export function ReorderNoticesPage() {
         ) : null}
       </Card>
 
-      <Card title="Supplier order sheet" subtitle="Transfer suggested quantities into supplier groups, then send an email where supplier email and Stock email configuration are available.">
-        {emailResult ? (
-          <div className="stock-order-email-result">
-            <Badge tone={emailResult.status === 'SENT' ? 'positive' : 'warning'}>{emailResult.status === 'SENT' ? 'Sent' : 'Email setup needed'}</Badge>
-            <p>{emailResult.status === 'SENT' ? `Sent to ${emailResult.supplierEmail}.` : emailResult.warning}</p>
-            <pre>{emailResult.body}</pre>
-          </div>
-        ) : null}
-        {!orderLines.length ? (
-          <EmptyState title="No order sheet yet" description="Run menu par recommendations, then transfer suggested supplier-matched lines here." />
-        ) : (
-          <div className="stock-order-sheet">
-            {groupedOrderLines.map((group) => {
-              const first = group.lines[0];
-              if (!first) return null;
-              return (
-                <section key={group.key} className="stock-order-supplier-group">
-                  <div className="stock-order-supplier-head">
-                    <span>
-                      <strong>{first.supplierName}</strong>
-                      <span className="subtle">{first.supplierEmail}</span>
-                    </span>
-                    <Button type="button" size="sm" onClick={() => void emailSupplier(group)} disabled={emailingSupplier === group.key}>
-                      {emailingSupplier === group.key ? 'Sending...' : 'Email supplier'}
-                    </Button>
-                  </div>
-                  <div className="stock-mobile-list">
-                    {group.lines.map((line) => {
-                      const lineIndex = orderLines.findIndex((candidate) => candidate.stockItemId === line.stockItemId && candidate.supplierEmail === line.supplierEmail);
-                      return (
-                        <div key={`${line.supplierEmail}:${line.stockItemId}`} className="stock-operation-row stock-order-line">
-                          <span>
-                            <strong>{line.name}</strong>
-                            <span className="subtle">{line.unit}</span>
-                          </span>
-                          <span className="stock-order-line-controls">
-                            <Input label="Qty" type="number" min="0" step="0.01" value={line.quantity} onChange={(event) => updateOrderLine(lineIndex, 'quantity', event.currentTarget.value)} />
-                            <Input label="Note" value={line.note} onChange={(event) => updateOrderLine(lineIndex, 'note', event.currentTarget.value)} />
-                            <Button type="button" size="sm" variant="ghost" onClick={() => removeOrderLine(lineIndex)}>Remove</Button>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-        )}
-      </Card>
     </div>
   );
 }

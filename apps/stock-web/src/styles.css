@@ -684,6 +684,101 @@ tbody tr.row-interactive {
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+/* ── The order guide (Build order) ─────────────────────────────────────
+   The numbered how-it-works strip, the sticky review bar, and the small
+   rows the review sheet is made of. */
+.stock-guide-steps {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.stock-guide-steps ol {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+.stock-guide-steps li::marker {
+  font-weight: 700;
+}
+
+/* Rides above the bottom edge while the guide scrolls, so "Review & send"
+   is always one thumb away no matter how long the list is. */
+.stock-guide-bar {
+  position: sticky;
+  bottom: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: 0 6px 18px rgba(15, 30, 20, 0.18);
+}
+
+/* On phones the fixed task bar owns the bottom edge — rest on it, not under it. */
+@media (max-width: 860px) {
+  .stock-guide-bar {
+    bottom: calc(var(--alma-taskbar-h, 57px) + 10px);
+  }
+}
+
+.stock-guide-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.stock-guide-adder,
+.stock-guide-email-fix {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stock-guide-adder {
+  flex: 1;
+}
+
+.stock-guide-review-lines {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stock-guide-review-lines li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* A short/check-par badge sits beside the item name in a guide row. */
+.stock-buying-row > span:first-child > .badge {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .stock-delivery-lines {
   display: grid;
   gap: 12px;

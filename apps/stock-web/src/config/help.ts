@@ -105,11 +105,12 @@ export const STOCK_HELP: Record<string, HelpContent> = {
   },
   '/reorder': {
     title: 'Below par',
-    intro: 'Items at or below their par / reorder point, ready to turn into an order.',
+    intro: 'Items at or below their par / reorder point. The ordering itself happens on Purchasing → Ordering, where these arrive prefilled.',
     features: [
       { name: 'Below par', desc: 'Anything under its reorder threshold is flagged here.' },
       { name: 'Par levels', desc: 'Set per item (and per venue) on the Items page.' }
-    ]
+    ],
+    tips: ['Everything on this list is already quantified on the Ordering tab — go there to actually place the order.']
   },
   '/recipes': {
     title: 'Menu items',
@@ -135,14 +136,24 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     tips: ['Pair this with Price movement to catch dishes squeezed by rising ingredient costs.']
   },
   '/purchase-orders': {
-    title: 'Purchase orders',
-    intro: 'Raise orders to suppliers, send them by email, receive stock against them and match the invoice.',
-    features: [
-      { name: 'Order guide', desc: 'One supplier\'s whole buying list — agreed price beside what the last invoice charged — with quantities prefilled to par.' },
-      { name: 'Send = email', desc: 'Sending emails the order to the supplier and records what went where. No email configured? You get the exact text to copy.' },
-      { name: '3-way match', desc: 'Ordered vs received vs billed, with every discrepancy listed.' }
+    title: 'Ordering',
+    intro: 'Everything you order on one screen, grouped by supplier. Set quantities, review, and every order goes out at once.',
+    steps: [
+      'Build order: everything you buy is listed under its supplier, with anything below par already quantified. Adjust the numbers.',
+      'Review & send: one order per supplier. Sending emails each supplier directly; no email on file hands you the exact text to copy.',
+      'Receive: when the delivery lands, open the order on the Orders tab and confirm quantities — stock levels update on their own.',
+      'Match: pick the supplier invoice and the 3-way match (ordered vs received vs billed) flags anything off before you pay.'
     ],
-    tips: ['A "last paid" above the agreed price on the order guide is a price rise nobody has signed off — query it before ordering.']
+    features: [
+      { name: 'The guide builds itself', desc: 'Lines come from your invoices and price lists — anything ever bought or priced is on the list, at what you actually pay.' },
+      { name: 'Shorts prefilled', desc: 'Below-par items arrive with a suggested quantity; "Only what\'s short" narrows the guide to them.' },
+      { name: 'No supplier on file', desc: 'Below-par items nobody has bought through the app yet sit in their own group — order them anyway and pick the supplier at review.' },
+      { name: 'One-off orders', desc: 'The typed-by-hand form lives at the bottom of Build order for new suppliers and odd requests.' }
+    ],
+    tips: [
+      'A "last paid" above the agreed price is a price rise nobody has signed off — query it before ordering.',
+      '"Check par" on a line means its par came from a count made in the wrong unit. Fix the item\'s count unit, recount, and the suggestion comes back sane.'
+    ]
   },
   '/payments': {
     title: 'Payments',
@@ -153,16 +164,6 @@ export const STOCK_HELP: Record<string, HelpContent> = {
       { name: 'Xero-aware', desc: 'Bills that synced from Xero already marked paid there arrive here as paid.' }
     ],
     tips: ['Recording is reversible — a bill marked paid by mistake can be set back to unpaid from the Invoices tab.']
-  },
-  '/buying': {
-    title: 'Buying',
-    intro: 'Who supplies each item and what it last cost, worked out from the invoices already entered.',
-    features: [
-      { name: 'Derived, not maintained', desc: 'Reads supplier and price from matched invoice lines, so there is no price list to keep up.' },
-      { name: 'Per-unit prices', desc: 'Corrects for invoices that record a whole delivery as one unit, so a heavier delivery is not read as a price rise.' },
-      { name: 'Prices that moved', desc: 'Items now costing 15% or more above the best price ever paid for them.' }
-    ],
-    tips: ['Items with no purchase history are grouped last — they are a gap to work through, not a supplier to order from.']
   },
   '/price-movement': {
     title: 'Supplier price changes',
