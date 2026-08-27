@@ -48,6 +48,33 @@ purchaseOrdersRouter.delete('/price-list/:id', async (req, res, next) => {
   }
 });
 
+// The whole ordering universe: every supplier's guide at once, plus below-par
+// items with no known supplier. The screen a chef opens to do the day's
+// ordering. Registered before '/:id'.
+purchaseOrdersRouter.get('/order-guide/all', async (req, res, next) => {
+  try {
+    res.json(
+      await purchaseOrdersService.fullOrderGuide(
+        req.user,
+        typeof req.query.venue === 'string' ? req.query.venue : null
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+// One review, one send: a draft purchase order per supplier, raised (and
+// optionally emailed) in a single request.
+purchaseOrdersRouter.post('/batch', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.status(201).json(await purchaseOrdersService.createBatch(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // One supplier's full buying list — agreed price beside last paid — ready to
 // turn into an order. Registered before '/:id'.
 purchaseOrdersRouter.get('/order-guide', async (req, res, next) => {

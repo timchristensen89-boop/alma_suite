@@ -44,7 +44,6 @@ const PurchaseOrdersPage = lazy(() => import('./pages/PurchaseOrdersPage').then(
 const RecipesPage = lazy(() => import('./pages/RecipesPage').then((m) => ({ default: m.RecipesPage })));
 const WineListPage = lazy(() => import('./pages/WineListPage').then((m) => ({ default: m.WineListPage })));
 const DishMarginPage = lazy(() => import('./pages/DishMarginPage').then((m) => ({ default: m.DishMarginPage })));
-const BuyingPage = lazy(() => import('./pages/BuyingPage').then((m) => ({ default: m.BuyingPage })));
 const PriceMovementPage = lazy(() => import('./pages/PriceMovementPage').then((m) => ({ default: m.PriceMovementPage })));
 const PaymentsPage = lazy(() => import('./pages/PaymentsPage').then((m) => ({ default: m.PaymentsPage })));
 const ReorderNoticesPage = lazy(() => import('./pages/ReorderNoticesPage').then((m) => ({ default: m.ReorderNoticesPage })));
@@ -73,11 +72,10 @@ const STOCK_COUNT_TABS: HubTab[] = [
 ];
 const PURCHASING_TABS: HubTab[] = [
   { to: '/invoices', label: 'Invoices' },
-  { to: '/purchase-orders', label: 'Purchase orders' },
+  { to: '/purchase-orders', label: 'Ordering' },
   { to: '/payments', label: 'Payments' },
   { to: '/deliveries', label: 'Deliveries' },
   { to: '/suppliers', label: 'Suppliers' },
-  { to: '/buying', label: 'Buying' },
   { to: '/price-movement', label: 'Price changes' }
 ];
 const RECIPE_TABS: HubTab[] = [
@@ -333,7 +331,8 @@ function StockAppShell() {
         <Route path="/payments" element={<HubLayout tabs={PURCHASING_TABS}><PaymentsPage /></HubLayout>} />
         <Route path="/deliveries" element={<HubLayout tabs={PURCHASING_TABS}><DeliveriesPage /></HubLayout>} />
         <Route path="/suppliers" element={<HubLayout tabs={PURCHASING_TABS}><SuppliersPage /></HubLayout>} />
-        <Route path="/buying" element={<HubLayout tabs={PURCHASING_TABS}><BuyingPage /></HubLayout>} />
+        {/* Buying folded into the order guide — everything it showed lives there now. */}
+        <Route path="/buying" element={<Navigate to="/purchase-orders" replace />} />
         <Route path="/price-movement" element={<HubLayout tabs={PURCHASING_TABS}><PriceMovementPage /></HubLayout>} />
 
         {/* Recipes hub */}

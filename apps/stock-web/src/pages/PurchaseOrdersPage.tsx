@@ -1,8 +1,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
+  StockFullOrderGuidePayload,
   StockItem,
   StockInvoicesPayload,
-  StockOrderGuidePayload,
+  StockOrderGuideLine,
   StockPurchaseOrderSendEmail,
   StockSupplierInvoice
 } from '@alma/shared';
@@ -73,6 +74,17 @@ type MatchResult = {
   };
 };
 
+type BatchResult = {
+  venue: string;
+  results: Array<{
+    supplierName: string;
+    purchaseOrder: PurchaseOrder | null;
+    email: StockPurchaseOrderSendEmail | null;
+    error: string | null;
+  }>;
+  generatedAt: string;
+};
+
 type SupplierPriceListItem = {
   id: string;
   supplierId: string;
@@ -124,255 +136,52 @@ function statusTone(status: PurchaseOrderStatus): 'positive' | 'warning' | 'dang
   }
 }
 
-type SuggestionLine = {
-  stockItemId: string;
-  description: string;
-  unit: string | null;
-  orderedQuantity: number;
-  unitCostCents: number | null;
-  lineTotalCents: number | null;
-  onHand: number;
-  parLevel: number;
-  onOrder: number;
-  lastPurchasedAt: string | null;
-  priceMovement: number | null;
-};
+/** The price a guide line would go on an order at: agreed first, else last paid. */
+function linePriceCents(line: StockOrderGuideLine): number | null {
+  return line.agreedCostCents ?? line.lastPaidCents;
+}
 
-type SuggestionsPayload = {
-  venue: string | null;
-  suppliers: Array<{ supplierId: string | null; supplierName: string; lines: SuggestionLine[]; subtotalCents: number }>;
-  itemsBelowPar: number;
-  itemsWithNoSupplier: number;
-  /** Lines kept out of the totals because the par behind them cannot be right. */
-  needsCheck?: Array<SuggestionLine & { supplierName: string; shareOfSuggested: number }>;
-  needsCheckTotalCents?: number;
-  needsVenue: boolean;
-  generatedAt: string;
-};
+const STEPS_HIDDEN_KEY = 'alma.stock.orderingStepsHidden';
 
 /**
- * Below par, grouped by who to buy it from, ready to become an order.
- *
- * This is the step that did not exist. Production had 664 low-stock notices
- * and not one purchase order ever raised — the app could say what was running
- * out, and then the trail went cold. Quantities are already in whole purchase
- * units at the last price actually paid, so nothing has to be retyped.
+ * The four steps of the whole purchasing loop, in the order they happen. This
+ * strip is the instructions: always on screen until someone who knows the flow
+ * hides it, and one tap brings it back.
  */
-function SuggestedOrders({
-  venue,
-  canManage,
-  onCreated
-}: {
-  venue: string;
-  canManage: boolean;
-  onCreated: () => void;
-}) {
-  const [payload, setPayload] = useState<SuggestionsPayload | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  // Quantities the buyer has adjusted, keyed by item. A suggestion is a
-  // starting point, not an instruction.
-  const [edits, setEdits] = useState<Record<string, string>>({});
-  const [excluded, setExcluded] = useState<Record<string, boolean>>({});
-
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      const query = venue ? `?venue=${encodeURIComponent(venue)}` : '';
-      setPayload(await api<SuggestionsPayload>(`/api/purchase-orders/suggestions${query}`));
-    } catch {
-      setPayload(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [venue]);
-
-  useEffect(() => { void reload(); }, [reload]);
-
-  async function createOrder(group: SuggestionsPayload['suppliers'][number]) {
-    const lines = group.lines
-      .filter((line) => !excluded[line.stockItemId])
-      .map((line) => ({
-        stockItemId: line.stockItemId,
-        description: line.description,
-        unit: line.unit,
-        orderedQuantity: Number(edits[line.stockItemId] ?? line.orderedQuantity),
-        unitCostCents: line.unitCostCents ?? 0
-      }))
-      .filter((line) => line.orderedQuantity > 0);
-
-    if (lines.length === 0) {
-      setMessage('Nothing selected to order.');
-      return;
-    }
-
-    setBusy(group.supplierId ?? '__none__');
-    setMessage(null);
-    try {
-      await api('/api/purchase-orders', {
-        method: 'POST',
-        body: JSON.stringify({
-          supplierId: group.supplierId,
-          supplierName: group.supplierName,
-          venue,
-          notes: 'Raised from below-par suggestion',
-          lines
-        })
-      });
-      setMessage(`Draft order raised for ${group.supplierName} — ${lines.length} line${lines.length === 1 ? '' : 's'}.`);
-      await reload();
-      onCreated();
-    } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : 'Could not raise that order.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  if (!loading && (!payload || payload.itemsBelowPar === 0)) return null;
-
+function OrderingSteps({ onHide }: { onHide: () => void }) {
   return (
-    <Card
-      title="Needs ordering"
-      subtitle="Everything below par for this venue, grouped by who you buy it from, at the last price you actually paid."
-      action={payload ? <Badge tone="warning">{payload.itemsBelowPar} below par</Badge> : null}
-      padding="none"
-    >
-      {loading ? <Spinner label="Working out what is short…" /> : null}
-      {payload?.needsVenue ? (
-        <EmptyState
-          title="Choose a venue"
-          description="Par levels are set per venue, so there is nothing to compare stock against until one is picked."
-        />
-      ) : null}
-      {message ? <p className="subtle" style={{ padding: '6px 12px' }}>{message}</p> : null}
-
-      {/* Order lines left out of the totals because the count behind the par
-          was made in the wrong unit — 21,724 bottles of gin, not 29. Shown
-          rather than hidden: the stock may still need ordering, the item just
-          has to be fixed first. */}
-      {payload?.needsCheck && payload.needsCheck.length > 0 ? (
-        <div className="stock-buying-needs-check">
-          <strong>
-            {payload.needsCheck.length} line{payload.needsCheck.length === 1 ? '' : 's'} held back —
-            {' '}{money(payload.needsCheckTotalCents ?? 0)} of suggestions that cannot be right
-          </strong>
-          <p className="subtle small">
-            The last count of these came to far more than the venue holds, so the par worked out from it is wrong.
-            Fix the count unit on the item, then recount.
-          </p>
-          <ul>
-            {payload.needsCheck.map((line) => (
-              <li key={line.stockItemId}>
-                <strong>{line.description}</strong>
-                <span className="subtle">
-                  {' '}— would order {line.orderedQuantity.toLocaleString()} {line.unit ?? 'units'} for{' '}
-                  {money(line.lineTotalCents ?? 0)} (on hand {line.onHand}, par {line.parLevel})
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {(payload?.suppliers ?? []).map((group) => {
-        const key = group.supplierId ?? '__none__';
-        const isOpen = open === key;
-        const unknownSupplier = group.supplierId === null;
-        return (
-          <section key={key} className="stock-buying-group">
-            <button
-              type="button"
-              className="stock-buying-group-head"
-              onClick={() => setOpen(isOpen ? null : key)}
-            >
-              <strong>{group.supplierName}</strong>
-              <span className="subtle">
-                {group.lines.length} line{group.lines.length === 1 ? '' : 's'}
-                {group.subtotalCents > 0 ? ` · about ${money(group.subtotalCents)}` : ''}
-              </span>
-              {unknownSupplier ? (
-                <Badge tone="neutral">Match their invoices to know who to order from</Badge>
-              ) : null}
-            </button>
-
-            {isOpen ? (
-              <div className="stock-buying-rows">
-                {group.lines.map((line) => {
-                  const value = edits[line.stockItemId] ?? String(line.orderedQuantity);
-                  const off = Boolean(excluded[line.stockItemId]);
-                  return (
-                    <div key={line.stockItemId} className="stock-buying-row" style={off ? { opacity: 0.45 } : undefined}>
-                      <span>
-                        <strong>{line.description}</strong>
-                        <span className="subtle">
-                          on hand {line.onHand} / par {line.parLevel}
-                          {line.onOrder > 0 ? ` · ${line.onOrder} already on order` : ''}
-                          {line.unitCostCents === null
-                            ? ' · never bought — no price'
-                            : ` · ${money(line.unitCostCents)} per ${line.unit ?? 'unit'}`}
-                          {line.priceMovement !== null && line.priceMovement >= 0.15
-                            ? ` · up ${Math.round(line.priceMovement * 100)}% on the best price paid`
-                            : ''}
-                        </span>
-                      </span>
-                      <span className="stock-buying-price">
-                        <Input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={value}
-                          disabled={off || !canManage}
-                          onChange={(event) =>
-                            setEdits((current) => ({ ...current, [line.stockItemId]: event.target.value }))
-                          }
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            setExcluded((current) => ({ ...current, [line.stockItemId]: !off }))
-                          }
-                        >
-                          {off ? 'Include' : 'Skip'}
-                        </Button>
-                      </span>
-                    </div>
-                  );
-                })}
-                <div className="stock-buying-row">
-                  <span className="subtle">
-                    {unknownSupplier
-                      ? 'Raising this still records the order — the supplier name can be set on the draft.'
-                      : 'Creates a draft order you can adjust and send.'}
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={busy === key || !canManage}
-                    onClick={() => void createOrder(group)}
-                  >
-                    {busy === key ? 'Raising…' : `Raise draft order`}
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </section>
-        );
-      })}
-    </Card>
+    <div className="stock-guide-steps">
+      <ol>
+        <li>
+          <strong>Set quantities.</strong> Everything you order is listed under its supplier — anything running
+          short is already filled in.
+        </li>
+        <li>
+          <strong>Review &amp; send.</strong> One email goes to each supplier. No email on file? You get the exact
+          text to copy.
+        </li>
+        <li>
+          <strong>Receive the delivery.</strong> Open the order under Orders when the truck arrives — stock levels
+          update on their own.
+        </li>
+        <li>
+          <strong>Match the invoice.</strong> Ordered vs received vs billed — price rises get flagged before you
+          pay.
+        </li>
+      </ol>
+      <Button type="button" size="sm" variant="ghost" onClick={onHide}>
+        Hide
+      </Button>
+    </div>
   );
 }
 
 export function PurchaseOrdersPage() {
-  useDocumentTitle('Purchase orders');
+  useDocumentTitle('Ordering');
   const { user } = useAuth();
   const canManage = canManageStock(user);
 
-  const [view, setView] = useState<'orders' | 'guide' | 'price-list'>('orders');
+  const [view, setView] = useState<'order' | 'orders' | 'prices'>('order');
   const [data, setData] = useState<PurchaseOrdersPayload | null>(null);
   const [items, setItems] = useState<StockItem[]>([]);
   const [invoices, setInvoices] = useState<StockSupplierInvoice[]>([]);
@@ -381,7 +190,9 @@ export function PurchaseOrdersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Create / edit form
+  // The manual, typed-by-hand order form. Tucked away — the guide is the flow;
+  // this is the escape hatch for one-offs and for editing an existing draft.
+  const [showManual, setShowManual] = useState(false);
   const [draft, setDraft] = useState(emptyDraft);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -390,9 +201,24 @@ export function PurchaseOrdersPage() {
   const [receiveDraft, setReceiveDraft] = useState<Record<string, string>>({});
   const [matchInvoiceId, setMatchInvoiceId] = useState('');
   const [matchResults, setMatchResults] = useState<Record<string, MatchResult['match']>>({});
-  // What happened when an order was sent: delivered, or the copy-paste
-  // fallback when the supplier has no email / email isn't configured.
+  // What happened when an order was sent from the Orders list.
   const [sendResult, setSendResult] = useState<{ orderId: string; email: StockPurchaseOrderSendEmail } | null>(null);
+
+  const [stepsHidden, setStepsHidden] = useState(() => {
+    try {
+      return window.localStorage.getItem(STEPS_HIDDEN_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  function hideSteps(hidden: boolean) {
+    setStepsHidden(hidden);
+    try {
+      window.localStorage.setItem(STEPS_HIDDEN_KEY, hidden ? '1' : '');
+    } catch {
+      /* private mode */
+    }
+  }
 
   async function load(venue = selectedVenue) {
     setLoading(true);
@@ -413,7 +239,7 @@ export function PurchaseOrdersPage() {
     void load();
   }, [selectedVenue]);
 
-  // Stock items power the line picker; invoices power the match picker. Both non-fatal.
+  // Stock items power the pickers; invoices power the match picker. Both non-fatal.
   useEffect(() => {
     let cancelled = false;
     api<{ items: StockItem[] }>('/api/items/picker')
@@ -434,6 +260,9 @@ export function PurchaseOrdersPage() {
     { label: 'Manual supplier', value: '' },
     ...(data?.suppliers ?? []).map((supplier) => ({ label: supplier.name, value: supplier.id }))
   ];
+  const openOrderCount = (data?.orders ?? []).filter(
+    (order) => order.status === 'DRAFT' || order.status === 'SENT' || order.status === 'PARTIALLY_RECEIVED'
+  ).length;
 
   function updateLine(index: number, patch: Partial<DraftLine>) {
     setDraft((current) => ({
@@ -450,6 +279,8 @@ export function PurchaseOrdersPage() {
   function editOrder(order: PurchaseOrder) {
     setEditingId(order.id);
     setPanel(null);
+    setView('order');
+    setShowManual(true);
     setDraft({
       supplierId: order.supplier?.id ?? '',
       supplierName: order.supplierName,
@@ -515,6 +346,8 @@ export function PurchaseOrdersPage() {
         await api('/api/purchase-orders', { method: 'POST', body: JSON.stringify(body) });
       }
       resetForm();
+      setShowManual(false);
+      setView('orders');
       await load(activeVenue);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save purchase order.');
@@ -617,18 +450,18 @@ export function PurchaseOrdersPage() {
 
   return (
     <div className="page-stack">
-      {view === 'orders' ? (
-        <SuggestedOrders
-          venue={selectedVenue}
-          canManage={canManage}
-          onCreated={() => void load(selectedVenue)}
-        />
-      ) : null}
-
       <Card
-        title="Purchase orders"
-        subtitle="Raise orders to suppliers, receive stock against them, and match to the supplier invoice."
+        title="Ordering"
+        subtitle="Everything you order, under the supplier it comes from. Set quantities, review, send — then receive the delivery and the invoice matches against it."
+        action={
+          stepsHidden ? (
+            <Button type="button" size="sm" variant="ghost" onClick={() => hideSteps(false)}>
+              How ordering works
+            </Button>
+          ) : null
+        }
       >
+        {!stepsHidden ? <OrderingSteps onHide={() => hideSteps(true)} /> : null}
         <div className="stock-filter-toolbar">
           <Select
             label="Venue"
@@ -636,33 +469,32 @@ export function PurchaseOrdersPage() {
             onChange={(event) => setSelectedVenue(event.currentTarget.value)}
             options={venueOptions}
           />
-          <div className="po-view-toggle" role="tablist" aria-label="Purchase orders view">
+          <div className="po-view-toggle" role="tablist" aria-label="Ordering view">
+            <Button
+              type="button"
+              size="sm"
+              variant={view === 'order' ? 'primary' : 'ghost'}
+              onClick={() => setView('order')}
+            >
+              Build order
+            </Button>
             <Button
               type="button"
               size="sm"
               variant={view === 'orders' ? 'primary' : 'ghost'}
               onClick={() => setView('orders')}
             >
-              Orders
+              Orders{openOrderCount > 0 ? ` (${openOrderCount})` : ''}
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={view === 'guide' ? 'primary' : 'ghost'}
-              onClick={() => setView('guide')}
-            >
-              Order guide
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={view === 'price-list' ? 'primary' : 'ghost'}
-              onClick={() => setView('price-list')}
+              variant={view === 'prices' ? 'primary' : 'ghost'}
+              onClick={() => setView('prices')}
             >
               Price list
             </Button>
           </div>
-          <p className="subtle">{activeVenue ? `Purchase orders for ${activeVenue}.` : 'Choose a venue.'}</p>
         </div>
         {!canManage ? <p className="subtle">Manager access is required to create or action purchase orders.</p> : null}
       </Card>
@@ -673,500 +505,954 @@ export function PurchaseOrdersPage() {
         </Card>
       ) : null}
 
-      {view === 'orders' ? (
-        <div className="stock-operations-grid">
-          <Card
-            title={editingId ? 'Edit purchase order' : 'New purchase order'}
-            subtitle="Choose a supplier, add lines with quantity and unit cost, then send to the supplier."
-          >
-            <form className="stock-operation-form" onSubmit={submit}>
-              <div className="stock-filter-toolbar">
-                <Select
-                  label="Supplier"
-                  value={draft.supplierId}
-                  onChange={(event) => {
-                    const el = event.currentTarget;
-                    const supplier = data?.suppliers.find((candidate) => candidate.id === el.value);
-                    setDraft((current) => ({ ...current, supplierId: el.value, supplierName: supplier?.name ?? current.supplierName }));
+      {view === 'order' ? (
+        <>
+          <OrderBuilder
+            venue={activeVenue}
+            canManage={canManage}
+            suppliers={data?.suppliers ?? []}
+            items={items}
+            onError={setError}
+            onOrdersChanged={() => void load(activeVenue)}
+            onViewOrders={() => setView('orders')}
+          />
+
+          {!showManual ? (
+            <p className="subtle" style={{ textAlign: 'center' }}>
+              Something the guide doesn't cover?{' '}
+              <button type="button" className="stock-guide-link" onClick={() => setShowManual(true)}>
+                Type a one-off order by hand
+              </button>
+            </p>
+          ) : (
+            <Card
+              title={editingId ? 'Edit purchase order' : 'One-off order'}
+              subtitle="Typed by hand — for a new supplier or something not in the guide yet."
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    resetForm();
+                    setShowManual(false);
                   }}
-                  options={supplierOptions}
-                />
-                <Input
-                  label="Supplier name"
-                  value={draft.supplierName}
-                  onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, supplierName: el.value })); }}
-                />
-              </div>
-              <div className="stock-filter-toolbar">
-                <Input
-                  label="Reference"
-                  value={draft.reference}
-                  onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, reference: el.value })); }}
-                  placeholder="PO number or note"
-                />
-                <Input
-                  label="Expected"
-                  type="date"
-                  value={draft.expectedAt}
-                  onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, expectedAt: el.value })); }}
-                />
-              </div>
-
-              <div className="po-line-list">
-                {draft.lines.map((line, index) => (
-                  <div key={index} className="po-line-row">
-                    <StockItemPicker
-                      label="Stock item"
-                      items={items}
-                      value={line.stockItemId}
-                      onChange={(id) => {
-                        const item = items.find((candidate) => candidate.id === id);
-                        updateLine(index, {
-                          stockItemId: id,
-                          description: item?.name ?? line.description,
-                          unit: itemUnit(item) || line.unit
-                        });
-                      }}
-                    />
-                    <Input label="Description" value={line.description} onChange={(event) => updateLine(index, { description: event.currentTarget.value })} />
-                    <Input label="Qty" type="number" min="0" step="0.01" value={line.orderedQuantity} onChange={(event) => updateLine(index, { orderedQuantity: event.currentTarget.value })} />
-                    <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
-                    <Input label="Unit cost ($)" type="number" min="0" step="0.01" value={line.unitCost} onChange={(event) => updateLine(index, { unitCost: event.currentTarget.value })} />
-                    {draft.lines.length > 1 ? (
-                      <Button type="button" size="sm" variant="ghost" onClick={() => setDraft((current) => ({ ...current, lines: current.lines.filter((_, i) => i !== index) }))}>
-                        Remove
-                      </Button>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-              <Button type="button" variant="secondary" onClick={() => setDraft((current) => ({ ...current, lines: [...current.lines, emptyLine()] }))}>
-                Add line
-              </Button>
-              <Textarea label="Notes" rows={2} value={draft.notes} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, notes: el.value })); }} />
-              <div className="stock-operation-row-actions">
-                <Button type="submit" disabled={saving || !activeVenue || !canManage}>
-                  {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create draft order'}
+                >
+                  Close
                 </Button>
-                {editingId ? (
-                  <Button type="button" variant="ghost" disabled={saving} onClick={resetForm}>
-                    Cancel edit
-                  </Button>
-                ) : null}
-              </div>
-            </form>
-          </Card>
+              }
+            >
+              <form className="stock-operation-form" onSubmit={submit}>
+                <div className="stock-filter-toolbar">
+                  <Select
+                    label="Supplier"
+                    value={draft.supplierId}
+                    onChange={(event) => {
+                      const el = event.currentTarget;
+                      const supplier = data?.suppliers.find((candidate) => candidate.id === el.value);
+                      setDraft((current) => ({ ...current, supplierId: el.value, supplierName: supplier?.name ?? current.supplierName }));
+                    }}
+                    options={supplierOptions}
+                  />
+                  <Input
+                    label="Supplier name"
+                    value={draft.supplierName}
+                    onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, supplierName: el.value })); }}
+                  />
+                </div>
+                <div className="stock-filter-toolbar">
+                  <Input
+                    label="Reference"
+                    value={draft.reference}
+                    onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, reference: el.value })); }}
+                    placeholder="PO number or note"
+                  />
+                  <Input
+                    label="Expected"
+                    type="date"
+                    value={draft.expectedAt}
+                    onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, expectedAt: el.value })); }}
+                  />
+                </div>
 
-          <Card title="Purchase orders" subtitle="Draft, sent, received and matched orders for the selected venue." padding="none">
-            {loading ? <Spinner label="Loading purchase orders" /> : null}
-            {!loading && !data?.orders.length ? (
-              <EmptyState title="No purchase orders" description="Raise the first order to a supplier from the form." />
-            ) : null}
-            {data?.orders.length ? (
-              <div className="stock-mobile-list">
-                {data.orders.map((order) => {
-                  const isPanelOpen = panel?.orderId === order.id;
-                  const matchResult = matchResults[order.id];
-                  return (
-                    <div key={order.id} className="po-block">
-                      <div className="stock-operation-row">
-                        <span>
-                          <strong>{order.supplierName}</strong>
-                          <span className="subtle">
-                            {order.reference ? `${order.reference} · ` : ''}
-                            {order.venue} · {order.lines.length} line{order.lines.length === 1 ? '' : 's'} · {money(order.subtotalCents)}
-                            {order.expectedAt ? ` · expected ${new Date(order.expectedAt).toLocaleDateString()}` : ''}
-                          </span>
-                          {order.matchedInvoice ? (
-                            <span className="subtle">Matched invoice {order.matchedInvoice.invoiceNumber ?? order.matchedInvoice.id}</span>
-                          ) : null}
-                          {order.sentAt && order.sentTo ? (
-                            <span className="subtle">Emailed to {order.sentTo} · {new Date(order.sentAt).toLocaleString()}</span>
-                          ) : null}
-                        </span>
-                        <span className="stock-operation-row-actions">
-                          <Badge tone={statusTone(order.status)}>{order.status.replaceAll('_', ' ')}</Badge>
-                          {canManage && order.status === 'DRAFT' ? (
-                            <>
-                              <Button
-                                type="button"
-                                size="sm"
-                                disabled={saving}
-                                title={order.supplier?.email ? `Emails the order to ${order.supplier.email}` : 'No supplier email saved — you will get the order text to copy'}
-                                onClick={() => void sendOrder(order)}
-                              >
-                                Send
-                              </Button>
-                              <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => editOrder(order)}>Edit</Button>
-                              <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void cancelOrder(order)}>Cancel</Button>
-                            </>
-                          ) : null}
-                          {canManage && (order.status === 'SENT' || order.status === 'PARTIALLY_RECEIVED') ? (
-                            <>
-                              <Button type="button" size="sm" disabled={saving} onClick={() => (isPanelOpen && panel?.mode === 'receive' ? setPanel(null) : openReceive(order))}>
-                                {isPanelOpen && panel?.mode === 'receive' ? 'Close' : 'Receive'}
-                              </Button>
-                              {order.status === 'SENT' ? (
-                                <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void sendOrder(order)}>Resend</Button>
-                              ) : null}
-                              <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void cancelOrder(order)}>Cancel</Button>
-                            </>
-                          ) : null}
-                          {canManage && order.status === 'RECEIVED' ? (
-                            <Button type="button" size="sm" disabled={saving} onClick={() => (isPanelOpen && panel?.mode === 'match' ? setPanel(null) : openMatch(order))}>
-                              {isPanelOpen && panel?.mode === 'match' ? 'Close' : 'Match'}
-                            </Button>
-                          ) : null}
-                        </span>
-                      </div>
-
-                      {sendResult?.orderId === order.id ? (
-                        <div className="po-panel">
-                          {sendResult.email.status === 'SENT' ? (
-                            <p className="subtle">Order emailed to {sendResult.email.to}.</p>
-                          ) : (
-                            <>
-                              <p className="error-text">{sendResult.email.warning}</p>
-                              <Textarea
-                                label={`Copy and send yourself — subject: ${sendResult.email.subject}`}
-                                rows={8}
-                                readOnly
-                                value={sendResult.email.body}
-                              />
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => {
-                                  void navigator.clipboard
-                                    ?.writeText(`${sendResult.email.subject}\n\n${sendResult.email.body}`)
-                                    .catch(() => undefined);
-                                }}
-                              >
-                                Copy order text
-                              </Button>
-                            </>
-                          )}
-                          <Button type="button" size="sm" variant="ghost" onClick={() => setSendResult(null)}>
-                            Dismiss
-                          </Button>
-                        </div>
-                      ) : null}
-
-                      {isPanelOpen && panel?.mode === 'receive' ? (
-                        <div className="po-panel">
-                          <p className="subtle">Enter received quantities. Blank lines default to the ordered quantity.</p>
-                          <div className="po-receive-lines">
-                            {order.lines.map((line) => (
-                              <div key={line.id} className="po-receive-row">
-                                <span className="po-receive-label">
-                                  <strong>{line.description}</strong>
-                                  <span className="subtle">Ordered {line.orderedQuantity}{line.unit ? ` ${line.unit}` : ''} · {money(line.unitCostCents)}/unit</span>
-                                </span>
-                                <Input
-                                  label="Received"
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={receiveDraft[line.id] ?? ''}
-                                  onChange={(event) => {
-                                    const value = event.currentTarget.value;
-                                    setReceiveDraft((current) => ({ ...current, [line.id]: value }));
-                                  }}
-                                />
-                              </div>
-                            ))}
-                          </div>
-                          <Button type="button" disabled={saving} onClick={() => void submitReceive(order)}>
-                            {saving ? 'Receiving…' : 'Confirm received'}
-                          </Button>
-                        </div>
-                      ) : null}
-
-                      {isPanelOpen && panel?.mode === 'match' ? (
-                        <div className="po-panel">
-                          <Select
-                            label="Match to invoice"
-                            value={matchInvoiceId}
-                            onChange={(event) => setMatchInvoiceId(event.currentTarget.value)}
-                            options={[
-                              { label: 'Select an invoice…', value: '' },
-                              ...invoices.map((invoice) => ({
-                                label: `${invoice.supplierName} · ${invoice.invoiceNumber ?? 'No #'} · ${money(invoice.totalCents)}`,
-                                value: invoice.id
-                              }))
-                            ]}
-                          />
-                          <Button type="button" disabled={saving || !matchInvoiceId} onClick={() => void submitMatch(order)}>
-                            {saving ? 'Matching…' : 'Run match'}
-                          </Button>
-
-                          {matchResult ? (
-                            <div className={`po-match-result${matchResult.clean ? ' po-match-result--clean' : ' po-match-result--flagged'}`}>
-                              <div className="po-match-banner">
-                                <Badge tone={matchResult.clean ? 'positive' : 'danger'}>
-                                  {matchResult.clean ? 'Clean match' : 'Discrepancies found'}
-                                </Badge>
-                                <span className="subtle">
-                                  Ordered {money(matchResult.orderedTotalCents)} · Received {money(matchResult.receivedTotalCents)} · Billed {money(matchResult.billedTotalCents)} · Variance {money(matchResult.totalVarianceCents)}
-                                </span>
-                              </div>
-                              {matchResult.discrepancies.length ? (
-                                <ul className="po-discrepancy-list">
-                                  {matchResult.discrepancies.map((discrepancy, index) => (
-                                    <li key={index}>
-                                      <strong>{discrepancy.description}</strong>
-                                      <span className="subtle">{discrepancy.issue}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
+                <div className="po-line-list">
+                  {draft.lines.map((line, index) => (
+                    <div key={index} className="po-line-row">
+                      <StockItemPicker
+                        label="Stock item"
+                        items={items}
+                        value={line.stockItemId}
+                        onChange={(id) => {
+                          const item = items.find((candidate) => candidate.id === id);
+                          updateLine(index, {
+                            stockItemId: id,
+                            description: item?.name ?? line.description,
+                            unit: itemUnit(item) || line.unit
+                          });
+                        }}
+                      />
+                      <Input label="Description" value={line.description} onChange={(event) => updateLine(index, { description: event.currentTarget.value })} />
+                      <Input label="Qty" type="number" min="0" step="0.01" value={line.orderedQuantity} onChange={(event) => updateLine(index, { orderedQuantity: event.currentTarget.value })} />
+                      <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
+                      <Input label="Unit cost ($)" type="number" min="0" step="0.01" value={line.unitCost} onChange={(event) => updateLine(index, { unitCost: event.currentTarget.value })} />
+                      {draft.lines.length > 1 ? (
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setDraft((current) => ({ ...current, lines: current.lines.filter((_, i) => i !== index) }))}>
+                          Remove
+                        </Button>
                       ) : null}
                     </div>
-                  );
-                })}
-              </div>
-            ) : null}
-          </Card>
-        </div>
-      ) : view === 'guide' ? (
-        <OrderGuideSection
-          suppliers={data?.suppliers ?? []}
-          venue={activeVenue}
-          canManage={canManage}
-          onError={setError}
-          onCreated={() => {
-            setView('orders');
-            void load(activeVenue);
-          }}
-          onSent={(orderId, email) => {
-            setSendResult({ orderId, email });
-            setView('orders');
-            void load(activeVenue);
-          }}
-        />
-      ) : (
+                  ))}
+                </div>
+                <Button type="button" variant="secondary" onClick={() => setDraft((current) => ({ ...current, lines: [...current.lines, emptyLine()] }))}>
+                  Add line
+                </Button>
+                <Textarea label="Notes" rows={2} value={draft.notes} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, notes: el.value })); }} />
+                <div className="stock-operation-row-actions">
+                  <Button type="submit" disabled={saving || !activeVenue || !canManage}>
+                    {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create draft order'}
+                  </Button>
+                  {editingId ? (
+                    <Button type="button" variant="ghost" disabled={saving} onClick={resetForm}>
+                      Cancel edit
+                    </Button>
+                  ) : null}
+                </div>
+              </form>
+            </Card>
+          )}
+        </>
+      ) : null}
+
+      {view === 'orders' ? (
+        <Card
+          title="Orders"
+          subtitle="Draft, sent, received and matched orders for the selected venue. Receive stock here when the delivery lands."
+          padding="none"
+        >
+          {loading ? <Spinner label="Loading purchase orders" /> : null}
+          {!loading && !data?.orders.length ? (
+            <EmptyState
+              title="No purchase orders yet"
+              description="Build the first one on the Build order tab — set quantities and send."
+            />
+          ) : null}
+          {data?.orders.length ? (
+            <div className="stock-mobile-list">
+              {data.orders.map((order) => {
+                const isPanelOpen = panel?.orderId === order.id;
+                const matchResult = matchResults[order.id];
+                return (
+                  <div key={order.id} className="po-block">
+                    <div className="stock-operation-row">
+                      <span>
+                        <strong>{order.supplierName}</strong>
+                        <span className="subtle">
+                          {order.reference ? `${order.reference} · ` : ''}
+                          {order.venue} · {order.lines.length} line{order.lines.length === 1 ? '' : 's'} · {money(order.subtotalCents)}
+                          {order.expectedAt ? ` · expected ${new Date(order.expectedAt).toLocaleDateString()}` : ''}
+                        </span>
+                        {order.matchedInvoice ? (
+                          <span className="subtle">Matched invoice {order.matchedInvoice.invoiceNumber ?? order.matchedInvoice.id}</span>
+                        ) : null}
+                        {order.sentAt && order.sentTo ? (
+                          <span className="subtle">Emailed to {order.sentTo} · {new Date(order.sentAt).toLocaleString()}</span>
+                        ) : null}
+                      </span>
+                      <span className="stock-operation-row-actions">
+                        <Badge tone={statusTone(order.status)}>{order.status.replaceAll('_', ' ')}</Badge>
+                        {canManage && order.status === 'DRAFT' ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={saving}
+                              title={order.supplier?.email ? `Emails the order to ${order.supplier.email}` : 'No supplier email saved — you will get the order text to copy'}
+                              onClick={() => void sendOrder(order)}
+                            >
+                              Send
+                            </Button>
+                            <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => editOrder(order)}>Edit</Button>
+                            <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void cancelOrder(order)}>Cancel</Button>
+                          </>
+                        ) : null}
+                        {canManage && (order.status === 'SENT' || order.status === 'PARTIALLY_RECEIVED') ? (
+                          <>
+                            <Button type="button" size="sm" disabled={saving} onClick={() => (isPanelOpen && panel?.mode === 'receive' ? setPanel(null) : openReceive(order))}>
+                              {isPanelOpen && panel?.mode === 'receive' ? 'Close' : 'Receive'}
+                            </Button>
+                            {order.status === 'SENT' ? (
+                              <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void sendOrder(order)}>Resend</Button>
+                            ) : null}
+                            <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void cancelOrder(order)}>Cancel</Button>
+                          </>
+                        ) : null}
+                        {canManage && order.status === 'RECEIVED' ? (
+                          <Button type="button" size="sm" disabled={saving} onClick={() => (isPanelOpen && panel?.mode === 'match' ? setPanel(null) : openMatch(order))}>
+                            {isPanelOpen && panel?.mode === 'match' ? 'Close' : 'Match'}
+                          </Button>
+                        ) : null}
+                      </span>
+                    </div>
+
+                    {sendResult?.orderId === order.id ? (
+                      <div className="po-panel">
+                        {sendResult.email.status === 'SENT' ? (
+                          <p className="subtle">Order emailed to {sendResult.email.to}.</p>
+                        ) : (
+                          <>
+                            <p className="error-text">{sendResult.email.warning}</p>
+                            <Textarea
+                              label={`Copy and send yourself — subject: ${sendResult.email.subject}`}
+                              rows={8}
+                              readOnly
+                              value={sendResult.email.body}
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => {
+                                void navigator.clipboard
+                                  ?.writeText(`${sendResult.email.subject}\n\n${sendResult.email.body}`)
+                                  .catch(() => undefined);
+                              }}
+                            >
+                              Copy order text
+                            </Button>
+                          </>
+                        )}
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setSendResult(null)}>
+                          Dismiss
+                        </Button>
+                      </div>
+                    ) : null}
+
+                    {isPanelOpen && panel?.mode === 'receive' ? (
+                      <div className="po-panel">
+                        <p className="subtle">Enter received quantities. Blank lines default to the ordered quantity.</p>
+                        <div className="po-receive-lines">
+                          {order.lines.map((line) => (
+                            <div key={line.id} className="po-receive-row">
+                              <span className="po-receive-label">
+                                <strong>{line.description}</strong>
+                                <span className="subtle">Ordered {line.orderedQuantity}{line.unit ? ` ${line.unit}` : ''} · {money(line.unitCostCents)}/unit</span>
+                              </span>
+                              <Input
+                                label="Received"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={receiveDraft[line.id] ?? ''}
+                                onChange={(event) => {
+                                  const value = event.currentTarget.value;
+                                  setReceiveDraft((current) => ({ ...current, [line.id]: value }));
+                                }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <Button type="button" disabled={saving} onClick={() => void submitReceive(order)}>
+                          {saving ? 'Receiving…' : 'Confirm received'}
+                        </Button>
+                      </div>
+                    ) : null}
+
+                    {isPanelOpen && panel?.mode === 'match' ? (
+                      <div className="po-panel">
+                        <Select
+                          label="Match to invoice"
+                          value={matchInvoiceId}
+                          onChange={(event) => setMatchInvoiceId(event.currentTarget.value)}
+                          options={[
+                            { label: 'Select an invoice…', value: '' },
+                            ...invoices.map((invoice) => ({
+                              label: `${invoice.supplierName} · ${invoice.invoiceNumber ?? 'No #'} · ${money(invoice.totalCents)}`,
+                              value: invoice.id
+                            }))
+                          ]}
+                        />
+                        <Button type="button" disabled={saving || !matchInvoiceId} onClick={() => void submitMatch(order)}>
+                          {saving ? 'Matching…' : 'Run match'}
+                        </Button>
+
+                        {matchResult ? (
+                          <div className={`po-match-result${matchResult.clean ? ' po-match-result--clean' : ' po-match-result--flagged'}`}>
+                            <div className="po-match-banner">
+                              <Badge tone={matchResult.clean ? 'positive' : 'danger'}>
+                                {matchResult.clean ? 'Clean match' : 'Discrepancies found'}
+                              </Badge>
+                              <span className="subtle">
+                                Ordered {money(matchResult.orderedTotalCents)} · Received {money(matchResult.receivedTotalCents)} · Billed {money(matchResult.billedTotalCents)} · Variance {money(matchResult.totalVarianceCents)}
+                              </span>
+                            </div>
+                            {matchResult.discrepancies.length ? (
+                              <ul className="po-discrepancy-list">
+                                {matchResult.discrepancies.map((discrepancy, index) => (
+                                  <li key={index}>
+                                    <strong>{discrepancy.description}</strong>
+                                    <span className="subtle">{discrepancy.issue}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {view === 'prices' ? (
         <SupplierPriceListSection
           suppliers={data?.suppliers ?? []}
           items={items}
           canManage={canManage}
           onError={setError}
         />
-      )}
+      ) : null}
     </div>
   );
 }
 
-type OrderGuideProps = {
-  suppliers: Array<{ id: string; name: string; email: string | null }>;
+type OrderBuilderProps = {
   venue: string;
   canManage: boolean;
+  suppliers: Array<{ id: string; name: string; email: string | null }>;
+  items: StockItem[];
   onError: (message: string | null) => void;
-  onCreated: () => void;
-  onSent: (orderId: string, email: StockPurchaseOrderSendEmail) => void;
+  onOrdersChanged: () => void;
+  onViewOrders: () => void;
 };
 
+const NO_SUPPLIER = '__none__';
+
 /**
- * The order guide: one supplier's whole buying list, priced and ready.
+ * The whole order on one screen.
  *
- * This is how FoodByUs presents ordering, and the shape the reorder screen's
- * ad-hoc email always wanted to be. Prices come from two places at once — the
- * agreed price list (kept current automatically whenever an invoice cost is
- * applied) and what the last invoice actually charged — because the gap
- * between those two numbers is a price rise nobody has agreed to.
+ * Everything the venue buys, grouped under the supplier it comes from, with
+ * anything running short already quantified. The buyer walks the list top to
+ * bottom, adjusts numbers, hits review — and the orders split themselves by
+ * supplier and go out in one send. This replaces three separate ways of
+ * starting an order (below-par suggestions, a per-supplier guide behind a
+ * dropdown, and the manual form) with the one flow people actually follow.
  */
-function OrderGuideSection({ suppliers, venue, canManage, onError, onCreated, onSent }: OrderGuideProps) {
-  const [supplierId, setSupplierId] = useState('');
-  const [guide, setGuide] = useState<StockOrderGuidePayload | null>(null);
-  const [loading, setLoading] = useState(false);
+function OrderBuilder({ venue, canManage, suppliers, items, onError, onOrdersChanged, onViewOrders }: OrderBuilderProps) {
+  const [guide, setGuide] = useState<StockFullOrderGuidePayload | null>(null);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [shortsOnly, setShortsOnly] = useState(false);
   const [qty, setQty] = useState<Record<string, string>>({});
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  // Lines added from the catalogue that the guide didn't already carry.
+  const [extras, setExtras] = useState<Record<string, StockOrderGuideLine[]>>({});
+  const [adderFor, setAdderFor] = useState<string | null>(null);
+  const [adderItem, setAdderItem] = useState('');
+  const [reviewing, setReviewing] = useState(false);
+  const [note, setNote] = useState('');
+  const [expectedAt, setExpectedAt] = useState('');
+  // Where the "no supplier on file" lines should go, chosen at review time.
+  const [unassignedSupplierId, setUnassignedSupplierId] = useState('');
+  const [unassignedSupplierName, setUnassignedSupplierName] = useState('');
+  const [result, setResult] = useState<BatchResult | null>(null);
+  const [emailDrafts, setEmailDrafts] = useState<Record<string, string>>({});
 
-  const keyOf = (line: StockOrderGuidePayload['lines'][number]) => line.stockItemId ?? `desc:${line.description}`;
+  const lineKey = (groupKey: string, line: StockOrderGuideLine) =>
+    `${groupKey}|${line.stockItemId ?? `desc:${line.description}`}`;
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const query = venue ? `?venue=${encodeURIComponent(venue)}` : '';
+      const payload = await api<StockFullOrderGuidePayload>(`/api/purchase-orders/order-guide/all${query}`);
+      setGuide(payload);
+      // Below-par quantities prefill. A suggestion is a starting point — every
+      // number is editable before anything is sent.
+      const prefill: Record<string, string> = {};
+      for (const group of payload.suppliers) {
+        for (const line of group.lines) {
+          if (line.suggestedQuantity > 0) prefill[lineKey(group.supplier.id, line)] = String(line.suggestedQuantity);
+        }
+      }
+      for (const line of payload.unassigned) {
+        if (line.suggestedQuantity > 0) prefill[lineKey(NO_SUPPLIER, line)] = String(line.suggestedQuantity);
+      }
+      setQty(prefill);
+      setExtras({});
+      setOpenGroups({});
+      setResult(null);
+      setReviewing(false);
+      onError(null);
+    } catch (err) {
+      setGuide(null);
+      onError(err instanceof ApiError ? err.message : 'Could not load the order guide.');
+    } finally {
+      setLoading(false);
+    }
+  }, [venue]);
 
   useEffect(() => {
-    if (!supplierId) {
-      setGuide(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    const query = `supplierId=${encodeURIComponent(supplierId)}${venue ? `&venue=${encodeURIComponent(venue)}` : ''}`;
-    api<StockOrderGuidePayload>(`/api/purchase-orders/order-guide?${query}`)
-      .then((payload) => {
-        if (cancelled) return;
-        setGuide(payload);
-        // Below-par quantities prefill; a suggestion is a starting point.
-        const prefill: Record<string, string> = {};
-        for (const line of payload.lines) {
-          if (line.suggestedQuantity > 0 && line.stockItemId) prefill[line.stockItemId] = String(line.suggestedQuantity);
-        }
-        setQty(prefill);
-        setNotice(null);
-        onError(null);
-      })
-      .catch((err) => {
-        if (!cancelled) onError(err instanceof ApiError ? err.message : 'Could not load the order guide.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [supplierId, venue]);
+    void reload();
+  }, [reload]);
 
-  const chosen = useMemo(() => {
+  // Guide groups plus any hand-added lines, in render order.
+  const groups = useMemo(() => {
     if (!guide) return [];
-    return guide.lines
-      .map((line) => ({ line, quantity: Number(qty[keyOf(line)] ?? 0) }))
-      .filter((entry) => Number.isFinite(entry.quantity) && entry.quantity > 0);
-  }, [guide, qty]);
+    const merged = guide.suppliers.map((group) => ({
+      key: group.supplier.id,
+      supplier: group.supplier,
+      lines: [...group.lines, ...(extras[group.supplier.id] ?? [])]
+    }));
+    const unassignedLines = [...guide.unassigned, ...(extras[NO_SUPPLIER] ?? [])];
+    if (unassignedLines.length > 0) {
+      merged.push({
+        key: NO_SUPPLIER,
+        supplier: { id: NO_SUPPLIER, name: 'No supplier on file yet', email: null },
+        lines: unassignedLines
+      });
+    }
+    return merged;
+  }, [guide, extras]);
 
-  const estimatedCents = chosen.reduce((sum, { line, quantity }) => {
-    const price = line.agreedCostCents ?? line.lastPaidCents;
-    return price === null ? sum : sum + Math.round(price * quantity);
-  }, 0);
+  const needle = search.trim().toLowerCase();
+  const visibleGroups = useMemo(() => {
+    return groups
+      .map((group) => {
+        let lines = group.lines;
+        if (needle) lines = lines.filter((line) => line.description.toLowerCase().includes(needle));
+        if (shortsOnly) {
+          lines = lines.filter(
+            (line) => line.suggestedQuantity > 0 || line.checkPar || Number(qty[lineKey(group.key, line)] ?? 0) > 0
+          );
+        }
+        return { ...group, lines };
+      })
+      .filter((group) => group.lines.length > 0);
+  }, [groups, needle, shortsOnly, qty]);
 
-  async function raiseOrder(sendNow: boolean) {
-    if (!guide || !canManage) return;
+  // Everything with a quantity, grouped the way the orders will be raised.
+  const chosen = useMemo(() => {
+    return groups
+      .map((group) => ({
+        ...group,
+        picked: group.lines
+          .map((line) => ({ line, quantity: Number(qty[lineKey(group.key, line)] ?? 0) }))
+          .filter((entry) => Number.isFinite(entry.quantity) && entry.quantity > 0)
+      }))
+      .filter((group) => group.picked.length > 0);
+  }, [groups, qty]);
+
+  const chosenLineCount = chosen.reduce((sum, group) => sum + group.picked.length, 0);
+  const estimatedCents = chosen.reduce(
+    (sum, group) =>
+      sum +
+      group.picked.reduce((groupSum, { line, quantity }) => {
+        const price = linePriceCents(line);
+        return price === null ? groupSum : groupSum + Math.round(price * quantity);
+      }, 0),
+    0
+  );
+
+  function groupSubtotal(group: (typeof chosen)[number]) {
+    return group.picked.reduce((sum, { line, quantity }) => {
+      const price = linePriceCents(line);
+      return price === null ? sum : sum + Math.round(price * quantity);
+    }, 0);
+  }
+
+  function isOpen(group: { key: string; lines: StockOrderGuideLine[] }) {
+    if (needle) return true;
+    const explicit = openGroups[group.key];
+    if (explicit !== undefined) return explicit;
+    // Open by default where there is something to act on.
+    return group.lines.some(
+      (line) => line.suggestedQuantity > 0 || line.checkPar || Number(qty[lineKey(group.key, line)] ?? 0) > 0
+    );
+  }
+
+  function addExtra(groupKey: string, itemId: string) {
+    const item = items.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    const existing = groups
+      .find((group) => group.key === groupKey)
+      ?.lines.find((line) => line.stockItemId === item.id);
+    const key = existing
+      ? lineKey(groupKey, existing)
+      : lineKey(groupKey, { stockItemId: item.id } as StockOrderGuideLine);
+    if (!existing) {
+      setExtras((current) => ({
+        ...current,
+        [groupKey]: [
+          ...(current[groupKey] ?? []),
+          {
+            stockItemId: item.id,
+            description: item.name,
+            unit: itemUnit(item) || null,
+            onHand: item.onHand ?? null,
+            parLevel: item.parLevel ?? null,
+            agreedCostCents: null,
+            agreedEffectiveAt: null,
+            lastPaidCents: item.latestCostCents ?? null,
+            lastPurchasedAt: null,
+            priceMovement: null,
+            suggestedQuantity: 0
+          }
+        ]
+      }));
+    }
+    setQty((current) => ({ ...current, [key]: current[key] && Number(current[key]) > 0 ? current[key] : '1' }));
+    setAdderFor(null);
+    setAdderItem('');
+  }
+
+  async function saveSupplierEmail(supplierId: string) {
+    const email = (emailDrafts[supplierId] ?? '').trim();
+    if (!email) return;
+    try {
+      await api(`/api/suppliers/${supplierId}`, { method: 'PATCH', body: JSON.stringify({ email }) });
+      setGuide((current) =>
+        current
+          ? {
+              ...current,
+              suppliers: current.suppliers.map((group) =>
+                group.supplier.id === supplierId ? { ...group, supplier: { ...group.supplier, email } } : group
+              )
+            }
+          : current
+      );
+      setNotice(`Saved — orders for this supplier now email to ${email}.`);
+    } catch (err) {
+      setNotice(err instanceof ApiError ? err.message : 'Could not save the supplier email.');
+    }
+  }
+
+  async function submitBatch(send: boolean) {
+    if (!canManage || busy) return;
     if (!venue) {
       setNotice('Choose a venue first — orders belong to one.');
       return;
     }
-    if (chosen.length === 0) {
+    const unassignedGroup = chosen.find((group) => group.key === NO_SUPPLIER);
+    const supplierName =
+      unassignedSupplierName.trim() ||
+      suppliers.find((supplier) => supplier.id === unassignedSupplierId)?.name ||
+      '';
+    if (unassignedGroup && !supplierName) {
+      setNotice('Say who supplies the "no supplier on file" lines — pick one or type a name.');
+      return;
+    }
+    const orders = chosen.map((group) => ({
+      supplierId: group.key === NO_SUPPLIER ? unassignedSupplierId || undefined : group.key,
+      supplierName: group.key === NO_SUPPLIER ? supplierName : group.supplier.name,
+      lines: group.picked.map(({ line, quantity }) => ({
+        stockItemId: line.stockItemId ?? undefined,
+        description: line.description,
+        unit: line.unit ?? undefined,
+        orderedQuantity: quantity,
+        unitCostCents: linePriceCents(line) ?? 0
+      }))
+    }));
+    if (orders.length === 0) {
       setNotice('Set a quantity on at least one line.');
       return;
     }
     setBusy(true);
     setNotice(null);
     try {
-      const created = await api<PurchaseOrder>('/api/purchase-orders', {
+      const payload = await api<BatchResult>('/api/purchase-orders/batch', {
         method: 'POST',
-        body: JSON.stringify({
-          supplierId: guide.supplier.id,
-          supplierName: guide.supplier.name,
-          venue,
-          notes: 'Raised from the order guide',
-          lines: chosen.map(({ line, quantity }) => ({
-            stockItemId: line.stockItemId ?? undefined,
-            description: line.description,
-            unit: line.unit ?? undefined,
-            orderedQuantity: quantity,
-            unitCostCents: line.agreedCostCents ?? line.lastPaidCents ?? 0
-          }))
-        })
+        body: JSON.stringify({ venue, send, message: note, expectedAt, orders })
       });
-      if (sendNow) {
-        const result = await api<{ purchaseOrder: PurchaseOrder; email: StockPurchaseOrderSendEmail }>(
-          `/api/purchase-orders/${created.id}/send`,
-          { method: 'POST', body: JSON.stringify({}) }
-        );
-        onSent(created.id, result.email);
-      } else {
-        onCreated();
-      }
+      setResult(payload);
+      setReviewing(false);
       setQty({});
+      setExtras({});
+      onOrdersChanged();
     } catch (err) {
-      setNotice(err instanceof ApiError ? err.message : 'Could not raise the order.');
+      setNotice(err instanceof ApiError ? err.message : 'Could not raise the orders.');
     } finally {
       setBusy(false);
     }
   }
 
-  return (
-    <Card
-      title="Order guide"
-      subtitle="Everything you buy from one supplier — agreed price beside what the last invoice actually charged. Set quantities and send."
-      padding="none"
-    >
-      <div className="stock-filter-toolbar" style={{ padding: '12px 12px 0' }}>
-        <Select
-          label="Supplier"
-          value={supplierId}
-          onChange={(event) => setSupplierId(event.currentTarget.value)}
-          options={[{ label: 'Choose a supplier…', value: '' }, ...suppliers.map((supplier) => ({ label: supplier.name, value: supplier.id }))]}
-        />
-        {guide ? (
-          <p className="subtle">
-            {guide.supplier.email ? `Orders email to ${guide.supplier.email}.` : 'No email saved for this supplier — sending will hand you the order text to copy.'}
-          </p>
-        ) : null}
-      </div>
-      {notice ? <p className="subtle" style={{ padding: '6px 12px' }}>{notice}</p> : null}
-      {loading ? <Spinner label="Building the order guide…" /> : null}
-      {!loading && !supplierId ? (
-        <EmptyState
-          title="Pick a supplier"
-          description="The guide lists their agreed prices and everything you've bought from them before."
-        />
-      ) : null}
-      {!loading && guide && guide.lines.length === 0 ? (
-        <EmptyState
-          title="Nothing on file yet"
-          description="No agreed prices and no matched invoice history for this supplier. Import an invoice or add prices on the Price list tab."
-        />
-      ) : null}
-      {guide && guide.lines.length > 0 ? (
-        <div className="stock-mobile-list">
-          {guide.lines.map((line) => {
-            const key = keyOf(line);
-            // Last invoice above the agreed price = a rise nobody signed off.
-            const risen =
-              line.agreedCostCents !== null && line.lastPaidCents !== null && line.lastPaidCents > line.agreedCostCents;
-            return (
-              <div key={key} className="stock-operation-row">
-                <span>
-                  <strong>{line.description}</strong>
-                  <span className="subtle">
-                    {line.onHand !== null ? `on hand ${line.onHand}` : ''}
-                    {line.parLevel ? ` / par ${line.parLevel}` : ''}
-                    {line.agreedCostCents !== null ? ` · agreed ${money(line.agreedCostCents)}${line.unit ? `/${line.unit}` : ''}` : ''}
-                    {line.lastPaidCents !== null ? ` · last paid ${money(line.lastPaidCents)}` : ''}
-                    {line.priceMovement !== null && line.priceMovement >= 0.15
-                      ? ` · up ${Math.round(line.priceMovement * 100)}% on the best price paid`
-                      : ''}
+  if (loading) {
+    return (
+      <Card padding="none">
+        <Spinner label="Building your order guide…" />
+      </Card>
+    );
+  }
+
+  if (result) {
+    const sentCount = result.results.filter((row) => row.email?.status === 'SENT').length;
+    const copyCount = result.results.filter((row) => row.email && row.email.status !== 'SENT').length;
+    const draftCount = result.results.filter((row) => !row.email && !row.error).length;
+    return (
+      <Card
+        title="Orders away"
+        subtitle={[
+          sentCount ? `${sentCount} emailed to suppliers` : null,
+          copyCount ? `${copyCount} need copying below` : null,
+          draftCount ? `${draftCount} saved as drafts on the Orders tab` : null
+        ]
+          .filter(Boolean)
+          .join(' · ') || 'Nothing was raised.'}
+      >
+        <div className="stock-order-sheet">
+          {result.results.map((row, index) => (
+            <div key={index} className="stock-order-email-result">
+              <div className="stock-order-supplier-head">
+                <strong>{row.supplierName}</strong>
+                {row.error ? (
+                  <Badge tone="danger">Failed</Badge>
+                ) : row.email?.status === 'SENT' ? (
+                  <span>
+                    <Badge tone="positive">Emailed</Badge>{' '}
+                    <span className="subtle">{row.email.to}</span>
                   </span>
-                  {risen ? <span className="error-text">Last invoice came in above the agreed price</span> : null}
-                </span>
-                <span className="stock-buying-price">
-                  <Input
-                    label="Qty"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={qty[key] ?? ''}
-                    disabled={!canManage}
-                    onChange={(event) => {
-                      const value = event.currentTarget.value;
-                      setQty((current) => ({ ...current, [key]: value }));
-                    }}
-                  />
-                </span>
+                ) : row.email ? (
+                  <Badge tone="warning">Copy &amp; send yourself</Badge>
+                ) : (
+                  <Badge tone="muted">Draft saved</Badge>
+                )}
               </div>
-            );
-          })}
-          <div className="stock-operation-row">
-            <span className="subtle">
-              {chosen.length} line{chosen.length === 1 ? '' : 's'} selected
-              {estimatedCents > 0 ? ` · about ${money(estimatedCents)}` : ''}
-            </span>
-            <span className="stock-operation-row-actions">
-              <Button type="button" variant="secondary" disabled={busy || !canManage} onClick={() => void raiseOrder(false)}>
-                {busy ? 'Working…' : 'Raise draft order'}
-              </Button>
-              <Button type="button" disabled={busy || !canManage} onClick={() => void raiseOrder(true)}>
-                {busy ? 'Working…' : 'Raise & send'}
-              </Button>
-            </span>
+              {row.error ? <p className="error-text">{row.error}</p> : null}
+              {row.email && row.email.status !== 'SENT' ? (
+                <>
+                  <p className="subtle">{row.email.warning}</p>
+                  <pre>{row.email.body}</pre>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      void navigator.clipboard
+                        ?.writeText(`${row.email!.subject}\n\n${row.email!.body}`)
+                        .catch(() => undefined);
+                    }}
+                  >
+                    Copy order text
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          ))}
+          <div className="stock-operation-row-actions">
+            <Button type="button" onClick={() => void reload()}>
+              Back to the guide
+            </Button>
+            <Button type="button" variant="secondary" onClick={onViewOrders}>
+              View orders
+            </Button>
           </div>
         </div>
+      </Card>
+    );
+  }
+
+  if (reviewing) {
+    const unassignedGroup = chosen.find((group) => group.key === NO_SUPPLIER);
+    return (
+      <Card
+        title="Review &amp; send"
+        subtitle="One order per supplier. Check the numbers, then everything goes out at once."
+        action={
+          <Button type="button" size="sm" variant="ghost" onClick={() => setReviewing(false)}>
+            Back to the guide
+          </Button>
+        }
+      >
+        <div className="stock-order-sheet">
+          {notice ? <p className="error-text">{notice}</p> : null}
+          {chosen.map((group) => (
+            <div key={group.key} className="stock-order-supplier-group">
+              <div className="stock-order-supplier-head">
+                <span>
+                  <strong>{group.key === NO_SUPPLIER ? 'No supplier on file yet' : group.supplier.name}</strong>
+                  <span className="subtle">
+                    {group.picked.length} line{group.picked.length === 1 ? '' : 's'}
+                    {groupSubtotal(group) > 0 ? ` · about ${money(groupSubtotal(group))}` : ''}
+                  </span>
+                </span>
+                {group.key === NO_SUPPLIER ? null : group.supplier.email ? (
+                  <span className="subtle">emails to {group.supplier.email}</span>
+                ) : (
+                  <span className="stock-guide-email-fix">
+                    <Input
+                      placeholder="orders@supplier.com"
+                      value={emailDrafts[group.key] ?? ''}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+                        setEmailDrafts((current) => ({ ...current, [group.key]: value }));
+                      }}
+                    />
+                    <Button type="button" size="sm" variant="secondary" onClick={() => void saveSupplierEmail(group.key)}>
+                      Save email
+                    </Button>
+                  </span>
+                )}
+              </div>
+              {group.key === NO_SUPPLIER ? (
+                <div className="stock-filter-toolbar">
+                  <Select
+                    label="Send these to"
+                    value={unassignedSupplierId}
+                    onChange={(event) => setUnassignedSupplierId(event.currentTarget.value)}
+                    options={[{ label: 'Pick a supplier…', value: '' }, ...suppliers.map((supplier) => ({ label: supplier.name, value: supplier.id }))]}
+                  />
+                  <Input
+                    label="Or type a name"
+                    value={unassignedSupplierName}
+                    onChange={(event) => setUnassignedSupplierName(event.currentTarget.value)}
+                  />
+                </div>
+              ) : null}
+              <ul className="stock-guide-review-lines">
+                {group.picked.map(({ line, quantity }) => {
+                  const price = linePriceCents(line);
+                  return (
+                    <li key={lineKey(group.key, line)}>
+                      <span>
+                        {quantity} {line.unit ?? ''} × <strong>{line.description}</strong>
+                        {price !== null ? <span className="subtle"> · about {money(Math.round(price * quantity))}</span> : null}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          setQty((current) => ({ ...current, [lineKey(group.key, line)]: '' }))
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+          {unassignedGroup ? (
+            <p className="subtle">
+              Tip: once one of that supplier's invoices is matched, these items file themselves under the right
+              supplier automatically.
+            </p>
+          ) : null}
+          <div className="stock-filter-toolbar">
+            <Input
+              label="Deliver by (all orders)"
+              type="date"
+              value={expectedAt}
+              onChange={(event) => setExpectedAt(event.currentTarget.value)}
+            />
+          </div>
+          <Textarea
+            label="Note to suppliers (goes on every order)"
+            rows={2}
+            placeholder="e.g. Please deliver before 10am"
+            value={note}
+            onChange={(event) => setNote(event.currentTarget.value)}
+          />
+          <div className="stock-operation-row-actions">
+            <Button type="button" disabled={busy || !canManage} onClick={() => void submitBatch(true)}>
+              {busy ? 'Sending…' : `Send ${chosen.length} order${chosen.length === 1 ? '' : 's'} now`}
+            </Button>
+            <Button type="button" variant="secondary" disabled={busy || !canManage} onClick={() => void submitBatch(false)}>
+              Save as drafts instead
+            </Button>
+          </div>
+          <p className="subtle">
+            About {money(estimatedCents)} across {chosen.length} supplier{chosen.length === 1 ? '' : 's'}. Sending
+            emails each supplier and records every order under the Orders tab.
+          </p>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card
+        title="Everything you order"
+        subtitle="Built from your invoices and price lists — grouped by supplier, priced at what you actually pay. Anything below par is already filled in."
+        padding="none"
+      >
+        <div className="stock-filter-toolbar" style={{ padding: '12px 12px 0' }}>
+          <Input
+            placeholder="Search items…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant={shortsOnly ? 'primary' : 'ghost'}
+            onClick={() => setShortsOnly((current) => !current)}
+          >
+            Only what's short
+          </Button>
+        </div>
+        {notice ? <p className="subtle" style={{ padding: '6px 12px' }}>{notice}</p> : null}
+        {groups.length === 0 ? (
+          <EmptyState
+            title="Nothing on file yet"
+            description="The guide builds itself from supplier invoices and price lists. Import an invoice (Invoices tab) or add prices on the Price list tab, and everything you buy appears here."
+          />
+        ) : null}
+        {groups.length > 0 && visibleGroups.length === 0 ? (
+          <EmptyState
+            title={needle ? `Nothing matching “${search.trim()}”` : 'Nothing is short'}
+            description={
+              needle
+                ? 'Try a different search, or add it as a one-off order below.'
+                : 'Nothing is below par right now. Turn off “Only what\'s short” to see the whole guide.'
+            }
+          />
+        ) : null}
+
+        {visibleGroups.map((group) => {
+          const open = isOpen(group);
+          const shorts = group.lines.filter((line) => line.suggestedQuantity > 0).length;
+          const entered = group.lines.filter((line) => Number(qty[lineKey(group.key, line)] ?? 0) > 0);
+          const enteredCents = entered.reduce((sum, line) => {
+            const price = linePriceCents(line);
+            return price === null ? sum : sum + Math.round(price * Number(qty[lineKey(group.key, line)] ?? 0));
+          }, 0);
+          return (
+            <section key={group.key} className="stock-buying-group">
+              <button
+                type="button"
+                className="stock-buying-group-head"
+                onClick={() => setOpenGroups((current) => ({ ...current, [group.key]: !open }))}
+              >
+                <strong>{group.supplier.name}</strong>
+                <span className="subtle">
+                  {group.lines.length} item{group.lines.length === 1 ? '' : 's'}
+                  {entered.length > 0 ? ` · ordering ${entered.length}${enteredCents > 0 ? ` (about ${money(enteredCents)})` : ''}` : ''}
+                </span>
+                {shorts > 0 ? <Badge tone="warning">{shorts} short</Badge> : null}
+                {group.key === NO_SUPPLIER ? (
+                  <Badge tone="neutral">Below par — supplier unknown</Badge>
+                ) : !group.supplier.email ? (
+                  <Badge tone="neutral">No email saved</Badge>
+                ) : null}
+              </button>
+
+              {open ? (
+                <div className="stock-buying-rows">
+                  {group.key === NO_SUPPLIER ? (
+                    <p className="subtle" style={{ padding: '0 12px' }}>
+                      These are running short but no invoice or price list says who supplies them. Order them anyway —
+                      you pick the supplier at review — or match one of their invoices and they file themselves.
+                    </p>
+                  ) : null}
+                  {group.lines.map((line) => {
+                    const key = lineKey(group.key, line);
+                    const price = linePriceCents(line);
+                    // Last invoice above the agreed price = a rise nobody signed off.
+                    const risen =
+                      line.agreedCostCents !== null && line.lastPaidCents !== null && line.lastPaidCents > line.agreedCostCents;
+                    return (
+                      <div key={key} className="stock-buying-row">
+                        <span>
+                          <strong>{line.description}</strong>
+                          {line.suggestedQuantity > 0 ? <Badge tone="warning">short</Badge> : null}
+                          {line.checkPar ? <Badge tone="danger">check par</Badge> : null}
+                          <span className="subtle">
+                            {line.onHand !== null ? `on hand ${line.onHand}` : ''}
+                            {line.parLevel ? ` / par ${line.parLevel}` : ''}
+                            {price !== null ? ` · ${money(price)}${line.unit ? `/${line.unit}` : ''}` : ' · no price yet'}
+                            {line.priceMovement !== null && line.priceMovement >= 0.15
+                              ? ` · up ${Math.round(line.priceMovement * 100)}% on the best price paid`
+                              : ''}
+                          </span>
+                          {risen ? <span className="error-text">Last invoice came in above the agreed price</span> : null}
+                          {line.checkPar ? (
+                            <span className="error-text">
+                              The par behind this can't be right — fix the count unit on the item, then recount.
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="stock-buying-price">
+                          <Input
+                            label="Qty"
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={qty[key] ?? ''}
+                            disabled={!canManage}
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
+                              setQty((current) => ({ ...current, [key]: value }));
+                            }}
+                          />
+                        </span>
+                      </div>
+                    );
+                  })}
+                  <div className="stock-buying-row">
+                    {adderFor === group.key ? (
+                      <span className="stock-guide-adder">
+                        <StockItemPicker
+                          label="Add from the catalogue"
+                          items={items}
+                          value={adderItem}
+                          onChange={(id) => setAdderItem(id)}
+                        />
+                        <Button type="button" size="sm" disabled={!adderItem} onClick={() => addExtra(group.key, adderItem)}>
+                          Add
+                        </Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => { setAdderFor(null); setAdderItem(''); }}>
+                          Close
+                        </Button>
+                      </span>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={!canManage}
+                        onClick={() => { setAdderFor(group.key); setAdderItem(''); }}
+                      >
+                        + Add another item
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
+      </Card>
+
+      {chosenLineCount > 0 ? (
+        <div className="stock-guide-bar">
+          <span>
+            <strong>
+              {chosenLineCount} item{chosenLineCount === 1 ? '' : 's'} · {chosen.length} supplier{chosen.length === 1 ? '' : 's'}
+            </strong>
+            {estimatedCents > 0 ? <span className="subtle"> · about {money(estimatedCents)}</span> : null}
+          </span>
+          <span className="stock-operation-row-actions">
+            <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setQty({})}>
+              Clear
+            </Button>
+            <Button type="button" disabled={busy || !canManage || !venue} onClick={() => { setNotice(null); setReviewing(true); }}>
+              Review &amp; send
+            </Button>
+          </span>
+        </div>
       ) : null}
-    </Card>
+      {chosenLineCount > 0 && !venue ? (
+        <p className="subtle" style={{ textAlign: 'center' }}>Choose a venue above before sending — orders belong to one.</p>
+      ) : null}
+    </>
   );
 }
 
@@ -1282,7 +1568,7 @@ function SupplierPriceListSection({ suppliers, items, canManage, onError }: Pric
         </form>
       </Card>
 
-      <Card title="Price list" subtitle="Agreed supplier unit costs." padding="none">
+      <Card title="Price list" subtitle="Agreed supplier unit costs. Kept current automatically as invoice costs are applied." padding="none">
         {loading ? <Spinner label="Loading price list" /> : null}
         {!loading && !entries.length ? (
           <EmptyState title="No prices yet" description="Add supplier prices to build a catalogue." />

@@ -21,6 +21,7 @@ export * from './loaded-count-units.js';
 export * from './stock-units.js';
 export * from './clock-to-timesheet.js';
 import type { ParsedInvoiceLine } from './invoice-paste.js';
+import { IMPLAUSIBLE_COUNT_FLOOR_CENTS, IMPLAUSIBLE_COUNT_SHARE } from './count-scale.js';
 import { CHECKLIST_CADENCES, type ChecklistCadence } from './checklist-cadence.js';
 import { z } from 'zod';
 import {
@@ -6221,6 +6222,12 @@ export type StockOrderGuideLine = {
   priceMovement: number | null;
   /** Whole purchase units to get back to par; 0 when at or above par. */
   suggestedQuantity: number;
+  /**
+   * The par behind this line cannot be right (a count made in the wrong unit),
+   * so its suggestion was zeroed rather than proposing 21,724 bottles of gin.
+   * Fix the count unit on the item, then recount.
+   */
+  checkPar?: boolean;
 };
 
 export type StockOrderGuidePayload = {
@@ -6229,6 +6236,86 @@ export type StockOrderGuidePayload = {
   lines: StockOrderGuideLine[];
   generatedAt: string;
 };
+
+/** One supplier's slice of the full order guide. */
+export type StockOrderGuideSupplierGroup = {
+  supplier: { id: string; name: string; email: string | null };
+  lines: StockOrderGuideLine[];
+};
+
+/**
+ * The whole ordering universe on one screen: every supplier's guide at once,
+ * plus the below-par items whose supplier nobody knows yet. This is the page
+ * a chef opens to do the day's ordering — everything the venue buys, not one
+ * supplier at a time.
+ */
+export type StockFullOrderGuidePayload = {
+  venue: string | null;
+  suppliers: StockOrderGuideSupplierGroup[];
+  /** Below par, but no invoice history or price list says who supplies it. */
+  unassigned: StockOrderGuideLine[];
+  generatedAt: string;
+};
+
+/**
+ * Zero out guide suggestions whose value says the par behind them is a unit
+ * mistake, marking them `checkPar` instead. Same rule as the stocktake guard
+ * (`IMPLAUSIBLE_COUNT_SHARE` / floor): a single suggested line worth a huge
+ * share of the whole suggested spend is not an order anybody would place.
+ * Mutates the given lines; returns how many were held back.
+ */
+export function holdBackImplausibleGuideSuggestions(lines: StockOrderGuideLine[]): number {
+  const valued = lines.map((line) => {
+    const price = line.agreedCostCents ?? line.lastPaidCents ?? 0;
+    return { line, cents: Math.max(0, Math.round(line.suggestedQuantity * price)) };
+  });
+  const total = valued.reduce((sum, entry) => sum + entry.cents, 0);
+  if (total <= 0) return 0;
+  let held = 0;
+  for (const { line, cents } of valued) {
+    if (cents < IMPLAUSIBLE_COUNT_FLOOR_CENTS) continue;
+    if (cents / total < IMPLAUSIBLE_COUNT_SHARE) continue;
+    line.suggestedQuantity = 0;
+    line.checkPar = true;
+    held += 1;
+  }
+  return held;
+}
+
+/**
+ * One review, one send: a draft purchase order per supplier, raised (and
+ * optionally emailed) in a single request. This is the FoodByUs shape — build
+ * the day's whole order across suppliers, then everything goes out at once.
+ */
+export const stockPurchaseOrderBatchInputSchema = z.object({
+  venue: z.string().min(1).optional(),
+  /** True: email each order to its supplier as it is raised. */
+  send: z.boolean().default(false),
+  /** A note above the lines on every order ("deliver before 10am"). */
+  message: z.string().max(2000).optional().or(z.literal('')),
+  expectedAt: z.string().optional().or(z.literal('')),
+  orders: z
+    .array(
+      z.object({
+        supplierId: z.string().optional().nullable(),
+        supplierName: z.string().min(1, 'Every order needs a supplier name'),
+        lines: z
+          .array(
+            z.object({
+              stockItemId: z.string().optional().nullable(),
+              description: z.string().min(1),
+              unit: z.string().optional().nullable(),
+              orderedQuantity: z.number().positive(),
+              unitCostCents: z.number().int().min(0).default(0)
+            })
+          )
+          .min(1, 'Every order needs at least one line')
+      })
+    )
+    .min(1, 'Nothing to order')
+    .max(50)
+});
+export type StockPurchaseOrderBatchInput = z.infer<typeof stockPurchaseOrderBatchInputSchema>;
 
 export const stockInvoicePaymentStatusSchema = z.enum(['UNPAID', 'PARTIALLY_PAID', 'PAID']);
 export type StockInvoicePaymentStatus = z.infer<typeof stockInvoicePaymentStatusSchema>;
