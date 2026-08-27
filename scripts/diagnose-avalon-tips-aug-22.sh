@@ -88,9 +88,31 @@ echo "--- what the RUNNING api container is serving (the real answer) ---"
 (cd "$DEPLOY_DIR" && docker compose ps --format '{{.Service}}\t{{.Image}}\t{{.Status}}' 2>&1) | sed 's/^/  /'
 echo
 echo "--- grep the built bundle inside the container ---"
-(cd "$DEPLOY_DIR" && docker compose exec -T api sh -lc \
-   'grep -rl "day total repeated on" /app 2>/dev/null | head -5; echo "exit=$?"' 2>&1) | sed 's/^/  /'
-echo "  (no paths listed => the fix is NOT in the running image)"
+# The service is suite-api, not api. Hardcoding "api" made this step print a
+# "not running" error and then assert the fix was missing regardless, which is
+# worse than not checking at all - so detect the name and only draw a
+# conclusion when the grep actually ran.
+API_SVC="${API_SVC:-}"
+if [ -z "$API_SVC" ]; then
+  API_SVC=$( (cd "$DEPLOY_DIR" && docker compose ps --services 2>/dev/null) \
+               | grep -Ex 'suite-api|api' | head -1 )
+fi
+if [ -z "$API_SVC" ]; then
+  echo "  could not identify the suite api service. Services present:"
+  (cd "$DEPLOY_DIR" && docker compose ps --services 2>&1) | sed 's/^/    /'
+  echo "  => INCONCLUSIVE. Re-run with API_SVC=<name>."
+else
+  echo "  service: $API_SVC"
+  HITS=$( (cd "$DEPLOY_DIR" && docker compose exec -T "$API_SVC" sh -lc \
+             'grep -rl "day total repeated on" /app 2>/dev/null | head -5') 2>&1 )
+  if printf '%s' "$HITS" | grep -q "day total repeated on\|/app"; then
+    printf '%s\n' "$HITS" | sed 's/^/    /'
+    echo "  => the FIXED parser IS in the running image."
+  else
+    printf '%s\n' "$HITS" | sed 's/^/    /'
+    echo "  => no match: the running image does NOT carry the fix."
+  fi
+fi
 echo
 echo "--- image build time vs the fix merge (2026-08-21 21:19 UTC) ---"
 (cd "$DEPLOY_DIR" && docker compose images 2>&1) | sed 's/^/  /'
