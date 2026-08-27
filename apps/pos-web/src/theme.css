@@ -2414,15 +2414,17 @@ body.pos-dark .pos-nav-dd-panel { box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5); }
   }
   body.pos-dark .pos-header { background: #10160f; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
 
-  /* Row 1: brand on the left, actions on the right. */
+  /* Row 1: the brand. Row 2: everything you touch — sale context, search and
+     the action buttons share one line, the search soaking up whatever width
+     the buttons leave. Only when a sale's chips crowd a narrow till do the
+     buttons wrap under. The chips scroll inside the crumb; the search box
+     itself never leaves the screen. */
   .pos-header-brand { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
-  .pos-header-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+  .pos-header-actions { display: flex; align-items: center; gap: 6px; flex: none; order: 11; }
   .pos-header-spacer { display: none; }
-  /* Row 2: what you're doing — sale context, then search. The chips scroll
-     inside the crumb; the search box itself never leaves the screen. */
   .pos-header-context {
     display: flex; align-items: center; gap: 6px;
-    flex-basis: 100%; order: 10; min-width: 0;
+    flex: 1 1 120px; order: 10; min-width: 0;
   }
 
   .pos-header .pos-mark { width: 26px; height: 26px; }
@@ -2451,7 +2453,7 @@ body.pos-dark .pos-nav-dd-panel { box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5); }
   .pos-header .pos-guest-chip { margin-left: 0; background: rgba(255, 255, 255, 0.06); border-color: rgba(188, 211, 168, 0.55); color: #bcd3a8; }
 
   .pos-header .pos-search {
-    flex: 1 1 130px; order: 0; min-width: 130px; width: auto;
+    flex: 1 1 100px; order: 0; min-width: 100px; width: auto;
     background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.16); color: #f3efe6;
   }
   .pos-header .pos-search::placeholder { color: rgba(243, 239, 230, 0.55); }
