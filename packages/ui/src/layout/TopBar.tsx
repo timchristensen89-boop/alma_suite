@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ALMA_HOME_URL } from '../brand/almaHome';
 
 type Props = {
   title: ReactNode;
@@ -14,7 +15,7 @@ type Props = {
   homeUrl?: string;
 };
 
-export function TopBar({ title, subtitle, right, showHomeLink = false, homeUrl = 'https://alma-home.web.app/' }: Props) {
+export function TopBar({ title, subtitle, right, showHomeLink = false, homeUrl = ALMA_HOME_URL }: Props) {
   return (
     <div className="topbar">
       <div className="topbar-text">

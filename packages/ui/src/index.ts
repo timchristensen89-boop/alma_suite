@@ -71,6 +71,7 @@ export {
   getAlmaAppIcon
 } from './brand/AlmaAppIcon';
 export type { AlmaAppDefinition, AlmaAppIconKey } from './brand/AlmaAppIcon';
+export { ALMA_HOME_URL } from './brand/almaHome';
 export {
   ProductLogo,
   SUITE_APPS,

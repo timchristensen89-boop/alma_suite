@@ -172,17 +172,11 @@ function currentPage(pathname: string, navItems = NAV_ITEMS) {
 
 function UserMenu() {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
 
   if (!user) return null;
 
   return (
-    <SuiteSignOutButton
-      onClick={async () => {
-        await logout();
-        navigate('/login', { replace: true });
-      }}
-    />
+    <SuiteSignOutButton onClick={() => logout()} />
   );
 }
 
