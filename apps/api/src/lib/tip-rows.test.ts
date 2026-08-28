@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import { totalTipsPerDay } from './tip-rows.js';
 
 const row = (dateKey: string, tipCents: number, venue = 'Alma Avalon') => ({ venue, dateKey, tipCents });
+// A row the report gave no date for, filed under the email's fallback day.
+const undated = (dateKey: string, tipCents: number, venue = 'Alma Avalon') => ({
+  venue,
+  dateKey,
+  tipCents,
+  dated: false
+});
 
 describe('totalTipsPerDay', () => {
   it('counts a repeated day total once', () => {
@@ -64,5 +71,51 @@ describe('totalTipsPerDay', () => {
     );
     const total = totalTipsPerDay(emailed).reduce((sum, day) => sum + day.cents, 0);
     assert.equal(total, 33625);
+  });
+
+  it('marks a day whose every row carried a date as known, not guessed', () => {
+    const [day] = totalTipsPerDay([row('2026-08-19', 5000), row('2026-08-19', 2500)]);
+    assert.equal(day?.guessedDate, false);
+  });
+
+  it('marks a day as guessed only when NO row carried a date', () => {
+    // One dated row is enough to anchor the day: the others belong to it.
+    const [day] = totalTipsPerDay([row('2026-08-19', 5000), undated('2026-08-19', 2500)]);
+    assert.equal(day?.guessedDate, false);
+  });
+
+  it('flags the shape that lost Alma Avalon its Saturday', () => {
+    // 23 August 2026: the report stopped carrying a date column, so 14 rows
+    // spanning more than one trading day all landed on "yesterday" and were
+    // added up to $681.87 — filed as a single Sunday against $2,382 of sales.
+    const fourteen = [
+      68187 - 13 * 1000,
+      ...Array.from({ length: 13 }, () => 1000)
+    ].map((cents) => undated('2026-08-23', cents));
+    const [day] = totalTipsPerDay(fourteen);
+    assert.equal(day?.cents, 68187);
+    assert.equal(day?.rows, 14);
+    assert.equal(day?.repeated, false);
+    assert.equal(day?.guessedDate, true);
+  });
+
+  it('does not flag a single undated row — a one-row daily report is fine', () => {
+    const [day] = totalTipsPerDay([undated('2026-08-19', 16105)]);
+    assert.equal(day?.cents, 16105);
+    assert.equal(day?.rows, 1);
+    assert.equal(day?.guessedDate, true);
+  });
+
+  it('still counts an undated repeated total once', () => {
+    // Undated AND repeated: the repeat guard resolves it, so the caller has a
+    // trustworthy figure and does not need to refuse it.
+    const [day] = totalTipsPerDay([
+      undated('2026-08-19', 16105),
+      undated('2026-08-19', 16105),
+      undated('2026-08-19', 16105)
+    ]);
+    assert.equal(day?.cents, 16105);
+    assert.equal(day?.repeated, true);
+    assert.equal(day?.guessedDate, true);
   });
 });

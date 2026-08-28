@@ -270,6 +270,8 @@ export type LightspeedInboundResult = {
   dayTotalsUpserted?: number;
   dayTotalsSkipped?: number;
   tipDaysUpserted?: number;
+  /** Days whose figure was a guessed-date sum and was deliberately not written. */
+  tipDaysRefused?: number;
   tipCents?: number;
   warnings?: string[];
 };
@@ -489,6 +491,7 @@ export const lightspeedInboundService = {
     // days are skipped, and a day the API sync (source 'lightspeed') already
     // wrote is left alone so the two feeds can never double-count.
     let tipDaysUpserted = 0;
+    let tipDaysRefused = 0;
     let tipCentsImported = 0;
     let sawTipsColumn = false;
     const tipRows: ParsedTipRow[] = [];
@@ -503,7 +506,7 @@ export const lightspeedInboundService = {
           warnings.push(`Tips row for ${dateKey} skipped — the day isn't over yet. Set the report's date filter to "Yesterday".`);
           continue;
         }
-        tipRows.push({ venue, dateKey, tipCents: tipRow.tipCents });
+        tipRows.push({ venue, dateKey, tipCents: tipRow.tipCents, dated: tipRow.dateKey !== null });
       }
     }
     // Not a plain sum: these reports repeat the day's tip total on every
@@ -512,6 +515,22 @@ export const lightspeedInboundService = {
     const tipDays = totalTipsPerDay(tipRows);
     for (const tipDay of tipDays) {
       if (tipDay.cents <= 0) continue;
+      // Several undated rows added together is not a day's takings — it is a
+      // guess. Alma Avalon's Saturday 22 Aug 2026 went missing this way: the
+      // report stopped carrying a date column, 14 rows spanning more than one
+      // trading day all landed on "yesterday", and $681.87 was filed as a
+      // single Sunday against $2,382 of sales. A visible gap and a warning are
+      // recoverable; a plausible wrong number gets paid out.
+      if (tipDay.guessedDate && tipDay.rows > 1 && !tipDay.repeated) {
+        warnings.push(
+          `${tipDay.venue}: ${tipDay.rows} tip rows carried no date of their own and would have been ` +
+            `added up to $${(tipDay.cents / 100).toFixed(2)} on ${tipDay.dateKey}. Nothing was recorded — ` +
+            'undated rows cannot be told apart from several days\' takings run together. Set the ' +
+            'report\'s date filter to "Yesterday" and include the business date column.'
+        );
+        tipDaysRefused += 1;
+        continue;
+      }
       const serviceDate = new Date(`${tipDay.dateKey}T00:00:00Z`);
       const apiRow = await prisma.staffTipCardEntry.findFirst({
         where: { venue: tipDay.venue, serviceDate, source: 'lightspeed' },
@@ -545,8 +564,20 @@ export const lightspeedInboundService = {
           'so it was read as the day total once rather than added up.'
       );
     }
-    if (sawTipsColumn && tipDays.length > 0 && tipCentsImported === 0 && tipDaysUpserted === 0) {
+    if (sawTipsColumn && tipDays.length > 0 && tipCentsImported === 0 && tipDaysUpserted === 0 && tipDaysRefused === 0) {
       warnings.push('A tips column was found but every usable day summed to zero.');
+    }
+    // The other half of the Avalon Saturday: the email arrived on time, parsed
+    // cleanly, wrote that day's sales — and recorded no tips at all, because the
+    // tips column simply was not in the CSV. Saying nothing made a report that
+    // lost its tips column look exactly like a night that genuinely took none.
+    // Only reports that announce themselves as tips are checked, so the four
+    // daily sales digests stay quiet.
+    if (/tips?|gratuit/i.test(subject) && !sawTipsColumn) {
+      warnings.push(
+        `"${subject}" reads as a tips report but no tips column was found in any of its ` +
+          `${csvTexts.length} attachment(s), so no tips were recorded for this day.`
+      );
     }
 
     const source = 'lightspeed-item:email';
@@ -641,6 +672,7 @@ export const lightspeedInboundService = {
           dayTotalsUpserted,
           dayTotalsSkipped,
           tipDaysUpserted,
+          tipDaysRefused,
           tipCents: tipCentsImported,
           warnings: warnings.slice(0, 25)
         } as Prisma.InputJsonObject
@@ -656,6 +688,7 @@ export const lightspeedInboundService = {
       dayTotalsUpserted,
       dayTotalsSkipped,
       tipDaysUpserted,
+      tipDaysRefused,
       tipCents: tipCentsImported,
       warnings
     };
