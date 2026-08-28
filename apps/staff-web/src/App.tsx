@@ -1106,13 +1106,7 @@ function TopBarWithContext() {
             />
             <ThemeToggle />
             <SuiteClock />
-            <SuiteSignOutButton
-              className="staff-topbar-signout"
-              onClick={async () => {
-                await logout();
-                navigate('/login', { replace: true });
-              }}
-            />
+            <SuiteSignOutButton className="staff-topbar-signout" onClick={() => logout()} />
           </>
         ) : null
       }
