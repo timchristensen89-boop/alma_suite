@@ -17,6 +17,7 @@ import {
   type AlmaAppIconKey
 } from './AlmaAppIcon';
 import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
+import { ALMA_HOME_URL } from './almaHome';
 
 /**
  * Compatibility wrapper around the new ALMA app icon system.
@@ -174,8 +175,23 @@ export const SUITE_APPS: SuiteAppIdentity[] = ALL_APPS.filter((app) =>
 /** Legacy alias — same data as `SUITE_APPS`. */
 export const suiteApp: SuiteAppIdentity[] = SUITE_APPS;
 
+/**
+ * Display name from the icon set's shouty label. Two of the nine do not
+ * survive a plain title-case: POS is an initialism, not a word, and GIFTCARDS
+ * is two of them. They read as "Pos" and "Giftcards" everywhere the name is
+ * shown to a person — the switcher, the directory, the login strip.
+ *
+ * The overrides live inside the function on purpose. `titleCase` is called at
+ * module scope, by SUITE_APP_SEEDS a hundred lines above this — the function
+ * declaration hoists, a `const` beside it would not, and reaching it from up
+ * there throws on the temporal dead zone and blanks the whole app.
+ */
 function titleCase(value: string) {
-  return value.charAt(0) + value.slice(1).toLowerCase();
+  const overrides: Record<string, string> = {
+    POS: 'POS',
+    GIFTCARDS: 'Gift cards'
+  };
+  return overrides[value] ?? value.charAt(0) + value.slice(1).toLowerCase();
 }
 
 // Functional grouping for the editorial switcher — promotes from a flat list
@@ -281,7 +297,7 @@ const HOME_APP: SuiteAppIdentity = {
   description: 'Daily brief, tasks, and every Alma app in one place.',
   status: 'active',
   lifecycle: 'live',
-  href: (SUITE_APP_HOSTS as Partial<Record<string, string>>).home ?? 'https://alma-home.web.app',
+  href: (SUITE_APP_HOSTS as Partial<Record<string, string>>).home ?? ALMA_HOME_URL,
   fromColor: '#2F343A',
   toColor: '#1F2429',
   iconKey: 'gear',
@@ -331,7 +347,7 @@ export function ProductLogo({
 
   return (
     <a
-      href="https://alma-home.web.app"
+      href={ALMA_HOME_URL}
       className={className ? `product-logo-lockup ${className}` : 'product-logo-lockup'}
       title="Back to Alma Suite home"
       style={{
@@ -446,12 +462,14 @@ export function SuiteAppSwitcher({
   const [mobileOpen, setMobileOpen] = useState(false);
   const isSidebar = variant === 'sidebar';
   const isTopbar = variant === 'topbar';
+  const isLogin = !isSidebar && !isTopbar;
   const current = apps.find((app) => app.id === currentApp);
   const popoverId = `${currentApp ?? 'suite'}-app-switcher-popover`;
   const className = [
     'suite-switcher',
     isSidebar ? 'suite-switcher--sidebar' : '',
-    isTopbar ? 'suite-switcher--topbar' : ''
+    isTopbar ? 'suite-switcher--topbar' : '',
+    isLogin ? 'suite-switcher--login' : ''
   ]
     .filter(Boolean)
     .join(' ');
@@ -575,6 +593,12 @@ export function SuiteAppSwitcher({
       className={className}
       aria-label="Alma apps"
     >
+      {/* A row of unlabelled coloured tiles under a sign-in form reads as
+          decoration somebody forgot to remove. Saying what it is turns the
+          same tiles into the thing they always were: the way to the app you
+          actually meant to open. Only on a login screen — in the sidebar the
+          launcher already sits under its own heading. */}
+      {isLogin ? <p className="suite-switcher-lede">Or open another Alma app</p> : null}
       {grid}
     </nav>
   );

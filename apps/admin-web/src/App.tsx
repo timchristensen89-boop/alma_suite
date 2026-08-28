@@ -4,8 +4,7 @@ import {
   NavLink,
   Route,
   Routes,
-  useLocation,
-  useNavigate
+  useLocation
 } from 'react-router-dom';
 import {
   AppShell,
@@ -417,17 +416,11 @@ function AdminSidebar() {
 
 function UserMenu() {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
 
   if (!user) return null;
 
   return (
-    <SuiteSignOutButton
-      onClick={async () => {
-        await logout();
-        navigate('/login', { replace: true });
-      }}
-    />
+    <SuiteSignOutButton onClick={() => logout()} />
   );
 }
 
