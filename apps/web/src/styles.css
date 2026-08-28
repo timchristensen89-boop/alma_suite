@@ -10052,19 +10052,10 @@ html[data-theme='dark'] .alma-roster-publish:hover:not(:disabled) {
   }
 }
 
-/* Compliance topbar / sidebar — slightly tighter spacing on phone so
-   the daily flows have more room. */
-@media (max-width: 720px) {
-  .app-shell-container {
-    padding-inline: 14px;
-    padding-block: 14px;
-  }
-
-  .app-shell-topbar {
-    padding-inline: 14px;
-    padding-block: 10px;
-  }
-}
+/* The phone's container and topbar padding now live in the phone-header block
+   at the end of this file, which covers every width this rule did and set all
+   four of these properties again. Two rules for one gutter is how the header
+   ended up 14px in while the cards under it sat at 28. */
 
 /* Suite app lifecycle chip — italic Cormorant pill that surfaces in the
    switcher popover (and on home tiles) so unfinished apps don't look
@@ -12920,3 +12911,318 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
 /* App strip: logos only, evenly spaced, never overlapping */
 .suite-switcher:not(.suite-switcher--sidebar):not(.suite-switcher--topbar) .suite-app-tile { margin: 0; }
 .suite-app-lifecycle { display: none !important; }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Phone header, second pass
+   ══════════════════════════════════════════════════════════════════════════
+
+   "One header, not two" was the right call — this is what was left in it.
+   Measured on a 390px screen, signed in, on Dashboard:
+
+     · The bar padded 6px above the row and nothing below it, so a 24px serif
+       title sat 3px proud of centre in a 66px bar.
+     · The bar's gutter was 14px while the page under it used 12px, and 10px
+       below 420px. Nothing in the header shared an edge with the cards.
+     · Nothing said which app you were in. The sidebar lockup left with the
+       sidebar, and the switch-apps control that replaced it renders as a
+       white tile inside a red ring — at 36px, fourth in a row of four, it
+       reads as a warning light rather than an identity.
+     · Those four buttons were three different shapes (squircle, circle,
+       circle) and took 168px of a 390px bar, leaving the title ~180px, so
+       every page whose name is longer than "Incidents" ellipsized.
+     · The app switcher's panel opened 40px past the bottom of the screen
+       with its footer behind the task bar. Two compounding causes, both
+       below.
+
+   So: one gutter shared with the page, the app mark moved to the head of the
+   bar where identity belongs, the rest of the actions dropped to a single
+   quieter weight behind it, and every panel that hangs off this header sized
+   against the screen it actually has.                                      */
+
+:root {
+  /* The header is opaque on a phone, so it needs a flat colour rather than
+     the translucent cream it uses on a desktop. */
+  --topbar-solid: #FAF8F3;
+}
+
+html[data-theme='dark'] {
+  --topbar-solid: #17140F;
+}
+
+@media (max-width: 860px) {
+  :root {
+    /* One gutter for the header and the page below it. */
+    --phone-gutter: 14px;
+    /* The header's real height, so the panels under it can anchor honestly
+       instead of to the 70px bar that used to be there. */
+    --suite-header-h: 60px;
+  }
+
+  /* The header owns the top edge, notch included.
+
+     Opaque rather than frosted, and deliberately: `backdrop-filter` makes an
+     element the containing block for every `position: fixed` descendant, so
+     while this bar was blurred each panel's `top` was measured from the bar
+     instead of from the viewport. That, plus a `max-height` that knew nothing
+     about the task bar, is what pushed the switcher's list off-screen. A flat
+     bar is also the better read on a phone — page content ghosting through
+     the title is noise, not depth.
+
+     Above the task bar in the stack, so a panel is never clipped behind it. */
+  .app-shell-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 70;
+    padding: env(safe-area-inset-top) 0 0;
+    background: var(--topbar-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-bottom: 1px solid rgba(var(--ink-forest-rgb), 0.07);
+  }
+
+  /* The accent thread stays, as a hairline that fades out — the full-width
+     2px rule at 0.6 read as a stalled progress bar. */
+  .app-shell-topbar::after {
+    height: 1.5px;
+    opacity: 1;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-accent) 72%, transparent),
+      color-mix(in srgb, var(--color-accent) 24%, transparent) 44%,
+      transparent 76%
+    );
+  }
+
+  .topbar {
+    gap: 10px;
+    min-height: var(--suite-header-h);
+    height: auto;
+    padding: 0 var(--phone-gutter);
+    align-items: center;
+  }
+
+  /* Header and page share one left edge. Overrides the 12px at 760 and the
+     10px at 420 — both of which the header never matched.
+
+     The container's own 14px (added at 720 back when the shell had two bars)
+     stacked on top of main's, so every card on every screen sat 28px in while
+     the header sat at 14. One of them has to own the gutter; main does. */
+  .app-shell-main {
+    padding: 16px var(--phone-gutter) 32px;
+  }
+
+  .app-shell-container {
+    padding: 0;
+  }
+
+  /* Lift the actions out of their wrapper so the app mark can lead the bar.
+     `display: contents` keeps the markup as it is on every other breakpoint;
+     only the phone reorders. */
+  .topbar-right {
+    display: contents;
+  }
+
+  /* Flex, not the default block: the button is inline-grid, so a block
+     wrapper gave it 6px of baseline descent and centred the tile 3px high. */
+  .suite-switcher--topbar {
+    order: 0;
+    display: flex;
+    align-items: center;
+  }
+  .topbar-text { order: 1; padding-left: 2px; }
+  .suite-inbox-anchor,
+  .suite-alert-anchor { order: 2; }
+  .suite-clock { order: 3; }
+  .app-shell-topbar .suite-theme-toggle { order: 4; }
+  .app-shell-topbar .icon-btn { order: 5; }
+
+  /* ── The app mark ──────────────────────────────────────────────────────
+     The switcher becomes the identity at the head of the bar: the app's own
+     tile at 40px, in its own colour, with a chevron tucked into the corner
+     so it still reads as something that opens. */
+  .app-shell-topbar .suite-switch-apps-button {
+    position: relative;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 13px;
+    background: none;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .app-shell-topbar .suite-switch-apps-button[aria-expanded='true'] {
+    box-shadow: none;
+  }
+
+  .app-shell-topbar .suite-switcher-current-mark,
+  .app-shell-topbar .suite-switcher-current-mark > .alma-app-icon {
+    width: 40px !important;
+    min-height: 40px;
+    height: 40px !important;
+  }
+
+  .app-shell-topbar .suite-switcher-current-mark {
+    border-radius: 13px;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  /* Put the app's own gradient back — the desktop rule bleaches the tile to
+     paper so it can sit on the coloured button, and there is no button here. */
+  .app-shell-topbar .suite-switcher-current-mark > .alma-app-icon {
+    border-radius: 13px;
+    background: linear-gradient(
+      155deg,
+      var(--suite-app-from, #343a40) 0%,
+      var(--suite-app-to, #1f2328) 100%
+    ) !important;
+    color: #ffffff !important;
+    box-shadow:
+      0 6px 14px -6px rgba(15, 23, 42, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
+  }
+
+  .app-shell-topbar .suite-switcher-current-mark > .alma-app-icon > span[aria-hidden='true']:last-child {
+    width: 22px !important;
+    height: 22px !important;
+    color: rgba(255, 255, 255, 0.96) !important;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3)) !important;
+  }
+
+  .app-shell-topbar .suite-switcher-current-mark > .alma-app-icon svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
+  .app-shell-topbar .suite-switcher-chevron {
+    display: grid;
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    width: 15px;
+    height: 15px;
+    background: var(--topbar-solid);
+    color: rgba(var(--ink-forest-rgb), 0.62);
+    box-shadow: 0 0 0 1px rgba(var(--ink-forest-rgb), 0.14);
+  }
+
+  /* The open state repaints the chevron translucent-white for the coloured
+     desktop button; there is no coloured button under it here. */
+  .suite-switcher--topbar.is-open .suite-switcher-chevron {
+    background: var(--topbar-solid);
+  }
+
+  .app-shell-topbar .suite-switcher-chevron svg {
+    width: 11px;
+    height: 11px;
+    stroke-width: 2.6;
+  }
+
+  /* ── The title ─────────────────────────────────────────────────────────
+     22px against a 40px mark; 24px next to it was top-heavy. */
+  .topbar-title {
+    font-size: 22px;
+    line-height: 1.06;
+    letter-spacing: -0.008em;
+  }
+
+  .topbar-subtitle {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    margin-bottom: 3px;
+    color: rgba(var(--ink-forest-rgb), 0.5);
+  }
+
+  /* ── The actions ───────────────────────────────────────────────────────
+     One size, one shape, one weight. Borderless: three outlined boxes next to
+     a solid app tile read as three empty inputs, and the outline was doing no
+     work a 36px target and a glyph were not already doing. The tint appears
+     under a finger, so the target is still confirmed on touch. */
+  .app-shell-topbar .suite-msg-trigger,
+  .app-shell-topbar .suite-alert-trigger,
+  .app-shell-topbar .suite-feedback-trigger,
+  .app-shell-topbar .staff-topbar-signout,
+  .app-shell-topbar .app-shell-topbar-home,
+  .app-shell-topbar .suite-theme-toggle,
+  .app-shell-topbar .icon-btn {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    min-height: 36px;
+    padding: 0;
+    border-radius: 11px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: rgba(var(--ink-forest-rgb), 0.66);
+    box-shadow: none;
+  }
+
+  .app-shell-topbar .suite-msg-trigger:active,
+  .app-shell-topbar .suite-alert-trigger:active,
+  .app-shell-topbar .suite-feedback-trigger:active,
+  .app-shell-topbar .staff-topbar-signout:active,
+  .app-shell-topbar .app-shell-topbar-home:active,
+  .app-shell-topbar .suite-theme-toggle:active,
+  .app-shell-topbar .icon-btn:active {
+    background: rgba(var(--ink-forest-rgb), 0.07);
+    color: var(--color-ink-forest);
+  }
+
+  .app-shell-topbar .suite-theme-toggle svg,
+  .app-shell-topbar .icon-btn svg,
+  .app-shell-topbar .suite-alert-trigger-icon svg,
+  .app-shell-topbar .suite-msg-trigger-icon svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .app-shell-topbar .suite-alert-trigger-icon,
+  .app-shell-topbar .suite-msg-trigger-icon {
+    width: 19px;
+    height: 19px;
+  }
+
+  /* ── Panels that hang off this header ──────────────────────────────────
+     Anchored under the header's real height, inset by the page gutter, and
+     capped so the last row and the footer land above the task bar. The
+     `100vh` line is the fallback; `100dvh` keeps the cap honest while iOS
+     collapses its URL bar. */
+  .suite-switcher-popover,
+  .suite-switcher-popover--list,
+  .suite-alert-panel,
+  .suite-inbox-panel,
+  .suite-msg-panel,
+  .notifications-panel {
+    position: fixed;
+    top: calc(var(--suite-header-h) + env(safe-area-inset-top) + 8px);
+    right: max(var(--phone-gutter), env(safe-area-inset-right));
+    left: max(var(--phone-gutter), env(safe-area-inset-left));
+    width: auto;
+    max-width: none;
+    max-height: calc(
+      100vh - var(--suite-header-h) - env(safe-area-inset-top)
+        - var(--alma-taskbar-h, 57px) - env(safe-area-inset-bottom) - 20px
+    );
+    max-height: calc(
+      100dvh - var(--suite-header-h) - env(safe-area-inset-top)
+        - var(--alma-taskbar-h, 57px) - env(safe-area-inset-bottom) - 20px
+    );
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 20px;
+  }
+
+  /* The body had its own 100vh sum, which re-introduced the overflow the
+     panel cap had just removed. The panel scrolls; the body fills it. */
+  .notifications-body {
+    max-height: none;
+  }
+}
