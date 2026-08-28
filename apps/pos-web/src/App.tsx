@@ -3542,7 +3542,7 @@ export function App() {
         </button>
         <button
           type="button"
-          className="pos-theme-btn"
+          className="pos-theme-btn pos-apps-btn"
           title="Other ALMA apps"
           onClick={() => setAppsOpen(true)}
         >
@@ -3703,6 +3703,18 @@ export function App() {
                         Back office <em>POS settings</em>
                       </button>
                     ) : null}
+                    {/* On a phone the bar carries the brand, New and this
+                        menu — nothing else fits next to a search box worth
+                        touching. The two icon buttons it used to hold live
+                        here instead; `pos-nav-narrow` keeps them out of the
+                        list on a till wide enough to show them in the bar. */}
+                    <div className="pos-nav-dd-rule pos-nav-narrow" />
+                    <button type="button" role="menuitem" className="pos-nav-dd-item pos-nav-narrow" onClick={() => navTo(() => setAppsOpen(true))}>
+                      Other Alma apps <em>the suite</em>
+                    </button>
+                    <button type="button" role="menuitem" className="pos-nav-dd-item pos-nav-narrow" onClick={() => navTo(() => setHelpOpen(true))}>
+                      How this register works <em>help</em>
+                    </button>
                     <div className="pos-nav-dd-rule" />
                     <button type="button" role="menuitem" className="pos-nav-dd-item" onClick={() => navTo(() => setDarkTheme(!darkTheme))}>
                       {darkTheme ? '☀ Light theme' : '☾ Dark theme'}

@@ -2531,3 +2531,92 @@ body.pos-dark .office-top { background: #10160f; box-shadow: 0 6px 18px rgba(0, 
   .office-main { padding: 16px 12px 60px; }
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Phone: the register's bar, and the menu that hangs off it
+   ══════════════════════════════════════════════════════════════════════════
+
+   Reported from a real till on a 393px phone, and reproduced at 360 and 393:
+
+   The Menu panel opened off the left edge of the screen. It is anchored
+   `right: 0` to its own trigger, and on a phone that trigger is not at the
+   right edge — it is roughly two-thirds across the bar, because the actions
+   wrap onto their own row and sit hard left. A 236px panel hung off a button
+   whose right edge is 234px in starts at −2px, so its first column of text is
+   cut off by the screen. `max-width: calc(100vw - 24px)` caps the width but
+   cannot stop it hanging past the left edge. Nothing about the panel knew
+   where the screen was.
+
+   The bar around it had the matching problem. The header comment describes
+   the search and the buttons sharing a line — they never do. Brand and search
+   fill row one, the four buttons wrap to row two and hug the left, and 159px
+   of a 393px row is empty. Two rows, one of them mostly nothing.
+
+   So: row one is who and where, then everything you press, right-aligned into
+   the space that was empty. Row two is the search, the width of the screen —
+   it is the first thing anybody touches on a till, and it now has a thumb's
+   worth of it. And the panel is measured from the header rather than from a
+   button, so it lands under the bar, inside the same gutter as everything
+   else, at any header height.                                              */
+
+@media (max-width: 700px) {
+  .pos-header {
+    padding: 10px 12px;
+    padding-top: calc(10px + env(safe-area-inset-top));
+    column-gap: 8px;
+    row-gap: 9px;
+  }
+
+  /* Brand grows, so the actions are carried to the right edge; the search
+     takes a full row of its own underneath. */
+  .pos-header-brand { order: 0; flex: 1 1 auto; }
+  .pos-header-actions { order: 1; flex: none; gap: 7px; }
+  .pos-header-context { order: 2; flex: 1 1 100%; }
+
+  .pos-header .pos-mark { width: 28px; height: 28px; flex: none; }
+  .pos-header .pos-header-name { font-size: 20px; }
+
+  /* Help and the app launcher move into the Menu panel on a phone. Four
+     controls plus a brand do not fit beside each other at 360px — they wrapped
+     to a third row — and neither of these two is something you reach for
+     mid-service. New and Menu stay in the bar; both of these are one tap
+     inside it. Wide tills keep all four in the bar as before. */
+  .pos-header .pos-help-btn,
+  .pos-header .pos-apps-btn { display: none; }
+
+  /* One height for everything in the bar you can press. The pills were 33px
+     of padded text next to 32px circles next to a 38px search — four controls,
+     three heights, none of them aligned to each other. */
+  .pos-header .pos-ghost {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 36px; padding: 0 15px;
+  }
+  .pos-header .pos-theme-btn { width: 36px; height: 36px; flex: none; }
+  .pos-header .pos-search { flex: 1 1 100%; min-width: 0; min-height: 38px; }
+
+  /* The panel hangs off the header, not off the button: `.pos-nav-dd` gives up
+     being the containing block, so `top: 100%` is the bar's own bottom edge
+     whatever it is currently carrying (a sale's crumb chips, a notch), and the
+     left and right insets are the bar's own gutter. */
+  .pos-nav-dd { position: static; }
+
+  .pos-nav-dd-panel {
+    top: calc(100% + 6px);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    /* `100%` is the header's own height (this is now its containing block),
+       so the cap is "whatever is left between the bar and the bill bar" and
+       stays right when a sale's crumb chips make the bar taller. The first
+       line is the fallback for anything without dvh. */
+    max-height: calc(100vh - 210px);
+    max-height: calc(100dvh - 100% - 84px);
+    border-radius: 18px;
+  }
+
+  /* The tabs share the bar's gutter, so the first chip lines up under the
+     brand instead of sitting 2px to its left. */
+  .pos-tabs { padding-inline: 12px; }
+}
