@@ -108,7 +108,18 @@ export function AlmaCard({
     read();
     const observer = new ResizeObserver(read);
     observer.observe(host);
-    return () => observer.disconnect();
+    // Printing changes the box without resizing the window, and the print
+    // layout is serialised before a ResizeObserver callback would land. Re-read
+    // when the print media query flips so the card is measured against the
+    // paper it is about to be drawn on, not the screen it was last seen on.
+    const printQuery = window.matchMedia('print');
+    printQuery.addEventListener('change', read);
+    window.addEventListener('beforeprint', read);
+    return () => {
+      observer.disconnect();
+      printQuery.removeEventListener('change', read);
+      window.removeEventListener('beforeprint', read);
+    };
   }, [width]);
 
   const rendered = width ?? measured;

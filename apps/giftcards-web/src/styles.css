@@ -2893,10 +2893,16 @@
     page-break-inside: avoid;
   }
 
-  /* The chosen artwork sits at the top — give it a sane
-     printed width so it doesn't dominate the page. */
-  .giftcards-print-card > div[style*="aspect-ratio"] {
-    max-width: 110mm !important;
+  /* The chosen artwork sits at the top.
+     This width MUST match the wrapper's own maxWidth in App.tsx (540px).
+     AlmaCard sizes itself from a ResizeObserver measurement taken on screen,
+     and print layout does not wait for React to re-render — so if the printed
+     box is narrower than the measured one, the card keeps its screen scale and
+     is sheared off by its own overflow:hidden. At 110mm it printed at 130% of
+     its box. Same width on both sides, no shearing.
+     540px is 142.9mm, which fits the 146mm of content this card has room for. */
+  .giftcards-print-art {
+    max-width: 540px !important;
     margin: 0 auto 6mm !important;
   }
 

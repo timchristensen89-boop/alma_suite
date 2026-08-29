@@ -1423,7 +1423,7 @@ function PrintableGiftCardPage() {
       {card ? (
         <section className="giftcards-print-card">
           <div className="giftcards-print-brand">ALMA Gift Cards</div>
-          <div style={{ position: 'relative', width: '100%', maxWidth: 540, aspectRatio: '1.586 / 1', margin: '0 auto 18px' }}>
+          <div className="giftcards-print-art" style={{ position: 'relative', width: '100%', maxWidth: 540, aspectRatio: '1.586 / 1', margin: '0 auto 18px' }}>
             {card.customArtworkUrl ? (
               <img src={card.customArtworkUrl} alt="Custom gift card artwork" style={{ width: '100%', borderRadius: 16, display: 'block' }} />
             ) : (
