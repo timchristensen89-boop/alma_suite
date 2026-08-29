@@ -1442,6 +1442,30 @@
   background: var(--color-surface);
 }
 
+/* The level that produced the ticks below it, said before you read them. */
+.perm-level {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A tick the level granted, not one anyone chose. Without the distinction a
+   manager cannot tell what they are free to change from what comes with the
+   role — which is the whole reason these boxes were unreadable. */
+.check-row.is-inherited {
+  opacity: 0.85;
+}
+
+.check-row.is-inherited em {
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, rgba(31, 53, 36, 0.62));
+  margin-left: 6px;
+}
+
 .app-access-title {
   display: inline-flex;
   align-items: center;
