@@ -316,6 +316,115 @@ const ACCESS_PERMISSION_GROUPS: Partial<Record<AlmaAppId, Array<{ key: string; l
   ]
 };
 
+/**
+ * What a person can actually do in an app, answered the way the server answers it.
+ *
+ * The stored `permissions` map holds overrides only. The API grants everything
+ * on top of that when the app role is ADMIN — `access.role === 'ADMIN' ||
+ * permissions.admin`, in staff.service.ts — and it consults permissions at all
+ * only while the app is ENABLED. A screen that ticks the overrides alone
+ * therefore shows someone with full admin as having no permissions whatsoever,
+ * which is the exact opposite of the truth and the reason nobody could tell who
+ * had what.
+ */
+function effectiveAccessFor(
+  access: { status?: string; role?: string; permissions?: Record<string, boolean> } | undefined,
+  fallbackRole: string
+) {
+  const role = String(access?.role ?? fallbackRole ?? '').trim();
+  const permissions = access?.permissions ?? {};
+  // Which blanket grant is in play, if either — they read differently to a
+  // manager: one is changed by moving the level, the other by unticking a box.
+  // Compared exactly, not case-insensitively, because the gates that matter do
+  // the same (`access.role === 'ADMIN'`, staff.service.ts:191 and :588). Being
+  // more generous here would tick boxes the server then refuses, which is the
+  // same lie as the one this is fixing, pointing the other way.
+  const blanket: 'role' | 'permission' | null =
+    role === 'ADMIN' ? 'role' : permissions.admin ? 'permission' : null;
+  return {
+    role: role || '—',
+    enabled: access?.status === 'ENABLED',
+    blanket,
+    /** On, whether that came from the level or from a tick. */
+    has: (key: string) => Boolean(blanket) || Boolean(permissions[key]),
+    /** On because someone ticked this one, rather than inherited. */
+    isExplicit: (key: string) => Boolean(permissions[key])
+  };
+}
+
+/**
+ * One app's permissions, with the level that produced them stated above.
+ * Shared because there are two of these screens and they had already drifted
+ * into two copies of the same misleading tick logic.
+ */
+function AppPermissionTile({
+  app,
+  access,
+  permissions,
+  canEdit,
+  saving,
+  feedback,
+  onToggle
+}: {
+  app: { id: AlmaAppId; label: string; role: string };
+  access: { status?: string; role?: string; permissions?: Record<string, boolean> } | undefined;
+  permissions: Array<{ key: string; label: string }>;
+  canEdit: boolean;
+  saving: boolean;
+  feedback: ReactNode;
+  onToggle: (key: string, next: boolean) => void;
+}) {
+  const effective = effectiveAccessFor(access, app.role);
+  const granted = permissions.filter((permission) => effective.has(permission.key)).length;
+  return (
+    <div className="app-access-tile">
+      <strong>{app.label}</strong>
+      <div className="perm-level">
+        <Badge tone={effective.enabled ? 'positive' : 'muted'} dot>
+          {effective.enabled ? 'Enabled' : 'Disabled'}
+        </Badge>
+        <Badge tone={effective.blanket ? 'warning' : 'neutral'}>Level: {effective.role}</Badge>
+        <Badge tone={granted ? 'info' : 'muted'}>
+          {granted} of {permissions.length}
+        </Badge>
+      </div>
+      {effective.blanket === 'role' ? (
+        <span className="subtle">
+          The {effective.role} level grants everything below. Change the level to take any of it away.
+        </span>
+      ) : effective.blanket === 'permission' ? (
+        <span className="subtle">The admin permission grants everything below.</span>
+      ) : null}
+      {!effective.enabled ? (
+        <span className="subtle">This app is off, so none of it applies until it is enabled.</span>
+      ) : null}
+      <div className="onboarding-toggle-row">
+        {permissions.map((permission) => {
+          const inherited = effective.has(permission.key) && !effective.isExplicit(permission.key);
+          return (
+            <label
+              key={permission.key}
+              className={`check-row${inherited ? ' is-inherited' : ''}`}
+              title={inherited ? `Granted by the ${effective.role} level` : undefined}
+            >
+              <input
+                type="checkbox"
+                checked={effective.has(permission.key)}
+                disabled={!canEdit || saving || Boolean(effective.blanket && permission.key !== 'admin')}
+                onChange={(event) => onToggle(permission.key, event.currentTarget.checked)}
+              />
+              {permission.label}
+              {inherited ? <em>via level</em> : null}
+            </label>
+          );
+        })}
+      </div>
+      {feedback}
+    </div>
+  );
+}
+
+
 // Consolidated manager nav: fewer top-level items, each a hub that groups the
 // related screens as in-page tabs (matching the Stock and Compliance apps).
 const NAV_ITEMS = [
@@ -7300,27 +7409,19 @@ function StaffProfileWorkspacePage({
               {visibleStaffApps.map((app) => {
                 const permissions = ACCESS_PERMISSION_GROUPS[app.id] ?? [];
                 if (!permissions.length) return null;
-                const current = accessByApp.get(app.id);
-                const appPermissions = permissionsFor(app.id);
                 return (
-                  <div key={app.id} className="app-access-tile">
-                    <strong>{app.label}</strong>
-                    <span className="subtle">{current?.status ?? 'DISABLED'} · {current?.role ?? app.role}</span>
-                    <div className="onboarding-toggle-row">
-                      {permissions.map((permission) => (
-                        <label key={permission.key} className="check-row">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(appPermissions[permission.key] || appPermissions.admin)}
-                            disabled={!canManageProfileAccess || saving || Boolean(appPermissions.admin && permission.key !== 'admin')}
-                            onChange={(event) => void setPermission(app.id, permission.key, event.currentTarget.checked)}
-                          />
-                          {permission.label}
-                        </label>
-                      ))}
-                    </div>
-                    <ActionFeedback message={messageTarget === `permission:${app.id}` ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
-                  </div>
+                  <AppPermissionTile
+                    key={app.id}
+                    app={app}
+                    access={accessByApp.get(app.id)}
+                    permissions={permissions}
+                    canEdit={canManageProfileAccess}
+                    saving={saving}
+                    onToggle={(key, next) => void setPermission(app.id, key, next)}
+                    feedback={
+                      <ActionFeedback message={messageTarget === `permission:${app.id}` ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+                    }
+                  />
                 );
               })}
             </div>
@@ -8691,30 +8792,22 @@ function AccessPage({
                 {visibleStaffApps.map((app) => {
                   const permissions = ACCESS_PERMISSION_GROUPS[app.id] ?? [];
                   if (!permissions.length) return null;
-                  const current = accessByApp.get(app.id);
-                  const appPermissions = permissionsFor(app.id);
                   return (
-                    <div key={app.id} className="app-access-tile">
-                      <strong>{app.label}</strong>
-                      <span className="subtle">{current?.status ?? 'DISABLED'} · {current?.role ?? app.role}</span>
-                      <div className="onboarding-toggle-row">
-                        {permissions.map((permission) => (
-                          <label key={permission.key} className="check-row">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(appPermissions[permission.key] || appPermissions.admin)}
-                              disabled={saving || Boolean(appPermissions.admin && permission.key !== 'admin')}
-                              onChange={(event) => void setPermission(app.id, permission.key, event.currentTarget.checked)}
-                            />
-                            {permission.label}
-                          </label>
-                        ))}
-                      </div>
-                      <ActionFeedback
-                        message={messageTarget === `permission:${app.id}` ? message : null}
-                        tone={message?.includes('Could') ? 'error' : 'success'}
-                      />
-                    </div>
+                    <AppPermissionTile
+                      key={app.id}
+                      app={app}
+                      access={accessByApp.get(app.id)}
+                      permissions={permissions}
+                      canEdit
+                      saving={saving}
+                      onToggle={(key, next) => void setPermission(app.id, key, next)}
+                      feedback={
+                        <ActionFeedback
+                          message={messageTarget === `permission:${app.id}` ? message : null}
+                          tone={message?.includes('Could') ? 'error' : 'success'}
+                        />
+                      }
+                    />
                   );
                 })}
               </div>

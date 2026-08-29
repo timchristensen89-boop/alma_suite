@@ -110,7 +110,7 @@ input, select { font: inherit; }
 .pos-receipt-total { border-top: 1px solid var(--pos-line); padding-top: 8px; font-weight: 800; }
 
 .pos-day-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.pos-day-grid > div { background: var(--pos-raise); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.pos-day-grid > div { background: var(--pos-raise); border: 1px solid var(--pos-line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
 .pos-day-grid small { color: var(--pos-muted); }
 .pos-day-grid strong { font-size: 20px; }
 .pos-day-item { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; padding: 4px 0; }
