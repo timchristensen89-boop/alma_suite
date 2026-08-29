@@ -34,6 +34,12 @@
   --pos-accent: #4f6b47;
   --pos-line: rgba(31, 53, 36, 0.12);
   --pos-muted: rgba(31, 53, 36, 0.72);
+  /* A lifted surface: tiles inside a panel, inputs on the header, a pressed
+     row. styles.css only ever gave this a dark value (#262b31) and nothing
+     re-themed it, so on paper every one of its sixteen uses was a near-black
+     block — most visibly the day-takings tiles, which read as dark-green text
+     on charcoal. White is the panel's own lift: #f1ebe3 panel, #ffffff raised. */
+  --pos-raise: #ffffff;
   --pos-danger: #9a3a2e;
   /* Amber says "needs attention" — a table calling, money still owing. As a
      fill (#b5772f) it is fine; as text on paper it measured 3.7:1, so the one
@@ -81,6 +87,9 @@ body.pos-dark {
   --pos-accent: #bcd3a8;
   --pos-line: rgba(248, 246, 241, 0.14);
   --pos-muted: rgba(248, 246, 241, 0.55);
+  /* The forest equivalent — a step up from the #10160f panel, matching the
+     card. The old #262b31 was a cool charcoal from before this theme existed. */
+  --pos-raise: #1d271e;
   --pos-danger: #f0b7ac;
   /* On the dark board cream-on-forest already clears AA at these alphas, and
      the amber only has to be light enough — it is the same colour both ways. */
@@ -2420,11 +2429,16 @@ body.pos-dark .pos-nav-dd-panel { box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5); }
      buttons wrap under. The chips scroll inside the crumb; the search box
      itself never leaves the screen. */
   .pos-header-brand { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
-  .pos-header-actions { display: flex; align-items: center; gap: 6px; flex: none; order: 11; }
+  /* New and Menu ride on the brand line. That line was a venue name and a lot
+     of empty green, and putting them there buys the whole of the next row for
+     the sale itself. */
+  .pos-header-actions { display: flex; align-items: center; gap: 14px; flex: none; order: 1; }
   .pos-header-spacer { display: none; }
+  /* flex-basis 100% forces the wrap, so the sale context always starts its own
+     row rather than fighting the buttons for what is left of the first one. */
   .pos-header-context {
-    display: flex; align-items: center; gap: 6px;
-    flex: 1 1 120px; order: 10; min-width: 0;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    flex: 1 1 100%; order: 10; min-width: 0;
   }
 
   .pos-header .pos-mark { width: 26px; height: 26px; }
@@ -2438,14 +2452,28 @@ body.pos-dark .pos-nav-dd-panel { box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5); }
     color: #f3efe6; padding: 8px 12px; white-space: nowrap;
   }
   .pos-header .pos-ghost-active { background: #f3efe6; border-color: #f3efe6; color: #1f3524; }
+  /* Beside the wordmark these are labels, not buttons — a pill each would put
+     two more outlines on a line that already carries the mark. The tap target
+     keeps its full height through the padding; only the shell goes. */
+  .pos-header-actions .pos-ghost,
+  .pos-header-actions .pos-ghost-active {
+    background: transparent; border-color: transparent; box-shadow: none;
+    color: #f3efe6; padding: 8px 0; font-weight: 700; letter-spacing: 0.04em;
+  }
+  /* The dropdown is open: say so without giving the shell back. */
+  .pos-header-actions .pos-ghost-active { text-decoration: underline; text-underline-offset: 5px; }
   .pos-header .pos-theme-btn { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); color: #f3efe6; }
 
+  /* This used to be a horizontal scroller capped at 62%, which sheared the
+     chips mid-word against an edge with nothing to show it was an edge — it
+     read as the bar being cut up by something invisible. Now it wraps: the
+     chips take a second line when they need one and none of them is ever
+     sliced. Row 2 is theirs alone, so it rarely comes to that. */
   .pos-header .pos-crumb {
-    color: rgba(243, 239, 230, 0.92); display: inline-flex; align-items: center; gap: 6px;
-    flex: 0 1 auto; max-width: 62%; white-space: nowrap; font-size: 12.5px;
-    overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    color: rgba(243, 239, 230, 0.92); display: inline-flex; align-items: center;
+    flex-wrap: wrap; gap: 6px;
+    flex: 0 1 auto; max-width: 100%; white-space: normal; font-size: 12.5px;
   }
-  .pos-header .pos-crumb::-webkit-scrollbar { display: none; }
   .pos-header .pos-covers-chip, .pos-header .pos-type-chip {
     margin-left: 0; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.16); color: #f3efe6;
   }
