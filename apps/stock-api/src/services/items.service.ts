@@ -28,6 +28,7 @@ import {
   type AuthUser
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { actorPinnedVenue, isVenueUnscopedActor } from '../lib/venue-scope.js';
 import { convertQuantityToCostUnit } from './units.js';
 
 type StockItemRow = Prisma.StockItemGetPayload<{
@@ -159,7 +160,7 @@ function isAdminActor(actor?: AuthUser | null) {
 
 function actorVenueScope(actor?: AuthUser | null, requestedVenue?: string | null) {
   const venue = requestedVenue?.trim() || null;
-  if (!actor || isAdminActor(actor)) return venue;
+  if (!actor || isVenueUnscopedActor(actor)) return venue;
   if (!actor.venue) throw new HttpError(403, 'Stock access requires a venue-scoped staff profile.');
   if (venue && venue !== actor.venue) {
     throw new HttpError(403, 'Stock access is limited to your venue.');
@@ -333,7 +334,7 @@ async function assertCategoryExists(categoryId: string | null | undefined) {
 }
 
 async function venueOptions(actor?: AuthUser | null) {
-  if (actor && !isAdminActor(actor)) {
+  if (actor && !isVenueUnscopedActor(actor)) {
     return actor.venue ? [actor.venue] : [];
   }
 
@@ -1065,10 +1066,11 @@ export const itemsService = {
         include: { category: { select: { id: true, name: true } } }
       });
 
-      if (actor && !isAdminActor(actor) && actor.venue) {
+      const pinnedVenue = actorPinnedVenue(actor);
+      if (pinnedVenue) {
         await tx.venueStockItem.create({
           data: {
-            venue: actor.venue,
+            venue: pinnedVenue,
             stockItemId: created.id,
             parLevel: data.parLevel,
             reorderPoint: normaliseOptionalNumber(data.reorderPoint) ?? null,
@@ -1507,7 +1509,11 @@ export const itemsService = {
       const recipeCount = recipeIds.size;
 
       // 1. No average cost → reads as $0 wherever it's used.
-      if (item.avgCostCents === null) {
+      // A stored ZERO is the same defect as a null and was not being reported:
+      // six kitchen items (Lemon, Fennel, Ginger, Apples Granny Smith, Shiitake
+      // punnets, black peppercorns) sit at 0 and valued a real count at $0.00
+      // while passing this check.
+      if (item.avgCostCents === null || item.avgCostCents === 0) {
         issues.push({
           code: 'no-avg-cost',
           severity: recipeCount > 0 ? 'error' : 'warn',

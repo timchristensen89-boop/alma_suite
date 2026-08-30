@@ -21,6 +21,7 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { convertQuantityToCostUnit } from './units.js';
+import { isVenueUnscopedActor } from '../lib/venue-scope.js';
 
 type LineCostItem = {
   unit: string;
@@ -244,7 +245,7 @@ function isAdminActor(actor?: AuthUser | null) {
 }
 
 function stocktakeScope(actor?: AuthUser | null): Prisma.StocktakeWhereInput {
-  if (!actor || isAdminActor(actor)) return {};
+  if (!actor || isVenueUnscopedActor(actor)) return {};
   if (!actor.venue) return { id: '__no_stocktake_scope__' };
   return { OR: [{ venue: actor.venue }, { venue: null }] };
 }
@@ -254,7 +255,7 @@ function scopedStocktakeWhere(id: string, actor?: AuthUser | null): Prisma.Stock
 }
 
 function targetVenueForActor(requestedVenue: string | null | undefined, actor?: AuthUser | null) {
-  if (!actor || isAdminActor(actor)) return requestedVenue ?? null;
+  if (!actor || isVenueUnscopedActor(actor)) return requestedVenue ?? null;
   if (!actor.venue) throw new HttpError(403, 'Stocktake actions require a venue-scoped manager.');
   if (requestedVenue && requestedVenue !== actor.venue) {
     throw new HttpError(403, 'Stocktake actions are limited to your venue.');
@@ -267,7 +268,7 @@ function assertVenueChangeAllowed(
   existingVenue: string | null,
   actor?: AuthUser | null
 ) {
-  if (!actor || isAdminActor(actor)) return requestedVenue ?? existingVenue;
+  if (!actor || isVenueUnscopedActor(actor)) return requestedVenue ?? existingVenue;
   return targetVenueForActor(requestedVenue ?? existingVenue, actor);
 }
 
@@ -309,7 +310,14 @@ async function balanceTargetForItem(
 
   return {
     item,
-    quantityBefore: venueStock.onHand ?? item.onHand,
+    // A venue row with a null on-hand means this venue has never counted this
+    // item — so its prior holding is zero, not the group total. Falling back to
+    // `item.onHand` (the SUM across every venue) booked the OTHER venue's stock
+    // as this one's opening balance: counting 3 kg of hominy at Avalon, which
+    // had no row, wrote "before 4, after 3, delta −1" using St Alma's 4, and
+    // recorded a shrink the kitchen never had. 96 of the 308 active kitchen
+    // items are in exactly that state at Avalon.
+    quantityBefore: venueStock.onHand ?? 0,
     updateQuantityAfter: async (quantityAfter: number) => {
       await tx.venueStockItem.update({
         where: { id: venueStock.id },
@@ -852,7 +860,7 @@ export const stocktakesService = {
       if (!stocktake) throw new HttpError(404, 'Stocktake not found');
       if (
         reviewer &&
-        !isAdminActor(reviewer) &&
+        !isVenueUnscopedActor(reviewer) &&
         (!reviewer.venue || (stocktake.venue !== reviewer.venue && stocktake.venue !== null))
       ) {
         throw new HttpError(403, 'Stocktake review is limited to your venue.');

@@ -87,8 +87,23 @@ async function stockValueForVenueAtCents(venue: string, at: Date): Promise<numbe
     select: { countedAt: true }
   });
   if (!latest) return null;
+  // Match on the calendar DAY, not the exact instant. The Loaded importer
+  // stamped every session of a count with the same synthetic `T12:00:00`, so
+  // equality happened to work; a count entered in the app takes its time from a
+  // `datetime-local` defaulted to now-to-the-minute, so the bar's 15:12 and the
+  // kitchen's 16:34 never matched and the venue kept only whichever session
+  // finished last. Measured on a clone of production: St Alma's closing stock
+  // came back $7,048.72 (kitchen alone) instead of $70,025.50.
+  const dayStart = new Date(latest.countedAt);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
   const sameDayStocktakes = await prisma.stocktake.findMany({
-    where: { countedAt: latest.countedAt, status: { in: ['SUBMITTED', 'REVIEWED', 'LOCKED'] }, venue },
+    where: {
+      countedAt: { gte: dayStart, lt: dayEnd, lte: at },
+      status: { in: ['SUBMITTED', 'REVIEWED', 'LOCKED'] },
+      venue
+    },
     select: { id: true }
   });
   const agg = await prisma.stocktakeLine.aggregate({

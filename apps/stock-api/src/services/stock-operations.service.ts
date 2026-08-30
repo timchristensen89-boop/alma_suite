@@ -22,6 +22,7 @@ import {
   type StockWastageRecord
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { actorPinnedVenue, isVenueUnscopedActor } from '../lib/venue-scope.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -45,7 +46,7 @@ function isAdminActor(actor?: AuthUser | null) {
 
 function actorVenueScope(actor?: AuthUser | null, requestedVenue?: string | null) {
   const venue = requestedVenue?.trim() || null;
-  if (!actor || isAdminActor(actor)) return venue;
+  if (!actor || isVenueUnscopedActor(actor)) return venue;
   if (!actor.venue) throw new HttpError(403, 'Stock access requires a venue-scoped staff profile.');
   if (venue && venue !== actor.venue) throw new HttpError(403, 'Stock access is limited to your venue.');
   return actor.venue;
@@ -168,7 +169,8 @@ async function sendSupplierOrderEmail(input: {
 }
 
 async function venuesForActor(actor?: AuthUser | null) {
-  if (actor?.venue && !isAdminActor(actor)) return [actor.venue];
+  const pinned = actorPinnedVenue(actor);
+  if (pinned) return [pinned];
   const rows = await prisma.venueStockItem.findMany({
     distinct: ['venue'],
     where: { active: true },

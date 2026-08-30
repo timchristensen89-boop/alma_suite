@@ -15,6 +15,7 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { sendStockEmail } from '../lib/resend.js';
+import { actorPinnedVenue, isVenueUnscopedActor } from '../lib/venue-scope.js';
 import { itemsService } from './items.service.js';
 
 // Purchase-order lifecycle: DRAFT → SENT → PARTIALLY_RECEIVED / RECEIVED → MATCHED.
@@ -30,7 +31,7 @@ function isAdmin(actor?: AuthUser | null) {
 
 function actorVenueScope(actor?: AuthUser | null, requested?: string | null) {
   const venue = requested?.trim() || null;
-  if (!actor || isAdmin(actor)) return venue;
+  if (!actor || isVenueUnscopedActor(actor)) return venue;
   if (!actor.venue) throw new HttpError(403, 'Stock access requires a venue-scoped staff profile.');
   if (venue && venue !== actor.venue) throw new HttpError(403, 'Stock access is limited to your venue.');
   return actor.venue;
@@ -375,11 +376,10 @@ export const purchaseOrdersService = {
       orderBy: [{ createdAt: 'desc' }],
       take: 100
     });
-    const venues = isAdmin(actor)
-      ? (await prisma.venueStockItem.findMany({ distinct: ['venue'], where: { active: true }, select: { venue: true }, orderBy: { venue: 'asc' } })).map((v) => v.venue)
-      : actor?.venue
-        ? [actor.venue]
-        : [];
+    const pinnedVenue = actorPinnedVenue(actor);
+    const venues = pinnedVenue
+      ? [pinnedVenue]
+      : (await prisma.venueStockItem.findMany({ distinct: ['venue'], where: { active: true }, select: { venue: true }, orderBy: { venue: 'asc' } })).map((v) => v.venue);
     const suppliers = await prisma.supplier.findMany({
       where: { status: 'ACTIVE' },
       select: { id: true, name: true, email: true },
