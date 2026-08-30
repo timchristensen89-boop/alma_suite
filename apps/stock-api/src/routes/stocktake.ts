@@ -185,7 +185,15 @@ stocktakeRouter.get('/:id/export.csv', async (req, res, next) => {
     requireStockManager(req.user);
     const { filename, csv } = await stocktakesService.exportCsv(String(req.params.id), req.user);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    // Header values must be Latin-1. Every count this business has ever named
+    // uses an em dash ("Alma Avalon — Fri 31st Jul"), which threw
+    // "Invalid character in header content" and turned every export into a 500.
+    // Send an ASCII-folded filename plus the RFC 5987 UTF-8 form.
+    const asciiFilename = filename.replace(/[^\x20-\x7E]/g, '-').replace(/"/g, '');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+    );
     res.send(csv);
   } catch (error) {
     next(error);

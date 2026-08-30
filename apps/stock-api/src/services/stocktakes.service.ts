@@ -21,6 +21,7 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { convertQuantityToCostUnit } from './units.js';
+import { isVenueUnscopedActor } from '../lib/venue-scope.js';
 
 type LineCostItem = {
   unit: string;
@@ -114,6 +115,18 @@ type StocktakeReviewRow = Prisma.StocktakeGetPayload<{
     };
   };
 }>;
+
+function startOfDay(value: Date) {
+  const day = new Date(value);
+  day.setHours(0, 0, 0, 0);
+  return day;
+}
+
+function startOfNextDay(value: Date) {
+  const day = startOfDay(value);
+  day.setDate(day.getDate() + 1);
+  return day;
+}
 
 function normaliseOptionalText(value: string | undefined) {
   if (value === undefined) return undefined;
@@ -244,7 +257,7 @@ function isAdminActor(actor?: AuthUser | null) {
 }
 
 function stocktakeScope(actor?: AuthUser | null): Prisma.StocktakeWhereInput {
-  if (!actor || isAdminActor(actor)) return {};
+  if (!actor || isVenueUnscopedActor(actor)) return {};
   if (!actor.venue) return { id: '__no_stocktake_scope__' };
   return { OR: [{ venue: actor.venue }, { venue: null }] };
 }
@@ -254,7 +267,7 @@ function scopedStocktakeWhere(id: string, actor?: AuthUser | null): Prisma.Stock
 }
 
 function targetVenueForActor(requestedVenue: string | null | undefined, actor?: AuthUser | null) {
-  if (!actor || isAdminActor(actor)) return requestedVenue ?? null;
+  if (!actor || isVenueUnscopedActor(actor)) return requestedVenue ?? null;
   if (!actor.venue) throw new HttpError(403, 'Stocktake actions require a venue-scoped manager.');
   if (requestedVenue && requestedVenue !== actor.venue) {
     throw new HttpError(403, 'Stocktake actions are limited to your venue.');
@@ -267,7 +280,7 @@ function assertVenueChangeAllowed(
   existingVenue: string | null,
   actor?: AuthUser | null
 ) {
-  if (!actor || isAdminActor(actor)) return requestedVenue ?? existingVenue;
+  if (!actor || isVenueUnscopedActor(actor)) return requestedVenue ?? existingVenue;
   return targetVenueForActor(requestedVenue ?? existingVenue, actor);
 }
 
@@ -309,7 +322,14 @@ async function balanceTargetForItem(
 
   return {
     item,
-    quantityBefore: venueStock.onHand ?? item.onHand,
+    // A venue row with a null on-hand means this venue has never counted this
+    // item — so its prior holding is zero, not the group total. Falling back to
+    // `item.onHand` (the SUM across every venue) booked the OTHER venue's stock
+    // as this one's opening balance: counting 3 kg of hominy at Avalon, which
+    // had no row, wrote "before 4, after 3, delta −1" using St Alma's 4, and
+    // recorded a shrink the kitchen never had. 96 of the 308 active kitchen
+    // items are in exactly that state at Avalon.
+    quantityBefore: venueStock.onHand ?? 0,
     updateQuantityAfter: async (quantityAfter: number) => {
       await tx.venueStockItem.update({
         where: { id: venueStock.id },
@@ -639,7 +659,32 @@ export const stocktakesService = {
           orderBy: [{ countedAt: 'desc' }],
           select: { id: true, status: true, countedAt: true, name: true }
         });
-        const stockValueCents = latestLocked?.lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0) ?? null;
+        // A venue's count is split across sessions — the bar and the kitchen
+        // count separately, minutes apart. Reading the value off the single
+        // most-recent locked count reported one section as the whole venue
+        // (St Alma read $7,048.72, its kitchen, against $70,025.50 counted).
+        // Sum every locked count the venue recorded on that same day, the way
+        // stockValueForVenueAtCents in @alma/db does.
+        const sameDaySessions = latestLocked
+          ? await prisma.stocktake.findMany({
+              where: {
+                venue: v,
+                status: 'LOCKED',
+                countedAt: {
+                  gte: startOfDay(latestLocked.countedAt),
+                  lt: startOfNextDay(latestLocked.countedAt)
+                }
+              },
+              include: { _count: { select: { lines: true } }, lines: { select: { stockValueCents: true } } }
+            })
+          : [];
+        const stockValueCents = latestLocked
+          ? sameDaySessions.reduce(
+              (sum, session) => sum + session.lines.reduce((s, line) => s + (line.stockValueCents ?? 0), 0),
+              0
+            )
+          : null;
+        const sessionLineCount = sameDaySessions.reduce((sum, session) => sum + session._count.lines, 0);
         const stale = latestLocked ? latestLocked.countedAt < staleCutoff : true;
         return {
           venue: v,
@@ -649,7 +694,8 @@ export const stocktakesService = {
                 name: latestLocked.name,
                 countedAt: latestLocked.countedAt.toISOString(),
                 lockedAt: latestLocked.lockedAt?.toISOString() ?? null,
-                lineCount: latestLocked._count.lines,
+                lineCount: sessionLineCount || latestLocked._count.lines,
+                sessionCount: sameDaySessions.length,
                 stockValueCents,
                 stale
               }
@@ -852,7 +898,7 @@ export const stocktakesService = {
       if (!stocktake) throw new HttpError(404, 'Stocktake not found');
       if (
         reviewer &&
-        !isAdminActor(reviewer) &&
+        !isVenueUnscopedActor(reviewer) &&
         (!reviewer.venue || (stocktake.venue !== reviewer.venue && stocktake.venue !== null))
       ) {
         throw new HttpError(403, 'Stocktake review is limited to your venue.');
