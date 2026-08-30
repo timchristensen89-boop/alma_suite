@@ -58,6 +58,7 @@ import {
   selectPullFields,
   type XeroEmployeeDetail
 } from '../lib/xero-employee-pull.js';
+import { payrollDetailsNotSent, xeroElementWarnings } from '../lib/xero-employee-push.js';
 import { deputyService } from './deputy.service.js';
 
 type Provider = 'SQUARE' | 'XERO' | 'DEPUTY' | 'LIGHTSPEED';
@@ -4053,6 +4054,11 @@ type XeroPayrollEmployeeSummary = {
   FirstName?: string;
   LastName?: string;
   Status?: string;
+  // Xero Payroll answers 200 and reports a rejected block HERE, per employee,
+  // rather than failing the request. Without this field the push read the
+  // EmployeeID, called it "updated", and never noticed that the tax
+  // declaration or the bank account had been thrown away.
+  ValidationErrors?: Array<{ Message?: string }>;
 };
 
 // Which organisations a person should exist in, from the venue on their
@@ -4315,7 +4321,13 @@ export async function pushStaffToXero(staffProfileId: string, options?: { tenant
       body: [xeroEmployeeBody(staff, { employeeId: existingId ?? undefined, superFundId: fund.id })]
     });
     connection = saved.connection;
-    const xeroEmployeeId = saved.data.Employees?.[0]?.EmployeeID ?? existingId;
+    const element = saved.data.Employees?.[0];
+    // A push that carried no tax declaration is not a successful push, and
+    // until now it reported as one.
+    const tenantLabel = tenant.name ?? tenant.id;
+    warnings.push(...payrollDetailsNotSent(staff, tenantLabel));
+    warnings.push(...xeroElementWarnings(element, tenantLabel));
+    const xeroEmployeeId = element?.EmployeeID ?? existingId;
     const action = existingId ? 'updated' : 'created';
     if (!xeroEmployeeId) throw new HttpError(502, `Xero did not return an employee id for ${tenant.name ?? tenant.id}.`);
 
