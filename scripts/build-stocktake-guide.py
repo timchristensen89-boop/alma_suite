@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Builds the staff-facing "first stocktake on the venue iPad" guide as a PDF.
+Builds the staff-facing "how to run your first stocktake" guides as PDFs.
+
+Two of them, because there are two ways in and they are not the same flow:
+
+  stocktake-first-time-ipad.pdf   the venue iPad — device account + staff PIN
+  stocktake-first-time-login.pdf  Alma Stock on your own email and password
 
 Every screen name, button label and error message quoted in the guide is the
 real string from the app, so this script lives next to the code it documents:
@@ -12,7 +17,13 @@ when the iPad stocktake screens change, change the copy here and re-run it.
     apps/stock-web/src/pages/StocktakePage.tsx             (the manager half)
 
   Run:  python3 scripts/build-stocktake-guide.py
-  Out:  docs/guides/stocktake-first-time-ipad.pdf
+  Out:  docs/guides/stocktake-first-time-{ipad,login}.pdf
+
+Note for the login guide: counting on a personal login needs ADMIN or MANAGER.
+`requireStockManager` guards PATCH /api/stocktake/:id server-side, and
+`canManageStock` hides the buttons client-side, so a STAFF-role account cannot
+save a count at all. The guide says so on page one rather than letting someone
+find out halfway through a cool room.
 """
 
 from datetime import date
@@ -43,7 +54,9 @@ INK = colors.HexColor("#1c211d")
 MUTED = colors.HexColor("#5d6b62")
 RULE = colors.HexColor("#d6ded8")
 
-OUT = Path(__file__).resolve().parent.parent / "docs" / "guides" / "stocktake-first-time-ipad.pdf"
+GUIDES = Path(__file__).resolve().parent.parent / "docs" / "guides"
+OUT_IPAD = GUIDES / "stocktake-first-time-ipad.pdf"
+OUT_LOGIN = GUIDES / "stocktake-first-time-login.pdf"
 
 MARGIN = 16 * mm
 
@@ -107,7 +120,11 @@ def callout(heading, flowables, tone="accent"):
 
 
 def step(number, heading, flowables):
-    """Numbered step: a green square with the number, then the copy beside it."""
+    """Numbered step: a green square with the number, then the copy beside it.
+
+    Each step is kept whole, so keep them short enough not to strand half a
+    page — the troubleshooting table is the place for the long explanations.
+    """
     badge = Table([[Paragraph(str(number), step_num)]], colWidths=[9 * mm], rowHeights=[9 * mm])
     badge.setStyle(
         TableStyle(
@@ -162,34 +179,47 @@ def fix_table(rows):
     return t
 
 
-def page_furniture(canvas, doc):
-    canvas.saveState()
-    # Accent rule across the top of every page.
-    canvas.setFillColor(ACCENT)
-    canvas.rect(0, A4[1] - 6 * mm, A4[0], 6 * mm, stroke=0, fill=1)
-    # Footer.
-    canvas.setFont("Helvetica", 8)
-    canvas.setFillColor(MUTED)
-    canvas.drawString(MARGIN, 11 * mm, "Alma · Stocktake on the venue iPad")
-    canvas.drawRightString(A4[0] - MARGIN, 11 * mm, f"Page {doc.page}")
-    canvas.restoreState()
+def furniture(footer_text):
+    """Accent rule along the top, footer along the bottom, on every page."""
+
+    def draw(canvas, doc):
+        canvas.saveState()
+        canvas.setFillColor(ACCENT)
+        canvas.rect(0, A4[1] - 6 * mm, A4[0], 6 * mm, stroke=0, fill=1)
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(MUTED)
+        canvas.drawString(MARGIN, 11 * mm, footer_text)
+        canvas.drawRightString(A4[0] - MARGIN, 11 * mm, f"Page {doc.page}")
+        canvas.restoreState()
+
+    return draw
 
 
-def build():
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    doc = BaseDocTemplate(
-        str(OUT),
+def make_doc(out, doc_title, subject):
+    out.parent.mkdir(parents=True, exist_ok=True)
+    return BaseDocTemplate(
+        str(out),
         pagesize=A4,
         leftMargin=MARGIN,
         rightMargin=MARGIN,
         topMargin=MARGIN,
         bottomMargin=18 * mm,
-        title="Stocktake on the venue iPad",
+        title=doc_title,
         author="Alma Group",
-        subject="First-time staff guide to running a stocktake on the venue iPad",
+        subject=subject,
+    )
+
+
+def build_ipad():
+    doc = make_doc(
+        OUT_IPAD,
+        "Stocktake on the venue iPad",
+        "First-time staff guide to running a stocktake on the venue iPad",
     )
     frame = Frame(MARGIN, 18 * mm, CONTENT_W, A4[1] - MARGIN - 18 * mm, id="main")
-    doc.addPageTemplates([PageTemplate(id="all", frames=[frame], onPage=page_furniture)])
+    doc.addPageTemplates(
+        [PageTemplate(id="all", frames=[frame], onPage=furniture("Alma · Stocktake on the venue iPad"))]
+    )
 
     s = []
 
@@ -479,8 +509,302 @@ def build():
     )
 
     doc.build(s)
-    print(f"wrote {OUT}")
+    print(f"wrote {OUT_IPAD}")
+
+
+def build_login():
+    """The Alma Stock web flow, for counting on your own email and password."""
+    doc = make_doc(
+        OUT_LOGIN,
+        "Stocktake on your own login",
+        "First-time staff guide to counting a stocktake in Alma Stock on a personal login",
+    )
+    frame = Frame(MARGIN, 18 * mm, CONTENT_W, A4[1] - MARGIN - 18 * mm, id="main")
+    doc.addPageTemplates(
+        [PageTemplate(id="all", frames=[frame], onPage=furniture("Alma · Stocktake on your own login"))]
+    )
+
+    cb = ParagraphStyle("cb", parent=bullet, fontSize=10, leading=14)
+    s = []
+
+    s.append(Paragraph("Stocktake on your own login", title))
+    s.append(
+        Paragraph(
+            "Counting in Alma Stock from your own account — what to tap, in order.",
+            subtitle,
+        )
+    )
+    s.append(Spacer(1, 12))
+
+    s.append(
+        callout(
+            "Before you start",
+            [
+                li(
+                    "Sign in at <b>alma-stock-v18.web.app</b> with your own Alma email and the "
+                    "password your manager gives you.",
+                    cb,
+                ),
+                li(
+                    "A laptop or an iPad browser is far easier than a phone for a long count — "
+                    "it all works, but you’ll be scrolling a lot on a phone.",
+                    cb,
+                ),
+                li(
+                    "<b>Your login needs stock manager access.</b> Step 2 checks it in five "
+                    "seconds. Without it you can’t save a single number, so check before you "
+                    "walk into the cool room, not halfway through it.",
+                    cb,
+                ),
+            ],
+        )
+    )
+    s.append(Spacer(1, 14))
+
+    s.append(
+        step(
+            1,
+            "Sign in",
+            [
+                Paragraph(
+                    "Go to <b>alma-stock-v18.web.app</b>, enter your <b>Email</b> and "
+                    "<b>Password</b>, tap <b>Sign in</b>. If it won’t let you in, "
+                    "<b>Forgot password?</b> emails the office.",
+                    body_tight,
+                )
+            ],
+        )
+    )
+
+    s.append(
+        step(
+            2,
+            "Open Stocktake — and check your access",
+            [
+                Paragraph(
+                    "Tap <b>Stocktake</b> in the menu, then scroll to the card at the bottom. "
+                    "The button on its top right tells you where you stand:",
+                    body_tight,
+                ),
+                Spacer(1, 4),
+                li("It says <b>New stocktake</b> → you’re good, carry on."),
+                li(
+                    "It says <b>Manager required</b>, or the history rows say <b>View only</b> "
+                    "→ your account can’t count yet. Nothing on this screen will fix it; ask the "
+                    "office to give you stock manager access."
+                ),
+            ],
+        )
+    )
+
+    s.append(
+        step(
+            3,
+            "Start the count, or open the one already going",
+            [
+                Paragraph(
+                    "<b>New count:</b> tap <b>New stocktake</b>, then fill in <b>Name</b>, "
+                    "<b>Venue</b> (Freshie, Avalon…) and <b>Counted at</b>. "
+                    "<b>Start from template</b> loads just that template’s items in walking "
+                    "order; leave it on <i>Full count — all active items</i> to count the lot.",
+                    body_tight,
+                ),
+                Spacer(1, 4),
+                Paragraph(
+                    "<b>Already started:</b> find it in the list underneath and press "
+                    "<b>Edit</b>.",
+                    body_tight,
+                ),
+            ],
+        )
+    )
+
+    s.append(
+        step(
+            4,
+            "Set the screen up before you count",
+            [
+                Paragraph("Two toggles sit above the count lines. Both are worth using.", body_tight),
+                Spacer(1, 4),
+                li(
+                    "<b>Blind count</b> — hides what the system expects to be on the shelf, so "
+                    "you write down what’s actually there."
+                ),
+                li(
+                    "<b>Walk by area</b> — orders the lines by location, so you do the bar, then "
+                    "the cool room, then the kitchen, instead of criss-crossing the venue."
+                ),
+                Spacer(1, 3),
+                Paragraph(
+                    "Categories start closed. Tap a heading to open it — each one shows "
+                    "<b>“4 of 28 counted”</b> so you can see what’s left.",
+                    body_tight,
+                ),
+            ],
+        )
+    )
+
+    s.append(
+        step(
+            5,
+            "Count each line",
+            [
+                Paragraph(
+                    "Each row is <b>Item · Label · Qty · Unit · Location</b>. Type the count into "
+                    "<b>Qty</b>. The <b>Unit</b> beside it is what you’re counting in — bottles, "
+                    "kg, each.",
+                    body_tight,
+                ),
+                Spacer(1, 4),
+                Paragraph(
+                    "Underneath the row the screen prices your line as you go. If it warns you "
+                    "about the unit, or says one line is most of the whole count, take it "
+                    "seriously — it’s catching a units mistake while you’re still standing in "
+                    "front of the shelf.",
+                    body_tight,
+                ),
+            ],
+        )
+    )
+
+    s.append(Spacer(1, 2))
+    s.append(
+        callout(
+            "Important — blank is not the same as zero",
+            [
+                Paragraph(
+                    "An empty <b>Qty</b> means <b>“not counted yet”</b>. A typed <b>0</b> means "
+                    "you looked and there was none. To whoever reviews this, one is a gap in the "
+                    "count and the other is a result.",
+                    callout_body,
+                ),
+                Spacer(1, 4),
+                Paragraph("<b>If the shelf is empty, type 0.</b>", callout_body),
+            ],
+            tone="warn",
+        )
+    )
+    s.append(Spacer(1, 14))
+
+    s.append(
+        step(
+            6,
+            "Save as you go",
+            [
+                Paragraph(
+                    "Tap <b>Save draft</b> at the end of every area, and any time you stop. "
+                    "Nothing is kept until you do — close the tab without saving and that "
+                    "stretch of counting is gone.",
+                    body_tight,
+                )
+            ],
+        )
+    )
+
+    s.append(
+        step(
+            7,
+            "Submit when the whole count is done",
+            [
+                Paragraph(
+                    "Tap <b>Submit for review</b>. The screen tells you the truth: "
+                    "<i>“Submitting sends this count for review. It does not update stock "
+                    "balances.”</i> Nothing moves until a manager applies it.",
+                    body_tight,
+                )
+            ],
+        )
+    )
+
+    s.append(Spacer(1, 6))
+    s.append(Paragraph("When something looks wrong", section_head))
+    s.append(
+        fix_table(
+            [
+                (
+                    "“Manager required” or “View only”",
+                    "Your login doesn’t have stock manager access. There’s nothing you can do "
+                    "from this screen — ask the office to change it.",
+                ),
+                (
+                    "Two people on one count",
+                    "Don’t. Saving sends the <i>whole</i> count back, not just the lines you "
+                    "touched, so the second person to save overwrites the first one’s work. One "
+                    "person per count — if you want to split the job, make it two counts.",
+                ),
+                (
+                    "You closed the tab mid-count",
+                    "Everything since your last <b>Save draft</b> is gone. It’s the only thing "
+                    "that keeps your numbers, so save often.",
+                ),
+                (
+                    "“Applied stocktakes cannot be edited”",
+                    "A manager has already applied that count to stock, so it’s locked. Start a "
+                    "new count, or ask them to reverse it.",
+                ),
+                (
+                    "An item isn’t in the list",
+                    "<b>Add line</b> at the top right of the count, then pick the item from the "
+                    "picker.",
+                ),
+                (
+                    "“unit ‘ml’ ≠ bottle”",
+                    "You’ve typed a different unit from the one the item is costed in. Check it "
+                    "against the parent product before you move on.",
+                ),
+                (
+                    "“$12,400.00 — 62% of this whole count”",
+                    "Almost always a units mistake rather than a real number. The message even "
+                    "tells you what your count would come to if you meant the other unit.",
+                ),
+            ]
+        )
+    )
+
+    s.append(Spacer(1, 14))
+    s.append(
+        callout(
+            "For the manager — finishing the count",
+            [
+                li(
+                    "<b>Submit for review</b> only marks the count ready. It does not move "
+                    "stock.",
+                    cb,
+                ),
+                li(
+                    "<b>Apply count to stock</b> is the one that counts. It asks you to type "
+                    "<b>APPLY COUNT</b>, then updates on-hand balances and writes the movements. "
+                    "It can’t be run twice and isn’t bulk-reversible.",
+                    cb,
+                ),
+                li(
+                    "<b>Export CSV</b> on any row downloads counted-vs-expected variance if you "
+                    "want to check it outside the app.",
+                    cb,
+                ),
+                Spacer(1, 3),
+                Paragraph(
+                    "Only Admin and Manager accounts see those buttons — and, today, only they "
+                    "can enter counts at all.",
+                    callout_body,
+                ),
+            ],
+        )
+    )
+
+    s.append(Spacer(1, 10))
+    s.append(
+        Paragraph(
+            "Stuck on something this page doesn’t cover? Ask your venue manager. "
+            f"<font color='#8a9990'>Guide updated {date.today().strftime('%-d %B %Y')}.</font>",
+            ParagraphStyle("foot2", parent=body, fontSize=9, textColor=MUTED),
+        )
+    )
+
+    doc.build(s)
+    print(f"wrote {OUT_LOGIN}")
 
 
 if __name__ == "__main__":
-    build()
+    build_ipad()
+    build_login()
