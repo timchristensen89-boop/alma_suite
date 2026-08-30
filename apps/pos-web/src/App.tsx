@@ -3526,9 +3526,16 @@ export function App() {
             a word from the note; a dish by what it suits) and sitting right
             above the list it filters. Showing this as well was two boxes
             competing for the same job and a row of screen nobody got back. */}
-        {view === 'register' && !pageOwnsSearch ? (
-          <PosSearchBox onTerm={setSearchTerm} />
-        ) : null}
+        </div>
+        {/* Forces the wrap on a phone: the brand and the sale's chips keep row
+            one, the search and the two buttons share row two. Without it the
+            row break depends on how long the venue name and the chips happen
+            to be, which is how the bar ended up four rows deep. */}
+        <span className="pos-header-break" aria-hidden="true" />
+        <div className="pos-header-search">
+          {view === 'register' && !pageOwnsSearch ? (
+            <PosSearchBox onTerm={setSearchTerm} />
+          ) : null}
         </div>
         <span className="pos-header-spacer" />
         <div className="pos-header-actions">

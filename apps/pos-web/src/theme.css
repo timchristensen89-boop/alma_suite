@@ -2367,8 +2367,10 @@ body.pos-v2 .pos-rail { flex-basis: calc(190px * var(--pos-text-scale, 1)); }
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* Wide screens: the wrappers dissolve into the header's own flex row. */
-.pos-header-brand, .pos-header-context, .pos-header-actions { display: contents; }
+.pos-header-brand, .pos-header-context, .pos-header-actions, .pos-header-search { display: contents; }
 .pos-header-spacer { flex: 1 1 auto; }
+/* Phone-only row break; nothing on a wide till. */
+.pos-header-break { display: none; }
 
 /* What each width shows: -wide only above 700px, -narrow only below. */
 @media (min-width: 701px) {
@@ -2647,6 +2649,73 @@ body.pos-dark .office-top { background: #10160f; box-shadow: 0 6px 18px rgba(0, 
   /* The tabs share the bar's gutter, so the first chip lines up under the
      brand instead of sitting 2px to its left. */
   .pos-tabs { padding-inline: 12px; }
+
+  /* ── Two rows, and only two ────────────────────────────────────────────
+     Row 1: the logo and the venue name, with the sale's chips beside them.
+     Row 2: the search, then New and Menu on the same line.
+
+     Everything here is written twice, plainly and with a `body.pos-v2`
+     prefix. That block near the top of this file sets
+     `body.pos-v2 .pos-header > * { order: 2 }` at specificity (0,3,0), which
+     silently beat the (0,1,0) ordering this section used to carry — the bar
+     kept its four rows and New and Menu never reached the venue name. Match
+     its specificity or it wins. */
+  body.pos-v2 .pos-header, .pos-header { flex-wrap: wrap; align-items: center; }
+
+  body.pos-v2 .pos-header-brand, .pos-header-brand { order: 0; flex: 0 1 auto; min-width: 0; }
+  body.pos-v2 .pos-header-context, .pos-header-context { order: 1; flex: 1 1 auto; min-width: 0; }
+  /* Zero-height, full-width: the row ends here regardless of what row one is
+     carrying. */
+  body.pos-v2 .pos-header-break, .pos-header-break { display: block; order: 2; flex: 0 0 100%; height: 0; margin: 0; }
+  /* Basis 0, not auto: an <input>'s intrinsic width is about 20 characters,
+     and with `auto` the wrapper asked for all of it — at 320px that left no
+     room for New and Menu and pushed them onto a third row. Basis 0 makes the
+     search take whatever the two labels leave. */
+  body.pos-v2 .pos-header-search, .pos-header-search { order: 3; display: flex; flex: 1 1 0%; min-width: 0; }
+  body.pos-v2 .pos-header-actions, .pos-header-actions { order: 4; flex: none; }
+  body.pos-v2 .pos-header-spacer, .pos-header-spacer { display: none; }
+
+  /* The input fills its wrapper. The pos-v2 block gives it `flex: 1 0 100%`
+     to claim a row of its own — it no longer needs to, the break does that,
+     and 100% here would push New and Menu onto a third row. */
+  body.pos-v2 .pos-header .pos-search, .pos-header .pos-search { flex: 1 1 auto; width: 100%; min-width: 0; order: 0; }
+
+  /* ── New and Menu are labels, not buttons ──────────────────────────────
+     This shipped once and the outline stayed on the phone, because two other
+     rules were quietly putting it back:
+
+       body.pos-v2 .pos-header .pos-ghost   (0,3,0) sets a border-colour, and
+                                            out-specifies a bare
+                                            `.pos-header-actions .pos-ghost`;
+       .pos-header .pos-ghost               (0,2,0) later in this file resets
+                                            the padding.
+
+     So this lives at the very end of the last phone block and carries the
+     body.pos-v2 form as well — it has to win on both specificity and order.
+     Test after any header change: on a phone, New and Menu are text on green
+     with no pill around either. */
+  .pos-header-actions .pos-ghost,
+  .pos-header-actions .pos-ghost-active,
+  body.pos-v2 .pos-header-actions .pos-ghost,
+  body.pos-v2 .pos-header-actions .pos-ghost-active {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    color: #f3efe6;
+    /* The tap target keeps its full height; only the shell goes. */
+    min-height: 36px;
+    padding: 0 2px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .pos-header-actions .pos-ghost:hover,
+  body.pos-v2 .pos-header-actions .pos-ghost:hover { background: transparent; }
+  /* The dropdown is open: say so without giving the shell back. */
+  .pos-header-actions .pos-ghost-active,
+  body.pos-v2 .pos-header-actions .pos-ghost-active {
+    text-decoration: underline;
+    text-underline-offset: 5px;
+  }
 }
 
 /* ── A deploy has landed while this till was open ──────────────────────────
