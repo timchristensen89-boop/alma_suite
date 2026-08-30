@@ -2367,10 +2367,8 @@ body.pos-v2 .pos-rail { flex-basis: calc(190px * var(--pos-text-scale, 1)); }
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* Wide screens: the wrappers dissolve into the header's own flex row. */
-.pos-header-brand, .pos-header-context, .pos-header-actions, .pos-header-search { display: contents; }
+.pos-header-brand, .pos-header-context, .pos-header-actions { display: contents; }
 .pos-header-spacer { flex: 1 1 auto; }
-/* Phone-only row break; nothing on a wide till. */
-.pos-header-break { display: none; }
 
 /* What each width shows: -wide only above 700px, -narrow only below. */
 @media (min-width: 701px) {
@@ -2650,9 +2648,13 @@ body.pos-dark .office-top { background: #10160f; box-shadow: 0 6px 18px rgba(0, 
      brand instead of sitting 2px to its left. */
   .pos-tabs { padding-inline: 12px; }
 
-  /* ── Two rows, and only two ────────────────────────────────────────────
-     Row 1: the logo and the venue name, with the sale's chips beside them.
-     Row 2: the search, then New and Menu on the same line.
+  /* ── The bar is the venue and two labels ───────────────────────────────
+     With the search gone to the page it filters, this fits on one line:
+
+       logo · venue name · New · Menu
+
+     and the sale's chips take a second line only when a sale is open and
+     they don't fit beside it.
 
      Everything here is written twice, plainly and with a `body.pos-v2`
      prefix. That block near the top of this file sets
@@ -2662,23 +2664,13 @@ body.pos-dark .office-top { background: #10160f; box-shadow: 0 6px 18px rgba(0, 
      its specificity or it wins. */
   body.pos-v2 .pos-header, .pos-header { flex-wrap: wrap; align-items: center; }
 
-  body.pos-v2 .pos-header-brand, .pos-header-brand { order: 0; flex: 0 1 auto; min-width: 0; }
-  body.pos-v2 .pos-header-context, .pos-header-context { order: 1; flex: 1 1 auto; min-width: 0; }
-  /* Zero-height, full-width: the row ends here regardless of what row one is
-     carrying. */
-  body.pos-v2 .pos-header-break, .pos-header-break { display: block; order: 2; flex: 0 0 100%; height: 0; margin: 0; }
-  /* Basis 0, not auto: an <input>'s intrinsic width is about 20 characters,
-     and with `auto` the wrapper asked for all of it — at 320px that left no
-     room for New and Menu and pushed them onto a third row. Basis 0 makes the
-     search take whatever the two labels leave. */
-  body.pos-v2 .pos-header-search, .pos-header-search { order: 3; display: flex; flex: 1 1 0%; min-width: 0; }
-  body.pos-v2 .pos-header-actions, .pos-header-actions { order: 4; flex: none; }
+  body.pos-v2 .pos-header-brand, .pos-header-brand { order: 0; flex: 1 1 auto; min-width: 0; }
+  /* Beside the venue name, which is what buys the rest of the bar back. */
+  body.pos-v2 .pos-header-actions, .pos-header-actions { order: 1; flex: none; }
+  /* Last, and free to wrap: a long table label takes its own line rather than
+     shoving the buttons off the end of the first one. */
+  body.pos-v2 .pos-header-context, .pos-header-context { order: 2; flex: 1 1 auto; min-width: 0; }
   body.pos-v2 .pos-header-spacer, .pos-header-spacer { display: none; }
-
-  /* The input fills its wrapper. The pos-v2 block gives it `flex: 1 0 100%`
-     to claim a row of its own — it no longer needs to, the break does that,
-     and 100% here would push New and Menu onto a third row. */
-  body.pos-v2 .pos-header .pos-search, .pos-header .pos-search { flex: 1 1 auto; width: 100%; min-width: 0; order: 0; }
 
   /* ── New and Menu are labels, not buttons ──────────────────────────────
      This shipped once and the outline stayed on the phone, because two other
