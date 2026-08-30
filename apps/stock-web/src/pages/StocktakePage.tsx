@@ -179,6 +179,13 @@ function estimateLineValueCents(
   };
 }
 
+// Still being counted, so anyone at the venue may enter counts. Once it is
+// SUBMITTED it belongs to the reviewer; a manager reopens it to hand it back.
+// The same rule is enforced server-side in stocktakes.service.updateStocktake.
+function isOpenForCounting(status: Stocktake['status']) {
+  return status === 'IN_PROGRESS' || status === 'REOPENED';
+}
+
 function movementTypeLabel(type: StocktakeMovement['movementType']) {
   switch (type) {
     case 'STOCKTAKE_CORRECTION':
@@ -883,6 +890,7 @@ export function StocktakePage() {
             mode={form.mode}
             initial={form.mode === 'edit' ? form.stocktake : undefined}
             items={items}
+            canSubmitForReview={canManageReview}
             onSaved={() => void handleSaved()}
             onCancel={() => setForm({ mode: 'closed' })}
           />
@@ -1044,20 +1052,29 @@ export function StocktakePage() {
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  disabled={Boolean(stocktake.appliedAt) || !canManageReview}
+                                  disabled={
+                                    Boolean(stocktake.appliedAt) ||
+                                    !(canManageReview || isOpenForCounting(stocktake.status))
+                                  }
                                   title={
-                                    !canManageReview
-                                      ? 'Manager access required'
-                                      : stocktake.appliedAt
-                                        ? 'Applied stocktakes are locked until a ledger reversal exists.'
-                                        : undefined
+                                    stocktake.appliedAt
+                                      ? 'Applied stocktakes are locked until a ledger reversal exists.'
+                                      : canManageReview || isOpenForCounting(stocktake.status)
+                                        ? undefined
+                                        : 'This count is closed for counting — ask a manager to reopen it.'
                                   }
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    if (canManageReview) void editStocktake(stocktake);
+                                    if (canManageReview || isOpenForCounting(stocktake.status)) {
+                                      void editStocktake(stocktake);
+                                    }
                                   }}
                                 >
-                                  {canManageReview ? 'Edit' : 'View only'}
+                                  {canManageReview
+                                    ? 'Edit'
+                                    : isOpenForCounting(stocktake.status)
+                                      ? 'Count'
+                                      : 'View only'}
                                 </Button>
                               </td>
                             </tr>
@@ -1112,12 +1129,15 @@ function StocktakeForm({
   mode,
   initial,
   items,
+  canSubmitForReview,
   onSaved,
   onCancel
 }: {
   mode: 'create' | 'edit';
   initial?: StocktakeWithLines;
   items: StockItem[];
+  /** Managers own the state machine; staff count and save drafts. */
+  canSubmitForReview: boolean;
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -1465,16 +1485,24 @@ function StocktakeForm({
         })}
       </div>
 
-      <p className="subtle">Submitting sends this count for review. It does not update stock balances.</p>
+      <p className="subtle">
+        {canSubmitForReview
+          ? 'Submitting sends this count for review. It does not update stock balances.'
+          : 'Save draft keeps your counts. A manager submits the count and applies it to stock.'}
+      </p>
 
       <div className="toolbar-right">
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button type="submit" variant="secondary" disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</Button>
         <ActionFeedback message={feedbackTarget === 'draft' ? feedback : null} tone={feedbackTone} />
-        <Button type="button" disabled={saving} onClick={() => void submit('SUBMITTED', 'review')}>
-          {saving ? 'Submitting…' : 'Submit for review'}
-        </Button>
-        <ActionFeedback message={feedbackTarget === 'review' ? feedback : null} tone={feedbackTone} />
+        {canSubmitForReview ? (
+          <>
+            <Button type="button" disabled={saving} onClick={() => void submit('SUBMITTED', 'review')}>
+              {saving ? 'Submitting…' : 'Submit for review'}
+            </Button>
+            <ActionFeedback message={feedbackTarget === 'review' ? feedback : null} tone={feedbackTone} />
+          </>
+        ) : null}
       </div>
     </form>
   );
