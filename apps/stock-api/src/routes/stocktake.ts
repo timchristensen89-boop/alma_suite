@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireStockManager } from '../lib/stock-permissions.js';
+import { requireStockManager, requireStockUser } from '../lib/stock-permissions.js';
 import { stocktakesService } from '../services/stocktakes.service.js';
 import { stockReportsService } from '../services/stock-reports.service.js';
 
@@ -130,9 +130,14 @@ stocktakeRouter.post('/:id/reopen', async (req, res, next) => {
   }
 });
 
+// The one write on this router open to non-managers: entering counts. Staff
+// count the shelves, managers own the count's identity and its state machine,
+// so updateStocktake narrows a non-manager's payload to lines and notes and
+// refuses anything but an open stocktake. Everything else here stays
+// requireStockManager.
 stocktakeRouter.patch('/:id', async (req, res, next) => {
   try {
-    requireStockManager(req.user);
+    requireStockUser(req.user);
     res.json(await stocktakesService.updateStocktake(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);

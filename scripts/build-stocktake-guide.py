@@ -14,16 +14,17 @@ when the iPad stocktake screens change, change the copy here and re-run it.
   Source screens
     apps/venue-ipad-dashboard/src/pages/StocktakePage.tsx  (list / areas / count)
     apps/venue-ipad-dashboard/src/auth.tsx                 (device sign-in, PIN)
-    apps/stock-web/src/pages/StocktakePage.tsx             (the manager half)
+    apps/stock-web/src/pages/StocktakePage.tsx             (the Alma Stock flow)
+    apps/stock-api/src/lib/stock-permissions.ts            (who may do what)
 
   Run:  python3 scripts/build-stocktake-guide.py
   Out:  docs/guides/stocktake-first-time-{ipad,login}.pdf
 
-Note for the login guide: counting on a personal login needs ADMIN or MANAGER.
-`requireStockManager` guards PATCH /api/stocktake/:id server-side, and
-`canManageStock` hides the buttons client-side, so a STAFF-role account cannot
-save a count at all. The guide says so on page one rather than letting someone
-find out halfway through a cool room.
+Note for the login guide: it describes the permission split as it stands after
+`assertMayEnterCounts` (apps/stock-api/src/lib/stock-permissions.ts) — anyone
+signed in may write counts to a stocktake that is open for counting, while
+creating, submitting, reviewing, locking and applying stay manager-only. If
+that guard ever moves, this copy has to move with it.
 """
 
 from datetime import date
@@ -551,9 +552,9 @@ def build_login():
                     cb,
                 ),
                 li(
-                    "<b>Your login needs stock manager access.</b> Step 2 checks it in five "
-                    "seconds. Without it you can’t save a single number, so check before you "
-                    "walk into the cool room, not halfway through it.",
+                    "<b>A manager starts the count; you count it.</b> Starting a stocktake, "
+                    "submitting it and applying it to stock are all manager jobs — your part is "
+                    "entering the numbers and saving them.",
                     cb,
                 ),
             ],
@@ -579,19 +580,21 @@ def build_login():
     s.append(
         step(
             2,
-            "Open Stocktake — and check your access",
+            "Open today’s count",
             [
                 Paragraph(
-                    "Tap <b>Stocktake</b> in the menu, then scroll to the card at the bottom. "
-                    "The button on its top right tells you where you stand:",
+                    "Tap <b>Stocktake</b> in the menu, then find today’s count in the list and "
+                    "press <b>Count</b>.",
                     body_tight,
                 ),
                 Spacer(1, 4),
-                li("It says <b>New stocktake</b> → you’re good, carry on."),
                 li(
-                    "It says <b>Manager required</b>, or the history rows say <b>View only</b> "
-                    "→ your account can’t count yet. Nothing on this screen will fix it; ask the "
-                    "office to give you stock manager access."
+                    "No count in the list → a manager hasn’t started one yet. Ask them to; "
+                    "you can’t start it yourself."
+                ),
+                li(
+                    "The button says <b>View only</b> → that count has already been submitted or "
+                    "locked, so it’s closed for counting. A manager can reopen it."
                 ),
             ],
         )
@@ -600,28 +603,6 @@ def build_login():
     s.append(
         step(
             3,
-            "Start the count, or open the one already going",
-            [
-                Paragraph(
-                    "<b>New count:</b> tap <b>New stocktake</b>, then fill in <b>Name</b>, "
-                    "<b>Venue</b> (Freshie, Avalon…) and <b>Counted at</b>. "
-                    "<b>Start from template</b> loads just that template’s items in walking "
-                    "order; leave it on <i>Full count — all active items</i> to count the lot.",
-                    body_tight,
-                ),
-                Spacer(1, 4),
-                Paragraph(
-                    "<b>Already started:</b> find it in the list underneath and press "
-                    "<b>Edit</b>.",
-                    body_tight,
-                ),
-            ],
-        )
-    )
-
-    s.append(
-        step(
-            4,
             "Set the screen up before you count",
             [
                 Paragraph("Two toggles sit above the count lines. Both are worth using.", body_tight),
@@ -646,7 +627,7 @@ def build_login():
 
     s.append(
         step(
-            5,
+            4,
             "Count each line",
             [
                 Paragraph(
@@ -688,7 +669,7 @@ def build_login():
 
     s.append(
         step(
-            6,
+            5,
             "Save as you go",
             [
                 Paragraph(
@@ -703,13 +684,14 @@ def build_login():
 
     s.append(
         step(
-            7,
-            "Submit when the whole count is done",
+            6,
+            "Tell your manager when it’s done",
             [
                 Paragraph(
-                    "Tap <b>Submit for review</b>. The screen tells you the truth: "
-                    "<i>“Submitting sends this count for review. It does not update stock "
-                    "balances.”</i> Nothing moves until a manager applies it.",
+                    "That’s your part. You won’t see a submit button — the screen says "
+                    "<i>“Save draft keeps your counts. A manager submits the count and applies "
+                    "it to stock.”</i> Save one last time and let them know the count is "
+                    "finished.",
                     body_tight,
                 )
             ],
@@ -722,9 +704,14 @@ def build_login():
         fix_table(
             [
                 (
-                    "“Manager required” or “View only”",
-                    "Your login doesn’t have stock manager access. There’s nothing you can do "
-                    "from this screen — ask the office to change it.",
+                    "The button says “View only”",
+                    "That count has been submitted, reviewed or locked, so it’s closed for "
+                    "counting. A manager can reopen it if there’s more to add.",
+                ),
+                (
+                    "“Manager required” on New stocktake",
+                    "Expected — starting a count is a manager job. Ask them to create it and it "
+                    "will appear in your list.",
                 ),
                 (
                     "Two people on one count",
@@ -784,8 +771,9 @@ def build_login():
                 ),
                 Spacer(1, 3),
                 Paragraph(
-                    "Only Admin and Manager accounts see those buttons — and, today, only they "
-                    "can enter counts at all.",
+                    "Only Admin and Manager accounts see those buttons, and only they can start "
+                    "a count. Anyone signed in can enter counts on a count that is open — once "
+                    "you submit it, it closes to them until you reopen it.",
                     callout_body,
                 ),
             ],

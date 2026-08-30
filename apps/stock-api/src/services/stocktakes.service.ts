@@ -20,6 +20,7 @@ import {
   type StocktakesSummary
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { assertMayEnterCounts, isStockManager } from '../lib/stock-permissions.js';
 import { convertQuantityToCostUnit } from './units.js';
 
 type LineCostItem = {
@@ -742,9 +743,28 @@ export const stocktakesService = {
     input: unknown,
     actor?: AuthUser | null
   ): Promise<StocktakeWithLines> {
-    const data = stocktakeUpdateInputSchema.parse(input);
+    const parsed = stocktakeUpdateInputSchema.parse(input);
     const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
     if (!existing) throw new HttpError(404, 'Stocktake not found');
+
+    // Non-managers count; they don't run the count. They may write lines and
+    // notes on a stocktake that is open for counting, and nothing else: not
+    // its name, venue, template or date, not its status, and never one that
+    // has already been applied to stock. Narrowing the payload here rather
+    // than rejecting it keeps the existing web form working unchanged — it
+    // PATCHes the whole record on every save, including fields it never
+    // edited.
+    let data = parsed;
+    if (!isStockManager(actor)) {
+      assertMayEnterCounts(existing, parsed.status);
+      // Every field on the update schema is optional (it is .partial()), so
+      // dropping the rest is a valid payload rather than a cast.
+      const narrowed: typeof parsed = {};
+      if (parsed.lines !== undefined) narrowed.lines = parsed.lines;
+      if (parsed.notes !== undefined) narrowed.notes = parsed.notes;
+      data = narrowed;
+    }
+
     let reversedAfterApply = false;
     if (existing.appliedAt) {
       reversedAfterApply = await prisma.inventoryMovement.count({
