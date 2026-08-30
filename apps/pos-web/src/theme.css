@@ -2648,3 +2648,33 @@ body.pos-dark .office-top { background: #10160f; box-shadow: 0 6px 18px rgba(0, 
      brand instead of sitting 2px to its left. */
   .pos-tabs { padding-inline: 12px; }
 }
+
+/* ── A deploy has landed while this till was open ──────────────────────────
+   Bottom-left, clear of the bill's own actions on the right and of the phone
+   home indicator. It is the only thing in the app that appears uninvited, so
+   it stays small and it never covers a control. */
+.pos-update-ready {
+  position: fixed;
+  left: max(12px, env(safe-area-inset-left));
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 60;
+  padding: 10px 14px;
+  border: 1px solid rgba(243, 239, 230, 0.28);
+  border-radius: 999px;
+  background: #1f3524;
+  color: #f3efe6;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 10px 26px rgba(31, 53, 36, 0.34);
+  cursor: pointer;
+}
+
+.pos-update-ready:disabled { opacity: 0.7; cursor: default; }
+
+body.pos-dark .pos-update-ready {
+  background: #1d271e;
+  border-color: rgba(248, 246, 241, 0.22);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
