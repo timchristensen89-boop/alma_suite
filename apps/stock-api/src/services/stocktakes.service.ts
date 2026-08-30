@@ -116,6 +116,18 @@ type StocktakeReviewRow = Prisma.StocktakeGetPayload<{
   };
 }>;
 
+function startOfDay(value: Date) {
+  const day = new Date(value);
+  day.setHours(0, 0, 0, 0);
+  return day;
+}
+
+function startOfNextDay(value: Date) {
+  const day = startOfDay(value);
+  day.setDate(day.getDate() + 1);
+  return day;
+}
+
 function normaliseOptionalText(value: string | undefined) {
   if (value === undefined) return undefined;
   return value.trim() || null;
@@ -647,7 +659,32 @@ export const stocktakesService = {
           orderBy: [{ countedAt: 'desc' }],
           select: { id: true, status: true, countedAt: true, name: true }
         });
-        const stockValueCents = latestLocked?.lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0) ?? null;
+        // A venue's count is split across sessions — the bar and the kitchen
+        // count separately, minutes apart. Reading the value off the single
+        // most-recent locked count reported one section as the whole venue
+        // (St Alma read $7,048.72, its kitchen, against $70,025.50 counted).
+        // Sum every locked count the venue recorded on that same day, the way
+        // stockValueForVenueAtCents in @alma/db does.
+        const sameDaySessions = latestLocked
+          ? await prisma.stocktake.findMany({
+              where: {
+                venue: v,
+                status: 'LOCKED',
+                countedAt: {
+                  gte: startOfDay(latestLocked.countedAt),
+                  lt: startOfNextDay(latestLocked.countedAt)
+                }
+              },
+              include: { _count: { select: { lines: true } }, lines: { select: { stockValueCents: true } } }
+            })
+          : [];
+        const stockValueCents = latestLocked
+          ? sameDaySessions.reduce(
+              (sum, session) => sum + session.lines.reduce((s, line) => s + (line.stockValueCents ?? 0), 0),
+              0
+            )
+          : null;
+        const sessionLineCount = sameDaySessions.reduce((sum, session) => sum + session._count.lines, 0);
         const stale = latestLocked ? latestLocked.countedAt < staleCutoff : true;
         return {
           venue: v,
@@ -657,7 +694,8 @@ export const stocktakesService = {
                 name: latestLocked.name,
                 countedAt: latestLocked.countedAt.toISOString(),
                 lockedAt: latestLocked.lockedAt?.toISOString() ?? null,
-                lineCount: latestLocked._count.lines,
+                lineCount: sessionLineCount || latestLocked._count.lines,
+                sessionCount: sameDaySessions.length,
                 stockValueCents,
                 stale
               }
