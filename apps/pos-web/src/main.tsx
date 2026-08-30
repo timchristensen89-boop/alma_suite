@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import { RegisterErrorBoundary, installGlobalCrashReporting } from './ErrorBoundary';
+import { watchForNewBuild } from './updateCheck';
 import './styles.css';
 import './theme.css';
 
@@ -33,6 +34,12 @@ const ClockKiosk = React.lazy(() => import('./Clock').then((m) => ({ default: m.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => void navigator.serviceWorker.register('/sw.js').catch(() => undefined));
 }
+
+// sw.js promises a build reaches the till "sooner via the app's own update
+// check". There wasn't one, so a deploy waited for the next cold open. There
+// is now — see updateCheck.ts for why it watches version.json rather than the
+// worker, and why it asks rather than reloading.
+watchForNewBuild();
 
 const hash = window.location.hash;
 const isKds = hash.includes('kds');
