@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import type { AuthUser } from '@alma/shared';
 import { assertMayEnterCounts, isStockManager } from './stock-permissions.js';
 
-function user(overrides: Partial<AuthUser>): AuthUser {
-  return { id: 'u1', role: 'STAFF', isAdmin: false, ...overrides } as AuthUser;
+// Overrides are deliberately untyped: some of these cases are values the
+// AuthUser type forbids but the database can still hold (a lowercase role),
+// and those are exactly the ones worth asserting on.
+function user(overrides: Record<string, unknown>): AuthUser {
+  return { id: 'u1', role: 'STAFF', isAdmin: false, ...overrides } as unknown as AuthUser;
 }
 
 const open = { status: 'IN_PROGRESS', appliedAt: null };
