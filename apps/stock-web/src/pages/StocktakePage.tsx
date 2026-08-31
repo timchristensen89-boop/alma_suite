@@ -1194,13 +1194,35 @@ function PreppedItemsPicker({
     [lines]
   );
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
-
-  if (recipes.length === 0) return null;
+  const [filter, setFilter] = useState('');
 
   const available = recipes.filter((recipe) => !alreadyOn.has(recipe.id));
   const countable = available.filter((recipe) => recipe.countable);
   const blocked = available.filter((recipe) => !recipe.countable);
   const onSheet = recipes.filter((recipe) => alreadyOn.has(recipe.id));
+
+  // One flat list of ninety is a kitchen list a bar manager has to read
+  // through to find two batches. The recipes already carry their category, so
+  // group by it: the bar count opens on "Batches", the kitchen on its sauces,
+  // and neither has to scroll past the other.
+  const needle = filter.trim().toLowerCase();
+  const matching = needle
+    ? countable.filter(
+        (recipe) =>
+          recipe.title.toLowerCase().includes(needle) ||
+          (recipe.category ?? '').toLowerCase().includes(needle)
+      )
+    : countable;
+  const byCategory = new Map<string, StocktakePrepRecipeOption[]>();
+  for (const recipe of matching) {
+    const key = recipe.category?.trim() || 'Uncategorised';
+    const bucket = byCategory.get(key);
+    if (bucket) bucket.push(recipe);
+    else byCategory.set(key, [recipe]);
+  }
+  const groups = [...byCategory.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+  if (recipes.length === 0) return null;
 
   function add(chosen: StocktakePrepRecipeOption[]) {
     if (chosen.length === 0) return;
@@ -1232,32 +1254,80 @@ function PreppedItemsPicker({
           </p>
           {countable.length > 0 ? (
             <>
-              <div className="stocktake-prep-grid">
-                {countable.map((recipe) => (
-                  <label key={recipe.id} className="stocktake-toggle">
+              <input
+                type="search"
+                className="stocktake-prep-filter"
+                placeholder={`Filter ${countable.length} prepped items — batch, salsa, mole…`}
+                value={filter}
+                onChange={(event) => setFilter(event.currentTarget.value)}
+                aria-label="Filter prepped items"
+              />
+              {groups.length === 0 ? (
+                <p className="subtle">Nothing matches “{filter}”.</p>
+              ) : null}
+              {groups.map(([category, inCategory]) => (
+                <div key={category} className="stocktake-prep-group">
+                  <div className="stocktake-prep-group-head">
+                    <strong>{category}</strong>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => add(inCategory)}
+                    >
+                      Add all {inCategory.length}
+                    </Button>
+                  </div>
+                  <div className="stocktake-prep-grid">
+                {inCategory.map((recipe) => (
+                  <label
+                    key={recipe.id}
+                    className={`stocktake-prep-option${picked.has(recipe.id) ? ' is-picked' : ''}`}
+                    title={recipe.warnings?.length ? recipe.warnings.join(' ') : undefined}
+                  >
                     <input
                       type="checkbox"
                       checked={picked.has(recipe.id)}
                       onChange={(event) => {
+                        // Read `checked` HERE, not inside the updater. React
+                        // nulls currentTarget once the handler returns, and a
+                        // set-state updater runs later, during render — so
+                        // reading it in there threw and took the whole count
+                        // sheet down to the error boundary the moment anyone
+                        // ticked a prepped item.
+                        const checked = event.currentTarget.checked;
                         setPicked((prev) => {
                           const next = new Set(prev);
-                          if (event.currentTarget.checked) next.add(recipe.id);
+                          if (checked) next.add(recipe.id);
                           else next.delete(recipe.id);
                           return next;
                         });
                       }}
                     />
-                    {recipe.title}
-                    <span className="subtle">
-                      {recipe.yieldQuantity ? ` · makes ${recipe.yieldQuantity} ${recipe.yieldUnit ?? ''}` : ''}
+                    <span className="stocktake-prep-option-text">
+                      <strong>{recipe.title}</strong>
+                      {recipe.yieldQuantity ? (
+                        <span className="subtle">
+                          makes {recipe.yieldQuantity} {recipe.yieldUnit ?? ''}
+                        </span>
+                      ) : null}
                       {/* Countable, but it will book less than everything. Said
                           here rather than after the count, when the number is
-                          already in the ledger. */}
-                      {recipe.warnings?.length ? ` · ${recipe.warnings.join(' ')}` : ''}
+                          already in the ledger — but as a count, with the
+                          sentences on the label's title. Spelled out inline,
+                          ninety of these is a wall of prose nobody reads. */}
+                      {recipe.warnings?.length ? (
+                        <span className="stocktake-prep-option-warn">
+                          {recipe.warnings.length} ingredient issue
+                          {recipe.warnings.length === 1 ? '' : 's'} — books less than everything
+                        </span>
+                      ) : null}
                     </span>
                   </label>
                 ))}
-              </div>
+                  </div>
+                </div>
+              ))}
               <div className="stocktake-count-toggles">
                 <Button
                   type="button"

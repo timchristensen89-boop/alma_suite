@@ -3209,6 +3209,10 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 }
 .template-checks .check-row {
   margin-top: 0;
+  /* Flex items default to min-width: auto, so a long label refuses to shrink
+     and overflows the wrapped row instead of breaking. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .template-chips {
   display: flex;
@@ -3722,8 +3726,83 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 }
 .stocktake-prep-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 6px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+  /* Cards are as tall as their own text needs. Without this a card with a
+     warning line stretches every card in its row. */
+  align-items: start;
+}
+
+/* One option = one box.
+   These labels are recipe names — "Adobo for chicken and octopus", "Cooked
+   chicken thigh with skin" — not the two-word switches .stocktake-toggle was
+   written for, and that class sets white-space: nowrap. In a fixed-width grid
+   track a nowrap label does not wrap and does not clip: it runs straight out
+   of its cell and paints over its neighbours, which is what ninety prep
+   recipes looked like on the live sheet. Own class, own rules: wrap inside
+   the cell, and min-width: 0 so the grid track is allowed to be the limit. */
+.stocktake-prep-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted, #f6f2ea);
+  font-size: 12.5px;
+  color: var(--color-text, #1f3524);
+  cursor: pointer;
+}
+.stocktake-prep-option.is-picked {
+  border-color: #4f6b47;
+  background: rgba(79, 107, 71, 0.1);
+}
+.stocktake-prep-option input {
+  flex: none;
+  margin-top: 2px;
+  cursor: pointer;
+}
+.stocktake-prep-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.stocktake-prep-option-text strong {
+  font-weight: 600;
+  /* Recipe titles carry long unbroken words; break inside one rather than
+     let it push the card wide. */
+  overflow-wrap: anywhere;
+}
+.stocktake-prep-option-warn {
+  color: #8a6520;
+  overflow-wrap: anywhere;
+}
+.stocktake-prep-filter {
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #1f3524);
+  font: inherit;
+  font-size: 12.5px;
+}
+.stocktake-prep-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stocktake-prep-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #5a6b58);
 }
 .stocktake-prep-blocked {
   padding: 10px 12px;
