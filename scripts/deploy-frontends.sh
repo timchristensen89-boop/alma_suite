@@ -88,7 +88,7 @@ for app in "${APPS[@]}"; do
 done
 
 echo "→ Stamping dists with ${HEAD_SHORT}…"
-node scripts/frontends-deploy-check.mjs stamp
+node scripts/frontends-deploy-check.cjs stamp
 
 if [ "${BUILD_ONLY:-NO}" = "YES" ]; then
   echo "✓ Built and stamped. BUILD_ONLY=YES, so nothing was deployed."
@@ -117,4 +117,4 @@ firebase deploy --only "$TARGETS" --project alma-compliance
 
 echo
 echo "✓ Deployed $HEAD_SHORT. Check what is live with:"
-echo "    node scripts/frontends-deploy-check.mjs"
+echo "    node scripts/frontends-deploy-check.cjs"

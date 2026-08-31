@@ -35,7 +35,7 @@
         }
       ],
       "predeploy": [
-        "node scripts/frontends-deploy-check.mjs stamp"
+        "node scripts/frontends-deploy-check.cjs stamp"
       ]
     },
     {
@@ -73,7 +73,7 @@
         }
       ],
       "predeploy": [
-        "node scripts/frontends-deploy-check.mjs stamp"
+        "node scripts/frontends-deploy-check.cjs stamp"
       ]
     },
     {
@@ -111,7 +111,7 @@
         }
       ],
       "predeploy": [
-        "node scripts/frontends-deploy-check.mjs stamp"
+        "node scripts/frontends-deploy-check.cjs stamp"
       ]
     },
     {
@@ -149,7 +149,7 @@
         }
       ],
       "predeploy": [
-        "node scripts/frontends-deploy-check.mjs stamp"
+        "node scripts/frontends-deploy-check.cjs stamp"
       ]
     },
     {
@@ -187,7 +187,7 @@
         }
       ],
       "predeploy": [
-        "node scripts/frontends-deploy-check.mjs stamp"
+        "node scripts/frontends-deploy-check.cjs stamp"
       ]
     },
     {
@@ -225,7 +225,7 @@
         }
       ],
       "predeploy": [
-        "node scripts/frontends-deploy-check.mjs stamp"
+        "node scripts/frontends-deploy-check.cjs stamp"
       ]
     },
     {
@@ -263,7 +263,7 @@
         }
       ],
       "predeploy": [
-        "node scripts/frontends-deploy-check.mjs stamp"
+        "node scripts/frontends-deploy-check.cjs stamp"
       ]
     },
     {
@@ -301,7 +301,7 @@
         }
       ],
       "predeploy": [
-        "node scripts/frontends-deploy-check.mjs stamp"
+        "node scripts/frontends-deploy-check.cjs stamp"
       ]
     },
     {
@@ -339,7 +339,7 @@
         }
       ],
       "predeploy": [
-        "node scripts/frontends-deploy-check.mjs stamp"
+        "node scripts/frontends-deploy-check.cjs stamp"
       ]
     },
     {
@@ -377,7 +377,7 @@
         }
       ],
       "predeploy": [
-        "node scripts/frontends-deploy-check.mjs stamp"
+        "node scripts/frontends-deploy-check.cjs stamp"
       ]
     },
     {
@@ -415,7 +415,7 @@
         }
       ],
       "predeploy": [
-        "node scripts/frontends-deploy-check.mjs stamp"
+        "node scripts/frontends-deploy-check.cjs stamp"
       ]
     }
   ]

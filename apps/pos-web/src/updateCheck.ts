@@ -15,7 +15,7 @@
  *   sw.js, and sw.js only changes when someone bumps CACHE by hand — so it
  *   says nothing at all about whether the app was rebuilt. version.json is
  *   the honest signal: the deploy stamps it with the commit
- *   (scripts/frontends-deploy-check.mjs), which is exactly the question.
+ *   (scripts/frontends-deploy-check.cjs), which is exactly the question.
  *
  *   It does not reload on its own. A register that refreshes itself mid-order
  *   is worse than one running yesterday's build. The operator is told, and
