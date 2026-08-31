@@ -7229,6 +7229,12 @@ export type StocktakeLine = {
   stocktakeId: string;
   itemId: string | null;
   item: { id: string; name: string; unit: string; onHand: number } | null;
+  // A PREPPED-ITEM line: something the kitchen made, counted as itself
+  // (11.7 kg of chipotle mayo). Exclusive with itemId. Applying the count
+  // explodes the recipe into the raw items it holds and adds those to their
+  // own counted quantities — nothing is ever booked against a recipe.
+  recipeId: string | null;
+  recipe: { id: string; title: string; yieldQuantity: number | null; yieldUnit: string | null } | null;
   position: number;
   label: string;
   countedQty: number | null;
@@ -7275,6 +7281,10 @@ export type StocktakeTemplate = {
   categoryIds: string[];
   includeItemIds: string[];
   excludeItemIds: string[];
+  // Prep recipes counted as made items on this sheet. Prep is not a StockItem
+  // and never resolves from a count area or a category, so it is chosen
+  // explicitly.
+  prepRecipeIds: string[];
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -7287,13 +7297,37 @@ export type StocktakeTemplatesPayload = {
   countAreas: string[];
   categories: Array<{ id: string; name: string }>;
   venues: string[];
+  // Every active prep recipe, each carrying whether it can actually be
+  // exploded into ingredients. An un-countable one is still listed — hiding it
+  // would leave a manager wondering why the mole never appears.
+  prepRecipes: StocktakePrepRecipeOption[];
+};
+
+// A prep recipe offered as a countable made item, plus what (if anything)
+// stops it working. `problems` is empty exactly when `countable` is true.
+export type StocktakePrepRecipeOption = {
+  id: string;
+  title: string;
+  category: string | null;
+  yieldQuantity: number | null;
+  yieldUnit: string | null;
+  countable: boolean;
+  problems: string[];
 };
 
 // The resolved concrete item list for starting a count from a template.
 export type StocktakeTemplateResolved = {
   template: StocktakeTemplate;
   items: Array<{ id: string; name: string; unit: string; countUnit: string | null; countArea: string | null; categoryName: string | null }>;
+  // Prep lines to seed after the item lines, in the order the template lists
+  // them. Counted in `yieldUnit`, grouped under STOCKTAKE_PREP_AREA.
+  prepRecipes: StocktakePrepRecipeOption[];
 };
+
+// The count area prep lines are filed under, so they walk as one section on
+// the iPad and read as one block on the sheet. A single spelling shared by
+// everything that creates or groups them.
+export const STOCKTAKE_PREP_AREA = 'Prep (made items)';
 
 export const stocktakeTemplateInputSchema = z.object({
   name: z.string().min(1, 'Template name is required'),
@@ -7303,6 +7337,7 @@ export const stocktakeTemplateInputSchema = z.object({
   categoryIds: z.array(z.string()).optional(),
   includeItemIds: z.array(z.string()).optional(),
   excludeItemIds: z.array(z.string()).optional(),
+  prepRecipeIds: z.array(z.string()).optional(),
   active: z.boolean().optional()
 });
 export type StocktakeTemplateInput = z.infer<typeof stocktakeTemplateInputSchema>;
@@ -7504,6 +7539,10 @@ export type ReportsOverviewPayload = {
 
 export const stocktakeLineInputSchema = z.object({
   itemId: z.string().optional().or(z.literal('')),
+  // Set INSTEAD of itemId for a prepped-item line. Every client that PATCHes
+  // a whole count sheet back must round-trip this, or a prep line returns as
+  // a bare label and its ingredients stop being booked.
+  recipeId: z.string().optional().or(z.literal('')),
   label: z.string().min(1, 'Label is required'),
   // Null = not counted yet (distinct from a counted zero).
   countedQty: z.coerce.number().nullable(),
@@ -7596,6 +7635,58 @@ export type StocktakeMovement = InventoryMovement & {
 export type ApplyStocktakeResult = {
   stocktake: StocktakeWithLines;
   movements: InventoryMovement[];
+  // What the prepped-item lines contributed, and what they could not. Empty on
+  // a count with no prep lines.
+  prep: StocktakePrepApplySummary;
+};
+
+// One raw stock item, and how much of it the prepped-item lines hold.
+export type StocktakePrepContribution = {
+  itemId: string;
+  itemName: string;
+  unit: string;
+  // Total across every prep line, in the item's own count unit.
+  quantity: number;
+  valueCents: number | null;
+  // Which made items it came from ("Chipotle Mayo", "Beef Birria").
+  fromPrep: string[];
+  // What the item was counted loose on the shelf, and the sum that will be
+  // booked. `countedOnSheet` is null when the item has no counted line in this
+  // stocktake — in which case NOTHING is booked for it, because a partial
+  // count sheet must never set an uncounted item's on-hand.
+  countedOnSheet: number | null;
+  totalToBook: number | null;
+};
+
+// A prepped-item line, and what counting it works out to.
+export type StocktakePrepLineSummary = {
+  lineId: string;
+  recipeId: string;
+  label: string;
+  countedQty: number | null;
+  unit: string | null;
+  batches: number | null;
+  valueCents: number | null;
+  componentCount: number;
+  warnings: string[];
+};
+
+export type StocktakePrepApplySummary = {
+  lines: StocktakePrepLineSummary[];
+  contributions: StocktakePrepContribution[];
+  // Items the prep holds that are NOT counted on this sheet. Their stock is
+  // deliberately left alone; naming them is how a manager knows to add them.
+  notOnSheet: StocktakePrepContribution[];
+  totalValueCents: number | null;
+  warnings: string[];
+};
+
+// GET /api/stocktake/:id/prep-preview — the same arithmetic as applying,
+// run without writing anything.
+export type StocktakePrepPreview = StocktakePrepApplySummary & {
+  stocktakeId: string;
+  stocktakeName: string;
+  generatedAt: string;
 };
 
 export type StocktakeMovementHistoryPayload = {

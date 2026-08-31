@@ -938,10 +938,10 @@ model StaffUnavailability {
 }
 
 model StaffLeaveRequest {
-  id                String       @id @default(cuid())
+  id                String           @id @default(cuid())
   staffProfileId    String
   type              String
-  status            String       @default("PENDING")
+  status            String           @default("PENDING")
   startDate         DateTime
   endDate           DateTime
   notes             String?
@@ -949,9 +949,9 @@ model StaffLeaveRequest {
   requestedByUserId String?
   reviewedByUserId  String?
   reviewedAt        DateTime?
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-  staffProfile      StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  staffProfile      StaffProfile     @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
   xeroLeave         StaffXeroLeave[]
 
   @@index([staffProfileId, startDate])
@@ -3094,6 +3094,10 @@ model StocktakeTemplate {
   categoryIds    String[] @default([])
   includeItemIds String[] @default([])
   excludeItemIds String[] @default([])
+  /// Prep recipes counted as made items on this sheet, in the order chosen.
+  /// Separate from the item selection above because prep is not a StockItem
+  /// and never resolves from a count area or a category.
+  prepRecipeIds  String[] @default([])
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -3108,6 +3112,24 @@ model StocktakeLine {
   legacyId        String?             @unique
   stocktakeId     String
   itemId          String?
+  /// A PREPPED-ITEM line: what the kitchen has already made, counted as
+  /// itself. Mutually exclusive with `itemId` — a line is either a shelf item
+  /// or a tub of prep, never both.
+  ///
+  /// The kitchen does not hold its stock as ingredients. It holds it as 11.7 kg
+  /// of chipotle mayo and 6 kg of birria, and until this existed none of that
+  /// was countable: the mayonnaise and the beef inside it read as consumed the
+  /// moment they were cooked, and every count since has booked the whole
+  /// production fridge as shrinkage. The first stocktake on the new app came
+  /// back with twenty-two prepped items listed by hand at the bottom, because
+  /// there was nowhere to put them.
+  ///
+  /// The count is the made item in its own unit (kg, L, portions). Applying it
+  /// explodes the prep recipe back into the raw stock items it consumed and
+  /// ADDS those to the same items' counted quantities — see
+  /// lib/prep-explosion.ts. Nothing is booked against a recipe itself; recipes
+  /// are not stock.
+  recipeId        String?
   position        Int                 @default(0)
   label           String
   // Nullable so a not-yet-counted line (null) is distinct from a counted zero.
@@ -3121,10 +3143,12 @@ model StocktakeLine {
   updatedAt       DateTime            @updatedAt
   stocktake       Stocktake           @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
   item            StockItem?          @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  recipe          Recipe?             @relation("StocktakePrepLines", fields: [recipeId], references: [id], onDelete: SetNull)
   movements       InventoryMovement[]
 
   @@index([stocktakeId])
   @@index([itemId])
+  @@index([recipeId])
 }
 
 // @domain: stock | home: suite
@@ -3221,6 +3245,7 @@ model Recipe {
   setMenuCourses     SetMenuCourse[]
   offeredOn          SetMenuOption[]
   winePour           WinePour?
+  stocktakeLines     StocktakeLine[]           @relation("StocktakePrepLines")
 
   @@index([title])
   @@index([category])
@@ -5725,27 +5750,27 @@ model StaffXeroEmployee {
 // company, because a person rostered across both companies takes their leave
 // in the one that pays it.
 model StaffXeroLeave {
-  id             String   @id @default(cuid())
-  leaveRequestId String
-  tenantId       String
-  tenantName     String?
+  id                     String   @id @default(cuid())
+  leaveRequestId         String
+  tenantId               String
+  tenantName             String?
   // Xero's id for the application it created. Present once the POST succeeds.
   xeroLeaveApplicationId String
   // The pay period this covers. Leave reaches Xero with the week's
   // timesheets, so one five-week absence becomes five applications and the
   // key has to say WHICH week — keyed on the request alone, the second week
   // would collide with the first and never be sent.
-  periodStart    DateTime
-  periodEnd      DateTime
+  periodStart            DateTime
+  periodEnd              DateTime
   // What was actually sent, kept so a manager can see why a balance moved by
   // the amount it did without opening Xero.
-  leaveTypeId    String
-  leaveTypeName  String?
-  units          Float
-  unitsAre       String
-  pushedByUserId String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  leaveTypeId            String
+  leaveTypeName          String?
+  units                  Float
+  unitsAre               String
+  pushedByUserId         String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   leaveRequest StaffLeaveRequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
 

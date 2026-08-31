@@ -8,6 +8,7 @@ import type {
 } from '@alma/shared';
 import { stocktakeTemplateInputSchema } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { listPrepRecipeOptions } from './prep-recipes.service.js';
 
 type TemplateRow = Prisma.StocktakeTemplateGetPayload<Record<string, never>>;
 
@@ -21,6 +22,7 @@ function toPayload(row: TemplateRow, resolvedItemCount: number): StocktakeTempla
     categoryIds: row.categoryIds,
     includeItemIds: row.includeItemIds,
     excludeItemIds: row.excludeItemIds,
+    prepRecipeIds: row.prepRecipeIds,
     active: row.active,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -59,6 +61,9 @@ function normaliseInput(input: unknown) {
     categoryIds: Array.from(new Set((data.categoryIds ?? []).filter(Boolean))),
     includeItemIds: Array.from(new Set((data.includeItemIds ?? []).filter(Boolean))),
     excludeItemIds: Array.from(new Set((data.excludeItemIds ?? []).filter(Boolean))),
+    // Order matters here and nowhere else in this input: it is the order the
+    // prep block walks on the count sheet.
+    prepRecipeIds: Array.from(new Set((data.prepRecipeIds ?? []).filter(Boolean))),
     active: data.active ?? true
   };
 }
@@ -81,7 +86,8 @@ export const stocktakeTemplatesService = {
       templates: templates.map((row, index) => toPayload(row, resolvedCounts[index] ?? 0)),
       countAreas: areaRows.map((row) => row.countArea as string),
       categories,
-      venues: venueRows.map((row) => row.venue)
+      venues: venueRows.map((row) => row.venue),
+      prepRecipes: await listPrepRecipeOptions()
     };
   },
 
@@ -119,6 +125,9 @@ export const stocktakeTemplatesService = {
     });
     return {
       template: toPayload(row, items.length),
+      // Prep lines seed after the item lines. An un-countable one is still
+      // returned so the sheet says so rather than quietly omitting it.
+      prepRecipes: row.prepRecipeIds.length ? await listPrepRecipeOptions(row.prepRecipeIds) : [],
       items: items.map((item) => ({
         id: item.id,
         name: item.name,

@@ -25,6 +25,7 @@ type Draft = {
   categoryIds: string[];
   includeItemIds: string[];
   excludeItemIds: string[];
+  prepRecipeIds: string[];
 };
 
 function emptyDraft(): Draft {
@@ -36,7 +37,8 @@ function emptyDraft(): Draft {
     countAreas: [],
     categoryIds: [],
     includeItemIds: [],
-    excludeItemIds: []
+    excludeItemIds: [],
+    prepRecipeIds: []
   };
 }
 
@@ -133,7 +135,8 @@ export function StocktakeTemplatesPage() {
       countAreas: [...template.countAreas],
       categoryIds: [...template.categoryIds],
       includeItemIds: [...template.includeItemIds],
-      excludeItemIds: [...template.excludeItemIds]
+      excludeItemIds: [...template.excludeItemIds],
+      prepRecipeIds: [...(template.prepRecipeIds ?? [])]
     });
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -166,6 +169,7 @@ export function StocktakeTemplatesPage() {
       categoryIds: draft.categoryIds,
       includeItemIds: draft.includeItemIds,
       excludeItemIds: draft.excludeItemIds,
+      prepRecipeIds: draft.prepRecipeIds,
       active: draft.active
     };
     setSaving(true);
@@ -345,6 +349,45 @@ export function StocktakeTemplatesPage() {
                   ))}
                 </div>
               ) : null}
+            </div>
+
+            {/* Prep is not a StockItem: it never resolves from a count area or a
+                category, so a sheet that should carry the production fridge has
+                to name it. Un-countable recipes are shown with their reason
+                rather than hidden — otherwise the mole is simply absent and
+                nobody can say why. */}
+            <div className="template-field">
+              <span className="field-label">Prepped items (counted as made)</span>
+              {data?.prepRecipes.length ? (
+                <div className="template-checks">
+                  {data.prepRecipes.map((recipe) => (
+                    <label
+                      key={recipe.id}
+                      className="check-row"
+                      title={recipe.countable ? undefined : recipe.problems.join(' ')}
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={!recipe.countable}
+                        checked={draft.prepRecipeIds.includes(recipe.id)}
+                        onChange={() =>
+                          setDraft((current) => ({ ...current, prepRecipeIds: toggle(current.prepRecipeIds, recipe.id) }))
+                        }
+                      />
+                      {recipe.title}
+                      <span className="subtle">
+                        {recipe.countable
+                          ? recipe.yieldQuantity
+                            ? ` · makes ${recipe.yieldQuantity} ${recipe.yieldUnit ?? ''}`
+                            : ''
+                          : ` · ${recipe.problems.join(' ')}`}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="subtle">No prep recipes yet.</p>
+              )}
             </div>
 
             <div className="template-field">

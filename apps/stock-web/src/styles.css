@@ -3701,3 +3701,102 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 }
 .menu-lab-picklist button:hover { border-color: var(--color-primary, #1f3d2b); }
 .menu-lab-picklist span { color: var(--color-text-muted); white-space: nowrap; }
+
+/* ── Prepped items ────────────────────────────────────────────────────────
+   Counting what the kitchen has already made. A prep line is a different
+   kind of thing from a shelf item — it holds other stock inside it — so it
+   reads differently on the sheet rather than hiding among the items. */
+
+.stocktake-prep-picker {
+  margin: 14px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.stocktake-prep-body {
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--color-surface, #fff);
+}
+.stocktake-prep-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px 16px;
+}
+.stocktake-prep-blocked {
+  padding: 10px 12px;
+  border-left: 3px solid #b8892f;
+  border-radius: 8px;
+  background: rgba(184, 137, 47, 0.08);
+}
+.stocktake-prep-blocked ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* A prep line on the count sheet: no item picker (it points at a recipe),
+   so the first column names it instead. */
+.stocktake-count-line.is-prep {
+  border-left: 3px solid #4f6b47;
+}
+.stocktake-prep-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  justify-content: flex-end;
+  padding-bottom: 6px;
+  min-width: 0;
+}
+.stocktake-prep-label strong {
+  overflow-wrap: anywhere;
+}
+
+/* What the prep lines will book, shown before approval. */
+.stocktake-prep-preview {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid #4f6b47;
+  border-radius: 12px;
+  background: var(--color-surface, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.stocktake-prep-preview.is-alert {
+  border-left-color: #b8892f;
+}
+.stocktake-prep-preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.stocktake-prep-preview-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stocktake-prep-preview-list li {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(180px, 2fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+@media (max-width: 720px) {
+  .stocktake-prep-preview-list li {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}

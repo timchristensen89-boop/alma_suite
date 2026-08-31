@@ -1055,6 +1055,18 @@ a {
   border-color: var(--color-accent-soft);
 }
 
+/* A prepped item — mole, birria, chipotle mayo — is weighed rather than
+   tallied, so it carries no +/- buttons and the input takes the whole
+   control column. Marked so the counter can see at a glance that this line
+   is asking for a scale reading, not a headcount. */
+.stock-line.is-prep {
+  border-left: 4px solid var(--color-accent);
+}
+
+.stock-line.is-prep .stock-line-controls {
+  min-width: 160px;
+}
+
 .stock-line-meta {
   display: flex;
   flex-direction: column;

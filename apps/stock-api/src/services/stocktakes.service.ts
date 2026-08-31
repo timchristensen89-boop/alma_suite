@@ -17,10 +17,19 @@ import {
   type StocktakeWithLines,
   type StocktakesPayload,
   type AuthUser,
+  type StocktakePrepApplySummary,
+  type StocktakePrepPreview,
   type StocktakesSummary
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { assertMayEnterCounts, isStockManager } from '../lib/stock-permissions.js';
+import {
+  explodePrepCount,
+  summarisePrepLines,
+  type PrepExplosion,
+  type PrepSummaryLine
+} from '../lib/prep-explosion.js';
+import { loadPrepItems, loadPrepRecipes } from './prep-recipes.service.js';
 import { convertQuantityToCostUnit } from './units.js';
 import { isVenueUnscopedActor } from '../lib/venue-scope.js';
 
@@ -82,12 +91,15 @@ type StocktakeRow = Prisma.StocktakeGetPayload<{
   };
 }>;
 
+// Every read of a stocktake's lines carries the prep recipe alongside the
+// stock item, so a prepped-item line is never rendered as a bare label.
+const lineInclude = {
+  item: { select: { id: true, name: true, unit: true, onHand: true } },
+  recipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true } }
+} satisfies Prisma.StocktakeLineInclude;
+
 type StocktakeWithLinesRow = Prisma.StocktakeGetPayload<{
-  include: {
-    lines: {
-      include: { item: { select: { id: true; name: true; unit: true; onHand: true } } };
-    };
-  };
+  include: { lines: { include: typeof lineInclude } };
 }>;
 
 type StocktakeLineRow = StocktakeWithLinesRow['lines'][number];
@@ -167,6 +179,8 @@ function toLinePayload(row: StocktakeLineRow): StocktakeLine {
     stocktakeId: row.stocktakeId,
     itemId: row.itemId,
     item: row.item ?? null,
+    recipeId: row.recipeId,
+    recipe: row.recipe ?? null,
     position: row.position,
     label: row.label,
     countedQty: row.countedQty,
@@ -445,9 +459,7 @@ async function loadStocktakeWithVenueOnHand(id: string, actor?: AuthUser | null)
   const row = await prisma.stocktake.findFirst({
     where: scopedStocktakeWhere(id, actor),
     include: {
-      lines: {
-        include: { item: { select: { id: true, name: true, unit: true, onHand: true } } }
-      }
+      lines: { include: lineInclude }
     }
   });
   if (!row) throw new HttpError(404, 'Stocktake not found');
@@ -580,6 +592,84 @@ async function theoreticalUsageByItem(
   }
   return usage;
 }
+
+/* -------------------------------------------------------------------------
+ * Prepped items
+ *
+ * A stocktake line may count something the kitchen MADE rather than something
+ * it bought. Counting it books nothing against the recipe — recipes hold no
+ * stock — and instead explodes into the raw items the tub still holds, which
+ * are ADDED to those items' own counted quantities.
+ *
+ * The arithmetic (and every refusal in it) lives in lib/prep-explosion.ts and
+ * is tested there. What is here is the loading and the merge.
+ * ---------------------------------------------------------------------- */
+
+type CountedPrepLine = { recipeId?: string | null; countedQty?: number | null; unit?: string | null };
+
+// Explode a list of lines in place: index i of the result corresponds to index
+// i of the input, and is null for anything that is not a counted prep line.
+// Used both to value lines on save (where they have no ids yet) and to apply
+// a whole stocktake.
+async function explodePrepLines(
+  client: Prisma.TransactionClient,
+  lines: CountedPrepLine[] | undefined
+): Promise<Array<PrepExplosion | null>> {
+  const list = lines ?? [];
+  const roots = list
+    .map((line) => normaliseOptionalText(line.recipeId ?? undefined))
+    .filter((id): id is string => Boolean(id));
+  if (!roots.length) return list.map(() => null);
+
+  const specs = await loadPrepRecipes(client, roots);
+  const items = await loadPrepItems(client, specs);
+
+  return list.map((line) => {
+    const recipeId = normaliseOptionalText(line.recipeId ?? undefined);
+    if (!recipeId) return null;
+    // A prep line nobody has counted yet contributes nothing, exactly like an
+    // uncounted item line.
+    if (line.countedQty === null || line.countedQty === undefined) return null;
+    const recipe = specs.get(recipeId);
+    if (!recipe) {
+      return {
+        recipeId,
+        recipeTitle: 'Unknown recipe',
+        batches: null,
+        components: [],
+        valueCents: null,
+        warnings: ['This prepped-item line points at a recipe that no longer exists.']
+      };
+    }
+    return explodePrepCount({
+      countedQty: line.countedQty,
+      countedUnit: line.unit ?? recipe.yieldUnit,
+      recipe,
+      recipesById: specs,
+      itemsById: items
+    });
+  });
+}
+
+/**
+ * What the prepped-item lines on a stocktake work out to. Loads what the
+ * arithmetic needs; the merge itself is pure and tested in
+ * lib/prep-explosion.ts.
+ */
+async function buildPrepSummary(
+  client: Prisma.TransactionClient,
+  lines: PrepSummaryLine[]
+): Promise<StocktakePrepApplySummary> {
+  return summarisePrepLines(lines, await explodePrepLines(client, lines));
+}
+
+const EMPTY_PREP_SUMMARY: StocktakePrepApplySummary = {
+  lines: [],
+  contributions: [],
+  notOnSheet: [],
+  totalValueCents: 0,
+  warnings: []
+};
 
 export const stocktakesService = {
   async list(actor?: AuthUser | null): Promise<StocktakesPayload> {
@@ -739,6 +829,9 @@ export const stocktakesService = {
 
     const row = await prisma.$transaction(async (tx) => {
       const costById = await loadLineCostItems(tx, data.lines);
+      // A prepped-item line has no stock item to cost against; its value is
+      // the raw material the tub holds.
+      const prepByIndex = await explodePrepLines(tx, data.lines);
       const created = await tx.stocktake.create({
         data: {
           name: data.name.trim(),
@@ -755,23 +848,24 @@ export const stocktakesService = {
                   position: index + 1,
                   label: line.label.trim(),
                   itemId: normaliseOptionalText(line.itemId) ?? null,
+                  recipeId: normaliseOptionalText(line.recipeId) ?? null,
                   countedQty: line.countedQty,
                   unit: normaliseOptionalText(line.unit) ?? null,
                   location: normaliseOptionalText(line.location) ?? null,
-                  stockValueCents: stocktakeLineValueCents(
-                    line.countedQty,
-                    line.unit,
-                    costById.get(normaliseOptionalText(line.itemId) ?? '')
-                  ),
+                  stockValueCents: normaliseOptionalText(line.recipeId)
+                    ? prepByIndex[index]?.valueCents ?? null
+                    : stocktakeLineValueCents(
+                        line.countedQty,
+                        line.unit,
+                        costById.get(normaliseOptionalText(line.itemId) ?? '')
+                      ),
                   notes: normaliseOptionalText(line.notes) ?? null
                 }))
               }
             : undefined
         },
         include: {
-          lines: {
-            include: { item: { select: { id: true, name: true, unit: true, onHand: true } } }
-          }
+          lines: { include: lineInclude }
         }
       });
       await ensureVenueStockRowsForLines(
@@ -841,6 +935,7 @@ export const stocktakesService = {
         await tx.stocktakeLine.deleteMany({ where: { stocktakeId: id } });
       }
       const costById = await loadLineCostItems(tx, data.lines);
+      const prepByIndex = await explodePrepLines(tx, data.lines);
 
       const updated = await tx.stocktake.update({
         where: { id },
@@ -873,23 +968,24 @@ export const stocktakesService = {
                 position: index + 1,
                 label: line.label.trim(),
                 itemId: normaliseOptionalText(line.itemId) ?? null,
+                recipeId: normaliseOptionalText(line.recipeId) ?? null,
                 countedQty: line.countedQty,
                 unit: normaliseOptionalText(line.unit) ?? null,
                 location: normaliseOptionalText(line.location) ?? null,
-                stockValueCents: stocktakeLineValueCents(
-                  line.countedQty,
-                  line.unit,
-                  costById.get(normaliseOptionalText(line.itemId) ?? '')
-                ),
+                stockValueCents: normaliseOptionalText(line.recipeId)
+                  ? prepByIndex[index]?.valueCents ?? null
+                  : stocktakeLineValueCents(
+                      line.countedQty,
+                      line.unit,
+                      costById.get(normaliseOptionalText(line.itemId) ?? '')
+                    ),
                 notes: normaliseOptionalText(line.notes) ?? null
               }))
             }
           })
         },
         include: {
-          lines: {
-            include: { item: { select: { id: true, name: true, unit: true, onHand: true } } }
-          }
+          lines: { include: lineInclude }
         }
       });
       await ensureVenueStockRowsForLines(
@@ -910,7 +1006,7 @@ export const stocktakesService = {
         include: {
           lines: {
             orderBy: [{ position: 'asc' }, { label: 'asc' }],
-            include: { item: { select: { id: true, name: true, unit: true, onHand: true } } }
+            include: lineInclude
           }
         }
       });
@@ -943,8 +1039,26 @@ export const stocktakesService = {
         throw new HttpError(409, 'Stocktake has already been applied');
       }
 
+      // What the prepped-item lines hold, before anything is written. A
+      // contribution is ADDED to the item's counted quantity; the tub and the
+      // shelf are both stock, and booking either alone loses the other.
+      const prep = await buildPrepSummary(tx, stocktake.lines);
+      const prepByItem = new Map(prep.contributions.map((row) => [row.itemId, row]));
+
+      // Which line credits a prep contribution, when an item is counted on
+      // more than one line. The loop below writes the item's on-hand once per
+      // line and the last write stands, so the credit has to land on the last
+      // counted line for that item or it would be overwritten.
+      const lastCountedLineForItem = new Map<string, string>();
+      for (const line of stocktake.lines) {
+        if (!line.itemId || line.countedQty == null) continue;
+        lastCountedLineForItem.set(line.itemId, line.id);
+      }
+
       const movements: InventoryMovementRow[] = [];
       for (const line of stocktake.lines) {
+        // Prepped-item lines never adjust a recipe — they were already
+        // exploded into the item lines above.
         if (!line.itemId) continue;
         // Not-yet-counted lines (null) carry no count — never adjust the ledger
         // for them, or we'd zero a real item's on-hand.
@@ -952,8 +1066,12 @@ export const stocktakesService = {
         const balanceTarget = await balanceTargetForItem(tx, line.itemId, stocktake.venue);
         if (!balanceTarget) continue;
 
+        const contribution =
+          lastCountedLineForItem.get(line.itemId) === line.id ? prepByItem.get(line.itemId) : undefined;
         const quantityBefore = balanceTarget.quantityBefore;
-        const quantityAfter = line.countedQty;
+        const quantityAfter = contribution
+          ? Math.round((line.countedQty + contribution.quantity) * 1e6) / 1e6
+          : line.countedQty;
         const quantityDelta = quantityAfter - quantityBefore;
 
         const movement = await tx.inventoryMovement.create({
@@ -970,6 +1088,12 @@ export const stocktakesService = {
               `Applied stocktake: ${stocktake.name}`,
               stocktake.venue ? `Venue: ${stocktake.venue}` : null,
               line.location ? `Location: ${line.location}` : null,
+              // Spelled out on the movement itself so the arithmetic is
+              // legible a year later, without re-deriving it from recipes
+              // that may since have changed.
+              contribution
+                ? `Counted ${line.countedQty} loose + ${contribution.quantity} ${contribution.unit} held in ${contribution.fromPrep.join(', ')}`
+                : null,
               reviewedBy ? `Reviewed by: ${reviewedBy}` : null
             ])
           }
@@ -982,18 +1106,45 @@ export const stocktakesService = {
       const appliedStocktake = await tx.stocktake.findUniqueOrThrow({
         where: { id },
         include: {
-          lines: {
-            include: { item: { select: { id: true, name: true, unit: true, onHand: true } } }
-          }
+          lines: { include: lineInclude }
         }
       });
 
-      return { stocktake: appliedStocktake, movements };
+      return { stocktake: appliedStocktake, movements, prep };
     }, { maxWait: 15_000, timeout: 30_000 });
 
     return {
       stocktake: await loadStocktakeWithVenueOnHand(result.stocktake.id, reviewer),
-      movements: result.movements.map(toMovementPayload)
+      movements: result.movements.map(toMovementPayload),
+      prep: result.prep
+    };
+  },
+
+  // The same arithmetic as applying, run without writing anything: what the
+  // prepped-item lines will book, and what they cannot. Managers review this
+  // before approving a count — a prep line that silently explodes into nothing
+  // is the failure mode worth catching before it reaches the ledger.
+  async prepPreview(id: string, actor?: AuthUser | null): Promise<StocktakePrepPreview> {
+    const stocktake = await prisma.stocktake.findFirst({
+      where: scopedStocktakeWhere(id, actor),
+      select: {
+        id: true,
+        name: true,
+        lines: {
+          orderBy: [{ position: 'asc' }, { label: 'asc' }],
+          select: { id: true, label: true, itemId: true, recipeId: true, countedQty: true, unit: true }
+        }
+      }
+    });
+    if (!stocktake) throw new HttpError(404, 'Stocktake not found');
+    const summary = stocktake.lines.some((line) => line.recipeId)
+      ? await buildPrepSummary(prisma, stocktake.lines)
+      : EMPTY_PREP_SUMMARY;
+    return {
+      ...summary,
+      stocktakeId: stocktake.id,
+      stocktakeName: stocktake.name,
+      generatedAt: new Date().toISOString()
     };
   },
 
@@ -1047,9 +1198,7 @@ export const stocktakesService = {
       const stocktake = await tx.stocktake.findFirst({
         where: scopedStocktakeWhere(id, reviewer),
         include: {
-          lines: {
-            include: { item: { select: { id: true, name: true, unit: true, onHand: true } } }
-          }
+          lines: { include: lineInclude }
         }
       });
 
@@ -1119,9 +1268,7 @@ export const stocktakesService = {
       const updatedStocktake = await tx.stocktake.findUniqueOrThrow({
         where: { id },
         include: {
-          lines: {
-            include: { item: { select: { id: true, name: true, unit: true, onHand: true } } }
-          }
+          lines: { include: lineInclude }
         }
       });
 
@@ -1234,9 +1381,7 @@ export const stocktakesService = {
         where: { id },
         data: { appliedAt: null, status: 'IN_PROGRESS' },
         include: {
-          lines: {
-            include: { item: { select: { id: true, name: true, unit: true, onHand: true } } }
-          }
+          lines: { include: lineInclude }
         }
       });
 
@@ -1446,6 +1591,19 @@ export const stocktakesService = {
     });
     if (!target) throw new HttpError(404, 'Stocktake not found');
 
+    // What the prepped-item lines hold, folded into the counted side.
+    //
+    // This is the whole reason the feature exists. Expected-on-hand is
+    // anchored on the previous count and depleted by SALES, so raw material
+    // that was cooked but not sold has left the shelf without leaving the
+    // building — and comparing it against a loose-only count reports the
+    // entire production fridge as unexplained loss, every single week.
+    const prepByItem = target.lines.some((line) => line.recipeId)
+      ? new Map(
+          (await buildPrepSummary(prisma, target.lines)).contributions.map((row) => [row.itemId, row.quantity])
+        )
+      : new Map<string, number>();
+
     // Find the previous LOCKED stocktake at the same venue, before this one.
     const previous = await prisma.stocktake.findFirst({
       where: {
@@ -1458,12 +1616,23 @@ export const stocktakesService = {
       include: { lines: true }
     });
 
+    // The opening balance is folded the same way, for the same reason: the
+    // previous count's line holds only what was loose, while the on-hand it
+    // applied included its prep. Comparing a prep-folded count against a
+    // loose-only opening would report the whole production fridge as a GAIN —
+    // the same error with its sign flipped.
+    const previousPrepByItem = previous?.lines.some((line) => line.recipeId)
+      ? new Map(
+          (await buildPrepSummary(prisma, previous.lines)).contributions.map((row) => [row.itemId, row.quantity])
+        )
+      : new Map<string, number>();
+
     const previousByItemId = new Map<string, { qty: number; valueCents: number | null }>();
     if (previous) {
       for (const line of previous.lines) {
         if (!line.itemId || line.countedQty == null) continue;
         previousByItemId.set(line.itemId, {
-          qty: line.countedQty,
+          qty: Math.round((line.countedQty + (previousPrepByItem.get(line.itemId) ?? 0)) * 1e6) / 1e6,
           valueCents: line.stockValueCents
         });
       }
@@ -1509,12 +1678,18 @@ export const stocktakesService = {
 
     const rows = target.lines.map((line) => {
       const prev = line.itemId ? previousByItemId.get(line.itemId) : undefined;
-      const varianceQty = prev !== undefined && line.countedQty !== null ? line.countedQty - prev.qty : null;
+      // Counted = loose on the shelf + held inside the prep that was counted.
+      // Both are stock; comparing only the first is what produced the phantom
+      // shrinkage.
+      const prepQty = line.itemId && line.countedQty !== null ? prepByItem.get(line.itemId) ?? 0 : 0;
+      const countedQty =
+        line.countedQty === null ? null : Math.round((line.countedQty + prepQty) * 1e6) / 1e6;
+      const varianceQty = prev !== undefined && countedQty !== null ? countedQty - prev.qty : null;
       const varianceValueCents = prev !== undefined && prev.valueCents !== null && line.stockValueCents !== null
         ? line.stockValueCents - prev.valueCents
         : null;
-      const variancePct = prev !== undefined && prev.qty > 0 && line.countedQty !== null
-        ? (line.countedQty - prev.qty) / prev.qty
+      const variancePct = prev !== undefined && prev.qty > 0 && countedQty !== null
+        ? (countedQty - prev.qty) / prev.qty
         : null;
 
       // Expected-vs-counted: what the shelf *should* hold given usage + movements.
@@ -1522,7 +1697,7 @@ export const stocktakesService = {
       const ledgerDelta = line.itemId ? ledgerByItem.get(line.itemId) ?? 0 : 0;
       const expectedQty = prev !== undefined ? prev.qty + ledgerDelta - theoreticalUsageQty : null;
       const expectedVarianceQty =
-        expectedQty !== null && line.countedQty !== null ? line.countedQty - expectedQty : null;
+        expectedQty !== null && countedQty !== null ? countedQty - expectedQty : null;
       const countUnitCostCents = line.item?.avgCostCents ?? null;
       const expectedVarianceValueCents =
         expectedVarianceQty !== null && countUnitCostCents !== null
@@ -1533,7 +1708,7 @@ export const stocktakesService = {
       }
 
       const isMissing = line.countedQty === null || Number.isNaN(line.countedQty);
-      const isZero = line.countedQty === 0;
+      const isZero = countedQty === 0;
       const isNew = prev === undefined && line.itemId !== null;
       const isHighVariance = variancePct !== null && Math.abs(variancePct) > HIGH_VARIANCE_THRESHOLD;
 
@@ -1549,7 +1724,15 @@ export const stocktakesService = {
         category: line.item?.category?.name ?? null,
         countArea: line.location ?? line.item?.countArea ?? null,
         unit: line.unit ?? line.item?.countUnit ?? line.item?.unit ?? null,
-        currentQty: line.countedQty,
+        // What kind of line this is, so a reader can tell a tub of mole from a
+        // shelf item that happens to share its name.
+        lineKind: line.recipeId ? ('PREPPED_ITEM' as const) : ('STOCK_ITEM' as const),
+        currentQty: countedQty,
+        // The split behind currentQty: how much of it was counted loose, and
+        // how much came out of the prep. Zero on every line of a count with no
+        // prepped items.
+        countedLooseQty: line.countedQty,
+        heldInPrepQty: prepQty,
         previousQty: prev?.qty ?? null,
         varianceQty,
         variancePct,
@@ -1607,7 +1790,7 @@ export const stocktakesService = {
       where: scopedStocktakeWhere(id, actor),
       include: {
         lines: {
-          include: { item: { include: { category: true } } },
+          include: { item: { include: { category: true } }, recipe: { select: { title: true } } },
           orderBy: [{ position: 'asc' }]
         }
       }
@@ -1619,9 +1802,12 @@ export const stocktakesService = {
       return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     }
 
+    // line_kind separates the two things a row can be. Without it a prepped
+    // item reads as an ordinary count of an item that does not exist, and the
+    // archive silently double-counts against the exploded ingredients.
     const headers = [
       'stocktake_id', 'name', 'venue', 'status', 'counted_at',
-      'area', 'category', 'item', 'sku', 'quantity', 'unit',
+      'area', 'category', 'line_kind', 'item', 'sku', 'quantity', 'unit',
       'latest_cost_cents', 'stock_value_cents', 'notes'
     ];
     const rows = existing.lines.map((line) => ({
@@ -1632,6 +1818,7 @@ export const stocktakesService = {
       counted_at: existing.countedAt?.toISOString().slice(0, 10) ?? '',
       area: line.location ?? line.item?.countArea ?? '',
       category: line.item?.category?.name ?? '',
+      line_kind: line.recipeId ? 'PREPPED_ITEM' : 'STOCK_ITEM',
       item: line.label,
       sku: line.item?.sku ?? '',
       quantity: line.countedQty,
