@@ -115,6 +115,20 @@ function isBareMeasure(token: string): boolean {
   return token in MASS_TO_GRAMS || token in VOLUME_TO_ML;
 }
 
+/**
+ * Is this unit something you can put on a scale or in a jug — g, kg, mL, L —
+ * as opposed to a count of things (each, portion, bottle, punnet)?
+ *
+ * The distinction decides whether a quantity can be converted by arithmetic or
+ * only by knowing how much one of the things holds. It matters most for prep
+ * recipes: a kitchen WEIGHS what it has made, so a recipe that yields
+ * "60 portions" cannot be counted off a scale at all.
+ */
+export function isMeasureUnit(value: string | null | undefined): boolean {
+  const token = normaliseUnitLabel(value);
+  return token.length > 0 && isBareMeasure(token);
+}
+
 function aliasLookup(token: string): string {
   const aliases = getActiveUnitAliases();
   const direct = aliases[token];

@@ -589,3 +589,47 @@ test('a count with no prepped items summarises to nothing at all', () => {
   assert.deepEqual(summary.notOnSheet, []);
   assert.equal(summary.totalValueCents, 0);
 });
+
+test('a recipe that yields portions warns that weighing it books nothing', () => {
+  // The kitchen weighs everything. "Strawberry Habanero Sour Batch — makes 60
+  // portions" passed readiness because the dry run counts one batch in the
+  // recipe's own unit, where the conversion always works. The first time
+  // somebody puts 1.426 kg of it on a scale, batchesForCount refuses and the
+  // line books nothing — silently, unless this is said up front.
+  const chilli = item({ id: 'i1', name: 'Habanero', unit: 'kg' });
+  const spec = recipe({
+    id: 'r1',
+    title: 'Strawberry Habanero Sour Batch',
+    yieldQuantity: 60,
+    yieldUnit: 'portions',
+    lines: [{ ingredientName: 'Habanero', quantity: 1, unit: 'kg', itemId: 'i1', subRecipeId: null }]
+  });
+  const { itemsById, recipesById } = maps([chilli], [spec]);
+  const ready = prepCountReadiness(spec, recipesById, itemsById);
+
+  assert.equal(ready.countable, true, 'countable in portions — just not on a scale');
+  assert.match(ready.warnings.join(' '), /can only be counted in portions/);
+  assert.match(ready.warnings.join(' '), /weighing it will book nothing/);
+
+  // And that is exactly what a weight count does.
+  assert.equal(batchesForCount(1.426, 'kg', spec).batches, null);
+});
+
+test('a weight or volume yield draws no such warning', () => {
+  const beans = item({ id: 'i1', name: 'Black beans', unit: 'kg' });
+  for (const unit of ['kg', 'g', 'L', 'ml']) {
+    const spec = recipe({
+      id: 'r1',
+      title: 'Bean Puree',
+      yieldQuantity: 10,
+      yieldUnit: unit,
+      lines: [{ ingredientName: 'Black beans', quantity: 5, unit: 'kg', itemId: 'i1', subRecipeId: null }]
+    });
+    const { itemsById, recipesById } = maps([beans], [spec]);
+    const ready = prepCountReadiness(spec, recipesById, itemsById);
+    assert.ok(
+      !ready.warnings.some((w) => w.includes('can only be counted')),
+      `${unit} is weighable and should not warn`
+    );
+  }
+});
