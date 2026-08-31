@@ -237,6 +237,18 @@ if (process.env.ALL === 'YES') {
     console.log(`  ${row.title}`);
     for (const problem of readinessById.get(row.id).problems) console.log(`      ${problem}`);
   }
+
+  // The import artifact, called out on its own because it is one fix repeated
+  // rather than N separate ones: a yield note that became an ingredient row.
+  const junk = rows.filter((row) =>
+    row.lines.some((line) => !line.itemId && !line.subRecipeId && /^\(\s*[\d.]+\s*portions?\s*\)$/i.test(line.ingredientName.trim()))
+  );
+  if (junk.length) {
+    console.log(`\nLIKELY IMPORT JUNK — an ingredient line named "(N portions)" (${junk.length} recipes)`);
+    console.log('  A yield note that became an ingredient row. It books nothing and is safe to');
+    console.log('  delete; until then every one of these reports an unlinked ingredient.');
+    for (const row of junk) console.log(`      ${row.title}`);
+  }
   await prisma.$disconnect();
   process.exit(0);
 }
@@ -270,19 +282,22 @@ for (const [name, counted] of COUNTED_BY_HAND) {
 
 console.log(`READY TO COUNT (${ready.length})`);
 if (ready.length === 0) console.log('  (none yet)');
-for (const [name, counted, recipe, , exact, alternatives] of ready) {
+for (const [name, counted, recipe, readiness, exact, alternatives] of ready) {
   console.log(
     `  ${pad(name, 32)} ${pad(counted, 20)} → ${pad(recipe.title, 30)} makes ${recipe.yieldQuantity} ${recipe.yieldUnit ?? ''}${exact ? '' : '   (check this is the right recipe)'}`
   );
   if (alternatives.length) console.log(`  ${' '.repeat(32)} or maybe: ${alternatives.join(', ')}`);
+  // Countable, but not complete. Worth counting today and worth fixing.
+  for (const warning of readiness.warnings) console.log(`  ${' '.repeat(32)} ${warning}`);
 }
 
-console.log(`\nHAS A RECIPE, BUT IT CANNOT BE EXPLODED YET (${needsFixing.length})`);
+console.log(`\nHAS A RECIPE, BUT A COUNT OF IT WOULD BOOK NOTHING (${needsFixing.length})`);
 if (needsFixing.length === 0) console.log('  (none)');
 for (const [name, counted, recipe, readiness, exact, alternatives] of needsFixing) {
   console.log(`  ${name}  —  counted ${counted}  →  ${recipe.title}${exact ? '' : '   (check this is the right recipe)'}`);
   if (alternatives.length) console.log(`      or maybe: ${alternatives.join(', ')}`);
   for (const problem of readiness.problems) console.log(`      ${problem}`);
+  for (const warning of readiness.warnings) console.log(`      also: ${warning}`);
 }
 
 console.log(`\nNO PREP RECIPE AT ALL (${noRecipe.length})`);
@@ -291,8 +306,9 @@ for (const [name, counted, nearest] of noRecipe) {
   console.log(`  ${pad(name, 32)} ${pad(counted, 20)}${nearest.length ? `   nearest titles: ${nearest.join(', ')}` : ''}`);
 }
 
+const partial = ready.filter(([, , , readiness]) => readiness.warnings.length).length;
 console.log(
-  `\nSummary: ${ready.length} countable now, ${needsFixing.length} need a recipe fix, ${noRecipe.length} need a recipe.`
+  `\nSummary: ${ready.length} countable now (${partial} of them will book less than everything), ${needsFixing.length} would book nothing, ${noRecipe.length} need a recipe.`
 );
 console.log('Nothing was written. Fix the recipes in Stock → Recipes, then re-run this.');
 

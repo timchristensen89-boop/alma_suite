@@ -315,19 +315,43 @@ export function explodePrepCount(args: {
 }
 
 /**
- * What stops a prep recipe being countable, before anyone tries to count it.
+ * What stops a prep recipe being countable — and, separately, what merely
+ * costs it accuracy.
  *
- * Run over the whole prep catalogue this is the difference between the feature
- * working and the feature appearing to work: a recipe with no yield explodes to
- * nothing, and without this the only symptom is a stocktake that still reads
- * the production fridge as shrinkage.
+ * The distinction is the whole value of this function, and the first version
+ * got it wrong. It treated an ingredient that is not linked to a stock item as
+ * a blocker, and against the real catalogue that made every single prep recipe
+ * un-countable: the recipe import left a junk line in each one, named things
+ * like "(1 portions)" and "(500 portions)" — a yield note that became an
+ * ingredient row. Recipes with a good yield and a full set of linked
+ * ingredients were reported as unusable because of a line that is not food.
+ *
+ * So the bar is what the count will actually DO:
+ *
+ *   BLOCKER  — a count of it books nothing at all. No yield to divide by, no
+ *              ingredient lines, or one batch that explodes into zero
+ *              components. There is nothing to gain by offering it.
+ *   WARNING  — a count of it books less than everything. An unlinked
+ *              ingredient, a unit that will not convert, a sub-recipe that
+ *              would not load. Booking most of a tub beats booking none of
+ *              it, and the direction of the error is the safe one: stock is
+ *              understated, never invented.
  */
 export function prepCountReadiness(
   recipe: PrepRecipeSpec,
   recipesById: Map<string, PrepRecipeSpec>,
   itemsById: Map<string, PrepStockItem>
-): { recipeId: string; title: string; countable: boolean; unit: string | null; problems: string[] } {
+): {
+  recipeId: string;
+  title: string;
+  countable: boolean;
+  unit: string | null;
+  problems: string[];
+  warnings: string[];
+} {
   const problems: string[] = [];
+  const warnings: string[] = [];
+
   if (!recipe.yieldQuantity || recipe.yieldQuantity <= 0) {
     problems.push('No batch yield — set how much one batch makes.');
   }
@@ -338,15 +362,19 @@ export function prepCountReadiness(
   if (physical.length === 0) {
     problems.push('No ingredient lines — a count of it explodes into nothing.');
   }
+
   const unlinked = physical.filter((line) => !line.itemId && !line.subRecipeId && (line.quantity ?? 0) > 0);
   if (unlinked.length > 0) {
-    problems.push(
-      `${unlinked.length} ingredient${unlinked.length === 1 ? '' : 's'} not linked to a stock item (${unlinked
+    warnings.push(
+      `${unlinked.length} ingredient${unlinked.length === 1 ? '' : 's'} not linked to a stock item, so ${
+        unlinked.length === 1 ? 'it is' : 'they are'
+      } not counted back into stock (${unlinked
         .slice(0, 3)
         .map((line) => line.ingredientName)
         .join(', ')}${unlinked.length > 3 ? '…' : ''}).`
     );
   }
+
   // Dry-run one batch: catches unit mismatches and broken sub-recipe links that
   // the field checks above cannot see.
   if (recipe.yieldQuantity && recipe.yieldQuantity > 0) {
@@ -358,22 +386,24 @@ export function prepCountReadiness(
       itemsById
     });
     for (const warning of dryRun.warnings) {
-      // The valuation warning is not a blocker: an uncosted ingredient still
-      // books the right QUANTITY back into stock, which is the point.
+      // Valuation is a bonus: an uncosted ingredient still books the right
+      // QUANTITY, which is the point of counting it.
       if (warning.includes('cannot be valued')) continue;
       const stripped = warning.startsWith(`${recipe.title}: `) ? warning.slice(recipe.title.length + 2) : warning;
-      if (!problems.includes(stripped)) problems.push(stripped);
+      if (!warnings.includes(stripped)) warnings.push(stripped);
     }
-    if (dryRun.components.length === 0 && !problems.length) {
-      problems.push('One batch explodes into nothing — check the ingredient quantities.');
+    if (dryRun.components.length === 0 && problems.length === 0) {
+      problems.push('One batch explodes into nothing — no ingredient on it is linked to a stock item.');
     }
   }
+
   return {
     recipeId: recipe.id,
     title: recipe.title,
     countable: problems.length === 0,
     unit: recipe.yieldUnit,
-    problems
+    problems,
+    warnings
   };
 }
 
