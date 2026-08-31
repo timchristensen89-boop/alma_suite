@@ -9,6 +9,20 @@ set -euo pipefail
 # days as ordinary hours pays them twice) and nothing picked it up on the
 # other side. This is that other side.
 #
+# FIRST, AND IN THIS ORDER. `prisma migrate deploy` runs INSIDE the container,
+# so it reads the migrations baked into the image — running it before the
+# rebuild reads the OLD image and reports "no pending migrations" while doing
+# nothing. Rebuild, then migrate:
+#
+#   cd /opt/alma/alma-suite && git fetch origin main && git checkout -f -B main FETCH_HEAD
+#   cd /opt/alma/deploy && docker compose build suite-api && docker compose up -d suite-api
+#   docker compose exec -T suite-api sh -c "cd /workspace/packages/db && npx prisma migrate deploy --schema prisma/schema.prisma"
+#
+# The migrate step should report one more migration than the run before it. If
+# it says "No pending migrations to apply" and the script below then dies on
+# `The table public.StaffXeroLeave does not exist`, the migrate ran against the
+# old image — rebuild and migrate again.
+#
 # Run it on the VPS:
 #
 #   cd /opt/alma/alma-suite && ./scripts/xero-leave-dry-run.sh
