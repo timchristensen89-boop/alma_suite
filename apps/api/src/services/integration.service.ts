@@ -59,7 +59,15 @@ import {
   type XeroEmployeeDetail
 } from '../lib/xero-employee-pull.js';
 import { payrollDetailsNotSent, xeroElementWarnings } from '../lib/xero-employee-push.js';
-import { planLeaveApplication, type AlmaLeaveType, type XeroLeaveType } from '../lib/xero-leave.js';
+import {
+  alreadyInXeroReason,
+  overlappingLeave,
+  clipLeaveToPeriod,
+  planLeaveApplication,
+  type AlmaLeaveType,
+  type XeroLeaveApplication,
+  type XeroLeaveType
+} from '../lib/xero-leave.js';
 import { deputyService } from './deputy.service.js';
 
 type Provider = 'SQUARE' | 'XERO' | 'DEPUTY' | 'LIGHTSPEED';
@@ -4212,7 +4220,18 @@ async function xeroSuperFundId(
 // undoable, so the caller has to ask for it.
 export async function pushLeaveToXero(
   leaveRequestId: string,
-  options?: { tenantId?: string; apply?: boolean; actorUserId?: string }
+  options?: {
+    tenantId?: string;
+    apply?: boolean;
+    actorUserId?: string;
+    /**
+     * The pay period being pushed, [start, end). Leave is clipped to it, so a
+     * long absence contributes one application per period rather than
+     * arriving as one for the whole range. Omitted, the whole request goes —
+     * which for a five-week absence is 28 days in a single application.
+     */
+    period?: { start: Date; end: Date };
+  }
 ) {
   const leave = await prisma.staffLeaveRequest.findUnique({
     where: { id: leaveRequestId },
@@ -4225,12 +4244,29 @@ export async function pushLeaveToXero(
           xeroEmployees: { select: { tenantId: true, xeroEmployeeId: true } }
         }
       },
-      xeroLeave: { select: { tenantId: true, tenantName: true, xeroLeaveApplicationId: true, units: true } }
+      xeroLeave: {
+        select: { tenantId: true, tenantName: true, xeroLeaveApplicationId: true, units: true, periodStart: true }
+      }
     }
   });
   if (!leave) throw new HttpError(404, 'Leave request not found.');
   const staff = leave.staffProfile;
   const staffName = `${staff.firstName} ${staff.lastName}`.trim();
+
+  // The slice of the absence this push is responsible for.
+  const span = options?.period
+    ? clipLeaveToPeriod({ startDate: leave.startDate, endDate: leave.endDate }, options.period)
+    : { startDate: leave.startDate, endDate: leave.endDate };
+  if (!span) {
+    return {
+      staff: staffName,
+      dryRun: options?.apply !== true,
+      organisations: [],
+      warnings: [`${staffName}'s leave does not fall in this pay period.`]
+    };
+  }
+  // What identifies this application: the request, the company, and the week.
+  const periodStart = options?.period ? options.period.start : span.startDate;
 
   const initialConnection = await connectionSelect('XERO');
   if (!initialConnection || initialConnection.status !== 'CONNECTED') {
@@ -4271,7 +4307,9 @@ export async function pushLeaveToXero(
 
     // Already sent to this company: say so and move on. Posting again draws
     // the balance twice.
-    const already = leave.xeroLeave.find((row) => row.tenantId === tenant.id);
+    const already = leave.xeroLeave.find(
+      (row) => row.tenantId === tenant.id && row.periodStart.getTime() === periodStart.getTime()
+    );
     if (already) {
       planned.push({
         tenantId: tenant.id,
@@ -4305,8 +4343,8 @@ export async function pushLeaveToXero(
     const plan = planLeaveApplication({
       type: leave.type as AlmaLeaveType,
       status: leave.status,
-      startDate: leave.startDate,
-      endDate: leave.endDate,
+      startDate: span.startDate,
+      endDate: span.endDate,
       contractedWeeklyHours: staff.contractedWeeklyHours,
       availableLeaveTypes: payItems.data.PayItems?.LeaveTypes ?? [],
       tenantLabel,
@@ -4314,6 +4352,20 @@ export async function pushLeaveToXero(
     });
     if (!plan.ok) {
       warnings.push(plan.reason);
+      continue;
+    }
+
+    // What Xero already holds for this employee. StaffXeroLeave above only
+    // knows about applications this code created; everything entered by hand
+    // or via Deputy is invisible to it, and that is currently all of them.
+    const existing = await xeroGetJson<{ LeaveApplications?: XeroLeaveApplication[] }>(
+      `/payroll.xro/1.0/LeaveApplications?where=${encodeURIComponent(`EmployeeID==Guid("${link.xeroEmployeeId}")`)}`,
+      { connection, tenantId: tenant.id }
+    );
+    connection = existing.connection;
+    const clash = overlappingLeave(plan, existing.data.LeaveApplications ?? [], link.xeroEmployeeId);
+    if (clash) {
+      warnings.push(alreadyInXeroReason(clash, staffName, tenantLabel));
       continue;
     }
 
@@ -4371,6 +4423,8 @@ export async function pushLeaveToXero(
         tenantId: tenant.id,
         tenantName: tenant.name,
         xeroLeaveApplicationId: applicationId,
+        periodStart,
+        periodEnd: span.endDate,
         leaveTypeId: plan.leaveTypeId,
         leaveTypeName: plan.leaveTypeName,
         units: plan.units,
@@ -9427,6 +9481,54 @@ export const integrationService = {
       warnings.push(
         `${leaveEntries.length} leave timesheet${leaveEntries.length === 1 ? '' : 's'} (${leaveHours}h) stayed behind — leave reaches Xero as a leave application, not ordinary hours.`
       );
+    }
+
+    // Leave, as a leave application, for the period being pushed.
+    //
+    // This is the half that never existed: leave was excluded from the hours
+    // above (correctly — Xero pays it separately, so sending it as ordinary
+    // hours pays it twice) and then nothing sent it the other way. The source
+    // is Alma's own approved leave requests rather than the imported leave
+    // timesheets, because Xero needs a leave TYPE and the timesheet only
+    // carries an isLeave flag.
+    //
+    // Each is clipped to this period, so a long absence arrives a week at a
+    // time. Casuals fall out on their own: no contracted weekly hours means no
+    // defensible number of hours, and pushLeaveToXero refuses rather than
+    // inventing one.
+    const leaveRequests = await prisma.staffLeaveRequest.findMany({
+      where: {
+        status: 'APPROVED',
+        startDate: { lt: end },
+        endDate: { gte: start },
+        ...(selectedStaffIds.length > 0 ? { staffProfileId: { in: selectedStaffIds } } : {}),
+        ...(scopedVenue ? { staffProfile: { venue: scopedVenue } } : {})
+      },
+      select: { id: true }
+    });
+    for (const request of leaveRequests) {
+      try {
+        const result = await pushLeaveToXero(request.id, {
+          apply: !input.dryRun,
+          actorUserId: actor.id,
+          period: { start, end }
+        });
+        warnings.push(...result.warnings);
+        for (const org of result.organisations) {
+          if (org.action === 'created' || org.action === 'would create') {
+            warnings.push(
+              `${result.staff}: ${org.action === 'created' ? 'sent' : 'would send'} ${org.days} day(s) of ` +
+                `${org.leaveTypeName} (${org.units} ${org.unitsAre.toLowerCase()}) to ${org.tenantName ?? org.tenantId}.`
+            );
+          }
+        }
+      } catch (error) {
+        // One person's leave failing must not take the week's timesheets with
+        // it — the hours are the thing people are waiting to be paid for.
+        warnings.push(
+          `Leave for one staff member could not be sent: ${error instanceof Error ? error.message : 'unknown error'}`
+        );
+      }
     }
 
     if (entries.length === 0) {

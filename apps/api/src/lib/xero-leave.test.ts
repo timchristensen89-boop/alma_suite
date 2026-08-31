@@ -1,11 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  alreadyInXeroReason,
+  clipLeaveToPeriod,
   hoursPerDay,
   matchLeaveType,
   normaliseLeaveName,
   planLeaveApplication,
+  overlappingLeave,
+  parseXeroLeaveDate,
   weekdaysBetween,
+  type XeroLeaveApplication,
   type XeroLeaveType
 } from './xero-leave.js';
 
@@ -194,4 +199,158 @@ test('a long weekend off is two days, priced as two', () => {
     assert.equal(plan.days, 2);
     assert.equal(plan.units, 15.2);
   }
+});
+
+// ── clipping to the pay period ─────────────────────────────────────────────
+//
+// The week is [start, end) — `end` exclusive, matching the timesheet push's
+// `workDate < end`.
+
+const week = { start: day('2026-08-31'), end: day('2026-09-07') }; // Mon..Sun
+
+function clipped(startIso: string, endIso: string) {
+  const out = clipLeaveToPeriod({ startDate: day(startIso), endDate: day(endIso) }, week);
+  return out ? [out.startDate.toISOString().slice(0, 10), out.endDate.toISOString().slice(0, 10)] : null;
+}
+
+test('leave inside the week is unchanged', () => {
+  assert.deepEqual(clipped('2026-09-01', '2026-09-03'), ['2026-09-01', '2026-09-03']);
+});
+
+test('leave running past both ends becomes exactly the week', () => {
+  // Janaina's case: 26 Aug to 2 Oct pushed against one week gives that week
+  // only — five days, not twenty-eight.
+  assert.deepEqual(clipped('2026-08-26', '2026-10-02'), ['2026-08-31', '2026-09-06']);
+  const out = clipLeaveToPeriod(
+    { startDate: day('2026-08-26'), endDate: day('2026-10-02') },
+    week
+  );
+  assert.ok(out);
+  assert.equal(weekdaysBetween(out.startDate, out.endDate), 5, 'one working week, not the whole absence');
+});
+
+test('the exclusive end never leaks the next day in', () => {
+  // 7 Sep is the next period's Monday. Clipping must stop at the 6th.
+  assert.deepEqual(clipped('2026-09-05', '2026-09-09'), ['2026-09-05', '2026-09-06']);
+});
+
+test('leave entirely outside the week clips to nothing', () => {
+  assert.equal(clipped('2026-08-01', '2026-08-30'), null, 'ends before the week');
+  assert.equal(clipped('2026-09-07', '2026-09-11'), null, 'starts on the exclusive end');
+});
+
+test('leave touching a single boundary day survives', () => {
+  assert.deepEqual(clipped('2026-08-20', '2026-08-31'), ['2026-08-31', '2026-08-31']);
+  assert.deepEqual(clipped('2026-09-06', '2026-09-30'), ['2026-09-06', '2026-09-06']);
+});
+
+test('nonsense in gives nothing out', () => {
+  assert.equal(clipped('2026-09-05', '2026-09-01'), null, 'backwards leave');
+  assert.equal(
+    clipLeaveToPeriod({ startDate: day('2026-09-01'), endDate: day('2026-09-02') }, { start: week.end, end: week.start }),
+    null,
+    'backwards period'
+  );
+  assert.equal(
+    clipLeaveToPeriod({ startDate: new Date('nope'), endDate: day('2026-09-02') }, week),
+    null,
+    'invalid date'
+  );
+});
+
+test('a clipped week of sick leave on 40 hours is 5 days, 40 hours', () => {
+  // The end-to-end shape: clip, then plan. This is what one weekly push sends
+  // for Janaina — not 224 hours.
+  const slice = clipLeaveToPeriod({ startDate: day('2026-08-26'), endDate: day('2026-10-02') }, week);
+  assert.ok(slice);
+  const plan = planLeaveApplication({
+    ...base,
+    type: 'SICK',
+    startDate: slice.startDate,
+    endDate: slice.endDate,
+    contractedWeeklyHours: 40,
+    staffName: 'Janaina'
+  });
+  assert.equal(plan.ok, true);
+  if (!plan.ok) return;
+  assert.equal(plan.days, 5);
+  assert.equal(plan.units, 40);
+  assert.equal(plan.leaveTypeId, 'personal-id');
+});
+
+// ── the duplicate guard ────────────────────────────────────────────────────
+//
+// The one that stops a second leave application being paid over days Xero
+// already covers.
+
+test("Xero's .NET date format is read, not silently dropped", () => {
+  // A date this failed to parse would be an overlap never found — the exact
+  // failure the guard exists to prevent.
+  const dotNet = parseXeroLeaveDate('/Date(1756598400000+1000)/');
+  assert.ok(dotNet);
+  assert.equal(dotNet.toISOString().slice(0, 10), '2025-08-31');
+  assert.equal(parseXeroLeaveDate('2026-09-01')?.toISOString().slice(0, 10), '2026-09-01');
+  assert.equal(parseXeroLeaveDate(''), null);
+  assert.equal(parseXeroLeaveDate(null), null);
+  assert.equal(parseXeroLeaveDate('not a date'), null);
+});
+
+const week1 = { startDate: '2026-08-31', endDate: '2026-09-04' };
+const app = (start: string, end: string, extra: Partial<XeroLeaveApplication> = {}): XeroLeaveApplication => ({
+  LeaveApplicationID: 'existing-1',
+  EmployeeID: 'emp-1',
+  StartDate: start,
+  EndDate: end,
+  ...extra
+});
+
+test('an application over the same days blocks the push', () => {
+  assert.ok(overlappingLeave(week1, [app('2026-08-31', '2026-09-04')]));
+});
+
+test('any overlap at all blocks it, however small', () => {
+  assert.ok(overlappingLeave(week1, [app('2026-09-04', '2026-09-11')]), 'shares the last day');
+  assert.ok(overlappingLeave(week1, [app('2026-08-20', '2026-08-31')]), 'shares the first day');
+  assert.ok(overlappingLeave(week1, [app('2026-01-01', '2026-12-31')]), 'swallows the week whole');
+  assert.ok(overlappingLeave(week1, [app('2026-09-01', '2026-09-02')]), 'sits inside it');
+});
+
+test('leave that does not touch the week does not block it', () => {
+  assert.equal(overlappingLeave(week1, [app('2026-08-24', '2026-08-30')]), null, 'ends the day before');
+  assert.equal(overlappingLeave(week1, [app('2026-09-05', '2026-09-09')]), null, 'starts the day after');
+  assert.equal(overlappingLeave(week1, []), null, 'nothing on file');
+});
+
+test('a different type of leave blocks it just the same', () => {
+  // Already booked as annual leave means already paid for that absence.
+  // Adding personal leave on top is the same double payment, relabelled.
+  const annual = app('2026-09-01', '2026-09-02', { LeaveTypeID: 'annual-id' });
+  assert.ok(overlappingLeave(week1, [annual]));
+});
+
+test('another employee\'s leave is not this employee\'s problem', () => {
+  const someoneElse = app('2026-08-31', '2026-09-04', { EmployeeID: 'emp-2' });
+  assert.equal(overlappingLeave(week1, [someoneElse], 'emp-1'), null);
+  // With no employee filter it still blocks — the caller is expected to have
+  // fetched one employee's applications.
+  assert.ok(overlappingLeave(week1, [someoneElse]));
+});
+
+test('an unreadable date is treated as an overlap', () => {
+  // Refusing a push that might be a duplicate costs a manual check. Sending
+  // one that is costs a leave balance.
+  assert.ok(overlappingLeave(week1, [app('', '')]), 'no dates at all');
+  assert.ok(overlappingLeave(week1, [app('rubbish', '2026-09-04')]), 'half unreadable');
+});
+
+test('the refusal says who, where, when and why', () => {
+  const reason = alreadyInXeroReason(
+    app('2026-08-31', '2026-09-04', { Title: 'Personal/Carer\'s Leave — Janaina' }),
+    'Janaina',
+    'Alma Avalon'
+  );
+  assert.match(reason, /Alma Avalon/);
+  assert.match(reason, /Janaina/);
+  assert.match(reason, /2026-08-31 to 2026-09-04/);
+  assert.match(reason, /pay the absence twice/);
 });

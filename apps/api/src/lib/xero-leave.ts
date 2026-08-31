@@ -136,6 +136,122 @@ export function hoursPerDay(contractedWeeklyHours: number | null | undefined): n
   return Math.round((contractedWeeklyHours / 5) * 10000) / 10000;
 }
 
+/**
+ * The part of a leave request that falls inside one pay period.
+ *
+ * Leave reaches Xero alongside the week's timesheets, so a five-week absence
+ * contributes five days to five separate pushes rather than arriving as one
+ * application for the whole range. That matters for more than tidiness: a
+ * single 28-day personal-leave application draws about three years of accrual
+ * at once, and it is only ever obvious that a balance has run out at the week
+ * it runs out.
+ *
+ * Returns null when the request does not touch the period at all.
+ */
+export function clipLeaveToPeriod(
+  leave: { startDate: Date; endDate: Date },
+  period: { start: Date; end: Date }
+): { startDate: Date; endDate: Date } | null {
+  const times = [leave.startDate, leave.endDate, period.start, period.end].map((d) => d.getTime());
+  if (times.some((t) => Number.isNaN(t))) return null;
+  if (leave.endDate < leave.startDate) return null;
+  // `end` is exclusive, matching the timesheet push's `workDate < end`.
+  if (period.end <= period.start) return null;
+  const startMs = Math.max(leave.startDate.getTime(), period.start.getTime());
+  // Step back one day off the exclusive end so both dates are inclusive, the
+  // shape planLeaveApplication and Xero both want.
+  const endMs = Math.min(leave.endDate.getTime(), period.end.getTime() - 86400000);
+  if (endMs < startMs) return null;
+  return { startDate: new Date(startMs), endDate: new Date(endMs) };
+}
+
+// ── Not sending one Xero already has ──────────────────────────────────────
+//
+// The guard that matters most. StaffXeroLeave only knows about applications
+// THIS code created; every application in Xero today was entered by hand or
+// arrived via Deputy, and deputy-timesheet.ts already notes that Xero "also
+// pays the leave application". Creating a second one over the same days pays
+// the absence twice and draws the balance twice, and a leave application in a
+// live payroll is not undoable.
+//
+// So before creating anything, ask Xero what it already holds for that
+// employee and refuse on any overlap.
+
+/** A leave application as Xero's Payroll API returns it. */
+export type XeroLeaveApplication = {
+  LeaveApplicationID?: string;
+  EmployeeID?: string;
+  LeaveTypeID?: string;
+  Title?: string;
+  StartDate?: string;
+  EndDate?: string;
+};
+
+/**
+ * Xero Payroll hands dates back as `/Date(1756598400000+1000)/` as often as
+ * ISO. Parsed here rather than by the caller so the format is covered by a
+ * test — a date this silently failed to read would be an overlap silently not
+ * found, which is the one failure this whole function exists to prevent.
+ */
+export function parseXeroLeaveDate(value: string | null | undefined): Date | null {
+  const text = (value ?? '').trim();
+  if (!text) return null;
+  const dotNet = /\/Date\((-?\d+)(?:[+-]\d+)?\)\//.exec(text);
+  const date = dotNet?.[1] ? new Date(Number(dotNet[1])) : new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * The first existing application overlapping the planned dates, or null.
+ *
+ * Overlap is checked against leave of ANY type, not just the type being sent.
+ * Someone already booked as annual leave over those days is already being paid
+ * for that absence; adding personal leave on top is the same double payment
+ * wearing a different label.
+ *
+ * An application whose dates Xero did not give us is treated as overlapping.
+ * Refusing a push that might be a duplicate costs a manual check; sending one
+ * that is costs a person's leave balance.
+ */
+export function overlappingLeave(
+  planned: { startDate: string; endDate: string },
+  existing: XeroLeaveApplication[],
+  employeeId?: string
+): XeroLeaveApplication | null {
+  const from = new Date(`${planned.startDate}T00:00:00.000Z`);
+  const to = new Date(`${planned.endDate}T00:00:00.000Z`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
+
+  for (const application of existing) {
+    if (employeeId && application.EmployeeID && application.EmployeeID !== employeeId) continue;
+    const start = parseXeroLeaveDate(application.StartDate);
+    const end = parseXeroLeaveDate(application.EndDate);
+    // Unreadable dates count as an overlap: see the note above.
+    if (!start || !end) return application;
+    // Inclusive ranges overlap when each starts on or before the other ends.
+    if (start.getTime() <= to.getTime() && from.getTime() <= end.getTime()) return application;
+  }
+  return null;
+}
+
+/** How to describe a refusal caused by an existing application. */
+export function alreadyInXeroReason(
+  application: XeroLeaveApplication,
+  staffName: string,
+  tenantLabel: string
+): string {
+  const title = (application.Title ?? '').trim();
+  const start = parseXeroLeaveDate(application.StartDate);
+  const end = parseXeroLeaveDate(application.EndDate);
+  const when =
+    start && end ? ` (${start.toISOString().slice(0, 10)} to ${end.toISOString().slice(0, 10)})` : '';
+  return (
+    `${tenantLabel} already has leave for ${staffName} over these days${when}` +
+    (title ? ` — "${title}"` : '') +
+    '. Nothing was sent; sending it would pay the absence twice.'
+  );
+}
+
 export type LeaveApplicationPlan =
   | {
       ok: true;

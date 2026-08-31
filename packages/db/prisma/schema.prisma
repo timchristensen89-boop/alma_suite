@@ -5731,6 +5731,12 @@ model StaffXeroLeave {
   tenantName     String?
   // Xero's id for the application it created. Present once the POST succeeds.
   xeroLeaveApplicationId String
+  // The pay period this covers. Leave reaches Xero with the week's
+  // timesheets, so one five-week absence becomes five applications and the
+  // key has to say WHICH week — keyed on the request alone, the second week
+  // would collide with the first and never be sent.
+  periodStart    DateTime
+  periodEnd      DateTime
   // What was actually sent, kept so a manager can see why a balance moved by
   // the amount it did without opening Xero.
   leaveTypeId    String
@@ -5743,7 +5749,7 @@ model StaffXeroLeave {
 
   leaveRequest StaffLeaveRequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
 
-  @@unique([leaveRequestId, tenantId])
+  @@unique([leaveRequestId, tenantId, periodStart])
   @@index([tenantId])
 }
 
