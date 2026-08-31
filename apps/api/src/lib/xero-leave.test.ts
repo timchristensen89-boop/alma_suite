@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  alreadyInXeroReason,
   clipLeaveToPeriod,
   hoursPerDay,
   matchLeaveType,
   normaliseLeaveName,
   planLeaveApplication,
+  overlappingLeave,
+  parseXeroLeaveDate,
   weekdaysBetween,
+  type XeroLeaveApplication,
   type XeroLeaveType
 } from './xero-leave.js';
 
@@ -272,4 +276,81 @@ test('a clipped week of sick leave on 40 hours is 5 days, 40 hours', () => {
   assert.equal(plan.days, 5);
   assert.equal(plan.units, 40);
   assert.equal(plan.leaveTypeId, 'personal-id');
+});
+
+// ── the duplicate guard ────────────────────────────────────────────────────
+//
+// The one that stops a second leave application being paid over days Xero
+// already covers.
+
+test("Xero's .NET date format is read, not silently dropped", () => {
+  // A date this failed to parse would be an overlap never found — the exact
+  // failure the guard exists to prevent.
+  const dotNet = parseXeroLeaveDate('/Date(1756598400000+1000)/');
+  assert.ok(dotNet);
+  assert.equal(dotNet.toISOString().slice(0, 10), '2025-08-31');
+  assert.equal(parseXeroLeaveDate('2026-09-01')?.toISOString().slice(0, 10), '2026-09-01');
+  assert.equal(parseXeroLeaveDate(''), null);
+  assert.equal(parseXeroLeaveDate(null), null);
+  assert.equal(parseXeroLeaveDate('not a date'), null);
+});
+
+const week1 = { startDate: '2026-08-31', endDate: '2026-09-04' };
+const app = (start: string, end: string, extra: Partial<XeroLeaveApplication> = {}): XeroLeaveApplication => ({
+  LeaveApplicationID: 'existing-1',
+  EmployeeID: 'emp-1',
+  StartDate: start,
+  EndDate: end,
+  ...extra
+});
+
+test('an application over the same days blocks the push', () => {
+  assert.ok(overlappingLeave(week1, [app('2026-08-31', '2026-09-04')]));
+});
+
+test('any overlap at all blocks it, however small', () => {
+  assert.ok(overlappingLeave(week1, [app('2026-09-04', '2026-09-11')]), 'shares the last day');
+  assert.ok(overlappingLeave(week1, [app('2026-08-20', '2026-08-31')]), 'shares the first day');
+  assert.ok(overlappingLeave(week1, [app('2026-01-01', '2026-12-31')]), 'swallows the week whole');
+  assert.ok(overlappingLeave(week1, [app('2026-09-01', '2026-09-02')]), 'sits inside it');
+});
+
+test('leave that does not touch the week does not block it', () => {
+  assert.equal(overlappingLeave(week1, [app('2026-08-24', '2026-08-30')]), null, 'ends the day before');
+  assert.equal(overlappingLeave(week1, [app('2026-09-05', '2026-09-09')]), null, 'starts the day after');
+  assert.equal(overlappingLeave(week1, []), null, 'nothing on file');
+});
+
+test('a different type of leave blocks it just the same', () => {
+  // Already booked as annual leave means already paid for that absence.
+  // Adding personal leave on top is the same double payment, relabelled.
+  const annual = app('2026-09-01', '2026-09-02', { LeaveTypeID: 'annual-id' });
+  assert.ok(overlappingLeave(week1, [annual]));
+});
+
+test('another employee\'s leave is not this employee\'s problem', () => {
+  const someoneElse = app('2026-08-31', '2026-09-04', { EmployeeID: 'emp-2' });
+  assert.equal(overlappingLeave(week1, [someoneElse], 'emp-1'), null);
+  // With no employee filter it still blocks — the caller is expected to have
+  // fetched one employee's applications.
+  assert.ok(overlappingLeave(week1, [someoneElse]));
+});
+
+test('an unreadable date is treated as an overlap', () => {
+  // Refusing a push that might be a duplicate costs a manual check. Sending
+  // one that is costs a leave balance.
+  assert.ok(overlappingLeave(week1, [app('', '')]), 'no dates at all');
+  assert.ok(overlappingLeave(week1, [app('rubbish', '2026-09-04')]), 'half unreadable');
+});
+
+test('the refusal says who, where, when and why', () => {
+  const reason = alreadyInXeroReason(
+    app('2026-08-31', '2026-09-04', { Title: 'Personal/Carer\'s Leave — Janaina' }),
+    'Janaina',
+    'Alma Avalon'
+  );
+  assert.match(reason, /Alma Avalon/);
+  assert.match(reason, /Janaina/);
+  assert.match(reason, /2026-08-31 to 2026-09-04/);
+  assert.match(reason, /pay the absence twice/);
 });
