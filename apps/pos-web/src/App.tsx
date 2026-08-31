@@ -275,7 +275,15 @@ type DaySummary = {
  * register only hears the 120ms-debounced term it actually filters by.
  * Before this, every character re-evaluated the whole ~3,300-line render.
  */
-const PosSearchBox = memo(function PosSearchBox({ onTerm }: { onTerm: (term: string) => void }) {
+const PosSearchBox = memo(function PosSearchBox({
+  onTerm,
+  className = 'pos-search',
+  placeholder = 'Search menu…'
+}: {
+  onTerm: (term: string) => void;
+  className?: string;
+  placeholder?: string;
+}) {
   const [value, setValue] = useState('');
   useEffect(() => {
     const timer = setTimeout(() => onTerm(value), 120);
@@ -283,8 +291,8 @@ const PosSearchBox = memo(function PosSearchBox({ onTerm }: { onTerm: (term: str
   }, [value, onTerm]);
   return (
     <input
-      className="pos-search"
-      placeholder="Search menu…"
+      className={className}
+      placeholder={placeholder}
       value={value}
       onChange={(event) => setValue(event.currentTarget.value)}
     />
@@ -3526,10 +3534,11 @@ export function App() {
             a word from the note; a dish by what it suits) and sitting right
             above the list it filters. Showing this as well was two boxes
             competing for the same job and a row of screen nobody got back. */}
-        {view === 'register' && !pageOwnsSearch ? (
-          <PosSearchBox onTerm={setSearchTerm} />
-        ) : null}
         </div>
+        {/* The search used to live here. It now sits above the list it
+            filters, on every tab, the same place Full menu and Wine have
+            always put theirs — so the bar is the venue and the two buttons
+            and nothing else. */}
         <span className="pos-header-spacer" />
         <div className="pos-header-actions">
         <button
@@ -3887,7 +3896,7 @@ export function App() {
       ) : view === 'bills' || view === 'board' ? null : (
         <div className="pos-body">
           <div className="pos-menu">
-            {!searchTerm ? (
+            {/* The tabs stay put while you search. They used to vanish, which was fine when the search box lived in the header — now it sits directly under them, and hiding them slid the box you were typing into up the page. */}
               <nav className="pos-tabs">
                 <button
                   type="button"
@@ -3943,6 +3952,27 @@ export function App() {
                   </button>
                 ) : null}
               </nav>
+            {/* One search bar, in one place, on every tab. Full menu and Wine
+                carry their own — richer than this one, and already sitting
+                above the list they filter — so this stands down for those two
+                rather than putting a second box on the same screen. Everywhere
+                else it searches the whole menu, which is what the header box
+                used to do from a row of its own. */}
+            {!pageOwnsSearch ? (
+              <div className="pos-wine-filters pos-menu-filters">
+                <div className="pos-wine-find">
+                  <PosSearchBox
+                    onTerm={setSearchTerm}
+                    className="pos-wine-search"
+                    placeholder="Search the menu…"
+                  />
+                  {searchTerm ? (
+                    <span className="pos-wine-count">
+                      {visibleItems.length} item{visibleItems.length === 1 ? '' : 's'}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
             ) : null}
             {activeCategory === WINE_TAB ? (
               (() => {

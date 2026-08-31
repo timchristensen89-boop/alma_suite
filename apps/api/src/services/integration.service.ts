@@ -58,6 +58,8 @@ import {
   selectPullFields,
   type XeroEmployeeDetail
 } from '../lib/xero-employee-pull.js';
+import { payrollDetailsNotSent, xeroElementWarnings } from '../lib/xero-employee-push.js';
+import { planLeaveApplication, type AlmaLeaveType, type XeroLeaveType } from '../lib/xero-leave.js';
 import { deputyService } from './deputy.service.js';
 
 type Provider = 'SQUARE' | 'XERO' | 'DEPUTY' | 'LIGHTSPEED';
@@ -4053,6 +4055,11 @@ type XeroPayrollEmployeeSummary = {
   FirstName?: string;
   LastName?: string;
   Status?: string;
+  // Xero Payroll answers 200 and reports a rejected block HERE, per employee,
+  // rather than failing the request. Without this field the push read the
+  // EmployeeID, called it "updated", and never noticed that the tax
+  // declaration or the bank account had been thrown away.
+  ValidationErrors?: Array<{ Message?: string }>;
 };
 
 // Which organisations a person should exist in, from the venue on their
@@ -4194,6 +4201,198 @@ async function xeroSuperFundId(
 // Matching before creating is the whole safety story: 32 people already exist
 // in Xero from before this was wired up, and creating a duplicate employee in
 // a live payroll is not something you undo with a delete.
+// ── Approved leave into Xero Payroll ──────────────────────────────────────
+//
+// The timesheet push drops leave on purpose — Xero pays it through a leave
+// application, and sending the same days as ordinary hours pays them twice —
+// and until now nothing picked it up on the other side. Leave was excluded,
+// warned about, and never sent.
+//
+// Dry run by default. This writes to a live payroll, where a duplicate is not
+// undoable, so the caller has to ask for it.
+export async function pushLeaveToXero(
+  leaveRequestId: string,
+  options?: { tenantId?: string; apply?: boolean; actorUserId?: string }
+) {
+  const leave = await prisma.staffLeaveRequest.findUnique({
+    where: { id: leaveRequestId },
+    select: {
+      id: true, type: true, status: true, startDate: true, endDate: true, notes: true,
+      staffProfile: {
+        select: {
+          id: true, firstName: true, lastName: true, venue: true,
+          contractedWeeklyHours: true,
+          xeroEmployees: { select: { tenantId: true, xeroEmployeeId: true } }
+        }
+      },
+      xeroLeave: { select: { tenantId: true, tenantName: true, xeroLeaveApplicationId: true, units: true } }
+    }
+  });
+  if (!leave) throw new HttpError(404, 'Leave request not found.');
+  const staff = leave.staffProfile;
+  const staffName = `${staff.firstName} ${staff.lastName}`.trim();
+
+  const initialConnection = await connectionSelect('XERO');
+  if (!initialConnection || initialConnection.status !== 'CONNECTED') {
+    throw new HttpError(409, 'Xero is not connected. Reconnect it in Admin → Integrations.');
+  }
+  let connection: IntegrationConnection = initialConnection;
+  const scopes = Array.isArray(connection.scopes) ? connection.scopes.map(String) : [];
+  if (!scopes.includes('payroll.employees')) {
+    throw new HttpError(409, 'The Xero connection is read-only for payroll — reconnect it to allow writing leave.');
+  }
+
+  const tenants = xeroTenantsFromConnection(connection);
+  const targets = options?.tenantId
+    ? tenants.filter((tenant) => tenant.id === options.tenantId)
+    : xeroTenantsForVenue(staff.venue, tenants);
+  if (targets.length === 0) {
+    throw new HttpError(
+      400,
+      `No Xero organisation matches the venue "${staff.venue ?? '(none)'}" — set it on their profile, or pick a company.`
+    );
+  }
+
+  const apply = options?.apply === true;
+  const warnings: string[] = [];
+  const planned: Array<{
+    tenantId: string;
+    tenantName: string | null;
+    leaveTypeName: string;
+    days: number;
+    units: number;
+    unitsAre: string;
+    action: 'would create' | 'created' | 'already sent';
+    xeroLeaveApplicationId?: string;
+  }> = [];
+
+  for (const tenant of targets) {
+    const tenantLabel = tenant.name ?? tenant.id;
+
+    // Already sent to this company: say so and move on. Posting again draws
+    // the balance twice.
+    const already = leave.xeroLeave.find((row) => row.tenantId === tenant.id);
+    if (already) {
+      planned.push({
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        leaveTypeName: '',
+        days: 0,
+        units: already.units,
+        unitsAre: '',
+        action: 'already sent',
+        xeroLeaveApplicationId: already.xeroLeaveApplicationId
+      });
+      warnings.push(`${staffName}'s leave was already sent to ${tenantLabel} and was left alone.`);
+      continue;
+    }
+
+    const link = staff.xeroEmployees.find((row) => row.tenantId === tenant.id);
+    if (!link) {
+      warnings.push(
+        `${staffName} has no employee record in ${tenantLabel} — open their profile, push them to Xero for that company, then push the leave.`
+      );
+      continue;
+    }
+
+    // Leave types are local to each company, exactly like super funds.
+    const payItems = await xeroGetJson<{ PayItems?: { LeaveTypes?: XeroLeaveType[] } }>(
+      '/payroll.xro/1.0/PayItems',
+      { connection, tenantId: tenant.id }
+    );
+    connection = payItems.connection;
+
+    const plan = planLeaveApplication({
+      type: leave.type as AlmaLeaveType,
+      status: leave.status,
+      startDate: leave.startDate,
+      endDate: leave.endDate,
+      contractedWeeklyHours: staff.contractedWeeklyHours,
+      availableLeaveTypes: payItems.data.PayItems?.LeaveTypes ?? [],
+      tenantLabel,
+      staffName
+    });
+    if (!plan.ok) {
+      warnings.push(plan.reason);
+      continue;
+    }
+
+    if (!apply) {
+      planned.push({
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        leaveTypeName: plan.leaveTypeName,
+        days: plan.days,
+        units: plan.units,
+        unitsAre: plan.unitsAre,
+        action: 'would create'
+      });
+      continue;
+    }
+
+    const saved = await xeroPostJson<{ LeaveApplications?: Array<{ LeaveApplicationID?: string; ValidationErrors?: Array<{ Message?: string }> }> }>(
+      '/payroll.xro/1.0/LeaveApplications',
+      {
+        connection,
+        tenantId: tenant.id,
+        body: [
+          {
+            EmployeeID: link.xeroEmployeeId,
+            LeaveTypeID: plan.leaveTypeId,
+            Title: plan.title,
+            StartDate: plan.startDate,
+            EndDate: plan.endDate,
+            LeavePeriods: [
+              {
+                PayPeriodStartDate: plan.startDate,
+                PayPeriodEndDate: plan.endDate,
+                NumberOfUnits: plan.units
+              }
+            ],
+            Description: leave.notes ?? undefined
+          }
+        ]
+      }
+    );
+    connection = saved.connection;
+    const element = saved.data.LeaveApplications?.[0];
+    // Same trap as the employee push: Xero answers 200 and reports the
+    // rejection in the body.
+    warnings.push(...xeroElementWarnings(element, tenantLabel));
+    const applicationId = element?.LeaveApplicationID;
+    if (!applicationId) {
+      warnings.push(`${tenantLabel} did not return a leave application id, so nothing was recorded against ${staffName}'s request.`);
+      continue;
+    }
+
+    await prisma.staffXeroLeave.create({
+      data: {
+        leaveRequestId: leave.id,
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        xeroLeaveApplicationId: applicationId,
+        leaveTypeId: plan.leaveTypeId,
+        leaveTypeName: plan.leaveTypeName,
+        units: plan.units,
+        unitsAre: plan.unitsAre,
+        pushedByUserId: options?.actorUserId ?? null
+      }
+    });
+    planned.push({
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      leaveTypeName: plan.leaveTypeName,
+      days: plan.days,
+      units: plan.units,
+      unitsAre: plan.unitsAre,
+      action: 'created',
+      xeroLeaveApplicationId: applicationId
+    });
+  }
+
+  return { staff: staffName, dryRun: !apply, organisations: planned, warnings };
+}
+
 export async function pushStaffToXero(staffProfileId: string, options?: { tenantId?: string }) {
   const staff = await prisma.staffProfile.findUnique({
     where: { id: staffProfileId },
@@ -4315,7 +4514,13 @@ export async function pushStaffToXero(staffProfileId: string, options?: { tenant
       body: [xeroEmployeeBody(staff, { employeeId: existingId ?? undefined, superFundId: fund.id })]
     });
     connection = saved.connection;
-    const xeroEmployeeId = saved.data.Employees?.[0]?.EmployeeID ?? existingId;
+    const element = saved.data.Employees?.[0];
+    // A push that carried no tax declaration is not a successful push, and
+    // until now it reported as one.
+    const tenantLabel = tenant.name ?? tenant.id;
+    warnings.push(...payrollDetailsNotSent(staff, tenantLabel));
+    warnings.push(...xeroElementWarnings(element, tenantLabel));
+    const xeroEmployeeId = element?.EmployeeID ?? existingId;
     const action = existingId ? 'updated' : 'created';
     if (!xeroEmployeeId) throw new HttpError(502, `Xero did not return an employee id for ${tenant.name ?? tenant.id}.`);
 

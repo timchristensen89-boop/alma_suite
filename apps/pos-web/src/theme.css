@@ -2647,6 +2647,67 @@ body.pos-dark .office-top { background: #10160f; box-shadow: 0 6px 18px rgba(0, 
   /* The tabs share the bar's gutter, so the first chip lines up under the
      brand instead of sitting 2px to its left. */
   .pos-tabs { padding-inline: 12px; }
+
+  /* ── The bar is the venue and two labels ───────────────────────────────
+     With the search gone to the page it filters, this fits on one line:
+
+       logo · venue name · New · Menu
+
+     and the sale's chips take a second line only when a sale is open and
+     they don't fit beside it.
+
+     Everything here is written twice, plainly and with a `body.pos-v2`
+     prefix. That block near the top of this file sets
+     `body.pos-v2 .pos-header > * { order: 2 }` at specificity (0,3,0), which
+     silently beat the (0,1,0) ordering this section used to carry — the bar
+     kept its four rows and New and Menu never reached the venue name. Match
+     its specificity or it wins. */
+  body.pos-v2 .pos-header, .pos-header { flex-wrap: wrap; align-items: center; }
+
+  body.pos-v2 .pos-header-brand, .pos-header-brand { order: 0; flex: 1 1 auto; min-width: 0; }
+  /* Beside the venue name, which is what buys the rest of the bar back. */
+  body.pos-v2 .pos-header-actions, .pos-header-actions { order: 1; flex: none; }
+  /* Last, and free to wrap: a long table label takes its own line rather than
+     shoving the buttons off the end of the first one. */
+  body.pos-v2 .pos-header-context, .pos-header-context { order: 2; flex: 1 1 auto; min-width: 0; }
+  body.pos-v2 .pos-header-spacer, .pos-header-spacer { display: none; }
+
+  /* ── New and Menu are labels, not buttons ──────────────────────────────
+     This shipped once and the outline stayed on the phone, because two other
+     rules were quietly putting it back:
+
+       body.pos-v2 .pos-header .pos-ghost   (0,3,0) sets a border-colour, and
+                                            out-specifies a bare
+                                            `.pos-header-actions .pos-ghost`;
+       .pos-header .pos-ghost               (0,2,0) later in this file resets
+                                            the padding.
+
+     So this lives at the very end of the last phone block and carries the
+     body.pos-v2 form as well — it has to win on both specificity and order.
+     Test after any header change: on a phone, New and Menu are text on green
+     with no pill around either. */
+  .pos-header-actions .pos-ghost,
+  .pos-header-actions .pos-ghost-active,
+  body.pos-v2 .pos-header-actions .pos-ghost,
+  body.pos-v2 .pos-header-actions .pos-ghost-active {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    color: #f3efe6;
+    /* The tap target keeps its full height; only the shell goes. */
+    min-height: 36px;
+    padding: 0 2px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .pos-header-actions .pos-ghost:hover,
+  body.pos-v2 .pos-header-actions .pos-ghost:hover { background: transparent; }
+  /* The dropdown is open: say so without giving the shell back. */
+  .pos-header-actions .pos-ghost-active,
+  body.pos-v2 .pos-header-actions .pos-ghost-active {
+    text-decoration: underline;
+    text-underline-offset: 5px;
+  }
 }
 
 /* ── A deploy has landed while this till was open ──────────────────────────

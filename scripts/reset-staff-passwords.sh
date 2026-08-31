@@ -86,9 +86,20 @@ const EXCLUDED = new Set(
     .filter(Boolean)
 );
 
-/** "José" -> "Jose", "anne-marie" -> "AnneMarie", "" -> null. */
+/**
+ * The name someone types into the password box.
+ *
+ * Only the FIRST given name. Plenty of profiles carry two in the firstName
+ * field — "Rodrigo Golcalves" folded to Rodrigogolcalves, which nobody is
+ * typing at the start of a shift. Accents are folded and anything that is not
+ * a letter is dropped for the same reason.
+ *
+ *   "Rodrigo Golcalves" -> Rodrigo      "Jose"       -> Jose
+ *   "MARIA JOSE"        -> Maria        "anne-marie" -> Annemarie
+ */
 function passwordName(firstName) {
-  const folded = firstName
+  const first = firstName.trim().split(/\s+/)[0] ?? '';
+  const folded = first
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^A-Za-z]/g, '');

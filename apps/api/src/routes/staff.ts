@@ -181,6 +181,32 @@ staffRouter.post('/:id/push-to-xero', requireManager, async (req, res, next) => 
   }
 });
 
+// Push one approved leave request into Xero Payroll as a leave application.
+//
+// DRY RUN unless the body says { apply: true }. This writes to a live
+// payroll, where a duplicate leave application draws the balance twice and
+// pays it twice and cannot be undone — so the default answer is "here is what
+// would happen", and sending it is a separate, deliberate act.
+//
+// With a tenantId: exactly that company. Without: every company the staff
+// member's venue implies.
+staffRouter.post('/leave/:id/push-to-xero', requireManager, async (req, res, next) => {
+  try {
+    const { pushLeaveToXero } = await import('../services/integration.service.js');
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const tenantId = typeof body.tenantId === 'string' && body.tenantId ? body.tenantId : undefined;
+    res.json(
+      await pushLeaveToXero(String(req.params.id), {
+        tenantId,
+        apply: body.apply === true,
+        actorUserId: req.user?.id
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 // The employees in every connected Xero organisation, plus this profile's
 // current links — what the profile page's Xero panel renders.
 staffRouter.get('/:id/xero-link-options', requireManager, async (req, res, next) => {
