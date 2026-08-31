@@ -7312,7 +7312,13 @@ export type StocktakePrepRecipeOption = {
   yieldQuantity: number | null;
   yieldUnit: string | null;
   countable: boolean;
+  // Blockers: a count of it would book nothing at all. Empty exactly when
+  // `countable` is true.
   problems: string[];
+  // Not blockers: a count of it books less than everything — an unlinked
+  // ingredient, a unit that will not convert. Worth fixing, worth counting
+  // meanwhile, because most of a tub beats none of it.
+  warnings: string[];
 };
 
 // The resolved concrete item list for starting a count from a template.

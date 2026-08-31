@@ -89,6 +89,10 @@ export async function loadPrepItems(
  * to look like it works: the mole simply never appears on the count sheet and
  * nobody can say why. Named with its reason, it is a five-second fix on the
  * recipe.
+ *
+ * `countable` means a count books SOMETHING, not that the recipe is perfect.
+ * A recipe missing one ingredient link still books the rest, and blocking it
+ * for that would be trading most of an answer for none of one.
  */
 export async function listPrepRecipeOptions(
   recipeIds?: string[]
@@ -115,7 +119,8 @@ export async function listPrepRecipeOptions(
       yieldQuantity: row.yieldQuantity,
       yieldUnit: row.yieldUnit,
       countable: readiness.countable,
-      problems: readiness.problems
+      problems: readiness.problems,
+      warnings: readiness.warnings
     };
   });
   // When an explicit list was asked for, keep the caller's order — a count

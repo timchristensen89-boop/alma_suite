@@ -364,7 +364,7 @@ export function StocktakeTemplatesPage() {
                     <label
                       key={recipe.id}
                       className="check-row"
-                      title={recipe.countable ? undefined : recipe.problems.join(' ')}
+                      title={recipe.countable ? recipe.warnings?.join(' ') : recipe.problems.join(' ')}
                     >
                       <input
                         type="checkbox"
@@ -377,9 +377,9 @@ export function StocktakeTemplatesPage() {
                       {recipe.title}
                       <span className="subtle">
                         {recipe.countable
-                          ? recipe.yieldQuantity
-                            ? ` · makes ${recipe.yieldQuantity} ${recipe.yieldUnit ?? ''}`
-                            : ''
+                          ? `${recipe.yieldQuantity ? ` · makes ${recipe.yieldQuantity} ${recipe.yieldUnit ?? ''}` : ''}${
+                              recipe.warnings?.length ? ` · ${recipe.warnings.length} ingredient issue${recipe.warnings.length === 1 ? '' : 's'}` : ''
+                            }`
                           : ` · ${recipe.problems.join(' ')}`}
                       </span>
                     </label>

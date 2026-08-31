@@ -1238,6 +1238,10 @@ function PreppedItemsPicker({
                     {recipe.title}
                     <span className="subtle">
                       {recipe.yieldQuantity ? ` · makes ${recipe.yieldQuantity} ${recipe.yieldUnit ?? ''}` : ''}
+                      {/* Countable, but it will book less than everything. Said
+                          here rather than after the count, when the number is
+                          already in the ledger. */}
+                      {recipe.warnings?.length ? ` · ${recipe.warnings.join(' ')}` : ''}
                     </span>
                   </label>
                 ))}
@@ -1264,8 +1268,8 @@ function PreppedItemsPicker({
             <div className="stocktake-prep-blocked">
               <strong>Not countable yet ({blocked.length})</strong>
               <p className="subtle">
-                These need a fix on the recipe before a count of them can be turned back into
-                ingredients. Until then they would explode into nothing.
+                A count of these would book nothing at all — no batch yield, or not one
+                ingredient linked to a stock item. Fix the recipe and they appear above.
               </p>
               <ul>
                 {blocked.map((recipe) => (

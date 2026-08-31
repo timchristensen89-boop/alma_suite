@@ -326,6 +326,72 @@ test('readiness names every reason a recipe cannot be counted', () => {
   assert.match(ready.problems.join(' '), /No ingredient lines/);
 });
 
+test('one unlinked ingredient warns; it does not block the whole recipe', () => {
+  // The case that made the first version of this useless. Against the real
+  // catalogue every prep recipe carried a junk line from the import, named
+  // "(1 portions)" — a yield note that became an ingredient row. Blocking on
+  // it reported 22 out of 22 recipes as un-countable, when each had a good
+  // yield and a full set of linked ingredients underneath.
+  const mayonnaise = item({ id: 'i1', name: 'Mayonnaise', unit: 'kg' });
+  const spec = recipe({
+    id: 'r1',
+    title: 'Chipotle Mayo',
+    yieldQuantity: 11.7,
+    yieldUnit: 'kg',
+    lines: [
+      { ingredientName: 'Mayonnaise', quantity: 10, unit: 'kg', itemId: 'i1', subRecipeId: null },
+      { ingredientName: '(1 portions)', quantity: 1, unit: 'portion', itemId: null, subRecipeId: null }
+    ]
+  });
+  const { itemsById, recipesById } = maps([mayonnaise], [spec]);
+  const ready = prepCountReadiness(spec, recipesById, itemsById);
+
+  assert.equal(ready.countable, true, 'the 10 kg of mayonnaise is still worth booking');
+  assert.deepEqual(ready.problems, []);
+  assert.match(ready.warnings.join(' '), /not linked to a stock item/);
+  assert.match(ready.warnings.join(' '), /\(1 portions\)/);
+});
+
+test('a recipe where NOTHING is linked is still blocked', () => {
+  // The line between the two: warnings mean "books less than everything",
+  // blockers mean "books nothing". Offering this one would be offering a
+  // count that quietly does nothing at all.
+  const spec = recipe({
+    id: 'r1',
+    title: 'Habanero Salsa',
+    yieldQuantity: 2,
+    yieldUnit: 'kg',
+    lines: [
+      { ingredientName: 'Habanero', quantity: 1, unit: 'kg', itemId: null, subRecipeId: null },
+      { ingredientName: '(60 portions)', quantity: 1, unit: 'portion', itemId: null, subRecipeId: null }
+    ]
+  });
+  const { itemsById, recipesById } = maps([], [spec]);
+  const ready = prepCountReadiness(spec, recipesById, itemsById);
+  assert.equal(ready.countable, false);
+  assert.match(ready.problems.join(' '), /explodes into nothing/);
+});
+
+test('an unconvertible ingredient unit warns rather than blocking', () => {
+  // It costs the count that one ingredient, not the other four.
+  const beef = item({ id: 'i1', name: 'Beef chuck', unit: 'kg' });
+  const wine = item({ id: 'i2', name: 'Cooking wine', unit: 'bottle', countUnit: 'bottle' });
+  const spec = recipe({
+    id: 'r1',
+    title: 'Beef Birria',
+    yieldQuantity: 12,
+    yieldUnit: 'kg',
+    lines: [
+      { ingredientName: 'Beef chuck', quantity: 10, unit: 'kg', itemId: 'i1', subRecipeId: null },
+      { ingredientName: 'Cooking wine', quantity: 500, unit: 'g', itemId: 'i2', subRecipeId: null }
+    ]
+  });
+  const { itemsById, recipesById } = maps([beef, wine], [spec]);
+  const ready = prepCountReadiness(spec, recipesById, itemsById);
+  assert.equal(ready.countable, true);
+  assert.match(ready.warnings.join(' '), /do not convert/);
+});
+
 test('a missing cost does not make a recipe uncountable', () => {
   // Quantities are the point; the value is a bonus. An uncosted ingredient
   // still books the right kilograms back onto the shelf.
@@ -341,7 +407,10 @@ test('a missing cost does not make a recipe uncountable', () => {
   assert.equal(prepCountReadiness(spec, recipesById, itemsById).countable, true);
 });
 
-test('readiness catches a unit mismatch the field checks cannot see', () => {
+test('a unit mismatch that leaves nothing to book IS a blocker', () => {
+  // Same warning as the test above, but here it is the only ingredient, so
+  // the count books nothing. The blocker is the empty result, never the
+  // warning itself.
   const wine = item({ id: 'i1', name: 'Cooking wine', unit: 'bottle', countUnit: 'bottle' });
   const spec = recipe({
     id: 'r1',
@@ -353,7 +422,8 @@ test('readiness catches a unit mismatch the field checks cannot see', () => {
   const { itemsById, recipesById } = maps([wine], [spec]);
   const ready = prepCountReadiness(spec, recipesById, itemsById);
   assert.equal(ready.countable, false);
-  assert.match(ready.problems.join(' '), /do not convert/);
+  assert.match(ready.problems.join(' '), /explodes into nothing/);
+  assert.match(ready.warnings.join(' '), /do not convert/);
 });
 
 /* ------------------------------------------------------------------ merge */
