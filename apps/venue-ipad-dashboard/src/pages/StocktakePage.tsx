@@ -9,10 +9,13 @@
 // - Read open + recent stocktakes for the venue, group lines by area, count
 //   with big inputs, save draft to the existing PATCH /api/stocktake/:id.
 // - "Touched" state is tracked iPad-local: a line shows as "Not counted yet"
-//   until the staff member explicitly types a value or taps +/-/zero. This
-//   approximates the strategy doc's zero-vs-not-counted concern WITHOUT a
-//   schema change. A future migration to make StocktakeLine.countedQty
-//   nullable would let us persist this distinction.
+//   until the staff member explicitly types a value or taps +/-. That is a
+//   progress indicator for the person counting, NOT a claim about the stock.
+//   Nobody types 0 three hundred times at the end of a long shift: a line with
+//   none of it is left blank, and submitting the count records every blank as
+//   a counted zero (stocktakes.service.ts → submitStocktake). Blank only means
+//   "not looked at yet" while the count is still open, so a half-finished
+//   draft can never zero a shelf nobody reached.
 //
 // What this commit does NOT cover (Phase 5.6b)
 // - Submit / review / lock (requires manager PIN — current RBAC blocks staff)
@@ -374,8 +377,11 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
             </button>
           </div>
           <p className="section-copy">
-            Tap a count to type, or use +/- for quick adjustments. Lines stay marked
-            "Not counted yet" until you touch them on this iPad.
+            Tap a count to type, or use +/- for quick adjustments.
+          </p>
+          <p className="section-copy stock-blank-note">
+            <strong>If there is none of something, leave it blank.</strong> You do not have to type
+            a zero. Anything still blank when the manager submits the count is recorded as zero.
           </p>
         </div>
 
