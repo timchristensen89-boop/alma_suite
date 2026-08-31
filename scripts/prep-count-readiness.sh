@@ -282,6 +282,15 @@ for (const [name, counted] of COUNTED_BY_HAND) {
 
 console.log(`READY TO COUNT (${ready.length})`);
 if (ready.length === 0) console.log('  (none yet)');
+else {
+  console.log('  "Makes" came from scripts/estimate-recipe-yields.ts, which set every yield to the');
+  console.log('  total weight of the ingredients. That is mass-balanced — counting 6 kg of a prep');
+  console.log('  books about 6 kg of ingredients back, whatever the batch size is written at — and');
+  console.log('  where the kitchen really does cook liquid off, the yield is too HIGH, so the count');
+  console.log('  books too LITTLE. That is the safe direction. Nudge a yield DOWN only when you');
+  console.log('  know the real loss; nudging it down too far books stock that is not there.');
+  console.log('');
+}
 for (const [name, counted, recipe, readiness, exact, alternatives] of ready) {
   console.log(
     `  ${pad(name, 32)} ${pad(counted, 20)} → ${pad(recipe.title, 30)} makes ${recipe.yieldQuantity} ${recipe.yieldUnit ?? ''}${exact ? '' : '   (check this is the right recipe)'}`

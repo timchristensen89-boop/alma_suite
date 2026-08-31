@@ -42,6 +42,7 @@
 import {
   convertBetweenUnits,
   convertQuantityToCostUnit,
+  isMeasureUnit,
   type CostUnitItem,
   type StocktakePrepApplySummary,
   type StocktakePrepContribution,
@@ -361,6 +362,21 @@ export function prepCountReadiness(
   const physical = recipe.lines.filter((line) => !line.costingOnly);
   if (physical.length === 0) {
     problems.push('No ingredient lines — a count of it explodes into nothing.');
+  }
+
+  // A kitchen weighs what it has made. Every one of the twenty-two items the
+  // chef wrote out by hand was a weight — 11.707 kg, 468 g — so a recipe that
+  // yields "60 portions" cannot be counted off a scale: batchesForCount will
+  // refuse the conversion and the line books nothing.
+  //
+  // The dry run below cannot see this, because it counts one batch in the
+  // recipe's OWN unit, where the conversion always succeeds. It has to be
+  // checked separately or the recipe reads as ready and then quietly does
+  // nothing the first time someone weighs it.
+  if (recipe.yieldUnit && recipe.yieldUnit.trim() && !isMeasureUnit(recipe.yieldUnit)) {
+    warnings.push(
+      `Yields ${recipe.yieldUnit}, so it can only be counted in ${recipe.yieldUnit} — weighing it will book nothing. Give it a weight or volume yield if the kitchen weighs it.`
+    );
   }
 
   const unlinked = physical.filter((line) => !line.itemId && !line.subRecipeId && (line.quantity ?? 0) > 0);
