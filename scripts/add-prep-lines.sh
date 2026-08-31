@@ -27,16 +27,28 @@ set -euo pipefail
 #       usually what you want — two hand-written names can reach the same
 #       recipe, so excluding one name alone just lets the other one through.
 #
-# It adds a line ONLY where the recipe can actually be exploded AND the weight
-# the chef wrote converts to that recipe's yield unit. Anything else is listed
-# with the reason and left alone, because a prep line that books nothing looks
-# exactly like one that worked.
+# EVERY item the chef counted goes on the sheet. What differs is whether it
+# books ingredients:
+#
+#   A PREP LINE, where the recipe can be exploded AND the weight converts to
+#   its yield unit. Approving the count books its ingredients back into stock.
+#
+#   A RECORD-ONLY LINE for the rest — no recipe link, so it books nothing, but
+#   the number is on the count instead of in a message. Dropping them would
+#   recreate the problem this exists to fix: the only record of 8.884 kg of
+#   bean puree would be the note at the bottom of an email. Each one carries
+#   the reason it books nothing, so it is a to-do rather than a mystery.
+#   RECORD_ONLY=NO leaves them off entirely.
 
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/alma/deploy}"
 CONFIRM="${PREP_CONFIRM:-NO}"
 # Comma-separated hand-written names to leave off, for when the dry run shows a
 # match is wrong. e.g. SKIP="Bean puree,Octopus"
 SKIP_LIST="${SKIP:-}"
+# Record the items that cannot be exploded as label-only lines. On by default:
+# a number the chef measured is worth keeping even when nothing can be booked
+# from it.
+RECORD_ONLY="${RECORD_ONLY:-YES}"
 
 SERVICE="${SERVICE:-}"
 if [ -z "$SERVICE" ]; then
@@ -68,6 +80,7 @@ import {
 } from './dist/apps/stock-api/src/lib/prep-explosion.js';
 
 const CONFIRM = process.env.PREP_CONFIRM === 'YES';
+const RECORD_ONLY = (process.env.RECORD_ONLY ?? 'YES') === 'YES';
 const SKIP = new Set(
   (process.env.SKIP ?? '')
     .split(',')
@@ -154,12 +167,12 @@ const recipeSelect = {
 const stocktake = process.env.STOCKTAKE_ID
   ? await prisma.stocktake.findUnique({
       where: { id: process.env.STOCKTAKE_ID },
-      select: { id: true, name: true, venue: true, status: true, appliedAt: true, lines: { select: { id: true, position: true, recipeId: true, itemId: true } } }
+      select: { id: true, name: true, venue: true, status: true, appliedAt: true, lines: { select: { id: true, position: true, recipeId: true, itemId: true, label: true } } }
     })
   : await prisma.stocktake.findFirst({
       where: { status: 'SUBMITTED', name: { contains: 'Kitchen' } },
       orderBy: { countedAt: 'desc' },
-      select: { id: true, name: true, venue: true, status: true, appliedAt: true, lines: { select: { id: true, position: true, recipeId: true, itemId: true } } }
+      select: { id: true, name: true, venue: true, status: true, appliedAt: true, lines: { select: { id: true, position: true, recipeId: true, itemId: true, label: true } } }
     });
 
 if (!stocktake) {
@@ -182,6 +195,9 @@ if (stocktake.appliedAt) {
 }
 
 const already = new Set(stocktake.lines.map((l) => l.recipeId).filter(Boolean));
+// Record-only lines carry no recipe, so the recipe guard above cannot see them.
+// Without this a second run would add every one of them again.
+const alreadyLabelled = new Set(stocktake.lines.map((l) => (l.label ?? '').trim().toLowerCase()));
 
 const active = await prisma.recipe.findMany({
   where: { status: 'ACTIVE', isPrepRecipe: true },
@@ -216,13 +232,13 @@ const claimed = new Map();
 
 for (const [name, qty, unit] of COUNTED) {
   if (SKIP.has(name.toLowerCase())) {
-    skipped.push([name, `${qty} ${unit}`, 'excluded by SKIP']);
+    skipped.push([name, qty, unit, 'excluded by SKIP']);
     continue;
   }
   const ranked = match(name);
   const best = ranked[0];
   if (!best || best.score < MATCH_THRESHOLD) {
-    skipped.push([name, `${qty} ${unit}`, 'no prep recipe matches this name']);
+    skipped.push([name, qty, unit, 'no prep recipe matches this name']);
     continue;
   }
   const recipe = specs.get(best.recipe.id);
@@ -231,25 +247,30 @@ for (const [name, qty, unit] of COUNTED) {
   // and octopus" instead, and the same wrong recipe goes on under another
   // name. Naming the recipe shuts it out however it is reached.
   if (SKIP.has(recipe.title.toLowerCase())) {
-    skipped.push([name, `${qty} ${unit}`, `excluded by SKIP ("${recipe.title}")`]);
+    skipped.push([name, qty, unit, `excluded by SKIP ("${recipe.title}")`]);
     continue;
   }
   if (already.has(recipe.id)) {
-    skipped.push([name, `${qty} ${unit}`, `already on this sheet as "${recipe.title}"`]);
+    // NOT recordable. A prep line is written under the RECIPE's title, so on a
+    // re-run the chef's own name ("Tinga", "Ribs", "Birria") is not on the
+    // sheet even though the line is — and recording it would add a duplicate
+    // of something already counted. Caught by running the script twice.
+    skipped.push([name, qty, unit, `already on this sheet as "${recipe.title}"`, false]);
     continue;
   }
   const claimedBy = claimed.get(recipe.id);
   if (claimedBy) {
     skipped.push([
       name,
-      `${qty} ${unit}`,
+      qty,
+      unit,
       `also matched "${recipe.title}", already being added for "${claimedBy}" — adding both would book its ingredients twice`
     ]);
     continue;
   }
   const readiness = prepCountReadiness(recipe, specs, items);
   if (!readiness.countable) {
-    skipped.push([name, `${qty} ${unit}`, `"${recipe.title}": ${readiness.problems.join(' ')}`]);
+    skipped.push([name, qty, unit, `"${recipe.title}": ${readiness.problems.join(' ')}`]);
     continue;
   }
   // The decisive check, and the reason this is not just "add 22 lines": the
@@ -258,7 +279,7 @@ for (const [name, qty, unit] of COUNTED) {
   // books nothing while looking exactly like one that worked.
   const { batches, warning } = batchesForCount(qty, unit, recipe);
   if (batches === null) {
-    skipped.push([name, `${qty} ${unit}`, warning ?? 'the weight does not convert to this recipe’s yield unit']);
+    skipped.push([name, qty, unit, warning ?? 'the weight does not convert to this recipe’s yield unit']);
     continue;
   }
   const explosion = explodePrepCount({ countedQty: qty, countedUnit: unit, recipe, recipesById: specs, itemsById: items });
@@ -285,8 +306,29 @@ for (const row of toAdd) {
   if (row.explosion.components.length > 4) console.log(`        ... and ${row.explosion.components.length - 4} more`);
 }
 
-console.log(`\nWILL NOT ADD (${skipped.length})`);
-for (const [name, counted, why] of skipped) console.log(`  ${pad(name, 32)} ${pad(counted, 12)} ${why}`);
+// Everything that could not be exploded still goes on the sheet, carrying the
+// reason it books nothing.
+// Two ways an item is already accounted for: its own label is on the sheet, or
+// it was matched to a recipe that is (under that recipe's title, not this one).
+const isRecordable = ([name, , , , recordable]) =>
+  recordable !== false && !alreadyLabelled.has(name.trim().toLowerCase());
+const recordOnly = RECORD_ONLY ? skipped.filter(isRecordable) : [];
+const alreadyThere = skipped.filter((row) => !isRecordable(row));
+const counted = (qty, unit) => `${qty} ${unit}`;
+
+console.log(`\nWILL RECORD ONLY - ON THE SHEET, BOOKS NOTHING (${recordOnly.length})`);
+if (!RECORD_ONLY) {
+  console.log('  RECORD_ONLY=NO, so these are left off the sheet entirely:');
+} else if (recordOnly.length) {
+  console.log('  The number is kept where the count is, instead of in a message. Each one');
+  console.log('  books no ingredients until its recipe is fixed:');
+}
+for (const [name, qty, unit, why] of recordOnly) console.log(`  ${pad(name, 32)} ${pad(counted(qty, unit), 12)} ${why}`);
+if (!RECORD_ONLY) for (const [name, qty, unit, why] of skipped) console.log(`  ${pad(name, 32)} ${pad(counted(qty, unit), 12)} ${why}`);
+if (alreadyThere.length) {
+  console.log(`\nALREADY ON THE SHEET (${alreadyThere.length}) - left alone so a re-run cannot duplicate them`);
+  for (const [name, qty, unit] of alreadyThere) console.log(`  ${pad(name, 32)} ${pad(counted(qty, unit), 12)}`);
+}
 
 // Only the items already counted on this sheet receive their share. Anything
 // else is left alone on purpose: a prep line says what is inside a tub, never
@@ -331,7 +373,30 @@ for (const row of toAdd) {
   });
   added += 1;
 }
+let recorded = 0;
+for (const [name, qty, unit, why] of recordOnly) {
+  position += 1;
+  await prisma.stocktakeLine.create({
+    data: {
+      stocktakeId: stocktake.id,
+      label: name,
+      countedQty: qty,
+      unit,
+      location: STOCKTAKE_PREP_AREA,
+      position,
+      // No recipe and no item, so applying skips it entirely — it moves no
+      // stock. The number is here to be seen and acted on, not to be booked.
+      stockValueCents: null,
+      notes: `Counted by hand. Books nothing yet: ${why}`
+    }
+  });
+  recorded += 1;
+}
+
 console.log(`\nAdded ${added} prepped-item line(s) to ${stocktake.name}.`);
+if (recorded) {
+  console.log(`Recorded ${recorded} more as count-only lines — they move no stock, and each says why.`);
+}
 console.log('Check Stock -> Stocktake -> Prepped items before approving.');
 
 await prisma.$disconnect();
@@ -341,4 +406,5 @@ JSEOF
   -e "PREP_CONFIRM=$CONFIRM" \
   -e "STOCKTAKE_ID=${STOCKTAKE_ID:-}" \
   -e "SKIP=$SKIP_LIST" \
+  -e "RECORD_ONLY=$RECORD_ONLY" \
   "$SERVICE" node "$SCRIPT_IN_CONTAINER")
