@@ -26,13 +26,23 @@ set -euo pipefail
 # It pulls main first. Anything uncommitted in the working tree stops it,
 # rather than shipping a build of code that is not on main.
 
+# NOTE ON THE BRACES BELOW. Every variable expansion followed by a non-ASCII
+# character in this file is written ${like_this}, and must stay that way. macOS
+# still ships bash 3.2 as /bin/bash, and it folds the bytes of a multibyte
+# character into the variable name: `echo "$app…"` looks up `app…`, which under
+# `set -u` aborts the script with "app?: unbound variable". Braces end the name
+# explicitly. `bash -n` does not catch it, because the parse is legal — it is
+# the lookup that fails, and only at run time, on that bash.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-APPS=("$@")
-if [ ${#APPS[@]} -eq 0 ]; then
-  APPS=(stock-web venue-ipad-dashboard)
+# Defaults are applied to the positional parameters BEFORE the array is built.
+# On bash 3.2 (still what macOS ships) `${#APPS[@]}` against an array that was
+# assigned from an empty "$@" is unreliable under `set -u`; `$#` is not.
+if [ "$#" -eq 0 ]; then
+  set -- stock-web venue-ipad-dashboard
 fi
+APPS=("$@")
 
 echo "→ Repository: $ROOT"
 echo "→ Apps:       ${APPS[*]}"
@@ -73,11 +83,11 @@ echo "→ Building @alma/shared…"
 pnpm --filter @alma/shared build
 
 for app in "${APPS[@]}"; do
-  echo "→ Building $app…"
+  echo "→ Building ${app}…"
   pnpm --filter "@alma/$app" build
 done
 
-echo "→ Stamping dists with $HEAD_SHORT…"
+echo "→ Stamping dists with ${HEAD_SHORT}…"
 node scripts/frontends-deploy-check.mjs stamp
 
 if [ "${BUILD_ONLY:-NO}" = "YES" ]; then
@@ -102,7 +112,7 @@ for (const app of apps) {
 process.stdout.write(sites.join(","));
 ' "${APPS[@]}")"
 
-echo "→ Deploying $TARGETS…"
+echo "→ Deploying ${TARGETS}…"
 firebase deploy --only "$TARGETS" --project alma-compliance
 
 echo
