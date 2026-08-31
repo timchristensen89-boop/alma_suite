@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireStockManager, requireStockUser } from '../lib/stock-permissions.js';
 import { stocktakesService } from '../services/stocktakes.service.js';
+import { listPrepRecipeOptions } from '../services/prep-recipes.service.js';
 import { stockReportsService } from '../services/stock-reports.service.js';
 
 export const stocktakeRouter = Router();
@@ -51,6 +52,19 @@ stocktakeRouter.get('/stock-summary', async (req, res, next) => {
   }
 });
 
+// Every active prep recipe offered as a countable made item, each carrying
+// whether it can actually be exploded into ingredients (registered before
+// '/:id'). Readable by anyone who can count, so the iPad can add a tub of
+// something the sheet forgot.
+stocktakeRouter.get('/prep-recipes', async (req, res, next) => {
+  try {
+    requireStockUser(req.user);
+    res.json({ prepRecipes: await listPrepRecipeOptions() });
+  } catch (error) {
+    next(error);
+  }
+});
+
 stocktakeRouter.post('/:id/apply', async (req, res, next) => {
   try {
     requireStockManager(req.user);
@@ -64,6 +78,18 @@ stocktakeRouter.post('/:id/approve', async (req, res, next) => {
   try {
     requireStockManager(req.user);
     res.json(await stocktakesService.applyStocktake(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// What the prepped-item lines will book, without writing anything. The check
+// a manager runs before approving: a prep line that explodes into nothing is
+// the failure worth catching before it reaches the ledger, not after.
+stocktakeRouter.get('/:id/prep-preview', async (req, res, next) => {
+  try {
+    requireStockUser(req.user);
+    res.json(await stocktakesService.prepPreview(String(req.params.id), req.user));
   } catch (error) {
     next(error);
   }

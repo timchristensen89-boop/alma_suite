@@ -168,6 +168,11 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
     try {
       const linesPayload = session.lines.map((line) => ({
         itemId: line.itemId ?? undefined,
+        // Prepped-item lines (a tub of mole, counted as itself) point at a
+        // recipe rather than a stock item. The PATCH deletes and recreates
+        // every line from this payload, so dropping this would turn each one
+        // back into a bare label and stop its ingredients ever being booked.
+        recipeId: line.recipeId ?? undefined,
         label: line.label,
         countedQty: draftCounts[line.id] ?? line.countedQty,
         unit: line.unit ?? undefined,
@@ -379,17 +384,23 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
             const value = draftCounts[line.id] ?? line.countedQty;
             const isTouched = Boolean(touched[line.id]);
             const onHand = line.item?.onHand;
+            // A prepped item is weighed, not tallied: there is no system
+            // on-hand to show (nothing has ever tracked the tub) and stepping
+            // by one is meaningless against 11.707 kg.
+            const isPrep = Boolean(line.recipeId);
             return (
-              <div key={line.id} className={`stock-line${isTouched ? ' is-touched' : ''}`}>
+              <div key={line.id} className={`stock-line${isTouched ? ' is-touched' : ''}${isPrep ? ' is-prep' : ''}`}>
                 <div className="stock-line-meta">
                   <strong>{line.label}</strong>
                   <span>
                     {line.unit ?? '—'}
-                    {onHand !== undefined ? ` · on hand ${onHand}` : null}
+                    {isPrep ? ' · made in-house — weigh what is left' : null}
+                    {!isPrep && onHand !== undefined ? ` · on hand ${onHand}` : null}
                   </span>
                   {!isTouched ? <span className="stock-line-untouched">Not counted yet</span> : null}
                 </div>
                 <div className="stock-line-controls">
+                  {isPrep ? null : (
                   <button
                     type="button"
                     className="stock-bump"
@@ -398,6 +409,7 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
                   >
                     −
                   </button>
+                  )}
                   <input
                     type="text"
                     inputMode="decimal"
@@ -410,6 +422,7 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
                       setCount(line.id, num);
                     }}
                   />
+                  {isPrep ? null : (
                   <button
                     type="button"
                     className="stock-bump"
@@ -418,6 +431,7 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
                   >
                     +
                   </button>
+                  )}
                 </div>
               </div>
             );

@@ -9,6 +9,8 @@ import type {
   StocktakeMovementResult,
   Stocktake,
   StocktakeLineInput,
+  StocktakePrepPreview,
+  StocktakePrepRecipeOption,
   StocktakeStatus,
   StocktakeTemplate,
   StocktakeTemplatesPayload,
@@ -20,6 +22,7 @@ import type {
 import {
   IMPLAUSIBLE_COUNT_SHARE,
   IMPLAUSIBLE_COUNT_FLOOR_CENTS,
+  STOCKTAKE_PREP_AREA,
   convertQuantityToCostUnit,
   normaliseUnitLabel,
   setActiveUnitAliases
@@ -65,6 +68,12 @@ type DataQualityPayload = {
 
 type LineDraft = {
   itemId: string;
+  // A PREPPED-ITEM line — something the kitchen made, counted as itself.
+  // Exclusive with itemId, and it MUST survive every round-trip: the PATCH
+  // deletes and recreates all lines from the payload, so a draft that drops
+  // this turns the mole back into a bare label and stops booking its
+  // ingredients.
+  recipeId: string;
   label: string;
   countedQty: string;
   unit: string;
@@ -237,11 +246,27 @@ function emptyLine(item?: StockItem, blind = true): LineDraft {
   const value = unitCostCents ? Math.round(unitCostCents * onHand) : '';
   return {
     itemId: item?.id ?? '',
+    recipeId: '',
     label: item?.name ?? '',
     countedQty: blind ? '' : item ? String(onHand) : '0',
     unit: item ? stockCountUnit(item) : '',
     location: item?.category?.name ?? '',
     stockValueCents: blind ? '' : value === '' ? '' : String(value),
+    notes: ''
+  };
+}
+
+// A prepped-item line. Always blind: there is no system on-hand for a tub of
+// mole to prefill from — the whole point is that nothing has been tracking it.
+function prepLine(recipe: StocktakePrepRecipeOption): LineDraft {
+  return {
+    itemId: '',
+    recipeId: recipe.id,
+    label: recipe.title,
+    countedQty: '',
+    unit: recipe.yieldUnit ?? '',
+    location: STOCKTAKE_PREP_AREA,
+    stockValueCents: '',
     notes: ''
   };
 }
@@ -264,7 +289,8 @@ function draftFromTemplate(
   items: StockItem[],
   resolvedItemIds: string[],
   template: StocktakeTemplate,
-  blind: boolean
+  blind: boolean,
+  prepRecipes: StocktakePrepRecipeOption[]
 ): StocktakeDraft {
   const order = new Map(resolvedItemIds.map((id, index) => [id, index] as const));
   const chosen = items
@@ -277,7 +303,9 @@ function draftFromTemplate(
     countedAt: formatDateTimeInput(new Date().toISOString()),
     status: 'IN_PROGRESS',
     notes: '',
-    lines: chosen.map((item) => emptyLine(item, blind))
+    // Prep last, as one block: the kitchen walks the shelves first and the
+    // production fridge at the end.
+    lines: [...chosen.map((item) => emptyLine(item, blind)), ...prepRecipes.map(prepLine)]
   };
 }
 
@@ -291,6 +319,7 @@ function draftFromStocktake(stocktake: StocktakeWithLines): StocktakeDraft {
     notes: stocktake.notes ?? '',
     lines: stocktake.lines.map((line) => ({
       itemId: line.itemId ?? '',
+      recipeId: line.recipeId ?? '',
       label: line.label,
       countedQty: line.countedQty == null ? '' : String(line.countedQty),
       unit: line.unit ?? line.item?.unit ?? '',
@@ -306,6 +335,7 @@ function linePayload(line: LineDraft): StocktakeLineInput {
   const countRaw = String(line.countedQty ?? '').trim();
   return {
     itemId: line.itemId,
+    recipeId: line.recipeId,
     label: line.label.trim(),
     countedQty: countRaw === '' ? null : Number(countRaw),
     unit: line.unit.trim(),
@@ -1125,6 +1155,133 @@ export function StocktakePage() {
   );
 }
 
+/**
+ * Adding prepped items to a count sheet.
+ *
+ * Prep is not a StockItem and never resolves from a count area or a category,
+ * so it cannot arrive the way everything else on the sheet does. It has to be
+ * chosen — which is also the honest thing, because a venue with 69 production
+ * recipes does not count all 69 every week.
+ *
+ * Recipes that CANNOT be exploded are still listed, disabled, with the reason.
+ * Hiding them is how this feature would come to look like it works: the mole
+ * simply never appears and nobody can say why.
+ */
+function PreppedItemsPicker({
+  recipes,
+  lines,
+  onAdd
+}: {
+  recipes: StocktakePrepRecipeOption[];
+  lines: LineDraft[];
+  onAdd: (chosen: StocktakePrepRecipeOption[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const alreadyOn = useMemo(
+    () => new Set(lines.map((line) => line.recipeId).filter(Boolean)),
+    [lines]
+  );
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+
+  if (recipes.length === 0) return null;
+
+  const available = recipes.filter((recipe) => !alreadyOn.has(recipe.id));
+  const countable = available.filter((recipe) => recipe.countable);
+  const blocked = available.filter((recipe) => !recipe.countable);
+  const onSheet = recipes.filter((recipe) => alreadyOn.has(recipe.id));
+
+  function add(chosen: StocktakePrepRecipeOption[]) {
+    if (chosen.length === 0) return;
+    onAdd(chosen);
+    setPicked(new Set());
+  }
+
+  return (
+    <div className="stocktake-prep-picker">
+      <button
+        type="button"
+        className={`stocktake-category-header${open ? ' is-open' : ''}`}
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        <span className="stocktake-category-name">
+          {open ? '▾' : '▸'} Prepped items — count what the kitchen has made
+        </span>
+        <span className="stocktake-category-count">
+          {onSheet.length} on this sheet · {countable.length} to add
+        </span>
+      </button>
+      {open ? (
+        <div className="stocktake-prep-body">
+          <p className="subtle">
+            Counted as the made item (kg, litres, portions). Approving the count works the
+            ingredients out and adds them to those items’ counts — the mayonnaise in a tub of
+            chipotle mayo stops reading as shrinkage.
+          </p>
+          {countable.length > 0 ? (
+            <>
+              <div className="stocktake-prep-grid">
+                {countable.map((recipe) => (
+                  <label key={recipe.id} className="stocktake-toggle">
+                    <input
+                      type="checkbox"
+                      checked={picked.has(recipe.id)}
+                      onChange={(event) => {
+                        setPicked((prev) => {
+                          const next = new Set(prev);
+                          if (event.currentTarget.checked) next.add(recipe.id);
+                          else next.delete(recipe.id);
+                          return next;
+                        });
+                      }}
+                    />
+                    {recipe.title}
+                    <span className="subtle">
+                      {recipe.yieldQuantity ? ` · makes ${recipe.yieldQuantity} ${recipe.yieldUnit ?? ''}` : ''}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className="stocktake-count-toggles">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={picked.size === 0}
+                  onClick={() => add(countable.filter((recipe) => picked.has(recipe.id)))}
+                >
+                  Add {picked.size || ''} selected
+                </Button>
+                <Button type="button" variant="secondary" size="sm" onClick={() => add(countable)}>
+                  Add all {countable.length}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p className="subtle">Every countable prep recipe is already on this sheet.</p>
+          )}
+          {blocked.length > 0 ? (
+            <div className="stocktake-prep-blocked">
+              <strong>Not countable yet ({blocked.length})</strong>
+              <p className="subtle">
+                These need a fix on the recipe before a count of them can be turned back into
+                ingredients. Until then they would explode into nothing.
+              </p>
+              <ul>
+                {blocked.map((recipe) => (
+                  <li key={recipe.id}>
+                    <strong>{recipe.title}</strong> — {recipe.problems.join(' ')}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function StocktakeForm({
   mode,
   initial,
@@ -1157,6 +1314,24 @@ function StocktakeForm({
   const [templates, setTemplates] = useState<StocktakeTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [templateBusy, setTemplateBusy] = useState(false);
+  // Prepped items are offered on every count, not just template-seeded ones —
+  // the first real count came back with twenty-two of them written by hand at
+  // the bottom, and the fix has to reach a sheet that is already open.
+  const [prepRecipes, setPrepRecipes] = useState<StocktakePrepRecipeOption[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const payload = await api<{ prepRecipes: StocktakePrepRecipeOption[] }>('/api/stocktake/prep-recipes');
+        if (!cancelled) setPrepRecipes(payload.prepRecipes);
+      } catch {
+        /* older API build — the picker simply doesn't appear */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     if (mode !== 'create') return;
     let cancelled = false;
@@ -1183,7 +1358,15 @@ function StocktakeForm({
     try {
       const resolved = await api<StocktakeTemplateResolved>(`/api/stocktake-templates/${templateId}/resolve`);
       setBlind(resolved.template.blindDefault);
-      setDraft(draftFromTemplate(items, resolved.items.map((item) => item.id), resolved.template, resolved.template.blindDefault));
+      setDraft(
+        draftFromTemplate(
+          items,
+          resolved.items.map((item) => item.id),
+          resolved.template,
+          resolved.template.blindDefault,
+          resolved.prepRecipes ?? []
+        )
+      );
     } catch {
       /* leave the current draft as-is on failure */
     } finally {
@@ -1420,6 +1603,12 @@ function StocktakeForm({
         <Textarea label="Notes" rows={2} value={draft.notes} onChange={(event) => update('notes', event.currentTarget.value)} />
       </div>
 
+      <PreppedItemsPicker
+        recipes={prepRecipes}
+        lines={draft.lines}
+        onAdd={(chosen) => update('lines', [...draft.lines, ...chosen.map(prepLine)])}
+      />
+
       <div className="stocktake-count-toolbar">
         <div className="stocktake-count-progress">
           <strong>{countedCount} / {draft.lines.length} counted</strong>
@@ -1562,12 +1751,31 @@ const CountLineRow = memo(function CountLineRow({
       ? Math.round((countedQty / measurePer) * 100) / 100
       : null;
 
+  // A prepped-item line counts a made thing, not a shelf item. Swapping the
+  // item picker for its name is not cosmetic: picking an item here would leave
+  // the line pointing at both a recipe and an item, and the server would treat
+  // it as an item line and drop the ingredients.
+  const isPrep = Boolean(line.recipeId);
+
   return (
     <div>
       {showAreaHeader ? <div className="stocktake-area-header">{line.location || 'No location'}</div> : null}
-      <div className="stocktake-count-line">
-        <StockItemPicker label="Item" items={items} value={line.itemId} onChange={onSelectItem} />
-        <Input label="Label" required value={line.label} onChange={(event) => onUpdate(index, { label: event.currentTarget.value })} />
+      <div className={`stocktake-count-line${isPrep ? ' is-prep' : ''}`}>
+        {isPrep ? (
+          <div className="stocktake-prep-label">
+            <span className="subtle">Prepped item</span>
+            <strong>{line.label}</strong>
+          </div>
+        ) : (
+          <StockItemPicker label="Item" items={items} value={line.itemId} onChange={onSelectItem} />
+        )}
+        <Input
+          label="Label"
+          required
+          readOnly={isPrep}
+          value={line.label}
+          onChange={(event) => onUpdate(index, { label: event.currentTarget.value })}
+        />
         <Input label="Qty" type="number" step="0.01" value={line.countedQty} onChange={(event) => onUpdate(index, { countedQty: event.currentTarget.value })} />
         <Input label="Unit" value={line.unit} onChange={(event) => onUpdate(index, { unit: event.currentTarget.value })} />
         <Input label="Location" value={line.location} onChange={(event) => onUpdate(index, { location: event.currentTarget.value })} />
@@ -1575,6 +1783,12 @@ const CountLineRow = memo(function CountLineRow({
           Remove
         </Button>
       </div>
+      {isPrep ? (
+        <div className="stocktake-count-cost">
+          Counted as made. Approving works the ingredients out and adds them to those items&apos;
+          counts — check <strong>Prepped items</strong> on the count before approving.
+        </div>
+      ) : null}
       {item && estimate ? (
         estimate.unitCostCents === null ? (
           <div className="stocktake-count-cost is-missing">No cost set for {item.name} — value can&apos;t be checked</div>
@@ -1600,6 +1814,92 @@ const CountLineRow = memo(function CountLineRow({
     </div>
   );
 });
+
+/**
+ * What the prepped-item lines on a count will actually book.
+ *
+ * Shown before approval because the two ways this feature fails are both
+ * silent. A prep line whose recipe has no yield explodes into nothing and
+ * looks identical to one that worked. And an ingredient the prep holds but
+ * the sheet never counted is deliberately NOT booked — setting its on-hand to
+ * the tub's share alone would record every loose jar as shrinkage — which is
+ * right, but only if somebody is told.
+ */
+function PrepPreviewPanel({ preview }: { preview: StocktakePrepPreview }) {
+  const uncounted = preview.lines.filter((line) => line.countedQty === null);
+  const explodedNothing = preview.lines.filter(
+    (line) => line.countedQty !== null && line.componentCount === 0
+  );
+
+  return (
+    <div className={`stocktake-prep-preview${explodedNothing.length || preview.notOnSheet.length ? ' is-alert' : ''}`}>
+      <div className="stocktake-prep-preview-head">
+        <span>Prepped items · {preview.lines.length} counted as made</span>
+        <strong>
+          {preview.totalValueCents === null ? 'value incomplete' : `${formatCurrency(preview.totalValueCents)} of raw material`}
+        </strong>
+      </div>
+      <p className="subtle">
+        Approving adds these quantities to the same items&apos; counted totals. Nothing is booked
+        against a recipe.
+      </p>
+
+      {preview.contributions.length > 0 ? (
+        <ul className="stocktake-prep-preview-list">
+          {preview.contributions.map((row) => (
+            <li key={row.itemId}>
+              <span className="stocktake-shrinkage-name">{row.itemName}</span>
+              <span className="stocktake-shrinkage-qty">
+                counted {row.countedOnSheet} + {row.quantity} {row.unit} in {row.fromPrep.join(', ')}
+              </span>
+              <strong>
+                {row.totalToBook} {row.unit}
+              </strong>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="subtle">No ingredients resolved yet — check the warnings below.</p>
+      )}
+
+      {preview.notOnSheet.length > 0 ? (
+        <div className="stocktake-prep-blocked">
+          <strong>Held in prep but not counted on this sheet ({preview.notOnSheet.length})</strong>
+          <p className="subtle">
+            Their stock is left untouched on purpose — a prep line says what is inside a tub, not
+            what is loose on the shelf. Add them to the count sheet to include them.
+          </p>
+          <ul>
+            {preview.notOnSheet.map((row) => (
+              <li key={row.itemId}>
+                <strong>{row.itemName}</strong> — {row.quantity} {row.unit} in {row.fromPrep.join(', ')}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {explodedNothing.length > 0 ? (
+        <div className="stocktake-prep-blocked">
+          <strong>Counted but booked nothing ({explodedNothing.length})</strong>
+          <ul>
+            {explodedNothing.map((line) => (
+              <li key={line.lineId}>
+                <strong>{line.label}</strong> — {line.warnings.join(' ') || 'the recipe has no linked ingredients.'}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {uncounted.length > 0 ? (
+        <p className="subtle">
+          Not counted yet: {uncounted.map((line) => line.label).join(', ')}.
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 // Response shape from GET /api/stocktake/:id/variance (the expected-vs-counted
 // usage analytic). Typed inline — the endpoint has no shared type yet.
@@ -1659,6 +1959,25 @@ function StocktakeLinesTable({
     };
   }, [detail.id]);
 
+  // What the prepped-item lines will book, run without writing anything. This
+  // is NOT informational: a prep line that explodes into nothing looks exactly
+  // like one that worked until the ledger is already wrong.
+  const [prepPreview, setPrepPreview] = useState<StocktakePrepPreview | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const preview = await api<StocktakePrepPreview>(`/api/stocktake/${detail.id}/prep-preview`);
+        if (!cancelled) setPrepPreview(preview);
+      } catch {
+        /* older API build — the panel simply doesn't appear */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [detail.id]);
+
   // ── Bulk line editing (review) ──────────────────────────────────────────
   // Select any lines, then correct their unit and/or counted qty together —
   // the fast fix when a batch of lines was counted in the wrong unit (mL vs
@@ -1705,6 +2024,10 @@ function StocktakeLinesTable({
         const apply = selected.has(line.id);
         return {
           itemId: line.itemId ?? '',
+          // The PATCH deletes and recreates every line from this payload, so a
+          // bulk unit fix that forgot this would quietly unlink every prepped
+          // item on the sheet and stop its ingredients being booked.
+          recipeId: line.recipeId ?? '',
           label: line.label,
           countedQty:
             apply && qtyOverride !== undefined ? qtyOverride : line.countedQty ?? null,
@@ -1795,6 +2118,7 @@ function StocktakeLinesTable({
       ) : (
         <p className="subtle">No linked stock items yet, so variances cannot be calculated for this stocktake.</p>
       )}
+      {prepPreview && prepPreview.lines.length > 0 ? <PrepPreviewPanel preview={prepPreview} /> : null}
       {usageVariance?.summary.expectedAvailable ? (
         <div className={`stocktake-shrinkage${(usageVariance.summary.unexplainedShrinkageValueCents ?? 0) < 0 ? ' is-loss' : ''}`}>
           <div className="stocktake-shrinkage-head">
