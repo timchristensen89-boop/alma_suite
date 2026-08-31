@@ -10,15 +10,23 @@
 // app — run it after building, before deploying. `check` (default) fetches
 // /version.json from each live site and compares to the current HEAD.
 //
-//   node scripts/frontends-deploy-check.mjs            # check live sites
-//   node scripts/frontends-deploy-check.mjs stamp      # after `pnpm build`
+//   node scripts/frontends-deploy-check.cjs            # check live sites
+//   node scripts/frontends-deploy-check.cjs stamp      # after `pnpm build`
 //
 // Exit code 1 when any site is stale or unstamped, so it can gate a deploy.
-import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+//
+// WHY .cjs AND NOT .mjs. firebase.json runs `stamp` as a hosting predeploy
+// hook, and the firebase CLI most people install on a Mac is the standalone
+// pkg binary: it carries its own embedded Node and starts a predeploy script
+// through require(), which cannot load an ES module. As .mjs this failed
+// EVERY deploy with ERR_REQUIRE_ESM — the check meant to stop stale frontends
+// shipping was itself stopping every frontend from shipping. CommonJS runs
+// under both that loader and a normal node, so it stays CommonJS.
+const { execSync } = require('node:child_process');
+const { existsSync, readFileSync, writeFileSync } = require('node:fs');
+const { join } = require('node:path');
 
-const root = new URL('..', import.meta.url).pathname;
+const root = join(__dirname, '..');
 const firebase = JSON.parse(readFileSync(join(root, 'firebase.json'), 'utf8'));
 const sites = firebase.hosting.map((entry) => ({ site: entry.site, dist: entry.public }));
 
@@ -96,5 +104,11 @@ async function check() {
   process.exit(stale === 0 ? 0 : 1);
 }
 
-if (process.argv[2] === 'stamp') stamp();
-else await check();
+if (process.argv[2] === 'stamp') {
+  stamp();
+} else {
+  check().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
