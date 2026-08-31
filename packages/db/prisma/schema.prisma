@@ -952,6 +952,7 @@ model StaffLeaveRequest {
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
   staffProfile      StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  xeroLeave         StaffXeroLeave[]
 
   @@index([staffProfileId, startDate])
   @@index([status, startDate])
@@ -5714,6 +5715,36 @@ model StaffXeroEmployee {
   @@unique([staffProfileId, tenantId])
   @@index([tenantId])
   @@index([xeroEmployeeId])
+}
+
+// One Alma leave request, as it landed in ONE Xero organisation.
+//
+// A duplicate leave application in a live payroll is not undoable — it draws
+// the balance twice and pays it twice — so the push refuses to send one it has
+// already sent. Keyed the same way StaffXeroEmployee is: per request, per
+// company, because a person rostered across both companies takes their leave
+// in the one that pays it.
+model StaffXeroLeave {
+  id             String   @id @default(cuid())
+  leaveRequestId String
+  tenantId       String
+  tenantName     String?
+  // Xero's id for the application it created. Present once the POST succeeds.
+  xeroLeaveApplicationId String
+  // What was actually sent, kept so a manager can see why a balance moved by
+  // the amount it did without opening Xero.
+  leaveTypeId    String
+  leaveTypeName  String?
+  units          Float
+  unitsAre       String
+  pushedByUserId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  leaveRequest StaffLeaveRequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([leaveRequestId, tenantId])
+  @@index([tenantId])
 }
 
 /// One browser, on one device, that has agreed to be told when a roster drops.
