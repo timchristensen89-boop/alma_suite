@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  clipLeaveToPeriod,
   hoursPerDay,
   matchLeaveType,
   normaliseLeaveName,
@@ -194,4 +195,81 @@ test('a long weekend off is two days, priced as two', () => {
     assert.equal(plan.days, 2);
     assert.equal(plan.units, 15.2);
   }
+});
+
+// ── clipping to the pay period ─────────────────────────────────────────────
+//
+// The week is [start, end) — `end` exclusive, matching the timesheet push's
+// `workDate < end`.
+
+const week = { start: day('2026-08-31'), end: day('2026-09-07') }; // Mon..Sun
+
+function clipped(startIso: string, endIso: string) {
+  const out = clipLeaveToPeriod({ startDate: day(startIso), endDate: day(endIso) }, week);
+  return out ? [out.startDate.toISOString().slice(0, 10), out.endDate.toISOString().slice(0, 10)] : null;
+}
+
+test('leave inside the week is unchanged', () => {
+  assert.deepEqual(clipped('2026-09-01', '2026-09-03'), ['2026-09-01', '2026-09-03']);
+});
+
+test('leave running past both ends becomes exactly the week', () => {
+  // Janaina's case: 26 Aug to 2 Oct pushed against one week gives that week
+  // only — five days, not twenty-eight.
+  assert.deepEqual(clipped('2026-08-26', '2026-10-02'), ['2026-08-31', '2026-09-06']);
+  const out = clipLeaveToPeriod(
+    { startDate: day('2026-08-26'), endDate: day('2026-10-02') },
+    week
+  );
+  assert.ok(out);
+  assert.equal(weekdaysBetween(out.startDate, out.endDate), 5, 'one working week, not the whole absence');
+});
+
+test('the exclusive end never leaks the next day in', () => {
+  // 7 Sep is the next period's Monday. Clipping must stop at the 6th.
+  assert.deepEqual(clipped('2026-09-05', '2026-09-09'), ['2026-09-05', '2026-09-06']);
+});
+
+test('leave entirely outside the week clips to nothing', () => {
+  assert.equal(clipped('2026-08-01', '2026-08-30'), null, 'ends before the week');
+  assert.equal(clipped('2026-09-07', '2026-09-11'), null, 'starts on the exclusive end');
+});
+
+test('leave touching a single boundary day survives', () => {
+  assert.deepEqual(clipped('2026-08-20', '2026-08-31'), ['2026-08-31', '2026-08-31']);
+  assert.deepEqual(clipped('2026-09-06', '2026-09-30'), ['2026-09-06', '2026-09-06']);
+});
+
+test('nonsense in gives nothing out', () => {
+  assert.equal(clipped('2026-09-05', '2026-09-01'), null, 'backwards leave');
+  assert.equal(
+    clipLeaveToPeriod({ startDate: day('2026-09-01'), endDate: day('2026-09-02') }, { start: week.end, end: week.start }),
+    null,
+    'backwards period'
+  );
+  assert.equal(
+    clipLeaveToPeriod({ startDate: new Date('nope'), endDate: day('2026-09-02') }, week),
+    null,
+    'invalid date'
+  );
+});
+
+test('a clipped week of sick leave on 40 hours is 5 days, 40 hours', () => {
+  // The end-to-end shape: clip, then plan. This is what one weekly push sends
+  // for Janaina — not 224 hours.
+  const slice = clipLeaveToPeriod({ startDate: day('2026-08-26'), endDate: day('2026-10-02') }, week);
+  assert.ok(slice);
+  const plan = planLeaveApplication({
+    ...base,
+    type: 'SICK',
+    startDate: slice.startDate,
+    endDate: slice.endDate,
+    contractedWeeklyHours: 40,
+    staffName: 'Janaina'
+  });
+  assert.equal(plan.ok, true);
+  if (!plan.ok) return;
+  assert.equal(plan.days, 5);
+  assert.equal(plan.units, 40);
+  assert.equal(plan.leaveTypeId, 'personal-id');
 });

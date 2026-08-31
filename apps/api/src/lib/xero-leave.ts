@@ -136,6 +136,35 @@ export function hoursPerDay(contractedWeeklyHours: number | null | undefined): n
   return Math.round((contractedWeeklyHours / 5) * 10000) / 10000;
 }
 
+/**
+ * The part of a leave request that falls inside one pay period.
+ *
+ * Leave reaches Xero alongside the week's timesheets, so a five-week absence
+ * contributes five days to five separate pushes rather than arriving as one
+ * application for the whole range. That matters for more than tidiness: a
+ * single 28-day personal-leave application draws about three years of accrual
+ * at once, and it is only ever obvious that a balance has run out at the week
+ * it runs out.
+ *
+ * Returns null when the request does not touch the period at all.
+ */
+export function clipLeaveToPeriod(
+  leave: { startDate: Date; endDate: Date },
+  period: { start: Date; end: Date }
+): { startDate: Date; endDate: Date } | null {
+  const times = [leave.startDate, leave.endDate, period.start, period.end].map((d) => d.getTime());
+  if (times.some((t) => Number.isNaN(t))) return null;
+  if (leave.endDate < leave.startDate) return null;
+  // `end` is exclusive, matching the timesheet push's `workDate < end`.
+  if (period.end <= period.start) return null;
+  const startMs = Math.max(leave.startDate.getTime(), period.start.getTime());
+  // Step back one day off the exclusive end so both dates are inclusive, the
+  // shape planLeaveApplication and Xero both want.
+  const endMs = Math.min(leave.endDate.getTime(), period.end.getTime() - 86400000);
+  if (endMs < startMs) return null;
+  return { startDate: new Date(startMs), endDate: new Date(endMs) };
+}
+
 export type LeaveApplicationPlan =
   | {
       ok: true;
