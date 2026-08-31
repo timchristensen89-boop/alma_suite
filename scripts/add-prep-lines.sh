@@ -20,6 +20,13 @@ set -euo pipefail
 #   STOCKTAKE_ID=<id> ./scripts/add-prep-lines.sh
 #       ...target a specific count instead of the newest submitted kitchen one.
 #
+#   SKIP="Bean puree,Octopus Adobo" ./scripts/add-prep-lines.sh
+#       ...leave things off. Use this when the dry run shows a match is wrong:
+#       the matcher offers a candidate, the kitchen decides. An entry matches
+#       either a hand-written name OR a recipe title, and naming the RECIPE is
+#       usually what you want — two hand-written names can reach the same
+#       recipe, so excluding one name alone just lets the other one through.
+#
 # It adds a line ONLY where the recipe can actually be exploded AND the weight
 # the chef wrote converts to that recipe's yield unit. Anything else is listed
 # with the reason and left alone, because a prep line that books nothing looks
@@ -27,6 +34,9 @@ set -euo pipefail
 
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/alma/deploy}"
 CONFIRM="${PREP_CONFIRM:-NO}"
+# Comma-separated hand-written names to leave off, for when the dry run shows a
+# match is wrong. e.g. SKIP="Bean puree,Octopus"
+SKIP_LIST="${SKIP:-}"
 
 SERVICE="${SERVICE:-}"
 if [ -z "$SERVICE" ]; then
@@ -58,6 +68,12 @@ import {
 } from './dist/apps/stock-api/src/lib/prep-explosion.js';
 
 const CONFIRM = process.env.PREP_CONFIRM === 'YES';
+const SKIP = new Set(
+  (process.env.SKIP ?? '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean)
+);
 
 // Exactly what the chef weighed, in the units she wrote them in.
 const COUNTED = [
@@ -199,6 +215,10 @@ const skipped = [];
 const claimed = new Map();
 
 for (const [name, qty, unit] of COUNTED) {
+  if (SKIP.has(name.toLowerCase())) {
+    skipped.push([name, `${qty} ${unit}`, 'excluded by SKIP']);
+    continue;
+  }
   const ranked = match(name);
   const best = ranked[0];
   if (!best || best.score < MATCH_THRESHOLD) {
@@ -206,6 +226,14 @@ for (const [name, qty, unit] of COUNTED) {
     continue;
   }
   const recipe = specs.get(best.recipe.id);
+  // SKIP takes a recipe title as well as a hand-written name, and it has to:
+  // excluding "Octopus" alone just hands Octopus Adobo to "Adobo for chicken
+  // and octopus" instead, and the same wrong recipe goes on under another
+  // name. Naming the recipe shuts it out however it is reached.
+  if (SKIP.has(recipe.title.toLowerCase())) {
+    skipped.push([name, `${qty} ${unit}`, `excluded by SKIP ("${recipe.title}")`]);
+    continue;
+  }
   if (already.has(recipe.id)) {
     skipped.push([name, `${qty} ${unit}`, `already on this sheet as "${recipe.title}"`]);
     continue;
@@ -240,10 +268,16 @@ for (const [name, qty, unit] of COUNTED) {
 
 const pad = (v, w) => String(v ?? '').padEnd(w);
 
+const money = (c) =>
+  c === null || c === undefined ? 'not valued' : `$${(c / 100).toFixed(2)}`;
+
 console.log(`WILL ADD (${toAdd.length})`);
+console.log('  "books" is what the ingredients are worth. It is the quickest way to spot a bad');
+console.log('  match: a tub should book roughly what its contents cost. Wildly more means the');
+console.log('  recipe yield is too small, and the count will invent stock that is not there.\n');
 for (const row of toAdd) {
   console.log(
-    `  ${pad(row.name, 32)} ${pad(row.qty + ' ' + row.unit, 12)} -> ${pad(row.recipe.title, 28)} ${row.explosion.components.length} ingredient(s)${row.verify ? '   (check this is the right recipe)' : ''}`
+    `  ${pad(row.name, 32)} ${pad(row.qty + ' ' + row.unit, 12)} -> ${pad(row.recipe.title, 28)} ${pad(row.explosion.components.length + ' ingredient(s)', 16)} books ${money(row.explosion.valueCents)}${row.verify ? '   (check this is the right recipe)' : ''}`
   );
   for (const c of row.explosion.components.slice(0, 4)) {
     console.log(`        ${pad(c.itemName, 34)} ${c.quantity} ${c.unit}`);
@@ -303,4 +337,8 @@ console.log('Check Stock -> Stocktake -> Prepped items before approving.');
 await prisma.$disconnect();
 JSEOF
 
-(cd "$DEPLOY_DIR" && docker compose exec -T -w /workspace/apps/stock-api -e "PREP_CONFIRM=$CONFIRM" -e "STOCKTAKE_ID=${STOCKTAKE_ID:-}" "$SERVICE" node "$SCRIPT_IN_CONTAINER")
+(cd "$DEPLOY_DIR" && docker compose exec -T -w /workspace/apps/stock-api \
+  -e "PREP_CONFIRM=$CONFIRM" \
+  -e "STOCKTAKE_ID=${STOCKTAKE_ID:-}" \
+  -e "SKIP=$SKIP_LIST" \
+  "$SERVICE" node "$SCRIPT_IN_CONTAINER")
