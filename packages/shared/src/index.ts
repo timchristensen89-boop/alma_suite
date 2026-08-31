@@ -7264,6 +7264,10 @@ export type Stocktake = {
   totalValueCents: number;
   createdAt: string;
   updatedAt: string;
+  // Set only by the submit endpoint: how many lines were left blank and have
+  // just been recorded as zero. Absent everywhere else, because it describes
+  // one transition rather than a property of the count.
+  blankLinesZeroed?: number;
 };
 
 export type StocktakeWithLines = Stocktake & { lines: StocktakeLine[] };

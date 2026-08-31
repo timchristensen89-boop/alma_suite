@@ -363,22 +363,23 @@ def build_ipad():
     s.append(Spacer(1, 2))
     s.append(
         callout(
-            "Important — blank is not the same as zero",
+            "You don’t have to type zeros",
             [
                 Paragraph(
-                    "<b>“Not counted yet”</b> means nobody has looked at that line. "
-                    "<b>0</b> means you looked and the shelf was empty. To the manager reviewing "
-                    "your count those are completely different answers — one is a gap, the "
-                    "other is a result.",
+                    "<b>If there is none of something, leave it blank.</b> Only type a number "
+                    "for what you actually have. Anything still blank when the manager submits "
+                    "the count is recorded as zero.",
                     callout_body,
                 ),
                 Spacer(1, 4),
                 Paragraph(
-                    "<b>If it’s empty, put in 0.</b> Don’t leave it blank.",
+                    "“Not counted yet” on screen is just your own progress marker while "
+                    "you work — it is there so you can see what you have already walked past, "
+                    "not so you have to go back and fill it in.",
                     callout_body,
                 ),
             ],
-            tone="warn",
+            tone="accent",
         )
     )
     s.append(Spacer(1, 14))
@@ -651,18 +652,23 @@ def build_login():
     s.append(Spacer(1, 2))
     s.append(
         callout(
-            "Important — blank is not the same as zero",
+            "You don’t have to type zeros",
             [
                 Paragraph(
-                    "An empty <b>Qty</b> means <b>“not counted yet”</b>. A typed <b>0</b> means "
-                    "you looked and there was none. To whoever reviews this, one is a gap in the "
-                    "count and the other is a result.",
+                    "<b>If the shelf is empty, leave the Qty blank.</b> Only type a number for "
+                    "what you actually have — counting three hundred lines is slow enough "
+                    "without typing a zero next to half of them.",
                     callout_body,
                 ),
                 Spacer(1, 4),
-                Paragraph("<b>If the shelf is empty, type 0.</b>", callout_body),
+                Paragraph(
+                    "Every line still blank when the count is submitted is recorded as zero. "
+                    "Until then blank just means you have not got to it yet, so saving a "
+                    "half-finished count can never wipe a shelf.",
+                    callout_body,
+                ),
             ],
-            tone="warn",
+            tone="accent",
         )
     )
     s.append(Spacer(1, 14))

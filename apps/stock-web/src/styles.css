@@ -3800,3 +3800,13 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
     gap: 2px;
   }
 }
+
+/* The one instruction that decides how long a count takes: you do not have to
+   type a zero. Sits directly above the count lines, not in a tooltip. */
+.stocktake-blank-note {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid #4f6b47;
+  border-radius: 8px;
+  background: rgba(79, 107, 71, 0.06);
+}

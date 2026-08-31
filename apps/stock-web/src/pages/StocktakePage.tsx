@@ -675,13 +675,25 @@ export function StocktakePage() {
     setBulkBusy('submit');
     setError(null);
     const results = await Promise.allSettled(
-      targets.map((stocktake) => api(`/api/stocktake/${stocktake.id}/submit`, { method: 'POST' }))
+      targets.map((stocktake) => api<Stocktake>(`/api/stocktake/${stocktake.id}/submit`, { method: 'POST' }))
     );
     const failed = results.filter((r) => r.status === 'rejected').length;
+    // Submitting turns every blank line into a counted zero. It is the right
+    // reading of a finished sheet, and it is still a real change to stock, so
+    // it gets said out loud rather than happening quietly.
+    const zeroed = results.reduce(
+      (sum, r) => sum + (r.status === 'fulfilled' ? r.value.blankLinesZeroed ?? 0 : 0),
+      0
+    );
     setSelectedIds(new Set());
     setBulkBusy(null);
     await load();
     if (failed) setError(`Submitted ${results.length - failed} of ${results.length}; ${failed} could not be submitted.`);
+    else if (zeroed > 0) {
+      setError(
+        `Submitted. ${zeroed} line${zeroed === 1 ? '' : 's'} left blank ${zeroed === 1 ? 'was' : 'were'} recorded as zero — check the variance report before approving.`
+      );
+    }
   }
 
   async function approveSelectedStocktakes() {
@@ -1549,18 +1561,25 @@ function StocktakeForm({
 
     setSaving(true);
     try {
+      let zeroedNote = '';
       if (mode === 'edit' && initial) {
         await api<StocktakeWithLines>(`/api/stocktake/${initial.id}`, {
           method: 'PATCH',
           body: JSON.stringify(payload)
         });
+        if (status === 'SUBMITTED') {
+          const blanks = draft.lines.filter((line) => String(line.countedQty ?? '').trim() === '').length;
+          if (blanks > 0) zeroedNote = ` ${blanks} blank line${blanks === 1 ? '' : 's'} recorded as zero.`;
+        }
       } else {
         await api<StocktakeWithLines>('/api/stocktake', {
           method: 'POST',
           body: JSON.stringify(payload)
         });
       }
-      setFeedback(status === 'SUBMITTED' ? 'Stocktake marked ready for review.' : 'Stocktake draft saved.');
+      setFeedback(
+        status === 'SUBMITTED' ? `Stocktake marked ready for review.${zeroedNote}` : 'Stocktake draft saved.'
+      );
       setFeedbackTone('success');
       window.setTimeout(() => onSaved(), 500);
     } catch (err) {
@@ -1612,6 +1631,11 @@ function StocktakeForm({
         lines={draft.lines}
         onAdd={(chosen) => update('lines', [...draft.lines, ...chosen.map(prepLine)])}
       />
+
+      <p className="subtle stocktake-blank-note">
+        Leave a line blank when there is none of it — blanks are recorded as zero when the count is
+        submitted. Only type a number for what you actually have.
+      </p>
 
       <div className="stocktake-count-toolbar">
         <div className="stocktake-count-progress">

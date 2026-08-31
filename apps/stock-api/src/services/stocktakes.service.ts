@@ -1490,25 +1490,51 @@ export const stocktakesService = {
   // prefer this stocktake when computing stock value + COGS.
   // ──────────────────────────────────────────────────────────────
 
+  // Submitting is the moment a count stops being a work in progress and
+  // becomes an assertion about the venue — which is what finally settles what
+  // a BLANK line means.
+  //
+  // While counting, blank has to mean "nobody has looked at this yet", or a
+  // half-finished sheet would zero every shelf the counter had not reached.
+  // But a finished count says otherwise: if the sheet covers the item and
+  // nothing was written next to it, there is none. Leaving it blank forever
+  // was the worse of the two readings — apply skips it, so the item keeps
+  // whatever on-hand it had LAST time, and an empty shelf quietly carries
+  // yesterday's phantom stock into the new count.
+  //
+  // So blanks become zeros here, at submit, and nowhere earlier. Nobody has to
+  // type 0 three hundred times at the end of a long day, and no draft can
+  // destroy a count that is still being taken.
   async submitStocktake(id: string, actor?: AuthUser | null): Promise<Stocktake> {
     const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
     if (!existing) throw new HttpError(404, 'Stocktake not found');
     if (existing.status !== 'IN_PROGRESS') {
       throw new HttpError(409, `Stocktake is ${existing.status}, only IN_PROGRESS draft stocktakes can be submitted.`);
     }
-    const row = await prisma.stocktake.update({
-      where: { id },
-      data: {
-        status: 'SUBMITTED',
-        submittedAt: new Date(),
-        submittedByUserId: actor?.id ?? null
-      },
-      include: {
-        _count: { select: { lines: true } },
-        lines: { select: { stockValueCents: true } }
-      }
-    });
-    return toStocktakePayload(row);
+
+    const { row, blankLinesZeroed } = await prisma.$transaction(async (tx) => {
+      // A counted zero is worth zero, whatever the item costs, so the value
+      // needs no per-line arithmetic — one statement covers the whole sheet.
+      const zeroed = await tx.stocktakeLine.updateMany({
+        where: { stocktakeId: id, countedQty: null },
+        data: { countedQty: 0, stockValueCents: 0 }
+      });
+      const updated = await tx.stocktake.update({
+        where: { id },
+        data: {
+          status: 'SUBMITTED',
+          submittedAt: new Date(),
+          submittedByUserId: actor?.id ?? null
+        },
+        include: {
+          _count: { select: { lines: true } },
+          lines: { select: { stockValueCents: true } }
+        }
+      });
+      return { row: updated, blankLinesZeroed: zeroed.count };
+    }, { maxWait: 15_000, timeout: 30_000 });
+
+    return { ...toStocktakePayload(row), blankLinesZeroed };
   },
 
   async reviewStocktake(id: string, actor: AuthUser | undefined | null, input: { notes?: string }): Promise<Stocktake> {
