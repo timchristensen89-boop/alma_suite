@@ -118,6 +118,14 @@ const money = (cents) =>
 function pad(v, w) { const t = String(v ?? ''); return t.length >= w ? t : t + ' '.repeat(w - t.length); }
 function padLeft(v, w) { const t = String(v ?? ''); return t.length >= w ? t : ' '.repeat(w - t.length) + t; }
 const norm = (v) => (v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+// Word set for the "did you mean" suggestions only. Deliberately crude: it
+// never decides anything, it just gives a person three titles to look at.
+function tokens(value) {
+  return norm(value)
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((t) => t.length > 2 && !['the', 'and', 'for', 'with', 'batch'].includes(t));
+}
 
 // ---- the count to write onto -------------------------------------------
 let stocktake;
@@ -137,10 +145,15 @@ if (process.env.STOCKTAKE_ID) {
     orderBy: { countedAt: 'desc' },
     include: { lines: { select: { id: true, label: true, recipeId: true } } }
   });
-  stocktake = candidates.find((s) =>
+  if (candidates.length === 0) {
+    console.log('No open stocktakes at all.');
+    await prisma.$disconnect();
+    process.exit(1);
+  }
+  const bars = candidates.filter((s) =>
     /bar|foh|front/i.test(`${s.name ?? ''} ${s.template ?? ''}`)
   );
-  if (!stocktake) {
+  if (bars.length === 0) {
     console.log('Could not find an open Bar count. Pass STOCKTAKE_ID=<id>. Open counts:');
     for (const s of candidates) {
       console.log(`  ${s.id}  ${pad(s.status, 12)} ${s.name} (${s.venue ?? 'no venue'})`);
@@ -148,6 +161,21 @@ if (process.env.STOCKTAKE_ID) {
     await prisma.$disconnect();
     process.exit(1);
   }
+  // More than one open Bar count means two venues, or a stale one still
+  // sitting in the queue. Picking the most recent silently is how a bar's
+  // numbers land on another venue's sheet — and the first run of this script
+  // did exactly that, offering Alma Avalon's January count for St Alma's
+  // batches. A write needs to be aimed, not guessed.
+  if (bars.length > 1) {
+    console.log(`${bars.length} open Bar counts. Pass STOCKTAKE_ID=<id> to say which one:\n`);
+    for (const s of bars) {
+      const when = s.countedAt ? new Date(s.countedAt).toISOString().slice(0, 10) : 'no date';
+      console.log(`  ${s.id}  ${pad(s.status, 12)} ${pad(s.venue ?? 'no venue', 14)} ${when}  ${s.name}`);
+    }
+    await prisma.$disconnect();
+    process.exit(1);
+  }
+  stocktake = bars[0];
 }
 
 console.log(`Stocktake: ${stocktake.name}`);
@@ -232,9 +260,31 @@ if (noQuantity.length) {
 }
 if (noMatch.length) {
   console.log(`\nNO RECIPE WITH THAT EXACT TITLE (${noMatch.length}) - not written`);
-  for (const r of noMatch) console.log(`  ${pad(r.title, 34)} ${padLeft(r.qty ?? '-', 7)} ${r.unit}`);
-  console.log('  Check the spelling against Stock -> Recipes. Nothing is guessed at here on');
-  console.log('  purpose: a near-miss match books the wrong ingredients.');
+  for (const r of noMatch) {
+    console.log(`  ${pad(r.title, 34)} ${padLeft(r.qty ?? '-', 7)} ${r.unit}`);
+    // Suggestions only. They are printed for a person to read and are never
+    // selected automatically: the whole reason this script matches on exact
+    // titles is that a near-miss books the wrong ingredients. Saying "did you
+    // mean" costs nothing; acting on it is what nearly double-booked the
+    // octopus on the kitchen count.
+    const want = new Set(tokens(r.title));
+    const scored = recipeRows
+      .map((row) => {
+        const have = new Set(tokens(row.title));
+        const shared = [...want].filter((t) => have.has(t)).length;
+        return { title: row.title, score: shared / Math.max(want.size, have.size, 1) };
+      })
+      .filter((c) => c.score > 0.25)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+    if (scored.length) {
+      console.log(`      did you mean: ${scored.map((c) => c.title).join('  |  ')}`);
+    } else {
+      console.log('      nothing similar in the recipe book - it may need creating');
+    }
+  }
+  console.log('  Suggestions are printed to read, never acted on. Correct the title in the');
+  console.log('  COUNTED list at the top of this script, or create the recipe, then re-run.');
 }
 if (already.length) {
   console.log(`\nALREADY ON THIS SHEET (${already.length}) - left alone so a re-run cannot duplicate them`);
