@@ -106,7 +106,7 @@ const COUNTED = [
   ['Pistachio and vanilla bean flan',  null, 'each'],
   ['Paloma Margarita Batch',           1825, 'ml'],
   ['Razzle Bazzle Batch',              1500, 'ml'],
-  ['Sensible Margarita Batch',         7650, 'ml'],
+  ['Sensible Marg Batch',              7650, 'ml'],
   ['Spiced Tequila & Triple Sec',      3100, 'ml'],
   ['Strawberry Habanero Sour Batch',   null, 'ml']
 ];
@@ -192,7 +192,22 @@ const recipeRows = await prisma.recipe.findMany({
     }
   }
 });
-const byTitle = new Map(recipeRows.map((r) => [norm(r.title), r]));
+// Titles are not unique. The recipe book holds two "Beach, Please Batch" rows
+// (18.53 portions and 24 portions) and two "Ginger Spice Batch" rows, among
+// others — the Loaded import brought duplicates across and nothing has merged
+// them. Building a Map here keeps whichever row the database happened to
+// return LAST, so an exact-title match silently picks one of two different
+// recipes with different yields. That is the same class of quiet wrong answer
+// the fuzzy matching was removed to avoid, and it is worse, because the title
+// matched perfectly and nothing looks suspicious.
+//
+// So: collect every row per title, and treat more than one as unresolvable.
+const byTitle = new Map();
+for (const r of recipeRows) {
+  const key = norm(r.title);
+  if (!byTitle.has(key)) byTitle.set(key, []);
+  byTitle.get(key).push(r);
+}
 const specs = new Map(recipeRows.map((r) => [r.id, r]));
 const itemIds = [...new Set(recipeRows.flatMap((r) => r.lines.map((l) => l.itemId).filter(Boolean)))];
 const items = new Map(
@@ -211,12 +226,15 @@ const willBook = [];
 const booksNothing = [];
 const noQuantity = [];
 const noMatch = [];
+const ambiguous = [];
 const already = [];
 
 for (const [title, qty, unit] of COUNTED) {
   if (SKIP.has(norm(title))) continue;
-  const recipe = byTitle.get(norm(title));
-  if (!recipe) { noMatch.push({ title, qty, unit }); continue; }
+  const matches = byTitle.get(norm(title)) ?? [];
+  if (matches.length === 0) { noMatch.push({ title, qty, unit }); continue; }
+  if (matches.length > 1) { ambiguous.push({ title, qty, unit, matches }); continue; }
+  const recipe = matches[0];
   if (onSheet.has(recipe.id)) { already.push({ title, recipe }); continue; }
   if (qty === null || qty === undefined) { noQuantity.push({ title, recipe, unit }); continue; }
 
@@ -257,6 +275,19 @@ if (booksNothing.length) {
 if (noQuantity.length) {
   console.log(`\nNO QUANTITY ON THE SHEET (${noQuantity.length}) - not written`);
   for (const r of noQuantity) console.log(`  ${pad(r.title, 34)} counted in ${r.unit}, no number given`);
+}
+if (ambiguous.length) {
+  console.log(`\nTWO RECIPES SHARE THAT TITLE (${ambiguous.length}) - not written`);
+  console.log('  The title matched more than one recipe, and they do not make the same');
+  console.log('  amount. Picking one would book a number nobody chose. Merge or rename');
+  console.log('  the duplicates in Stock -> Recipes, then re-run.');
+  for (const r of ambiguous) {
+    console.log(`  ${pad(r.title, 34)} ${padLeft(r.qty ?? '-', 7)} ${r.unit}`);
+    for (const m of r.matches) {
+      const y = m.yieldQuantity ? `makes ${m.yieldQuantity} ${m.yieldUnit ?? ''}`.trim() : 'no yield set';
+      console.log(`      ${pad(m.id, 28)} ${y}`);
+    }
+  }
 }
 if (noMatch.length) {
   console.log(`\nNO RECIPE WITH THAT EXACT TITLE (${noMatch.length}) - not written`);
