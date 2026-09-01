@@ -1026,10 +1026,19 @@ export const stocktakesService = {
         throw new HttpError(409, 'Stocktake has already been applied');
       }
 
+      // Applying is the review, so it has to move the status as well as stamp
+      // reviewedAt. Without that the count stays SUBMITTED for ever: applied,
+      // reviewed, its stock long since written, and still sitting in the
+      // review queue. Twenty-six of them had piled up that way, which made the
+      // queue read as twenty-six counts waiting for a decision when every one
+      // of them was finished. The appliedAt guard above is what kept it
+      // harmless - a second apply is refused - but the queue was lying.
+
       const appliedAt = new Date();
       const applied = await tx.stocktake.updateMany({
         where: { id, status: 'SUBMITTED', appliedAt: null },
         data: {
+          status: 'REVIEWED',
           appliedAt,
           reviewedAt: appliedAt,
           reviewedByUserId: reviewer?.id ?? null
