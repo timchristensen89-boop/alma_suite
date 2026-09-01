@@ -324,4 +324,11 @@ console.log('Nothing was written. Fix the recipes in Stock → Recipes, then re-
 await prisma.$disconnect();
 JSEOF
 
-(cd "$DEPLOY_DIR" && docker compose exec -T -w /workspace/apps/stock-api "$SERVICE" node "$SCRIPT_IN_CONTAINER")
+# ALL has to be handed over explicitly. `docker compose exec` does not carry the
+# caller's environment into the container, so `ALL=YES ./prep-count-readiness.sh`
+# set it on the host and the script inside saw nothing — it printed the chef's
+# twenty-two and looked like it had simply ignored the flag. Same shape as the
+# -e list add-prep-lines.sh already passes.
+(cd "$DEPLOY_DIR" && docker compose exec -T -w /workspace/apps/stock-api \
+  -e "ALL=${ALL:-}" \
+  "$SERVICE" node "$SCRIPT_IN_CONTAINER")
