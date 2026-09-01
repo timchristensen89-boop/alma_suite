@@ -144,6 +144,12 @@ test('applying submitted stocktakes creates movement deltas and updates balances
     const applied = await stocktakesService.applyStocktake(stocktake.id);
     assert.equal(applied.movements.length, 2);
     assert.ok(applied.stocktake.appliedAt);
+    // Applying IS the review, so it has to move the status too. It used to
+    // stamp appliedAt and reviewedAt and leave status at SUBMITTED, which left
+    // finished counts sitting in the review queue for ever - twenty-six of them
+    // in production, every one applied months earlier.
+    assert.equal(applied.stocktake.status, 'REVIEWED');
+    assert.ok(applied.stocktake.reviewedAt);
 
     const [updatedA, updatedB, movements] = await Promise.all([
       prisma.stockItem.findUniqueOrThrow({ where: { id: itemA.id } }),
