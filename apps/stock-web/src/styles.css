@@ -3889,3 +3889,297 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   border-radius: 8px;
   background: rgba(79, 107, 71, 0.06);
 }
+
+/* ------------------------------------------------------------------ */
+/* Count sheet — the printable stocktake.                              */
+/* Screen shows a preview with a toolbar; print strips the app shell   */
+/* and lays the sheet out for A4 with black rules and writing boxes.   */
+/* ------------------------------------------------------------------ */
+
+.count-sheet-page {
+  display: grid;
+  gap: 16px;
+}
+
+.count-sheet-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+}
+
+.count-sheet-toolbar-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.count-sheet-toolbar-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.count-sheet-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.count-sheet-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.count-sheet {
+  background: #fff;
+  color: #111;
+  padding: 24px 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  max-width: 900px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.count-sheet-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+  border-bottom: 2px solid #111;
+  padding-bottom: 12px;
+}
+
+.count-sheet-eyebrow {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #555;
+}
+
+.count-sheet-title h1 {
+  margin: 4px 0 4px;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.count-sheet-meta {
+  margin: 0;
+  color: #333;
+}
+
+.count-sheet-signoff {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+  min-width: 260px;
+}
+
+.count-sheet-signoff div {
+  display: flex;
+  flex-direction: column;
+}
+
+.count-sheet-signoff dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #555;
+}
+
+.count-sheet-signoff dd {
+  margin: 0;
+  min-height: 22px;
+  border-bottom: 1px solid #111;
+  font-size: 13px;
+}
+
+.count-sheet-instructions {
+  margin: 12px 0 8px;
+  color: #333;
+  font-size: 12px;
+}
+
+.count-sheet-section {
+  margin-top: 16px;
+}
+
+.count-sheet-section h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 6px;
+  font-size: 15px;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.count-sheet-section-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border: 1.5px solid #111;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.count-sheet-section-count {
+  font-weight: 400;
+  font-size: 11px;
+  color: #555;
+}
+
+.count-sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.count-sheet-table th,
+.count-sheet-table td {
+  border: 1px solid #111;
+  padding: 5px 7px;
+  vertical-align: top;
+  text-align: left;
+}
+
+.count-sheet-table thead th {
+  background: #eee;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.count-sheet-table .col-index { width: 28px; text-align: right; color: #555; }
+.count-sheet-table .col-unit { width: 84px; }
+.count-sheet-table .col-num { width: 80px; text-align: right; }
+.count-sheet-table .col-tally { width: 110px; }
+.count-sheet-table .col-count { width: 86px; }
+.count-sheet-table .col-notes { width: 150px; }
+
+.count-sheet-table tbody td.col-count,
+.count-sheet-table tbody td.col-tally,
+.count-sheet-table tbody td.col-notes {
+  height: 30px;
+}
+
+.count-sheet-table tbody td.col-tally {
+  background-image: linear-gradient(to right, transparent 33%, #bbb 33%, #bbb calc(33% + 1px), transparent calc(33% + 1px), transparent 66%, #bbb 66%, #bbb calc(66% + 1px), transparent calc(66% + 1px));
+}
+
+.count-sheet-table tbody tr { break-inside: avoid; page-break-inside: avoid; }
+.count-sheet-table tbody tr:nth-child(5n) td { border-bottom-width: 2px; }
+.count-sheet-table tr.is-prep td.col-item { font-style: italic; }
+
+.count-sheet-item-name { display: block; font-weight: 600; }
+.count-sheet-item-sub { display: block; font-size: 10.5px; color: #555; }
+.count-sheet-item-sub:empty { display: none; }
+.count-sheet-unit-hint { display: block; font-size: 10px; color: #555; }
+.count-sheet-prefilled { color: #888; font-style: italic; }
+
+.count-sheet-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 1px solid #111;
+  font-size: 10.5px;
+  color: #555;
+}
+
+.count-sheet-page.is-compact .count-sheet { font-size: 11.5px; }
+.count-sheet-page.is-compact .count-sheet-table th,
+.count-sheet-page.is-compact .count-sheet-table td { padding: 3px 5px; }
+.count-sheet-page.is-compact .count-sheet-table tbody td.col-count,
+.count-sheet-page.is-compact .count-sheet-table tbody td.col-tally,
+.count-sheet-page.is-compact .count-sheet-table tbody td.col-notes { height: 22px; }
+.count-sheet-page.is-compact .count-sheet-item-sub { display: none; }
+
+@media (max-width: 720px) {
+  .count-sheet { padding: 16px; }
+  .count-sheet-head { flex-direction: column; }
+  .count-sheet-signoff { min-width: 0; }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 12mm 12mm 14mm;
+}
+
+@media print {
+  html, body { background: #fff !important; color: #111 !important; }
+  .app-shell-sidebar,
+  .app-shell-topbar,
+  .app-shell-sidebar-toggle,
+  .suite-fish,
+  .suite-feedback-widget,
+  .mobile-nav-toggle,
+  .mobile-nav-layer,
+  .hub-tabs,
+  .count-sheet-toolbar,
+  [class^="alma-taskbar"],
+  [class*=" alma-taskbar"] {
+    display: none !important;
+  }
+  .app-shell,
+  .app-shell-body,
+  .app-shell-main,
+  .app-shell-container {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+    width: auto !important;
+    min-height: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+  .count-sheet-page { display: block; }
+  .count-sheet {
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    max-width: none;
+    font-size: 12px;
+  }
+  .count-sheet-table thead { display: table-header-group; }
+  .count-sheet-table th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .count-sheet-table tbody td.col-tally { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .count-sheet-section { break-inside: auto; }
+  .count-sheet-foot { position: static; }
+  a[href]::after { content: none !important; }
+}
+
+/* Stocktake history feedback + duplicate review panel */
+.stocktake-page-feedback { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; }
+.stock-duplicates-card { margin: 0 0 12px; }
+.stock-duplicates-intro { margin: 0 0 12px; }
+.stock-duplicate-groups { display: flex; flex-direction: column; gap: 12px; }
+.stock-duplicate-group {
+  border: 1px solid var(--color-border); border-radius: 12px; padding: 10px 12px;
+  background: var(--color-surface-muted, #f8f8f6);
+}
+.stock-duplicate-group.is-flagged { border-style: dashed; }
+.stock-duplicate-group-head {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 8px;
+}
+.stock-duplicate-group-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.stock-duplicate-members { display: flex; flex-direction: column; gap: 6px; }
+.stock-duplicate-members .stock-merge-option { flex-wrap: wrap; }

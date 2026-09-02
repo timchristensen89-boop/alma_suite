@@ -48,10 +48,29 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     features: [
       { name: 'Areas', desc: 'Tag each line with where it was counted (Bar, Kitchen, Cool room).' },
       { name: 'Variance', desc: 'Compare counted vs expected to spot shrinkage or miscounts.' },
+      { name: 'Print sheet', desc: 'Print a paper count sheet in walking order, write the counts on it, then key them in on the same count.' },
       { name: 'Import from Loaded', desc: 'Bring historical counts in from a Loaded CSV export.' },
       { name: 'Export CSV', desc: 'Download any count for your records.' }
     ],
-    tips: ['A blank count is "not counted yet" — different from counting zero on hand.']
+    tips: [
+      'A blank count is "not counted yet" while counting — but blanks become zero when the count is submitted, so write 0 or NC on paper rather than leaving a line empty.',
+      'One person per count. If someone else saves the same count after you opened it, your save is refused until you reload — split a big count into one stocktake per area instead.'
+    ]
+  },
+  '/stocktake-templates': {
+    title: 'Stocktake templates',
+    intro: 'Reusable count sheets: which areas, categories and prepped items a count covers, and whether it is blind by default.',
+    steps: [
+      'Name the template and pick its venue.',
+      'Choose count areas and/or categories for the base list, then include or exclude specific items.',
+      'Add the prepped items (batches, sauces, marinades) the kitchen or bar holds as made stock.',
+      'Start a count from it on the Count tab, or print a blank sheet straight from here.'
+    ],
+    features: [
+      { name: 'Print blank sheet', desc: 'A paper sheet with every item on the template, in walking order, before the count exists in the app.' },
+      { name: 'Blind by default', desc: 'Hide the expected on-hand so counters record what they see.' }
+    ],
+    tips: ['Set a count area on every item (Items → edit) so the sheet walks the venue in order rather than by category.']
   },
   '/transfers': {
     title: 'Transfers',

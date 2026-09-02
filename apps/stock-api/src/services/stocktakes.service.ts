@@ -15,6 +15,8 @@ import {
   type Stocktake,
   type StocktakeLine,
   type StocktakeWithLines,
+  type StocktakeCountSheet,
+  type StocktakeLineInput,
   type StocktakesPayload,
   type AuthUser,
   type StocktakePrepApplySummary,
@@ -22,6 +24,7 @@ import {
   type StocktakesSummary
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { buildCountSheetSections } from '../lib/count-sheet.js';
 import { assertMayEnterCounts, isStockManager } from '../lib/stock-permissions.js';
 import {
   explodePrepCount,
@@ -388,6 +391,89 @@ async function ensureVenueStockRowsForLines(
       },
       update: {}
     });
+  }
+}
+
+// Refuse a save built on a stale copy of the count. Two people on one sheet
+// used to be "the last iPad to save wins" — a whole area's counts gone with
+// no sign anything happened. Clients send the updatedAt they loaded; a save
+// after someone else's is a 409 with enough context to reload, not a
+// silent overwrite. Clients that do not send it are unchanged.
+function assertNotStale(existing: { updatedAt: Date }, expectedUpdatedAt: string | undefined) {
+  const expected = normaliseOptionalText(expectedUpdatedAt);
+  if (!expected) return;
+  const expectedAt = new Date(expected);
+  if (Number.isNaN(expectedAt.getTime())) return;
+  // Postgres keeps microseconds and JSON keeps milliseconds; compare loosely.
+  if (Math.abs(existing.updatedAt.getTime() - expectedAt.getTime()) <= 1000) return;
+  const when = existing.updatedAt.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+  throw new HttpError(
+    409,
+    `Someone else saved this count at ${when}, after you opened it. Reload to see their numbers before saving, or your counts would overwrite theirs.`
+  );
+}
+
+type StocktakeLineWrite = {
+  position: number;
+  label: string;
+  itemId: string | null;
+  recipeId: string | null;
+  countedQty: number | null;
+  unit: string | null;
+  location: string | null;
+  stockValueCents: number | null;
+  notes: string | null;
+};
+
+// Write the sheet back without throwing away the rows. A save used to delete
+// every line and recreate it, so every line id changed on every save and the
+// ledger's sourceStocktakeLineId (SET NULL on delete) lost its anchor to the
+// line it came from. Now a line that arrives with the id it was loaded with is
+// updated in place — and only if something on it changed, so a save that
+// touched twelve lines writes twelve rows, not seven hundred. Lines without a
+// known id are created; existing lines the client no longer sends are removed.
+async function writeStocktakeLines(
+  tx: Prisma.TransactionClient,
+  stocktakeId: string,
+  lines: StocktakeLineInput[],
+  toWrite: (line: StocktakeLineInput, index: number) => StocktakeLineWrite
+) {
+  const existing = await tx.stocktakeLine.findMany({
+    where: { stocktakeId },
+    select: {
+      id: true,
+      position: true,
+      label: true,
+      itemId: true,
+      recipeId: true,
+      countedQty: true,
+      unit: true,
+      location: true,
+      stockValueCents: true,
+      notes: true
+    }
+  });
+  const existingById = new Map(existing.map((line) => [line.id, line]));
+  const keep = new Set<string>();
+  for (const line of lines) {
+    if (line.id && existingById.has(line.id) && !keep.has(line.id)) keep.add(line.id);
+  }
+  if (keep.size < existing.length) {
+    await tx.stocktakeLine.deleteMany({ where: { stocktakeId, id: { notIn: Array.from(keep) } } });
+  }
+  const seen = new Set<string>();
+  for (const [index, line] of lines.entries()) {
+    const values = toWrite(line, index);
+    const current = line.id && !seen.has(line.id) ? existingById.get(line.id) : undefined;
+    if (current) {
+      seen.add(current.id);
+      const changed = (Object.keys(values) as Array<keyof StocktakeLineWrite>).some(
+        (key) => (current[key] ?? null) !== (values[key] ?? null)
+      );
+      if (changed) await tx.stocktakeLine.update({ where: { id: current.id }, data: values });
+    } else {
+      await tx.stocktakeLine.create({ data: { ...values, stocktakeId } });
+    }
   }
 }
 
@@ -886,6 +972,7 @@ export const stocktakesService = {
     const parsed = stocktakeUpdateInputSchema.parse(input);
     const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
     if (!existing) throw new HttpError(404, 'Stocktake not found');
+    assertNotStale(existing, parsed.expectedUpdatedAt);
 
     // Non-managers count; they don't run the count. They may write lines and
     // notes on a stocktake that is open for counting, and nothing else: not
@@ -931,15 +1018,35 @@ export const stocktakesService = {
     const now = new Date();
 
     const row = await prisma.$transaction(async (tx) => {
-      if (data.lines !== undefined) {
-        await tx.stocktakeLine.deleteMany({ where: { stocktakeId: id } });
-      }
       const costById = await loadLineCostItems(tx, data.lines);
       const prepByIndex = await explodePrepLines(tx, data.lines);
+
+      if (data.lines !== undefined) {
+        await writeStocktakeLines(tx, id, data.lines, (line, index) => ({
+          position: index + 1,
+          label: line.label.trim(),
+          itemId: normaliseOptionalText(line.itemId) ?? null,
+          recipeId: normaliseOptionalText(line.recipeId) ?? null,
+          countedQty: line.countedQty,
+          unit: normaliseOptionalText(line.unit) ?? null,
+          location: normaliseOptionalText(line.location) ?? null,
+          stockValueCents: normaliseOptionalText(line.recipeId)
+            ? prepByIndex[index]?.valueCents ?? null
+            : stocktakeLineValueCents(
+                line.countedQty,
+                line.unit,
+                costById.get(normaliseOptionalText(line.itemId) ?? '')
+              ),
+          notes: normaliseOptionalText(line.notes) ?? null
+        }));
+      }
 
       const updated = await tx.stocktake.update({
         where: { id },
         data: {
+          // Always bump, even when only lines changed, so the stale-write
+          // guard above sees every save.
+          updatedAt: now,
           ...(data.name !== undefined && { name: data.name.trim() }),
           ...(data.venue !== undefined && { venue }),
           ...(data.template !== undefined && {
@@ -961,27 +1068,6 @@ export const stocktakesService = {
           ...(reversedAfterApply && {
             appliedAt: null,
             status: data.status ?? 'IN_PROGRESS'
-          }),
-          ...(data.lines !== undefined && {
-            lines: {
-              create: data.lines.map((line, index) => ({
-                position: index + 1,
-                label: line.label.trim(),
-                itemId: normaliseOptionalText(line.itemId) ?? null,
-                recipeId: normaliseOptionalText(line.recipeId) ?? null,
-                countedQty: line.countedQty,
-                unit: normaliseOptionalText(line.unit) ?? null,
-                location: normaliseOptionalText(line.location) ?? null,
-                stockValueCents: normaliseOptionalText(line.recipeId)
-                  ? prepByIndex[index]?.valueCents ?? null
-                  : stocktakeLineValueCents(
-                      line.countedQty,
-                      line.unit,
-                      costById.get(normaliseOptionalText(line.itemId) ?? '')
-                    ),
-                notes: normaliseOptionalText(line.notes) ?? null
-              }))
-            }
           })
         },
         include: {
@@ -1019,11 +1105,16 @@ export const stocktakesService = {
       ) {
         throw new HttpError(403, 'Stocktake review is limited to your venue.');
       }
-      if (stocktake.status !== 'SUBMITTED') {
-        throw new HttpError(400, 'Only submitted stocktakes can be applied');
-      }
+      // Applied first: applying moves the status to REVIEWED, so checking the
+      // status before appliedAt told a manager who pressed the button twice
+      // "only submitted stocktakes can be applied" instead of the truth.
       if (stocktake.appliedAt) {
         throw new HttpError(409, 'Stocktake has already been applied');
+      }
+      // A count reviewed through POST /:id/review is still waiting to be
+      // applied; the review queue offers both.
+      if (stocktake.status !== 'SUBMITTED' && stocktake.status !== 'REVIEWED') {
+        throw new HttpError(400, 'Only submitted stocktakes can be applied');
       }
 
       // Applying is the review, so it has to move the status as well as stamp
@@ -1036,7 +1127,7 @@ export const stocktakesService = {
 
       const appliedAt = new Date();
       const applied = await tx.stocktake.updateMany({
-        where: { id, status: 'SUBMITTED', appliedAt: null },
+        where: { id, status: { in: ['SUBMITTED', 'REVIEWED'] }, appliedAt: null },
         data: {
           status: 'REVIEWED',
           appliedAt,
@@ -1436,18 +1527,22 @@ export const stocktakesService = {
     if (existing.appliedAt) {
       throw new HttpError(409, 'Applied stocktakes must be reversed before reopening.');
     }
-    if (existing.status !== 'SUBMITTED') {
-      throw new HttpError(400, 'Only submitted stocktakes can be reopened.');
+    if (existing.status !== 'SUBMITTED' && existing.status !== 'REVIEWED') {
+      throw new HttpError(400, 'Only submitted or reviewed stocktakes can be reopened.');
     }
 
+    // Reopening un-submits. It used to stamp reviewedAt as well, recording a
+    // review that never happened on a count going back to draft.
     const row = await prisma.stocktake.update({
       where: { id },
       data: {
         status: 'IN_PROGRESS',
         submittedAt: null,
         submittedByUserId: null,
-        reviewedAt: new Date(),
-        reviewedByUserId: actor?.id ?? null
+        reviewedAt: null,
+        reviewedByUserId: null,
+        reopenedAt: new Date(),
+        reopenedByUserId: actor?.id ?? null
       },
       include: {
         _count: { select: { lines: true } },
@@ -1517,8 +1612,11 @@ export const stocktakesService = {
   async submitStocktake(id: string, actor?: AuthUser | null): Promise<Stocktake> {
     const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
     if (!existing) throw new HttpError(404, 'Stocktake not found');
-    if (existing.status !== 'IN_PROGRESS') {
-      throw new HttpError(409, `Stocktake is ${existing.status}, only IN_PROGRESS draft stocktakes can be submitted.`);
+    // REOPENED is a draft handed back for correction; once corrected it goes
+    // through review again. Refusing it left a reopened count with no way
+    // forward except a manager hand-editing its status.
+    if (existing.status !== 'IN_PROGRESS' && existing.status !== 'REOPENED') {
+      throw new HttpError(409, `Stocktake is ${existing.status}, only draft (IN_PROGRESS or REOPENED) stocktakes can be submitted.`);
     }
 
     const { row, blankLinesZeroed } = await prisma.$transaction(async (tx) => {
@@ -1815,6 +1913,72 @@ export const stocktakesService = {
         const bv = b.varianceValueCents === null ? 0 : Math.abs(b.varianceValueCents);
         return bv - av;
       })
+    };
+  },
+
+  // The paper count sheet for an existing stocktake. Staff said it is easier
+  // to print a sheet and write on it than count into any app, so this is a
+  // first-class output, not a screenshot: grouped by count area in walking
+  // order, one row per line, a box to write the count in, and the expected
+  // on-hand only when the sheet is not blind. Readable by anyone who can
+  // count, since the counter is the one who prints it.
+  async countSheet(
+    id: string,
+    actor: AuthUser | undefined | null,
+    options: { blind?: boolean } = {}
+  ): Promise<StocktakeCountSheet> {
+    const existing = await prisma.stocktake.findFirst({
+      where: scopedStocktakeWhere(id, actor),
+      include: {
+        lines: {
+          include: {
+            item: { include: { category: { select: { name: true } } } },
+            recipe: { select: { id: true, title: true, yieldUnit: true } }
+          },
+          orderBy: [{ position: 'asc' }]
+        }
+      }
+    });
+    if (!existing) throw new HttpError(404, 'Stocktake not found');
+    const blind = options.blind ?? true;
+    const venueOnHandByKey = await venueOnHandLookup([existing]);
+    const rows = existing.lines.map((line) => {
+      const kind = line.recipeId ? ('PREPPED_ITEM' as const) : ('STOCK_ITEM' as const);
+      const item = line.item;
+      const expected = item
+        ? effectiveVenueOnHand(existing.venue, item.id, item.onHand, venueOnHandByKey)
+        : null;
+      return {
+        lineId: line.id,
+        itemId: line.itemId,
+        recipeId: line.recipeId,
+        label: line.label,
+        sku: item?.sku ?? null,
+        category: item?.category?.name ?? null,
+        unit: line.unit ?? item?.countUnit ?? item?.unit ?? line.recipe?.yieldUnit ?? '',
+        purchaseUnit: item && item.countUnit && item.countUnit !== item.unit ? item.unit : null,
+        conversionFactor: item && item.countUnit && item.countUnit !== item.unit ? item.conversionFactor : null,
+        expectedQty: blind ? null : expected,
+        parLevel: item?.parLevel ?? null,
+        countedQty: line.countedQty,
+        notes: line.notes,
+        kind,
+        area: line.location ?? item?.countArea ?? item?.category?.name ?? null
+      };
+    });
+    return {
+      source: 'stocktake',
+      stocktakeId: existing.id,
+      templateId: null,
+      name: existing.name,
+      venue: existing.venue,
+      template: existing.template,
+      countedAt: existing.countedAt.toISOString(),
+      status: existing.status,
+      blind,
+      generatedAt: new Date().toISOString(),
+      lineCount: rows.length,
+      sections: buildCountSheetSections(rows)
     };
   },
 

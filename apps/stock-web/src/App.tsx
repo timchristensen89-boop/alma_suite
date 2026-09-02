@@ -35,6 +35,7 @@ import { AuthProvider, useAuth } from './lib/auth';
 const ItemsPage = lazy(() => import('./pages/ItemsPage').then((m) => ({ default: m.ItemsPage })));
 const ConfigHealthPage = lazy(() => import('./pages/ConfigHealthPage').then((m) => ({ default: m.ConfigHealthPage })));
 const StocktakePage = lazy(() => import('./pages/StocktakePage').then((m) => ({ default: m.StocktakePage })));
+const CountSheetPage = lazy(() => import('./pages/CountSheetPage').then((m) => ({ default: m.CountSheetPage })));
 const StocktakeTemplatesPage = lazy(() => import('./pages/StocktakeTemplatesPage').then((m) => ({ default: m.StocktakeTemplatesPage })));
 const TransfersPage = lazy(() => import('./pages/TransfersPage').then((m) => ({ default: m.TransfersPage })));
 const SuppliersPage = lazy(() => import('./pages/SuppliersPage').then((m) => ({ default: m.SuppliersPage })));
@@ -316,6 +317,9 @@ function StockAppShell() {
         {/* Stock count hub */}
         <Route path="/stocktake" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakePage /></HubLayout>} />
         <Route path="/stocktake-templates" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakeTemplatesPage /></HubLayout>} />
+        {/* Printable count sheets: no hub tabs, the page is the paper. */}
+        <Route path="/stocktake/:id/print" element={<CountSheetPage source="stocktake" />} />
+        <Route path="/stocktake-templates/:id/print" element={<CountSheetPage source="template" />} />
         <Route path="/wastage" element={<HubLayout tabs={STOCK_COUNT_TABS}><WastagePage /></HubLayout>} />
         <Route path="/staff-usage" element={<HubLayout tabs={STOCK_COUNT_TABS}><StaffUsagePage /></HubLayout>} />
         <Route path="/transfers" element={<HubLayout tabs={STOCK_COUNT_TABS}><TransfersPage /></HubLayout>} />
