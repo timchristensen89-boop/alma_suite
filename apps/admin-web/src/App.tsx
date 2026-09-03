@@ -4,7 +4,8 @@ import {
   NavLink,
   Route,
   Routes,
-  useLocation
+  useLocation,
+  useNavigate
 } from 'react-router-dom';
 import {
   AppShell,
@@ -22,7 +23,7 @@ import {
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { SuiteSignOutButton } from '@alma/ui';
+import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import { ForgotPasswordPage, ResetPasswordPage } from '../../web/src/pages/PasswordRecoveryPages';
 import { HandbookAdminPage } from '../../web/src/pages/handbook/HandbookIndexPage';
 import { api } from '../../web/src/lib/api';
@@ -327,6 +328,44 @@ function groupFor(pathname: string) {
   ) ?? NAV_GROUPS[0]!;
 }
 
+/**
+ * The phone task bar. Admin is a long, grouped list — 26 pages — so the bar
+ * holds the four somebody reaches for on a phone and everything else sits
+ * behind More, in sidebar order, so nothing the sidebar offers is unreachable
+ * once the sidebar is hidden on a phone.
+ */
+const ADMIN_PRIMARY_TASKS = ['/', '/users', '/venues', '/settings'];
+/** Bar labels are one word where the sidebar's wrap to two lines on a 390px bar. */
+const ADMIN_BAR_LABELS: Record<string, string> = { '/settings': 'Settings' };
+
+function AdminTaskBar() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeTo = pageFor(location.pathname).to;
+  const items: TaskBarItem[] = [
+    ...ADMIN_PRIMARY_TASKS.map((to) => NAV_ITEMS.find((item) => item.to === to)!),
+    ...NAV_ITEMS.filter((item) => !ADMIN_PRIMARY_TASKS.includes(item.to))
+  ].map((item) => ({
+    key: item.to,
+    label: ADMIN_BAR_LABELS[item.to] ?? item.label,
+    href: item.to,
+    icon: item.icon,
+    primary: ADMIN_PRIMARY_TASKS.includes(item.to),
+    active: item.to === activeTo
+  }));
+  return (
+    <TaskBar
+      items={items}
+      label="Admin pages"
+      onNavigate={(item, event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        navigate(item.href);
+      }}
+    />
+  );
+}
+
 function AdminSidebar() {
   const location = useLocation();
   const active = pageFor(location.pathname);
@@ -607,6 +646,7 @@ function AdminWorkspace() {
           }
         />
       </Routes>
+      <AdminTaskBar />
     </AppShell>
   );
 }

@@ -10420,6 +10420,16 @@ html[data-theme='dark'] .alma-roster-publish:hover:not(:disabled) {
   .admin-debt-row {
     grid-template-columns: 1fr;
     gap: 6px;
+    /* Grid items default to min-width:auto, and on a 390px phone these rows
+       were sizing to the viewport edge instead of the card — 406px wide on a
+       390px screen. That one overflow zoomed the whole layout out, which is
+       why the task bar sat half below the bottom of the screen on Admin. */
+    min-width: 0;
+  }
+
+  .admin-debt-row > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 }
 
@@ -12634,16 +12644,33 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
    own list does not name, so nothing a person could reach through the
    dropdown became unreachable when it disappeared. */
 @media (max-width: 860px) {
-  .app-shell-sidebar {
+  /* Only when a task bar is actually on the page. The TaskBar component
+     stamps this class on <html> while mounted. Without it, hiding the sidebar
+     hides the only navigation the app has — Admin, Reserve, Marketing and
+     Gift Cards shipped with no nav on phones for exactly that reason. Those
+     apps now carry a bar too, and any app that ever drops it falls back to
+     the labelled dropdown from the 900px block instead of to nothing. */
+  html.has-alma-taskbar .app-shell-sidebar {
     display: none;
   }
 
-  .app-shell-topbar {
+  html.has-alma-taskbar .app-shell-topbar {
     /* It is the only header now, so it carries the top edge itself. */
     position: sticky;
     top: 0;
     z-index: 30;
     padding: 6px 0 0;
+  }
+
+  /* No bar: the sidebar row is the header and owns the notch; the topbar
+     sits under it and scrolls, as it did before the bar existed. The sticky
+     topbar rules further down are scoped the same way. */
+  html:not(.has-alma-taskbar) .app-shell-sidebar {
+    padding-top: calc(10px + env(safe-area-inset-top));
+  }
+
+  html:not(.has-alma-taskbar) .app-shell-topbar {
+    position: static;
   }
 }
 
@@ -13090,8 +13117,11 @@ html[data-theme='dark'] {
      bar is also the better read on a phone — page content ghosting through
      the title is noise, not depth.
 
-     Above the task bar in the stack, so a panel is never clipped behind it. */
-  .app-shell-topbar {
+     Above the task bar in the stack, so a panel is never clipped behind it.
+
+     Scoped to pages with a task bar: without one the sidebar row is the
+     header, and a second sticky bar at top:0 would slide over it. */
+  html.has-alma-taskbar .app-shell-topbar {
     position: sticky;
     top: 0;
     z-index: 70;
@@ -13352,5 +13382,49 @@ html[data-theme='dark'] {
      panel cap had just removed. The panel scrolls; the body fills it. */
   .notifications-body {
     max-height: none;
+  }
+}
+
+/* ==========================================================================
+   Phone nav dropdown on the coloured rail.
+   The rail rules above paint every sidebar link white for the dark rail. On a
+   phone the same list opens as a dropdown sheet on --color-surface, so the
+   white links vanished into it: the sheet opened and looked empty. Only apps
+   without a task bar reach this (see html.has-alma-taskbar), but a fallback
+   that renders blank is worse than none. Restores ink on paper for the sheet
+   and leaves the rail itself alone.
+   ========================================================================== */
+@media (max-width: 900px) {
+  .app-shell-sidebar .app-shell-nav .sidebar-nav .sidebar-nav-section {
+    color: var(--color-text-muted);
+  }
+
+  .app-shell-sidebar .app-shell-nav .sidebar-nav a,
+  .app-shell-sidebar .app-shell-nav .sidebar-nav li > span[aria-disabled] {
+    color: rgba(var(--ink-forest-rgb), 0.72);
+  }
+
+  .app-shell-sidebar .app-shell-nav .sidebar-nav a:hover {
+    background: rgba(var(--ink-forest-rgb), 0.05);
+    color: var(--color-ink-forest);
+  }
+
+  .app-shell-sidebar .app-shell-nav .sidebar-nav a.active {
+    background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+    color: var(--color-ink-forest);
+  }
+
+  .app-shell-sidebar .app-shell-nav .sidebar-nav a.active::before {
+    background: var(--color-accent);
+    box-shadow: none;
+  }
+
+  .app-shell-sidebar .app-shell-nav .sidebar-nav a.active .sidebar-nav-icon {
+    color: var(--color-accent);
+  }
+
+  .app-shell-sidebar .app-shell-nav .sidebar-nav .sidebar-nav-count {
+    background: rgba(var(--ink-forest-rgb), 0.08);
+    color: var(--color-text);
   }
 }

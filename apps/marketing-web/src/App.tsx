@@ -51,7 +51,7 @@ import {
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { SuiteSignOutButton } from '@alma/ui';
+import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import { MARKETING_WEB_URL, RESERVE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import {
@@ -691,6 +691,37 @@ function useMarketingActivePath() {
   }, []);
 
   return MARKETING_NAV_ITEMS.some((item) => item.href === activePath) ? activePath : '/';
+}
+
+/**
+ * The phone task bar. Calendar is the default landing and the thing checked
+ * most often from a phone, then the two places a post or campaign gets made,
+ * then Guests. Everything else in the sidebar sits behind More in the same
+ * order, so the list a phone can reach is the list the sidebar shows.
+ */
+const MARKETING_PRIMARY_TASKS = ['/content/calendar', '/content/composer', '/campaigns', '/guests'];
+
+function MarketingTaskBar() {
+  const activePath = useMarketingActivePath();
+  const items: TaskBarItem[] = MARKETING_NAV_ITEMS.map((item) => ({
+    key: item.href,
+    label: item.label,
+    href: item.href,
+    icon: item.icon,
+    primary: MARKETING_PRIMARY_TASKS.includes(item.href),
+    active: item.href === activePath
+  }));
+  return (
+    <TaskBar
+      items={items}
+      label="Marketing pages"
+      onNavigate={(item, event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        navigateMarketingPath(item.href);
+      }}
+    />
+  );
 }
 
 function SidebarNav() {
@@ -2510,6 +2541,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
           </aside>
         </div>
       </div>
+      <MarketingTaskBar />
     </AppShell>
   );
 }
