@@ -13,7 +13,7 @@ set -euo pipefail
 # several litres of made cocktail, and none of it is on the count.
 #
 # This puts those numbers on the sheet. It is the bar twin of
-# add-prep-lines.sh, with two deliberate differences:
+# add-prep-lines.sh, with three deliberate differences:
 #
 #  1. MATCHING IS BY EXACT TITLE, not by fuzzy name. Dirk wrote his numbers
 #     against the app's own printed recipe list, so the names already ARE the
@@ -30,6 +30,12 @@ set -euo pipefail
 #     does it silently. That is the single most likely outcome here, which is
 #     why the dry run separates "will book" from "books nothing" rather than
 #     burying it in a warning.
+#
+#  3. A SHARED TITLE IS RESOLVED BY THE COUNT'S VENUE, and only by that.
+#     The catalogue holds one copy of each recipe per venue, so "Ginger Spice
+#     Batch" existing twice is the normal shape, not a duplicate to merge. A
+#     count belongs to one venue, so the row for that venue is the right one.
+#     Anything that does not narrow to exactly one row is still refused.
 #
 # Dry run by default. Nothing is written without PREP_CONFIRM=YES.
 #
@@ -185,7 +191,7 @@ console.log(`  ${stocktake.venue ?? 'no venue'} · ${stocktake.status} · ${stoc
 const recipeRows = await prisma.recipe.findMany({
   where: { status: 'ACTIVE', isPrepRecipe: true },
   select: {
-    id: true, title: true, yieldQuantity: true, yieldUnit: true,
+    id: true, title: true, venue: true, yieldQuantity: true, yieldUnit: true,
     lines: {
       select: { ingredientName: true, quantity: true, unit: true, itemId: true, subRecipeId: true, costingOnly: true },
       orderBy: { position: 'asc' }
@@ -193,15 +199,14 @@ const recipeRows = await prisma.recipe.findMany({
   }
 });
 // Titles are not unique. The recipe book holds two "Beach, Please Batch" rows
-// (18.53 portions and 24 portions) and two "Ginger Spice Batch" rows, among
-// others — the Loaded import brought duplicates across and nothing has merged
-// them. Building a Map here keeps whichever row the database happened to
-// return LAST, so an exact-title match silently picks one of two different
-// recipes with different yields. That is the same class of quiet wrong answer
-// the fuzzy matching was removed to avoid, and it is worse, because the title
-// matched perfectly and nothing looks suspicious.
+// and two "Ginger Spice Batch" rows, among others. Building a Map here keeps
+// whichever row the database happened to return LAST, so an exact-title match
+// silently picks one of two different recipes with different yields. That is
+// the same class of quiet wrong answer the fuzzy matching was removed to
+// avoid, and it is worse, because the title matched perfectly and nothing
+// looks suspicious.
 //
-// So: collect every row per title, and treat more than one as unresolvable.
+// So: collect every row per title, and resolve the pick deliberately below.
 const byTitle = new Map();
 for (const r of recipeRows) {
   const key = norm(r.title);
@@ -233,8 +238,29 @@ for (const [title, qty, unit] of COUNTED) {
   if (SKIP.has(norm(title))) continue;
   const matches = byTitle.get(norm(title)) ?? [];
   if (matches.length === 0) { noMatch.push({ title, qty, unit }); continue; }
-  if (matches.length > 1) { ambiguous.push({ title, qty, unit, matches }); continue; }
-  const recipe = matches[0];
+
+  // Two rows under one title is usually not a duplicate waiting to be merged.
+  // The catalogue is duplicated per venue on purpose — Recipe.venue, and the
+  // canonicalId twin link the schema documents — so "Beach, Please Batch"
+  // exists once for St Alma and once for Alma Avalon, with different
+  // quantities because the two bars batch different sizes. Merging them would
+  // be the wrong repair.
+  //
+  // A count belongs to exactly one venue, and each venue's recipe is the one
+  // whose ingredients point at that venue's stock items, so narrowing to the
+  // count's own venue is not a coin toss — it is the only reading that books
+  // against the right stock. Anything that does not narrow to exactly one row
+  // is still refused.
+  let recipe;
+  let pickedFrom = 0;
+  if (matches.length === 1) {
+    recipe = matches[0];
+  } else {
+    const here = matches.filter((m) => m.venue && norm(m.venue) === norm(stocktake.venue));
+    if (here.length !== 1) { ambiguous.push({ title, qty, unit, matches }); continue; }
+    recipe = here[0];
+    pickedFrom = matches.length;
+  }
   if (onSheet.has(recipe.id)) { already.push({ title, recipe }); continue; }
   if (qty === null || qty === undefined) { noQuantity.push({ title, recipe, unit }); continue; }
 
@@ -243,11 +269,11 @@ for (const [title, qty, unit] of COUNTED) {
   // refused here, and the line would book nothing.
   const { batches, warning } = batchesForCount(qty, unit, recipe);
   if (batches === null) {
-    booksNothing.push({ title, qty, unit, recipe, reason: warning });
+    booksNothing.push({ title, qty, unit, recipe, reason: warning, pickedFrom });
     continue;
   }
   const explosion = explodePrepCount({ countedQty: qty, countedUnit: unit, recipe, recipesById: specs, itemsById: items });
-  willBook.push({ title, qty, unit, recipe, explosion });
+  willBook.push({ title, qty, unit, recipe, explosion, pickedFrom });
 }
 
 console.log(`WILL BOOK (${willBook.length})`);
@@ -258,6 +284,12 @@ for (const r of willBook) {
     ` makes ${r.recipe.yieldQuantity} ${r.recipe.yieldUnit ?? ''}  books ${money(r.explosion.valueCents)}` +
     ` across ${r.explosion.components.length} item(s)`
   );
+  if (r.pickedFrom) {
+    console.log(
+      `      ${r.pickedFrom} recipes carry this title, one per venue;` +
+      ` took the ${r.recipe.venue} one to match the count`
+    );
+  }
 }
 
 console.log(`\nBOOKS NOTHING - THE UNIT WILL NOT CONVERT (${booksNothing.length})`);
@@ -265,6 +297,9 @@ if (!booksNothing.length) console.log('  (none)');
 for (const r of booksNothing) {
   console.log(`  ${pad(r.title, 34)} ${padLeft(r.qty, 7)} ${r.unit}`);
   console.log(`      makes ${r.recipe.yieldQuantity} ${r.recipe.yieldUnit ?? '(no yield unit)'} - ${r.reason ?? 'no yield set'}`);
+  if (r.pickedFrom) {
+    console.log(`      (${r.pickedFrom} recipes carry this title; this is the ${r.recipe.venue} one)`);
+  }
 }
 if (booksNothing.length) {
   console.log('\n  These are NOT written. Counting them would look like it worked and book');
@@ -277,15 +312,18 @@ if (noQuantity.length) {
   for (const r of noQuantity) console.log(`  ${pad(r.title, 34)} counted in ${r.unit}, no number given`);
 }
 if (ambiguous.length) {
-  console.log(`\nTWO RECIPES SHARE THAT TITLE (${ambiguous.length}) - not written`);
-  console.log('  The title matched more than one recipe, and they do not make the same');
-  console.log('  amount. Picking one would book a number nobody chose. Merge or rename');
-  console.log('  the duplicates in Stock -> Recipes, then re-run.');
+  console.log(`\nCANNOT TELL WHICH RECIPE (${ambiguous.length}) - not written`);
+  console.log('  Several recipes share the title. That on its own is normal - the');
+  console.log('  catalogue holds one copy per venue - and a title with exactly one row');
+  console.log(`  for ${stocktake.venue ?? 'this count'} is taken automatically. These did not narrow that far:`);
+  console.log('  either none of them carries the venue, or more than one does. Picking one');
+  console.log('  would book a number nobody chose, and possibly against the other venue\'s');
+  console.log('  stock. Set the venue on the right row in Stock -> Recipes, then re-run.');
   for (const r of ambiguous) {
     console.log(`  ${pad(r.title, 34)} ${padLeft(r.qty ?? '-', 7)} ${r.unit}`);
     for (const m of r.matches) {
       const y = m.yieldQuantity ? `makes ${m.yieldQuantity} ${m.yieldUnit ?? ''}`.trim() : 'no yield set';
-      console.log(`      ${pad(m.id, 28)} ${y}`);
+      console.log(`      ${pad(m.id, 28)} ${pad(m.venue ?? 'NO VENUE', 14)} ${y}`);
     }
   }
 }
