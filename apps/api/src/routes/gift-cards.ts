@@ -344,6 +344,16 @@ giftCardsRouter.patch('/donations/:id', requireGiftCardOwner, async (req, res, n
   }
 });
 
+// Hand the voucher over by email. Issuing never sends; this does, to the one
+// address given, and records where it went.
+giftCardsRouter.post('/donations/:id/send', requireGiftCardOwner, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.sendDonationVoucher(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.post('/redeem', requireGiftCardRedeemer, async (req, res, next) => {
   try {
     const card = await giftCardService.redeem(req.body, req.user?.id);
