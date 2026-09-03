@@ -3,7 +3,7 @@
  *
  * ALMA's written policy (docs/donation-policy.md, August 2026) turns what used
  * to be a judgement call into a lookup: vouchers not cash, twelve a year across
- * all venues, $150–$200 each, twelve months, dine-in, never a Friday or
+ * all venues, $50–$200 each, twelve months, dine-in, never a Friday or
  * Saturday night. Everything in this file is that policy expressed once, so the
  * counter iPad, the admin screen and the API cannot drift apart on it.
  *
@@ -14,8 +14,12 @@
 /** Calendar-year allocation across ALL venues, not per venue. */
 export const DONATION_ANNUAL_CAP = 12;
 
-/** Face value band. The policy allows no exception upward "without a real reason". */
-export const DONATION_MIN_CENTS = 150_00;
+/**
+ * Face value band. The policy allows no exception upward "without a real reason".
+ * The floor came down from $150 to $50 in September 2026 so a small voucher can
+ * go to a school raffle without spending a $150 allocation slot on it.
+ */
+export const DONATION_MIN_CENTS = 50_00;
 export const DONATION_MAX_CENTS = 200_00;
 
 /**

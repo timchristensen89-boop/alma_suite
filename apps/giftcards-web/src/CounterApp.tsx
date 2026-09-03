@@ -766,7 +766,7 @@ function RedeemPanel() {
 /* ------------------------------------------------------------------ */
 
 const DONATION_VENUES = ['St Alma', 'Alma Avalon', 'Either venue'];
-const DONATION_AMOUNTS = [150, 175, 200];
+const DONATION_AMOUNTS = [50, 100, 150, 200];
 
 /**
  * Somebody has walked in and asked, or rung, and the answer is needed now.

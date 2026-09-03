@@ -36,7 +36,7 @@ const money = (cents: number) =>
   new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: cents % 100 === 0 ? 0 : 2 }).format(cents / 100);
 
 const DONATION_VENUES = ['St Alma', 'Alma Avalon', 'Either venue'];
-const QUICK_AMOUNTS = [150, 175, 200];
+const QUICK_AMOUNTS = [50, 100, 150, 200];
 
 const SIGNATURE = ['Tim Christensen', 'DIRECTOR', '0430 058 410', 'tim@almagroup.com.au'].join('\n');
 

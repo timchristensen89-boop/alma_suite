@@ -12,7 +12,7 @@
 
 1. **Vouchers, not cash.** Cash donations are off the table entirely.
 2. **Twelve per year, maximum.** Roughly one a month across all venues.
-3. **$150–$200 face value each.** No exceptions upward without a real reason.
+3. **$50–$200 face value each.** No exceptions upward without a real reason. (Floor lowered from $150 in September 2026.)
 4. **12-month expiry, dine-in only, not valid Fri/Sat night.** Protects the busy services.
 5. **Once the twelve are gone, they're gone.** The answer is no until the calendar year turns.
 
