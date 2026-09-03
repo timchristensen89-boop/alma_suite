@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 /**
@@ -210,6 +210,26 @@ function useInjectedStyles() {
   }, []);
 }
 
+/**
+ * Marks the document while a bar is on the page. The shell stylesheet hides
+ * the sidebar (and with it the phone nav dropdown) on phones only under this
+ * class, so an app that renders no task bar keeps its dropdown instead of
+ * ending up with no navigation at all — which is exactly what happened to
+ * Admin, Reserve, Marketing and Gift Cards when the hide was unconditional.
+ */
+export const TASKBAR_PRESENT_CLASS = 'has-alma-taskbar';
+
+function useTaskBarPresence(present: boolean) {
+  // Layout effect, so the class is on <html> before the first paint: with a
+  // plain effect the phone header row shows for a frame and then jumps away.
+  useLayoutEffect(() => {
+    if (typeof document === 'undefined' || !present) return;
+    const root = document.documentElement;
+    root.classList.add(TASKBAR_PRESENT_CLASS);
+    return () => root.classList.remove(TASKBAR_PRESENT_CLASS);
+  }, [present]);
+}
+
 function ItemLink({
   item,
   onNavigate,
@@ -244,6 +264,7 @@ function ItemLink({
 
 export function TaskBar({ items, onNavigate, label = 'Quick actions' }: Props) {
   useInjectedStyles();
+  useTaskBarPresence(items.length > 0);
   const [sheetOpen, setSheetOpen] = useState(false);
   const sheetRef = useRef<HTMLDivElement | null>(null);
 

@@ -54,7 +54,7 @@ import { installSuiteAppAccess,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { SuiteSignOutButton } from '@alma/ui';
+import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import {
@@ -1495,6 +1495,59 @@ export function isGiftCardOwner(user?: { email?: string | null } | null) {
   return user?.email?.toLowerCase() === GIFT_CARD_OWNER_EMAIL;
 }
 
+/** Which nav item the current URL belongs to. Shared by the sidebar and the phone task bar. */
+function giftCardSectionFromLocation() {
+  const path = window.location.pathname;
+  if (path.startsWith('/orders')) return '/orders#recent';
+  if (path.startsWith('/reporting')) return '/reporting#report';
+  if (path.startsWith('/donations')) return '/donations#donations';
+  if (path.startsWith('/admin')) return '/admin#settings';
+  if (path.startsWith('/activate')) return '/activate#activate';
+  if (path.startsWith('/counter')) return '/counter';
+  return '/redeem#redeem';
+}
+
+function useActiveGiftCardHref() {
+  const [activeHref, setActiveHref] = useState(giftCardSectionFromLocation);
+  useEffect(() => {
+    const sync = () => setActiveHref(giftCardSectionFromLocation());
+    sync();
+    window.addEventListener('hashchange', sync);
+    window.addEventListener('popstate', sync);
+    return () => {
+      window.removeEventListener('hashchange', sync);
+      window.removeEventListener('popstate', sync);
+    };
+  }, []);
+  return [activeHref, setActiveHref] as const;
+}
+
+/**
+ * The phone task bar: the counter jobs first — redeem, sell, orders, activate —
+ * and the rest behind More in sidebar order. Same owner-only filter as the
+ * sidebar, so Donations only shows for the person the API lets in.
+ */
+const GIFTCARD_PRIMARY_TASKS = ['/redeem#redeem', '/counter', '/orders#recent', '/activate#activate'];
+/** Bar labels are one word where the sidebar's wrap to two lines on a 390px bar. */
+const GIFTCARD_BAR_LABELS: Record<string, string> = { '/counter': 'Sell', '/activate#activate': 'Activate', '/admin#settings': 'Setup' };
+
+function GiftCardTaskBar({ isOwner }: { isOwner: boolean }) {
+  const [activeHref] = useActiveGiftCardHref();
+  const items: TaskBarItem[] = GIFTCARD_NAV_ITEMS
+    .filter((item) => !item.ownerOnly || isOwner)
+    .map((item) => ({
+      key: item.href,
+      label: GIFTCARD_BAR_LABELS[item.href] ?? item.label,
+      href: item.href,
+      icon: item.icon,
+      primary: GIFTCARD_PRIMARY_TASKS.includes(item.href),
+      active: item.href === activeHref
+    }));
+  // Plain anchors, as in the sidebar: each section is its own path, so the
+  // browser does the navigating.
+  return <TaskBar items={items} label="Gift card pages" />;
+}
+
 function SidebarNav({ isOwner }: { isOwner: boolean }) {
   const navItems = useMemo(
     () => GIFTCARD_NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner),
@@ -1504,26 +1557,7 @@ function SidebarNav({ isOwner }: { isOwner: boolean }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
   useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'giftcards-mobile-nav');
-  const sectionFromLocation = useCallback(() => {
-    if (window.location.pathname.startsWith('/orders')) return '/orders#recent';
-    if (window.location.pathname.startsWith('/reporting')) return '/reporting#report';
-    if (window.location.pathname.startsWith('/donations')) return '/donations#donations';
-    if (window.location.pathname.startsWith('/admin')) return '/admin#settings';
-    if (window.location.pathname.startsWith('/activate')) return '/activate#activate';
-    return '/redeem#redeem';
-  }, []);
-  const [activeHref, setActiveHref] = useState(sectionFromLocation);
-
-  useEffect(() => {
-    const syncHash = () => setActiveHref(sectionFromLocation());
-    syncHash();
-    window.addEventListener('hashchange', syncHash);
-    window.addEventListener('popstate', syncHash);
-    return () => {
-      window.removeEventListener('hashchange', syncHash);
-      window.removeEventListener('popstate', syncHash);
-    };
-  }, [sectionFromLocation]);
+  const [activeHref, setActiveHref] = useActiveGiftCardHref();
 
   const active = navItems.find((item) => item.href === activeHref) ?? navItems[0]!;
 
@@ -2909,6 +2943,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
         {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
       </div>
+      <GiftCardTaskBar isOwner={isGiftCardOwner(user)} />
     </AppShell>
   );
 }
