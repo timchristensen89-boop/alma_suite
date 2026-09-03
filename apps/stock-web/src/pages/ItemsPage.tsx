@@ -12,6 +12,7 @@ import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
 import { ItemForm } from '../features/items/ItemForm';
 import { PortionsBuilder } from '../features/recipes/PortionsBuilder';
+import { DuplicateItemsPanel } from '../components/DuplicateItemsPanel';
 
 const UNCATEGORISED_FILTER = '__uncategorised';
 
@@ -73,16 +74,6 @@ function isLowVenueStockConfig(row: VenueStockItem) {
       threshold > 0 &&
       row.onHand <= threshold
   );
-}
-
-function duplicateItemKey(item: StockItem) {
-  return [
-    item.name.trim().toLowerCase().replace(/\s+/g, ' '),
-    item.unit.trim().toLowerCase(),
-    item.countUnit?.trim().toLowerCase() ?? '',
-    String(item.conversionFactor ?? 1),
-    item.category?.name.trim().toLowerCase() ?? ''
-  ].join('|');
 }
 
 type FormState =
@@ -309,24 +300,10 @@ export function ItemsPage() {
     };
   }, [activeVenue, data]);
 
-  const duplicateGroups = useMemo(() => {
-    const groups = new Map<string, StockItem[]>();
-    for (const item of data?.items ?? []) {
-      const key = duplicateItemKey(item);
-      groups.set(key, [...(groups.get(key) ?? []), item]);
-    }
-    return Array.from(groups.values()).filter((group) => group.length > 1);
-  }, [data]);
-
-  const duplicateExtraIds = useMemo(
-    () => duplicateGroups.flatMap((group) => group.slice(1).map((item) => item.id)),
-    [duplicateGroups]
-  );
-
-  const duplicateIds = useMemo(
-    () => new Set(duplicateGroups.flatMap((group) => group.map((item) => item.id))),
-    [duplicateGroups]
-  );
+  // Duplicate detection moved server-side (GET /api/items/duplicates): the
+  // panel reports which ids it flagged so the table can mark them.
+  const [duplicateIds, setDuplicateIds] = useState<Set<string>>(() => new Set());
+  const [duplicateGroupCount, setDuplicateGroupCount] = useState(0);
 
   const selectedItems = useMemo(() => {
     const items = data?.items ?? [];
@@ -889,6 +866,19 @@ export function ItemsPage() {
                 ]}
               />
             </div>
+            <DuplicateItemsPanel
+              canManage={canManage}
+              reloadKey={reloadKey}
+              onFlagged={(ids, groupCount) => {
+                setDuplicateIds(ids);
+                setDuplicateGroupCount(groupCount);
+              }}
+              onMerged={(message) => {
+                setMergeMessage(message);
+                setSelectedIds(new Set());
+                setReloadKey((key) => key + 1);
+              }}
+            />
             <div className="table-toolbar stock-bulk-toolbar">
               <span>
                 {selectedIds.size > 0
@@ -896,16 +886,6 @@ export function ItemsPage() {
                   : `${filteredItems.length} of ${data.items.length} catalogue items`}
               </span>
               <span className="table-toolbar-right stock-bulk-actions">
-                {duplicateExtraIds.length > 0 && selectedIds.size === 0 ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setSelectedIds(new Set(duplicateExtraIds))}
-                  >
-                    Select duplicate extras
-                  </Button>
-                ) : null}
                 {selectedIds.size > 0 ? (
                   <>
                     <Button
@@ -956,8 +936,8 @@ export function ItemsPage() {
                   </>
                 ) : stats.lowStock > 0 ? (
                   `${stats.lowStock} need attention`
-                ) : duplicateGroups.length > 0 ? (
-                  `${duplicateGroups.length} duplicate groups`
+                ) : duplicateGroupCount > 0 ? (
+                  `${duplicateGroupCount} possible duplicate group${duplicateGroupCount === 1 ? '' : 's'} — see above`
                 ) : (
                   'Stock levels steady'
                 )}

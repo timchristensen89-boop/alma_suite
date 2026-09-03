@@ -65,6 +65,9 @@ app.use('/stock-api/api/operations', operationsRouter);
 // reaching the API through that prefix got 404s for ordering only.
 app.use('/stock-api/api/purchase-orders', purchaseOrdersRouter);
 app.use('/stock-api/api/items', itemsRouter);
+// stocktake-templates and imports were also missing from this prefix set.
+app.use('/stock-api/api/stocktake-templates', stocktakeTemplatesRouter);
+app.use('/stock-api/api/imports', importsRouter);
 app.use('/stock-api/api/stocktake', stocktakeRouter);
 app.use('/stock-api/api/suppliers', suppliersRouter);
 app.use('/stock-api/api/invoices', invoicesRouter);

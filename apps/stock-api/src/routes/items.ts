@@ -102,6 +102,17 @@ itemsRouter.get('/by-supplier', async (req, res, next) => {
   }
 });
 
+// Likely duplicate items, grouped, with the suggested keeper. Read-only; the
+// merge itself is POST /merge below. Registered before '/:id'.
+itemsRouter.get('/duplicates', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await itemsService.duplicates());
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.get('/:id/purchase-history', async (req, res, next) => {
   try {
     res.json(await itemsService.purchaseFactsForItem(String(req.params.id)));
@@ -215,7 +226,7 @@ itemsRouter.post('/bulk', async (req, res, next) => {
 itemsRouter.post('/merge', async (req, res, next) => {
   try {
     requireStockManager(req.user);
-    res.json(await itemsService.mergeItems(req.body));
+    res.json(await itemsService.mergeItems(req.body, req.user));
   } catch (error) {
     next(error);
   }

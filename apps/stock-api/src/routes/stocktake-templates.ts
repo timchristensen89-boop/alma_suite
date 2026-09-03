@@ -20,6 +20,18 @@ stocktakeTemplatesRouter.get('/:id/resolve', async (req, res, next) => {
   }
 });
 
+// Blank printable count sheet for a template. Anyone who can count may print
+// it; that is who prints it.
+stocktakeTemplatesRouter.get('/:id/count-sheet', async (req, res, next) => {
+  try {
+    const blind = req.query.blind === undefined ? undefined : req.query.blind !== '0' && req.query.blind !== 'false';
+    const venue = typeof req.query.venue === 'string' ? req.query.venue : null;
+    res.json(await stocktakeTemplatesService.countSheet(String(req.params.id), req.user, { blind, venue }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 stocktakeTemplatesRouter.post('/', async (req, res, next) => {
   try {
     requireStockManager(req.user);

@@ -2,12 +2,14 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import type {
   AuthUser,
+  StocktakeCountSheet,
   StocktakeTemplate,
   StocktakeTemplatesPayload,
   StocktakeTemplateResolved
 } from '@alma/shared';
 import { stocktakeTemplateInputSchema } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { buildCountSheetSections } from '../lib/count-sheet.js';
 import { listPrepRecipeOptions } from './prep-recipes.service.js';
 
 type TemplateRow = Prisma.StocktakeTemplateGetPayload<Record<string, never>>;
@@ -136,6 +138,92 @@ export const stocktakeTemplatesService = {
         countArea: item.countArea,
         categoryName: item.category?.name ?? null
       }))
+    };
+  },
+
+  // A blank paper count sheet straight from the template, for a count that
+  // has not been started in the app yet — the walk, the items, empty boxes.
+  // Blind follows the template unless the caller says otherwise.
+  async countSheet(
+    id: string,
+    _actor: AuthUser | undefined | null,
+    options: { blind?: boolean; venue?: string | null } = {}
+  ): Promise<StocktakeCountSheet> {
+    const row = await prisma.stocktakeTemplate.findUnique({ where: { id } });
+    if (!row) throw new HttpError(404, 'Template not found');
+    const ids = await resolveItemIds(row);
+    const blind = options.blind ?? row.blindDefault;
+    const venue = options.venue?.trim() || row.venue || null;
+    const items = await prisma.stockItem.findMany({
+      where: { id: { in: [...ids] }, status: 'ACTIVE' },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        unit: true,
+        countUnit: true,
+        conversionFactor: true,
+        countArea: true,
+        onHand: true,
+        parLevel: true,
+        category: { select: { name: true } },
+        venueStock: venue ? { where: { venue }, select: { onHand: true, parLevel: true } } : false
+      },
+      orderBy: [{ countArea: 'asc' }, { name: 'asc' }]
+    });
+    const prepRecipes = row.prepRecipeIds.length ? await listPrepRecipeOptions(row.prepRecipeIds) : [];
+    const rows = [
+      ...items.map((item) => {
+        const venueRow = Array.isArray(item.venueStock) ? item.venueStock[0] : undefined;
+        return {
+          lineId: null,
+          itemId: item.id,
+          recipeId: null,
+          label: item.name,
+          sku: item.sku,
+          category: item.category?.name ?? null,
+          unit: item.countUnit ?? item.unit,
+          purchaseUnit: item.countUnit && item.countUnit !== item.unit ? item.unit : null,
+          conversionFactor: item.countUnit && item.countUnit !== item.unit ? item.conversionFactor : null,
+          expectedQty: blind ? null : venueRow?.onHand ?? item.onHand,
+          parLevel: venueRow?.parLevel ?? item.parLevel,
+          countedQty: null,
+          notes: null,
+          kind: 'STOCK_ITEM' as const,
+          area: item.countArea ?? item.category?.name ?? null
+        };
+      }),
+      ...prepRecipes.map((recipe) => ({
+        lineId: null,
+        itemId: null,
+        recipeId: recipe.id,
+        label: recipe.title,
+        sku: null,
+        category: recipe.category,
+        unit: recipe.yieldUnit ?? '',
+        purchaseUnit: null,
+        conversionFactor: null,
+        expectedQty: null,
+        parLevel: null,
+        countedQty: null,
+        notes: recipe.countable ? null : 'Cannot be booked yet: ' + recipe.problems.join('; '),
+        kind: 'PREPPED_ITEM' as const,
+        area: null
+      }))
+    ];
+    return {
+      source: 'template',
+      stocktakeId: null,
+      templateId: row.id,
+      name: row.name,
+      venue,
+      template: row.name,
+      countedAt: null,
+      status: null,
+      blind,
+      generatedAt: new Date().toISOString(),
+      lineCount: rows.length,
+      sections: buildCountSheetSections(rows)
     };
   }
 };

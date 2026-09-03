@@ -19,6 +19,7 @@ export * from './count-scale.js';
 export * from './loaded-stocktake.js';
 export * from './loaded-count-units.js';
 export * from './stock-units.js';
+export * from './stock-duplicates.js';
 export * from './clock-to-timesheet.js';
 import type { ParsedInvoiceLine } from './invoice-paste.js';
 import { IMPLAUSIBLE_COUNT_FLOOR_CENTS, IMPLAUSIBLE_COUNT_SHARE } from './count-scale.js';
@@ -5940,6 +5941,50 @@ export type StockItemMergeResult = {
   parentId: string;
   mergedCount: number;
   venuesAdded: string[];
+  // What moved, so the merge message can say it and the archived item's note
+  // records it.
+  moved: {
+    recipeLines: number;
+    stocktakeLines: number;
+    invoiceLines: number;
+    movements: number;
+    aliases: number;
+    priceListItems: number;
+    purchaseOrderLines: number;
+  };
+};
+
+// Server-side duplicate report for the Items page. Groups come from
+// findDuplicateGroups in stock-duplicates.ts; each member carries how much
+// history hangs off it so the suggested keeper is the one with the most.
+export type StockItemDuplicateMember = {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+  countUnit: string | null;
+  categoryName: string | null;
+  countArea: string | null;
+  latestCostCents: number | null;
+  onHand: number;
+  venues: string[];
+  referenceCount: number;
+  createdAt: string;
+};
+
+export type StockItemDuplicateGroup = {
+  key: string;
+  basis: 'exact' | 'core';
+  sizeConflict: boolean;
+  unitConflict: boolean;
+  suggestedParentId: string;
+  items: StockItemDuplicateMember[];
+};
+
+export type StockItemDuplicatesPayload = {
+  generatedAt: string;
+  activeItems: number;
+  groups: StockItemDuplicateGroup[];
 };
 
 // Bulk-edit selected items. Each field is optional — only provided fields are
@@ -7339,6 +7384,49 @@ export type StocktakeTemplateResolved = {
 // everything that creates or groups them.
 export const STOCKTAKE_PREP_AREA = 'Prep (made items)';
 
+// A printable count sheet. One row per line, grouped by count area in
+// walking order, with the expected on-hand only when the sheet is not blind.
+// Built for either an existing stocktake (rows carry the stocktake line) or a
+// template (a blank sheet before the count is started).
+export type StocktakeCountSheetRow = {
+  lineId: string | null;
+  itemId: string | null;
+  recipeId: string | null;
+  label: string;
+  sku: string | null;
+  category: string | null;
+  unit: string;
+  // Purchase unit + how many count units it holds, so "1 case = 24 bottles"
+  // can print next to the item.
+  purchaseUnit: string | null;
+  conversionFactor: number | null;
+  expectedQty: number | null;
+  parLevel: number | null;
+  countedQty: number | null;
+  notes: string | null;
+  kind: 'STOCK_ITEM' | 'PREPPED_ITEM';
+};
+
+export type StocktakeCountSheetSection = {
+  area: string;
+  rows: StocktakeCountSheetRow[];
+};
+
+export type StocktakeCountSheet = {
+  source: 'stocktake' | 'template';
+  stocktakeId: string | null;
+  templateId: string | null;
+  name: string;
+  venue: string | null;
+  template: string | null;
+  countedAt: string | null;
+  status: StocktakeStatus | null;
+  blind: boolean;
+  generatedAt: string;
+  lineCount: number;
+  sections: StocktakeCountSheetSection[];
+};
+
 export const stocktakeTemplateInputSchema = z.object({
   name: z.string().min(1, 'Template name is required'),
   venue: z.string().optional().or(z.literal('')),
@@ -7548,14 +7636,24 @@ export type ReportsOverviewPayload = {
 };
 
 export const stocktakeLineInputSchema = z.object({
+  // The existing line this row updates. When every line in a PATCH carries
+  // the id it was loaded with, the API updates rows in place instead of
+  // deleting and recreating the sheet, so ledger movements keep their
+  // sourceStocktakeLineId anchor. Omitted by older clients — still accepted.
+  id: z.string().optional(),
   itemId: z.string().optional().or(z.literal('')),
   // Set INSTEAD of itemId for a prepped-item line. Every client that PATCHes
   // a whole count sheet back must round-trip this, or a prep line returns as
   // a bare label and its ingredients stop being booked.
   recipeId: z.string().optional().or(z.literal('')),
   label: z.string().min(1, 'Label is required'),
-  // Null = not counted yet (distinct from a counted zero).
-  countedQty: z.coerce.number().nullable(),
+  // Null = not counted yet (distinct from a counted zero). An omitted or
+  // blank quantity reads as null, never as zero: blanks only become zeros at
+  // submit, and z.coerce alone turned '' into 0 and undefined into NaN.
+  countedQty: z.preprocess(
+    (value) => (value === undefined || value === '' ? null : value),
+    z.coerce.number().nullable()
+  ),
   unit: z.string().optional().or(z.literal('')),
   location: z.string().optional().or(z.literal('')),
   // Can be negative: lines are prefilled from system on-hand, which goes
@@ -7574,7 +7672,14 @@ export const stocktakeCreateInputSchema = z.object({
   lines: z.array(stocktakeLineInputSchema).optional()
 });
 
-export const stocktakeUpdateInputSchema = stocktakeCreateInputSchema.partial();
+export const stocktakeUpdateInputSchema = stocktakeCreateInputSchema.partial().extend({
+  // Stale-write guard. A save sends the whole sheet back, so two people
+  // counting the same stocktake used to overwrite each other silently — the
+  // last iPad to save won. Send the `updatedAt` the sheet was loaded with and
+  // the API refuses (409) when someone else has saved since, instead of
+  // discarding their counts.
+  expectedUpdatedAt: z.string().optional().or(z.literal(''))
+});
 export const stocktakeBulkDeleteInputSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, 'Select at least one stocktake'),
   confirmationText: z.literal('DELETE STOCKTAKES', {

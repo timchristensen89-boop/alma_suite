@@ -464,6 +464,15 @@ export function StocktakeTemplatesPage() {
                   <Badge tone={template.active ? 'positive' : 'muted'}>
                     {template.active ? 'Active' : 'Inactive'}
                   </Badge>
+                  <a
+                    className="btn btn-ghost btn-sm"
+                    href={`/stocktake-templates/${template.id}/print`}
+                    target="_blank"
+                    rel="noopener"
+                    title="Print a blank paper count sheet for this template, in walking order"
+                  >
+                    <span>Print blank sheet</span>
+                  </a>
                   {canManage ? (
                     <>
                       <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => editTemplate(template)}>Edit</Button>

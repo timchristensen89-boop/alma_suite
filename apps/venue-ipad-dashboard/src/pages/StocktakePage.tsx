@@ -170,6 +170,9 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
     setSaveError('');
     try {
       const linesPayload = session.lines.map((line) => ({
+        // Carrying the id keeps the row in place on the server instead of a
+        // delete-and-recreate, so ledger corrections keep pointing at it.
+        id: line.id,
         itemId: line.itemId ?? undefined,
         // Prepped-item lines (a tub of mole, counted as itself) point at a
         // recipe rather than a stock item. The PATCH deletes and recreates
@@ -184,7 +187,10 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
       }));
       const updated = await api<StocktakeWithLines>(`/api/stocktake/${session.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ lines: linesPayload })
+        // expectedUpdatedAt: the API refuses (409) if another iPad saved this
+        // count since it was loaded here, instead of letting this save wipe
+        // their area. The message tells the counter to reload.
+        body: JSON.stringify({ lines: linesPayload, expectedUpdatedAt: session.updatedAt })
       });
       setSession(updated);
       // Re-seed drafts from the server response, keep "touched" set so the

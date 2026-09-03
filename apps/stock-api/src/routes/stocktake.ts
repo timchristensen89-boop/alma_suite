@@ -211,6 +211,18 @@ stocktakeRouter.post('/:id/reopen-with-reason', async (req, res, next) => {
   }
 });
 
+// Printable count sheet. Open to anyone who can count — the counter prints
+// it — and it never carries values, only quantities.
+stocktakeRouter.get('/:id/count-sheet', async (req, res, next) => {
+  try {
+    requireStockUser(req.user);
+    const blind = req.query.blind === undefined ? undefined : req.query.blind !== '0' && req.query.blind !== 'false';
+    res.json(await stocktakesService.countSheet(String(req.params.id), req.user, { blind }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 stocktakeRouter.get('/:id/export.csv', async (req, res, next) => {
   try {
     requireStockManager(req.user);

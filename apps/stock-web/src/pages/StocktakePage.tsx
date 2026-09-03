@@ -67,6 +67,9 @@ type DataQualityPayload = {
 };
 
 type LineDraft = {
+  // Server line id when editing an existing count; '' for a new row. Sent
+  // back so the API updates the row in place.
+  id: string;
   itemId: string;
   // A PREPPED-ITEM line — something the kitchen made, counted as itself.
   // Exclusive with itemId, and it MUST survive every round-trip: the PATCH
@@ -245,12 +248,17 @@ function emptyLine(item?: StockItem, blind = true): LineDraft {
   const unitCostCents = item ? stockUnitCostCents(item) : null;
   const value = unitCostCents ? Math.round(unitCostCents * onHand) : '';
   return {
+    id: '',
     itemId: item?.id ?? '',
     recipeId: '',
     label: item?.name ?? '',
     countedQty: blind ? '' : item ? String(onHand) : '0',
     unit: item ? stockCountUnit(item) : '',
-    location: item?.category?.name ?? '',
+    // The count area is the physical walk (Bar, Cool room…); the category is
+    // only the fallback. Seeding the category here is why "walk by area" was
+    // really "walk by category" and the printed sheet could not follow the
+    // room.
+    location: item?.countArea ?? item?.category?.name ?? '',
     stockValueCents: blind ? '' : value === '' ? '' : String(value),
     notes: ''
   };
@@ -260,6 +268,7 @@ function emptyLine(item?: StockItem, blind = true): LineDraft {
 // mole to prefill from — the whole point is that nothing has been tracking it.
 function prepLine(recipe: StocktakePrepRecipeOption): LineDraft {
   return {
+    id: '',
     itemId: '',
     recipeId: recipe.id,
     label: recipe.title,
@@ -318,6 +327,7 @@ function draftFromStocktake(stocktake: StocktakeWithLines): StocktakeDraft {
     status: stocktake.status,
     notes: stocktake.notes ?? '',
     lines: stocktake.lines.map((line) => ({
+      id: line.id,
       itemId: line.itemId ?? '',
       recipeId: line.recipeId ?? '',
       label: line.label,
@@ -334,6 +344,7 @@ function linePayload(line: LineDraft): StocktakeLineInput {
   // A blank field means "not counted yet" (null) — distinct from a counted zero.
   const countRaw = String(line.countedQty ?? '').trim();
   return {
+    ...(line.id ? { id: line.id } : {}),
     itemId: line.itemId,
     recipeId: line.recipeId,
     label: line.label.trim(),
@@ -343,6 +354,28 @@ function linePayload(line: LineDraft): StocktakeLineInput {
     stockValueCents: line.stockValueCents === '' ? undefined : Math.round(Number(line.stockValueCents)),
     notes: line.notes.trim()
   };
+}
+
+// Every status the API can hold, not the three the badge used to collapse
+// them to. LOCKED in particular is the state the variance report depends on
+// and there was no way to see it.
+function stocktakeBadge(stocktake: Stocktake): { tone: 'info' | 'positive' | 'warning' | 'indigo' | 'neutral'; label: string } {
+  if (stocktake.status === 'LOCKED') return { tone: 'indigo', label: 'Locked baseline' };
+  if (stocktake.appliedAt) return { tone: 'info', label: 'Applied to stock' };
+  switch (stocktake.status) {
+    case 'SUBMITTED':
+      return { tone: 'positive', label: 'Ready for review' };
+    case 'REVIEWED':
+      return { tone: 'positive', label: 'Reviewed, not applied' };
+    case 'REOPENED':
+      return { tone: 'warning', label: 'Reopened for correction' };
+    default:
+      return { tone: 'warning', label: 'In progress' };
+  }
+}
+
+function countSheetUrl(stocktakeId: string) {
+  return `/stocktake/${stocktakeId}/print`;
 }
 
 export function StocktakePage() {
@@ -370,6 +403,11 @@ export function StocktakePage() {
   // new dataQualityReport service. Renders as a Card above the stocktake
   // list so the user spots catalogue gaps before counting.
   const [dataQuality, setDataQuality] = useState<DataQualityPayload | null>(null);
+  // Outcomes that are not errors (a bulk submit that zeroed blanks, an
+  // export that ran) used to go through `error`, which replaced the whole
+  // history table with "Stocktakes unavailable". They get their own line.
+  const [notice, setNotice] = useState<string | null>(null);
+  const [venues, setVenues] = useState<string[]>([]);
   const canManageReview = canManageStock(user);
 
   async function load() {
@@ -386,6 +424,7 @@ export function StocktakePage() {
       setData(list);
       setSummary(sum);
       setItems(itemPayload.items);
+      setVenues(itemPayload.venues ?? []);
       setDataQuality(quality);
       setError(null);
     } catch (err) {
@@ -416,10 +455,12 @@ export function StocktakePage() {
     [data, selectedIds]
   );
 
+  // REVIEWED (through the review endpoint) is still waiting to be applied;
+  // the bulk approver already accepted it, the queue just did not show it.
   const readyForReview = useMemo(
     () =>
       (data?.stocktakes ?? [])
-        .filter((stocktake) => stocktake.status === 'SUBMITTED' && !stocktake.appliedAt)
+        .filter((stocktake) => (stocktake.status === 'SUBMITTED' || stocktake.status === 'REVIEWED') && !stocktake.appliedAt)
         .sort((a, b) =>
           new Date(b.submittedAt ?? b.updatedAt).getTime() -
           new Date(a.submittedAt ?? a.updatedAt).getTime()
@@ -560,6 +601,10 @@ export function StocktakePage() {
   }
 
   async function downloadStocktakeCsv(stocktake: Stocktake) {
+    if (!canManageReview) {
+      setError('Manager access is required to export stocktakes.');
+      return;
+    }
     setError(null);
     try {
       await downloadCsv(
@@ -667,13 +712,20 @@ export function StocktakePage() {
   }
 
   async function submitSelectedStocktakes() {
-    const targets = selectedStocktakes.filter((stocktake) => stocktake.status === 'IN_PROGRESS');
+    if (!canManageReview) {
+      setError('Manager access is required to submit stocktakes for review.');
+      return;
+    }
+    const targets = selectedStocktakes.filter(
+      (stocktake) => stocktake.status === 'IN_PROGRESS' || stocktake.status === 'REOPENED'
+    );
     if (targets.length === 0) {
       setError('Select one or more in-progress stocktakes to submit.');
       return;
     }
     setBulkBusy('submit');
     setError(null);
+    setNotice(null);
     const results = await Promise.allSettled(
       targets.map((stocktake) => api<Stocktake>(`/api/stocktake/${stocktake.id}/submit`, { method: 'POST' }))
     );
@@ -690,7 +742,7 @@ export function StocktakePage() {
     await load();
     if (failed) setError(`Submitted ${results.length - failed} of ${results.length}; ${failed} could not be submitted.`);
     else if (zeroed > 0) {
-      setError(
+      setNotice(
         `Submitted. ${zeroed} line${zeroed === 1 ? '' : 's'} left blank ${zeroed === 1 ? 'was' : 'were'} recorded as zero — check the variance report before approving.`
       );
     }
@@ -886,11 +938,21 @@ export function StocktakePage() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        title="Download counted vs expected variance as CSV"
+                        disabled={!canManageReview}
+                        title={canManageReview ? 'Download counted vs expected variance as CSV' : 'Manager access required'}
                         onClick={() => void downloadStocktakeCsv(stocktake)}
                       >
                         Export CSV
                       </Button>
+                      <a
+                        className="btn btn-ghost btn-sm"
+                        href={countSheetUrl(stocktake.id)}
+                        target="_blank"
+                        rel="noopener"
+                        title="Open the printable count sheet in a new tab"
+                      >
+                        <span>Print sheet</span>
+                      </a>
                     </td>
                   </tr>
                 ))
@@ -932,16 +994,24 @@ export function StocktakePage() {
             mode={form.mode}
             initial={form.mode === 'edit' ? form.stocktake : undefined}
             items={items}
+            venues={venues}
             canSubmitForReview={canManageReview}
             onSaved={() => void handleSaved()}
+            onReload={form.mode === 'edit' ? () => void editStocktake(form.stocktake) : undefined}
             onCancel={() => setForm({ mode: 'closed' })}
           />
         ) : loading ? (
           <Spinner label="Loading stocktakes" />
-        ) : error ? (
+        ) : error && !data ? (
           <EmptyState icon={<IconStocktake size={24} />} title="Stocktakes unavailable" description={error} />
         ) : data && data.stocktakes.length > 0 ? (
           <>
+            {error || notice ? (
+              <div className="stocktake-page-feedback">
+                <ActionFeedback message={error} tone="error" />
+                <ActionFeedback message={notice} tone="success" />
+              </div>
+            ) : null}
             <div className="recipes-toolbar">
               <Input label="Search" value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder="Search by name, venue or template" />
             </div>
@@ -970,7 +1040,8 @@ export function StocktakePage() {
                         variant="secondary"
                         size="sm"
                         onClick={() => void submitSelectedStocktakes()}
-                        disabled={deleting || bulkBusy !== null}
+                        disabled={deleting || bulkBusy !== null || !canManageReview}
+                        title={canManageReview ? 'Mark the selected drafts ready for review' : 'Manager access required'}
                       >
                         {bulkBusy === 'submit' ? 'Submitting…' : 'Submit selected'}
                       </Button>
@@ -1062,16 +1133,12 @@ export function StocktakePage() {
                               <td>{stocktake.lineCount}</td>
                               <td>{formatCurrency(stocktake.totalValueCents)}</td>
                               <td>
-                                <Badge tone={stocktake.appliedAt ? 'info' : stocktake.status === 'SUBMITTED' ? 'positive' : 'warning'} dot>
-                                  {stocktake.appliedAt
-                                    ? 'Applied and locked'
-                                    : stocktake.status === 'SUBMITTED'
-                                      ? 'Ready for review'
-                                      : 'In progress'}
+                                <Badge tone={stocktakeBadge(stocktake).tone} dot>
+                                  {stocktakeBadge(stocktake).label}
                                 </Badge>
                               </td>
                               <td className="cell-actions">
-                                {stocktake.status === 'SUBMITTED' && !stocktake.appliedAt ? (
+                                {(stocktake.status === 'SUBMITTED' || stocktake.status === 'REVIEWED') && !stocktake.appliedAt ? (
                                   <Button
                                     type="button"
                                     variant="secondary"
@@ -1118,6 +1185,45 @@ export function StocktakePage() {
                                       ? 'Count'
                                       : 'View only'}
                                 </Button>
+                                {stocktake.appliedAt && stocktake.status !== 'LOCKED' && canManageReview ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={lockingId !== null}
+                                    title="Lock this count as the baseline the next one is measured against — the variance report needs it"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      void lockStocktake(stocktake);
+                                    }}
+                                  >
+                                    {lockingId === stocktake.id ? 'Locking…' : 'Lock as baseline'}
+                                  </Button>
+                                ) : null}
+                                {canManageReview ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Download this count as CSV"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      void downloadStocktakeCsv(stocktake);
+                                    }}
+                                  >
+                                    Export CSV
+                                  </Button>
+                                ) : null}
+                                <a
+                                  className="btn btn-ghost btn-sm"
+                                  href={countSheetUrl(stocktake.id)}
+                                  target="_blank"
+                                  rel="noopener"
+                                  title="Open the printable count sheet in a new tab"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <span>Print sheet</span>
+                                </a>
                               </td>
                             </tr>
                             {expanded ? (
@@ -1372,16 +1478,21 @@ function StocktakeForm({
   mode,
   initial,
   items,
+  venues,
   canSubmitForReview,
   onSaved,
+  onReload,
   onCancel
 }: {
   mode: 'create' | 'edit';
   initial?: StocktakeWithLines;
   items: StockItem[];
+  venues: string[];
   /** Managers own the state machine; staff count and save drafts. */
   canSubmitForReview: boolean;
   onSaved: () => void;
+  /** Re-fetch the count after a stale-save refusal. */
+  onReload?: () => void;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<StocktakeDraft>(() =>
@@ -1391,6 +1502,8 @@ function StocktakeForm({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<'success' | 'error'>('success');
   const [feedbackTarget, setFeedbackTarget] = useState<'draft' | 'review'>('draft');
+  // Set when the API refused the save because someone else saved first.
+  const [stale, setStale] = useState(false);
   // Blind count (best practice: don't show the expected number while counting)
   // defaults on for new counts. Walk-by-area orders entry by physical location.
   const [blind, setBlind] = useState(mode === 'create');
@@ -1595,8 +1708,10 @@ function StocktakeForm({
     updateLine(index, {
       itemId,
       label: item?.name ?? '',
-      unit: item?.unit ?? '',
-      location: item?.category?.name ?? ''
+      // Count unit, as emptyLine does — the purchase unit tripped the unit
+      // mismatch warning on every hand-picked line.
+      unit: item ? stockCountUnit(item) : '',
+      location: item?.countArea ?? item?.category?.name ?? ''
     });
   }
 
@@ -1626,10 +1741,13 @@ function StocktakeForm({
       countedAt: new Date(draft.countedAt).toISOString(),
       status,
       notes: draft.notes.trim(),
-      lines
+      lines,
+      // Refused with 409 if someone else saved this count after we loaded it.
+      ...(mode === 'edit' && initial ? { expectedUpdatedAt: initial.updatedAt } : {})
     };
 
     setSaving(true);
+    setStale(false);
     try {
       let zeroedNote = '';
       if (mode === 'edit' && initial) {
@@ -1655,10 +1773,17 @@ function StocktakeForm({
     } catch (err) {
       setFeedback(err instanceof ApiError ? err.message : 'Could not save stocktake');
       setFeedbackTone('error');
+      if (err instanceof ApiError && err.status === 409 && mode === 'edit') setStale(true);
     } finally {
       setSaving(false);
     }
   }
+
+  const venueOptions = useMemo(() => {
+    const known = venues.length ? venues : ['Alma Avalon', 'St Alma'];
+    const list = draft.venue && !known.includes(draft.venue) ? [...known, draft.venue] : known;
+    return [{ label: 'Not set', value: '' }, ...list.map((venue) => ({ label: venue, value: venue }))];
+  }, [draft.venue, venues]);
 
   return (
     <form
@@ -1688,7 +1813,7 @@ function StocktakeForm({
       ) : null}
       <div className="form-grid three">
         <Input label="Name" required value={draft.name} onChange={(event) => update('name', event.currentTarget.value)} />
-        <Input label="Venue" value={draft.venue} onChange={(event) => update('venue', event.currentTarget.value)} placeholder="Freshie, Avalon…" />
+        <Select label="Venue" value={draft.venue} onChange={(event) => update('venue', event.currentTarget.value)} options={venueOptions} />
         <Input label="Counted at" type="datetime-local" required value={draft.countedAt} onChange={(event) => update('countedAt', event.currentTarget.value)} />
       </div>
       <div className="form-grid two">
@@ -1780,6 +1905,20 @@ function StocktakeForm({
 
       <div className="toolbar-right">
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
+        {mode === 'edit' && initial ? (
+          <a
+            className="btn btn-ghost btn-md"
+            href={countSheetUrl(initial.id)}
+            target="_blank"
+            rel="noopener"
+            title="Open the printable count sheet in a new tab. Save first so the sheet shows what has been counted."
+          >
+            <span>Print sheet</span>
+          </a>
+        ) : null}
+        {stale && onReload ? (
+          <Button type="button" variant="secondary" onClick={onReload}>Reload this count</Button>
+        ) : null}
         <Button type="submit" variant="secondary" disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</Button>
         <ActionFeedback message={feedbackTarget === 'draft' ? feedback : null} tone={feedbackTone} />
         {canSubmitForReview ? (
