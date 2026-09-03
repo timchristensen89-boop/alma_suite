@@ -305,6 +305,8 @@ function toDonationRecord(
       initialValueCents: number;
       balanceCents: number;
       expiresAt: Date | null;
+      recipientEmail?: string | null;
+      emailedAt?: Date | null;
       redemptions: Array<{ amountCents: number; status: string; redeemedAt: Date }>;
     };
   },
@@ -339,6 +341,8 @@ function toDonationRecord(
     notes: row.notes,
     approvedByName: row.approvedById ? (names.get(row.approvedById) ?? null) : null,
     createdAt: row.createdAt.toISOString(),
+    sentAt: row.giftCard.emailedAt?.toISOString() ?? null,
+    sentTo: row.giftCard.recipientEmail ?? null,
     card: {
       code: row.giftCard.code,
       status: row.giftCard.status,
@@ -1650,6 +1654,55 @@ export const giftCardService = {
     });
     if (!row) throw new HttpError(404, 'No such donation.');
     return toDonationRecord(row, await approverNames([row.approvedById]));
+  },
+
+  /**
+   * Email the voucher to whoever is running the raffle.
+   *
+   * Issuing deliberately sends nothing — the winner is not known yet. This is
+   * the hand-over: a director-only action that mails the voucher artwork,
+   * the code and the conditions to one address, and records where it went on
+   * the card so the register can say "sent to sarah@… on 3 Sep". Sending
+   * again is allowed (the contact changed, the email bounced) and just
+   * updates that record.
+   */
+  async sendDonationVoucher(id: string, input: unknown, actor?: AuthUser | null): Promise<DonationRecord> {
+    const data = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+    const to = typeof data.to === 'string' ? data.to.trim().toLowerCase() : '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new HttpError(400, 'Enter the email address to send the voucher to.');
+    const note = typeof data.note === 'string' ? data.note.trim().slice(0, 1000) : '';
+
+    const row = await prisma.giftCardDonation.findUnique({ where: { id }, include: { giftCard: true } });
+    if (!row) throw new HttpError(404, 'No such donation.');
+    if (row.giftCard.status === 'CANCELLED') throw new HttpError(409, 'That voucher has been cancelled.');
+    if (row.giftCard.expiresAt && row.giftCard.expiresAt < new Date()) throw new HttpError(409, 'That voucher has expired.');
+
+    const senderName = actor
+      ? [`${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() || null, actor.roleTitle ?? null, actor.email ?? null].filter(Boolean).join('\n')
+      : 'ALMA Group';
+    const result = await mailService.sendDonationVoucher({
+      to,
+      organisation: row.organisation,
+      cause: row.cause,
+      contactName: row.contactName,
+      venue: row.venue === 'Either venue' ? 'Alma Avalon or St Alma' : row.venue,
+      code: row.giftCard.code,
+      amountCents: row.giftCard.initialValueCents,
+      expiresAt: row.giftCard.expiresAt,
+      conditions: donationConditions(),
+      note,
+      printableUrl: printableUrl(row.giftCard.code),
+      qrCodeUrl: qrCodeUrl(row.giftCard.code),
+      redeemUrl: redeemUrl(row.giftCard.code),
+      senderName
+    });
+    if (result.status === 'failed') throw new HttpError(502, `The voucher could not be sent: ${result.reason}`);
+    if (result.status === 'skipped') throw new HttpError(503, `Email is not configured on this server (${result.reason}).`);
+
+    await prisma.giftCard.update({ where: { id: row.giftCardId }, data: { recipientEmail: to, emailedAt: new Date() } });
+    if (!row.contactEmail) await prisma.giftCardDonation.update({ where: { id }, data: { contactEmail: to } });
+    console.info('[gift-cards] donation voucher sent', { donationId: id, code: row.giftCard.code, to, by: actor?.email ?? actor?.id ?? 'unknown' });
+    return this.getDonation(id);
   },
 
   /**

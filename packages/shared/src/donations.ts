@@ -260,6 +260,9 @@ export type DonationRecord = {
   notes: string | null;
   approvedByName: string | null;
   createdAt: string;
+  /** When and where the voucher email last went out; null until it is sent. */
+  sentAt: string | null;
+  sentTo: string | null;
   card: {
     code: string;
     status: string;

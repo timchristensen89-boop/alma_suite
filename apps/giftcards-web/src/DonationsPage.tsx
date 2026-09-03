@@ -507,6 +507,7 @@ function DonationReportBody({ report, onChanged }: { report: DonationReport; onC
                 <th>Status</th>
                 <th>Score</th>
                 <th>Listing</th>
+                <th>Sent</th>
               </tr>
             </thead>
             <tbody>
@@ -535,9 +536,36 @@ function DonationRow({ row, onChanged }: { row: DonationRecord; onChanged: () =>
   const [editing, setEditing] = useState(false);
   const [evidence, setEvidence] = useState(row.listingEvidence ?? '');
   const [saving, setSaving] = useState(false);
+  // Sending: issuing never emails anyone (the winner is not known yet), so
+  // the hand-over is this explicit step, to one address, with a line from us.
+  const [sending, setSending] = useState(false);
+  const [sendTo, setSendTo] = useState(row.sentTo ?? row.contactEmail ?? '');
+  const [sendNote, setSendNote] = useState('');
+  const [sendBusy, setSendBusy] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sentJustNow, setSentJustNow] = useState<string | null>(null);
+  const cancelled = row.card.status === 'CANCELLED';
 
   const expired = row.card.expiresAt ? new Date(row.card.expiresAt) < new Date() : false;
   const used = row.card.redeemedCents > 0;
+
+  async function send() {
+    setSendBusy(true);
+    setSendError(null);
+    try {
+      const updated = await api<DonationRecord>(`/api/gift-cards/donations/${row.id}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ to: sendTo.trim(), note: sendNote.trim() || null })
+      });
+      setSentJustNow(updated.sentTo ?? sendTo.trim());
+      setSending(false);
+      onChanged();
+    } catch (err) {
+      setSendError(err instanceof ApiError ? err.message : 'Could not send the voucher.');
+    } finally {
+      setSendBusy(false);
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -594,10 +622,72 @@ function DonationRow({ row, onChanged }: { row: DonationRecord; onChanged: () =>
             </button>
           )}
         </td>
+        <td>
+          {row.sentAt || sentJustNow ? (
+            <button
+              type="button"
+              className="donation-linkish"
+              title={`Sent to ${sentJustNow ?? row.sentTo ?? ''}. Click to send again.`}
+              disabled={cancelled || expired}
+              onClick={() => setSending((value) => !value)}
+            >
+              {sentJustNow ? 'Sent just now' : `Sent ${new Date(row.sentAt!).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}`}
+              <small className="donation-cell-note">{sentJustNow ?? row.sentTo}</small>
+            </button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={cancelled || expired}
+              title={cancelled ? 'Cancelled vouchers cannot be sent' : expired ? 'Expired vouchers cannot be sent' : 'Email the voucher artwork and code to the organisation'}
+              onClick={() => setSending((value) => !value)}
+            >
+              {sending ? 'Close' : 'Send voucher'}
+            </Button>
+          )}
+        </td>
       </tr>
+      {sending ? (
+        <tr className="donation-edit-row">
+          <td colSpan={10}>
+            <div className="donation-send-panel">
+              <div className="form-grid two">
+                <Input
+                  label="Send to"
+                  type="email"
+                  value={sendTo}
+                  onChange={(event) => setSendTo(event.currentTarget.value)}
+                  placeholder="sarah@nippers.org.au"
+                  required
+                />
+                <Textarea
+                  label="A line from you (optional)"
+                  value={sendNote}
+                  onChange={(event) => setSendNote(event.currentTarget.value)}
+                  placeholder={`Great to support ${row.organisation}. Hope the night goes well.`}
+                  rows={2}
+                />
+              </div>
+              <p className="subtle donation-send-hint">
+                Sends the {money(row.card.initialValueCents)} voucher artwork with {row.organisation}'s name on it, the code {row.card.code}, the QR and the conditions. The winner shows the code or the QR at the venue.
+              </p>
+              {sendError ? <p className="error-text">{sendError}</p> : null}
+              <div className="giftcards-inline-actions">
+                <Button type="button" size="sm" disabled={sendBusy || !sendTo.trim()} onClick={() => void send()}>
+                  {sendBusy ? 'Sending…' : row.sentAt ? 'Send again' : 'Send voucher'}
+                </Button>
+                <Button type="button" size="sm" variant="secondary" disabled={sendBusy} onClick={() => setSending(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      ) : null}
       {editing ? (
         <tr className="donation-edit-row">
-          <td colSpan={9}>
+          <td colSpan={10}>
             <Input
               label="Where you were named"
               value={evidence}

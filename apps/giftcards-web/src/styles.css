@@ -4312,3 +4312,8 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   overflow: hidden;
 }
 .giftcards-detail-art img { width: 100%; display: block; border-radius: 6px; }
+
+/* Donation register: the send-voucher row */
+.donation-send-panel { display: grid; gap: 10px; padding: 4px 0; }
+.donation-send-hint { margin: 0; font-size: 12.5px; }
+.donation-linkish small.donation-cell-note { display: block; font-weight: 400; opacity: 0.7; }

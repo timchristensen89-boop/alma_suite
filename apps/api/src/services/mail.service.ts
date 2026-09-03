@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import nodemailer from 'nodemailer';
 import QRCode from 'qrcode';
 import { rosterShiftLine } from '@alma/shared';
+import { donationVoucherSvg } from '../lib/donation-voucher-art.js';
 
 /**
  * The ALMA wordmark, in the ink that suits the surface behind it. Always the
@@ -66,6 +67,24 @@ type GiftCardEmailInput = {
   // replaces the generated SVG attachment and appears inline via the hosted
   // URL (data-URI images get stripped by Gmail/Outlook; hosted URLs don't).
   customArtwork?: { data: Buffer; mimeType: string; url: string };
+};
+
+type DonationVoucherEmailInput = {
+  to: string;
+  organisation: string;
+  cause?: string | null;
+  contactName?: string | null;
+  venue: string;
+  code: string;
+  amountCents: number;
+  expiresAt?: Date | null;
+  conditions: string;
+  /** A personal line from the director, printed above the voucher. */
+  note?: string | null;
+  printableUrl: string;
+  qrCodeUrl?: string | null;
+  redeemUrl?: string | null;
+  senderName: string;
 };
 
 type PasswordResetEmailInput = {
@@ -1011,6 +1030,168 @@ export const mailService = {
     // A gift card is the one email here a customer receives, so it goes out
     // from the venue's own address rather than the staff operations one.
     // GIFTCARD_FROM overrides; otherwise the house sender still applies.
+    return deliverEmail({
+      to: input.to,
+      subject,
+      text,
+      html,
+      attachments,
+      from: process.env.GIFTCARD_FROM?.trim() || undefined
+    });
+  },
+
+  /**
+   * A donated voucher on its way to the organisation that asked for it.
+   *
+   * Different email from a sold card on purpose. Nobody paid, so there is no
+   * receipt language and no balance; the recipient is a fundraiser who will
+   * hand this on or hold it up, so the artwork carries THEIR name and the
+   * conditions are stated once, plainly, where they will be read.
+   */
+  async sendDonationVoucher(input: DonationVoucherEmailInput): Promise<EmailDeliveryResult> {
+    const amount = formatMoney(input.amountCents);
+    const expiry = input.expiresAt
+      ? input.expiresAt.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+      : null;
+    const greeting = input.contactName?.trim() ? `Hi ${input.contactName.trim()},` : 'Hello,';
+    const subject = `A ${amount} ${input.venue} voucher for ${input.organisation}`;
+    const safeOrg = escapeHtml(input.organisation);
+    const safeCause = input.cause?.trim() ? escapeHtml(input.cause.trim()) : '';
+    const safeCode = escapeHtml(input.code);
+    const safeVenue = escapeHtml(input.venue);
+    const safeNote = input.note?.trim() ? escapeHtml(input.note.trim()).replace(/\n/g, '<br>') : '';
+    const safePrintable = escapeHtml(input.printableUrl);
+    const safeQr = input.qrCodeUrl ? escapeHtml(input.qrCodeUrl) : '';
+    const safeConditions = escapeHtml(input.conditions);
+    const safeSender = escapeHtml(input.senderName);
+
+    const text = [
+      greeting,
+      '',
+      input.note?.trim() ?? '',
+      input.note?.trim() ? '' : '',
+      `Here is the ${amount} ${input.venue} voucher for ${input.organisation}${input.cause?.trim() ? ` (${input.cause.trim()})` : ''}.`,
+      '',
+      `Voucher code: ${input.code}`,
+      `Value: ${amount}`,
+      expiry ? `Valid until: ${expiry}` : '',
+      `Conditions: ${input.conditions}`,
+      '',
+      'Printable voucher (the artwork is also attached):',
+      input.printableUrl,
+      '',
+      'Whoever wins it just shows the code or the QR at the venue.',
+      '',
+      input.senderName
+    ]
+      .filter((line) => line !== null && line !== undefined)
+      .join('\n');
+
+    const logo = brandLogo('cream');
+    const attachments: EmailAttachment[] = [
+      {
+        filename: `alma-voucher-${input.code}.svg`,
+        content: donationVoucherSvg({
+          organisation: input.organisation,
+          cause: input.cause,
+          venue: input.venue,
+          code: input.code,
+          amountLabel: amount,
+          expiryLabel: expiry ?? '12 months from issue',
+          conditions: input.conditions,
+          logoBase64: logo ? logo.toString('base64') : null
+        }),
+        contentType: 'image/svg+xml'
+      }
+    ];
+    if (input.redeemUrl) {
+      try {
+        attachments.push({
+          filename: `alma-voucher-${input.code}-qr.svg`,
+          content: await QRCode.toString(input.redeemUrl, { type: 'svg', margin: 1, width: 360, color: { dark: '#14241A', light: '#ffffff' } }),
+          contentType: 'image/svg+xml'
+        });
+      } catch (error) {
+        console.warn('[mail] Donation voucher QR generation failed', { code: input.code, reason: error instanceof Error ? error.message : 'unknown' });
+      }
+    }
+    if (logo) {
+      attachments.push({ filename: 'alma-group.png', content: logo, contentType: 'image/png', contentId: 'almagrouplogo' });
+    }
+    const headerMark = logo
+      ? '<img src="cid:almagrouplogo" alt="ALMA Group" width="150" style="display:block;width:150px;max-width:60%;height:auto;border:0" />'
+      : '<div style="font-size:34px;font-weight:900;letter-spacing:-0.04em;line-height:0.95">alma</div><div style="font-size:13px;font-weight:800;letter-spacing:0.52em;margin-left:3px;margin-top:8px">GROUP</div>';
+
+    // The voucher block is built in HTML rather than shown as an image: an SVG
+    // will not render inline in Gmail, and a voucher that arrives as a blank
+    // box is worse than plain type. The SVG is attached for printing.
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta name="color-scheme" content="light only">
+        <meta name="supported-color-schemes" content="light only">
+        <title>${escapeHtml(subject)}</title>
+      </head>
+      <body style="margin:0;padding:0;width:100%;background:#faf8f3">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#faf8f3">
+        <tr>
+          <td align="center" style="padding:24px 12px">
+      <table role="presentation" width="680" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:680px;border-collapse:collapse">
+        <tr>
+          <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#1f3524;text-align:left;background:#faf8f3">
+        <div style="background:#1f3524;color:#fff1e6;padding:32px 30px 30px;border-radius:18px 18px 0 0">
+          ${headerMark}
+        </div>
+        <div style="padding:30px;background:#faf8f3;border:1px solid #e6ded0;border-top:0;border-radius:0 0 18px 18px">
+          <p style="font-size:17px;margin:0 0 10px">${escapeHtml(greeting)}</p>
+          ${safeNote ? `<p style="font-size:15px;margin:0 0 18px;color:#2f3f31">${safeNote}</p>` : ''}
+          <p style="font-size:15px;margin:0 0 22px;color:#4c5d4d">Here is the ${escapeHtml(amount)} ${safeVenue} voucher for ${safeOrg}${safeCause ? ` (${safeCause})` : ''}. The artwork is attached for the programme or the raffle table; whoever wins it just shows the code or the QR at the venue.</p>
+          <div style="background:#1f3524;background-image:linear-gradient(160deg,#233628 0%,#14241A 100%);border-radius:16px;padding:28px 28px 26px;margin:0 0 22px;color:#F5DCCE;border:1px solid rgba(201,162,76,0.45)">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
+              <tr>
+                <td style="font-size:11px;text-transform:uppercase;letter-spacing:0.28em;color:#C9A24C;font-weight:700">Sponsorship voucher</td>
+                <td align="right">
+                  <span style="display:inline-block;background:#C9A24C;border-radius:999px;padding:6px 16px;font-size:15px;font-weight:800;color:#14241A">${escapeHtml(amount)}</span>
+                </td>
+              </tr>
+            </table>
+            <div style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:16px;color:rgba(245,220,206,0.78);margin:22px 0 4px">Presented with our support to</div>
+            <div style="font-family:Georgia,'Times New Roman',serif;font-size:34px;font-weight:700;line-height:1.08;color:#F5DCCE">${safeOrg}</div>
+            ${safeCause ? `<div style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:16px;color:rgba(245,220,206,0.72);margin-top:6px">${safeCause}</div>` : ''}
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.22em;color:rgba(245,220,206,0.6);margin:24px 0 8px">Voucher code</div>
+            <div style="font-family:'Courier New',monospace;font-size:26px;font-weight:700;letter-spacing:0.12em;color:#F5DCCE;background:rgba(245,220,206,0.08);border:1px solid rgba(201,162,76,0.5);border-radius:10px;padding:14px 16px;text-align:center">${safeCode}</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:18px">
+              <tr>
+                <td style="font-size:10px;text-transform:uppercase;letter-spacing:0.22em;color:rgba(245,220,206,0.6)">Dine at<br><span style="font-family:Georgia,serif;font-size:18px;font-weight:700;letter-spacing:0;text-transform:none;color:#F5DCCE">${safeVenue}</span></td>
+                <td align="right" style="font-size:10px;text-transform:uppercase;letter-spacing:0.22em;color:rgba(245,220,206,0.6)">Valid until<br><span style="font-family:Georgia,serif;font-size:18px;font-weight:700;letter-spacing:0;text-transform:none;color:#F5DCCE">${expiry ? escapeHtml(expiry) : '12 months from issue'}</span></td>
+              </tr>
+            </table>
+            <p style="font-size:12px;color:rgba(245,220,206,0.7);border-top:1px solid rgba(245,220,206,0.18);padding-top:14px;margin:18px 0 0">${safeConditions}</p>
+            ${safeQr ? `<div style="margin-top:18px"><img src="${safeQr}" alt="Voucher QR code" width="140" height="140" style="display:block;background:#ffffff;border-radius:10px;padding:8px" /></div>` : ''}
+          </div>
+          <p style="margin:0 0 22px">
+            <a href="${safePrintable}" style="display:inline-block;background:#C9A24C;color:#14241A;text-decoration:none;font-weight:800;padding:13px 18px;border-radius:8px;font-size:14px">Open the printable voucher</a>
+          </p>
+          <p style="font-size:15px;margin:0 0 4px">Thanks again for thinking of us.</p>
+          <p style="font-size:15px;margin:0;white-space:pre-line">${safeSender}</p>
+          <p style="font-size:12px;color:#8d968a;margin:18px 0 0;border-top:1px solid #e6ded0;padding-top:14px">
+            If the button doesn't work, paste this link into your browser:<br>
+            <span style="word-break:break-all;color:#64705f">${safePrintable}</span>
+          </p>
+        </div>
+          </td>
+        </tr>
+      </table>
+          </td>
+        </tr>
+      </table>
+      </body>
+      </html>
+    `;
+
     return deliverEmail({
       to: input.to,
       subject,
