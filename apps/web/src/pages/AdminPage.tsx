@@ -876,7 +876,16 @@ function TipPaymentsAbaCard() {
   });
   const [selfBalancing, setSelfBalancing] = useState(false);
   const [accounts, setAccounts] = useState<
-    Array<{ key: string; label: string; traceBsb: string; traceAccount: string; remitterName: string }>
+    Array<{
+      key: string;
+      label: string;
+      traceBsb: string;
+      traceAccount: string;
+      remitterName: string;
+      financialInstitution: string;
+      userId: string;
+      userName: string;
+    }>
   >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -905,7 +914,10 @@ function TipPaymentsAbaCard() {
               label: account.label,
               traceBsb: account.traceBsb ?? '',
               traceAccount: account.traceAccount ?? '',
-              remitterName: account.remitterName ?? ''
+              remitterName: account.remitterName ?? '',
+              financialInstitution: account.financialInstitution ?? '',
+              userId: account.userId ?? '',
+              userName: account.userName ?? ''
             }))
           );
         }
@@ -935,7 +947,14 @@ function TipPaymentsAbaCard() {
                 label: account.label.trim(),
                 traceBsb: account.traceBsb.trim(),
                 traceAccount: account.traceAccount.trim(),
-                remitterName: account.remitterName.trim()
+                remitterName: account.remitterName.trim(),
+                // Sent even when empty. The server rebuilds each account from
+                // this payload alone, so a field omitted here is stored blank -
+                // which is how the bank identity on every account came to be
+                // wiped by an unrelated save.
+                financialInstitution: account.financialInstitution.trim(),
+                userId: account.userId.trim(),
+                userName: account.userName.trim()
               }))
           }
         })
@@ -949,7 +968,10 @@ function TipPaymentsAbaCard() {
             label: account.label,
             traceBsb: account.traceBsb ?? '',
             traceAccount: account.traceAccount ?? '',
-            remitterName: account.remitterName ?? ''
+            remitterName: account.remitterName ?? '',
+            financialInstitution: account.financialInstitution ?? '',
+            userId: account.userId ?? '',
+            userName: account.userName ?? ''
           }))
         );
       }
@@ -994,7 +1016,9 @@ function TipPaymentsAbaCard() {
               <strong style={{ fontSize: 13 }}>Funding accounts</strong>
               <p className="subtle" style={{ margin: '4px 0 0' }}>
                 Optional extra bank accounts tips can be paid from. When any are set up, the tips export asks which
-                account to pay from before creating the ABA file. Fields left blank fall back to the details above.
+                account to pay from before creating the ABA file. A field left blank here falls back to the venue's
+                own tip-payment details first, and only then to the details above — so blank is not neutral when a
+                venue is set up on a different bank.
               </p>
             </div>
             {accounts.map((account, index) => (
@@ -1018,6 +1042,26 @@ function TipPaymentsAbaCard() {
                   placeholder="Account number"
                   hint="Leave the masked value to keep it; type a new number to replace."
                 />
+                <Input
+                  label="Bank abbreviation (optional)"
+                  value={account.financialInstitution}
+                  onChange={(e) => setAccounts((list) => list.map((row, i) => (i === index ? { ...row, financialInstitution: e.currentTarget.value } : row)))}
+                  placeholder="CBA"
+                  hint="The bank's 3-letter direct-entry code — CBA, NAB, MBL. Must match the BSB above."
+                />
+                <Input
+                  label="Direct Entry user ID (optional)"
+                  value={account.userId}
+                  onChange={(e) => setAccounts((list) => list.map((row, i) => (i === index ? { ...row, userId: e.currentTarget.value } : row)))}
+                  placeholder="000000"
+                  hint="The 6-digit APCA id the bank issues for this account."
+                />
+                <Input
+                  label="User name override (optional)"
+                  value={account.userName}
+                  onChange={(e) => setAccounts((list) => list.map((row, i) => (i === index ? { ...row, userName: e.currentTarget.value } : row)))}
+                  placeholder="Registered account name"
+                />
                 <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>
                   <Input
                     label="Remitter override (optional)"
@@ -1035,7 +1079,12 @@ function TipPaymentsAbaCard() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => setAccounts((list) => [...list, { key: '', label: '', traceBsb: '', traceAccount: '', remitterName: '' }])}
+                onClick={() =>
+                  setAccounts((list) => [
+                    ...list,
+                    { key: '', label: '', traceBsb: '', traceAccount: '', remitterName: '', financialInstitution: '', userId: '', userName: '' }
+                  ])
+                }
               >
                 + Add funding account
               </Button>
