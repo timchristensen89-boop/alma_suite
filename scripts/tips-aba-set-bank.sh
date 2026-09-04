@@ -23,16 +23,17 @@ set -euo pipefail
 #   ./scripts/tips-aba-set-bank.sh
 #       ...show what each venue would become. Writes nothing.
 #
-#   USER_ID=123456 CONFIRM=YES ./scripts/tips-aba-set-bank.sh
+#   USER_ID=000000 CONFIRM=YES ./scripts/tips-aba-set-bank.sh
 #       ...set financialInstitution=CBA and that Direct Entry user id on both
 #          venues.
 #
-#   USER_ID=123456 INSTITUTION=CBA VENUE="Alma Avalon" CONFIRM=YES ./scripts/tips-aba-set-bank.sh
+#   USER_ID=000000 INSTITUTION=CBA VENUE="Alma Avalon" CONFIRM=YES ./scripts/tips-aba-set-bank.sh
 #
-# USER_ID is the 6-digit Direct Entry (APCA) user id the bank issues when it
-# enables direct entry on the account. It is not the BSB, the account number or
-# a customer number, and it is not something to guess - the file is rejected on
-# a wrong one exactly as it is on a missing one.
+# USER_ID is the 6-digit Direct Entry (APCA) user id, as the bank states it.
+# Do not guess it, and do not assume all-zeros is wrong: CommBank instructs
+# 000000 for CommBiz imports, because CommBiz validates against the account the
+# file is uploaded to rather than against the header. Other banks issue a real
+# one. Ask, and use the answer.
 
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/alma/deploy}"
 
@@ -139,10 +140,13 @@ for (const name of names) {
     }
     if (!bank && bsb.length === 6) notes.push(`BSB ${bsb.slice(0, 3)}-${bsb.slice(3)} is a bank this script does not recognise - check the abbreviation by hand`);
     if (uid.length !== 6) notes.push(`userId is ${uid.length} digits, not 6`);
-    else if (/^(\d)\1*$/.test(uid)) notes.push(`userId "${uid}" is still a placeholder`);
     if (notes.length) stillWrong += 1;
     console.log(`  ${name}  paying from  ${a?.label ?? '(base details)'}`);
     console.log(`      ${inst}  /  user id ${uid || '(none)'}  /  BSB ${plain(c.traceBsb)}  /  ${acct(c.traceAccount)}`);
+    // All-zeros is not a fault in itself - CommBank asks for it. Say so, so the
+    // next person reading this output does not go chasing a number that does
+    // not exist.
+    if (/^0+$/.test(uid)) console.log('      (user id 000000 - what CommBank instructs for CommBiz; other banks issue a real one)');
     for (const n of notes) console.log(`      !! ${n}`);
     if (!notes.length) console.log('      ok');
   }
@@ -151,10 +155,9 @@ console.log();
 
 if (!USER_ID) {
   console.log('NOT WRITING: USER_ID was not given.');
-  console.log('The institution is only half of it - a file with the right bank code and');
-  console.log('a placeholder user id is rejected just the same. Ask the bank for the');
-  console.log('6-digit Direct Entry user id on the account, then re-run:');
-  console.log('  USER_ID=123456 CONFIRM=YES ./scripts/tips-aba-set-bank.sh');
+  console.log('Use the 6-digit Direct Entry user id the bank stated for this account.');
+  console.log('CommBank instructs 000000 for CommBiz; other banks issue a real one.');
+  console.log('  USER_ID=000000 CONFIRM=YES ./scripts/tips-aba-set-bank.sh');
   await prisma.$disconnect();
   process.exit(1);
 }
