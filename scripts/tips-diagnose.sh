@@ -135,41 +135,99 @@ const acct = (v) => {
 };
 const plain = (v) => (String(v ?? '').trim() ? String(v).trim() : 'NOT SET');
 
-console.log('TIP PAYMENT (ABA) CONFIG - Settings -> Tip payments');
-console.log(`  financialInstitution : ${plain(aba.financialInstitution)}   (CommBank files must say CBA)`);
-console.log(`  userName             : ${plain(aba.userName)}`);
-console.log(`  userId               : ${plain(aba.userId)}   (the bank's 6-digit Direct Entry / APCA user id)`);
-console.log(`  remitterName         : ${plain(aba.remitterName)}`);
-console.log(`  traceBsb             : ${plain(aba.traceBsb)}`);
-console.log(`  traceAccount         : ${acct(aba.traceAccount)}`);
-console.log(`  selfBalancing        : ${aba.selfBalancing === '1' || aba.selfBalancing === true ? 'ON' : 'off'}`);
-console.log(`  env override         : TIPS_ABA_SELF_BALANCING=${process.env.TIPS_ABA_SELF_BALANCING ?? '(unset)'}`);
-
+const venueOverrides = aba.venues && typeof aba.venues === 'object' ? aba.venues : {};
 const accounts = Array.isArray(aba.accounts) ? aba.accounts : [];
-console.log(`\n  FUNDING ACCOUNTS (${accounts.length}) - the "pay from" choice at export`);
-if (!accounts.length) console.log('    (none - every export uses the base details above)');
-for (const a of accounts) {
-  console.log(`    ${a.label ?? '(no label)'}`);
-  console.log(`      traceBsb             : ${plain(a.traceBsb)}`);
-  console.log(`      traceAccount         : ${acct(a.traceAccount)}`);
-  // A blank field here is NOT neutral: it silently inherits the base value,
-  // which on a new account at a new bank is the OLD bank's.
-  for (const field of ['financialInstitution', 'userId', 'userName', 'remitterName']) {
-    const own = String(a[field] ?? '').trim();
-    console.log(
-      `      ${pad(field, 21)}: ${own ? own : `blank -> inherits "${plain(aba[field])}"`}`
+
+// The export resolves three layers, in this order (staff.service.ts,
+// tipsAbaConfig): the flat defaults, then the whole per-venue override, then
+// the chosen funding account's NON-EMPTY fields. So a blank field on a funding
+// account does not fall back to the flat defaults - it lands on whatever the
+// venue override says. That middle layer is the one people forget, and it is
+// why "the account looks right" and the file still carries the wrong bank.
+const resolve = (venue, account) => ({
+  ...aba,
+  ...(venue && venueOverrides[venue] && typeof venueOverrides[venue] === 'object' ? venueOverrides[venue] : {}),
+  ...Object.fromEntries(
+    Object.entries(account ?? {}).filter(([f, v]) => f !== 'key' && f !== 'label' && String(v ?? '').trim())
+  )
+});
+
+// The first two digits of a BSB name the institution. Only the two banks this
+// business actually uses are listed - an unrecognised prefix prints nothing
+// rather than guessing at a bank.
+const BSB_BANK = {
+  '06': { abbr: 'CBA', name: 'Commonwealth Bank' },
+  '18': { abbr: 'MBL', name: 'Macquarie Bank' }
+};
+
+const problems = (c) => {
+  const out = [];
+  const bsb = String(c.traceBsb ?? '').replace(/\D/g, '');
+  const inst = String(c.financialInstitution ?? '').trim().toUpperCase();
+  const bank = BSB_BANK[bsb.slice(0, 2)];
+  if (bank && inst && inst !== bank.abbr) {
+    out.push(
+      `financialInstitution is "${inst}", but BSB ${bsb.slice(0, 3)}-${bsb.slice(3)} is ${bank.name}, ` +
+        `whose Direct Entry abbreviation is "${bank.abbr}". The bank reads this field off the header record.`
     );
   }
-}
+  const uid = String(c.userId ?? '').replace(/\D/g, '');
+  if (uid && /^(\d)\1*$/.test(uid)) {
+    out.push(`userId "${uid}" is a placeholder, not a user id the bank issued. Direct Entry has to be enabled on the account to get a real one.`);
+  }
+  if (uid.length !== 6) out.push(`userId is ${uid.length} digits, not 6 - the export refuses before it writes a file.`);
+  if (bsb.length !== 6) out.push(`traceBsb is ${bsb.length} digits, not 6 - the export refuses before it writes a file.`);
+  const acctDigits = String(c.traceAccount ?? '').replace(/\D/g, '');
+  if (!acctDigits || acctDigits.length > 9) {
+    out.push(`traceAccount is ${acctDigits.length} digits; it must be 1 to 9 - the export refuses before it writes a file.`);
+  }
+  return out;
+};
 
-const venueOverrides = aba.venues && typeof aba.venues === 'object' ? aba.venues : {};
+const showField = (field, value) => (field === 'traceAccount' ? acct(value) : plain(value));
+const FIELDS = ['financialInstitution', 'userName', 'userId', 'remitterName', 'traceBsb', 'traceAccount'];
+
+console.log('TIP PAYMENT (ABA) CONFIG - Settings -> Tip payments');
+console.log('\n  BASE DEFAULTS - the bottom layer, used where nothing above sets a field');
+for (const field of FIELDS) console.log(`    ${pad(field, 21)}: ${showField(field, aba[field])}`);
+console.log(`    ${pad('selfBalancing', 21)}: ${aba.selfBalancing === '1' || aba.selfBalancing === true ? 'ON' : 'off'}`);
+console.log(`    ${pad('env override', 21)}: TIPS_ABA_SELF_BALANCING=${process.env.TIPS_ABA_SELF_BALANCING ?? '(unset)'}`);
+
 const venueKeys = Object.keys(venueOverrides);
-console.log(`\n  PER-VENUE OVERRIDES (${venueKeys.length})`);
+console.log(`\n  PER-VENUE OVERRIDES (${venueKeys.length}) - these sit ABOVE the base and above every blank funding-account field`);
 if (!venueKeys.length) console.log('    (none)');
 for (const v of venueKeys) {
   const o = venueOverrides[v] ?? {};
-  const set = Object.keys(o).filter((k) => String(o[k] ?? '').trim());
-  console.log(`    ${v}: ${set.length ? set.join(', ') : '(empty)'}`);
+  console.log(`    ${v}`);
+  for (const field of FIELDS) {
+    const own = String(o[field] ?? '').trim();
+    console.log(`      ${pad(field, 21)}: ${own ? showField(field, own) : 'not set here'}`);
+  }
+}
+
+console.log(`\n  FUNDING ACCOUNTS (${accounts.length}) - the "pay from" choice at export`);
+if (!accounts.length) console.log('    (none - every export uses the base and venue details above)');
+for (const a of accounts) {
+  console.log(`    ${a.label ?? '(no label)'}`);
+  for (const field of FIELDS) {
+    const own = String(a[field] ?? '').trim();
+    console.log(`      ${pad(field, 21)}: ${own ? showField(field, own) : 'blank - takes the venue value below'}`);
+  }
+}
+
+// Everything above is a layer. This is the file.
+console.log('\n  WHAT AN EXPORT ACTUALLY SENDS');
+console.log('    Each venue paired with each funding account, resolved through all three');
+console.log('    layers. This is the row to read - the layers above only explain it.');
+for (const venue of (venueKeys.length ? venueKeys : [null])) {
+  for (const a of (accounts.length ? accounts : [null])) {
+    const c = resolve(venue, a);
+    console.log(`\n    ${venue ?? '(no venue)'}  paying from  ${a?.label ?? '(base details)'}`);
+    for (const field of FIELDS) console.log(`      ${pad(field, 21)}: ${showField(field, c[field])}`);
+    const found = problems(c);
+    for (const p of found) console.log(`      !! ${p}`);
+    if (!found.length) console.log('      looks well formed');
+  }
 }
 
 console.log('\nRead only - nothing was written.');
