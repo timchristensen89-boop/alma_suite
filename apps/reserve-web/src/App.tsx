@@ -56,7 +56,7 @@ import { installSuiteAppAccess,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { SuiteSignOutButton } from '@alma/ui';
+import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { api, ApiError, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import { DrinksPaymentPanel } from './DrinksPaymentPanel';
@@ -678,19 +678,44 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
-function SidebarNav() {
-  const navRef = useRef<HTMLDivElement>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+function useActiveReserveHash() {
   const [activeHash, setActiveHash] = useState('#dashboard');
-  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
-  useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'reserve-mobile-nav');
-
   useEffect(() => {
     const syncHash = () => setActiveHash(window.location.hash || '#dashboard');
     syncHash();
     window.addEventListener('hashchange', syncHash);
     return () => window.removeEventListener('hashchange', syncHash);
   }, []);
+  return [activeHash, setActiveHash] as const;
+}
+
+/**
+ * The phone task bar: the four a manager reaches for on the floor stay on the
+ * bar, the rest sit behind More in sidebar order. Hash links, so the anchor
+ * itself does the navigating and the hashchange listener keeps it in step.
+ */
+const RESERVE_PRIMARY_TASKS = ['#dashboard', '#service', '#guests', '#waitlist'];
+
+function ReserveTaskBar() {
+  const [activeHash] = useActiveReserveHash();
+  const active = resolveNavItem(activeHash);
+  const items: TaskBarItem[] = MANAGER_NAV_ITEMS.map((item) => ({
+    key: item.href,
+    label: item.label,
+    href: item.href,
+    icon: item.icon,
+    primary: RESERVE_PRIMARY_TASKS.includes(item.href),
+    active: item.href === active.href
+  }));
+  return <TaskBar items={items} label="Reserve pages" />;
+}
+
+function SidebarNav() {
+  const navRef = useRef<HTMLDivElement>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeHash, setActiveHash] = useActiveReserveHash();
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+  useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'reserve-mobile-nav');
 
   const active = resolveNavItem(activeHash);
 
@@ -5127,6 +5152,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
           ) : null}
         </div>
       </div>
+      <ReserveTaskBar />
     </AppShell>
   );
 }
