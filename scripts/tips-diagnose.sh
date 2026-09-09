@@ -118,6 +118,93 @@ for (const ev of events) {
 }
 console.log();
 
+// ---- the API path, which needs no emailed report at all --------------------
+// The scheduled Lightspeed sync (integration.service.ts) reads orders and
+// writes tips dated from order.created_at in Sydney time. Rows from it carry
+// source 'lightspeed'; the emailed report writes 'lightspeed-email'. A day the
+// API covers cannot hit the undated-rows problem, because every order carries
+// its own timestamp - so where this path is working, the report filter stops
+// mattering.
+const conn = await prisma.integrationConnection.findFirst({
+  where: { provider: 'LIGHTSPEED' },
+  select: {
+    status: true, providerAccountName: true, connectedAt: true,
+    lastSyncAt: true, lastSyncStatus: true, lastError: true,
+    syncPausedAt: true, syncPausedReason: true, tokenExpiresAt: true
+  }
+});
+
+console.log('LIGHTSPEED API SYNC - the path that does not depend on the emailed report');
+if (!conn) {
+  console.log('  NO LIGHTSPEED CONNECTION AT ALL. Every tip day has to come from the');
+  console.log('  emailed report, so the report filter is the only thing holding it up.');
+  console.log('  Connect it in Settings -> Integrations to get dated, per-order tips.\n');
+} else {
+  const when = (d) => (d ? d.toISOString().slice(0, 16).replace('T', ' ') : 'never');
+  console.log(`  status        : ${conn.status}${conn.providerAccountName ? `  (${conn.providerAccountName})` : ''}`);
+  console.log(`  last sync     : ${when(conn.lastSyncAt)}  ${conn.lastSyncStatus ?? ''}`);
+  if (conn.lastError) console.log(`  last error    : ${conn.lastError}`);
+  if (conn.tokenExpiresAt && conn.tokenExpiresAt.getTime() < Date.now()) {
+    console.log(`  !! the access token expired ${when(conn.tokenExpiresAt)} and did not refresh - reconnect it.`);
+  }
+  // Pausing keeps the tokens alive but stops every sync. It is meant for a
+  // venue between POS systems, and it is silent: nothing else in the app says
+  // a feed has been switched off.
+  if (conn.syncPausedAt) {
+    console.log(`  !! SYNC IS PAUSED since ${when(conn.syncPausedAt)}${conn.syncPausedReason ? ` - "${conn.syncPausedReason}"` : ''}`);
+    console.log('     While paused this sync writes nothing, so every tip day falls back');
+    console.log('     on the emailed report. Unpause it in Settings -> Integrations.');
+  }
+  console.log();
+}
+
+const runs = await prisma.integrationSyncRun.findMany({
+  where: { provider: 'LIGHTSPEED', startedAt: { gte: from } },
+  orderBy: { startedAt: 'desc' },
+  take: 10,
+  select: { startedAt: true, syncType: true, status: true, recordsImported: true, recordsUpdated: true, errorSummary: true }
+});
+console.log(`  RECENT SYNC RUNS (${runs.length})`);
+if (!runs.length) {
+  console.log('    None in this window. The scheduled sync is not running, so nothing');
+  console.log('    is arriving by API however the emailed report is configured.');
+}
+for (const r of runs) {
+  console.log(
+    `    ${r.startedAt.toISOString().slice(0, 16).replace('T', ' ')}  ${pad(r.syncType, 10)} ${pad(r.status, 9)}` +
+      `  ${r.recordsImported} imported, ${r.recordsUpdated} updated`
+  );
+  if (r.errorSummary) console.log(`        ! ${r.errorSummary}`);
+}
+
+// Which source each venue's tips actually came from. The API path writing
+// nothing for a venue is the thing to see here.
+const bySource = new Map();
+for (const e of entries) {
+  const k = `${e.venue}|${e.source}`;
+  const prev = bySource.get(k) ?? { venue: e.venue, source: e.source, days: 0, cents: 0 };
+  prev.days += 1;
+  prev.cents += e.amountCents;
+  bySource.set(k, prev);
+}
+console.log('\n  WHERE EACH VENUE\'S TIPS CAME FROM');
+if (!bySource.size) console.log('    (no tip rows at all in this window)');
+for (const venue of venues) {
+  const mine = [...bySource.values()].filter((r) => r.venue === venue);
+  console.log(`    ${venue}`);
+  if (!mine.length) console.log('      (nothing recorded)');
+  for (const r of mine.sort((a, b) => b.days - a.days)) {
+    console.log(`      ${pad(r.source, 18)} ${padL(String(r.days), 2)} day(s)  ${padL(money(r.cents), 12)}`);
+  }
+  // Only a venue actually taking days from the emailed report is worse off for
+  // having no API rows. A venue on Square is not missing anything.
+  if (mine.some((r) => r.source === 'lightspeed-email') && !mine.some((r) => r.source === 'lightspeed')) {
+    console.log('      !! every one of these came from the emailed report, none from the');
+    console.log('         Lightspeed API - which is why a bad report filter loses whole days.');
+  }
+}
+console.log();
+
 // ---- the ABA config, masked -----------------------------------------------
 const settingsRow = await prisma.appSettings.findUnique({
   where: { id: 'singleton' },
