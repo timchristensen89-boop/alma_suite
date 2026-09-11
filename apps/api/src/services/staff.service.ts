@@ -86,6 +86,7 @@ import type {
   StaffLeaveType
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { staffProfileAccessDenial, staffProfileReach } from '../lib/staff-reach.js';
 import { bestVenueDaySales } from '../lib/sales-day-totals.js';
 import { env } from '../env.js';
 import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
@@ -598,6 +599,8 @@ async function assertStaffHrAccess(actor: AuthUser, options: { manage?: boolean;
   }
 }
 
+// Who may manage whom is decided in lib/staff-reach.ts: people management is
+// group-wide for managers, and a staff member reaches only themselves.
 async function assertActorCanAccessStaffProfile(staffProfileId: string, actor: AuthUser) {
   const profile = await prisma.staffProfile.findUnique({
     where: { id: staffProfileId },
@@ -608,28 +611,12 @@ async function assertActorCanAccessStaffProfile(staffProfileId: string, actor: A
     throw new HttpError(404, 'Staff profile not found');
   }
 
-  if (actor.isAdmin || actor.role === 'ADMIN') {
-    return profile;
-  }
-
-  if (actor.role === 'STAFF') {
-    if (actor.id !== staffProfileId) {
-      throw new HttpError(403, 'You can only access your own staff profile.');
-    }
-    return profile;
-  }
-
-  if (!actor.venue || profile.venue !== actor.venue) {
-    throw new HttpError(403, 'Staff management actions are limited to staff in your venue.');
+  const denial = staffProfileAccessDenial(actor, profile.id);
+  if (denial) {
+    throw new HttpError(403, denial);
   }
 
   return profile;
-}
-
-function actorVenueScope(actor?: AuthUser) {
-  if (!actor || actor.isAdmin || actor.role === 'ADMIN') return null;
-  if (actor.role === 'STAFF') return actor.venue || null;
-  return actor.venue || '__no_manager_venue__';
 }
 
 function dateToIso(value: Date | null) {
@@ -878,22 +865,11 @@ async function assertActorCanAccessClockSession(id: string, actor: AuthUser) {
 }
 
 function staffProfileScope(actor?: AuthUser): Prisma.StaffProfileWhereInput {
-  const where: Prisma.StaffProfileWhereInput = {
+  return {
     employmentStatus: { not: 'ARCHIVED' },
-    accountType: 'HUMAN'
+    accountType: 'HUMAN',
+    ...staffProfileReach(actor)
   };
-
-  if (actor && !actor.isAdmin && actor.role !== 'ADMIN') {
-    if (actor.role === 'STAFF') {
-      where.id = actor.id;
-    } else if (actor.venue) {
-      where.venue = actor.venue;
-    } else {
-      where.id = '__no_manager_venue__';
-    }
-  }
-
-  return where;
 }
 
 function actorName(actor: AuthUser) {
@@ -2083,13 +2059,9 @@ export const staffService = {
     const where: Prisma.StaffProfileWhereInput = {
       accountType: 'HUMAN',
       mergedIntoStaffProfileId: null,
-      employmentStatus: 'ARCHIVED'
+      employmentStatus: 'ARCHIVED',
+      ...staffProfileReach(actor)
     };
-    if (actor && !actor.isAdmin && actor.role !== 'ADMIN' && actor.role !== 'STAFF' && actor.venue) {
-      // Venue managers see phantoms in their venue plus the venue-less ones
-      // imports create.
-      where.OR = [{ venue: actor.venue }, { venue: null }];
-    }
     const rows = await prisma.staffProfile.findMany({
       where,
       select: {
@@ -2163,16 +2135,10 @@ export const staffService = {
       ? await loadActiveRoleTemplateForAssignment(data.roleTemplateId, actor)
       : null;
     const email = normaliseEmail(data.email);
+    // Any venue, whichever venue the manager is based at: people management
+    // is group-wide (lib/staff-reach.ts). The manager's own venue is only the
+    // fallback when nothing else chose one.
     const targetVenue = data.venue || roleTemplate?.venue || staffDefaults.defaultVenue || (actor && !actor.isAdmin && actor.role !== 'ADMIN' ? actor.venue ?? '' : '');
-
-    if (
-      actor &&
-      !actor.isAdmin &&
-      actor.role !== 'ADMIN' &&
-      (!actor.venue || targetVenue !== actor.venue)
-    ) {
-      throw new HttpError(403, 'Managers cannot create staff profiles outside their venue.');
-    }
 
     if (email) {
       const existing = await prisma.staffProfile.findUnique({ where: { email } });
@@ -2255,18 +2221,6 @@ export const staffService = {
       : null;
     const email =
       data.email !== undefined ? normaliseEmail(data.email) : existing.email;
-
-    if (
-      actor &&
-      !actor.isAdmin &&
-      actor.role !== 'ADMIN' &&
-      data.venue !== undefined &&
-      actor.venue &&
-      data.venue &&
-      data.venue !== actor.venue
-    ) {
-      throw new HttpError(403, 'Managers cannot move staff profiles outside their venue.');
-    }
 
     // Training-only is a financial control, not a preference. Setting it stops
     // a real person's sales counting toward takings; clearing it hands a live
@@ -7330,16 +7284,10 @@ export const staffService = {
     const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
     const email = normaliseEmail(data.email);
     const onboardingBaseUrl = normaliseBaseUrl(data.onboardingBaseUrl);
+    // Either company: a manager based at St Alma onboards onto Alma Avalon
+    // and vice versa (lib/staff-reach.ts). Their own venue is only the
+    // fallback when nothing else chose one.
     const targetVenue = data.venue || roleTemplate?.venue || staffDefaults.defaultVenue || (actor && !actor.isAdmin && actor.role !== 'ADMIN' ? actor.venue ?? '' : '');
-
-    if (
-      actor &&
-      !actor.isAdmin &&
-      actor.role !== 'ADMIN' &&
-      (!actor.venue || targetVenue !== actor.venue)
-    ) {
-      throw new HttpError(403, 'Managers cannot create staff invites outside their venue.');
-    }
 
     if (email) {
       const existing = await prisma.staffProfile.findUnique({ where: { email } });
@@ -7411,20 +7359,10 @@ export const staffService = {
     const email = normaliseEmail(data.email);
     if (!email) throw new HttpError(400, 'Email is required');
     const onboardingBaseUrl = normaliseBaseUrl(data.onboardingBaseUrl);
-    const existingForScope = await prisma.staffProfile.findUnique({
-      where: { email },
-      select: { id: true, venue: true }
-    });
-    const targetVenue = data.venue || roleTemplate?.venue || (existingForScope ? existingForScope.venue ?? '' : staffDefaults.defaultVenue) || '';
-
-    if (
-      actor &&
-      !actor.isAdmin &&
-      actor.role !== 'ADMIN' &&
-      (!actor.venue || targetVenue !== actor.venue)
-    ) {
-      throw new HttpError(403, 'Managers cannot re-onboard staff outside their venue.');
-    }
+    // Only used when there is no profile to reset yet; an existing profile
+    // keeps its venue unless the form overrides it. Either venue is fine for
+    // any manager (lib/staff-reach.ts).
+    const targetVenue = data.venue || roleTemplate?.venue || staffDefaults.defaultVenue || '';
 
     const invite = await prisma.$transaction(async (tx) => {
       const existing = await tx.staffProfile.findUnique({ where: { email } });
