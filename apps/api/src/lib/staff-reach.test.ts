@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { staffProfileAccessDenial, staffProfileReach } from './staff-reach.js';
+import { reachesEveryVenue, staffProfileAccessDenial, staffProfileReach } from './staff-reach.js';
 
 const admin = { id: 'admin-1', role: 'ADMIN' as const, isAdmin: true };
 const stAlmaManager = { id: 'mgr-freshwater', role: 'MANAGER' as const, isAdmin: false };
@@ -11,6 +11,14 @@ test('a manager based at one venue reaches a hire at the other', () => {
   // refused because the venues differed. People management is group-wide.
   assert.equal(staffProfileAccessDenial(stAlmaManager, 'new-avalon-hire'), null);
   assert.deepEqual(staffProfileReach(stAlmaManager), {});
+});
+
+test('a manager works every venue, a staff member does not', () => {
+  // Rosters, timesheets, clocking, devices, shift tasks and messages all
+  // take their venue from the request for a manager, never from their profile.
+  assert.equal(reachesEveryVenue(stAlmaManager), true);
+  assert.equal(reachesEveryVenue(admin), true);
+  assert.equal(reachesEveryVenue(staffMember), false);
 });
 
 test('an admin reaches everyone', () => {

@@ -78,11 +78,10 @@ function isAdmin(user: AuthUser) {
   return user.role === 'ADMIN' || user.isAdmin;
 }
 
-function canManageVenue(user: AuthUser, venue: string | null | undefined) {
-  if (isAdmin(user)) return true;
-  if (user.role !== 'MANAGER') return false;
-  if (!user.venue || !venue) return true;
-  return normalise(user.venue) === normalise(venue);
+// Managers work group-wide (lib/staff-reach.ts): any manager runs either
+// venue's shift tasks, so the venue no longer decides.
+function canManageVenue(user: AuthUser, _venue: string | null | undefined) {
+  return isAdmin(user) || user.role === 'MANAGER';
 }
 
 function isVenueDeviceContext(user: AuthUser) {
@@ -101,15 +100,7 @@ function canUseVenueQueue(user: AuthUser, venue: string | null | undefined) {
 
 function managedVenueForRequest(user: AuthUser, venue?: string) {
   const requestedVenue = cleanString(venue);
-  if (isAdmin(user)) return requestedVenue ?? user.venue;
   if (!isManager(user)) return user.venue;
-  if (
-    requestedVenue &&
-    user.venue &&
-    normalise(requestedVenue) !== normalise(user.venue)
-  ) {
-    throw new HttpError(403, 'Venue access required');
-  }
   return requestedVenue ?? user.venue;
 }
 
