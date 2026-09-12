@@ -9391,24 +9391,16 @@ export const integrationService = {
     }
     if (end <= start) throw new HttpError(400, 'Push end date must be after the start date.');
 
-    // Same venue rule the CSV export applies: an admin sees what they ask for,
-    // a manager only ever their own venue. Payroll is the last place to let a
-    // request parameter widen someone's reach.
+    // Same venue rule the CSV export applies: the push covers the venue that
+    // was asked for, or every venue when none was. Managers work group-wide
+    // (lib/staff-reach.ts) — the reach that lets them approve either venue's
+    // timesheets is the reach that lets them push them.
     // 'all' is this app's sentinel for "every venue", not a venue name. Passed
     // through it becomes `venue = 'all'`, which matches nothing and reports a
     // silent zero — the timesheet list guards the same way.
     const rawVenue = input.venue?.trim() || '';
     const requestedVenue = rawVenue === 'all' ? '' : rawVenue;
-    let scopedVenue: string | undefined;
-    if (actor.isAdmin || actor.role === 'ADMIN') {
-      scopedVenue = requestedVenue || undefined;
-    } else {
-      if (!actor.venue) throw new HttpError(403, 'Manager venue access is not configured.');
-      if (requestedVenue && requestedVenue !== actor.venue) {
-        throw new HttpError(403, 'Managers cannot push another venue’s timesheets.');
-      }
-      scopedVenue = actor.venue;
-    }
+    const scopedVenue: string | undefined = requestedVenue || undefined;
 
     const connection = await connectedXeroConnection();
     // Alma runs more than one Xero organisation (one per entity), and a single

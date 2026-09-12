@@ -107,18 +107,26 @@ function staffDisplayName(staff: Pick<StaffRecipient, 'firstName' | 'lastName' |
   return `${staff.firstName} ${staff.lastName}`.trim() || staff.email || 'Staff member';
 }
 
+// Managers work group-wide (lib/staff-reach.ts) and can message either
+// venue. A manager signed in through a venue device is that device for
+// messaging purposes and stays on its venue.
+function reachesEveryVenue(actor: AuthUser) {
+  if (actor.isAdmin || actor.role === 'ADMIN') return true;
+  return actor.role === 'MANAGER' && actor.accountType !== 'VENUE_DEVICE' && !actor.deviceAccount;
+}
+
 function staffBaseWhere(actor: AuthUser, options?: { includeActor?: boolean }) {
   return {
     accountType: 'HUMAN' as const,
     employmentStatus: 'ACTIVE' as const,
     mergedIntoStaffProfileId: null,
-    ...(canManageMessaging(actor) || !actorVenue(actor) ? {} : { venue: actorVenue(actor) }),
+    ...(canManageMessaging(actor) || reachesEveryVenue(actor) || !actorVenue(actor) ? {} : { venue: actorVenue(actor) }),
     ...(options?.includeActor ? {} : { id: { not: actor.id } })
   };
 }
 
 function assertCanUseVenue(actor: AuthUser, venue: string) {
-  if (actor.isAdmin || actor.role === 'ADMIN') return;
+  if (reachesEveryVenue(actor)) return;
   const scopedVenue = actorVenue(actor);
   if (!scopedVenue || scopedVenue !== venue) {
     throw new HttpError(403, 'Messages are limited to your venue.');

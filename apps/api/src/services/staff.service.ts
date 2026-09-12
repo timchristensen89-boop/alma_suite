@@ -86,7 +86,7 @@ import type {
   StaffLeaveType
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
-import { staffProfileAccessDenial, staffProfileReach } from '../lib/staff-reach.js';
+import { reachesEveryVenue, staffProfileAccessDenial, staffProfileReach } from '../lib/staff-reach.js';
 import { bestVenueDaySales } from '../lib/sales-day-totals.js';
 import { env } from '../env.js';
 import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
@@ -761,21 +761,16 @@ function renderHrTemplate(body: string, sampleData: Record<string, string>) {
   return { renderedBody, unresolvedVariables: Array.from(unresolved).sort() };
 }
 
+// The venue a roster, timesheet or clocking query is scoped to. Admins and
+// managers work group-wide (lib/staff-reach.ts): the venue is whatever they
+// asked for, and every venue when they asked for none. A staff member always
+// gets their own venue.
 function scopeVenueForActor(requestedVenue: string | undefined, actor?: AuthUser) {
   const venue = requestedVenue?.trim() || '';
-  if (!actor || actor.isAdmin || actor.role === 'ADMIN') {
-    return venue || undefined;
-  }
-  if (actor.role === 'STAFF') {
+  if (actor && !reachesEveryVenue(actor)) {
     return actor.venue || undefined;
   }
-  if (!actor.venue) {
-    throw new HttpError(403, 'Manager venue access is not configured.');
-  }
-  if (venue && venue !== actor.venue) {
-    throw new HttpError(403, 'Managers cannot access another venue.');
-  }
-  return actor.venue;
+  return venue || undefined;
 }
 
 async function assertActorCanAccessRosterShift(shiftId: string, actor: AuthUser) {
@@ -800,10 +795,7 @@ async function assertActorCanAccessRosterShift(shiftId: string, actor: AuthUser)
     }
     return shift;
   }
-  const shiftVenue = shift.venue || shift.staffProfile?.venue || null;
-  if (!actor.venue || shiftVenue !== actor.venue) {
-    throw new HttpError(403, 'Roster access is limited to your venue.');
-  }
+  // Managers reach every venue's shifts (lib/staff-reach.ts).
   return shift;
 }
 
@@ -824,10 +816,7 @@ async function assertActorCanAccessTimesheet(id: string, actor: AuthUser) {
     }
     return entry;
   }
-  const venue = entry.venue || entry.staffProfile?.venue || null;
-  if (!actor.venue || venue !== actor.venue) {
-    throw new HttpError(403, 'Timesheet access is limited to your venue.');
-  }
+  // Managers reach every venue's timesheets (lib/staff-reach.ts).
   return entry;
 }
 
@@ -857,10 +846,7 @@ async function assertActorCanAccessClockSession(id: string, actor: AuthUser) {
     }
     return session;
   }
-  const venue = session.venue || session.staffProfile?.venue || session.rosterShift?.venue || session.rosterShift?.staffProfile?.venue || null;
-  if (!actor.venue || venue !== actor.venue) {
-    throw new HttpError(403, 'Clocking access is limited to your venue.');
-  }
+  // Managers reach every venue's clocking (lib/staff-reach.ts).
   return session;
 }
 
@@ -4446,10 +4432,6 @@ export const staffService = {
       throw new HttpError(400, 'An open shift needs a venue so the right people can see it.');
     }
 
-    if (actor && !actor.isAdmin && actor.role !== 'ADMIN' && actor.venue && targetVenue && targetVenue !== actor.venue) {
-      throw new HttpError(403, 'Managers cannot create roster shifts outside their venue.');
-    }
-
     const startsAt = new Date(data.startsAt);
     const endsAt = new Date(data.endsAt);
     if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
@@ -4534,9 +4516,6 @@ export const staffService = {
       throw new HttpError(400, 'Roster shift must end after it starts');
     }
     const targetVenue = data.venue !== undefined ? (data.venue || null) : existing.venue || existing.staffProfile?.venue || null;
-    if (actor && !actor.isAdmin && actor.role !== 'ADMIN' && actor.venue && targetVenue && targetVenue !== actor.venue) {
-      throw new HttpError(403, 'Managers cannot move shifts outside their venue.');
-    }
     // Checked on every update, not just reassignment: moving a shift later can
     // push it past an expiry that the original time was inside.
     await assertCertifiedForShift(
@@ -5432,7 +5411,9 @@ export const staffService = {
     const start = startRaw ? new Date(startRaw) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const end = endRaw ? new Date(endRaw) : new Date();
 
-    const venueScope = !actor.isAdmin && actor.venue ? actor.venue : venueParam;
+    // Managers review clocking group-wide (lib/staff-reach.ts): the venue is
+    // a filter they chose, not a fence.
+    const venueScope = venueParam;
 
     const sessions = await prisma.staffClockSession.findMany({
       where: {
@@ -8112,14 +8093,7 @@ export const staffService = {
       accountType: 'VENUE_DEVICE',
       employmentStatus: { not: 'ARCHIVED' }
     };
-    // Venue-scoped managers only see devices for their venue
-    if (!actor.isAdmin && actor.role !== 'ADMIN') {
-      if (actor.venue) {
-        where.venue = actor.venue;
-      } else {
-        return [];
-      }
-    }
+    // Managers see every venue's devices (lib/staff-reach.ts).
     const devices = await prisma.staffProfile.findMany({
       where,
       orderBy: [{ venue: 'asc' }, { firstName: 'asc' }],
