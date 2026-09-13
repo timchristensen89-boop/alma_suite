@@ -1722,6 +1722,19 @@ async function getApprovedTipRun(input: unknown) {
   return run;
 }
 
+// YYYY-MM-DD for the Sydney calendar day, whatever the server's clock is set
+// to. `dateKey` above uses the local clock, which is UTC in the container.
+function sydneyDateKey(value: Date) {
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Sydney',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }).formatToParts(value);
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return `${pick('year')}-${pick('month')}-${pick('day')}`;
+}
+
 function formatAbaDate(value: Date) {
   const parts = new Intl.DateTimeFormat('en-AU', {
     timeZone: 'Australia/Sydney',
@@ -1761,7 +1774,12 @@ async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>, 
 
   const processingDate = formatAbaDate(new Date());
   const totalCents = payableLines.reduce((sum, line) => sum + line.amountCents, 0);
-  const lodgementReference = `TIPS ${dateKey(run.weekStart)}`;
+  // What each person sees on their bank statement: "TIPS" and the day the
+  // paid week ends on, as a Sydney calendar date. weekEnd is exclusive (the
+  // next Monday), so the last day is the Sunday before it. It used to print
+  // weekStart through the server's clock, which in UTC is the Sunday BEFORE
+  // the week — a date nobody in the week recognised.
+  const lodgementReference = `TIPS ${sydneyDateKey(new Date(run.weekEnd.getTime() - 24 * 60 * 60 * 1000))}`;
   const header = abaRecord([
     '0',
     ' '.repeat(17),
