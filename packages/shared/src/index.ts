@@ -1139,6 +1139,10 @@ export const tipsAdjustmentInputSchema = z.object({
   staffProfileId: z.string().min(1),
   adjustmentCents: z.coerce.number().int().default(0),
   excluded: z.boolean().default(false),
+  // Handed their share in cash: the amount stands and nobody else's changes;
+  // only the ABA export leaves them out. Excluding hands the share back to
+  // the pool instead. Both set means excluded.
+  paidInCash: z.boolean().default(false),
   notes: z.string().optional().or(z.literal(''))
 });
 
@@ -4900,6 +4904,8 @@ export type StaffTipEntitlement = {
   approvedHours: number;
   amountCents: number;
   paymentMethod: 'CASH';
+  /** Set on a locked run's lines: paid by hand, not in the bank file. */
+  paidInCash?: boolean;
 };
 
 export type StaffTipVenuePool = {

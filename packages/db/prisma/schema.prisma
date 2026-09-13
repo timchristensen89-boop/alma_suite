@@ -2465,6 +2465,8 @@ model StaffTipPaymentRunLine {
   adjustmentCents Int                @default(0)
   amountCents     Int
   excluded        Boolean            @default(false)
+  /// Paid their share by hand: the amount stands, the ABA export skips the line.
+  paidInCash      Boolean            @default(false)
   paymentMethod   String             @default("CASH")
   notes           String?
   paidAt          DateTime?

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { allocateTipsByVenue, splitByHours } from './tips-allocation.js';
+import { allocateTipsByVenue, applyTipAdjustments, splitByHours } from './tips-allocation.js';
 
 const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
@@ -163,4 +163,50 @@ it('POS-first tips: manual (control) entries are always kept', () => {
     cardRow('St Alma', '2026-08-19', 'control', 1200)
   ]);
   assert.equal(kept.length, 2);
+});
+
+describe('applyTipAdjustments', () => {
+  const week = () => splitByHours(10_000, [person('Ana', 'St Alma', 10), person('Ben', 'St Alma', 20), person('Cy', 'St Alma', 10)]);
+  const adjustment = (staffProfileId: string, patch: Partial<{ adjustmentCents: number; excluded: boolean; paidInCash: boolean; notes: string }>) => ({
+    staffProfileId,
+    adjustmentCents: 0,
+    excluded: false,
+    paidInCash: false,
+    ...patch
+  });
+
+  it('excluding someone hands their share back to everyone else', () => {
+    const rows = applyTipAdjustments(week(), [adjustment('ben', { excluded: true })]);
+    const byId = new Map(rows.map((row) => [row.staffProfileId, row]));
+    assert.equal(byId.get('ben')?.excluded, true);
+    assert.equal(byId.get('ben')?.finalAmountCents, 0);
+    assert.equal(byId.get('ana')?.finalAmountCents, 5_000);
+    assert.equal(byId.get('cy')?.finalAmountCents, 5_000);
+    assert.equal(sum(rows.filter((row) => !row.excluded).map((row) => row.finalAmountCents)), 10_000);
+  });
+
+  it('paid in cash keeps every amount as calculated', () => {
+    const rows = applyTipAdjustments(week(), [adjustment('ben', { paidInCash: true })]);
+    const byId = new Map(rows.map((row) => [row.staffProfileId, row]));
+    assert.equal(byId.get('ben')?.paidInCash, true);
+    assert.equal(byId.get('ben')?.excluded, false);
+    assert.equal(byId.get('ben')?.finalAmountCents, 5_000);
+    assert.equal(byId.get('ana')?.finalAmountCents, 2_500);
+    assert.equal(byId.get('cy')?.finalAmountCents, 2_500);
+    assert.equal(byId.get('ana')?.paidInCash, false);
+    assert.equal(sum(rows.map((row) => row.finalAmountCents)), 10_000);
+  });
+
+  it('an adjustment still applies to someone paid in cash', () => {
+    const rows = applyTipAdjustments(week(), [adjustment('ben', { paidInCash: true, adjustmentCents: 150 })]);
+    assert.equal(rows.find((row) => row.staffProfileId === 'ben')?.finalAmountCents, 5_150);
+  });
+
+  it('excluded wins over paid in cash', () => {
+    const rows = applyTipAdjustments(week(), [adjustment('ben', { excluded: true, paidInCash: true })]);
+    const ben = rows.find((row) => row.staffProfileId === 'ben');
+    assert.equal(ben?.excluded, true);
+    assert.equal(ben?.paidInCash, false);
+    assert.equal(ben?.finalAmountCents, 0);
+  });
 });

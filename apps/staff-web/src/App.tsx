@@ -16661,7 +16661,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   const [manualHours, setManualHours] = useState('');
   const [manualNotes, setManualNotes] = useState('');
   const [bulkDeleting, setBulkDeleting] = useState(false);
-  const [adjustments, setAdjustments] = useState<Record<string, { adjustment: string; excluded: boolean; notes: string }>>({});
+  const [adjustments, setAdjustments] = useState<Record<string, { adjustment: string; excluded: boolean; paidInCash: boolean; notes: string }>>({});
   const [summary, setSummary] = useState<StaffTipsSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -16721,14 +16721,16 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       staffProfileId,
       adjustmentCents: Math.round((Number(adjustment.adjustment) || 0) * 100),
       excluded: adjustment.excluded,
+      paidInCash: adjustment.paidInCash,
       notes: adjustment.notes
     }))
-    .filter((adjustment) => adjustment.adjustmentCents !== 0 || adjustment.excluded || adjustment.notes.trim().length > 0), [adjustments]);
+    .filter((adjustment) => adjustment.adjustmentCents !== 0 || adjustment.excluded || adjustment.paidInCash || adjustment.notes.trim().length > 0), [adjustments]);
 
   // Excluding someone hands their share back to the pool: their hours leave
   // the divisor and everyone left is re-cut over the same pool, so the final
   // payout still balances (variance $0) instead of stranding the excluded
-  // share. Mirrors the server-side calculation in applyTipAdjustments exactly
+  // share. Paid in cash changes nothing here — their amount stands, only the
+  // bank file skips them. Mirrors the server-side applyTipAdjustments exactly
   // (same pro-rata + last-row-remainder rounding).
   const reviewedRows = useMemo(() => {
     const rows = summary?.entitlements ?? [];
@@ -16761,6 +16763,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         adjustmentCents,
         finalAmountCents: Math.max(0, baseCents + adjustmentCents),
         excluded,
+        paidInCash: !excluded && Boolean(adjustment?.paidInCash),
         reviewNotes: adjustment?.notes ?? ''
       };
     });
@@ -16771,12 +16774,13 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   const lockedRows = summary?.paidEntitlements ?? [];
   const hasPaidRun = lockedRows.length > 0;
 
-  function updateTipAdjustment(staffProfileId: string, patch: Partial<{ adjustment: string; excluded: boolean; notes: string }>) {
+  function updateTipAdjustment(staffProfileId: string, patch: Partial<{ adjustment: string; excluded: boolean; paidInCash: boolean; notes: string }>) {
     setAdjustments((current) => ({
       ...current,
       [staffProfileId]: {
         adjustment: current[staffProfileId]?.adjustment ?? '',
         excluded: current[staffProfileId]?.excluded ?? false,
+        paidInCash: current[staffProfileId]?.paidInCash ?? false,
         notes: current[staffProfileId]?.notes ?? '',
         ...patch
       }
@@ -17621,14 +17625,26 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
                     </td>
                     <td>
                       <div className="tips-review-actions">
-                        <Badge tone={row.excluded ? 'muted' : 'warning'}>{row.excluded ? 'Excluded' : row.paymentMethod}</Badge>
+                        <Badge tone={row.excluded ? 'muted' : row.paidInCash ? 'positive' : 'warning'}>
+                          {row.excluded ? 'Excluded' : row.paidInCash ? 'Paid in cash' : 'Bank file'}
+                        </Badge>
                         <label className="inline-checkbox" title="Removes their hours from the split — the pool redistributes across everyone else and the payout still balances.">
                           <input
                             type="checkbox"
                             checked={row.excluded}
+                            disabled={row.paidInCash}
                             onChange={(event) => updateTipAdjustment(row.staffProfileId, { excluded: event.currentTarget.checked })}
                           />
                           Exclude
+                        </label>
+                        <label className="inline-checkbox" title="They were handed their share in cash. The amount stands and nobody else's changes — the bank file just leaves them out.">
+                          <input
+                            type="checkbox"
+                            checked={row.paidInCash}
+                            disabled={row.excluded}
+                            onChange={(event) => updateTipAdjustment(row.staffProfileId, { paidInCash: event.currentTarget.checked })}
+                          />
+                          Paid in cash
                         </label>
                         <Input
                           aria-label={`Tip note for ${row.name}`}
@@ -17667,6 +17683,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
                     <th>Role</th>
                     <th>Hours</th>
                     <th>Paid tips</th>
+                    <th>Paid by</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -17676,6 +17693,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
                       <td>{row.roleTitle ?? 'Team member'}</td>
                       <td>{row.approvedHours.toFixed(2)}</td>
                       <td>{formatCents(row.amountCents)}</td>
+                      <td>{row.paidInCash ? 'Cash' : 'Bank file'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -17692,7 +17710,11 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
               <strong>{hasPaidRun ? 'Ready to export' : 'Waiting for review'}</strong>
               <p className="subtle">
                 {hasPaidRun
-                  ? `${lockedRows.length} staff · ${formatCents(lockedRows.reduce((sum, row) => sum + row.amountCents, 0))} approved.`
+                  ? `${lockedRows.length} staff · ${formatCents(lockedRows.reduce((sum, row) => sum + row.amountCents, 0))} approved${
+                      lockedRows.some((row) => row.paidInCash)
+                        ? ` · ${lockedRows.filter((row) => row.paidInCash).length} paid in cash, ${formatCents(lockedRows.filter((row) => !row.paidInCash).reduce((sum, row) => sum + row.amountCents, 0))} to the bank file`
+                        : ''
+                    }.`
                   : `${reviewedRows.length} staff · final payout ${formatCents(totalPayoutCents)} · variance ${formatCents(payoutVarianceCents)}.`}
               </p>
             </div>
@@ -20475,10 +20497,15 @@ function parseTipsImportRows(text: string, defaultVenue: string, source: string)
   if (lines.length < 2) return [];
   const headers = parseCsvLine(lines[0]).map((header) => header.toLowerCase().replace(/[^a-z0-9]/g, ''));
   const findColumn = (names: string[]) => headers.findIndex((header) => names.includes(header));
-  const dateIndex = findColumn(['date', 'servicedate', 'businessdate', 'day']);
+  // 'saledate' and 'saleid' are the Lightspeed (Kounta) sales feed export,
+  // pasted as-is: one row per sale with its own timestamp, so a day's tips
+  // are dated by the sale and keyed by the sale id. That export cannot be
+  // scheduled as an email, and the emailed reconciliation report repeats each
+  // day's tips three times, so the paste is Avalon's card-tips path.
+  const dateIndex = findColumn(['date', 'servicedate', 'businessdate', 'day', 'saledate']);
   const venueIndex = findColumn(['venue', 'location', 'site']);
   const amountIndex = findColumn(['tips', 'tip', 'cardtips', 'squaretips', 'amount', 'tipamount', 'totaltips', 'totalgratuity', 'gratuity', 'nettips']);
-  const idIndex = findColumn(['id', 'externalid', 'paymentid', 'transactionid', 'orderid', 'receiptid', 'checkid']);
+  const idIndex = findColumn(['id', 'externalid', 'paymentid', 'transactionid', 'orderid', 'receiptid', 'checkid', 'saleid']);
   const notesIndex = findColumn(['notes', 'note', 'source']);
   if (dateIndex < 0 || amountIndex < 0) return [];
 
