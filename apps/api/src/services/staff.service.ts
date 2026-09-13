@@ -6943,6 +6943,11 @@ export const staffService = {
     const timesheets = await prisma.timesheet.findMany({
       where: {
         deputyTimesheetId: { not: null },
+        // Leave never counts as hours towards tips. The weekly summary already
+        // drops leave timesheets, but this import writes a manual-hours entry
+        // that overrides those timesheets for the person and week, so leave
+        // let in here paid a share of the pool for days not worked.
+        isLeave: false,
         workDate: { gte: startDate, lt: endDate },
         ...(data.venue ? { venue: data.venue } : {})
       },
@@ -6970,7 +6975,7 @@ export const staffService = {
       // the window (ignoring venue) and which venues they carry, so a venue-name
       // mismatch is obvious in the logs instead of a silent "0 found".
       const anyInWindow = await prisma.timesheet.findMany({
-        where: { deputyTimesheetId: { not: null }, workDate: { gte: startDate, lt: endDate } },
+        where: { deputyTimesheetId: { not: null }, isLeave: false, workDate: { gte: startDate, lt: endDate } },
         select: { venue: true }
       });
       const venues = Array.from(new Set(anyInWindow.map((t) => t.venue ?? '∅')));
