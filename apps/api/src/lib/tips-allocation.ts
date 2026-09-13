@@ -193,6 +193,80 @@ export function allocateTipsByVenue(input: {
  */
 const IMPORT_TIP_SOURCES = new Set(['square', 'lightspeed']);
 
+export type TipAdjustmentInput = {
+  staffProfileId: string;
+  adjustmentCents: number;
+  excluded: boolean;
+  /** Handed their share in cash: the amount stands, the bank file skips them. */
+  paidInCash: boolean;
+  notes?: string | null;
+};
+
+export type TipAdjustedRow<T> = T & {
+  baseAmountCents: number;
+  adjustmentCents: number;
+  finalAmountCents: number;
+  excluded: boolean;
+  paidInCash: boolean;
+  notes: string | null;
+};
+
+/**
+ * Apply the manager's review to a week's entitlements.
+ *
+ * Excluding someone removes their hours from the divisor and redistributes
+ * the pool across everyone left — the excluded person's share doesn't sit
+ * stranded as negative variance. The redistribution reuses the same pro-rata
+ * + last-row-remainder rounding as the original allocation so the active rows
+ * always sum exactly to the pool.
+ *
+ * Paid in cash is the other way to keep someone out of the bank file: they
+ * were handed their share, so nothing is redistributed and every figure
+ * stands as calculated — only the ABA export skips the line. Someone marked
+ * both excluded and paid in cash is excluded; there is no share to hand over.
+ */
+export function applyTipAdjustments<T extends { staffProfileId: string; approvedHours: number; amountCents: number }>(
+  rows: T[],
+  adjustments: TipAdjustmentInput[]
+): Array<TipAdjustedRow<T>> {
+  const byStaff = new Map(adjustments.map((adjustment) => [adjustment.staffProfileId, adjustment]));
+  const excludedIds = new Set(
+    rows.filter((row) => byStaff.get(row.staffProfileId)?.excluded).map((row) => row.staffProfileId)
+  );
+  const poolCents = rows.reduce((sum, row) => sum + row.amountCents, 0);
+  const activeRows = rows.filter((row) => !excludedIds.has(row.staffProfileId));
+  const activeHours = activeRows.reduce((sum, row) => sum + row.approvedHours, 0);
+  const redistributedBase = new Map<string, number>();
+  let allocated = 0;
+  activeRows.forEach((row, index) => {
+    const isLast = index === activeRows.length - 1;
+    const cents = activeHours > 0
+      ? isLast
+        ? poolCents - allocated
+        : Math.round((row.approvedHours / activeHours) * poolCents)
+      : 0;
+    allocated += cents;
+    redistributedBase.set(row.staffProfileId, cents);
+  });
+  return rows.map((row) => {
+    const adjustment = byStaff.get(row.staffProfileId);
+    const excluded = excludedIds.has(row.staffProfileId);
+    const baseAmountCents = excluded
+      ? row.amountCents
+      : redistributedBase.get(row.staffProfileId) ?? row.amountCents;
+    const adjustmentCents = excluded ? -baseAmountCents : adjustment?.adjustmentCents ?? 0;
+    return {
+      ...row,
+      baseAmountCents,
+      adjustmentCents,
+      finalAmountCents: Math.max(0, baseAmountCents + adjustmentCents),
+      excluded,
+      paidInCash: !excluded && Boolean(adjustment?.paidInCash),
+      notes: adjustment?.notes?.trim() || null
+    };
+  });
+}
+
 export function posFirstCardEntries<T extends { venue: string; serviceDate: Date; source: string }>(
   entries: T[]
 ): T[] {

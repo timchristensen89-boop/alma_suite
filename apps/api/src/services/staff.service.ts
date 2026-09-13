@@ -90,7 +90,7 @@ import { reachesEveryVenue, staffProfileAccessDenial, staffProfileReach } from '
 import { bestVenueDaySales } from '../lib/sales-day-totals.js';
 import { env } from '../env.js';
 import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
-import { allocateTipsByVenue, posFirstCardEntries } from '../lib/tips-allocation.js';
+import { allocateTipsByVenue, posFirstCardEntries, applyTipAdjustments as applyTipAdjustmentsToRows } from '../lib/tips-allocation.js';
 import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { configuredSuperRateFraction } from './settings.service.js';
 import { authService } from './auth.service.js';
@@ -1662,48 +1662,11 @@ type TipEntitlementRow = {
   paymentMethod: 'CASH';
 };
 
+// The review rules (exclude redistributes, paid in cash does not) live in
+// lib/tips-allocation.ts where they are unit-tested; this only parses input.
 function applyTipAdjustments(rows: TipEntitlementRow[], input: unknown) {
   const { adjustments } = tipsPayoutInputSchema.parse(input);
-  const byStaff = new Map(adjustments.map((adjustment) => [adjustment.staffProfileId, adjustment]));
-  // Excluding someone removes their hours from the divisor and redistributes
-  // the pool across everyone left — the excluded person's share doesn't sit
-  // stranded as negative variance. The redistribution reuses the same
-  // pro-rata + last-row-remainder rounding as the original allocation so the
-  // active rows always sum exactly to the pool.
-  const excludedIds = new Set(
-    rows.filter((row) => byStaff.get(row.staffProfileId)?.excluded).map((row) => row.staffProfileId)
-  );
-  const poolCents = rows.reduce((sum, row) => sum + row.amountCents, 0);
-  const activeRows = rows.filter((row) => !excludedIds.has(row.staffProfileId));
-  const activeHours = activeRows.reduce((sum, row) => sum + row.approvedHours, 0);
-  const redistributedBase = new Map<string, number>();
-  let allocated = 0;
-  activeRows.forEach((row, index) => {
-    const isLast = index === activeRows.length - 1;
-    const cents = activeHours > 0
-      ? isLast
-        ? poolCents - allocated
-        : Math.round((row.approvedHours / activeHours) * poolCents)
-      : 0;
-    allocated += cents;
-    redistributedBase.set(row.staffProfileId, cents);
-  });
-  return rows.map((row) => {
-    const adjustment = byStaff.get(row.staffProfileId);
-    const excluded = excludedIds.has(row.staffProfileId);
-    const baseAmountCents = excluded
-      ? row.amountCents
-      : redistributedBase.get(row.staffProfileId) ?? row.amountCents;
-    const adjustmentCents = excluded ? -baseAmountCents : adjustment?.adjustmentCents ?? 0;
-    return {
-      ...row,
-      baseAmountCents,
-      adjustmentCents,
-      finalAmountCents: Math.max(0, baseAmountCents + adjustmentCents),
-      excluded,
-      notes: adjustment?.notes?.trim() || null
-    };
-  });
+  return applyTipAdjustmentsToRows(rows, adjustments);
 }
 
 function tipImportKey(input: {
@@ -1778,7 +1741,8 @@ function tipRunFilenamePart(value: string) {
 
 async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>, accountKey?: string | null) {
   const config = await tipsAbaConfig(run.venue, accountKey);
-  const payableLines = run.lines.filter((line) => !line.excluded && line.amountCents > 0);
+  // A line paid in cash keeps its amount in the run; it just is not banked.
+  const payableLines = run.lines.filter((line) => !line.excluded && !line.paidInCash && line.amountCents > 0);
   if (!payableLines.length) throw new HttpError(400, 'Approved tip run has no payable lines for ABA export.');
 
   const missingBankDetails = payableLines.flatMap((line) => {
@@ -6643,7 +6607,8 @@ export const staffService = {
         venue: line.staffProfile.venue,
         approvedHours: Math.round(line.hours * 100) / 100,
         amountCents: line.amountCents,
-        paymentMethod: 'CASH' as const
+        paymentMethod: 'CASH' as const,
+        paidInCash: line.paidInCash
       })),
       cashEntries: cashEntries.map((entry) => ({
         id: entry.id,
@@ -7103,6 +7068,7 @@ export const staffService = {
         Adjustment: centsToMoney(line.adjustmentCents),
         'Tips Amount': centsToMoney(line.amountCents),
         Excluded: line.excluded ? 'Yes' : 'No',
+        'Paid In Cash': line.paidInCash ? 'Yes' : 'No',
         'Payment Method': line.paymentMethod,
         'Bank Account Name': line.staffProfile.bankAccountName ?? '',
         BSB: line.staffProfile.bankBsb ?? '',
@@ -7123,6 +7089,7 @@ export const staffService = {
       'Adjustment': centsToMoney(row.adjustmentCents),
       'Tips Amount': centsToMoney(row.finalAmountCents),
       Excluded: row.excluded ? 'Yes' : 'No',
+      'Paid In Cash': row.paidInCash ? 'Yes' : 'No',
       'Payment Method': row.paymentMethod,
       'Bank Account Name': '',
       BSB: '',
@@ -7201,6 +7168,7 @@ export const staffService = {
             adjustmentCents: row.adjustmentCents,
             amountCents: row.finalAmountCents,
             excluded: row.excluded,
+            paidInCash: row.paidInCash,
             paymentMethod: 'CASH',
             notes: row.notes,
             paidAt: new Date()
@@ -7235,6 +7203,7 @@ export const staffService = {
       baseAmountCents: line.baseAmountCents,
       adjustmentCents: line.adjustmentCents,
       amountCents: line.amountCents,
+      paidInCash: line.paidInCash,
       notes: line.notes
     }));
   },
