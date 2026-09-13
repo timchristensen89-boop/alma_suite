@@ -20475,10 +20475,15 @@ function parseTipsImportRows(text: string, defaultVenue: string, source: string)
   if (lines.length < 2) return [];
   const headers = parseCsvLine(lines[0]).map((header) => header.toLowerCase().replace(/[^a-z0-9]/g, ''));
   const findColumn = (names: string[]) => headers.findIndex((header) => names.includes(header));
-  const dateIndex = findColumn(['date', 'servicedate', 'businessdate', 'day']);
+  // 'saledate' and 'saleid' are the Lightspeed (Kounta) sales feed export,
+  // pasted as-is: one row per sale with its own timestamp, so a day's tips
+  // are dated by the sale and keyed by the sale id. That export cannot be
+  // scheduled as an email, and the emailed reconciliation report repeats each
+  // day's tips three times, so the paste is Avalon's card-tips path.
+  const dateIndex = findColumn(['date', 'servicedate', 'businessdate', 'day', 'saledate']);
   const venueIndex = findColumn(['venue', 'location', 'site']);
   const amountIndex = findColumn(['tips', 'tip', 'cardtips', 'squaretips', 'amount', 'tipamount', 'totaltips', 'totalgratuity', 'gratuity', 'nettips']);
-  const idIndex = findColumn(['id', 'externalid', 'paymentid', 'transactionid', 'orderid', 'receiptid', 'checkid']);
+  const idIndex = findColumn(['id', 'externalid', 'paymentid', 'transactionid', 'orderid', 'receiptid', 'checkid', 'saleid']);
   const notesIndex = findColumn(['notes', 'note', 'source']);
   if (dateIndex < 0 || amountIndex < 0) return [];
 
