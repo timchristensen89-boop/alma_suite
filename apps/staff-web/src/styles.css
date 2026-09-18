@@ -9251,6 +9251,12 @@ html[data-theme='dark'] .alma-taskbar-sheet { background: var(--color-elevated, 
 .xero-org-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
 .xero-org-actions { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
 .xero-org-actions .field { flex: 1 1 240px; min-width: 0; }
+/* The link list and the staff pickers show current people by default; the
+   tick underneath brings back the ones who have left. */
+.xero-org-actions .xero-link-pick { flex: 1 1 240px; min-width: 0; display: grid; gap: 6px; }
+.staff-picker { display: grid; gap: 6px; min-width: 0; }
+.staff-picker .check-row,
+.xero-link-pick .check-row { margin-top: 0; font-size: 12px; }
 @media (max-width: 700px) {
   .xero-org-actions { align-items: stretch; flex-direction: column; }
   .xero-org-actions button { width: 100%; }

@@ -2021,6 +2021,38 @@ function isTerminatedStaffProfile(member: Pick<StaffProfile, 'employmentStatus'>
   return status !== 'ACTIVE' && status !== 'PENDING';
 }
 
+/** Who a staff picker offers: current people by default, everyone on request.
+ * Hundreds of past staff sit on the register, and a dropdown that lists them
+ * all buries the twenty who work here. Whoever is already selected stays in
+ * the list either way, so an open form never loses its person. */
+function staffForPicker<T extends Pick<StaffProfile, 'id' | 'employmentStatus'>>(
+  list: T[],
+  showTerminated: boolean,
+  keepId?: string
+): T[] {
+  if (showTerminated) return list;
+  return list.filter((member) => !isTerminatedStaffProfile(member) || member.id === keepId);
+}
+
+function ShowTerminatedStaffToggle({
+  staff,
+  checked,
+  onChange
+}: {
+  staff: Array<Pick<StaffProfile, 'employmentStatus'>>;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const hidden = staff.filter(isTerminatedStaffProfile).length;
+  if (hidden === 0 && !checked) return null;
+  return (
+    <label className="check-row staff-picker-scope">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.currentTarget.checked)} />
+      Show terminated staff{hidden > 0 ? ` (${hidden})` : ''}
+    </label>
+  );
+}
+
 function staffProfileStatusRank(member: Pick<StaffProfile, 'employmentStatus'>) {
   const status = normaliseEmploymentStatus(member);
   if (status === 'ACTIVE') return 0;
@@ -5787,6 +5819,10 @@ function StaffXeroPanel({ staffId, onChanged }: { staffId: string; onChanged?: (
   const [message, setMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<'success' | 'error'>('success');
   const [picks, setPicks] = useState<Record<string, string>>({});
+  // Per organisation: whether the link list also shows people Xero has
+  // terminated. Off by default — years of past staff otherwise bury the few
+  // current ones the manager is looking for.
+  const [showTerminated, setShowTerminated] = useState<Record<string, boolean>>({});
   const [pull, setPull] = useState<XeroPullPreview | null>(null);
   const [take, setTake] = useState<Record<string, boolean>>({});
 
@@ -5920,6 +5956,14 @@ function StaffXeroPanel({ staffId, onChanged }: { staffId: string; onChanged?: (
         const linkedEmployee = org.employees.find((employee) => employee.id === org.linkedXeroEmployeeId) ?? null;
         const pick = picks[org.tenantId] ?? '';
         const pickChanged = pick !== (org.linkedXeroEmployeeId ?? '');
+        const showAll = Boolean(showTerminated[org.tenantId]);
+        const isCurrent = (employee: { status: string | null }) => !employee.status || employee.status.toUpperCase() === 'ACTIVE';
+        const terminatedCount = org.employees.filter((employee) => !isCurrent(employee)).length;
+        // The linked employee and the current pick always stay listed, so a
+        // terminated link is still visible and can still be changed.
+        const visibleEmployees = org.employees.filter(
+          (employee) => showAll || isCurrent(employee) || employee.id === org.linkedXeroEmployeeId || employee.id === pick
+        );
         return (
           <section key={org.tenantId} className="xero-org">
             <div className="xero-org-head">
@@ -5934,21 +5978,43 @@ function StaffXeroPanel({ staffId, onChanged }: { staffId: string; onChanged?: (
               )}
             </div>
             <div className="xero-org-actions">
-              <Select
-                label="Link to Xero employee"
-                value={pick}
-                onChange={(event) => {
-                  const chosen = event.currentTarget.value;
-                  setPicks((current) => ({ ...current, [org.tenantId]: chosen }));
-                }}
-                options={[
-                  { label: org.employees.length ? 'Pick an employee…' : 'No employees in this organisation', value: '' },
-                  ...org.employees.map((employee) => ({
-                    label: employee.status && employee.status !== 'ACTIVE' ? `${employee.name} (${employee.status.toLowerCase()})` : employee.name,
-                    value: employee.id
-                  }))
-                ]}
-              />
+              <div className="xero-link-pick">
+                <Select
+                  label="Link to Xero employee"
+                  value={pick}
+                  onChange={(event) => {
+                    const chosen = event.currentTarget.value;
+                    setPicks((current) => ({ ...current, [org.tenantId]: chosen }));
+                  }}
+                  options={[
+                    {
+                      label: visibleEmployees.length
+                        ? 'Pick an employee…'
+                        : org.employees.length
+                          ? 'No current employees — tick "Show terminated" for the rest'
+                          : 'No employees in this organisation',
+                      value: ''
+                    },
+                    ...visibleEmployees.map((employee) => ({
+                      label: employee.status && employee.status !== 'ACTIVE' ? `${employee.name} (${employee.status.toLowerCase()})` : employee.name,
+                      value: employee.id
+                    }))
+                  ]}
+                />
+                {terminatedCount > 0 ? (
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={showAll}
+                      onChange={(event) => {
+                        const on = event.currentTarget.checked;
+                        setShowTerminated((current) => ({ ...current, [org.tenantId]: on }));
+                      }}
+                    />
+                    Show terminated ({terminatedCount})
+                  </label>
+                ) : null}
+              </div>
               <Button
                 type="button"
                 variant="secondary"
@@ -6061,17 +6127,11 @@ function StaffXeroPanel({ staffId, onChanged }: { staffId: string; onChanged?: (
                 ) : (
                   <p className="subtle">Everything Xero holds already matches this profile.</p>
                 )}
-                <p className="subtle">
-                  Held in Xero and never copied back:{' '}
-                  {[
-                    pull.held.taxDeclaration ? 'tax declaration' : null,
-                    pull.held.bankAccount ? 'bank account' : null,
-                    pull.held.superFund ? 'super fund' : null
-                  ]
-                    .filter(Boolean)
-                    .join(', ') || 'none of them are set over there yet — push the profile to set them up'}
-                  .
-                </p>
+                {!pull.held.taxDeclaration && !pull.held.bankAccount && !pull.held.superFund ? (
+                  <p className="subtle">
+                    No tax declaration, bank account or super fund is set over there yet — push the profile to set them up.
+                  </p>
+                ) : null}
                 {pull.leave.length > 0 ? (
                   <p className="subtle">
                     Leave:{' '}
@@ -6086,11 +6146,11 @@ function StaffXeroPanel({ staffId, onChanged }: { staffId: string; onChanged?: (
         );
       })}
       <p className="subtle">
-        Push sends their profile (contact, bank, tax, super) into that company's payroll — it matches an existing
-        employee by name before ever creating one. Link just points this profile at an employee record that already
-        exists, without changing anything in Xero. Pull reads their record the other way — it shows what differs and
-        writes only the fields you tick. Tax file numbers, bank accounts and super are never read back; they travel
-        outward only.
+        Push sends their profile (contact, bank, tax settings, super) into that company's payroll — it matches an
+        existing employee by name before ever creating one. Link just points this profile at an employee record that
+        already exists, without changing anything in Xero. Pull reads their record the other way — bank account, super
+        fund and tax settings included — shows what differs, and writes only the fields you tick. The one thing Xero
+        never hands back is the tax file number itself: type that in from their TFN declaration.
       </p>
       <ActionFeedback message={message} tone={messageTone} />
     </div>
@@ -10961,6 +11021,7 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
     notes: ''
   });
   const [selectedStaffId, setSelectedStaffId] = useState(staff[0]?.id ?? '');
+  const [showTerminatedStaff, setShowTerminatedStaff] = useState(false);
   const [selectedModuleId, setSelectedModuleId] = useState('');
 
   const modules = overview?.modules ?? [];
@@ -10972,7 +11033,7 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
 
   const staffOptions = [
     { label: 'Select staff', value: '' },
-    ...sortStaffForSelect(staff).map((member) => ({
+    ...sortStaffForSelect(staffForPicker(staff, showTerminatedStaff, selectedStaffId)).map((member) => ({
       label: `${member.firstName} ${member.lastName}`,
       value: member.id
     }))
@@ -11210,7 +11271,10 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
 
       <Card title="Assign Academy module" subtitle="Link a module directly to a staff profile.">
         <div className="form-grid three">
-          <Select label="Staff" value={selectedStaffId} onChange={(event) => setSelectedStaffId(event.currentTarget.value)} options={staffOptions} />
+          <div className="staff-picker">
+            <Select label="Staff" value={selectedStaffId} onChange={(event) => setSelectedStaffId(event.currentTarget.value)} options={staffOptions} />
+            <ShowTerminatedStaffToggle staff={staff} checked={showTerminatedStaff} onChange={setShowTerminatedStaff} />
+          </div>
           <Select label="Module" value={selectedModuleId} onChange={(event) => setSelectedModuleId(event.currentTarget.value)} options={moduleOptions} />
           <div className="field-action">
             <Button type="button" disabled={saving || modules.length === 0} onClick={() => void assignTraining()}>
@@ -16658,6 +16722,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   const [cardImportSource, setCardImportSource] = useState('control');
   const [cardImportText, setCardImportText] = useState('');
   const [manualStaffId, setManualStaffId] = useState('');
+  const [showTerminatedStaff, setShowTerminatedStaff] = useState(false);
   const [manualHours, setManualHours] = useState('');
   const [manualNotes, setManualNotes] = useState('');
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -17110,10 +17175,10 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   }
 
   const staffOptions = useMemo(
-    () => staff
+    () => staffForPicker(staff, showTerminatedStaff, manualStaffId)
       .filter((member) => !member.venue || member.venue === venue || !venue)
       .map((member) => ({ value: member.id, label: `${member.firstName} ${member.lastName}${member.venue ? ` · ${member.venue}` : ''}` })),
-    [staff, venue]
+    [staff, venue, showTerminatedStaff, manualStaffId]
   );
 
   return (
@@ -17487,12 +17552,15 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
             tone={message?.includes('Could') || message?.includes('No Deputy') ? 'error' : 'success'}
           />
           <div className="form-grid three">
-            <Select
-              label="Staff member"
-              value={manualStaffId}
-              onChange={(event) => setManualStaffId(event.currentTarget.value)}
-              options={[{ value: '', label: 'Choose staff…' }, ...staffOptions]}
-            />
+            <div className="staff-picker">
+              <Select
+                label="Staff member"
+                value={manualStaffId}
+                onChange={(event) => setManualStaffId(event.currentTarget.value)}
+                options={[{ value: '', label: 'Choose staff…' }, ...staffOptions]}
+              />
+              <ShowTerminatedStaffToggle staff={staff} checked={showTerminatedStaff} onChange={setShowTerminatedStaff} />
+            </div>
             <Input label="Hours" type="number" min="0.25" step="0.25" value={manualHours} onChange={(event) => setManualHours(event.currentTarget.value)} placeholder="e.g. 6.5" />
             <Input label="Notes" value={manualNotes} onChange={(event) => setManualNotes(event.currentTarget.value)} placeholder="Optional notes" />
           </div>
@@ -18968,6 +19036,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   const [venueFilter, setVenueFilter] = useState('all');
   const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
   const [staffProfileId, setStaffProfileId] = useState(staff[0]?.id ?? '');
+  const [showTerminatedStaff, setShowTerminatedStaff] = useState(false);
   const [workDate, setWorkDate] = useState(() => toDateInput(new Date()));
   const [startTime, setStartTime] = useState('10:00');
   const [endTime, setEndTime] = useState('16:00');
@@ -19613,12 +19682,18 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         ) : null}
         <div className="form-grid">
           {isManagerView ? (
-            <Select
-              label="Staff member"
-              value={staffProfileId}
-              onChange={(event) => setStaffProfileId(event.currentTarget.value)}
-              options={sortStaffForSelect(staff).map((member) => ({ label: `${member.firstName} ${member.lastName}`, value: member.id }))}
-            />
+            <div className="staff-picker">
+              <Select
+                label="Staff member"
+                value={staffProfileId}
+                onChange={(event) => setStaffProfileId(event.currentTarget.value)}
+                options={sortStaffForSelect(staffForPicker(staff, showTerminatedStaff, staffProfileId)).map((member) => ({
+                  label: `${member.firstName} ${member.lastName}`,
+                  value: member.id
+                }))}
+              />
+              <ShowTerminatedStaffToggle staff={staff} checked={showTerminatedStaff} onChange={setShowTerminatedStaff} />
+            </div>
           ) : (
             <Input
               label="Staff member"

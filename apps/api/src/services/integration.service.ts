@@ -53,12 +53,24 @@ import { HttpError } from '../lib/http.js';
 import {
   auStateCode,
   buildXeroPullFields,
+  digitsOnly,
   ordinaryEarningsLine,
   payPeriodWeeks,
   selectPullFields,
-  type XeroEmployeeDetail
+  studyLoanFromXero,
+  superFundAbn,
+  taxFileNumberHeldNote,
+  type XeroEmployeeDetail,
+  type XeroSuperFund
 } from '../lib/xero-employee-pull.js';
-import { payrollDetailsNotSent, xeroElementWarnings } from '../lib/xero-employee-push.js';
+import {
+  buildTaxDeclaration,
+  employeeEmploymentType,
+  employeeIncomeType,
+  payrollDetailsNotSent,
+  residencyToSend,
+  xeroElementWarnings
+} from '../lib/xero-employee-push.js';
 import {
   alreadyInXeroReason,
   overlappingLeave,
@@ -4109,21 +4121,31 @@ function xeroEmployeeBody(staff: {
   dateOfBirth: Date | null;
   startDate: Date | null;
   addressLine1: string | null;
+  addressLine2: string | null;
   suburb: string | null;
   state: string | null;
   postcode: string | null;
+  employmentType: string | null;
   taxFileNumber: string | null;
   taxResidencyStatus: string | null;
   taxFreeThreshold: boolean | null;
+  hasStudyTrainingLoan: boolean | null;
   bankAccountName: string | null;
   bankBsb: string | null;
   bankAccountNumber: string | null;
   superMemberNumber: string | null;
-}, extra?: { employeeId?: string; superFundId?: string | null }) {
+}, extra?: {
+  employeeId?: string;
+  superFundId?: string | null;
+  /** Their current record in this organisation, on an update. What the
+   * profile has no column for is carried from here rather than reset. */
+  existing?: XeroEmployeeDetail | null;
+}) {
   const iso = (value: Date | null) => (value ? value.toISOString().slice(0, 10) : undefined);
-  const digits = (value: string | null) => (value ? value.replace(/\D/g, '') : '');
-  const bsb = digits(staff.bankBsb);
-  const account = digits(staff.bankAccountNumber);
+  const bsb = digitsOnly(staff.bankBsb);
+  const account = digitsOnly(staff.bankAccountNumber);
+  const existing = extra?.existing ?? null;
+  const residency = residencyToSend(staff, existing?.TaxDeclaration);
 
   return {
     // Present on an update, absent on a create — Xero AU payroll treats POST
@@ -4138,12 +4160,18 @@ function xeroEmployeeBody(staff: {
     HomeAddress: staff.addressLine1
       ? {
           AddressLine1: staff.addressLine1,
+          AddressLine2: staff.addressLine2 ?? undefined,
           City: staff.suburb ?? undefined,
           Region: auStateCode(staff.state),
           PostalCode: staff.postcode ?? undefined,
           Country: 'AUSTRALIA'
         }
       : undefined,
+    // STP Phase 2 files every employee under an income type and an employment
+    // type. Without them Xero lists the person as still needing an STP2
+    // update until someone fills them in by hand.
+    IncomeType: employeeIncomeType(residency, existing?.IncomeType),
+    EmploymentType: employeeEmploymentType(existing?.EmploymentType),
     // Where their pay goes. Remainder means "the balance of the pay" — with a
     // single account that is all of it, which is what everyone here has.
     BankAccounts:
@@ -4159,15 +4187,9 @@ function xeroEmployeeBody(staff: {
           ]
         : undefined,
     // Without a tax declaration Xero taxes them at the no-TFN rate, which is
-    // roughly half their pay — so this is not an optional nicety.
-    TaxDeclaration: staff.taxFileNumber
-      ? {
-          TaxFileNumber: digits(staff.taxFileNumber),
-          AustralianResidentForTaxPurposes: (staff.taxResidencyStatus ?? 'resident').toLowerCase().includes('resident'),
-          TaxFreeThresholdClaimed: staff.taxFreeThreshold ?? true,
-          EmploymentBasis: 'CASUAL'
-        }
-      : undefined,
+    // roughly half their pay — so this is not an optional nicety. Absent when
+    // the profile has no TFN; the caller says so.
+    TaxDeclaration: buildTaxDeclaration(staff, existing?.TaxDeclaration),
     // Super needs the fund's id INSIDE that organisation, so it's resolved by
     // the caller per company and passed in.
     SuperMemberships: extra?.superFundId
@@ -4178,24 +4200,46 @@ function xeroEmployeeBody(staff: {
 
 // Find a super fund in ONE organisation. Xero references funds by an id that
 // is local to each company, so the same HOSTPLUS is a different id in
-// Freshwater and Avalon — matched on ABN first, then USI, then name.
+// Freshwater and Avalon.
+//
+// Most specific first. A USI names one product; an ABN names a fund that may
+// list several products (HOSTPLUS Basic, Executive and Industry all sit under
+// 68 657 495 890), so an ABN alone only counts when exactly one fund has it.
+// And Xero's fund list carries no ABN field for regulated funds at all — only
+// a USI, which usually embeds the ABN — so the ABN is read out of the USI.
 async function xeroSuperFundId(
   connection: IntegrationConnection,
   tenantId: string,
   fund: { abn: string | null; usi: string | null; name: string | null }
-): Promise<{ id: string | null; connection: IntegrationConnection }> {
+): Promise<{ id: string | null; connection: IntegrationConnection; ambiguous?: string }> {
   if (!fund.abn && !fund.usi && !fund.name) return { id: null, connection };
   try {
-    const response = await xeroGetJson<{
-      SuperFunds?: Array<{ SuperFundID?: string; Name?: string; ABN?: string; USI?: string }>;
-    }>('/payroll.xro/1.0/Superfunds', { connection, tenantId });
-    const digits = (value: string | null | undefined) => (value ? value.replace(/\D/g, '') : '');
+    const response = await xeroGetJson<{ SuperFunds?: XeroSuperFund[] }>('/payroll.xro/1.0/Superfunds', {
+      connection,
+      tenantId
+    });
     const funds = response.data.SuperFunds ?? [];
-    const match =
-      (fund.abn && funds.find((row) => digits(row.ABN) === digits(fund.abn))) ||
-      (fund.usi && funds.find((row) => (row.USI ?? '').toUpperCase() === fund.usi!.toUpperCase())) ||
-      (fund.name && funds.find((row) => normaliseMatchText(row.Name ?? '') === normaliseMatchText(fund.name!)));
-    return { id: match ? match.SuperFundID ?? null : null, connection: response.connection };
+    const usi = (fund.usi ?? '').trim().toUpperCase();
+    const abn = digitsOnly(fund.abn);
+    const name = normaliseMatchText(fund.name ?? '');
+
+    const byUsi = usi ? funds.find((row) => (row.USI ?? '').trim().toUpperCase() === usi) : undefined;
+    if (byUsi) return { id: byUsi.SuperFundID ?? null, connection: response.connection };
+    const byAbn = abn ? funds.filter((row) => superFundAbn(row) === abn) : [];
+    if (byAbn.length === 1) return { id: byAbn[0]?.SuperFundID ?? null, connection: response.connection };
+    const byName = name ? funds.find((row) => normaliseMatchText(row.Name ?? '') === name) : undefined;
+    if (byName) return { id: byName.SuperFundID ?? null, connection: response.connection };
+    if (byAbn.length > 1) {
+      return {
+        id: null,
+        connection: response.connection,
+        ambiguous: `${byAbn.length} funds in Xero share ABN ${fund.abn} (${byAbn
+          .map((row) => row.Name)
+          .filter(Boolean)
+          .join('; ')}) — put the USI on the profile to say which one.`
+      };
+    }
+    return { id: null, connection: response.connection };
   } catch {
     return { id: null, connection };
   }
@@ -4453,8 +4497,8 @@ export async function pushStaffToXero(staffProfileId: string, options?: { tenant
     select: {
       id: true, firstName: true, lastName: true, email: true, phone: true, venue: true,
       dateOfBirth: true, startDate: true, addressLine1: true, suburb: true, state: true,
-      postcode: true, employmentStatus: true, xeroEmployeeId: true,
-      taxFileNumber: true, taxResidencyStatus: true, taxFreeThreshold: true,
+      postcode: true, addressLine2: true, employmentStatus: true, employmentType: true, xeroEmployeeId: true,
+      taxFileNumber: true, taxResidencyStatus: true, taxFreeThreshold: true, hasStudyTrainingLoan: true,
       bankAccountName: true, bankBsb: true, bankAccountNumber: true,
       superFundName: true, superFundAbn: true, superFundUsi: true, superMemberNumber: true,
       xeroEmployees: { select: { tenantId: true, xeroEmployeeId: true } }
@@ -4525,14 +4569,19 @@ export async function pushStaffToXero(staffProfileId: string, options?: { tenant
     // deleted". So an existing membership is left completely alone; we only
     // ever add one where there is none.
     let hasSuperAlready = false;
+    // Their current record here, on an update: the settings this profile has
+    // no column for (leave loading, withholding variations, income type) are
+    // carried from it rather than reset by the post.
+    let existing: XeroEmployeeDetail | null = null;
     if (existingId) {
       try {
-        const detail = await xeroGetJson<{ Employees?: Array<{ SuperMemberships?: unknown[] }> }>(
+        const detail = await xeroGetJson<{ Employees?: XeroEmployeeDetail[] }>(
           `/payroll.xro/1.0/Employees/${encodeURIComponent(existingId)}`,
           { connection, tenantId: tenant.id }
         );
         connection = detail.connection;
-        hasSuperAlready = (detail.data.Employees?.[0]?.SuperMemberships ?? []).length > 0;
+        existing = detail.data.Employees?.[0] ?? null;
+        hasSuperAlready = (existing?.SuperMemberships ?? []).length > 0;
       } catch {
         // Can't tell — assume they have one and don't touch it. A duplicate
         // fund is worse than leaving super to be set by hand.
@@ -4550,13 +4599,22 @@ export async function pushStaffToXero(staffProfileId: string, options?: { tenant
           name: staff.superFundName
         });
     connection = fund.connection;
-    if (!hasSuperAlready && !fund.id && (staff.superFundAbn || staff.superFundUsi)) {
+    if (!hasSuperAlready && !fund.id && fund.ambiguous) {
+      warnings.push(`Super was not set in ${tenant.name ?? tenant.id}: ${fund.ambiguous}`);
+    } else if (!hasSuperAlready && !fund.id && (staff.superFundAbn || staff.superFundUsi)) {
       warnings.push(
         `${staff.superFundName ?? 'Their super fund'} isn't set up in ${tenant.name ?? tenant.id} — add it in Xero (Payroll → Superannuation), then push again.`
       );
     }
     if (hasSuperAlready) {
       warnings.push(`Super in ${tenant.name ?? tenant.id} was already set and was left untouched.`);
+    }
+    // A loan Xero knows about and the profile doesn't is kept, not cleared —
+    // see buildTaxDeclaration. Say so, and point at the pull that fixes it.
+    if (staff.hasStudyTrainingLoan !== true && studyLoanFromXero(existing?.TaxDeclaration) === true) {
+      warnings.push(
+        `${tenant.name ?? tenant.id} has a study or training loan recorded for ${staff.firstName} and the profile doesn't — kept as Xero has it. Pull from Xero to bring it onto the profile.`
+      );
     }
 
     // Always POST the full record. With an EmployeeID this UPDATES, which is
@@ -4565,7 +4623,7 @@ export async function pushStaffToXero(staffProfileId: string, options?: { tenant
     const saved = await xeroPostJson<{ Employees?: XeroPayrollEmployeeSummary[] }>('/payroll.xro/1.0/Employees', {
       connection,
       tenantId: tenant.id,
-      body: [xeroEmployeeBody(staff, { employeeId: existingId ?? undefined, superFundId: fund.id })]
+      body: [xeroEmployeeBody(staff, { employeeId: existingId ?? undefined, superFundId: fund.id, existing })]
     });
     connection = saved.connection;
     const element = saved.data.Employees?.[0];
@@ -4675,10 +4733,14 @@ export async function xeroEmployeeLinkOptions(staffProfileId: string) {
 //     differs; the apply takes a list of field keys and writes only those. A
 //     silent overwrite would let a stale payroll record quietly undo what a
 //     manager typed this morning.
-//  2. Tax file numbers, bank accounts and super memberships are never read
-//     back. They travel outward only — and Xero masks the TFN it returns, so
-//     "pulling" it would replace a real number with asterisks. The preview
-//     reports only whether each is set over there.
+//  2. Bank account, super membership and tax settings come back like any
+//     other field — payroll is where they are kept current, and a person who
+//     already exists in one company's payroll should not be typed in again
+//     for the other. Account numbers are masked on the way to the browser;
+//     the apply re-reads Xero and writes the real digits itself. The tax
+//     file number is the exception: Xero masks it in every response, so
+//     "pulling" it would replace a real number with asterisks. It is
+//     reported as held, never offered.
 //  3. A termination date is reported, never applied. Ending someone's
 //     employment is a decision, not a sync.
 
@@ -4691,6 +4753,9 @@ async function xeroEmployeeSnapshot(staffProfileId: string, options?: { tenantId
       suburb: true, state: true, postcode: true, employmentType: true,
       contractedWeeklyHours: true, payRateCents: true, employmentStatus: true,
       xeroEmployeeId: true, xeroPayrollCalendarId: true, xeroEarningsRateId: true,
+      taxFileNumber: true, taxResidencyStatus: true, taxFreeThreshold: true, hasStudyTrainingLoan: true,
+      bankAccountName: true, bankBsb: true, bankAccountNumber: true,
+      superFundName: true, superFundAbn: true, superFundUsi: true, superMemberNumber: true,
       payProfile: { select: { payMode: true } },
       xeroEmployees: { select: { tenantId: true, tenantName: true, xeroEmployeeId: true } }
     }
@@ -4766,6 +4831,28 @@ async function xeroEmployeeSnapshot(staffProfileId: string, options?: { tenantId
     warnings.push('Their Xero pay template has no earnings line, so there is no rate or standard hours to read.');
   }
 
+  // A super membership names its fund by an id local to this organisation;
+  // the fund list turns that into the name, ABN and USI the profile holds.
+  let superFunds: XeroSuperFund[] | null = null;
+  const membership = (employee.SuperMemberships ?? []).find((row) => row.SuperFundID);
+  if (membership) {
+    try {
+      const funds = await xeroGetJson<{ SuperFunds?: XeroSuperFund[] }>('/payroll.xro/1.0/Superfunds', {
+        connection,
+        tenantId: tenant.id
+      });
+      connection = funds.connection;
+      superFunds = funds.data.SuperFunds ?? [];
+      if (!superFunds.some((fund) => fund.SuperFundID === membership.SuperFundID)) {
+        warnings.push(
+          `Their super membership in ${tenant.name ?? 'Xero'} points at a fund that is not in that organisation's fund list any more, so the fund cannot be read.`
+        );
+      }
+    } catch {
+      warnings.push(`Could not read the super fund list from ${tenant.name ?? 'Xero'}, so their fund is not offered this time.`);
+    }
+  }
+
   const fields = buildXeroPullFields({
     profile: staff,
     employee,
@@ -4776,8 +4863,17 @@ async function xeroEmployeeSnapshot(staffProfileId: string, options?: { tenantId
     periodWeeks,
     calendarName,
     tenantName: tenant.name,
-    manualPay: staff.payProfile?.payMode === 'MANUAL_FULL_TIME' || staff.payProfile?.payMode === 'CASH'
+    manualPay: staff.payProfile?.payMode === 'MANUAL_FULL_TIME' || staff.payProfile?.payMode === 'CASH',
+    superFunds
   });
+
+  const tfnNote = taxFileNumberHeldNote({
+    firstName: staff.firstName,
+    tenantName: tenant.name,
+    declaration: employee.TaxDeclaration,
+    profileTaxFileNumber: staff.taxFileNumber
+  });
+  if (tfnNote) warnings.push(tfnNote);
 
   const terminated = parseXeroDate(employee.TerminationDate);
   if (terminated) {
