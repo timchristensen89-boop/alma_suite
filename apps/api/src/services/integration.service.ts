@@ -71,6 +71,7 @@ import {
   residencyToSend,
   xeroElementWarnings
 } from '../lib/xero-employee-push.js';
+import { firstWholeDayKey, parseImportEdge, rollingImportWindow } from '../lib/square-import-window.js';
 import {
   alreadyInXeroReason,
   overlappingLeave,
@@ -2044,10 +2045,20 @@ function squarePaymentVenue(input: {
   return squareAccountConfig(input.accountKey).label;
 }
 
+// The window a Square import reads. With no start date it is today so far
+// plus the previous `defaultLookbackDays` days IN FULL: the start is a Sydney
+// midnight, never a raw "now minus N days" instant. That raw instant is how
+// five weeks of St Alma day totals were overwritten with each day's last few
+// payments — see square-import-window.ts. A bare date from a form means that
+// whole local day, inclusive at both ends.
 function squareImportDateRange(input: Record<string, unknown>, defaultLookbackDays: number) {
-  const end = parseXeroDate(input.endDate) ?? new Date();
-  const start = parseXeroDate(input.startDate) ?? new Date(end);
-  if (!input.startDate) start.setDate(start.getDate() - defaultLookbackDays);
+  const now = new Date();
+  const explicitEnd = parseImportEdge(input.endDate, 'end');
+  if (input.endDate && !explicitEnd) throw new HttpError(400, 'Square sales import end date could not be read.');
+  const end = explicitEnd && explicitEnd.getTime() < now.getTime() ? explicitEnd : now;
+  const explicitStart = parseImportEdge(input.startDate, 'start');
+  if (input.startDate && !explicitStart) throw new HttpError(400, 'Square sales import start date could not be read.');
+  const start = explicitStart ?? rollingImportWindow(end, defaultLookbackDays).start;
   if (end <= start) throw new HttpError(400, 'Square sales import end date must be after the start date.');
   return { start, end };
 }
@@ -7262,6 +7273,18 @@ export const integrationService = {
       currency: string | null;
     }>();
     let skippedCount = 0;
+    // A day that begins before the window's start was only partly read, and a
+    // partial sum written over a whole one is exactly the bug this guards
+    // against. Such payments are left out and the day keeps its total.
+    let partialDayPayments = 0;
+    const wholeDayFrom = new Map<string, string>();
+    const firstWholeDay = (timeZone: string) => {
+      const cached = wholeDayFrom.get(timeZone);
+      if (cached) return cached;
+      const key = firstWholeDayKey(start, timeZone);
+      wholeDayFrom.set(timeZone, key);
+      return key;
+    };
 
     for (const payment of response.payments) {
       if (trimText(payment.status).toUpperCase() !== 'COMPLETED') {
@@ -7283,6 +7306,10 @@ export const integrationService = {
       const location = locationsById.get(locationId) ?? null;
       const timeZone = location?.timezone || 'Australia/Sydney';
       const serviceDateKey = dateKeyInTimeZone(paymentDate, timeZone);
+      if (serviceDateKey < firstWholeDay(timeZone)) {
+        partialDayPayments += 1;
+        continue;
+      }
       const venue = squarePaymentVenue({ accountKey, location, venues });
       const externalId = `${source}:${locationId}:${serviceDateKey}`;
       const key = `${venue}|${serviceDateKey}|${externalId}`;
@@ -7306,6 +7333,11 @@ export const integrationService = {
     const rows = Array.from(grouped.values());
     if (response.limited) warnings.push(`Square returned the first ${limit} payments only. Run a shorter date range to import the remaining payments.`);
     if (skippedCount > 0) warnings.push(`${skippedCount} Square payments were skipped because they were not completed, had no date, or had no positive net amount.`);
+    if (partialDayPayments > 0) {
+      warnings.push(
+        `${partialDayPayments} Square payments fell on a day the window only partly covers and were left out, so that day keeps its previous total. Start the range at midnight to include it.`
+      );
+    }
 
     await prisma.$transaction(async (tx) => {
       for (const row of rows) {
@@ -7514,6 +7546,17 @@ export const integrationService = {
       recipeId: string | null;
     }>();
     let skippedLines = 0;
+    // Same guard as the day totals: an order on a day the window only partly
+    // covers is left out rather than written as that day's whole item mix.
+    let partialDayLines = 0;
+    const wholeDayFrom = new Map<string, string>();
+    const firstWholeDay = (timeZone: string) => {
+      const cached = wholeDayFrom.get(timeZone);
+      if (cached) return cached;
+      const key = firstWholeDayKey(start, timeZone);
+      wholeDayFrom.set(timeZone, key);
+      return key;
+    };
 
     for (const order of ordersResponse.orders) {
       const orderDate = providerDate(order.closed_at ?? order.created_at);
@@ -7526,6 +7569,10 @@ export const integrationService = {
       }
       const timeZone = location?.timezone || 'Australia/Sydney';
       const serviceDateKey = dateKeyInTimeZone(orderDate, timeZone);
+      if (serviceDateKey < firstWholeDay(timeZone)) {
+        partialDayLines += order.line_items?.length ?? 0;
+        continue;
+      }
       const venue = squarePaymentVenue({ accountKey, location, venues });
       const venueKey = normaliseMatchText(venue);
       for (const line of order.line_items ?? []) {
@@ -7601,6 +7648,11 @@ export const integrationService = {
     const warnings: string[] = [];
     if (ordersResponse.limited) warnings.push(`Square returned the first ${limit} orders only. Run a shorter date range to import the remaining item sales.`);
     if (skippedLines > 0) warnings.push(`${skippedLines} Square order lines were skipped because they were not item sales, had no item name, or had no positive quantity/sales.`);
+    if (partialDayLines > 0) {
+      warnings.push(
+        `${partialDayLines} Square order lines fell on a day the window only partly covers and were left out, so that day keeps its previous item mix. Start the range at midnight to include it.`
+      );
+    }
     const unmatchedRows = rows.filter((row) => !row.recipeId).length;
     if (unmatchedRows > 0) warnings.push(`${unmatchedRows} Square item sales rows did not match a Stock item recipe title yet.`);
 
