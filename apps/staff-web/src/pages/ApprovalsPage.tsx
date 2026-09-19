@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { StaffComplianceRecord, StaffProfile } from '@alma/shared';
 import { ActionFeedback, ActionPanel, Badge, Button, EmptyState, PageHeader, Select, StatCard } from '@alma/ui';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import {
   type StaffDocumentPromptAction,
   StaffDocumentActionPrompt,
@@ -153,6 +154,11 @@ function ApprovalRecordRow({
 }
 
 export function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () => Promise<void> }) {
+  const { user } = useAuth();
+  // Uploaded documents and the imported-document review queue are admin
+  // work: approving one means opening it, and other people's documents are
+  // admins' to open. A manager sees the profile approvals only.
+  const canReviewDocuments = Boolean(user && (user.isAdmin || user.role === 'ADMIN'));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
@@ -161,14 +167,16 @@ export function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload
   const [reviewStaffSelection, setReviewStaffSelection] = useState<Record<string, string>>({});
   const [reviewError, setReviewError] = useState<string | null>(null);
   const pendingProfiles = staff.filter((member) => member.employmentStatus === 'PENDING');
-  const pendingRecords = staff.flatMap((member) =>
-    member.records
-      .filter((record) => {
-        const status = staffComplianceDocumentRecord(record).status;
-        return (status === 'PENDING' || status === 'UPLOADED') && Boolean(record.documentUrl);
-      })
-      .map((record) => ({ member, record }))
-  );
+  const pendingRecords = canReviewDocuments
+    ? staff.flatMap((member) =>
+        member.records
+          .filter((record) => {
+            const status = staffComplianceDocumentRecord(record).status;
+            return (status === 'PENDING' || status === 'UPLOADED') && Boolean(record.documentUrl);
+          })
+          .map((record) => ({ member, record }))
+      )
+    : [];
   const documentReviewStaff = staff.filter((member) =>
     member.employmentStatus !== 'ARCHIVED' &&
     (member as StaffProfile & { accountType?: string }).accountType !== 'VENUE_DEVICE'
@@ -176,13 +184,17 @@ export function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload
   const staffById = new Map(staff.map((member) => [member.id, member]));
 
   const loadReviewItems = useCallback(async () => {
+    if (!canReviewDocuments) {
+      setReviewItems([]);
+      return;
+    }
     try {
       setReviewError(null);
       setReviewItems(await api<StaffDocumentReviewItem[]>('/api/staff/document-reviews'));
     } catch (err) {
       setReviewError(err instanceof Error ? err.message : 'Could not load manual document reviews.');
     }
-  }, []);
+  }, [canReviewDocuments]);
 
   useEffect(() => {
     void loadReviewItems();
@@ -426,8 +438,8 @@ export function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload
 
       <div className="stats-grid">
         <StatCard label="Pending profiles" value={pendingProfiles.length} hint="Awaiting manager approval" />
-        <StatCard label="Pending documents" value={pendingRecords.length} hint="Uploaded or waiting" />
-        <StatCard label="Manual RSA reviews" value={reviewItems.length} hint="Imported files to map" />
+        {canReviewDocuments ? <StatCard label="Pending documents" value={pendingRecords.length} hint="Uploaded or waiting" /> : null}
+        {canReviewDocuments ? <StatCard label="Manual RSA reviews" value={reviewItems.length} hint="Imported files to map" /> : null}
       </div>
 
       {message && !messageTarget ? <p className={message.includes('Could not') || message.includes('Missing') ? 'error-text' : 'subtle'}>{message}</p> : null}
@@ -484,7 +496,7 @@ export function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload
         )}
       </ActionPanel>
 
-      <ActionPanel
+      {canReviewDocuments ? <ActionPanel
         title="Manual RSA review queue"
         description="Uncertain Deputy RSA files sit here until a manager selects the right staff member. They are not attached to staff profiles until approved."
         count={reviewItems.length}
@@ -550,9 +562,9 @@ export function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload
             })}
           </div>
         )}
-      </ActionPanel>
+      </ActionPanel> : null}
 
-      <ActionPanel
+      {canReviewDocuments ? <ActionPanel
         title="Document approval queue"
         description="Open each uploaded document, upload missing files if needed, then approve."
         count={pendingRecords.length}
@@ -595,7 +607,7 @@ export function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload
             ))}
           </div>
         )}
-      </ActionPanel>
+      </ActionPanel> : null}
     </div>
   );
 }

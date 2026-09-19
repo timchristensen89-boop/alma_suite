@@ -30,6 +30,28 @@ function escalateAssigneeOptions(assignees: IssueAssigneeOption[]) {
   ];
 }
 
+// Who put this issue on the assignee's plate. Every activity row carries its
+// actor; the most recent assignment-shaped row answers the question — an
+// explicit 'assigned' row, an escalation that handed it on, an edit that
+// changed the assignee, or the creation itself when it was assigned at birth.
+// Rows written before the actor was recorded say 'system'.
+function latestAssignment(issue: Issue): { actor: string; at: string } | null {
+  const rows = [...issue.activities].sort(
+    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+  );
+  for (const row of rows) {
+    const assignmentShaped =
+      row.action === 'assigned' ||
+      (row.action === 'escalated' && row.message.includes('→')) ||
+      (row.action === 'updated' && /\bassignee\b/.test(row.message)) ||
+      (row.action === 'created' && /assigned to/.test(row.message));
+    if (assignmentShaped) {
+      return { actor: row.actor === 'system' ? 'Not recorded' : row.actor, at: row.createdAt };
+    }
+  }
+  return null;
+}
+
 export function IssueDetailPage() {
   const { id = '' } = useParams();
   const [completionOpen, setCompletionOpen] = useState(false);
@@ -131,6 +153,7 @@ export function IssueDetailPage() {
     );
   }
 
+  const assignment = latestAssignment(data);
   return (
     <div className="page-stack">
       <PageHeader
@@ -288,8 +311,22 @@ export function IssueDetailPage() {
               <strong>{data.area || 'Not set'}</strong>
             </div>
             <div>
-              <span>Assignee</span>
+              <span>Reported by</span>
+              <strong>{data.reportedByName || 'Not recorded'}</strong>
+            </div>
+            <div>
+              <span>Assigned to</span>
               <strong>{data.assignee || 'Unassigned'}</strong>
+            </div>
+            <div>
+              <span>Assigned by</span>
+              <strong>
+                {assignment
+                  ? `${assignment.actor}, ${new Date(assignment.at).toLocaleDateString()}`
+                  : data.assignee
+                    ? 'Not recorded'
+                    : '—'}
+              </strong>
             </div>
             <div>
               <span>Due date</span>
@@ -363,7 +400,10 @@ export function IssueDetailPage() {
             {data.activities.map((item) => (
               <article key={item.id} className="activity-row">
                 <div>
-                  <strong>{item.action}</strong>
+                  <strong>
+                    {item.action}
+                    <span className="subtle activity-actor"> · {item.actor === 'system' ? 'not recorded' : item.actor}</span>
+                  </strong>
                   <p>{item.message}</p>
                 </div>
                 <span className="subtle">

@@ -3,6 +3,7 @@ import { prisma } from '@alma/db';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
+  isKitchenRole,
   CERTIFICATION_RECORD_TYPES,
   canApproveClaim,
   canClaimShift,
@@ -86,7 +87,7 @@ import type {
   StaffLeaveType
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
-import { reachesEveryVenue, staffProfileAccessDenial, staffProfileReach } from '../lib/staff-reach.js';
+import { isAdminActor, reachesEveryVenue, staffProfileAccessDenial, staffProfileReach } from '../lib/staff-reach.js';
 import { bestVenueDaySales } from '../lib/sales-day-totals.js';
 import { env } from '../env.js';
 import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
@@ -182,15 +183,20 @@ function withoutStaffSecrets<T extends { passwordHash?: string | null; pinHash?:
 // "Not set" (instead of leaking the data and trusting the client to hide it).
 function redactStaffProfileFields<T extends Record<string, unknown> & { id?: string }>(profile: T, actor?: AuthUser | null): T {
   // No actor → public-ish view (shouldn't normally happen, but safe to hide).
-  if (!actor) return nullSensitiveFields(profile, { pay: true, banking: true, tax: true, dob: true, address: true, emergencyPhone: true, xero: true });
+  if (!actor) return nullSensitiveFields(profile, { pay: true, banking: true, tax: true, dob: true, address: true, emergencyPhone: true, xero: true, documents: true });
   if (actor.isAdmin || actor.role === 'ADMIN') return profile;
   // Staff member viewing their own profile sees everything.
   if (actor.role === 'STAFF' && actor.id === profile.id) return profile;
+  // Other people's documents — certificate scans, HR files — are for Alma
+  // admins only. The staff LIST carries every record's file as a data URI,
+  // so this is where a manager's view of them is cut, not on a route nobody
+  // calls. Your own documents are always yours.
+  const documents = actor.id !== profile.id;
   // Anyone else falls through to the permission-based redaction below.
   const access = actor.appAccess?.find((entry) => entry.appId === 'STAFF' && entry.status === 'ENABLED');
   const permissions = access?.permissions ?? {};
   const isAccessAdmin = access?.role === 'ADMIN' || Boolean(permissions.admin);
-  if (isAccessAdmin) return profile;
+  if (isAccessAdmin) return documents ? nullSensitiveFields(profile, { documents }) : profile;
   const canSeePay = Boolean(permissions.staffHrPayChanges);
   const canSeeRtwData = Boolean(permissions.staffHrRightToWork);
   const canSeeHrGeneral = Boolean(permissions.staffHrView || permissions.staffHrManage);
@@ -201,7 +207,8 @@ function redactStaffProfileFields<T extends Record<string, unknown> & { id?: str
     dob: !canSeeRtwData,
     address: !canSeeRtwData,
     emergencyPhone: !canSeeHrGeneral,
-    xero: !canSeePay
+    xero: !canSeePay,
+    documents
   });
 }
 
@@ -213,6 +220,7 @@ type RedactionMask = {
   address?: boolean;
   emergencyPhone?: boolean;
   xero?: boolean;
+  documents?: boolean;
 };
 
 function nullSensitiveFields<T extends Record<string, unknown>>(profile: T, mask: RedactionMask): T {
@@ -221,6 +229,17 @@ function nullSensitiveFields<T extends Record<string, unknown>>(profile: T, mask
   // Sidecar — tells the UI which field groups were hidden so it can render
   // "Hidden — needs permission" instead of "Not set" for those fields.
   const hidden: string[] = [];
+  if (mask.documents) {
+    // The record rows stay (type, status, expiry drive the compliance view);
+    // only the file itself and its name go.
+    const records = out.records;
+    if (Array.isArray(records)) {
+      out.records = records.map((record) =>
+        record && typeof record === 'object' ? { ...(record as Record<string, unknown>), documentUrl: null, documentName: null } : record
+      );
+    }
+    hidden.push('documents');
+  }
   if (mask.pay) {
     out.payRateCents = null;
     out.trainingPayRateCents = null;
@@ -581,16 +600,28 @@ async function assertManagerCanAccessStaffProfile(staffProfileId: string, actor:
   return assertActorCanAccessStaffProfile(staffProfileId, actor);
 }
 
-function hasStaffHrAccess(actor: AuthUser, options: { manage?: boolean; rightToWork?: boolean; payChanges?: boolean } = {}) {
-  if (actor.isAdmin || actor.role === 'ADMIN') return true;
-  const staffAccess = actor.appAccess.find((access) => access.appId === 'STAFF' && access.status === 'ENABLED');
-  if (!staffAccess) return false;
-  const permissions = staffAccess.permissions ?? {};
-  if (staffAccess.role === 'ADMIN' || permissions.admin) return true;
-  if (options.rightToWork && !permissions.staffHrRightToWork) return false;
-  if (options.payChanges && !permissions.staffHrPayChanges) return false;
-  if (options.manage) return Boolean(permissions.staffHrManage);
-  return Boolean(permissions.staffHrView || permissions.staffHrManage);
+// HR records — contracts, warnings, pay changes, right-to-work files — are
+// Alma admins' to read and write. The per-manager HR permission keys
+// (staffHrView, staffHrRightToWork, staffHrPayChanges) still unlock the
+// matching profile FIELDS in redactStaffProfileFields; they no longer open
+// anyone's records.
+function hasStaffHrAccess(actor: AuthUser, _options: { manage?: boolean; rightToWork?: boolean; payChanges?: boolean } = {}) {
+  return isAdminActor(actor);
+}
+
+// Other people's documents (certificate scans, the imported-document review
+// queue) are admin-only; your own are always yours.
+function canSeeStaffDocuments(actor: AuthUser | null | undefined, staffProfileId?: string) {
+  if (!actor) return false;
+  if (isAdminActor(actor)) return true;
+  return Boolean(staffProfileId && actor.id === staffProfileId);
+}
+
+function assertStaffDocumentsAdmin(actor: AuthUser | null | undefined, staffProfileId?: string): asserts actor is AuthUser {
+  if (!actor) throw new HttpError(401, 'Not authenticated');
+  if (!canSeeStaffDocuments(actor, staffProfileId)) {
+    throw new HttpError(403, 'Staff documents are restricted to Alma admins.');
+  }
 }
 
 async function assertStaffHrAccess(actor: AuthUser, options: { manage?: boolean; rightToWork?: boolean; payChanges?: boolean } = {}) {
@@ -943,7 +974,29 @@ function defaultPayProfileCreateData(actorId?: string, defaults: StaffDefaults =
   };
 }
 
-function defaultStaffAppAccessCreateData(defaults: StaffDefaults = DEFAULT_STAFF_DEFAULTS) {
+/**
+ * What every new hire gets when no role template says otherwise.
+ *
+ * Staff (their own roster, shift swaps, leave and timesheets), Compliance (log
+ * an issue, run today's checks) and Gift Cards (check and redeem at the
+ * counter). Kitchen hires also get Stock, so they can count and see what is
+ * on hand. This used to be the Staff row alone, which left a new floor
+ * staffer unable to log a fault or redeem a card without a manager.
+ *
+ * None of these rows confers the manager role: that follows the person's
+ * role title and their COMPLIANCE access role (toAuthUser), so the roster
+ * builder and every requireManager route stay with managers.
+ */
+export const STANDARD_STAFF_ACCESS = {
+  COMPLIANCE: { view: true, issuesCreate: true, checklistsRun: true },
+  GIFTCARDS: { view: true, redeem: true, giftcardsRedeem: true },
+  STOCK: { view: true, stockCount: true, stocktake: true }
+} as const;
+
+function defaultStaffAppAccessCreateData(
+  defaults: StaffDefaults = DEFAULT_STAFF_DEFAULTS,
+  hire: { roleTitle?: string | null; defaultArea?: string | null } = {}
+): Prisma.StaffAppAccessCreateWithoutStaffProfileInput[] {
   const managerPermissions = {
     staffView: true,
     rosterView: true,
@@ -958,14 +1011,23 @@ function defaultStaffAppAccessCreateData(defaults: StaffDefaults = DEFAULT_STAFF
     tipsViewOwn: true,
     chatTeam: true
   };
+  const notes = 'Created from Staff Settings defaults.';
 
-  return {
-    appId: 'STAFF' as const,
-    status: 'ENABLED' as const,
-    role: defaults.defaultStaffAppRole,
-    permissions: defaults.defaultStaffAppRole === 'MANAGER' ? managerPermissions : staffPermissions,
-    notes: 'Created from Staff Settings defaults.'
-  };
+  const rows: Prisma.StaffAppAccessCreateWithoutStaffProfileInput[] = [
+    {
+      appId: 'STAFF',
+      status: 'ENABLED',
+      role: defaults.defaultStaffAppRole,
+      permissions: defaults.defaultStaffAppRole === 'MANAGER' ? managerPermissions : staffPermissions,
+      notes
+    },
+    { appId: 'COMPLIANCE', status: 'ENABLED', role: 'USER', permissions: { ...STANDARD_STAFF_ACCESS.COMPLIANCE }, notes },
+    { appId: 'GIFTCARDS', status: 'ENABLED', role: 'USER', permissions: { ...STANDARD_STAFF_ACCESS.GIFTCARDS }, notes }
+  ];
+  if (isKitchenRole(hire)) {
+    rows.push({ appId: 'STOCK', status: 'ENABLED', role: 'USER', permissions: { ...STANDARD_STAFF_ACCESS.STOCK }, notes: `${notes} Kitchen role.` });
+  }
+  return rows;
 }
 
 const staffRoleTemplateInclude = {
@@ -2131,7 +2193,7 @@ export const staffService = {
         payProfile: !hasLegacyPaySetup(data)
           ? { create: defaultPayProfileCreateData(actor?.id, staffDefaults) }
           : undefined,
-        appAccess: { create: roleTemplate ? roleTemplateAccessCreateData(roleTemplate) : defaultStaffAppAccessCreateData(staffDefaults) },
+        appAccess: { create: roleTemplate ? roleTemplateAccessCreateData(roleTemplate) : defaultStaffAppAccessCreateData(staffDefaults, { roleTitle: data.roleTitle || staffDefaults.defaultRoleTitle, defaultArea: data.defaultArea ?? null }) },
         records: data.records?.length
           ? {
               create: data.records.map((record) => ({
@@ -3038,6 +3100,7 @@ export const staffService = {
   },
 
   async listStaffDocuments(staffProfileId: string, actor: AuthUser) {
+    assertStaffDocumentsAdmin(actor, staffProfileId);
     await this.getById(staffProfileId, actor);
     return prisma.staffComplianceRecord.findMany({
       where: { staffProfileId },
@@ -7290,7 +7353,7 @@ export const staffService = {
           employmentStatus: 'PENDING',
           notes: data.note || null,
           payProfile: { create: defaultPayProfileCreateData(undefined, staffDefaults) },
-          appAccess: { create: roleTemplate ? roleTemplateAccessCreateData(roleTemplate) : defaultStaffAppAccessCreateData(staffDefaults) }
+          appAccess: { create: roleTemplate ? roleTemplateAccessCreateData(roleTemplate) : defaultStaffAppAccessCreateData(staffDefaults, { roleTitle: data.roleTitle || staffDefaults.defaultRoleTitle }) }
         }
       });
 
@@ -7381,7 +7444,7 @@ export const staffService = {
               employmentStatus: 'PENDING',
               notes: data.note || null,
               payProfile: { create: defaultPayProfileCreateData(undefined, staffDefaults) },
-              appAccess: { create: roleTemplate ? roleTemplateAccessCreateData(roleTemplate) : defaultStaffAppAccessCreateData(staffDefaults) }
+              appAccess: { create: roleTemplate ? roleTemplateAccessCreateData(roleTemplate) : defaultStaffAppAccessCreateData(staffDefaults, { roleTitle: data.roleTitle?.trim() || staffDefaults.defaultRoleTitle }) }
             }
           });
 
@@ -7579,7 +7642,7 @@ export const staffService = {
             payProfile: !hasLegacyPaySetup(data)
               ? { create: defaultPayProfileCreateData(undefined, staffDefaults) }
               : undefined,
-            appAccess: { create: defaultStaffAppAccessCreateData(staffDefaults) },
+            appAccess: { create: defaultStaffAppAccessCreateData(staffDefaults, { roleTitle: data.roleTitle || staffDefaults.defaultRoleTitle }) },
             records: data.records?.length
               ? {
                   create: data.records.map((record) => ({
@@ -7662,6 +7725,8 @@ export const staffService = {
   },
 
   async approveRecord(staffProfileId: string, recordId: string, actor?: AuthUser) {
+    // Approving means having looked at the file.
+    assertStaffDocumentsAdmin(actor);
     await this.getById(staffProfileId, actor);
     const record = await prisma.staffComplianceRecord.findFirst({
       where: { id: recordId, staffProfileId }
@@ -7689,7 +7754,7 @@ export const staffService = {
   },
 
   async rejectRecord(staffProfileId: string, recordId: string, input: unknown, actor?: AuthUser) {
-    if (!actor) throw new HttpError(401, 'Not authenticated');
+    assertStaffDocumentsAdmin(actor);
     await this.getById(staffProfileId, actor);
     const record = await prisma.staffComplianceRecord.findFirst({
       where: { id: recordId, staffProfileId }
@@ -7715,8 +7780,7 @@ export const staffService = {
   },
 
   async listDocumentReviews(query: unknown, actor?: AuthUser) {
-    if (!actor) throw new HttpError(401, 'Not authenticated');
-    if (actor.role === 'STAFF') throw new HttpError(403, 'Managers can review imported staff documents.');
+    assertStaffDocumentsAdmin(actor);
     const parsed = z.object({
       status: z.string().trim().optional()
     }).parse(query ?? {});
@@ -7730,8 +7794,7 @@ export const staffService = {
   },
 
   async approveDocumentReview(reviewId: string, input: unknown, actor?: AuthUser) {
-    if (!actor) throw new HttpError(401, 'Not authenticated');
-    if (actor.role === 'STAFF') throw new HttpError(403, 'Managers can review imported staff documents.');
+    assertStaffDocumentsAdmin(actor);
     const data = staffDocumentReviewApproveSchema.parse(input);
     await assertManagerCanAccessStaffProfile(data.staffProfileId, actor);
 
@@ -7806,8 +7869,7 @@ export const staffService = {
   },
 
   async rejectDocumentReview(reviewId: string, input: unknown, actor?: AuthUser) {
-    if (!actor) throw new HttpError(401, 'Not authenticated');
-    if (actor.role === 'STAFF') throw new HttpError(403, 'Managers can review imported staff documents.');
+    assertStaffDocumentsAdmin(actor);
     const data = staffDocumentReviewRejectSchema.parse(input);
     const review = await prisma.staffDocumentReview.findUnique({ where: { id: reviewId } });
     if (!review) throw new HttpError(404, 'Document review item not found');

@@ -512,6 +512,19 @@ export const DEFAULT_STAFF_DEFAULTS: StaffDefaults = {
   defaultStaffAppRole: 'USER'
 };
 
+/**
+ * Whether a hire works in the kitchen, from the two things the register
+ * records about a person: their role title and the roster area they default
+ * to. There is no department field. Kitchen staff get Stock on top of the
+ * standard access so they can count and see what is on hand.
+ */
+export const KITCHEN_ROLE_PATTERN = /chef|cook|kitchen|pastry|dish|\bkp\b|\bprep\b|sous|commis/i;
+
+export function isKitchenRole(input: { roleTitle?: string | null; defaultArea?: string | null }): boolean {
+  if ((input.defaultArea ?? '').trim().toLowerCase() === 'kitchen') return true;
+  return KITCHEN_ROLE_PATTERN.test(input.roleTitle ?? '');
+}
+
 export function normaliseStaffDefaults(input: unknown): StaffDefaults {
   const parsed = staffDefaultsInputSchema.safeParse(input);
   const data = parsed.success ? parsed.data : {};
@@ -3336,6 +3349,12 @@ export type Issue = {
   area: string | null;
   status: IssueStatus;
   assignee: string | null;
+  // Who it sits with and who raised it, by id as well as by name. The API has
+  // always returned these; the type never admitted it, so no screen showed
+  // the reporter.
+  assigneeStaffId?: string | null;
+  reportedByStaffId?: string | null;
+  reportedByName?: string | null;
   dueDate: string | null;
   notes: string | null;
   resolutionNotes: string | null;

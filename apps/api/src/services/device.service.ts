@@ -16,7 +16,10 @@ import { HttpError } from '../lib/http.js';
 import { authService } from './auth.service.js';
 
 const DEVICE_APP_ACCESS = [
-  { appId: 'GIFTCARDS' as const, role: 'USER', permissions: { view: true, redeem: true } },
+  // `redeem` and `giftcardsRedeem` are the same grant under two names (see
+  // requireGiftCardRedeemer); the device row carries both so the intersection
+  // with a staff row keeps whichever spelling that row has.
+  { appId: 'GIFTCARDS' as const, role: 'USER', permissions: { view: true, redeem: true, giftcardsRedeem: true } },
   { appId: 'STOCK' as const, role: 'USER', permissions: { view: true, stocktake: true } },
   { appId: 'RESERVE' as const, role: 'USER', permissions: { view: true } },
   { appId: 'STAFF' as const, role: 'USER', permissions: { view: true, rosterView: true } },

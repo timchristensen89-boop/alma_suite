@@ -13,6 +13,7 @@ import {
 } from '@alma/ui';
 import { useAsync } from '../../hooks/useAsync';
 import { api } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
 import { IssueSeverityPill } from '../../features/issues/IssueSeverityPill';
 import { IssueStatusPill } from '../../features/issues/IssueStatusPill';
 import {
@@ -114,6 +115,10 @@ export function IssuesListPage() {
   const [severity, setSeverity] = useState('');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
+  // "What's on my plate" — by id where the issue carries one, by name for the
+  // older rows that only ever stored the free-text assignee.
+  const [mine, setMine] = useState(false);
+  const { user } = useAuth();
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -140,12 +145,21 @@ export function IssuesListPage() {
   }, [configuredCategories.data, data]);
 
   // Category filtering is applied client-side over the loaded list.
-  const visibleIssues = useMemo(
-    () => (category ? (data ?? []).filter((issue) => issue.category === category) : data ?? []),
-    [category, data]
-  );
+  const visibleIssues = useMemo(() => {
+    const myName = user ? `${user.firstName} ${user.lastName}`.trim().toLowerCase() : '';
+    return (data ?? []).filter((issue) => {
+      if (category && issue.category !== category) return false;
+      if (mine) {
+        if (!user) return false;
+        const byId = issue.assigneeStaffId === user.id;
+        const byName = Boolean(myName) && (issue.assignee ?? '').trim().toLowerCase() === myName;
+        if (!byId && !byName) return false;
+      }
+      return true;
+    });
+  }, [category, data, mine, user]);
 
-  const filtersActive = Boolean(status || severity || search || category);
+  const filtersActive = Boolean(status || severity || search || category || mine);
   const resultCount = visibleIssues.length;
 
   function clearFilters() {
@@ -153,6 +167,7 @@ export function IssuesListPage() {
     setSeverity('');
     setSearch('');
     setCategory('');
+    setMine(false);
   }
 
   return (
@@ -234,6 +249,16 @@ export function IssuesListPage() {
                 {name}
               </button>
             ))}
+            {user ? (
+              <button
+                type="button"
+                className={`issue-cat-chip issue-cat-chip-mine ${mine ? 'is-active' : ''}`}
+                aria-pressed={mine}
+                onClick={() => setMine((current) => !current)}
+              >
+                Assigned to me
+              </button>
+            ) : null}
           </div>
         )}
       </Card>
@@ -301,7 +326,7 @@ export function IssuesListPage() {
         ) : null}
 
         {!error && resultCount > 0 ? (
-          <table>
+          <table className="rows-as-cards">
             <thead>
               <tr>
                 <th>Title</th>
@@ -326,17 +351,17 @@ export function IssuesListPage() {
                       <span className="line-clamp">{issue.description}</span>
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Category">
                     <Badge tone="muted">{issue.category}</Badge>
                   </td>
-                  <td>
+                  <td data-label="Severity">
                     <IssueSeverityPill severity={issue.severity} />
                   </td>
-                  <td>
+                  <td data-label="Status">
                     <IssueStatusPill status={issue.status} />
                   </td>
-                  <td>{issue.assignee || <span className="subtle">Unassigned</span>}</td>
-                  <td>
+                  <td data-label="Assigned to">{issue.assignee || <span className="subtle">Unassigned</span>}</td>
+                  <td data-label="Due">
                     {issue.dueDate ? (() => {
                       const due = new Date(issue.dueDate);
                       const isOverdue = due.getTime() < Date.now() &&
@@ -358,7 +383,7 @@ export function IssuesListPage() {
                       <span className="subtle">—</span>
                     )}
                   </td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td className="row-open" style={{ textAlign: 'right' }}>
                     <Link to={`/issues/${issue.id}`} aria-label={`Open ${issue.title}`}>
                       <IconArrowRight
                         size={16}

@@ -113,7 +113,9 @@ staffRouter.post('/role-templates/:id/duplicate', requireAdmin, async (req, res,
 staffRouter.get('/', async (_req, res, next) => {
   try {
     if (_req.user?.role === 'STAFF') {
-      res.json([redactManagerOnlyPay(await staffService.getById(_req.user.id))]);
+      // Pass the actor: without it the profile is redacted as if for nobody,
+      // which now also strips the person's own documents out of their row.
+      res.json([redactManagerOnlyPay(await staffService.getById(_req.user.id, _req.user))]);
       return;
     }
     res.json(await staffService.list(_req.user));
@@ -149,7 +151,9 @@ staffRouter.get('/award-rates', requireManager, async (_req, res, next) => {
 staffRouter.get('/profiles', async (_req, res, next) => {
   try {
     if (_req.user?.role === 'STAFF') {
-      res.json([redactManagerOnlyPay(await staffService.getById(_req.user.id))]);
+      // Pass the actor: without it the profile is redacted as if for nobody,
+      // which now also strips the person's own documents out of their row.
+      res.json([redactManagerOnlyPay(await staffService.getById(_req.user.id, _req.user))]);
       return;
     }
     res.json(await staffService.list(_req.user));

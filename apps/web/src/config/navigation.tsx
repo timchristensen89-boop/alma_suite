@@ -60,7 +60,8 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Staff certificates',
     description: 'RSA, first aid, food safety expiry',
     icon: <IconStaff />,
-    minimumRole: 'MANAGER',
+    // Everyone's certificates and the documents behind them: admins only.
+    minimumRole: 'ADMIN',
     section: 'Records & expiry'
   },
   {
