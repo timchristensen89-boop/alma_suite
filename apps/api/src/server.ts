@@ -1,3 +1,4 @@
+import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
@@ -72,6 +73,13 @@ app.use(
 );
 
 app.use(cors({ origin: env.corsOrigin, credentials: true }));
+
+// Gzip every compressible response. The API answers phones on venue wifi and
+// 4G with JSON lists that run to tens of kilobytes uncompressed (the staff
+// list alone is ~70 KB for 40 people, ~10 KB gzipped), and nothing in front
+// of the process was compressing them. Files that are already compressed
+// (PDF, images, xlsx) are left alone by the content-type check.
+app.use(compression());
 app.post('/api/gift-cards/webhook', express.raw({ type: 'application/json' }), stripeGiftCardWebhook);
 app.post('/api/integrations/square/webhook/:accountKey', express.raw({ type: 'application/json', limit: '2mb' }), squareWebhookReceiver);
 app.post('/webhooks/square/:accountKey', express.raw({ type: 'application/json', limit: '2mb' }), squareWebhookReceiver);
@@ -152,13 +160,16 @@ app.get('/', (_req, res) => {
 
 app.get('/api/summary', async (_req, res, next) => {
   try {
-    res.json({
-      incidents: await incidentService.summary(),
-      issues: await issueService.summary(),
-      staff: await staffService.summary(),
-      temperatures: await temperatureService.summary(),
-      audits: await auditService.summary()
-    });
+    // Five independent summaries: run them together rather than one after
+    // the other — this endpoint was 40 queries in series.
+    const [incidents, issues, staff, temperatures, audits] = await Promise.all([
+      incidentService.summary(),
+      issueService.summary(),
+      staffService.summary(),
+      temperatureService.summary(),
+      auditService.summary()
+    ]);
+    res.json({ incidents, issues, staff, temperatures, audits });
   } catch (error) {
     next(error);
   }

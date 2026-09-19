@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   Navigate,
   NavLink,
@@ -24,8 +24,6 @@ import {
   useDismissibleLayer
 } from '@alma/ui';
 import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
-import { ForgotPasswordPage, ResetPasswordPage } from '../../web/src/pages/PasswordRecoveryPages';
-import { HandbookAdminPage } from '../../web/src/pages/handbook/HandbookIndexPage';
 import { api } from '../../web/src/lib/api';
 import { AuthProvider, useAuth } from '../../web/src/lib/auth';
 import { canAdmin } from '../../web/src/lib/rbac';
@@ -49,34 +47,39 @@ import {
   IconUsers
 } from '../../web/src/lib/icons';
 import { COMPLIANCE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
-import {
-  AdminOverviewPage,
-  AuditTemplatesPage,
-  ChecklistTemplatesPage,
-  ComplianceSettingsPage,
-  DangerZonePage,
-  GeneralSettingsPage,
-  HumanAgentDemoPage,
-  ImportsPage,
-  IntegrationsPage,
-  RolesPage,
-  ShiftTaskRulesPage,
-  StaffOnboardingPage,
-  StaffRecordTypesPage,
-  StaffSettingsPage,
-  UsersPage,
-  VenuesPage,
-  XeroIntegrationPage
-} from './pages/AdminFeaturePages';
-import { BulkStaffOnboardingPage } from './pages/BulkStaffOnboardingPage';
-import { IntegrationHealthPage } from './pages/IntegrationHealthPage';
-import { LoadedImportPage } from './pages/LoadedImportPage';
-import { LoadedReplacementPage } from './pages/LoadedReplacementPage';
-import { SquareMenuMappingPage } from './pages/SquareMenuMappingPage';
-import { StaffHrTemplatesPage } from './pages/StaffHrTemplatesPage';
-import { WageForecastsPage } from './pages/WageForecastsPage';
-import { WeeklySummaryPage } from './pages/WeeklySummaryPage';
-import { VenueDevicesPage } from './pages/VenueDevicesPage';
+
+// Every admin section loads on demand. The shell is what an admin needs on
+// first paint; the 5,000-line settings workspace, the imports and the
+// integration pages arrive when their route is opened.
+const ForgotPasswordPage = lazy(() => import('../../web/src/pages/PasswordRecoveryPages').then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import('../../web/src/pages/PasswordRecoveryPages').then((m) => ({ default: m.ResetPasswordPage })));
+const HandbookAdminPage = lazy(() => import('../../web/src/pages/handbook/HandbookIndexPage').then((m) => ({ default: m.HandbookAdminPage })));
+const AdminOverviewPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.AdminOverviewPage })));
+const AuditTemplatesPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.AuditTemplatesPage })));
+const ChecklistTemplatesPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.ChecklistTemplatesPage })));
+const ComplianceSettingsPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.ComplianceSettingsPage })));
+const DangerZonePage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.DangerZonePage })));
+const GeneralSettingsPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.GeneralSettingsPage })));
+const HumanAgentDemoPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.HumanAgentDemoPage })));
+const ImportsPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.ImportsPage })));
+const IntegrationsPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.IntegrationsPage })));
+const RolesPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.RolesPage })));
+const ShiftTaskRulesPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.ShiftTaskRulesPage })));
+const StaffOnboardingPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.StaffOnboardingPage })));
+const StaffRecordTypesPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.StaffRecordTypesPage })));
+const StaffSettingsPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.StaffSettingsPage })));
+const UsersPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.UsersPage })));
+const VenuesPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.VenuesPage })));
+const XeroIntegrationPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.XeroIntegrationPage })));
+const BulkStaffOnboardingPage = lazy(() => import('./pages/BulkStaffOnboardingPage').then((m) => ({ default: m.BulkStaffOnboardingPage })));
+const IntegrationHealthPage = lazy(() => import('./pages/IntegrationHealthPage').then((m) => ({ default: m.IntegrationHealthPage })));
+const LoadedImportPage = lazy(() => import('./pages/LoadedImportPage').then((m) => ({ default: m.LoadedImportPage })));
+const LoadedReplacementPage = lazy(() => import('./pages/LoadedReplacementPage').then((m) => ({ default: m.LoadedReplacementPage })));
+const SquareMenuMappingPage = lazy(() => import('./pages/SquareMenuMappingPage').then((m) => ({ default: m.SquareMenuMappingPage })));
+const StaffHrTemplatesPage = lazy(() => import('./pages/StaffHrTemplatesPage').then((m) => ({ default: m.StaffHrTemplatesPage })));
+const WageForecastsPage = lazy(() => import('./pages/WageForecastsPage').then((m) => ({ default: m.WageForecastsPage })));
+const WeeklySummaryPage = lazy(() => import('./pages/WeeklySummaryPage').then((m) => ({ default: m.WeeklySummaryPage })));
+const VenueDevicesPage = lazy(() => import('./pages/VenueDevicesPage').then((m) => ({ default: m.VenueDevicesPage })));
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const complianceUrl = COMPLIANCE_WEB_URL
@@ -594,6 +597,15 @@ function RequireAdmin({ children }: { children: JSX.Element }) {
   return children;
 }
 
+// Shown while a section's chunk downloads.
+function RouteLoader() {
+  return (
+    <div className="full-page-loader">
+      <Spinner label="Loading…" />
+    </div>
+  );
+}
+
 function AdminWorkspace() {
   return (
     <AppShell
@@ -601,6 +613,7 @@ function AdminWorkspace() {
       sidebar={<AdminSidebar />}
       topBar={<AdminTopBar />}
     >
+      <Suspense fallback={<RouteLoader />}>
       <Routes>
         <Route path="/" element={<AdminOverviewPage />} />
         <Route path="/settings" element={<GeneralSettingsPage />} />
@@ -646,6 +659,7 @@ function AdminWorkspace() {
           }
         />
       </Routes>
+      </Suspense>
       <AdminTaskBar />
     </AppShell>
   );
@@ -654,6 +668,7 @@ function AdminWorkspace() {
 export default function App() {
   return (
     <AuthProvider>
+      <Suspense fallback={<RouteLoader />}>
       <Routes>
         <Route path="/login" element={<AdminLoginPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -669,6 +684,7 @@ export default function App() {
           }
         />
       </Routes>
+      </Suspense>
     </AuthProvider>
   );
 }

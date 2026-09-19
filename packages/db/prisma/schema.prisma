@@ -457,6 +457,11 @@ model Issue {
   checklistLinks    ChecklistItem[]
   auditLinks        AuditFinding[]
   incidentLinks     IncidentReport[]
+  @@index([status])
+  @@index([createdAt])
+  @@index([dueDate])
+  @@index([reportedByStaffId])
+  @@index([assigneeStaffId])
 }
 
 // @domain: compliance | home: suite
@@ -470,6 +475,7 @@ model IssueEvidence {
   note      String?
   createdAt DateTime @default(now())
   issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  @@index([issueId])
 }
 
 // Area → default responsible person. When an issue is created/assigned to an
@@ -504,6 +510,7 @@ model IssueActivity {
   actor     String
   createdAt DateTime @default(now())
   issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  @@index([issueId, createdAt])
 }
 
 // @domain: compliance | home: suite
@@ -534,6 +541,7 @@ model ChecklistItemTemplate {
   description String?
   position    Int
   template    ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  @@index([templateId])
 }
 
 // @domain: compliance | home: suite
@@ -551,6 +559,9 @@ model ChecklistRun {
   shiftTaskAssignments ShiftTaskAssignment[]
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
+  @@index([templateId])
+  @@index([runDate])
+  @@index([status, runDate])
 }
 
 // @domain: compliance | home: suite
@@ -567,6 +578,8 @@ model ChecklistItem {
   linkedIssueId  String?
   run            ChecklistRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
   linkedIssue    Issue?              @relation(fields: [linkedIssueId], references: [id])
+  @@index([runId])
+  @@index([linkedIssueId])
 }
 
 // @domain: compliance | home: suite
@@ -589,6 +602,7 @@ model AuditTemplateSection {
   description String?
   position    Int
   template    AuditTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  @@index([templateId])
 }
 
 // @domain: compliance | home: suite
@@ -604,6 +618,8 @@ model AuditRun {
   findings   AuditFinding[]
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
+  @@index([templateId])
+  @@index([runDate])
 }
 
 // @domain: compliance | home: suite
@@ -617,6 +633,8 @@ model AuditFinding {
   linkedIssueId String?
   auditRun      AuditRun @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
   linkedIssue   Issue?   @relation(fields: [linkedIssueId], references: [id])
+  @@index([auditRunId])
+  @@index([linkedIssueId])
 }
 
 // @domain: people-core | home: suite
@@ -1158,6 +1176,7 @@ model RosterShift {
 
   @@index([staffProfileId, startsAt])
   @@index([startsAt, endsAt])
+  @@index([offeredByStaffProfileId])
 }
 
 // @domain: bridge | home: suite
@@ -1827,6 +1846,7 @@ model ReserveEnquiry {
   @@index([status, createdAt])
   @@index([venue, eventDate])
   @@index([email])
+  @@index([guestId])
 }
 
 /// One message in an enquiry conversation, in either direction.
@@ -2617,6 +2637,7 @@ model IncidentReport {
   updatedAt         DateTime         @updatedAt
   linkedIssue       Issue?           @relation(fields: [linkedIssueId], references: [id])
   people            IncidentPerson[]
+  @@index([linkedIssueId])
 }
 
 // @domain: compliance | home: suite
@@ -2631,6 +2652,7 @@ model IncidentPerson {
   witnessStatement String?
   createdAt        DateTime       @default(now())
   incidentReport   IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+  @@index([incidentReportId])
 }
 
 // @domain: compliance | home: suite
@@ -2781,6 +2803,7 @@ model IntegrationWebhookEvent {
   @@unique([provider, accountKey, providerEventId])
   @@index([provider, accountKey, receivedAt])
   @@index([provider, eventType, receivedAt])
+  @@index([connectionId])
 }
 
 // @domain: compliance | home: suite
@@ -2802,6 +2825,7 @@ model TemperatureSensor {
 
   @@unique([integrationId, externalSensorId])
   @@index([integrationId, externalSensorId])
+  @@index([assetId])
 }
 
 // @domain: compliance | home: suite
@@ -3634,6 +3658,7 @@ model PurchaseOrder {
   @@index([supplierId])
   @@index([venue, status])
   @@index([status])
+  @@index([matchedInvoiceId])
 }
 
 model PurchaseOrderLine {
@@ -3723,6 +3748,7 @@ model SupplierInvoice {
   @@index([triageStatus])
   @@index([assignedToStaffProfileId])
   @@index([paymentStatus])
+  @@index([triagedByStaffProfileId])
 }
 
 // The original uploaded invoice file (PDF/photo) kept so a manager can open it
@@ -3788,6 +3814,7 @@ model StockItemAlias {
   @@unique([aliasKey, supplierId])
   @@index([stockItemId])
   @@map("stock_item_aliases")
+  @@index([supplierId])
 }
 
 /// A spelling of a UNIT (not a product): "KILO" means kg, "Unit" means each,
@@ -4023,6 +4050,8 @@ model CommsAlertEvent {
   @@index([alertType, createdAt])
   @@index([venue, createdAt])
   @@index([severity])
+  @@index([ruleId])
+  @@index([threadId])
 }
 
 // ===================================================================
@@ -5255,6 +5284,7 @@ model PosOrder {
 
   @@index([venue, serviceDate])
   @@index([status])
+  @@index([guestId])
 }
 
 model PosOrderLine {

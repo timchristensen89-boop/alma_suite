@@ -75,4 +75,25 @@ async function boot() {
   }
 }
 
+// Web only: the native shell serves its chunks from the app bundle, where
+// nothing is replaced underneath a running app.
+// A deploy replaces every hashed chunk under /assets. A tab opened before the
+// deploy still runs the old index.html, so the first lazy route it opens
+// afterwards asks for a chunk that no longer exists — and Hosting's SPA
+// rewrite answers with index.html instead of JavaScript. Reloading picks up
+// the new build. At most one reload a minute, so a genuinely broken network
+// cannot bounce the page forever.
+if (!isNative()) window.addEventListener('vite:preloadError', (event) => {
+  const key = 'alma.chunk-reload-at';
+  try {
+    const last = Number(window.sessionStorage.getItem(key) ?? 0);
+    if (Date.now() - last < 60_000) return;
+    window.sessionStorage.setItem(key, String(Date.now()));
+  } catch {
+    return;
+  }
+  event.preventDefault();
+  window.location.reload();
+});
+
 void boot();
