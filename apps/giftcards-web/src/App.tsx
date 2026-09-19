@@ -86,13 +86,15 @@ const GIFTCARD_NAV_ITEMS = [
     href: '/orders#recent',
     label: 'Orders',
     description: 'Recent cards and balances',
-    icon: <IconReceipt />
+    icon: <IconReceipt />,
+    managerOnly: true
   },
   {
     href: '/reporting#report',
     label: 'Reporting',
     description: 'Who redeemed what, where',
-    icon: <ChartIcon />
+    icon: <ChartIcon />,
+    managerOnly: true
   },
   {
     href: '/donations#donations',
@@ -114,19 +116,22 @@ const GIFTCARD_NAV_ITEMS = [
     href: '/counter',
     label: 'Sell at the counter',
     description: 'Take payment, issue a number, check a balance',
-    icon: <IconWallet />
+    icon: <IconWallet />,
+    managerOnly: true
   },
   {
     href: '/activate#activate',
     label: 'Activate pre-printed',
     description: 'A card that already has a number on it',
-    icon: <IconKeyRound />
+    icon: <IconKeyRound />,
+    managerOnly: true
   },
   {
     href: '/admin#settings',
     label: 'Admin setup',
     description: 'Checkout, promos, artwork',
-    icon: <IconSettings />
+    icon: <IconSettings />,
+    managerOnly: true
   }
 ];
 
@@ -1474,7 +1479,7 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
     <main className="login-page">
       <div className="login-shell">
         <ProductLogo appId="giftcards" size="lg" />
-        <Card title="Staff redeem" subtitle="Manager sign in required to accept gift cards">
+        <Card title="Staff redeem" subtitle="Sign in with your Alma account to check and redeem gift cards">
           <form className="login-form" onSubmit={handleSubmit}>
             <Input label="Email" type="email" required value={email} onChange={(event) => setEmail(event.currentTarget.value)} />
             <Input label="Password" type="password" required value={password} onChange={(event) => setPassword(event.currentTarget.value)} />
@@ -1493,6 +1498,16 @@ const GIFT_CARD_OWNER_EMAIL = 'tim@almagroup.com.au';
 
 export function isGiftCardOwner(user?: { email?: string | null } | null) {
   return user?.email?.toLowerCase() === GIFT_CARD_OWNER_EMAIL;
+}
+
+/**
+ * Managers and admins run orders, reporting, counter sales and setup.
+ * Everyone else signs in to check a balance and redeem — the API's
+ * requireManager draws the same line, so the nav should not offer doors
+ * that 403.
+ */
+export function canManageGiftCards(user?: { role?: string; isAdmin?: boolean } | null) {
+  return Boolean(user && (user.isAdmin || user.role === 'ADMIN' || user.role === 'MANAGER'));
 }
 
 /** Which nav item the current URL belongs to. Shared by the sidebar and the phone task bar. */
@@ -1531,10 +1546,10 @@ const GIFTCARD_PRIMARY_TASKS = ['/redeem#redeem', '/counter', '/orders#recent', 
 /** Bar labels are one word where the sidebar's wrap to two lines on a 390px bar. */
 const GIFTCARD_BAR_LABELS: Record<string, string> = { '/counter': 'Sell', '/activate#activate': 'Activate', '/admin#settings': 'Setup' };
 
-function GiftCardTaskBar({ isOwner }: { isOwner: boolean }) {
+function GiftCardTaskBar({ isOwner, canManage }: { isOwner: boolean; canManage: boolean }) {
   const [activeHref] = useActiveGiftCardHref();
   const items: TaskBarItem[] = GIFTCARD_NAV_ITEMS
-    .filter((item) => !item.ownerOnly || isOwner)
+    .filter((item) => (!item.ownerOnly || isOwner) && (!item.managerOnly || canManage))
     .map((item) => ({
       key: item.href,
       label: GIFTCARD_BAR_LABELS[item.href] ?? item.label,
@@ -1548,10 +1563,10 @@ function GiftCardTaskBar({ isOwner }: { isOwner: boolean }) {
   return <TaskBar items={items} label="Gift card pages" />;
 }
 
-function SidebarNav({ isOwner }: { isOwner: boolean }) {
+function SidebarNav({ isOwner, canManage }: { isOwner: boolean; canManage: boolean }) {
   const navItems = useMemo(
-    () => GIFTCARD_NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner),
-    [isOwner]
+    () => GIFTCARD_NAV_ITEMS.filter((item) => (!item.ownerOnly || isOwner) && (!item.managerOnly || canManage)),
+    [isOwner, canManage]
   );
   const navRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -2362,7 +2377,16 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     [code, giftCards]
   );
 
+  const canManage = canManageGiftCards(user);
+
   const load = useCallback(async () => {
+    // The card register is a manager's list; a staffer here to redeem does not
+    // need it and would only be shown the 403.
+    if (!canManage) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setMessage(null);
     try {
@@ -2374,7 +2398,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [canManage, query]);
 
   useEffect(() => {
     void load();
@@ -2486,7 +2510,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       ].filter((item): item is string => Boolean(item))
     : [];
   const currentPath = window.location.pathname;
-  const activeGiftCardPage = currentPath.startsWith('/admin')
+  const requestedGiftCardPage = currentPath.startsWith('/admin')
     ? 'admin'
     : currentPath.startsWith('/orders')
       ? 'orders'
@@ -2497,6 +2521,9 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           : currentPath.startsWith('/activate')
             ? 'activate'
             : 'redeem';
+  // Everything but Redeem is a manager's page; a staffer landing on one of
+  // those URLs gets the redeem screen, not a page of 403s.
+  const activeGiftCardPage = canManage ? requestedGiftCardPage : 'redeem';
   const pageCopy = {
     redeem: {
       eyebrow: 'Daily workflow',
@@ -2534,7 +2561,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   return (
     <AppShell
       brand={<ProductLogo appId="giftcards" size="md" showBrandMark={false} />}
-      sidebar={<SidebarNav isOwner={isGiftCardOwner(user)} />}
+      sidebar={<SidebarNav isOwner={isGiftCardOwner(user)} canManage={canManage} />}
       topBar={
         <TopBar
           title="ALMA Gift Cards"
@@ -2943,7 +2970,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
         {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
       </div>
-      <GiftCardTaskBar isOwner={isGiftCardOwner(user)} />
+      <GiftCardTaskBar isOwner={isGiftCardOwner(user)} canManage={canManage} />
     </AppShell>
   );
 }

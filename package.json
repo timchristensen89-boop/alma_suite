@@ -42,6 +42,7 @@
     "db:extract:legacy-compliance": "pnpm --filter @alma/db extract:legacy-compliance --",
     "db:extract:legacy-stock": "pnpm --filter @alma/db extract:legacy-stock --",
     "db:sync:govee": "pnpm --filter @alma/db sync:govee-temperature --",
+    "access:backfill": "pnpm --filter @alma/api access:backfill --",
     "prebuild": "pnpm db:generate",
     "gcp-build": "pnpm db:generate && pnpm --filter @alma/shared build && pnpm --filter @alma/db build && pnpm --filter @alma/api build && pnpm --filter @alma/stock-api build",
     "build": "pnpm -r --if-present build",

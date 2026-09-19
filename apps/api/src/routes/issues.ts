@@ -154,7 +154,7 @@ issuesRouter.put('/:id', async (req, res, next) => {
 
 issuesRouter.post('/:id/complete', async (req, res, next) => {
   try {
-    const issue = await issueService.complete(req.params.id, req.body);
+    const issue = await issueService.complete(req.params.id, req.body, req.user);
     res.json(issue);
   } catch (error) {
     next(error);

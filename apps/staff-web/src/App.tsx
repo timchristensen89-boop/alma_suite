@@ -197,6 +197,9 @@ const STAFF_PROFILE_PRESETS: Array<{
   employmentType: string;
   appAccess: Partial<Record<AlmaAppId, { status: StaffAppAccessStatus; role: string; permissions?: Record<string, boolean> }>>;
 }> = [
+  // The standard set every hire gets from the API's defaults: their own
+  // roster, swaps and leave; log an issue and run the checks; check and
+  // redeem gift cards. Kitchen adds Stock so they can count.
   {
     id: 'staff',
     label: 'Staff',
@@ -204,6 +207,22 @@ const STAFF_PROFILE_PRESETS: Array<{
     employmentType: 'Casual',
     appAccess: {
       STAFF: { status: 'ENABLED', role: 'USER', permissions: { staffSelfView: true, timesheetsSubmit: true, tipsViewOwn: true, chatTeam: true } },
+      COMPLIANCE: { status: 'ENABLED', role: 'USER', permissions: { view: true, issuesCreate: true, checklistsRun: true } },
+      GIFTCARDS: { status: 'ENABLED', role: 'USER', permissions: { view: true, giftcardsRedeem: true } },
+      TRAINING: { status: 'ENABLED', role: 'USER', permissions: { academyViewOwn: true } },
+      SETTINGS: { status: 'DISABLED', role: 'USER' }
+    }
+  },
+  {
+    id: 'kitchen',
+    label: 'Kitchen staff',
+    roleTitle: 'Kitchen staff',
+    employmentType: 'Casual',
+    appAccess: {
+      STAFF: { status: 'ENABLED', role: 'USER', permissions: { staffSelfView: true, timesheetsSubmit: true, tipsViewOwn: true, chatTeam: true } },
+      COMPLIANCE: { status: 'ENABLED', role: 'USER', permissions: { view: true, issuesCreate: true, checklistsRun: true } },
+      GIFTCARDS: { status: 'ENABLED', role: 'USER', permissions: { view: true, giftcardsRedeem: true } },
+      STOCK: { status: 'ENABLED', role: 'USER', permissions: { view: true, stockCount: true } },
       TRAINING: { status: 'ENABLED', role: 'USER', permissions: { academyViewOwn: true } },
       SETTINGS: { status: 'DISABLED', role: 'USER' }
     }
@@ -289,10 +308,11 @@ const ACCESS_PERMISSION_GROUPS: Partial<Record<AlmaAppId, Array<{ key: string; l
   STAFF: [
     { key: 'staffView', label: 'View staff' },
     { key: 'staffEdit', label: 'Edit staff profiles' },
-    { key: 'staffHrView', label: 'View HR records' },
-    { key: 'staffHrManage', label: 'Manage HR records' },
-    { key: 'staffHrRightToWork', label: 'Right-to-work HR records' },
-    { key: 'staffHrPayChanges', label: 'Pay-change HR records' },
+    // HR records and documents themselves are admin-only. These three keys
+    // now decide which sensitive profile FIELDS a manager can see.
+    { key: 'staffHrView', label: 'See emergency contact details' },
+    { key: 'staffHrRightToWork', label: 'See bank, tax, super, date of birth and address' },
+    { key: 'staffHrPayChanges', label: 'See pay rates' },
     { key: 'rosterView', label: 'View roster' },
     { key: 'rosterManage', label: 'Manage roster' },
     { key: 'rosterPublish', label: 'Publish roster' },
@@ -712,26 +732,15 @@ function canManageRosterAreas(user: ReturnType<typeof useAuth>['user']) {
   );
 }
 
+// HR records and other people's documents are for Alma admins. The API says
+// the same (hasStaffHrAccess, redactStaffProfileFields), so a manager who
+// somehow reached these screens would see nothing anyway.
 function canAccessStaffHr(user: ReturnType<typeof useAuth>['user']) {
-  const permissions = staffPermissions(user);
-  return Boolean(
-    user &&
-    user.role !== 'STAFF' &&
-    (user.isAdmin ||
-      user.role === 'ADMIN' ||
-      permissions.admin ||
-      permissions.staffHrView ||
-      permissions.staffHrManage)
-  );
+  return Boolean(user && (user.isAdmin || user.role === 'ADMIN'));
 }
 
 function canManageStaffHr(user: ReturnType<typeof useAuth>['user']) {
-  const permissions = staffPermissions(user);
-  return Boolean(
-    user &&
-    user.role !== 'STAFF' &&
-    (user.isAdmin || user.role === 'ADMIN' || permissions.admin || permissions.staffHrManage)
-  );
+  return canAccessStaffHr(user);
 }
 
 function canAccessRightToWorkHr(user: ReturnType<typeof useAuth>['user']) {
@@ -4448,10 +4457,12 @@ function complianceStatusTone(status: StaffComplianceRecord['status']): 'positiv
   return status === 'PENDING' ? 'warning' : 'muted';
 }
 
-function profileSectionIsLocked(section: StaffProfileSectionId, options: { canOpenHr: boolean; canOpenRightToWork: boolean; canOpenPayroll: boolean }) {
+function profileSectionIsLocked(section: StaffProfileSectionId, options: { canOpenHr: boolean; canOpenRightToWork: boolean; canOpenPayroll: boolean; isOwnProfile: boolean }) {
   if (section === 'payroll') return !options.canOpenPayroll;
   if (section === 'right-to-work') return !options.canOpenRightToWork;
   if (section === 'journals') return !options.canOpenHr;
+  // Someone else's documents are an admin's to open; your own are yours.
+  if (section === 'documents') return !options.canOpenHr && !options.isOwnProfile;
   return false;
 }
 
@@ -4770,7 +4781,7 @@ function StaffProfileWorkspacePage({
   const accessByApp = new Map(member.appAccess.map((access) => [access.appId, access]));
   const selectedRoleTemplate = roleTemplates.find((template) => template.id === profileDraft.roleTemplateId) ?? null;
   const canOpenPayroll = canOpenHr || canOpenPayChanges;
-  const locked = profileSectionIsLocked(activeSection, { canOpenHr, canOpenRightToWork, canOpenPayroll });
+  const locked = profileSectionIsLocked(activeSection, { canOpenHr, canOpenRightToWork, canOpenPayroll, isOwnProfile: member.id === user?.id });
   const profileHrRecords = canOpenHr ? hrRecords.filter((record) => record.staffProfileId === member.id) : [];
   const visibleHrRecords = profileHrRecords.filter((record) => {
     if (record.recordType === 'RIGHT_TO_WORK') return canOpenRightToWork;
@@ -5664,7 +5675,7 @@ function StaffProfileWorkspacePage({
               <div key={group}>
                 <span className="staff-profile-nav-group">{group}</span>
                 {items.map((item) => {
-                  const itemLocked = profileSectionIsLocked(item.id, { canOpenHr, canOpenRightToWork, canOpenPayroll });
+                  const itemLocked = profileSectionIsLocked(item.id, { canOpenHr, canOpenRightToWork, canOpenPayroll, isOwnProfile: member.id === user?.id });
                   return <NavLink key={item.id} to={`/staff/${member.id}/${item.id}`} className={({ isActive }: { isActive: boolean }) => `${isActive ? 'is-active' : ''} ${itemLocked ? 'is-locked' : ''}`}><span>{item.label}</span>{item.sensitive ? <IconFileLock /> : null}</NavLink>;
                 })}
               </div>

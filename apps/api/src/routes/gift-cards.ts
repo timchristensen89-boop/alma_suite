@@ -24,7 +24,15 @@ function requireGiftCardRedeemer(req: Request, _res: Response, next: NextFunctio
   if (!user) return next(new HttpError(401, 'You’re not signed in. Sign in with your Alma account or the venue device.'));
   const isManagerLike = user.accountType !== 'VENUE_DEVICE' && (user.role === 'ADMIN' || user.role === 'MANAGER' || user.isAdmin);
   const giftAccess = user.appAccess.find((access) => access.appId === 'GIFTCARDS' && access.status === 'ENABLED');
-  const canRedeem = Boolean(giftAccess?.permissions?.redeem) || giftAccess?.role === 'ADMIN' || giftAccess?.role === 'MANAGER';
+  // Two spellings of the same grant: venue-device rows say `redeem`, the
+  // access editor and the role presets say `giftcardsRedeem`. Either counts,
+  // so a staffer ticked "Redeem gift cards" in the editor can actually redeem.
+  const permissions = (giftAccess?.permissions ?? {}) as Record<string, unknown>;
+  const canRedeem =
+    permissions.redeem === true ||
+    permissions.giftcardsRedeem === true ||
+    giftAccess?.role === 'ADMIN' ||
+    giftAccess?.role === 'MANAGER';
   if (isManagerLike || canRedeem) return next();
   return next(new HttpError(403, 'This account can’t redeem gift cards. Ask a manager, or use the venue iPad.'));
 }

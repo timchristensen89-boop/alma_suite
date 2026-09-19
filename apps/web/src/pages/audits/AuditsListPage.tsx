@@ -215,6 +215,7 @@ export function AuditsListPage() {
           ) : null}
 
           {rows.length > 0 ? (
+            <div className="table-scroll">
             <table>
               <thead>
                 <tr>
@@ -264,6 +265,7 @@ export function AuditsListPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           ) : null}
         </Card>
 

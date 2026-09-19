@@ -242,8 +242,9 @@ function ComplianceTaskBar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const allowed = new Set(navItemsForRole(user).map((item) => item.to));
-  const items: TaskBarItem[] = COMPLIANCE_TASKS.filter(
+  const navItems = navItemsForRole(user);
+  const allowed = new Set(navItems.map((item) => item.to));
+  const named: TaskBarItem[] = COMPLIANCE_TASKS.filter(
     // Only offer what this person's own nav already grants them; the routes
     // themselves are role-gated, and a bar full of locked doors is worse than
     // a shorter bar.
@@ -257,6 +258,21 @@ function ComplianceTaskBar() {
       path === '/' ? location.pathname === '/' : location.pathname === path || location.pathname.startsWith(`${path}/`)
     )
   }));
+  // Anything in this person's own nav that the hand-written list above does
+  // not name goes on the end. The sidebar is hidden on phones once this bar
+  // exists, so a screen missing from both was simply unreachable — Settings
+  // (your account and password) was exactly that.
+  const covered = new Set(COMPLIANCE_TASKS.flatMap((task) => [task.to, ...(task.match ?? [])]));
+  const rest: TaskBarItem[] = navItems
+    .filter((item) => !covered.has(item.to))
+    .map((item) => ({
+      key: item.to,
+      label: item.label,
+      href: item.to,
+      icon: item.icon,
+      active: location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
+    }));
+  const items = [...named, ...rest];
   return (
     <TaskBar
       items={items}
@@ -311,7 +327,7 @@ function AuthenticatedApp() {
           <Route path="/checklists/templates/new" element={<RequireRole minimum="MANAGER"><ChecklistTemplateEditPage /></RequireRole>} />
           <Route path="/checklists/templates/:id/edit" element={<RequireRole minimum="MANAGER"><ChecklistTemplateEditPage /></RequireRole>} />
           <Route path="/checklists/runs/:id" element={<ChecklistRunDetailPage />} />
-          <Route path="/staff" element={<RequireRole minimum="MANAGER"><StaffPage /></RequireRole>} />
+          <Route path="/staff" element={<RequireRole minimum="ADMIN"><StaffPage /></RequireRole>} />
           <Route path="/temperatures" element={<RequireRole minimum="MANAGER"><HubLayout tabs={checksTabs}><TemperaturesPage /></HubLayout></RequireRole>} />
           <Route path="/licences" element={<RequireRole minimum="MANAGER"><LiquorPage /></RequireRole>} />
           <Route path="/licenses" element={<Navigate to="/licences" replace />} />

@@ -501,6 +501,10 @@ export const issueService = {
     const area = data.area?.trim() || null;
     const resolvedAssignee = await resolveAssigneeWithArea(data.assignee, area);
     const assigneeChanged = (existing.assignee ?? '') !== (resolvedAssignee.assignee ?? '');
+    // The activity log used to say 'system' did the edit. The person is
+    // right here — and "who handed me this?" is the question the log exists
+    // to answer.
+    const actorName = actor ? `${actor.firstName} ${actor.lastName}`.trim() || actor.email || 'system' : 'system';
 
     const changes: string[] = [];
     if (existing.status !== data.status) changes.push(`status ${existing.status} → ${data.status}`);
@@ -519,6 +523,20 @@ export const issueService = {
         await tx.issueEvidence.deleteMany({ where: { issueId: id } });
       }
 
+      // One row that says exactly who assigned it to whom, separate from the
+      // field-by-field diff below, so the detail screen can answer
+      // "assigned by" without parsing prose.
+      if (assigneeChanged) {
+        await tx.issueActivity.create({
+          data: {
+            issueId: id,
+            action: 'assigned',
+            message: resolvedAssignee.assignee ? `Assigned to ${resolvedAssignee.assignee}` : `Unassigned (was ${existing.assignee ?? 'nobody'})`,
+            actor: actorName
+          }
+        });
+      }
+
       const issue = await tx.issue.update({
         where: { id },
         data: {
@@ -529,6 +547,9 @@ export const issueService = {
           area,
           status: data.status,
           assignee: resolvedAssignee.assignee,
+          // Keep the id in step with the name: triage's "owner has left"
+          // check reads the id, and it was only ever written on create.
+          assigneeStaffId: resolvedAssignee.staffId,
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
           notes: data.notes || null,
           resolutionNotes: data.resolutionNotes || null,
@@ -546,7 +567,7 @@ export const issueService = {
             create: {
               action: 'updated',
               message: changes.length ? `Issue updated: ${changes.join(', ')}.` : 'Issue updated with no material field changes recorded.',
-              actor: 'system'
+              actor: actorName
             }
           }
         },
@@ -570,8 +591,9 @@ export const issueService = {
     });
   },
 
-  async complete(id: string, input: unknown) {
+  async complete(id: string, input: unknown, actor?: AuthUser | null) {
     const data = issueCompleteInputSchema.parse(input);
+    const actorName = actor ? `${actor.firstName} ${actor.lastName}`.trim() || actor.email || 'system' : 'system';
     const existing = await this.getById(id);
     const note = data.resolutionNotes?.trim();
     const resolutionNotes = note
@@ -593,7 +615,7 @@ export const issueService = {
             message: note
               ? `Issue completed with resolution notes: ${note}`
               : 'Issue completed.',
-            actor: 'system'
+            actor: actorName
           }
         }
       },
@@ -644,7 +666,7 @@ export const issueService = {
         await tx.issue.update({
           where: { id: issueId },
           data: {
-            ...(target.assignee ? { assignee: target.assignee } : {}),
+            ...(target.assignee ? { assignee: target.assignee, assigneeStaffId: target.staffId } : {}),
             ...(data.status ? { status: data.status } : {})
           }
         });

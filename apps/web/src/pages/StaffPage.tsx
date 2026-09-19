@@ -308,6 +308,7 @@ export function StaffPage() {
                 }}
               >
                 <div
+                  className="staff-register-row"
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -335,7 +336,7 @@ export function StaffPage() {
                       </span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <div className="staff-register-actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <Badge tone="muted">{member.records.length} records</Badge>
                     {canManageStaff ? (
                       <>

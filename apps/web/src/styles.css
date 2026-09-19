@@ -13428,3 +13428,100 @@ html[data-theme='dark'] {
     color: var(--color-text);
   }
 }
+
+/* ── Phones: tables become cards ──────────────────────────────────────────
+   Inside a .card, a wide table was clipped rather than scrolled (.card is
+   overflow:hidden), so on a phone the issues list showed the title column
+   and nothing else — no status, no assignee. Rows opt in with the
+   rows-as-cards class and label each cell; below 640px every row is a card. */
+@media (max-width: 640px) {
+  .card table.rows-as-cards,
+  .card table.rows-as-cards tbody,
+  .card table.rows-as-cards tr {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  .card table.rows-as-cards thead {
+    display: none;
+  }
+  .card table.rows-as-cards tr {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .card table.rows-as-cards tr:last-child {
+    border-bottom: 0;
+  }
+  .card table.rows-as-cards td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  .card table.rows-as-cards td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-subtle);
+  }
+  .card table.rows-as-cards td:first-child {
+    display: block;
+    padding: 0 0 8px;
+  }
+  .card table.rows-as-cards td.row-open {
+    display: none;
+  }
+  .card table.rows-as-cards td.row-actions {
+    justify-content: flex-start;
+    padding-top: 8px;
+  }
+  .card table.rows-as-cards td[colspan] {
+    display: block;
+    padding: 8px 0 0;
+  }
+  .card table.rows-as-cards td[colspan] .detail-list {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* The backlog triage figures were desktop-sized in a two-up grid. */
+  .issue-triage-stat strong {
+    font-size: 20px;
+  }
+  /* The staff register row: name block above the action buttons, not beside
+     them in a 60px column. */
+  .staff-register-row {
+    flex-direction: column;
+  }
+  .staff-register-actions {
+    justify-content: flex-start !important;
+  }
+  /* Seventeen checklist templates on one phone screen: keep the cards but
+     drop the padding and stack their meta in one line. */
+  .template-grid {
+    gap: 8px;
+  }
+  .template-card {
+    gap: 8px;
+    padding: 12px;
+  }
+  .template-card-meta {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+}
+
+/* Issue list: the "assigned to me" chip sits with the category chips but is
+   a different kind of filter, so it reads as one. */
+.issue-cat-chip-mine {
+  margin-left: auto;
+}
+.activity-actor {
+  font-weight: 400;
+}

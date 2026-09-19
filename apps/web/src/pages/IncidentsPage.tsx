@@ -335,7 +335,7 @@ export function IncidentsPage() {
         ) : null}
 
         {rows.length > 0 ? (
-          <table>
+          <table className="rows-as-cards">
             <thead>
               <tr>
                 <th>Title</th>
@@ -360,20 +360,20 @@ export function IncidentsPage() {
                           <span className="line-clamp">{incident.summary}</span>
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Type">
                         <Badge tone="muted">{incident.incidentType}</Badge>
                       </td>
-                      <td>
+                      <td data-label="Severity">
                         <IssueSeverityPill severity={incident.severity} />
                       </td>
-                      <td>
+                      <td data-label="Status">
                         <Badge tone={statusTone[incident.status]} dot>
                           {statusLabel[incident.status]}
                         </Badge>
                       </td>
-                      <td>{new Date(incident.occurredAt).toLocaleDateString()}</td>
-                      <td>{incident.reportedBy}</td>
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <td data-label="Occurred">{new Date(incident.occurredAt).toLocaleDateString()}</td>
+                      <td data-label="Reported by">{incident.reportedBy}</td>
+                      <td className="row-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {incident.status !== 'CLOSED' ? (
                           <Button
                             size="sm"

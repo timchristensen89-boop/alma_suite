@@ -9,7 +9,7 @@ import { AlmaHomeBubble, Badge, Button, Card, ShieldIcon, StatCard } from '@alma
 import { useAsync } from '../hooks/useAsync';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { canManage } from '../lib/rbac';
+import { canAdmin, canManage } from '../lib/rbac';
 import {
   IconArrowRight,
   IconChecklist,
@@ -34,6 +34,9 @@ const loadSummary = () => api<DashboardSummary>('/api/summary');
 export function DashboardPage() {
   const { user } = useAuth();
   const managerAccess = canManage(user);
+  // The staff certificate register is admin-only; don't offer a door that
+  // bounces a manager straight back here.
+  const adminAccess = canAdmin(user);
   const { data, loading, error, reload } = useAsync<DashboardSummary>(loadSummary, []);
 
   const hasCritical = (data?.issues.critical ?? 0) > 0;
@@ -157,6 +160,7 @@ export function DashboardPage() {
               loading={loading}
             />
           </Link>
+          {adminAccess ? (
           <Link to="/staff" className="stat-card-link" aria-label="Staff expiring">
             <StatCard
               label="Staff expiring"
@@ -167,6 +171,8 @@ export function DashboardPage() {
               loading={loading}
             />
           </Link>
+          ) : null}
+          {adminAccess ? (
           <Link to="/staff" className="stat-card-link" aria-label="Staff pending approval">
               <StatCard
                 label="Staff pending"
@@ -176,6 +182,7 @@ export function DashboardPage() {
                 loading={loading}
               />
             </Link>
+          ) : null}
             <Link to="/temperatures" className="stat-card-link" aria-label="Missing temperature logs today">
               <StatCard
                 label="Missing logs today"
@@ -224,7 +231,8 @@ export function DashboardPage() {
                   hint="Assets with a recent out-of-range reading"
                   to="/temperatures"
                 />
-                <AttentionRow
+                {adminAccess ? (
+                  <AttentionRow
                   icon={<IconStaff size={16} />}
                   tone={expiring > 0 ? 'warning' : 'neutral'}
                   title="Staff records expiring"
@@ -232,6 +240,7 @@ export function DashboardPage() {
                   hint="Certificates expiring in the next 30 days"
                   to="/staff"
                 />
+                ) : null}
               </>
             ) : null}
             <AttentionRow

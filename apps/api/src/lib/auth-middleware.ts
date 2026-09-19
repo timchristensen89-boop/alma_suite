@@ -36,7 +36,7 @@ function hasSettingsAccess(user: AuthUser) {
   return Boolean(settingsAccess?.role === 'ADMIN' || settingsAccess?.permissions?.admin);
 }
 
-function isWrite(req: Request) {
+function isWrite(req: Pick<Request, 'method'>) {
   return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
 }
 
@@ -70,9 +70,39 @@ const STAFF_APP_SURFACES = [
   '/api/handbook-documents'
 ];
 
-function isStaffWriteAllowed(req: Request) {
+// The register's floor work: taking, sending and settling orders, splitting a
+// bill, clearing a service call, bumping the kitchen screen, logging wastage
+// or an 86. A PIN'd staff member on the till is a STAFF session, and without
+// these entries every order they rang up was a "manager-only action".
+//
+// Money-reversing actions (reopen, void, refund) are listed because the
+// service demands a manager PIN for a non-manager session (needsManagerPin
+// in routes/pos.ts); discounts, line adjustments, drawer and day close,
+// pairing and every menu/printer/settings write are NOT listed, because
+// nothing in the service checks a PIN for them — the manager-only rule below
+// is their only gate.
+const POS_FLOOR_WRITES: Array<{ method: 'POST' | 'PATCH' | 'PUT' | 'DELETE'; pattern: RegExp }> = [
+  { method: 'POST', pattern: /^\/api\/pos\/orders$/ },
+  { method: 'PATCH', pattern: /^\/api\/pos\/orders\/[^/]+$/ },
+  { method: 'PUT', pattern: /^\/api\/pos\/orders\/[^/]+\/lines$/ },
+  { method: 'POST', pattern: /^\/api\/pos\/orders\/[^/]+\/(pay|send|meta|print-receipt|email-receipt|split-evenly|merge|terminal-checkout|loyalty|gift-cards|reopen|void|refund|terminal-refund)$/ },
+  { method: 'DELETE', pattern: /^\/api\/pos\/orders\/[^/]+\/(loyalty|gift-cards\/[^/]+)$/ },
+  { method: 'POST', pattern: /^\/api\/pos\/terminal-checkouts\/[^/]+\/cancel$/ },
+  { method: 'PATCH', pattern: /^\/api\/pos\/tables\/[^/]+\/position$/ },
+  { method: 'POST', pattern: /^\/api\/pos\/service-calls\/[^/]+\/clear$/ },
+  { method: 'POST', pattern: /^\/api\/pos\/kds\/[^/]+\/(bump|recall)$/ },
+  { method: 'POST', pattern: /^\/api\/pos\/(wastage|eighty-six|unlock|manager-approve|bug-reports)$/ },
+  { method: 'PATCH', pattern: /^\/api\/pos\/bug-reports\/[^/]+$/ },
+  { method: 'POST', pattern: /^\/api\/pos\/loyalty\/join$/ }
+];
+
+export function isStaffWriteAllowed(req: Pick<Request, 'path' | 'method'>) {
   if (!isWrite(req)) return true;
   if (req.path.startsWith('/api/issues')) return true;
+  // Redeeming a gift card at the counter is everyone's job. The route still
+  // runs requireGiftCardRedeemer, so the account needs the Gift Cards grant.
+  if (req.path === '/api/gift-cards/redeem' && req.method === 'POST') return true;
+  if (POS_FLOOR_WRITES.some((entry) => entry.method === req.method.toUpperCase() && entry.pattern.test(req.path))) return true;
   if (req.path === '/api/incidents' && req.method === 'POST') return true;
   if (req.path.startsWith('/api/checklists/runs')) return true;
   if (/^\/api\/shift-task-assignments\/[^/]+\/start-checklist$/.test(req.path) && req.method === 'POST') return true;
@@ -227,6 +257,14 @@ export async function authMiddleware(
     } else if (req.path.startsWith('/api/gift-cards')) {
       if (!hasAnyEnabledAppAccess(req.user, ['GIFTCARDS', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Gift Cards isn’t enabled on your account. Ask a manager.'));
+      }
+    } else if (req.path.startsWith('/api/pos')) {
+      // The register is gated by the venue device and the staff PIN, not by an
+      // app grant of its own. Any signed-in account with any enabled access
+      // may use it; what they may DO on it is decided per action below and in
+      // the POS service (manager PIN for reversals, posPermissions).
+      if (!hasAnyEnabledAppAccess(req.user, ['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS'])) {
+        return next(new HttpError(403, 'Your Alma Suite access is turned off. Ask an Alma admin.'));
       }
     } else if (req.path.startsWith('/api/notifications') || req.path.startsWith('/api/messages') || req.path.startsWith('/api/communications')) {
       if (!hasAnyEnabledAppAccess(req.user, ['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS'])) {

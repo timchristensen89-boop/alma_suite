@@ -10,7 +10,8 @@
     "test": "node --import tsx --test $(find src -name \"*.test.ts\" | sort)",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed:forecast-module": "node --import tsx scripts/seed-forecast-module.ts",
-    "generate:import-templates": "node --import tsx scripts/generate-import-templates.ts"
+    "generate:import-templates": "node --import tsx scripts/generate-import-templates.ts",
+    "access:backfill": "node --import tsx scripts/backfill-staff-access.ts"
   },
   "dependencies": {
     "@alma/db": "workspace:*",
