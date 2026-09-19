@@ -10,6 +10,15 @@
       ],
       "headers": [
         {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
           "source": "/index.html",
           "headers": [
             {
@@ -19,11 +28,20 @@
           ]
         },
         {
-          "source": "**",
+          "source": "/sw.js",
           "headers": [
             {
               "key": "Cache-Control",
-              "value": "no-cache"
+              "value": "no-cache, no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         }
@@ -48,6 +66,15 @@
       ],
       "headers": [
         {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
           "source": "/index.html",
           "headers": [
             {
@@ -57,11 +84,20 @@
           ]
         },
         {
-          "source": "**",
+          "source": "/sw.js",
           "headers": [
             {
               "key": "Cache-Control",
-              "value": "no-cache"
+              "value": "no-cache, no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         }
@@ -86,6 +122,15 @@
       ],
       "headers": [
         {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
           "source": "/index.html",
           "headers": [
             {
@@ -95,11 +140,20 @@
           ]
         },
         {
-          "source": "**",
+          "source": "/sw.js",
           "headers": [
             {
               "key": "Cache-Control",
-              "value": "no-cache"
+              "value": "no-cache, no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         }
@@ -124,6 +178,15 @@
       ],
       "headers": [
         {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
           "source": "/index.html",
           "headers": [
             {
@@ -133,11 +196,20 @@
           ]
         },
         {
-          "source": "**",
+          "source": "/sw.js",
           "headers": [
             {
               "key": "Cache-Control",
-              "value": "no-cache"
+              "value": "no-cache, no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         }
@@ -162,6 +234,15 @@
       ],
       "headers": [
         {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
           "source": "/index.html",
           "headers": [
             {
@@ -171,11 +252,20 @@
           ]
         },
         {
-          "source": "**",
+          "source": "/sw.js",
           "headers": [
             {
               "key": "Cache-Control",
-              "value": "no-cache"
+              "value": "no-cache, no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         }
@@ -200,6 +290,15 @@
       ],
       "headers": [
         {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
           "source": "/index.html",
           "headers": [
             {
@@ -209,11 +308,20 @@
           ]
         },
         {
-          "source": "**",
+          "source": "/sw.js",
           "headers": [
             {
               "key": "Cache-Control",
-              "value": "no-cache"
+              "value": "no-cache, no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         }
@@ -238,6 +346,15 @@
       ],
       "headers": [
         {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
           "source": "/index.html",
           "headers": [
             {
@@ -247,11 +364,20 @@
           ]
         },
         {
-          "source": "**",
+          "source": "/sw.js",
           "headers": [
             {
               "key": "Cache-Control",
-              "value": "no-cache"
+              "value": "no-cache, no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         }
@@ -276,6 +402,15 @@
       ],
       "headers": [
         {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
           "source": "/index.html",
           "headers": [
             {
@@ -285,11 +420,20 @@
           ]
         },
         {
-          "source": "**",
+          "source": "/sw.js",
           "headers": [
             {
               "key": "Cache-Control",
-              "value": "no-cache"
+              "value": "no-cache, no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         }
@@ -314,6 +458,15 @@
       ],
       "headers": [
         {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
           "source": "/index.html",
           "headers": [
             {
@@ -323,11 +476,20 @@
           ]
         },
         {
-          "source": "**",
+          "source": "/sw.js",
           "headers": [
             {
               "key": "Cache-Control",
-              "value": "no-cache"
+              "value": "no-cache, no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         }
@@ -352,6 +514,15 @@
       ],
       "headers": [
         {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
           "source": "/index.html",
           "headers": [
             {
@@ -361,11 +532,20 @@
           ]
         },
         {
-          "source": "**",
+          "source": "/sw.js",
           "headers": [
             {
               "key": "Cache-Control",
-              "value": "no-cache"
+              "value": "no-cache, no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         }
@@ -390,6 +570,15 @@
       ],
       "headers": [
         {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
           "source": "/index.html",
           "headers": [
             {
@@ -399,11 +588,20 @@
           ]
         },
         {
-          "source": "**",
+          "source": "/sw.js",
           "headers": [
             {
               "key": "Cache-Control",
-              "value": "no-cache"
+              "value": "no-cache, no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         }

@@ -1,5 +1,19 @@
 # staff-web breakup plan — App.tsx (17,008 lines → modules)
 
+> **Status (2026-09):** the first cut of this plan is done for the purpose of
+> shipping smaller chunks, not yet for the workforce extraction. Seventeen
+> manager-only and public pages (Roster, Timesheets, Tips, Communications,
+> Approvals, Leave calendar, Training, HR, Invites, the manager dashboards,
+> Labour, Public onboarding, StaffHome, StaffProfilesPage) now live in
+> `apps/staff-web/src/pages/*.tsx` and load on demand via `React.lazy`; the
+> helpers they share with the rest of the app are in `src/pages/shared.tsx`.
+> The code was moved verbatim — line ranges below refer to the old single
+> file and are kept for the bucket assignments. The staff-member pages
+> (home, my roster, clock, availability, leave, checks, temperatures,
+> academy, documents) and the three pages whose dependency closure is the
+> whole app (`StaffProfileWorkspacePage`, `AdminPage`, `AccessPage`) are
+> still in `App.tsx`.
+
 `apps/staff-web/src/App.tsx` is one 17k-line file. It must be broken into per-feature
 modules **before** the workforce engine can be cleanly extracted. Do it
 incrementally with the app running — extract one page at a time, lowest risk first.

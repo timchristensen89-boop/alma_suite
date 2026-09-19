@@ -5759,26 +5759,32 @@ export const staffService = {
   },
 
   async getMyHome(actor: AuthUser) {
-    const member = await this.getById(actor.id, actor);
-    const clock = await this.getMyClockStatus(actor);
+    // The first screen every staff member opens. The profile, the clock
+    // status and the leave list don't depend on each other, so they run
+    // together; only the announcements wait, because they're scoped to the
+    // venue on the loaded profile.
+    const [member, clock, leave] = await Promise.all([
+      this.getById(actor.id, actor),
+      this.getMyClockStatus(actor),
+      prisma.staffLeaveRequest.findMany({
+        where: {
+          staffProfileId: actor.id,
+          endDate: { gte: new Date(new Date().getTime() - 24 * 60 * 60 * 1000) },
+          status: { in: ['PENDING', 'APPROVED'] }
+        },
+        include: {
+          staffProfile: {
+            select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+          }
+        },
+        orderBy: [{ startDate: 'asc' }],
+        take: 6
+      })
+    ]);
     const announcements = await communicationsService.list(
       { appId: 'STAFF', venue: member.venue ?? '', channel: 'general' },
       actor
     );
-    const leave = await prisma.staffLeaveRequest.findMany({
-      where: {
-        staffProfileId: actor.id,
-        endDate: { gte: new Date(new Date().getTime() - 24 * 60 * 60 * 1000) },
-        status: { in: ['PENDING', 'APPROVED'] }
-      },
-      include: {
-        staffProfile: {
-          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
-        }
-      },
-      orderBy: [{ startDate: 'asc' }],
-      take: 6
-    });
     const reminderCutoff = new Date();
     reminderCutoff.setDate(reminderCutoff.getDate() + 30);
     const complianceReminders = [

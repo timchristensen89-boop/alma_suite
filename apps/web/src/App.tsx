@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Navigate,
   NavLink,
@@ -9,36 +9,11 @@ import {
 } from 'react-router-dom';
 import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteInboxWidget, SuiteSignOutButton, TaskBar, type TaskBarItem, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
-import { OnboardingPage } from './pages/OnboardingPage';
 import { LoginPage } from './pages/LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './pages/PasswordRecoveryPages';
 import { SuiteAppLoginPage } from './pages/SuiteAppLoginPage';
 // AdminPage is exported from this package for admin-web to consume, but the
 // Compliance app no longer renders it — admin lives at alma-suite-admin.web.app.
-import { SettingsPage } from './pages/SettingsPage';
-import { IssuesListPage } from './pages/issues/IssuesListPage';
-import { IssueDetailPage } from './pages/issues/IssueDetailPage';
-import { IssueCreatePage } from './pages/issues/IssueCreatePage';
-import { IssueEditPage } from './pages/issues/IssueEditPage';
-import { ChecklistsListPage } from './pages/checklists/ChecklistsListPage';
-import { ChecklistRunDetailPage } from './pages/checklists/ChecklistRunDetailPage';
-import { ChecklistRunCreatePage } from './pages/checklists/ChecklistRunCreatePage';
-import { ChecklistTemplateEditPage } from './pages/checklists/ChecklistTemplateEditPage';
-import { ChecklistIpadPage } from './pages/checklists/ChecklistIpadPage';
-import { IncidentsPage } from './pages/IncidentsPage';
-import { StaffPage } from './pages/StaffPage';
-import { TemperaturesPage } from './pages/TemperaturesPage';
-import { LiquorPage } from './pages/LiquorPage';
-import { AuditsListPage } from './pages/audits/AuditsListPage';
-import { AuditRunCreatePage } from './pages/audits/AuditRunCreatePage';
-import { AuditRunDetailPage } from './pages/audits/AuditRunDetailPage';
-import { AuditTemplateCreatePage } from './pages/audits/AuditTemplateCreatePage';
-import { HandbookAdminPage } from './pages/handbook/HandbookIndexPage';
-import { OrgChartPage } from './pages/handbook/OrgChartPage';
-import { GuidelinesPage } from './pages/handbook/GuidelinesPage';
-import { OnboardingPage as HandbookOnboardingPage } from './pages/handbook/OnboardingPage';
-import { MaintenancePage } from './pages/handbook/MaintenancePage';
-import { IconExportPage } from './pages/IconExportPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { api } from './lib/api';
@@ -63,6 +38,36 @@ import {
   IconStaff,
   IconTemperature
 } from './lib/icons';
+
+// Pages load on demand. The whole app used to ship as one chunk, so opening
+// the dashboard on a phone also downloaded the audit editor, the handbook
+// admin and the icon exporter. Dashboard and the sign-in pages stay eager:
+// they are the first paint.
+const OnboardingPage = lazy(() => import('./pages/OnboardingPage').then((m) => ({ default: m.OnboardingPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const IssuesListPage = lazy(() => import('./pages/issues/IssuesListPage').then((m) => ({ default: m.IssuesListPage })));
+const IssueDetailPage = lazy(() => import('./pages/issues/IssueDetailPage').then((m) => ({ default: m.IssueDetailPage })));
+const IssueCreatePage = lazy(() => import('./pages/issues/IssueCreatePage').then((m) => ({ default: m.IssueCreatePage })));
+const IssueEditPage = lazy(() => import('./pages/issues/IssueEditPage').then((m) => ({ default: m.IssueEditPage })));
+const ChecklistsListPage = lazy(() => import('./pages/checklists/ChecklistsListPage').then((m) => ({ default: m.ChecklistsListPage })));
+const ChecklistRunDetailPage = lazy(() => import('./pages/checklists/ChecklistRunDetailPage').then((m) => ({ default: m.ChecklistRunDetailPage })));
+const ChecklistRunCreatePage = lazy(() => import('./pages/checklists/ChecklistRunCreatePage').then((m) => ({ default: m.ChecklistRunCreatePage })));
+const ChecklistTemplateEditPage = lazy(() => import('./pages/checklists/ChecklistTemplateEditPage').then((m) => ({ default: m.ChecklistTemplateEditPage })));
+const ChecklistIpadPage = lazy(() => import('./pages/checklists/ChecklistIpadPage').then((m) => ({ default: m.ChecklistIpadPage })));
+const IncidentsPage = lazy(() => import('./pages/IncidentsPage').then((m) => ({ default: m.IncidentsPage })));
+const StaffPage = lazy(() => import('./pages/StaffPage').then((m) => ({ default: m.StaffPage })));
+const TemperaturesPage = lazy(() => import('./pages/TemperaturesPage').then((m) => ({ default: m.TemperaturesPage })));
+const LiquorPage = lazy(() => import('./pages/LiquorPage').then((m) => ({ default: m.LiquorPage })));
+const AuditsListPage = lazy(() => import('./pages/audits/AuditsListPage').then((m) => ({ default: m.AuditsListPage })));
+const AuditRunCreatePage = lazy(() => import('./pages/audits/AuditRunCreatePage').then((m) => ({ default: m.AuditRunCreatePage })));
+const AuditRunDetailPage = lazy(() => import('./pages/audits/AuditRunDetailPage').then((m) => ({ default: m.AuditRunDetailPage })));
+const AuditTemplateCreatePage = lazy(() => import('./pages/audits/AuditTemplateCreatePage').then((m) => ({ default: m.AuditTemplateCreatePage })));
+const HandbookAdminPage = lazy(() => import('./pages/handbook/HandbookIndexPage').then((m) => ({ default: m.HandbookAdminPage })));
+const OrgChartPage = lazy(() => import('./pages/handbook/OrgChartPage').then((m) => ({ default: m.OrgChartPage })));
+const GuidelinesPage = lazy(() => import('./pages/handbook/GuidelinesPage').then((m) => ({ default: m.GuidelinesPage })));
+const HandbookOnboardingPage = lazy(() => import('./pages/handbook/OnboardingPage').then((m) => ({ default: m.OnboardingPage })));
+const MaintenancePage = lazy(() => import('./pages/handbook/MaintenancePage').then((m) => ({ default: m.MaintenancePage })));
+const IconExportPage = lazy(() => import('./pages/IconExportPage').then((m) => ({ default: m.IconExportPage })));
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 
@@ -293,6 +298,7 @@ function AuthenticatedApp() {
       topBar={<TopBarWithContext />}
     >
       <ErrorBoundary>
+        <Suspense fallback={<RouteLoader />}>
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/issues" element={<HubLayout tabs={issuesTabs}><IssuesListPage /></HubLayout>} />
@@ -333,6 +339,7 @@ function AuthenticatedApp() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        </Suspense>
       </ErrorBoundary>
       <ComplianceTaskBar />
     </AppShell>
@@ -357,6 +364,16 @@ function AdminRedirect() {
   return (
     <div className="full-page-loader">
       <Spinner label="Sending you to the Admin app…" />
+    </div>
+  );
+}
+
+// Shown while a route's chunk downloads — the same full-page spinner the auth
+// gate uses, so a slow first open of a section looks like loading, not a blank.
+function RouteLoader() {
+  return (
+    <div className="full-page-loader">
+      <Spinner label="Loading…" />
     </div>
   );
 }
@@ -390,6 +407,7 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 export default function App() {
   return (
     <AuthProvider>
+      <Suspense fallback={<RouteLoader />}>
       <Routes>
         <Route path="/onboarding/:token" element={<OnboardingPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -405,6 +423,7 @@ export default function App() {
           }
         />
       </Routes>
+      </Suspense>
     </AuthProvider>
   );
 }

@@ -343,7 +343,21 @@ async function ensureDefaultChannels(appId: AlmaAppId = 'STAFF', venue?: string)
     });
   }
 
-  await Promise.all(defaults.map((channel) =>
+  // This runs on every communications read, including the staff home screen,
+  // so in the steady state it must cost one query: find which defaults are
+  // already there and only upsert the ones that aren't. The upsert used to run
+  // for every default on every call — six or seven round trips per page load
+  // that never changed anything (the update side was always empty).
+  const keys = defaults.map((channel) => channel.channelKey || channelKeyFor(channel));
+  const existing = await prisma.suiteChatChannel.findMany({
+    where: { channelKey: { in: keys } },
+    select: { channelKey: true }
+  });
+  const present = new Set(existing.map((row) => row.channelKey));
+  const missing = defaults.filter((channel) => !present.has(channel.channelKey || channelKeyFor(channel)));
+  if (missing.length === 0) return;
+
+  await Promise.all(missing.map((channel) =>
     prisma.suiteChatChannel.upsert({
       where: { channelKey: channel.channelKey || channelKeyFor(channel) },
       create: {

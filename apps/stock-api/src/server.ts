@@ -1,3 +1,4 @@
+import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
@@ -25,6 +26,10 @@ import { uploadsRouter } from './routes/uploads.js';
 const app = express();
 
 app.use(cors({ origin: env.corsOrigin, credentials: true }));
+// Gzip compressible responses — the catalogue and stocktake payloads are
+// large JSON lists read on phones in cool rooms, and nothing else compresses
+// them on the way out.
+app.use(compression());
 // 6mb body limit so the Loaded CSV imports (item catalogue + historical
 // stocktakes) fit. A medium-size venue's full catalogue is well under 1mb.
 app.use(express.json({ limit: '20mb' })); // headroom for base64 invoice scans (OCR)
