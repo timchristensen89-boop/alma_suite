@@ -32,8 +32,22 @@ import {
   type StockCostOfGoodsPayload
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { summariseCostOfGoods } from '../lib/cost-of-goods.js';
+import { venueDayKey } from '@alma/shared';
 import { applyDefaultWastage, attachMatchesForReview, recipeCostSanity } from './stock-rules.service.js';
 import { convertBetweenUnits, convertQuantityToCostUnit } from './units.js';
+
+// `days` venue calendar days ending on the venue's today, inclusive, as the
+// UTC-midnight day keys serviceDate/invoiceDate are stored under. The old
+// window used the server's UTC date, which before 10-11am Sydney was still
+// yesterday — the lookback silently ended a day early every morning.
+function salesLookbackWindow(days: number) {
+  const toKey = venueDayKey();
+  const toDate = new Date(`${toKey}T23:59:59.999Z`);
+  const fromDate = new Date(`${toKey}T00:00:00.000Z`);
+  fromDate.setUTCDate(fromDate.getUTCDate() - (days - 1));
+  return { fromKey: fromDate.toISOString().slice(0, 10), toKey, fromDate, toDate };
+}
 
 type RecipeRow = Prisma.RecipeGetPayload<{
   include: {
@@ -805,8 +819,14 @@ export const recipesService = {
   },
 
   // Cost of Goods summary for the stock dashboard.
-  // Theoretical COGS = Σ (recipe cost × units sold) from Square sales.
-  // Actual COGS     = Σ supplier purchases (invoice totals) in the window.
+  // Theoretical COGS = Σ (recipe cost × units sold) from Square sales, over
+  //   the recipe-mapped items only — and "sales" here means THOSE items' net
+  //   sales, not the venue's takings.
+  // Actual COGS     = the suite-wide canonical figure (packages/db cogs.ts):
+  //   opening + purchases − closing when stocktakes bracket the window,
+  //   otherwise purchases only, flagged as such. The two are only
+  //   comparable when the actual figure is stocktake-bounded; the maths and
+  //   the labelling live in lib/cost-of-goods.ts.
   async costOfGoods(options?: { venue?: string | null; days?: number }): Promise<StockCostOfGoodsPayload> {
     const lookbackDays = Math.min(Math.max(Math.floor(options?.days ?? 30), 1), 365);
     const venue = options?.venue?.trim() || null;
@@ -817,43 +837,32 @@ export const recipesService = {
       ? recipes.filter((recipe) => !recipe.venue || recipe.venue.toLowerCase() === venueKey)
       : recipes;
 
-    let theoreticalCogsCents = 0;
-    let netSalesCents = 0;
-    let mappedRecipes = 0;
-    let unmappedRecipes = 0;
-    let marginSum = 0;
-    let marginCount = 0;
-    for (const recipe of scoped) {
-      const sales = recipe.actualSales;
-      const qty = sales?.quantitySold ?? 0;
-      const costCents = Math.round((recipe.estimatedCost ?? 0) * 100);
-      if (sales && qty > 0) {
-        mappedRecipes += 1;
-        theoreticalCogsCents += costCents * qty;
-        netSalesCents += sales.netSalesCents;
-        if (recipe.salePriceCents && recipe.salePriceCents > 0) {
-          marginSum += ((recipe.salePriceCents - costCents) / recipe.salePriceCents) * 100;
-          marginCount += 1;
-        }
-      } else {
-        unmappedRecipes += 1;
-      }
-    }
-
-    // Actual COGS comes from the suite-wide canonical helper (ex-GST, finalised
-    // stock purchases, stocktake-bounded with a purchases-only fallback) so this
-    // dashboard agrees with the Reports Prime Cost and Monthly Recap for the same
-    // period instead of using its own formula.
-    const windowEnd = new Date();
-    const since = new Date(windowEnd);
-    since.setDate(since.getDate() - lookbackDays);
+    // The same venue-day window the sales lookback uses: `lookbackDays`
+    // calendar days ending on the venue's today, inclusive. serviceDate and
+    // invoiceDate are both stored as UTC midnight of the venue day.
+    const window = salesLookbackWindow(lookbackDays);
+    const since = window.fromDate;
+    const windowEnd = new Date(window.toDate.getTime() + 1);
     const actualCogs = await computeActualCogs({ venue: venue ?? null, start: since, end: windowEnd });
-    const actualCogsCents = actualCogs.cogsCents;
 
-    const varianceCents = actualCogsCents - theoreticalCogsCents;
-    const variancePercent =
-      theoreticalCogsCents > 0 ? (varianceCents / theoreticalCogsCents) * 100 : null;
-    const cogsPercentOfSales = netSalesCents > 0 ? (theoreticalCogsCents / netSalesCents) * 100 : null;
+    const summary = summariseCostOfGoods({
+      recipes: scoped.map((recipe) => ({
+        id: recipe.id,
+        estimatedCost: recipe.estimatedCost ?? null,
+        salePriceCents: recipe.salePriceCents ?? null,
+        actualSales: recipe.actualSales
+          ? { quantitySold: recipe.actualSales.quantitySold, netSalesCents: recipe.actualSales.netSalesCents }
+          : null
+      })),
+      actual: {
+        cogsCents: actualCogs.cogsCents,
+        purchasesCents: actualCogs.purchasesCents,
+        openingStockCents: actualCogs.openingStockCents,
+        closingStockCents: actualCogs.closingStockCents,
+        source: actualCogs.source,
+        quality: actualCogs.quality
+      }
+    });
 
     // Supplier price movement: per item, compare earliest vs latest unit cost
     // across invoice lines in the window.
@@ -888,17 +897,40 @@ export const recipesService = {
       generatedAt: new Date().toISOString(),
       venue,
       lookbackDays,
-      theoreticalCogsCents,
-      actualCogsCents,
-      actualMethod: 'supplier_purchases',
-      varianceCents,
-      variancePercent,
-      netSalesCents,
-      cogsPercentOfSales,
+      window: { from: window.fromKey, to: window.toKey },
+      salesBasis: 'recipe_mapped_item_sales',
+      mappedSalesCents: summary.theoretical.mappedSalesCents,
+      theoretical: {
+        cogsCents: summary.theoretical.cogsCents,
+        percentOfMappedSales: summary.theoretical.percentOfMappedSales,
+        grossProfitCents: summary.theoretical.grossProfitCents,
+        grossProfitPercent: summary.theoretical.grossProfitPercent
+      },
+      actual: {
+        cogsCents: summary.actual.cogsCents,
+        percentOfMappedSales: summary.actual.percentOfMappedSales,
+        grossProfitCents: summary.actual.grossProfitCents,
+        grossProfitPercent: summary.actual.grossProfitPercent,
+        source: summary.actual.source,
+        quality: summary.actual.quality,
+        comparable: summary.actual.comparable,
+        label: summary.actual.label,
+        purchasesCents: summary.actual.purchasesCents,
+        openingStockCents: summary.actual.openingStockCents,
+        closingStockCents: summary.actual.closingStockCents
+      },
+      varianceCents: summary.varianceCents,
+      variancePercent: summary.variancePercent,
+      coverage: {
+        mappedRecipes: summary.theoretical.mappedRecipes,
+        unmappedRecipes: summary.theoretical.unmappedRecipes,
+        zeroCostRecipes: summary.theoretical.zeroCostRecipes,
+        suspectRecipes: summary.theoretical.suspectRecipes
+      },
       dishMargin: {
-        mappedRecipes,
-        unmappedRecipes,
-        avgMarginPercent: marginCount > 0 ? marginSum / marginCount : null
+        mappedRecipes: summary.theoretical.mappedRecipes,
+        unmappedRecipes: summary.theoretical.unmappedRecipes,
+        avgMarginPercent: summary.theoretical.avgMarginPercent
       },
       priceMovement: { increasedItems, decreasedItems }
     };
@@ -933,13 +965,7 @@ export const recipesService = {
     // "no Square data because no mapping yet" vs "mapped but zero sales".
     let salesByRecipeId: Map<string, RecipeActualSales> = new Map();
     if (lookbackDays !== null) {
-      const toDate = new Date();
-      toDate.setUTCHours(23, 59, 59, 999);
-      const fromDate = new Date(toDate);
-      // Inclusive on both ends — subtract lookbackDays-1 so withSales=7
-      // covers exactly 7 daily serviceDate buckets, not 8.
-      fromDate.setUTCDate(fromDate.getUTCDate() - (lookbackDays - 1));
-      fromDate.setUTCHours(0, 0, 0, 0);
+      const { fromDate, toDate } = salesLookbackWindow(lookbackDays);
 
       const [salesAgg, mappedRecipeRows] = await Promise.all([
         prisma.salesItemActualEntry.groupBy({

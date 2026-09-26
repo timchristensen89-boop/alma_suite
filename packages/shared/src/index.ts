@@ -7473,20 +7473,53 @@ export type StocktakeReviewItem = Stocktake & {
   negativeVarianceQuantity: number;
 };
 
-// Cost of Goods summary — Theoretical (sold qty × recipe cost) vs Actual
-// (supplier purchases in the window) with the variance, plus dish-margin
-// and supplier price-movement summaries.
+// Cost of Goods summary for the Stock dashboard. Theoretical (sold qty ×
+// recipe cost) and Actual (opening + purchases − closing, or purchases only
+// when no stocktake brackets the window) are reported SEPARATELY, each with
+// its own percentage of the same denominator, and the actual side says
+// which method produced it. See apps/stock-api/src/lib/cost-of-goods.ts.
+export type StockCostOfGoodsActualQuality = 'complete' | 'estimated' | 'missing_opening' | 'missing_closing' | 'closing_implausible';
+
 export type StockCostOfGoodsPayload = {
   generatedAt: string;
   venue: string | null;
   lookbackDays: number;
-  theoreticalCogsCents: number;
-  actualCogsCents: number;
-  actualMethod: 'supplier_purchases';
-  varianceCents: number;
+  /** Inclusive venue-day keys the figures cover. */
+  window: { from: string; to: string };
+  /** The ONLY sales figure here: net sales of Square items mapped to recipes that sold. Not venue takings. */
+  salesBasis: 'recipe_mapped_item_sales';
+  mappedSalesCents: number;
+  theoretical: {
+    cogsCents: number;
+    percentOfMappedSales: number | null;
+    grossProfitCents: number;
+    grossProfitPercent: number | null;
+  };
+  actual: {
+    cogsCents: number;
+    /** actual ÷ mapped sales — only a fact when `comparable`. */
+    percentOfMappedSales: number | null;
+    grossProfitCents: number | null;
+    grossProfitPercent: number | null;
+    source: 'stock_bounded' | 'purchases_only';
+    quality: StockCostOfGoodsActualQuality;
+    /** True only when stocktakes bracket the window (quality 'complete'). */
+    comparable: boolean;
+    /** Plain-language method, e.g. "Supplier bills only — no stocktake brackets this window". */
+    label: string;
+    purchasesCents: number;
+    openingStockCents: number;
+    closingStockCents: number;
+  };
+  /** actual − theoretical; null unless the actual figure is comparable. */
+  varianceCents: number | null;
   variancePercent: number | null;
-  netSalesCents: number;
-  cogsPercentOfSales: number | null;
+  coverage: {
+    mappedRecipes: number;
+    unmappedRecipes: number;
+    zeroCostRecipes: number;
+    suspectRecipes: number;
+  };
   dishMargin: {
     mappedRecipes: number;
     unmappedRecipes: number;
