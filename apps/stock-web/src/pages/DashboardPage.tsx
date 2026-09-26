@@ -173,7 +173,7 @@ export function DashboardPage() {
             cogs
               ? cogs.actual.comparable
                 ? `${formatPercent(cogs.actual.percentOfMappedSales)} of mapped sales · ${cogs.actual.label}`
-                : `${cogs.actual.label} — not a food-cost % yet`
+                : `${cogs.actual.label} — whole-venue figure, not a % of mapped sales`
               : 'Opening + purchases − closing, or bills only'
           }
           tone={cogs && !cogs.actual.comparable ? 'warning' : undefined}
@@ -185,7 +185,7 @@ export function DashboardPage() {
             cogs && cogs.mappedSalesCents > 0
               ? cogs.actual.comparable && cogs.actual.grossProfitPercent != null
                 ? `${formatPercent(cogs.theoretical.grossProfitPercent)} on recipe cost · ${formatPercent(cogs.actual.grossProfitPercent)} on actual`
-                : `${formatPercent(cogs.theoretical.grossProfitPercent)} on recipe cost · actual GP needs stocktakes bracketing the window`
+                : `${formatPercent(cogs.theoretical.grossProfitPercent)} on recipe cost · actual GP needs like-for-like scope (${cogs.actual.comparability.reasons[0] ?? 'see Cost of Goods'})`
               : 'Needs mapped sales in the window'
           }
           tone={cogs?.theoretical.grossProfitPercent != null && cogs.theoretical.grossProfitPercent < 60 ? 'warning' : undefined}
@@ -381,7 +381,7 @@ export function DashboardPage() {
                 hint={
                   cogs.variancePercent != null
                     ? `${formatPercent(cogs.variancePercent)} vs recipe cost of what sold`
-                    : `Not comparable: ${cogs.actual.label.toLowerCase()}`
+                    : `Not comparable: ${cogs.actual.comparability.reasons.join('; ')}`
                 }
                 tone={cogs.variancePercent != null && Math.abs(cogs.variancePercent) > 15 ? 'warning' : undefined}
               />

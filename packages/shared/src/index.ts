@@ -7553,8 +7553,15 @@ export type StockCostOfGoodsPayload = {
     grossProfitPercent: number | null;
     source: 'stock_bounded' | 'purchases_only';
     quality: StockCostOfGoodsActualQuality;
-    /** True only when stocktakes bracket the window (quality 'complete'). */
+    /** True only when period, venue and item coverage match AND stocktakes bracket the window. */
     comparable: boolean;
+    comparability: {
+      comparable: boolean;
+      /** mapped sales ÷ all item sales in the window, %; null when unknown. */
+      mappedSalesSharePercent: number | null;
+      /** Why the two figures are not like-for-like; empty when comparable. */
+      reasons: string[];
+    };
     /** Plain-language method, e.g. "Supplier bills only — no stocktake brackets this window". */
     label: string;
     purchasesCents: number;

@@ -843,9 +843,26 @@ export const recipesService = {
     const window = salesLookbackWindow(lookbackDays);
     const since = window.fromDate;
     const windowEnd = new Date(window.toDate.getTime() + 1);
-    const actualCogs = await computeActualCogs({ venue: venue ?? null, start: since, end: windowEnd });
+    // Item coverage evidence: net sales of EVERY Square item sold in the
+    // window, mapped or not, so the summariser can say how much of what sold
+    // the theoretical side actually covers.
+    const [actualCogs, allItemSales] = await Promise.all([
+      computeActualCogs({ venue: venue ?? null, start: since, end: windowEnd }),
+      prisma.salesItemActualEntry.aggregate({
+        _sum: { netSalesCents: true },
+        where: { serviceDate: { gte: window.fromDate, lte: window.toDate } }
+      })
+    ]);
 
     const summary = summariseCostOfGoods({
+      // Scope: same window on both sides; the mapped-sales aggregate in
+      // list() is not venue-filtered, so a venue-scoped actual figure is a
+      // different venue set from the theoretical one.
+      scope: {
+        periodMatches: true,
+        venueMatches: venue == null,
+        totalItemSalesCents: allItemSales._sum.netSalesCents ?? null
+      },
       recipes: scoped.map((recipe) => ({
         id: recipe.id,
         estimatedCost: recipe.estimatedCost ?? null,
@@ -914,6 +931,7 @@ export const recipesService = {
         source: summary.actual.source,
         quality: summary.actual.quality,
         comparable: summary.actual.comparable,
+        comparability: summary.actual.comparability,
         label: summary.actual.label,
         purchasesCents: summary.actual.purchasesCents,
         openingStockCents: summary.actual.openingStockCents,

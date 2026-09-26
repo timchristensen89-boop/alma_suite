@@ -47,14 +47,40 @@ export type TheoreticalCogsSummary = {
   avgMarginPercent: number | null;
 };
 
+/**
+ * What the two figures actually cover. Actual COGS is a whole-venue (or
+ * whole-group) figure over every item bought and counted; theoretical cost
+ * and "mapped sales" cover only the recipe-mapped Square items that sold,
+ * less the rows excluded as suspect or uncosted. They are only comparable
+ * when period, venue and item coverage line up — stocktake completeness on
+ * its own says nothing about scope.
+ */
+export type CogsScopeInput = {
+  /** Both sides measured over the same window. */
+  periodMatches: boolean;
+  /** Both sides measured over the same venue set. */
+  venueMatches: boolean;
+  /** Net sales of EVERY Square item sold in the window, mapped or not; null when unknown. */
+  totalItemSalesCents: number | null;
+};
+
+export type CogsComparability = {
+  comparable: boolean;
+  /** mapped sales ÷ total item sales, one decimal %; null when total is unknown. */
+  mappedSalesSharePercent: number | null;
+  /** Every reason the figures are not like-for-like, in plain words. Empty when comparable. */
+  reasons: string[];
+};
+
 export type ActualCogsSummary = ActualCogsInput & {
-  /** actual cogsCents / mapped sales. Only a fact when quality is 'complete'. */
+  /** actual cogsCents / mapped sales. Only a fact when `comparability.comparable`. */
   percentOfMappedSales: number | null;
-  /** Gross profit on the actual figure; null unless the actual figure is complete. */
+  /** Gross profit on the actual figure; null unless comparable. */
   grossProfitCents: number | null;
   grossProfitPercent: number | null;
-  /** Whether the actual figure is comparable with the theoretical one. */
+  /** Shorthand for comparability.comparable. */
   comparable: boolean;
+  comparability: CogsComparability;
   label: string;
 };
 
@@ -126,22 +152,47 @@ const ACTUAL_LABELS: Record<ActualCogsInput['quality'], string> = {
   closing_implausible: 'Supplier bills only — the closing stocktake reads higher than opening + purchases'
 };
 
-export function summariseActualCogs(actual: ActualCogsInput, mappedSalesCents: number): ActualCogsSummary {
-  const comparable = actual.quality === 'complete';
-  const grossProfitCents = comparable ? mappedSalesCents - actual.cogsCents : null;
+// Mapped sales must be, to rounding, ALL item sales before the whole-venue
+// actual figure can be read against them.
+const FULL_COVERAGE_SHARE = 99.5;
+
+export function assessCogsComparability(input: {
+  actual: ActualCogsInput;
+  theoretical: TheoreticalCogsSummary;
+  scope: CogsScopeInput;
+}): CogsComparability {
+  const { actual, theoretical, scope } = input;
+  const reasons: string[] = [];
+  if (actual.quality !== 'complete') reasons.push(ACTUAL_LABELS[actual.quality].toLowerCase());
+  if (!scope.periodMatches) reasons.push('the two figures cover different periods');
+  if (!scope.venueMatches) reasons.push('the actual figure covers a different venue set from the mapped sales');
+  const share =
+    scope.totalItemSalesCents == null ? null : pct1(Math.min(theoretical.mappedSalesCents, scope.totalItemSalesCents), scope.totalItemSalesCents);
+  if (share == null) reasons.push('total item sales for the window are unknown, so item coverage cannot be confirmed');
+  else if (share < FULL_COVERAGE_SHARE) reasons.push(`recipe-mapped items are ${share}% of item sales — the actual figure covers everything bought`);
+  if (theoretical.suspectRecipes > 0) reasons.push(`${theoretical.suspectRecipes} batch-costed recipe${theoretical.suspectRecipes === 1 ? '' : 's'} excluded from the theoretical side`);
+  if (theoretical.zeroCostRecipes > 0) reasons.push(`${theoretical.zeroCostRecipes} recipe${theoretical.zeroCostRecipes === 1 ? '' : 's'} sold with no cost on the theoretical side`);
+  return { comparable: reasons.length === 0, mappedSalesSharePercent: share, reasons };
+}
+
+export function summariseActualCogs(actual: ActualCogsInput, theoretical: TheoreticalCogsSummary, scope: CogsScopeInput): ActualCogsSummary {
+  const comparability = assessCogsComparability({ actual, theoretical, scope });
+  const mappedSalesCents = theoretical.mappedSalesCents;
+  const grossProfitCents = comparability.comparable ? mappedSalesCents - actual.cogsCents : null;
   return {
     ...actual,
-    percentOfMappedSales: pct1(actual.cogsCents, mappedSalesCents),
+    percentOfMappedSales: comparability.comparable ? pct1(actual.cogsCents, mappedSalesCents) : null,
     grossProfitCents,
     grossProfitPercent: grossProfitCents == null ? null : pct1(grossProfitCents, mappedSalesCents),
-    comparable,
+    comparable: comparability.comparable,
+    comparability,
     label: ACTUAL_LABELS[actual.quality]
   };
 }
 
-export function summariseCostOfGoods(input: { recipes: CogsRecipeInput[]; actual: ActualCogsInput }): CostOfGoodsSummary {
+export function summariseCostOfGoods(input: { recipes: CogsRecipeInput[]; actual: ActualCogsInput; scope: CogsScopeInput }): CostOfGoodsSummary {
   const theoretical = summariseTheoreticalCogs(input.recipes);
-  const actual = summariseActualCogs(input.actual, theoretical.mappedSalesCents);
+  const actual = summariseActualCogs(input.actual, theoretical, input.scope);
   const varianceCents = actual.comparable ? actual.cogsCents - theoretical.cogsCents : null;
   return {
     theoretical,
