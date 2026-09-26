@@ -838,7 +838,9 @@ async function buildGiftCardSummary(): Promise<ReportsGiftCardSummary> {
       _sum: { initialValueCents: true },
       where: { status: 'PENDING_PAYMENT' }
     }),
-    prisma.giftCard.count({ where: { status: { in: ['ACTIVE', 'REDEEMED'] } } })
+    // Live (ACTIVE + REDEEMED) real cards, all time — not a period figure,
+    // and never test cards.
+    prisma.giftCard.count({ where: { status: { in: ['ACTIVE', 'REDEEMED'] }, testMode: false } })
   ]);
 
   return {

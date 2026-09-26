@@ -33,6 +33,7 @@ import Stripe from 'stripe';
 import QRCode from 'qrcode';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
+import { buildGiftCardLedger } from '../lib/gift-card-ledger.js';
 import { mailService } from './mail.service.js';
 import { giftCardWalletService } from './gift-card-wallet.service.js';
 
@@ -1000,56 +1001,54 @@ export const giftCardService = {
       orderBy: [{ createdAt: 'desc' }],
       take: 100
     });
-    const totals = await prisma.giftCard.aggregate({
-      _count: { id: true },
-      _sum: { balanceCents: true, initialValueCents: true },
-      where: { status: { in: ['ACTIVE', 'REDEEMED'] }, testMode: false }
-    });
-    const test = await prisma.giftCard.count({ where: { testMode: true, status: { in: ['ACTIVE', 'REDEEMED'] } } });
-
-    // Redemption revenue split by venue — server-side over ALL redemptions
-    // (the card list above is capped at 100, so client-side sums undercount).
-    // Each redemption is that venue's revenue; the remaining balances above
-    // are the liability still owed. `venue: null` rows predate the venue
-    // requirement and surface as "Unallocated" rather than disappearing.
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-    const [venueLifetime, venueMonth] = await Promise.all([
-      prisma.giftCardRedemption.groupBy({
-        by: ['venue'],
-        _sum: { amountCents: true },
-        where: { status: 'COMPLETED', giftCard: { testMode: false } }
+    // The ledger is built over EVERY card and EVERY redemption, on venue
+    // months, in lib/gift-card-ledger.ts — the list above is capped at 100
+    // and filtered by the search box, so nothing summed over it is a total.
+    const [ledgerCards, ledgerRedemptions] = await Promise.all([
+      prisma.giftCard.findMany({
+        where: { status: { not: 'PENDING_PAYMENT' } },
+        select: {
+          status: true,
+          testMode: true,
+          initialValueCents: true,
+          balanceCents: true,
+          paidAt: true,
+          promoCodeSnapshot: true,
+          saleChannel: true
+        }
       }),
-      prisma.giftCardRedemption.groupBy({
-        by: ['venue'],
-        _sum: { amountCents: true },
-        where: { status: 'COMPLETED', giftCard: { testMode: false }, redeemedAt: { gte: monthStart } }
+      prisma.giftCardRedemption.findMany({
+        select: { status: true, amountCents: true, venue: true, redeemedAt: true, giftCard: { select: { testMode: true } } }
       })
     ]);
-    const monthByVenue = new Map(venueMonth.map((row) => [row.venue ?? 'Unallocated', row._sum.amountCents ?? 0]));
-    const redeemedByVenue = venueLifetime
-      .map((row) => ({
-        venue: row.venue ?? 'Unallocated',
-        lifetimeCents: row._sum.amountCents ?? 0,
-        monthCents: monthByVenue.get(row.venue ?? 'Unallocated') ?? 0
+    const ledger = buildGiftCardLedger({
+      cards: ledgerCards,
+      redemptions: ledgerRedemptions.map((row) => ({
+        status: row.status,
+        amountCents: row.amountCents,
+        venue: row.venue,
+        redeemedAt: row.redeemedAt,
+        cardTestMode: row.giftCard.testMode
       }))
-      .sort((a, b) => b.lifetimeCents - a.lifetimeCents);
+    });
 
     return {
       giftCards: giftCards.map(toGiftCardPayload),
+      list: { limit: 100, capped: giftCards.length >= 100, query: query ?? null },
       totals: {
-        active: giftCards.filter((card) => card.status === 'ACTIVE' && !card.testMode).length,
+        // Uncapped counts — these used to be counted over the 100-card list.
+        active: ledger.activeCards,
         pending: 0,
-        redeemed: giftCards.filter((card) => card.status === 'REDEEMED' && !card.testMode).length,
-        test,
+        redeemed: ledger.redeemedCards,
+        test: ledger.testCards,
         // Liability triad (live cards only): issued = original face value,
         // outstanding = remaining redeemable balance, redeemed = drawn down.
-        activeBalanceCents: totals._sum.balanceCents ?? 0,
-        soldValueCents: totals._sum.initialValueCents ?? 0,
-        redeemedValueCents: Math.max(0, (totals._sum.initialValueCents ?? 0) - (totals._sum.balanceCents ?? 0)),
-        redeemedByVenue
-      }
+        activeBalanceCents: ledger.activeBalanceCents,
+        soldValueCents: ledger.issuedValueCents,
+        redeemedValueCents: ledger.drawnDownCents,
+        redeemedByVenue: ledger.redeemedByVenue
+      },
+      ledger
     };
   },
 

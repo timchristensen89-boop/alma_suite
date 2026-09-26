@@ -4622,23 +4622,57 @@ export type GiftCardCheckoutResult = {
   amountPaidCents?: number;
 };
 
+export type GiftCardLedgerOrigin = 'GIFTUP_IMPORT' | 'PHYSICAL_COUNTER' | 'DONATION' | 'CAMPAIGN_REWARD' | 'ONLINE' | 'COUNTER' | 'OTHER';
+
+/**
+ * Every-card, venue-month gift card accounting (apps/api lib/gift-card-ledger).
+ * Each figure names its scope; see docs/metric-definitions.md.
+ */
+export type GiftCardLedger = {
+  month: string;
+  activeCards: number;
+  activeBalanceCents: number;
+  expiredCards: number;
+  expiredRetainedCents: number;
+  redeemedCards: number;
+  issuedValueCents: number;
+  drawnDownCents: number;
+  redemptionsRecordedCents: number;
+  unrecordedDrawdownCents: number;
+  issuedThisMonthCents: number;
+  issuedThisMonthCards: number;
+  issuedLastMonthCents: number;
+  redeemedThisMonthCents: number;
+  redeemedLastMonthCents: number;
+  redeemedByVenue: Array<{ venue: string; lifetimeCents: number; monthCents: number }>;
+  byOrigin: Array<{ origin: GiftCardLedgerOrigin; activeCards: number; activeBalanceCents: number; issuedValueCents: number }>;
+  testCards: number;
+};
+
 export type GiftCardOverview = {
+  /** The newest cards matching the search — a page, never a total. */
   giftCards: GiftCard[];
+  list: { limit: number; capped: boolean; query: string | null };
   totals: {
+    /** ACTIVE non-test cards, over every card. */
     active: number;
     pending: number;
     redeemed: number;
     test: number;
+    /** Remaining balance on ACTIVE non-test cards — the liability. */
     activeBalanceCents: number;
+    /** Face value of every live (ACTIVE + REDEEMED) non-test card. */
     soldValueCents: number;
+    /** issued − outstanding: includes drawdown from before the GiftUp import. */
     redeemedValueCents: number;
     /**
-     * Redemption revenue split by venue (lifetime + current month), computed
-     * server-side over every redemption. "Unallocated" collects rows that
-     * predate the venue requirement.
+     * Redemption revenue split by venue (lifetime + current venue month),
+     * computed server-side over every redemption. "Unallocated" collects
+     * rows that predate the venue requirement.
      */
     redeemedByVenue: Array<{ venue: string; lifetimeCents: number; monthCents: number }>;
   };
+  ledger: GiftCardLedger;
 };
 
 export type GiftCardPromoQuote = {

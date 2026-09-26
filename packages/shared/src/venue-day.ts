@@ -128,3 +128,31 @@ export function venueDayBounds(day: string, timeZone = VENUE_TIME_ZONE): { gte: 
 export function venueTodayBounds(now: Date = new Date(), timeZone = VENUE_TIME_ZONE) {
   return venueDayBounds(venueDayKey(now, timeZone), timeZone);
 }
+
+/** The venue-local calendar month for an instant, as YYYY-MM. */
+export function venueMonthKey(instant: Date = new Date(), timeZone = VENUE_TIME_ZONE): string {
+  return venueDayKey(instant, timeZone).slice(0, 7);
+}
+
+/** The YYYY-MM `offset` months after the one given (negative for earlier). */
+export function shiftMonthKey(month: string, offset: number): string | null {
+  if (!/^\d{4}-\d{2}$/.test(month)) return null;
+  const year = Number(month.slice(0, 4));
+  const index = Number(month.slice(5, 7)) - 1 + offset;
+  const date = new Date(Date.UTC(year, index, 1));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 7);
+}
+
+/**
+ * The half-open UTC window `[start, end)` covering one venue-local calendar
+ * month. A "this month" figure built from the server's own midnight (UTC in
+ * the containers) starts ten or eleven hours into the Sydney first of the
+ * month; one built in a browser starts wherever that browser is.
+ */
+export function venueMonthBounds(month: string, timeZone = VENUE_TIME_ZONE): { gte: Date; lt: Date } | null {
+  const next = shiftMonthKey(month, 1);
+  if (!next) return null;
+  const gte = venueDayStart(`${month}-01`, timeZone);
+  const lt = venueDayStart(`${next}-01`, timeZone);
+  return gte && lt ? { gte, lt } : null;
+}

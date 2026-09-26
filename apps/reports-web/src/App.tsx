@@ -1914,7 +1914,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       ['Content', 'Setup required social accounts', overview.content.setupRequiredSocialAccounts],
       ['Gift cards', 'Pending orders', overview.giftCards.pendingOrders],
       ['Gift cards', 'Pending amount', overview.giftCards.totalPendingAmountCents],
-      ['Gift cards', 'Fulfilled orders', overview.giftCards.fulfilledOrders]
+      ['Gift cards', 'Live cards (all time, excl. test)', overview.giftCards.fulfilledOrders]
     ];
     downloadTextFile(`alma-management-overview-${overview.rangeDays}d.csv`, csvRows(rows));
     setExportMessage('Management overview CSV downloaded.');
@@ -4492,7 +4492,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <div className="action-panel-row">
               <span>
                 <strong>Fulfilled orders</strong>
-                <small>{data.overview?.giftCards.fulfilledOrders ?? 0} fulfilled in this report range.</small>
+                <small>{data.overview?.giftCards.fulfilledOrders ?? 0} live cards on the register, all time (test cards excluded).</small>
               </span>
               {appButton(GIFTCARDS_WEB_URL, '/orders', 'View orders')}
             </div>
