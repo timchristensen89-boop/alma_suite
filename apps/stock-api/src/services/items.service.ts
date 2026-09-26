@@ -30,7 +30,7 @@ import {
   type StockConfigHealthPayload,
   type AuthUser
 } from '@alma/shared';
-import { effectiveLowStockThreshold, isLowStockRow, lowStockStatus, rankStockAttentionRows, summariseLowStock } from '@alma/shared';
+import { effectiveLowStockThreshold, isLowStockRow, lowStockStatus, rankStockAttentionRows, realVenueNames, summariseLowStock } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { actorPinnedVenue, isVenueUnscopedActor } from '../lib/venue-scope.js';
 import { convertQuantityToCostUnit } from './units.js';
@@ -399,16 +399,14 @@ async function venueOptions(actor?: AuthUser | null) {
     })
   ]);
 
-  return Array.from(
-    new Set(
-      [
-        ...venueRows.map((row) => row.name?.trim()),
-        ...venueStockRows.map((row) => row.venue?.trim()),
-        ...stocktakeRows.map((row) => row.venue?.trim()),
-        ...staffRows.map((row) => row.venue?.trim())
-      ].filter((venue): venue is string => Boolean(venue))
-    )
-  ).sort((a, b) => a.localeCompare(b));
+  // Real places only: the "Both" marker on group-wide staff (and its
+  // spelling variants) is not a venue and must not be a picker option.
+  return realVenueNames([
+    ...venueRows.map((row) => row.name),
+    ...venueStockRows.map((row) => row.venue),
+    ...stocktakeRows.map((row) => row.venue),
+    ...staffRows.map((row) => row.venue)
+  ]);
 }
 
 async function assertKnownVenue(venue: string, actor?: AuthUser | null) {

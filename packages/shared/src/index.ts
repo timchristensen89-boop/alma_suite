@@ -15,6 +15,7 @@ export * from './guest-import.js';
 export * from './temperature-escalation.js';
 export * from './temperature-status.js';
 export * from './low-stock.js';
+export * from './venue-names.js';
 export * from './cogs-quality.js';
 export * from './onboarding-completion.js';
 export * from './invoice-paste.js';

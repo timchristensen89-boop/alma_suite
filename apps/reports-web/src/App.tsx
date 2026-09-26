@@ -3579,7 +3579,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           // Each count gets its own clause, so a missing log is never
           // described as a breach and the total is never an unlabelled sum.
           if (!data.overview) {
-            return <p className="report-lead">Compliance summary is not available for this range.</p>;
+            return <p className="report-lead">{loading ? 'Loading the compliance summary…' : 'Compliance summary is not available for this range.'}</p>;
           }
           return (
             <p className="report-lead">
@@ -4472,11 +4472,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             title="Gift card order actions"
             description="Expand to open the operational Gift Cards page."
             count={data.overview?.giftCards.pendingOrders ?? 0}
-            tone={(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? 'warning' : 'positive'}
+            tone={!data.overview ? 'neutral' : (data.overview.giftCards.pendingOrders ?? 0) > 0 ? 'warning' : 'positive'}
             empty={
               <div className="action-panel-row">
                 <span>
-                  <strong>No pending gift card orders</strong>
+                  <strong>{loading ? 'Loading gift card orders…' : data.overview ? 'No pending gift card orders' : 'Gift card orders are unavailable'}</strong>
                   <small>Open the orders page to review fulfilled, expired, or email issue rows.</small>
                 </span>
                 {appButton(GIFTCARDS_WEB_URL, '/orders', 'View orders')}

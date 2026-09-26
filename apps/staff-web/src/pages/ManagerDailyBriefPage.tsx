@@ -3,7 +3,7 @@
 // app live in ./shared.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { StaffProfile, StaffManagerDashboardPayload } from '@alma/shared';
+import { realVenueNames, type StaffProfile, type StaffManagerDashboardPayload } from '@alma/shared';
 import { Badge, Button, Card, Input, PageHeader, Select } from '@alma/ui';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -28,7 +28,7 @@ export function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
   const venueOptions = useMemo(
     () => [
       { label: 'All venues', value: '' },
-      ...uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]).map((item) => ({ label: item, value: item }))
+      ...realVenueNames(staff.map((member) => member.venue)).map((item) => ({ label: item, value: item }))
     ],
     [staff]
   );
@@ -155,8 +155,8 @@ export function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
         </div>
         <div className="daily-brief-hero-card">
           <span className="daily-brief-hero-label">Approvals waiting</span>
-          <span className="daily-brief-hero-value">{pendingTimesheets}</span>
-          <span className="daily-brief-hero-sub">{pendingTimesheets ? 'Open Timesheets to action' : 'All clear'}</span>
+          <span className="daily-brief-hero-value">{dashboard ? pendingTimesheets : '—'}</span>
+          <span className="daily-brief-hero-sub">{!dashboard ? (loading ? 'Loading…' : 'Unavailable') : pendingTimesheets ? 'Open Timesheets to action' : 'All clear'}</span>
         </div>
         <div className="daily-brief-hero-card">
           <span className="daily-brief-hero-label">Heads-ups</span>
@@ -230,7 +230,7 @@ export function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
           </div>
         </Card>
 
-        <Card title={`Low stock (${lowStockCount})`} subtitle="Items below par.">
+        <Card title={`Low stock (${dashboard ? lowStockCount : '—'})`} subtitle="Items below par.">
           {topLowStock.length ? (
             <ul className="daily-brief-list">
               {topLowStock.map((item) => (
@@ -244,7 +244,7 @@ export function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
               ))}
             </ul>
           ) : (
-            <p className="subtle">Stock looks healthy — nothing below par.</p>
+            <p className="subtle">{!dashboard ? (loading ? 'Loading stock…' : 'Stock data is unavailable right now.') : 'Stock looks healthy — nothing below par.'}</p>
           )}
           <div className="toolbar-right">
             <Button type="button" variant="secondary" onClick={() => { window.location.href = 'https://alma-stock-v18.web.app/orders'; }}>
@@ -253,7 +253,7 @@ export function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
           </div>
         </Card>
 
-        <Card title={`Compliance items (${openIssues})`} subtitle={criticalIssues ? `${criticalIssues} critical — action today.` : 'Nothing critical right now.'}>
+        <Card title={`Compliance items (${dashboard ? openIssues : '—'})`} subtitle={!dashboard ? (loading ? 'Loading…' : 'Unavailable') : criticalIssues ? `${criticalIssues} critical — action today.` : 'Nothing critical right now.'}>
           {topComplianceIssues.length ? (
             <ul className="daily-brief-list">
               {topComplianceIssues.map((item) => (
@@ -267,7 +267,7 @@ export function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
               ))}
             </ul>
           ) : (
-            <p className="subtle">No open compliance items.</p>
+            <p className="subtle">{!dashboard ? (loading ? 'Loading compliance items…' : 'Compliance data is unavailable right now.') : 'No open compliance items.'}</p>
           )}
           <div className="toolbar-right">
             <Button type="button" variant="secondary" onClick={() => { window.location.href = 'https://alma-compliance.web.app'; }}>

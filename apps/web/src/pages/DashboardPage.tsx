@@ -205,6 +205,7 @@ export function DashboardPage() {
         >
           <div className="attention-list">
             <AttentionRow
+              loading={loading || !data}
               icon={<IconIssues size={16} />}
               tone={hasCritical ? 'danger' : 'neutral'}
               title="Critical issues"
@@ -213,6 +214,7 @@ export function DashboardPage() {
               to="/issues"
             />
             <AttentionRow
+              loading={loading || !data}
               icon={<IconClock size={16} />}
               tone={(data?.issues.overdue ?? 0) > 0 ? 'warning' : 'neutral'}
               title="Overdue follow-ups"
@@ -223,6 +225,7 @@ export function DashboardPage() {
             {managerAccess ? (
               <>
                 <AttentionRow
+              loading={loading || !data}
                   icon={<IconTemperature size={16} />}
                   tone={outOfRange > 0 ? 'danger' : 'positive'}
                   title="Out-of-range fridges"
@@ -231,6 +234,7 @@ export function DashboardPage() {
                   to="/temperatures"
                 />
                 <AttentionRow
+              loading={loading || !data}
                   icon={<IconStaff size={16} />}
                   tone={expiring > 0 ? 'warning' : 'neutral'}
                   title="Staff records expiring"
@@ -241,6 +245,7 @@ export function DashboardPage() {
               </>
             ) : null}
             <AttentionRow
+              loading={loading || !data}
               icon={<IconIncident size={16} />}
               tone={openIncidents > 0 ? 'info' : 'neutral'}
               title="Open incidents"
@@ -300,7 +305,8 @@ function AttentionRow({
   title,
   value,
   hint,
-  to
+  to,
+  loading = false
 }: {
   icon: React.ReactNode;
   tone: AttentionTone;
@@ -308,15 +314,18 @@ function AttentionRow({
   value: number;
   hint: string;
   to: string;
+  loading?: boolean;
 }) {
+  // A row that has not loaded is neither green nor zero.
+  const shownTone = loading ? 'neutral' : tone;
   return (
     <Link to={to} className="attention-row">
-      <span className={`attention-row-icon tone-${tone}`}>{icon}</span>
+      <span className={`attention-row-icon tone-${shownTone}`}>{icon}</span>
       <div className="attention-row-body">
         <strong>{title}</strong>
-        <span className="subtle">{hint}</span>
+        <span className="subtle">{loading ? 'Loading…' : hint}</span>
       </div>
-      <Badge tone={tone === 'neutral' ? 'muted' : tone}>{value}</Badge>
+      <Badge tone={shownTone === 'neutral' ? 'muted' : shownTone}>{loading ? '…' : value}</Badge>
       <IconArrowRight size={14} className="attention-row-chevron" />
     </Link>
   );

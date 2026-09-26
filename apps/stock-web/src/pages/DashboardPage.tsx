@@ -345,7 +345,7 @@ export function DashboardPage() {
                 ) : (
                   <tr>
                     <td colSpan={5} className="table-empty-cell">
-                      No submitted stocktakes are waiting for review.
+                      {loading ? 'Loading stocktakes…' : error || !dashboard ? 'Stocktakes are unavailable right now.' : 'No submitted stocktakes are waiting for review.'}
                     </td>
                   </tr>
                 )}
