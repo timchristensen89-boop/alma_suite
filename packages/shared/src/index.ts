@@ -4370,7 +4370,22 @@ export type MarketingSegmentPreviewPayload = {
   guests: ReserveGuest[];
 };
 
+export type MarketingChannelSendMode = {
+  mode: 'LIVE' | 'SIMULATION' | 'SETUP_REQUIRED';
+  provider: string | null;
+  detail: string;
+};
+
+/** Per-channel execution mode, resolved by the API from its real configuration. */
+export type MarketingSendModes = {
+  email: MarketingChannelSendMode;
+  sms: MarketingChannelSendMode;
+  social: MarketingChannelSendMode;
+  summary: string;
+};
+
 export type MarketingOverview = {
+  sendModes: MarketingSendModes;
   guests: ReserveGuest[];
   tags: GuestTag[];
   templates: MarketingEmailTemplate[];

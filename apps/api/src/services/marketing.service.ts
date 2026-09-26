@@ -33,6 +33,7 @@ import {
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { mailService } from './mail.service.js';
+import { resolveMarketingSendModes } from '../lib/marketing-send-mode.js';
 import { AUTOMATION_LIBRARY } from '../data/marketingAutomationLibrary.js';
 
 const BIG_SPENDER_THRESHOLD_CENTS = 50_000;
@@ -1572,6 +1573,12 @@ export const marketingService = {
     ]);
 
     return {
+      // What each channel can actually do right now — the app derives its
+      // banner and its send controls from this, never from static copy.
+      sendModes: resolveMarketingSendModes({
+        ...mailService.sendModeEnv(),
+        socialLivePublishEnabled: env.marketing.socialPublishing.livePublishingEnabled
+      }),
       guests: guests.map(guestToPayload),
       tags: tags.map(tagToPayload),
       templates: templates.map(templateToPayload),
