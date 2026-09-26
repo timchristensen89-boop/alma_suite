@@ -79,7 +79,7 @@ Three figures. They are never substituted for one another silently.
 | **Formula** | `opening stock + purchases − closing stock` when finalised stocktakes bracket both ends (`source: stock_bounded`, `quality: complete`); otherwise `purchases` only (`source: purchases_only`, quality says which bound is missing or `closing_implausible`). |
 | **Purchases** | `SupplierInvoice` subtotal (ex-GST; total when no subtotal parsed), `status ≠ DRAFT`, `triageStatus ≠ NO_ITEM`, `invoiceDate` in window. |
 | **Stock values** | Latest `SUBMITTED/REVIEWED/LOCKED` stocktake per venue on or before the boundary; all-venues sums each venue's latest count. |
-| **Percent** | Reports: withheld (`null`) when invoices cover < 90 % of the period (`MIN_PURCHASE_COVERAGE`). Stock dashboard: shown as "% of mapped sales" only when `comparable` (quality `complete`); otherwise the card says which method produced the dollars and that it is not a food-cost % yet. |
+| **Percent** | Reports: withheld (`null`) when invoices cover < 90 % of the period (`MIN_PURCHASE_COVERAGE`). Stock dashboard: shown as "% of mapped sales" only when `comparable` — which needs stocktake completeness **and** like-for-like scope: same window, same venue set, recipe-mapped items ≈ all item sales in the window, and no suspect/uncosted exclusions (`assessCogsComparability`, reasons listed on the card). Otherwise the whole-venue dollars are shown as such and no actual %, GP or variance is derived. |
 | **Rule** | **Purchases never silently become COGS.** Gross profit and variance on the actual figure exist only when it is stocktake-bounded. |
 
 ### Food cost on the Reports Overview (what feeds prime cost)
@@ -88,23 +88,32 @@ Three figures. They are never substituted for one another silently.
 and every surface (hero sentence, tone, prime panel, trend bars, venue
 table, donut, Stock section) reads it:
 
-1. theoretical, when recipe-mapped sales exist for the period;
-2. else actual, only when the API stands behind its percentage (coverage ≥ 90 %);
-3. else **unavailable** — prime cost is `null` and the narrative says "labour only so far". Labour is never presented as the total.
+1. theoretical (estimated consumption), when recipe-mapped sales exist for the period;
+2. else stocktake-supported actual COGS (`cogsSource = stock_bounded`) with a percentage the API stands behind (coverage ≥ 90 %);
+3. else **unavailable** — prime cost is `null` and the narrative says "labour only so far". Labour is never presented as the total, and **supplier purchases are never folded into prime**: a purchases-only figure is exposed as `purchasesCents` and labelled as purchases.
 
-Per-venue theoretical cost applies the same suspect-row exclusion as the
-group total, so venues add to the group; a venue with no recipe rows gets a
-sales-share estimate. The overview fetches menu profitability **unfiltered**
-for the period (`data.overviewMenu`) so a Menu-tab filter cannot move it.
+Per-venue cost applies the same suspect-row exclusion as the group total. A
+venue with no attributable figure shows a dash — nothing is estimated for
+it — and the object reports `venueCoverage` (complete / partial / none),
+`venuesWithoutFoodCost` and `unattributedCogsCents`, with the invariant
+Σ venue cogs + unattributed = group. The overview fetches menu profitability
+**unfiltered** for the period (`data.overviewMenu`) so a Menu-tab filter
+cannot move it.
 
-## Prime cost (total operating cost)
+**Import evidence vs performance.** `salesImport.incomplete` is true only on
+evidence — the API's `salesDays` (most days any venue has a sales figure)
+is fewer than the days the period has traded so far. A prime cost above
+100 % is `lossMaking`: a severe result, shown red, never neutralised or
+described as an import problem.
+
+## Prime cost (labour + food — not "total operating cost")
 
 | | |
 |---|---|
 | **Formula** | `(wageCents + food cost cents) / salesCents`, with the food-cost basis above; `null` when food cost is unavailable or sales are zero. Components are rounded separately, so labour % + food % may differ from prime % by ≤ 0.1. |
 | **Targets** | Labour 30 %, food 30 %, prime 60 % (`COST_TARGETS`); prime is overridden by the mean of admin per-venue `targetPrimeCostPercent`. |
-| **Tone** | `costTone`: ≤ target positive, ≤ target + 5 warning, above danger, `null` or > 120 % neutral (> 120 % = "sales look short"). One rule for every pill and bar. |
-| **Narrative** | `overviewNarrative` writes the sentence from the same object and names the period ("for 1 Sep to 30 Sep"), never "this week" by default. |
+| **Tone** | `costTone`: ≤ target positive, ≤ target + 5 warning, above danger (however severe), `null` neutral. When the import is incomplete the tone is neutral and the caveat is shown alongside the reading. One rule for every pill and bar. |
+| **Narrative** | `overviewNarrative` writes "Prime cost (labour + food) is …" from the same object and names the period ("for 1 Sep to 30 Sep"), never "this week" by default. |
 | **Elsewhere** | Monthly Recap (`recapRecommendations`) uses actual COGS and fixed 30/30/60 targets — a different, documented basis (see open questions). Week-ahead forecast uses the forecast engine's own COGS. |
 
 ## Low stock
@@ -137,19 +146,28 @@ All from `lib/gift-card-ledger.ts: buildGiftCardLedger`, over **every** card
 and every redemption, on the **venue month**. The card list on the Orders
 page is the newest 100 matching the search and is never summed.
 
+Two ledgers, kept apart: the **current position** (redeemable now) and the
+**historical account** over every activated non-test card (ACTIVE, REDEEMED,
+EXPIRED, CANCELLED), explained card by card. They reconcile by identity:
+
+    issued = active balance + expired retained + redemptions recorded
+           + unrecorded drawdown − over-recorded + cancelled written off
+
 | Figure | Definition |
 |---|---|
-| Outstanding liability | Σ `balanceCents` of `ACTIVE`, `testMode = false` cards. |
+| Outstanding liability | Σ `balanceCents` of `ACTIVE`, `testMode = false` cards (current position). |
 | Active cards | count of the same cards. |
 | Expired retained | Σ balance on `EXPIRED` cards — reported, **not** in the liability. |
-| Issued (lifetime) | Σ `initialValueCents` of `ACTIVE + REDEEMED` real cards, whenever issued (GiftUp imports, donations, campaign rewards included). |
-| Drawn down | issued − live balance. Includes drawdown from before the GiftUp import and cancelled cards (balance zeroed by cancel). |
-| Redemptions recorded | Σ `COMPLETED` redemptions on real cards (VOIDED and test-card redemptions excluded). |
-| Unrecorded drawdown | drawn down − recorded: the part with no redemption row. |
-| Issued this / last month | `paidAt` in the venue month, live statuses. Donations and COMP cards have no `paidAt` and are not "issued this month". |
+| Issued (lifetime) | Σ `initialValueCents` of every activated real card, whatever its status now (GiftUp imports, donations, campaign rewards, later-cancelled cards included). |
+| Redemptions recorded | Σ `COMPLETED` redemptions on the same cards (VOIDED and test-card redemptions excluded). |
+| Unrecorded drawdown | Σ per card of (face − balance − recorded on that card) where positive — drawdown with no row behind it (GiftUp pre-import history). Never netted against another card. |
+| Over-recorded | Σ per card where recorded exceeds the card's own drawdown — a data problem, stated, never clamped. |
+| Cancelled written off | `CANCELLED` cards: face − recorded (the cancel zeroed the balance). Recorded redemptions on cancelled cards stay in "recorded". |
+| Drawn down | face − balance over non-cancelled activated cards = recorded (non-cancelled) + unrecorded − over-recorded. |
+| Issued this / last month | `paidAt` in the venue month, activated statuses (a card cancelled later was still issued). Donations and COMP cards have no `paidAt`. |
 | Redeemed this / last month | `redeemedAt` in the venue month. **Equals Σ `redeemedByVenue[].monthCents` by construction.** |
 | By venue | `redemption.venue`; null → "Unallocated". Cards have no venue of their own. |
-| By origin | `promoCodeSnapshot` / `saleChannel` markers: GIFTUP_IMPORT, PHYSICAL_COUNTER, DONATION, CAMPAIGN_REWARD:*, ONLINE, COUNTER. |
+| By origin | `promoCodeSnapshot` / `saleChannel` markers: GIFTUP_IMPORT, PHYSICAL_COUNTER, DONATION, CAMPAIGN_REWARD:*, ONLINE, COUNTER. Active balance per origin sums to the liability; issued per origin sums to issued. |
 
 The Reporting page (`/api/gift-cards/report`) keeps its own range-filtered
 redemption figures; its liability is the same ACTIVE-balance definition. The
@@ -193,11 +211,14 @@ Tick each against a browser set to a European timezone as well as Sydney.
 - [ ] Changing a filter on the Menu Engineering tab does not change the overview food cost.
 - [ ] Sentence names the period; switching to "This month" changes it.
 - [ ] Trend bars use the same rule (each bar's tone follows the target).
-- [ ] Stock section food % and "Total operating cost" match the overview.
+- [ ] Stock section food % and "Prime cost" match the overview.
+- [ ] Venue table: with a venue that has no recipe rows, that row shows a dash and the note names it; venue food-cost figures never sum to more than the group.
+- [ ] With no stocktake bracketing the period and only supplier bills, prime shows "—" and the bills are listed as purchases, not food cost.
+- [ ] A period whose costs exceed sales reads "Costs exceeded sales." in red; the import caveat appears only when sales days are short.
 
 **Stock › Dashboard**
 - [ ] "Low stock" count and the "Needs attention" table agree (table non-empty whenever the count > 0; "Showing 10 of N" when more).
-- [ ] Cost cards: theoretical % sits under theoretical $, actual % under actual $, and the actual card names its method. Actual GP and variance appear only when stocktakes bracket the window.
+- [ ] Cost cards: theoretical % sits under theoretical $, the actual card names its method, and actual %, GP and variance appear only when the card says the scope is like-for-like (expect them absent while any Square item is unmapped).
 - [ ] "Mapped item sales" is labelled as such and is not venue takings.
 - [ ] Venue picker offers only real venues (no "Both").
 
@@ -205,7 +226,7 @@ Tick each against a browser set to a European timezone as well as Sydney.
 - [ ] Header liability and count equal the Revenue tile's liability and count.
 - [ ] "Redeemed this month" equals the sum of the venue split beside it.
 - [ ] Tiles read "—" while loading; no "$0 / No redemptions yet" flash.
-- [ ] Liability note lists origins (GiftUp, online, …) and states expired retained balance separately.
+- [ ] Liability note lists origins (GiftUp, online, …) and states expired retained balance separately; the Redeemed (lifetime) hint separates Alma-recorded, unrecorded (GiftUp history), over-recorded and cancelled write-offs.
 
 **Compliance › Home and Temperatures**
 - [ ] With N missing logs and 0 breaches the hint says "N temperature logs missing today" (amber), never "out of range".
