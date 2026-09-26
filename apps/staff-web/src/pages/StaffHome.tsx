@@ -7,7 +7,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import type { StaffProfile } from '@alma/shared';
 import { ActionPanel, Badge, Button, Card, EmptyState, PageHeader, StatCard } from '@alma/ui';
 import { api } from '../lib/api';
-import { isExpiringSoon } from '../lib/datetime';
+import { addDaysToKey, isExpiringSoon, venueTodayKey } from '../lib/datetime';
 import { COMPLIANCE_WEB_URL } from '../config/suiteLinks';
 import {
   type LabourWeekPayload,
@@ -134,11 +134,14 @@ export function StaffHome({
         if (!cancelled) setLabour(data);
       })
       .catch(() => undefined);
-    const start = new Date();
-    start.setDate(start.getDate() - 30);
-    void api<Array<{ id: string }>>(
-      `/api/staff/timesheets?status=SUBMITTED&start=${start.toISOString().slice(0, 10)}`
-    )
+    // Venue days, sent explicitly at both ends: submitted timesheets worked in
+    // the last 30 venue days up to and including today, every venue. The
+    // Timesheets page counts the navigated week instead, so the two are
+    // labelled as different scopes rather than made to look like one.
+    const today = venueTodayKey();
+    const start = addDaysToKey(today, -30);
+    const end = addDaysToKey(today, 1);
+    void api<Array<{ id: string }>>(`/api/staff/timesheets?status=SUBMITTED&start=${start}&end=${end}`)
       .then((rows) => {
         if (!cancelled) setApprovalQueue(rows.length);
       })
@@ -251,7 +254,7 @@ export function StaffHome({
           <StatCard
             label="Awaiting approval"
             value={approvalQueue == null ? '—' : approvalQueue}
-            hint="Submitted timesheets, last 30 days"
+            hint="Submitted, worked in the last 30 days · all venues"
             tone={(approvalQueue ?? 0) > 0 ? 'warning' : 'positive'}
           />
         </NavLink>

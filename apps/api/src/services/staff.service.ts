@@ -88,6 +88,7 @@ import type {
 import { HttpError } from '../lib/http.js';
 import { reachesEveryVenue, staffProfileAccessDenial, staffProfileReach } from '../lib/staff-reach.js';
 import { bestVenueDaySales } from '../lib/sales-day-totals.js';
+import { resolveTimesheetWindow } from '../lib/timesheet-window.js';
 import { env } from '../env.js';
 import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
 import { allocateTipsByVenue, posFirstCardEntries, applyTipAdjustments as applyTipAdjustmentsToRows } from '../lib/tips-allocation.js';
@@ -6092,9 +6093,15 @@ export const staffService = {
     staffProfileId?: string,
     actor?: AuthUser
   ) {
-    const now = new Date();
-    const startDate = start ? parseDate(start, 'Timesheet start date') : new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
-    const endDate = end ? parseDate(end, 'Timesheet end date') : new Date(startDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+    // Venue-day window compared against workDate's UTC-midnight storage form.
+    // A missing `end` runs through the venue's today (it used to mean
+    // start + 14 days, which is how the Staff home "last 30 days" card counted
+    // one timesheet while the Timesheets page counted nineteen).
+    const window = resolveTimesheetWindow({ start, end });
+    if ('error' in window) {
+      throw new HttpError(400, window.error === 'start' ? 'Timesheet start date is invalid' : 'Timesheet end date is invalid');
+    }
+    const { start: startDate, end: endDate } = window;
     // The "All venues" filter sends the literal string "all"; treat it as no
     // venue filter (otherwise the query becomes `venue = 'all'` and matches
     // nothing — the Timesheets tab looked empty while the dashboard, which
