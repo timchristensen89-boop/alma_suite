@@ -61,6 +61,7 @@ import {
   staffApi,
   stockApi
 } from './lib/api';
+import { COST_TARGETS, buildOverviewCosts, costTone, overviewNarrative, type OverviewCosts } from './lib/overview-costs';
 import { ADMIN_WEB_URL, COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForWeek, normaliseHistoricalVenue, isVenueOpenOnDate } from './data/historicalSales';
 import { Donut, HBars, TrendLine, CHART_COLORS } from './components/Charts';
@@ -154,6 +155,10 @@ type ReportsData = {
   actualSales: SalesActualSummary | null;
   itemSales: SalesItemActualSummary | null;
   menuProfitability: ReportsMenuProfitabilityPayload | null;
+  /** Menu profitability for the WHOLE period and every venue — the Overview
+   *  cost triangle reads this, so a filter left on the Menu tab can't move
+   *  the group food cost. */
+  overviewMenu: ReportsMenuProfitabilityPayload | null;
   menuCogs: MenuCogsPayload | null;
   primeCost: ReportsPrimeCostPayload | null;
   tips: StaffTipsSummary | null;
@@ -259,9 +264,8 @@ type ReportNavItem = {
   hidden?: boolean;
 };
 
-// Plain-restaurant cost targets (% of sales) used for the at-a-glance tone on
-// the "This Week" cost triangle. Prime can be overridden per-venue by admins.
-const COST_TARGETS = { food: 30, labour: 30, prime: 60 };
+// Cost targets and the overview cost triangle live in lib/overview-costs so
+// every surface on the screen reads one definition (see that file's header).
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const REPORTS_FORECAST_STORAGE_KEY = 'alma.reports.forecast.v1';
@@ -1329,6 +1333,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     actualSales: null,
     itemSales: null,
     menuProfitability: null,
+    overviewMenu: null,
     menuCogs: null,
     primeCost: null,
     tips: null,
@@ -1347,7 +1352,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // Per-venue prime-cost target % set by admins in Admin → Wage forecasts.
   const [primeTargets, setPrimeTargets] = useState<Record<string, number>>({});
   // 4-week historical prime cost trend (most recent on the right, current week as the 5th).
-  const [primeCostHistory, setPrimeCostHistory] = useState<Array<{ weekStart: string; primeCostPercent: number | null; wagePercent: number | null; cogsPercent: number | null; salesCents: number }>>([]);
+  // Four prior weeks, each built with the SAME rule as the current period
+  // (buildOverviewCosts) so the trend bars and the headline agree on what
+  // "prime" means. Fetching only /prime-cost gave actual purchase COGS, which
+  // inside a week is ~$0 — the bars read as labour while the headline read
+  // labour plus food.
+  const [primeCostHistory, setPrimeCostHistory] = useState<Array<{ weekStart: string; costs: OverviewCosts; salesCents: number }>>([]);
   // 8-week forecast vs actual history for the sales section chart.
   const [forecastHistory, setForecastHistory] = useState<Array<{ weekStart: string; forecastCents: number; actualCents: number; variance: number | null }>>([]);
   const activeReport = REPORT_NAV_ITEMS.find((item) => item.id === activeSection) ?? REPORT_NAV_ITEMS[0]!;
@@ -1397,12 +1407,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         staffApi<ReportsMenuProfitabilityPayload>(`/api/reports/menu-profitability?${menuProfitabilityParams.toString()}`),
         staffApi<MenuCogsPayload>(`/api/reports/menu-cogs?start=${periodStartIso}&end=${periodEndIso}${menuVenue ? `&venue=${encodeURIComponent(menuVenue)}` : ''}`).catch(() => null),
         staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${periodStartIso}&end=${periodEndIso}`),
-        staffApi<StaffTipsSummary>(`/api/staff/tips?start=${periodStartIso}&end=${periodEndIso}`)
+        staffApi<StaffTipsSummary>(`/api/staff/tips?start=${periodStartIso}&end=${periodEndIso}`),
+        staffApi<ReportsMenuProfitabilityPayload>(`/api/reports/menu-profitability?start=${periodStartIso}&end=${periodEndIso}&accountKey=all&mappingStatus=all`)
       ]);
 
       const SECTION_LABELS = [
         'overview', 'suite summary', 'staff', 'timesheets', 'roster', 'roster forecast',
-        'sales', 'item sales', 'menu profitability', 'menu COGS', 'prime cost', 'tips'
+        'sales', 'item sales', 'menu profitability', 'menu COGS', 'prime cost', 'tips', 'overview food cost'
       ];
       const value = <T,>(index: number): T | null =>
         settled[index]!.status === 'fulfilled' ? ((settled[index] as PromiseFulfilledResult<T>).value) : null;
@@ -1424,6 +1435,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const menuCogs = value<MenuCogsPayload>(9);
       const primeCost = value<ReportsPrimeCostPayload>(10);
       const tips = value<StaffTipsSummary>(11);
+      const overviewMenu = value<ReportsMenuProfitabilityPayload>(12);
 
       setMessage(
         missing.length === 0
@@ -1450,7 +1462,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         setStockMessage(error instanceof Error ? error.message : 'Could not load stock reports.');
       }
 
-      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, menuCogs, primeCost, tips, stockValue, stockSummary, stocktakes, recipes });
+      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, overviewMenu, menuCogs, primeCost, tips, stockValue, stockSummary, stocktakes, recipes });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not load reports.');
     } finally {
@@ -1473,22 +1485,26 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           weeks.push({ start, end });
         }
         const results = await Promise.all(
-          weeks.map((w) =>
-            staffApi<ReportsPrimeCostPayload>(
-              `/api/reports/prime-cost?start=${w.start.toISOString()}&end=${w.end.toISOString()}`
-            ).catch(() => null)
-          )
+          weeks.map(async (w) => {
+            const startKey = localIsoDate(w.start);
+            const endKey = localIsoDate(w.end);
+            const [prime, menu] = await Promise.all([
+              staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${startKey}&end=${endKey}`).catch(() => null),
+              staffApi<ReportsMenuProfitabilityPayload>(
+                `/api/reports/menu-profitability?start=${startKey}&end=${endKey}&accountKey=all&mappingStatus=all`
+              ).catch(() => null)
+            ]);
+            return { prime, menu };
+          })
         );
         setPrimeCostHistory(
           weeks.map((w, i) => {
-            const totals = results[i]?.totals;
-            return {
-              weekStart: isoDate(w.start),
-              primeCostPercent: totals?.primeCostPercent ?? null,
-              wagePercent: totals?.wagePercent ?? null,
-              cogsPercent: totals?.cogsPercent ?? null,
-              salesCents: totals?.salesCents ?? 0
-            };
+            const costs = buildOverviewCosts({
+              totals: results[i]?.prime?.totals ?? null,
+              venues: (results[i]?.prime?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both'),
+              menu: results[i]?.menu ?? null
+            });
+            return { weekStart: isoDate(w.start), costs, salesCents: costs.salesCents };
           })
         );
       } catch {
@@ -2020,6 +2036,19 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const actualApprovedWageCostCents = wageTotals.approvedCostCents;
   const actualSalesCents = data.actualSales?.totalSalesCents ?? 0;
   const primeTotals = data.primeCost?.totals;
+  // THE cost triangle for the period. The Overview hero, prime panel, trend,
+  // venue table, donut and the Stock section's food-cost feature all read
+  // this one object (see lib/overview-costs.ts), so no two surfaces can
+  // describe different figures as "prime cost".
+  const primeCostTarget = (() => {
+    const vals = Object.values(primeTargets);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : COST_TARGETS.prime;
+  })();
+  const overviewCosts = buildOverviewCosts({
+    totals: primeTotals ?? null,
+    venues: (data.primeCost?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both'),
+    menu: data.overviewMenu
+  });
   const forecastSalesVarianceCents = actualSalesCents - publishedForecastTotals.salesCents;
   const plannedVsActualWageCents = actualWageCostCents - publishedForecastTotals.rosterCostCents;
   const actualWagePercent = actualSalesCents > 0 ? (actualWageCostCents / actualSalesCents) * 100 : 0;
@@ -2407,38 +2436,17 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       (data.overview?.content.postsNeedingApproval ?? 0) +
       (data.overview?.giftCards.pendingOrders ?? 0);
 
-    // Build 5-week trend (4 historical + current week as the last point)
-    const currentWeekPrimeCost = {
-      weekStart: isoDate(weekStart),
-      primeCostPercent: primeTotals?.primeCostPercent ?? null,
-      wagePercent: primeTotals?.wagePercent ?? null,
-      cogsPercent: primeTotals?.cogsPercent ?? null,
-      salesCents: primeTotals?.salesCents ?? 0
-    };
-    const trendPoints = [...primeCostHistory, currentWeekPrimeCost];
-    const trendMaxPct = Math.max(75, ...trendPoints.map((p) => p.primeCostPercent ?? 0));
-    const currentPct = primeTotals?.primeCostPercent ?? null;
-    const heroTone: 'positive' | 'warning' | 'danger' | 'neutral' =
-      currentPct == null ? 'neutral' : currentPct >= 65 ? 'danger' : currentPct >= 55 ? 'warning' : 'positive';
+    // Hero sentence and tone from the SAME figure the prime panel displays
+    // (it used to read wages + ~$0 actual COGS while the panel showed wages +
+    // theoretical food cost).
+    const narrative = overviewNarrative({ costs: overviewCosts, primeTarget: primeCostTarget, loading, periodLabel: periodWindowLabel });
+    const heroTone = narrative.tone;
+    // Build 5-week trend (4 historical + current period as the last point)
+    const trendPoints = [...primeCostHistory, { weekStart: isoDate(weekStart), costs: overviewCosts, salesCents: overviewCosts.salesCents }];
+    const trendMaxPct = Math.max(75, ...trendPoints.map((p) => p.costs.primeCostPercent ?? 0));
 
     // Weekly Snapshot (editorial dashboard from the design)
-    const salesCentsForRange = primeTotals?.salesCents ?? 0;
-    // Actual purchase COGS lags within an in-progress week (bills arrive after
-    // the stock is sold), so for the weekly snapshot fall back to THEORETICAL
-    // food cost — recipe cost × Square units sold — which is available live.
-    // The Monthly Recap / Prime Cost reports keep the canonical actual COGS.
-    const actualCogsCentsForRange = primeTotals?.cogsCents ?? 0;
-    const theoreticalCogsCents = data.menuProfitability?.totals.estimatedCogsCents ?? null;
-    const theoreticalFoodCostPct = data.menuProfitability?.totals.foodCostPercent ?? null;
-    // The weekly snapshot is NOT bracketed by two stocktakes (counts are monthly),
-    // so weekly "actual" COGS collapses to just this week's purchases — a stray
-    // mid-week invoice reads as a ~0% food cost. Prefer THEORETICAL (recipe × Square
-    // units sold), which is live and meaningful weekly; fall back to actual only when
-    // theoretical isn't available (Square items not yet mapped to recipes). The
-    // canonical actual COGS stays on the Monthly Recap / Prime Cost reports.
-    const hasTheoretical = theoreticalCogsCents != null && theoreticalCogsCents > 0;
-    const overviewCogsIsActual = !hasTheoretical && actualCogsCentsForRange > 0;
-    const overviewCogsCents = hasTheoretical ? theoreticalCogsCents : actualCogsCentsForRange;
+    const salesCentsForRange = overviewCosts.salesCents;
     const itemSalesQuantity = data.itemSales?.totalQuantity ?? 0;
     const coversForRange = itemSalesQuantity > 0 ? itemSalesQuantity : (data.overview?.reserve.coversToday ?? 0);
     const noShowsForRange = data.overview?.reserve.noShows ?? 0;
@@ -2473,91 +2481,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 6);
 
-    // Per-venue comparison rows from primeCost.
-    // Drop legacy "Both" rollup rows — the totals row beneath already plays
-    // that role, so showing both creates a confusing duplicate column.
-    const venueRows = (data.primeCost?.venues ?? []).filter(
-      (row) => row.venue && row.venue !== 'Both'
-    );
-    // If the API ever stops returning a totals row, fold the venues together
-    // ourselves so we always have a Group total to show.
-    const totalsRow = data.primeCost?.totals ?? (venueRows.length > 0
-      ? {
-          salesCents: venueRows.reduce((sum, v) => sum + v.salesCents, 0),
-          wageCents: venueRows.reduce((sum, v) => sum + v.wageCents, 0),
-          approvedWageCents: venueRows.reduce((sum, v) => sum + v.approvedWageCents, 0),
-          rosterWageEstimateCents: venueRows.reduce((sum, v) => sum + v.rosterWageEstimateCents, 0),
-          cogsCents: venueRows.reduce((sum, v) => sum + v.cogsCents, 0),
-          invoiceCogsCents: venueRows.reduce((sum, v) => sum + v.invoiceCogsCents, 0),
-          wastageCents: venueRows.reduce((sum, v) => sum + v.wastageCents, 0),
-          purchasesCents: venueRows.reduce((sum, v) => sum + v.purchasesCents, 0),
-          openingStockCents: venueRows.reduce((sum, v) => sum + v.openingStockCents, 0),
-          closingStockCents: venueRows.reduce((sum, v) => sum + v.closingStockCents, 0),
-          cogsSource: 'purchases_only' as const,
-          cogsQuality: 'estimated' as const,
-          primeCostCents: venueRows.reduce((sum, v) => sum + v.primeCostCents, 0),
-          wagePercent: (() => {
-            const sales = venueRows.reduce((sum, v) => sum + v.salesCents, 0);
-            const wage = venueRows.reduce((sum, v) => sum + v.wageCents, 0);
-            return sales > 0 ? (wage / sales) * 100 : null;
-          })(),
-          cogsPercent: (() => {
-            const sales = venueRows.reduce((sum, v) => sum + v.salesCents, 0);
-            const cogs = venueRows.reduce((sum, v) => sum + v.cogsCents, 0);
-            return sales > 0 ? (cogs / sales) * 100 : null;
-          })(),
-          primeCostPercent: (() => {
-            const sales = venueRows.reduce((sum, v) => sum + v.salesCents, 0);
-            const prime = venueRows.reduce((sum, v) => sum + v.primeCostCents, 0);
-            return sales > 0 ? (prime / sales) * 100 : null;
-          })(),
-          timesheetHours: venueRows.reduce((sum, v) => sum + v.timesheetHours, 0),
-          rosterHours: venueRows.reduce((sum, v) => sum + v.rosterHours, 0),
-          salesDays: venueRows.reduce((sum, v) => Math.max(sum, v.salesDays), 0),
-          sourceQuality: 'incomplete' as const,
-          missing: [] as string[]
-        }
-      : null);
-
-    // ── Weekly overview COGS: use THEORETICAL food cost ──────────────────────
-    // Actual stock-based COGS collapses to ~0 on a weekly window (stocktakes are
-    // monthly), which zeroes the By-venue COGS % and makes prime cost = wages
-    // only. Show theoretical food cost consistently: group total from
-    // menu-profitability, split across venues by sales share, folded into prime
-    // cost. The dedicated Prime Cost / Monthly Recap reports keep actual COGS.
-    const pctOf = (n: number, d: number): number | null => (d > 0 ? (n / d) * 100 : null);
-    const overviewTotalSalesCents = totalsRow?.salesCents ?? venueRows.reduce((s, v) => s + v.salesCents, 0);
-    // Each venue's OWN theoretical COGS, summed from that venue's menu-profitability
-    // rows (recipe cost × its own units sold) — so venues show their real, differing
-    // food cost, not a uniform group average. Falls back to a sales-share split only
-    // for a venue with no rows of its own.
-    const theoreticalCogsByVenue = new Map<string, number>();
-    for (const row of data.menuProfitability?.rows ?? []) {
-      if (row.estimatedCogsCents == null) continue;
-      theoreticalCogsByVenue.set(row.venue, (theoreticalCogsByVenue.get(row.venue) ?? 0) + row.estimatedCogsCents);
-    }
-    const overviewGroupCogsCents = hasTheoretical ? overviewCogsCents : (totalsRow?.cogsCents ?? 0);
-    const overviewVenueRows = venueRows.map((row) => {
-      const cogsCents = hasTheoretical
-        ? (theoreticalCogsByVenue.get(row.venue)
-            ?? (overviewTotalSalesCents > 0 ? Math.round(overviewGroupCogsCents * (row.salesCents / overviewTotalSalesCents)) : 0))
-        : row.cogsCents;
-      return {
-        ...row,
-        cogsCents,
-        cogsPercent: pctOf(cogsCents, row.salesCents),
-        primeCostPercent: pctOf(row.wageCents + cogsCents, row.salesCents)
-      };
-    });
-    const overviewTotalsRow = totalsRow
-      ? {
-          ...totalsRow,
-          cogsCents: overviewGroupCogsCents,
-          cogsPercent: pctOf(overviewGroupCogsCents, overviewTotalSalesCents),
-          primeCostPercent: pctOf((totalsRow.wageCents ?? 0) + overviewGroupCogsCents, overviewTotalSalesCents)
-        }
-      : totalsRow;
-
     return (
       <SectionShell
         id="overview"
@@ -2567,40 +2490,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       >
         <div className="report-section-stack">
           {(() => {
-            // Prime-cost target: the average of the admin-set per-venue targets
-            // (this overview is org-wide), falling back to the 60% default.
-            const primeCostTarget = (() => {
-              const vals = Object.values(primeTargets);
-              return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 60;
-            })();
-            const variancePct = primeTotals?.primeCostPercent != null
-              ? primeTotals.primeCostPercent - primeCostTarget
-              : null;
-            const salesIncomplete = primeTotals?.primeCostPercent != null && primeTotals.primeCostPercent > 120;
-            // Editorial headline: one plain-spoken line that carries the tone
-            // of the week (the design's "Running hot, worth a look.").
-            const headline = loading
-              ? 'Pulling the week together.'
-              : salesCentsForRange === 0
-                ? 'Waiting on the numbers.'
-                : salesIncomplete
-                  ? 'Sales look short, check the import.'
-                  : variancePct != null && variancePct > 5
-                    ? 'Running hot, worth a look.'
-                    : variancePct != null && variancePct > 0
-                      ? 'Warm, keep an eye on it.'
-                      : 'Inside the guides, good week.'
-            const sub = (() => {
-              if (loading) return 'Loading the week in numbers.';
-              if (salesCentsForRange === 0) return 'No sales recorded for the period yet — enter this week\u2019s takings under Enter sales.';
-              if (salesIncomplete) {
-                return 'Sales look incomplete for this week — check the Square import before trusting the cost %.';
-              }
-              if (primeTotals?.primeCostPercent != null) {
-                return `Total operating cost is ${primeTotals.primeCostPercent.toFixed(1)}% of sales this week, against the ${primeCostTarget.toFixed(0)}% guide. Reports are read-only and scoped to the venues you have access to.`;
-              }
-              return 'Reports are read-only and scoped to the venues you have access to.';
-            })();
+            // Headline, sentence and tone all come from overviewNarrative —
+            // the same figure the prime panel displays.
+            const headline = narrative.headline;
+            const sub = `${narrative.sub} Reports are read-only and scoped to the venues you have access to.`;
             const stocktakesWaiting = data.overview?.stock.stocktakesReadyForReview ?? 0;
             return (
               <section className={`ov-hero is-${heroTone}`}>
@@ -2611,10 +2504,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     <p className="ov-hero-sub">{sub}</p>
                   </div>
                   <div className="ov-hero-pills">
-                    {primeTotals?.primeCostPercent != null && !salesIncomplete ? (
-                      <AlmaPill kind={heroTone === 'danger' ? 'danger' : heroTone === 'warning' ? 'warn' : 'success'}>
-                        Prime cost {primeTotals.primeCostPercent.toFixed(1)}%
+                    {overviewCosts.primeCostPercent != null && !overviewCosts.incomplete ? (
+                      <AlmaPill kind={heroTone === 'danger' ? 'danger' : heroTone === 'warning' ? 'warn' : heroTone === 'positive' ? 'success' : 'neutral'}>
+                        Prime cost {overviewCosts.primeCostPercent.toFixed(1)}%
                       </AlmaPill>
+                    ) : overviewCosts.hasSales && overviewCosts.wagePercent != null ? (
+                      <AlmaPill kind="neutral">Labour {overviewCosts.wagePercent.toFixed(1)}% · food cost pending</AlmaPill>
                     ) : null}
                     {stocktakesWaiting > 0 ? (
                       <AlmaPill kind="warn">{stocktakesWaiting} stocktake{stocktakesWaiting === 1 ? '' : 's'} awaiting review</AlmaPill>
@@ -2686,31 +2581,28 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               restaurant lives or dies on: total operating cost with a five
               week trend, then labour and food read against their targets. */}
           {(() => {
-            const primeTarget = (() => {
-              const vals = Object.values(primeTargets);
-              return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : COST_TARGETS.prime;
-            })();
-            const costTone = (pct: number | null, target: number): 'positive' | 'warning' | 'danger' | 'neutral' =>
-              pct == null ? 'neutral' : pct <= target ? 'positive' : pct <= target + 5 ? 'warning' : 'danger';
-            // A cost ratio above ~120% of sales can't happen in a trading
-            // restaurant — it means sales didn't fully import for the window.
-            // Say that plainly instead of flashing a false red alarm.
-            const IMPLAUSIBLE = 120;
-            const primePct = overviewTotalsRow?.primeCostPercent ?? null;
-            const incomplete = primePct != null && primePct > IMPLAUSIBLE;
+            const primeTarget = primeCostTarget;
+            const primePct = overviewCosts.primeCostPercent;
+            const incomplete = overviewCosts.incomplete;
+            // Same tone rule as the hero (overviewNarrative uses costTone too).
             const primeToneNow = incomplete ? 'neutral' : costTone(primePct, primeTarget);
             const columns = [
               {
                 label: 'Labour · Wages',
-                pct: primeTotals?.wagePercent ?? null,
+                pct: overviewCosts.wagePercent,
                 target: COST_TARGETS.labour,
-                hint: 'Wages divided by sales, against the target guide.'
+                hint: 'Wages (timesheets + salaried) divided by sales, against the target guide.'
               },
               {
                 label: 'Food & bev · COGS',
-                pct: overviewTotalsRow?.cogsPercent ?? null,
+                pct: overviewCosts.cogsPercent,
                 target: COST_TARGETS.food,
-                hint: hasTheoretical ? 'Estimated from recipes times units sold.' : 'From purchases this week.'
+                hint:
+                  overviewCosts.basis === 'theoretical'
+                    ? 'Estimated from recipes times units sold.'
+                    : overviewCosts.basis === 'actual'
+                      ? 'Actual: purchases and stocktakes for the period.'
+                      : 'Not available: no recipe-mapped sales and no stocktake brackets yet.'
               }
             ];
             return (
@@ -2723,9 +2615,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     </span>
                     <div className="ov-prime-trend" aria-label="5 week prime cost trend">
                       {trendPoints.map((point, i) => {
-                        const pct = point.primeCostPercent;
+                        const pct = point.costs.primeCostPercent;
                         const height = pct != null ? Math.max(10, (pct / trendMaxPct) * 100) : 8;
-                        const barTone = pct == null ? 'muted' : pct >= 65 ? 'danger' : pct >= 55 ? 'warning' : 'positive';
+                        const barTone = pct == null ? 'muted' : costTone(pct, primeTarget);
                         const isCurrent = i === trendPoints.length - 1;
                         return (
                           <div key={point.weekStart} className={`ov-prime-bar is-${barTone}${isCurrent ? ' is-current' : ''}`}>
@@ -2740,15 +2632,17 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     {incomplete
                       ? 'Sales data looks incomplete — check the Square import before trusting the cost %.'
                       : primePct == null
-                        ? `Aim at or under ${primeTarget.toFixed(0)}% of sales.`
+                        ? overviewCosts.hasSales
+                          ? `Food cost is not available for this window, so total operating cost cannot be read. Aim at or under ${primeTarget.toFixed(0)}% of sales.`
+                          : `Aim at or under ${primeTarget.toFixed(0)}% of sales.`
                         : primePct > primeTarget
-                          ? <>{(primePct - primeTarget).toFixed(1)} pts over the {primeTarget.toFixed(0)}% guide. Food + labour, divided by sales of <strong>{formatCurrency(primeTotals?.salesCents ?? 0)}</strong>.</>
-                          : <>Inside the {primeTarget.toFixed(0)}% guide. Food + labour, divided by sales of <strong>{formatCurrency(primeTotals?.salesCents ?? 0)}</strong>.</>}
+                          ? <>{(primePct - primeTarget).toFixed(1)} pts over the {primeTarget.toFixed(0)}% guide. Labour + food ({overviewCosts.basisLabel}), divided by sales of <strong>{formatCurrency(overviewCosts.salesCents)}</strong>.</>
+                          : <>Inside the {primeTarget.toFixed(0)}% guide. Labour + food ({overviewCosts.basisLabel}), divided by sales of <strong>{formatCurrency(overviewCosts.salesCents)}</strong>.</>}
                   </span>
                 </div>
                 {columns.map((column) => {
-                  const colIncomplete = column.pct != null && column.pct > IMPLAUSIBLE;
-                  const tone = colIncomplete ? 'neutral' : costTone(column.pct, column.target);
+                  const tone = costTone(column.pct, column.target);
+                  const colIncomplete = column.pct != null && tone === 'neutral';
                   const over = column.pct != null && column.pct > column.target;
                   return (
                     <div key={column.label} className={`ov-prime-col is-${tone}`}>
@@ -2803,10 +2697,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             const cogs = rows.reduce((s, d) => s + d.cogsForecastCents, 0);
             const primePct = sales > 0 ? ((wages + cogs) / sales) * 100 : null;
             const busiest = [...rows].sort((a, b) => b.salesForecastCents - a.salesForecastCents)[0];
-            const primeTargetPct = (() => {
-              const vals = Object.values(primeTargets);
-              return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : COST_TARGETS.prime;
-            })();
+            const primeTargetPct = primeCostTarget;
             return (
               <EditorialPanel
                 className="alma-band-sage"
@@ -2840,7 +2731,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {/* Where the money went + group prime donut — paired, per the
               overview redesign. The venue rows carry a small sales bar so
               relative size reads without the separate bar chart. */}
-          {venueRows.length > 0 && totalsRow ? (
+          {overviewCosts.venues.length > 0 && overviewCosts.hasSales ? (
             <div className="ov-two">
             <EditorialPanel
               eyebrow={`This week · ${weekWindowLabel}`}
@@ -2859,14 +2750,16 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   <span>Food %</span>
                   <span>Total cost</span>
                 </div>
-                {overviewVenueRows.map((row) => (
+                {overviewCosts.venues.map((row) => {
+                  const rowTone = costTone(row.primeCostPercent, primeCostTarget);
+                  return (
                   <div className="alma-venue-row" key={row.venue}>
                     <span className="alma-venue-name">
                       {row.venue}
                       <span className="ov-venue-bar" aria-hidden="true">
                         <span
                           style={{
-                            width: `${Math.round((row.salesCents / Math.max(...overviewVenueRows.map((r) => r.salesCents), 1)) * 100)}%`
+                            width: `${Math.round((row.salesCents / Math.max(...overviewCosts.venues.map((r) => r.salesCents), 1)) * 100)}%`
                           }}
                         />
                       </span>
@@ -2875,33 +2768,27 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     <span className="alma-venue-num">{formatPercent(row.wagePercent)}</span>
                     <span className="alma-venue-num">{formatPercent(row.cogsPercent)}</span>
                     <span>
-                      <AlmaPill kind={row.primeCostPercent == null
-                        ? 'neutral'
-                        : row.primeCostPercent >= 65
-                          ? 'danger'
-                          : row.primeCostPercent >= 55
-                            ? 'warn'
-                            : 'success'}>
+                      <AlmaPill kind={rowTone === 'danger' ? 'danger' : rowTone === 'warning' ? 'warn' : rowTone === 'positive' ? 'success' : 'neutral'}>
                         {row.primeCostPercent != null ? `${row.primeCostPercent.toFixed(1)}%` : '—'}
                       </AlmaPill>
                     </span>
                   </div>
-                ))}
+                  );
+                })}
                 <div className="alma-venue-row is-total">
                   <span className="alma-venue-name">Group total</span>
-                  <span className="alma-venue-num">{formatCurrency(totalsRow.salesCents)}</span>
-                  <span className="alma-venue-num">{formatPercent(totalsRow.wagePercent)}</span>
-                  <span className="alma-venue-num">{formatPercent(overviewTotalsRow?.cogsPercent)}</span>
+                  <span className="alma-venue-num">{formatCurrency(overviewCosts.salesCents)}</span>
+                  <span className="alma-venue-num">{formatPercent(overviewCosts.wagePercent)}</span>
+                  <span className="alma-venue-num">{formatPercent(overviewCosts.cogsPercent)}</span>
                   <span>
-                    <AlmaPill kind={overviewTotalsRow?.primeCostPercent == null
-                      ? 'neutral'
-                      : overviewTotalsRow.primeCostPercent >= 65
-                        ? 'danger'
-                        : overviewTotalsRow.primeCostPercent >= 55
-                          ? 'warn'
-                          : 'success'}>
-                      {overviewTotalsRow?.primeCostPercent != null ? `${overviewTotalsRow.primeCostPercent.toFixed(1)}%` : '—'}
-                    </AlmaPill>
+                    {(() => {
+                      const totalTone = costTone(overviewCosts.primeCostPercent, primeCostTarget);
+                      return (
+                        <AlmaPill kind={totalTone === 'danger' ? 'danger' : totalTone === 'warning' ? 'warn' : totalTone === 'positive' ? 'success' : 'neutral'}>
+                          {overviewCosts.primeCostPercent != null ? `${overviewCosts.primeCostPercent.toFixed(1)}%` : '—'}
+                        </AlmaPill>
+                      );
+                    })()}
                   </span>
                 </div>
               </div>
@@ -2910,23 +2797,27 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               <div className="ov-donut">
                 <Donut
                   size={140}
+                  // Same wages figure as the labour % beside it (all
+                  // timesheets + salaried), not approved-only — the split
+                  // must add back to the prime % in the centre.
                   segments={[
-                    { label: 'COGS', value: overviewGroupCogsCents, color: CHART_COLORS.danger },
-                    { label: 'Wages', value: primeTotals?.approvedWageCents ?? actualApprovedWageCostCents, color: CHART_COLORS.accent },
+                    { label: 'Food & bev', value: overviewCosts.cogsCents ?? 0, color: CHART_COLORS.danger },
+                    { label: 'Wages', value: overviewCosts.wageCents, color: CHART_COLORS.accent },
                     {
                       label: 'Gross profit',
-                      value: Math.max(0, totalsRow.salesCents - overviewGroupCogsCents - (primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)),
+                      value: Math.max(0, overviewCosts.salesCents - (overviewCosts.cogsCents ?? 0) - overviewCosts.wageCents),
                       color: CHART_COLORS.positive
                     }
                   ]}
-                  centerValue={overviewTotalsRow?.primeCostPercent != null ? `${overviewTotalsRow.primeCostPercent.toFixed(0)}%` : '—'}
+                  centerValue={overviewCosts.primeCostPercent != null ? `${overviewCosts.primeCostPercent.toFixed(0)}%` : '—'}
                   centerLabel="prime cost"
                   format={(v) => formatCurrency(v)}
                   emptyLabel="No prime cost data yet."
                 />
                 <p className="ov-donut-note">
-                  {formatCurrency(Math.max(0, totalsRow.salesCents - overviewGroupCogsCents - (primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)))}{' '}
-                  gross profit left after food and labour this week.
+                  {overviewCosts.cogsCents == null
+                    ? 'Food cost is not available for this window, so gross profit cannot be read yet.'
+                    : <>{formatCurrency(Math.max(0, overviewCosts.salesCents - overviewCosts.cogsCents - overviewCosts.wageCents))} gross profit left after food and labour for {periodWindowLabel}.</>}
                 </p>
               </div>
             </EditorialPanel>
@@ -3717,27 +3608,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   }
 
   function renderStockSection() {
-    // Weekly actual COGS (opening + purchases − closing) collapses to $0 because
-    // stocktakes are monthly, so nothing brackets a single week. Fall back to
-    // THEORETICAL food cost (recipe cost × Square units sold) — the same figure
-    // the "This Week" report uses — so a food cost always shows. Labelled clearly.
-    const stockTheoreticalCogsCents = data.menuProfitability?.totals.estimatedCogsCents ?? null;
-    const stockTheoreticalFoodPct = data.menuProfitability?.totals.foodCostPercent ?? null;
-    const stockActualCogsCents = primeTotals?.cogsCents ?? 0;
-    const stockUsingTheoretical =
-      stockActualCogsCents <= 0 && stockTheoreticalCogsCents != null && stockTheoreticalCogsCents > 0;
-    const stockDisplayCogsCents = stockUsingTheoretical ? stockTheoreticalCogsCents! : stockActualCogsCents;
-    const stockSalesCents = primeTotals?.salesCents ?? 0;
-    const stockDisplayCogsPct = stockUsingTheoretical
-      ? stockTheoreticalFoodPct
-      : (primeTotals?.cogsPercent ?? null);
-    const stockLabourCents = primeTotals?.wageCents ?? 0;
-    const stockDisplayPrimeCents = stockUsingTheoretical
-      ? stockLabourCents + stockDisplayCogsCents
-      : (primeTotals?.primeCostCents ?? 0);
-    const stockDisplayPrimePct = stockSalesCents > 0
-      ? (stockDisplayPrimeCents / stockSalesCents) * 100
-      : (primeTotals?.primeCostPercent ?? null);
+    // Same food cost, same basis and same denominator as the Overview cost
+    // triangle (lib/overview-costs.ts). This section used to switch bases on
+    // its own rule and divide by item-level net sales, so its food % and its
+    // "Total operating cost" disagreed with the Overview for the same period.
+    const stockUsingTheoretical = overviewCosts.basis === 'theoretical';
+    const stockDisplayCogsCents = overviewCosts.cogsCents ?? 0;
+    const stockDisplayCogsPct = overviewCosts.cogsPercent;
+    const stockDisplayPrimeCents = overviewCosts.primeCostCents;
+    const stockDisplayPrimePct = overviewCosts.primeCostPercent;
     // Presentation only: relative-size read for the category value table.
     const categoryValueMaxCents = Math.max(1, ...categoryValueRows.map((row) => row.valueCents));
     return (
@@ -3751,13 +3630,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {/* Food-cost feature — the section's one headline ratio, with prime,
               purchases, and wastage alongside instead of a second metric grid. */}
           {(() => {
-            const tone = stockDisplayCogsCents <= 0 || stockDisplayCogsPct == null
-              ? 'neutral'
-              : stockDisplayCogsPct <= COST_TARGETS.food
-                ? 'positive'
-                : stockDisplayCogsPct <= COST_TARGETS.food + 5
-                  ? 'warning'
-                  : 'danger';
+            const tone = stockDisplayCogsCents <= 0 ? 'neutral' : costTone(stockDisplayCogsPct, COST_TARGETS.food);
             return (
               <section className={`ov-prime is-${tone} rs-prime-cols-money`} aria-label="Food and beverage cost for the week">
                 <div className="ov-prime-main">
@@ -3773,8 +3646,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
                 <div className="ov-prime-col">
                   <span className="ov-prime-label">Total operating cost · Prime</span>
-                  <span className="ov-prime-col-value">{formatCurrency(stockDisplayPrimeCents)}</span>
-                  <span className="ov-prime-col-hint">{formatPercent(stockDisplayPrimePct)} of sales · food + labour</span>
+                  <span className="ov-prime-col-value">{stockDisplayPrimeCents == null ? '—' : formatCurrency(stockDisplayPrimeCents)}</span>
+                  <span className="ov-prime-col-hint">{stockDisplayPrimePct == null ? 'Food cost not available for this window' : `${formatPercent(stockDisplayPrimePct)} of sales · labour + food`}</span>
                 </div>
                 <div className="ov-prime-col">
                   <span className="ov-prime-label">Purchases (ex-GST)</span>
@@ -3804,7 +3677,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 size={130}
                 segments={[
                   { label: 'Food & bev', value: stockDisplayCogsCents, color: CHART_COLORS.danger },
-                  { label: 'Labour', value: stockLabourCents, color: CHART_COLORS.accent }
+                  { label: 'Labour', value: overviewCosts.wageCents, color: CHART_COLORS.accent }
                 ]}
                 centerValue={formatPercent(stockDisplayPrimePct)}
                 centerLabel="total cost %"
