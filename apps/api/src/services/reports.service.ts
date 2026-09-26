@@ -45,6 +45,7 @@ import {
   type SalesItemActualSummary,
   type StocktakeReviewItem
 } from '@alma/shared';
+import { summariseTemperatureAssets, venueTodayStart } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { isSuspectRecipeCost } from '../lib/cogs-quality.js';
 import { allocatePackageRevenue } from '../lib/banquet-allocation.js';
@@ -145,9 +146,9 @@ function rangeFromInput(input: unknown) {
   };
 }
 
-function startOfTodayUtc() {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+/** The UTC instant the venue's current day began — not the UTC calendar day. */
+function startOfVenueToday() {
+  return venueTodayStart();
 }
 
 function addDays(date: Date, days: number) {
@@ -295,7 +296,7 @@ function toStocktakeReviewPayload(row: Prisma.StocktakeGetPayload<{
 
 async function buildStaffSummary(actor: AuthUser, requestedVenue: string | null, start: Date): Promise<ReportsStaffSummary> {
   const scope = staffProfileScope(actor, requestedVenue);
-  const next30 = addDays(startOfTodayUtc(), 30);
+  const next30 = addDays(startOfVenueToday(), 30);
 
   const [
     totalActiveStaff,
@@ -328,7 +329,7 @@ async function buildStaffSummary(actor: AuthUser, requestedVenue: string | null,
       where: {
         status: 'APPROVED',
         startDate: { lte: next30 },
-        endDate: { gte: startOfTodayUtc() },
+        endDate: { gte: startOfVenueToday() },
         staffProfile: scope
       }
     }),
@@ -370,7 +371,7 @@ async function buildComplianceSummary(
 ): Promise<ReportsComplianceSummary> {
   const scope = staffProfileScope(actor, requestedVenue);
   const venue = actorVenueScope(actor, requestedVenue);
-  const today = startOfTodayUtc();
+  const today = startOfVenueToday();
   const next30 = addDays(today, 30);
   const staffRecordWhere: Prisma.StaffComplianceRecordWhereInput = {
     staffProfile: scope
@@ -388,8 +389,7 @@ async function buildComplianceSummary(
     pendingStaffRecords,
     expiredStaffRecords,
     expiringStaffRecordsNext30Days,
-    outOfRangeTemperatureAssets,
-    missingTemperatureReadingsToday,
+    temperatureAssetsWithLatestReading,
     activeLicences,
     expiringLicencesNext30Days,
     staffAttentionRecords,
@@ -408,14 +408,12 @@ async function buildComplianceSummary(
         expiryDate: { gte: today, lte: next30 }
       }
     }),
-    prisma.temperatureAsset.count({
-      where: { ...temperatureWhere, logs: { some: { status: 'OUT_OF_RANGE' } } }
-    }),
-    prisma.temperatureAsset.count({
-      where: {
-        ...temperatureWhere,
-        OR: [{ lastReadingAt: null }, { lastReadingAt: { lt: today } }]
-      }
+    // Latest reading per asset, classified by the shared rule: "out of range"
+    // is the LATEST reading breaching (it used to be any breach ever logged,
+    // which never cleared), "missing" is no reading in the venue's day.
+    prisma.temperatureAsset.findMany({
+      where: temperatureWhere,
+      select: { status: true, lastSyncAt: true, logs: { orderBy: [{ recordedAt: 'desc' }], take: 1, select: { recordedAt: true, status: true } } }
     }),
     prisma.liquorLicence.count({ where: licenceWhere }),
     prisma.liquorLicence.count({
@@ -450,12 +448,14 @@ async function buildComplianceSummary(
     })
   ]);
 
+  const temperatureCounts = summariseTemperatureAssets(temperatureAssetsWithLatestReading);
+
   return {
     pendingStaffRecords,
     expiredStaffRecords,
     expiringStaffRecordsNext30Days,
-    outOfRangeTemperatureAssets,
-    missingTemperatureReadingsToday,
+    outOfRangeTemperatureAssets: temperatureCounts.outOfRangeNow,
+    missingTemperatureReadingsToday: temperatureCounts.missingToday,
     activeLicences,
     expiringLicencesNext30Days,
     topAttentionItems: [
@@ -632,7 +632,7 @@ async function buildReserveSummary(
   end: Date
 ): Promise<ReportsReserveSummary> {
   const venue = actorVenueScope(actor, requestedVenue);
-  const today = startOfTodayUtc();
+  const today = startOfVenueToday();
   const tomorrow = addDays(today, 1);
   const reservationWhere: Prisma.ReserveReservationWhereInput = venue ? { venue } : {};
   const [bookingsToday, coversTodayRows, upcomingBookings, cancellations, noShows, newGuests] = await Promise.all([
@@ -796,7 +796,7 @@ async function buildContentSummary(
 ): Promise<ReportsContentSummary> {
   const venue = actorVenueScope(actor, requestedVenue);
   const where = venue ? { venue } : {};
-  const today = startOfTodayUtc();
+  const today = startOfVenueToday();
   const nextWeek = addDays(today, 7);
   const [scheduledPostsThisWeek, postsNeedingApproval, failedSimulatedPublishAttempts, setupRequiredSocialAccounts, assetsUploaded] =
     await Promise.all([

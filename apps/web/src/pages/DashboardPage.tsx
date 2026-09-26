@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { complianceAttentionLine } from '@alma/shared';
 import type {
   IncidentSummary,
   IssueSummary,
@@ -42,21 +43,26 @@ export function DashboardPage() {
   const openIncidents = data?.incidents.open ?? 0;
 
   // Data-driven editorial header copy per design — leads with whatever the
-  // operator needs to see first.
+  // operator needs to see first. Missing logs, recorded breaches and overdue
+  // issues each get their own clause from the shared helper; they used to be
+  // added into one number and described as "out of range".
   const openIssues = data?.issues.open ?? 0;
-  const overdueChecks = (data?.temperatures.outOfRangeNow ?? 0) + (data?.temperatures.missingToday ?? 0);
-  const headerTitle = openIssues > 0 || overdueChecks > 0 ? 'One thing' : 'All quiet';
-  const headerItalic = openIssues > 0 || overdueChecks > 0 ? 'needs your eye.' : 'on the floor.';
-  const headerSub = (() => {
-    if (loading) return 'Loading latest snapshot…';
-    if (error) return 'Could not refresh the summary.';
-    if (openIssues > 0 && overdueChecks > 0) {
-      return `${openIssues} open issue${openIssues === 1 ? '' : 's'} and ${overdueChecks} temperature${overdueChecks === 1 ? '' : 's'} out of range today.`;
-    }
-    if (openIssues > 0) return `${openIssues} open issue${openIssues === 1 ? '' : 's'} sitting on the board.`;
-    if (overdueChecks > 0) return `${overdueChecks} temperature${overdueChecks === 1 ? '' : 's'} out of range today.`;
-    return 'Issues, checklists and logs are all current.';
-  })();
+  const missingToday = data?.temperatures.missingToday ?? 0;
+  const attention = complianceAttentionLine({
+    openIssues,
+    overdueIssues: data?.issues.overdue ?? 0,
+    outOfRangeNow: outOfRange,
+    missingToday
+  });
+  const settled = !loading && !error && data != null;
+  const headerSub = loading ? 'Loading latest snapshot…' : error ? 'Could not refresh the summary.' : attention.text;
+  const statusDot: 'terracotta' | 'amber' | 'forest' | 'slate' = !settled
+    ? 'slate'
+    : attention.tone === 'danger'
+      ? 'terracotta'
+      : attention.tone === 'warning'
+        ? 'amber'
+        : 'forest';
 
   return (
     <div className="page-stack">
@@ -66,9 +72,9 @@ export function DashboardPage() {
         appIcon={<ShieldIcon />}
         eyebrow="Standards command"
         description="Audits, allergens, food safety logs. The unglamorous backbone that keeps the doors open."
-        statusLabel={openIssues > 0 ? `${openIssues} open` : 'All venues · today'}
-        statusHint={openIssues > 0 || overdueChecks > 0 ? headerSub : 'No issues. Logs are current.'}
-        statusDot={openIssues > 0 ? 'terracotta' : overdueChecks > 0 ? 'amber' : 'forest'}
+        statusLabel={!settled ? 'All venues · today' : openIssues > 0 ? `${openIssues} open` : 'All venues · today'}
+        statusHint={headerSub}
+        statusDot={statusDot}
         actions={
           <>
             <Link to="/issues/new" className="alma-home-bubble-btn alma-home-bubble-btn--primary">

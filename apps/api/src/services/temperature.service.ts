@@ -9,6 +9,7 @@ import {
   decideTemperatureEscalation
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { summariseTemperatureAssets } from '@alma/shared';
 import { mailService } from './mail.service.js';
 
 const GOVEE_PROVIDER = 'govee';
@@ -741,9 +742,10 @@ export const temperatureService = {
   },
 
   async summary() {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
+    // "Today" is the venue's day, not the container's (UTC): a fridge logged
+    // at 8am Sydney used to read as missing until 10am. The counting rule
+    // itself lives in @alma/shared so the Temperatures page and the Reports
+    // compliance section can't drift from it.
     const assets = await prisma.temperatureAsset.findMany({
       where: { status: 'ACTIVE' },
       include: {
@@ -754,11 +756,6 @@ export const temperatureService = {
       }
     });
 
-    const activeAssets = assets.length;
-    const outOfRangeNow = assets.filter((asset) => asset.logs[0]?.status === 'OUT_OF_RANGE').length;
-    const missingToday = assets.filter((asset) => !asset.logs[0] || asset.logs[0].recordedAt < todayStart).length;
-    const syncedToday = assets.filter((asset) => asset.lastSyncAt && asset.lastSyncAt >= todayStart).length;
-
-    return { activeAssets, outOfRangeNow, missingToday, syncedToday };
+    return summariseTemperatureAssets(assets);
   }
 };

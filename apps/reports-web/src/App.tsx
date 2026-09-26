@@ -101,7 +101,7 @@ type SuiteSummary = {
   incidents?: { total?: number; open?: number; followUp?: number };
   issues?: { total?: number; open?: number; overdue?: number; critical?: number };
   staff?: { totalProfiles?: number; expiringSoon?: number; expired?: number; pendingApproval?: number };
-  temperatures?: { assets?: number; outOfRange?: number; due?: number };
+  temperatures?: { activeAssets?: number; outOfRangeNow?: number; missingToday?: number; syncedToday?: number };
   audits?: { templates?: number; runs?: number; averageScore?: number | null };
 };
 
@@ -3670,15 +3670,27 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         description="Staff records, licences, and food-safety temperature logs — what's current and what needs attention"
       >
         {(() => {
-          const attention =
-            (data.overview?.compliance.expiredStaffRecords ?? 0) +
-            (data.overview?.compliance.pendingStaffRecords ?? 0) +
-            (data.summary?.issues?.critical ?? 0) +
-            (data.overview?.compliance.missingTemperatureReadingsToday ?? 0);
+          const expired = data.overview?.compliance.expiredStaffRecords ?? 0;
+          const pending = data.overview?.compliance.pendingStaffRecords ?? 0;
+          const critical = data.summary?.issues?.critical ?? 0;
+          const missingTemps = data.overview?.compliance.missingTemperatureReadingsToday ?? 0;
+          const breaches = data.overview?.compliance.outOfRangeTemperatureAssets ?? 0;
+          const clauses = [
+            expired > 0 ? `${expired} expired staff record${expired === 1 ? '' : 's'}` : null,
+            pending > 0 ? `${pending} pending staff record${pending === 1 ? '' : 's'}` : null,
+            critical > 0 ? `${critical} critical issue${critical === 1 ? '' : 's'}` : null,
+            breaches > 0 ? `${breaches} temperature${breaches === 1 ? '' : 's'} out of range` : null,
+            missingTemps > 0 ? `${missingTemps} temperature log${missingTemps === 1 ? '' : 's'} missing today` : null
+          ].filter((clause): clause is string => clause != null);
+          // Each count gets its own clause, so a missing log is never
+          // described as a breach and the total is never an unlabelled sum.
+          if (!data.overview) {
+            return <p className="report-lead">Compliance summary is not available for this range.</p>;
+          }
           return (
             <p className="report-lead">
-              {attention > 0
-                ? <>Have a look — <strong>{attention} item{attention === 1 ? '' : 's'}</strong> need attention: expired or pending staff records, critical issues, or missing temperature logs today.</>
+              {clauses.length > 0
+                ? <>Have a look — <strong>{clauses.join(', ')}</strong>.</>
                 : <>All clear — staff records, licences and food-safety temperature logs are current.</>}
             </p>
           );
@@ -3697,7 +3709,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <Metric label="Open issues" value={data.summary?.issues?.open ?? 0} tone={(data.summary?.issues?.open ?? 0) > 0 ? 'warning' : 'positive'} />
             <Metric label="Critical issues" value={data.summary?.issues?.critical ?? 0} tone={(data.summary?.issues?.critical ?? 0) > 0 ? 'danger' : 'positive'} />
             <Metric label="Missing temperature readings today" value={data.overview?.compliance.missingTemperatureReadingsToday ?? 0} tone={(data.overview?.compliance.missingTemperatureReadingsToday ?? 0) > 0 ? 'warning' : 'positive'} />
-            <Metric label="Out-of-range temperature assets" value={data.summary?.temperatures?.outOfRange ?? 0} tone={(data.summary?.temperatures?.outOfRange ?? 0) > 0 ? 'danger' : 'positive'} />
+            <Metric label="Out-of-range temperature assets" value={data.overview?.compliance.outOfRangeTemperatureAssets ?? 0} tone={(data.overview?.compliance.outOfRangeTemperatureAssets ?? 0) > 0 ? 'danger' : 'positive'} hint="Latest reading is a breach" />
           </div>
         </div>
       </SectionShell>

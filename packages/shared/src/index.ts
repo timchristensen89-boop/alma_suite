@@ -13,6 +13,7 @@ export * from './venue-day.js';
 export * from './guest-tags.js';
 export * from './guest-import.js';
 export * from './temperature-escalation.js';
+export * from './temperature-status.js';
 export * from './onboarding-completion.js';
 export * from './invoice-paste.js';
 export * from './count-scale.js';
