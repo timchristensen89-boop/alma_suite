@@ -1008,6 +1008,7 @@ export const giftCardService = {
       prisma.giftCard.findMany({
         where: { status: { not: 'PENDING_PAYMENT' } },
         select: {
+          id: true,
           status: true,
           testMode: true,
           initialValueCents: true,
@@ -1018,12 +1019,13 @@ export const giftCardService = {
         }
       }),
       prisma.giftCardRedemption.findMany({
-        select: { status: true, amountCents: true, venue: true, redeemedAt: true, giftCard: { select: { testMode: true } } }
+        select: { giftCardId: true, status: true, amountCents: true, venue: true, redeemedAt: true, giftCard: { select: { testMode: true } } }
       })
     ]);
     const ledger = buildGiftCardLedger({
       cards: ledgerCards,
       redemptions: ledgerRedemptions.map((row) => ({
+        giftCardId: row.giftCardId,
         status: row.status,
         amountCents: row.amountCents,
         venue: row.venue,
@@ -1041,8 +1043,9 @@ export const giftCardService = {
         pending: 0,
         redeemed: ledger.redeemedCards,
         test: ledger.testCards,
-        // Liability triad (live cards only): issued = original face value,
-        // outstanding = remaining redeemable balance, redeemed = drawn down.
+        // Current position vs history: outstanding = remaining redeemable
+        // balance now; issued = face value of every card ever activated;
+        // redeemed = face − balance on the cards that still show it.
         activeBalanceCents: ledger.activeBalanceCents,
         soldValueCents: ledger.issuedValueCents,
         redeemedValueCents: ledger.drawnDownCents,

@@ -4646,15 +4646,22 @@ export type GiftCardLedgerOrigin = 'GIFTUP_IMPORT' | 'PHYSICAL_COUNTER' | 'DONAT
  */
 export type GiftCardLedger = {
   month: string;
+  /** Current position: redeemable now. */
   activeCards: number;
   activeBalanceCents: number;
   expiredCards: number;
   expiredRetainedCents: number;
   redeemedCards: number;
+  cancelledCards: number;
+  /** Historical account over every activated card (ACTIVE, REDEEMED, EXPIRED, CANCELLED):
+   *  issued = activeBalance + expiredRetained + redemptionsRecorded + unrecordedDrawdown − overRecorded + cancelledWrittenOff. */
   issuedValueCents: number;
   drawnDownCents: number;
   redemptionsRecordedCents: number;
   unrecordedDrawdownCents: number;
+  overRecordedCents: number;
+  cancelledWrittenOffCents: number;
+  recordedOnCancelledCents: number;
   issuedThisMonthCents: number;
   issuedThisMonthCards: number;
   issuedLastMonthCents: number;
@@ -4677,9 +4684,9 @@ export type GiftCardOverview = {
     test: number;
     /** Remaining balance on ACTIVE non-test cards — the liability. */
     activeBalanceCents: number;
-    /** Face value of every live (ACTIVE + REDEEMED) non-test card. */
+    /** Face value of every activated non-test card, whatever its status now. */
     soldValueCents: number;
-    /** issued − outstanding: includes drawdown from before the GiftUp import. */
+    /** Face − balance over non-cancelled activated cards (recorded + unrecorded − over-recorded). */
     redeemedValueCents: number;
     /**
      * Redemption revenue split by venue (lifetime + current venue month),

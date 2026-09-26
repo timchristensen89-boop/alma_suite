@@ -2715,7 +2715,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 <StatCard label="Active" value={data?.totals.active ?? 0} hint="Can be redeemed · every card, test excluded" loading={loading} />
               </button>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open sold gift cards">
-                <StatCard label="Issued (lifetime)" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
+                <StatCard label="Issued (lifetime)" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`Every card ever activated, incl. expired and cancelled · ${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
               </button>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open redeemed gift cards">
                 <StatCard
@@ -2729,7 +2729,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                       ? `${formatCents(data.ledger.redemptionsRecordedCents)} recorded in Alma (${data.ledger.redeemedByVenue
                           .filter((row) => row.lifetimeCents > 0)
                           .map((row) => `${row.venue} ${formatCents(row.lifetimeCents)}`)
-                          .join(' · ') || 'no venue rows'})${data.ledger.unrecordedDrawdownCents > 0 ? ` · ${formatCents(data.ledger.unrecordedDrawdownCents)} drawn down before import or cancelled` : ''}`
+                          .join(' · ') || 'no venue rows'})${data.ledger.unrecordedDrawdownCents > 0 ? ` · ${formatCents(data.ledger.unrecordedDrawdownCents)} drawn down with no Alma record (GiftUp history)` : ''}${data.ledger.overRecordedCents > 0 ? ` · ${formatCents(data.ledger.overRecordedCents)} recorded beyond card drawdown — check` : ''}${data.ledger.cancelledWrittenOffCents > 0 ? ` · ${formatCents(data.ledger.cancelledWrittenOffCents)} written off on ${data.ledger.cancelledCards} cancelled card${data.ledger.cancelledCards === 1 ? '' : 's'} (not in this figure)` : ''}`
                       : `${data?.totals.redeemed ?? 0} fully used`
                   }
                   loading={loading}
