@@ -45,7 +45,7 @@ import {
   type SalesItemActualSummary,
   type StocktakeReviewItem
 } from '@alma/shared';
-import { summariseTemperatureAssets, venueTodayStart } from '@alma/shared';
+import { summariseLowStock, summariseTemperatureAssets, venueTodayStart } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { isSuspectRecipeCost } from '../lib/cogs-quality.js';
 import { allocatePackageRevenue } from '../lib/banquet-allocation.js';
@@ -565,11 +565,9 @@ async function buildStockSummary(
     })
   ]);
 
-  const lowStockCount = venueRows.filter((row) => {
-    const threshold = row.reorderPoint ?? row.parLevel ?? row.stockItem.parLevel;
-    return row.onHand !== null && threshold > 0 && row.onHand <= threshold;
-  }).length;
-  const outOfStockCount = venueRows.filter((row) => row.onHand !== null && row.onHand <= 0).length;
+  // Same rule as the Stock dashboard (@alma/shared low-stock.ts); this copy
+  // used to skip the item-level reorder point.
+  const { lowStockItems: lowStockCount, outOfStockItems: outOfStockCount } = summariseLowStock(venueRows);
   const venueStockOnHandByKey = new Map(
     venueRows.map((row) => [`${row.venue}:${row.stockItemId}`, row.onHand] as const)
   );

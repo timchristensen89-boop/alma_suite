@@ -199,7 +199,7 @@ export function DashboardPage() {
                 ? `${dashboard?.summary.outOfStockItems ?? 0} out of stock at ${activeVenue}`
                 : `${dashboard?.summary.outOfStockItems ?? 0} out of stock across venue stock`
             }
-            tone={(dashboard?.summary.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'}
+            tone={loading || !dashboard ? undefined : (dashboard.summary.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'}
           />
         </Link>
         <Link to="/items" className="stat-card-link" aria-label="Open on hand stock">
@@ -228,7 +228,7 @@ export function DashboardPage() {
       <div className="ov-two st-dashboard-pair">
         <Card
           title="Needs attention"
-          subtitle="Low-stock and out-of-stock items, sorted by most recent change."
+          subtitle="Low-stock and out-of-stock items, most urgent first — the same rows the Low stock count above is made of."
           action={
             <Link className="btn btn-ghost btn-sm" to="/reorder">
               View below par
@@ -274,10 +274,22 @@ export function DashboardPage() {
                 ) : (
                   <tr>
                     <td colSpan={7} className="table-empty-cell">
-                      No low-stock items right now.
+                      {loading
+                        ? 'Loading low-stock items…'
+                        : error || !dashboard
+                          ? 'Low-stock items are unavailable right now.'
+                          : `No low-stock or out-of-stock items${activeVenue ? ` at ${activeVenue}` : ''} right now.`}
                     </td>
                   </tr>
                 )}
+                {dashboard && (dashboard.lowStockItemsTotal ?? dashboard.lowStockItems.length) > dashboard.lowStockItems.length ? (
+                  <tr>
+                    <td colSpan={7} className="table-empty-cell">
+                      Showing the {dashboard.lowStockItems.length} most urgent of {dashboard.lowStockItemsTotal} items.{' '}
+                      <Link to="/reorder">View all below par →</Link>
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>

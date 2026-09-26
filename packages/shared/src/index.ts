@@ -14,6 +14,8 @@ export * from './guest-tags.js';
 export * from './guest-import.js';
 export * from './temperature-escalation.js';
 export * from './temperature-status.js';
+export * from './low-stock.js';
+export * from './cogs-quality.js';
 export * from './onboarding-completion.js';
 export * from './invoice-paste.js';
 export * from './count-scale.js';
@@ -5586,8 +5588,12 @@ export type StockItemsPayload = {
 export type StockItemsSummary = {
   totalItems: number;
   activeItems: number;
+  /** Rows at or under their threshold (see @alma/shared low-stock.ts). */
   lowStockItems: number;
+  /** Rows counted at or under zero, threshold or not. */
   outOfStockItems?: number;
+  /** Rows the attention table shows: low OR out of stock. */
+  attentionItems?: number;
   categories: number;
   totalOnHand: number;
   venueStockItems?: number;
@@ -7504,7 +7510,10 @@ export type StockDashboardPayload = {
     openStocktakes: number;
     readyForReviewStocktakes: number;
   };
+  /** The most urgent attention rows (out of stock first, then by shortfall); capped. */
   lowStockItems: StockLowStockItem[];
+  /** How many attention rows exist in total, so "showing 10 of N" is honest. */
+  lowStockItemsTotal?: number;
   reorderNotices?: StockReorderNotice[];
   recentItems: StockItem[];
   readyForReviewStocktakes: StocktakeReviewItem[];

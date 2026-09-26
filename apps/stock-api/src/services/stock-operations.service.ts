@@ -21,6 +21,7 @@ import {
   type StockWastagePayload,
   type StockWastageRecord
 } from '@alma/shared';
+import { isLowStockRow } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { actorPinnedVenue, isVenueUnscopedActor } from '../lib/venue-scope.js';
 
@@ -772,10 +773,8 @@ export const stockOperationsService = {
       venuesForActor(actor)
     ]);
     const lowStockItems = venueRows
-      .filter((row) => {
-        const threshold = row.reorderPoint ?? row.parLevel ?? row.stockItem.reorderPoint ?? row.stockItem.parLevel;
-        return row.onHand !== null && threshold > 0 && row.onHand <= threshold;
-      })
+      // Same rule as the dashboard headline (@alma/shared low-stock.ts).
+      .filter((row) => isLowStockRow(row))
       .map((row) => {
         const parLevel = row.parLevel ?? row.stockItem.parLevel;
         const reorderPoint = row.reorderPoint ?? row.stockItem.reorderPoint;

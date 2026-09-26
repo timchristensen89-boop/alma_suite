@@ -30,6 +30,7 @@ import {
   type StockConfigHealthPayload,
   type AuthUser
 } from '@alma/shared';
+import { effectiveLowStockThreshold, isLowStockRow, lowStockStatus, rankStockAttentionRows, summariseLowStock } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { actorPinnedVenue, isVenueUnscopedActor } from '../lib/venue-scope.js';
 import { convertQuantityToCostUnit } from './units.js';
@@ -231,8 +232,11 @@ function scopedVenueStockWhere(actor?: AuthUser | null, requestedVenue?: string 
   };
 }
 
+// The low-stock rule itself lives in @alma/shared (low-stock.ts) so the
+// dashboard headline, its attention table, /low-stock, the reorder page and
+// the Reports stock summary all count the same rows.
 function effectiveThreshold(row: VenueStockItemRow) {
-  return row.reorderPoint ?? row.parLevel ?? row.stockItem.reorderPoint ?? row.stockItem.parLevel;
+  return effectiveLowStockThreshold(row);
 }
 
 function effectiveParLevel(row: VenueStockItemRow) {
@@ -243,19 +247,8 @@ function effectiveReorderPoint(row: VenueStockItemRow) {
   return row.reorderPoint ?? row.stockItem.reorderPoint;
 }
 
-function lowStockStatus(row: Pick<VenueStockItemRow, 'onHand'> & { reorderPoint: number | null; parLevel: number | null }) {
-  if ((row.onHand ?? 0) <= 0) {
-    return { stockStatus: 'OUT_OF_STOCK' as const, suggestedAction: 'Out of stock' };
-  }
-  if (row.reorderPoint !== null && row.reorderPoint > 0 && (row.onHand ?? 0) <= row.reorderPoint) {
-    return { stockStatus: 'LOW_STOCK' as const, suggestedAction: 'Order soon' };
-  }
-  return { stockStatus: 'BELOW_PAR' as const, suggestedAction: 'Below par' };
-}
-
 function isLowVenueStockRow(row: VenueStockItemRow) {
-  const threshold = effectiveThreshold(row);
-  return row.active && row.stockItem.status === 'ACTIVE' && row.onHand !== null && threshold > 0 && row.onHand <= threshold;
+  return isLowStockRow(row);
 }
 
 function toLowStockPayload(row: VenueStockItemRow): StockLowStockItem {
@@ -276,8 +269,17 @@ function toLowStockPayload(row: VenueStockItemRow): StockLowStockItem {
     status: row.stockItem.status,
     updatedAt: row.updatedAt.toISOString(),
     threshold,
-    ...lowStockStatus({ onHand: row.onHand, parLevel, reorderPoint })
+    ...lowStockStatus(row)
   };
+}
+
+// Every active venue-stock row for the scope — the ONE row set the summary
+// counts and the attention table draws from.
+async function loadVenueStockRows(actor?: AuthUser | null, requestedVenue?: string | null) {
+  return prisma.venueStockItem.findMany({
+    where: venueStockWhere(actor, requestedVenue),
+    include: { stockItem: { include: { category: { select: { id: true, name: true } } } } }
+  });
 }
 
 function stocktakeLineValue(lines: StocktakeReviewRow['lines']) {
@@ -592,8 +594,7 @@ export const itemsService = {
         const entry = bucket(row.stockItem.category?.name ?? 'Uncategorised');
         entry.itemCount += 1;
         entry.valueCents += value;
-        const threshold = row.reorderPoint ?? row.parLevel ?? row.stockItem.reorderPoint ?? row.stockItem.parLevel ?? 0;
-        if (row.onHand !== null && threshold > 0 && row.onHand <= threshold) entry.lowStock += 1;
+        if (isLowStockRow(row)) entry.lowStock += 1;
       }
     } else {
       const items = await prisma.stockItem.findMany({
@@ -793,21 +794,17 @@ export const itemsService = {
     return facts.get(itemId) ?? null;
   },
 
-  async summary(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockItemsSummary> {
+  async summary(actor?: AuthUser | null, requestedVenue?: string | null, preloadedRows?: VenueStockItemRow[]): Promise<StockItemsSummary> {
     const venue = actorVenueScope(actor, requestedVenue);
     const [totalItems, activeItems, categories, venueRows] = await Promise.all([
       prisma.stockItem.count(),
       prisma.stockItem.count({ where: { status: 'ACTIVE' } }),
       prisma.stockCategory.count(),
-      prisma.venueStockItem.findMany({
-        where: venueStockWhere(actor, requestedVenue),
-        include: { stockItem: { include: { category: { select: { id: true, name: true } } } } }
-      })
+      preloadedRows ?? loadVenueStockRows(actor, requestedVenue)
     ]);
 
     const trackedItemIds = new Set(venueRows.map((row) => row.stockItemId));
-    const lowStockItems = venueRows.filter(isLowVenueStockRow).length;
-    const outOfStockItems = venueRows.filter((row) => row.onHand !== null && row.onHand <= 0).length;
+    const { lowStockItems, outOfStockItems, attentionItems } = summariseLowStock(venueRows);
     const totalOnHand = venueRows.reduce((total, row) => total + (row.onHand ?? 0), 0);
 
     return {
@@ -815,6 +812,7 @@ export const itemsService = {
       activeItems,
       lowStockItems,
       outOfStockItems,
+      attentionItems,
       categories,
       totalOnHand,
       venueStockItems: trackedItemIds.size,
@@ -824,13 +822,10 @@ export const itemsService = {
   },
 
   async lowStock(actor?: AuthUser | null, requestedVenue?: string | null): Promise<{ items: StockLowStockItem[] }> {
-    const rows = await prisma.venueStockItem.findMany({
-      where: venueStockWhere(actor, requestedVenue),
-      include: { stockItem: { include: { category: { select: { id: true, name: true } } } } },
-      orderBy: [{ updatedAt: 'desc' }, { stockItem: { name: 'asc' } }],
-      take: 200
-    });
-    return { items: rows.filter(isLowVenueStockRow).map(toLowStockPayload) };
+    // Every row, then filter — a `take` before the filter hid low rows
+    // whenever 200 healthier rows had been touched more recently.
+    const rows = await loadVenueStockRows(actor, requestedVenue);
+    return { items: rankStockAttentionRows(rows).map(toLowStockPayload) };
   },
 
   // Per-item usage history over the last N weeks. Used to compute a
@@ -928,9 +923,12 @@ export const itemsService = {
   async dashboard(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockDashboardPayload> {
     const venue = actorVenueScope(actor, requestedVenue);
     const stocktakeWhere = stocktakeScope(actor, requestedVenue);
+    // One row set feeds both the headline counts and the attention table,
+    // so the two can't disagree (the table used to filter only the 200 most
+    // recently updated rows — 581 low items beside "No low-stock items").
+    const venueStockRows = await loadVenueStockRows(actor, requestedVenue);
     const [
       summary,
-      lowStockRows,
       recentItems,
       venues,
       openStocktakes,
@@ -938,13 +936,7 @@ export const itemsService = {
       readyForReviewStocktakes,
       recentSubmittedStocktakes
     ] = await Promise.all([
-      itemsService.summary(actor, requestedVenue),
-      prisma.venueStockItem.findMany({
-        where: venueStockWhere(actor, requestedVenue),
-        include: { stockItem: { include: { category: { select: { id: true, name: true } } } } },
-        orderBy: [{ updatedAt: 'desc' }, { stockItem: { name: 'asc' } }],
-        take: 200
-      }),
+      itemsService.summary(actor, requestedVenue, venueStockRows),
       prisma.stockItem.findMany({
         include: { category: { select: { id: true, name: true } } },
         orderBy: [{ updatedAt: 'desc' }, { name: 'asc' }],
@@ -991,7 +983,8 @@ export const itemsService = {
       })
     ]);
 
-    const lowStockItems = lowStockRows.filter(isLowVenueStockRow).map(toLowStockPayload).slice(0, 10);
+    const attentionRows = rankStockAttentionRows(venueStockRows);
+    const lowStockItems = attentionRows.slice(0, 10).map(toLowStockPayload);
     const venueOnHandByKey = await venueOnHandLookup([
       ...readyForReviewStocktakes,
       ...recentSubmittedStocktakes
@@ -1014,6 +1007,7 @@ export const itemsService = {
         readyForReviewStocktakes: readyForReviewCount
       },
       lowStockItems,
+      lowStockItemsTotal: attentionRows.length,
       recentItems: recentItems.map(toItemPayload),
       readyForReviewStocktakes: readyForReview,
       recentSubmittedStocktakes: recentSubmittedStocktakes.map((row) =>
