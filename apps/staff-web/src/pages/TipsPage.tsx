@@ -19,7 +19,7 @@ import {
   Textarea
 } from '@alma/ui';
 import { api } from '../lib/api';
-import { startOfWeek, addDays, toDateInput, formatRange, roundHours, uniqueValues, formatCents } from '../lib/datetime';
+import { startOfWeek, addDays, toDateInput, formatRange, roundHours, uniqueValues, formatCents, venueTodayLocal } from '../lib/datetime';
 import {
   staffForPicker,
   ShowTerminatedStaffToggle,
@@ -31,9 +31,9 @@ import {
 } from './shared';
 
 export function TipsPage({ staff }: { staff: StaffProfile[] }) {
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(venueTodayLocal()));
   const [venue, setVenue] = useState(staff.find((member) => member.venue)?.venue ?? 'Alma Avalon');
-  const [serviceDate, setServiceDate] = useState(() => toDateInput(new Date()));
+  const [serviceDate, setServiceDate] = useState(() => toDateInput(venueTodayLocal()));
   const [cashAmount, setCashAmount] = useState('');
   const [cashNotes, setCashNotes] = useState('');
   const [payoutNotes, setPayoutNotes] = useState('');

@@ -27,6 +27,7 @@ import type {
   ReserveWaitlistEntry,
   ReserveWaitlistStatus
 } from '@alma/shared';
+import { localDateKey, venueDayBounds, venueDayKey, venueTodayAsLocalDate } from '@alma/shared';
 import { installSuiteAppAccess,
   ActionFeedback,
   AlmaHomeBubble,
@@ -243,8 +244,11 @@ type MarketingGuestDetail = {
   timeline?: GuestTimelinePayload;
 };
 
+// The venue's today, whatever zone the browser is in. `toDateInput(new
+// Date())` gave the browser's day — for a manager in Europe that is still
+// yesterday for most of the Sydney trading day.
 function todayInput() {
-  return toDateInput(new Date());
+  return venueDayKey();
 }
 
 function toDateInput(value: Date) {
@@ -929,11 +933,7 @@ function PublicBookingWidget() {
   const [configError, setConfigError] = useState<string | null>(null);
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
 
-  const today = useMemo(() => {
-    const value = new Date();
-    value.setHours(0, 0, 0, 0);
-    return value;
-  }, []);
+  const today = useMemo(() => venueTodayAsLocalDate(), []);
   const [venue, setVenue] = useState<string>('Alma Avalon');
   const [dateIdx, setDateIdx] = useState(0);
   const [partySize, setPartySize] = useState(2);
@@ -998,11 +998,8 @@ function PublicBookingWidget() {
       return date;
     });
   }, [today]);
-  const calendarMinIso = useMemo(() => calendar[0]!.toISOString().slice(0, 10), [calendar]);
-  const calendarMaxIso = useMemo(
-    () => calendar[calendar.length - 1]!.toISOString().slice(0, 10),
-    [calendar]
-  );
+  const calendarMinIso = useMemo(() => localDateKey(calendar[0]!), [calendar]);
+  const calendarMaxIso = useMemo(() => localDateKey(calendar[calendar.length - 1]!), [calendar]);
 
   const selectedDate = calendar[dateIdx] ?? calendar[0]!;
   const venueAccent = venueAccentFor(venue);
@@ -1255,14 +1252,14 @@ function PublicBookingWidget() {
                     <span className="visually-hidden">Pick a date</span>
                     <input
                       type="date"
-                      value={selectedDate.toISOString().slice(0, 10)}
+                      value={localDateKey(selectedDate)}
                       min={calendarMinIso}
                       max={calendarMaxIso}
                       onChange={(event) => {
                         const next = event.currentTarget.value;
                         if (!next) return;
                         const idx = calendar.findIndex(
-                          (date) => date.toISOString().slice(0, 10) === next
+                          (date) => localDateKey(date) === next
                         );
                         if (idx >= 0) setDateIdx(idx);
                       }}
@@ -3483,8 +3480,12 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [widgetSearch, setWidgetSearch] = useState<WidgetSearchForm>(() => defaultWidgetSearch(defaultVenue));
 
   const scopedVenueParam = venueFilter === ALL_VENUES ? null : venueFilter;
-  const diaryStart = useMemo(() => new Date(`${selectedDate}T00:00:00`), [selectedDate]);
-  const diaryEnd = useMemo(() => addDays(diaryStart, 1), [diaryStart]);
+  // Real venue-day instants for the diary window — `${selectedDate}T00:00:00`
+  // was the BROWSER's midnight, so the diary and the dashboard (which the
+  // server reads as a venue day) covered different hours from abroad.
+  const diaryBounds = useMemo(() => venueDayBounds(selectedDate), [selectedDate]);
+  const diaryStart = useMemo(() => diaryBounds?.gte ?? new Date(`${selectedDate}T00:00:00`), [diaryBounds, selectedDate]);
+  const diaryEnd = useMemo(() => diaryBounds?.lt ?? addDays(diaryStart, 1), [diaryBounds, diaryStart]);
   const currentReservations = diary?.reservations ?? [];
 
   const load = useCallback(async () => {
@@ -4154,7 +4155,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       <button
                         type="button"
                         className="alma-roster-weeknav-btn alma-roster-weeknav-btn--text"
-                        onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}
+                        onClick={() => setSelectedDate(todayInput())}
                       >
                         Today
                       </button>
@@ -4270,7 +4271,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       const todays = dashboard.todayReservations;
                       const earlier = todays.filter((r) => r.status === 'COMPLETED' || r.status === 'SEATED' || r.status === 'CANCELLED' || r.status === 'NO_SHOW');
                       const upcoming = todays.filter((r) => r.status === 'CONFIRMED' || r.status === 'PENDING');
-                      const isViewingToday = selectedDate === new Date().toISOString().slice(0, 10);
+                      const isViewingToday = selectedDate === todayInput();
                       const nowLabel = new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', '');
                       // Find next upcoming and show minutes-to-next
                       const nextUpcoming = upcoming.length > 0 ? upcoming[0] : null;
@@ -4366,7 +4367,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                         const byDay = new Map<string, number>();
                         for (const reservation of dashboard.upcomingReservations) {
                           if (reservation.status === 'CANCELLED' || reservation.status === 'NO_SHOW') continue;
-                          const dayKey = reservation.startsAt.slice(0, 10);
+                          const dayKey = venueDayKey(new Date(reservation.startsAt));
                           byDay.set(dayKey, (byDay.get(dayKey) ?? 0) + reservation.covers);
                         }
                         const days = Array.from(byDay.entries()).sort(([a], [b]) => a.localeCompare(b));

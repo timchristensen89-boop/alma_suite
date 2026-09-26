@@ -21,7 +21,8 @@ import {
   roundHours,
   uniqueValues,
   timesheetHours,
-  formatCents
+  formatCents,
+  venueTodayLocal
 } from '../lib/datetime';
 import { COMPLIANCE_WEB_URL, RESERVE_WEB_URL, STOCK_WEB_URL } from '../config/suiteLinks';
 import type { ForecastOutlookPayload } from '@alma/shared';
@@ -53,7 +54,7 @@ export function ManagerDashboardPage({ staff, roster }: { staff: StaffProfile[];
   const [dashboard, setDashboard] = useState<StaffManagerDashboardPayload | null>(null);
   const [operations, setOperations] = useState<StaffManagerOperationsPayload | null>(null);
   const [forecast, setForecast] = useState<ForecastOutlookPayload | null>(null);
-  const [date, setDate] = useState(() => toDateInput(new Date()));
+  const [date, setDate] = useState(() => toDateInput(venueTodayLocal()));
   const [venue, setVenue] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);

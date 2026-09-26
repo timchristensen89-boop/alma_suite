@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
-import { parseDishDietary, type AuthUser, type PriceWindow } from '@alma/shared';
+import { parseDishDietary, venueDayStart, type AuthUser, type PriceWindow } from '@alma/shared';
 import { nswHolidayName } from '../lib/nsw-holidays.js';
 import { courseDishIds, stillFixed } from '../lib/set-menu-plan.js';
 import { mailService } from './mail.service.js';
@@ -3090,8 +3090,11 @@ export const posService = {
     if (!fromKey || !toKey || !dayRe.test(fromKey) || !dayRe.test(toKey)) {
       throw new HttpError(400, 'from and to (YYYY-MM-DD) are required.');
     }
-    const from = new Date(`${fromKey}T00:00:00+10:00`);
-    const to = new Date(`${toKey}T00:00:00+10:00`);
+    // Real Sydney midnights, daylight saving included (a `+10:00` literal
+    // is an hour out from October to April).
+    const from = venueDayStart(fromKey);
+    const to = venueDayStart(toKey);
+    if (!from || !to) throw new HttpError(400, 'from and to must be real dates.');
     const venueWhere = venue ? { venue } : {};
     const [adjustments, voids, refunds] = await Promise.all([
       prisma.posAdjustment.findMany({

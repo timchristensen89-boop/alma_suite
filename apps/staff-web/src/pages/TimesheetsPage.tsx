@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useHubTabBadge } from '../components/HubTabs';
-import type { RosterShift, StaffClockSession, StaffProfile, Timesheet } from '@alma/shared';
+import { venueDayKey, type RosterShift, type StaffClockSession, type StaffProfile, type Timesheet } from '@alma/shared';
 import {
   ActionFeedback,
   Badge,
@@ -1495,12 +1495,14 @@ type ClockDriftResult = {
 function computeClockDrift(timesheet: Timesheet, clockSessions: StaffClockSession[]): ClockDriftResult | null {
   // Match clock sessions where the staff member is the same and the clock-in
   // falls on the same calendar date as the timesheet's workDate.
-  const tsDate = new Date(timesheet.workDate);
-  const dayKey = tsDate.toISOString().slice(0, 10);
+  // workDate is UTC midnight of the venue day, so its UTC date IS the venue
+  // day key; a clock-in instant must be read in the venue zone to compare
+  // (its UTC date is the day before until 10-11am Sydney).
+  const dayKey = new Date(timesheet.workDate).toISOString().slice(0, 10);
   const candidates = clockSessions.filter((s) =>
     s.staffProfileId === timesheet.staffProfileId &&
     s.clockOutAt !== null &&
-    s.clockInAt.slice(0, 10) === dayKey
+    venueDayKey(new Date(s.clockInAt)) === dayKey
   );
   if (candidates.length === 0) return null;
 

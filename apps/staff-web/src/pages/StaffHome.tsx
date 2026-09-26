@@ -150,10 +150,7 @@ export function StaffHome({
       cancelled = true;
     };
   }, []);
-  const todayKey = (() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  })();
+  const todayKey = venueTodayKey();
   const today = labour?.days.find((day) => day.date === todayKey) ?? null;
   const todayHours = today ? today.byVenue.reduce((sum, venue) => sum + venue.rosteredHours + venue.openHours, 0) : null;
   const todayCostCents = today ? today.byVenue.reduce((sum, venue) => sum + venue.estCostCents, 0) : null;

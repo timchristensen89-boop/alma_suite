@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { StaffProfile } from '@alma/shared';
 import { Badge, Button, Card, Input, PageHeader, Select } from '@alma/ui';
 import { api } from '../lib/api';
-import { toDateInput, uniqueValues } from '../lib/datetime';
+import { toDateInput, uniqueValues, venueTodayLocal } from '../lib/datetime';
 import { type ReadinessRow, type ReadinessPayload, readinessLabel } from './shared';
 
 function readinessTone(status: ReadinessRow['status']): 'positive' | 'warning' | 'danger' | 'muted' {
@@ -18,7 +18,7 @@ function readinessTone(status: ReadinessRow['status']): 'positive' | 'warning' |
 
 export function VenueReadinessPage({ staff }: { staff: StaffProfile[] }) {
   const [payload, setPayload] = useState<ReadinessPayload | null>(null);
-  const [date, setDate] = useState(() => toDateInput(new Date()));
+  const [date, setDate] = useState(() => toDateInput(venueTodayLocal()));
   const [venue, setVenue] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -61,6 +61,7 @@ import {
   staffApi,
   stockApi
 } from './lib/api';
+import { venueDayKey, venueTodayAsLocalDate } from '@alma/shared';
 import { COST_TARGETS, buildOverviewCosts, costTone, overviewNarrative, type OverviewCosts } from './lib/overview-costs';
 import { ADMIN_WEB_URL, COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForWeek, normaliseHistoricalVenue, isVenueOpenOnDate } from './data/historicalSales';
@@ -560,7 +561,9 @@ const PERIOD_PRESETS: Array<{ key: PeriodPresetKey; label: string }> = [
   { key: 'last-fy', label: 'Last financial year' }
 ];
 
-function periodFromPreset(key: PeriodPresetKey, now: Date = new Date()): { start: Date; end: Date; label: string } {
+// `now` defaults to the VENUE's today (as a local-midnight Date), so "this
+// week" and "this month" follow Sydney, not the browser.
+function periodFromPreset(key: PeriodPresetKey, now: Date = venueTodayAsLocalDate()): { start: Date; end: Date; label: string } {
   const label = PERIOD_PRESETS.find((preset) => preset.key === key)?.label ?? 'This week';
   const year = now.getFullYear();
   const month = now.getMonth();
@@ -1251,7 +1254,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // localIsoDate, not isoDate: slicing UTC from a Sydney local-midnight Monday
   // lands on Sunday's date, and startOfWeek then walks that back ANOTHER week —
   // the compounding drift that had the week pill weeks behind reality.
-  const [selectedWeekStart, setSelectedWeekStart] = useState(() => localIsoDate(startOfWeek(new Date())));
+  const [selectedWeekStart, setSelectedWeekStart] = useState(() => localIsoDate(startOfWeek(venueTodayAsLocalDate())));
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   // Recipe popup opened from a clickable menu-profitability row.
@@ -1395,7 +1398,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         ),
         staffApi<SuiteSummary>('/api/summary'),
         staffApi<StaffProfile[]>('/api/staff'),
-        staffApi<Timesheet[]>(`/api/staff/timesheets?start=${isoDate(weekStart)}&end=${isoDate(weekEnd)}&status=all`),
+        staffApi<Timesheet[]>(`/api/staff/timesheets?start=${localIsoDate(weekStart)}&end=${localIsoDate(weekEnd)}&status=all`),
         staffApi<RosterShift[]>(`/api/staff/roster?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<RosterForecastSnapshot[]>(`/api/staff/roster/forecast-snapshots?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         // Money is measured over the chosen period, not over whichever week the
@@ -2127,7 +2130,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   }, [data.actualSales, data.itemSales]);
 
   const salesTrendRows = useMemo<SalesTrendVenueRow[]>(() => {
-    const todayKey = isoDate(new Date());
+    const todayKey = venueDayKey();
     const weekEndKey = isoDate(addDays(weekStart, 7));
     const weekStartKey = isoDate(weekStart);
     return salesReportVenues.map((venue) => {
@@ -2671,7 +2674,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               engine (same model the Forecast tab, roster and ordering use).
               Turns "This Week" from a rear-view mirror into a windscreen. */}
           {(() => {
-            const todayKey = isoDate(new Date());
+            const todayKey = venueDayKey();
             const rows: ForecastDay[] = [];
             for (const v of engineOutlook?.venues ?? []) {
               const start = v.days.findIndex((d) => d.date >= todayKey);
@@ -4659,12 +4662,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               label="Week"
               type="date"
               value={selectedWeekStart}
-              onChange={(event) => setSelectedWeekStart(isoDate(startOfWeek(new Date(`${event.currentTarget.value}T00:00:00`))))}
+              onChange={(event) => setSelectedWeekStart(localIsoDate(startOfWeek(new Date(`${event.currentTarget.value}T00:00:00`))))}
             />
             <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(7)}>
               Next week
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedWeekStart(isoDate(startOfWeek(new Date())))}>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedWeekStart(localIsoDate(startOfWeek(new Date())))}>
               This week
             </Button>
           </div>

@@ -174,3 +174,14 @@ test('a venue month starts at Sydney midnight on the 1st, not the UTC or browser
   assert.equal(shiftMonthKey('2026-01', -1), '2025-12');
   assert.equal(shiftMonthKey('2026-12', 1), '2027-01');
 });
+
+test('a venue day round-trips through a browser-local Date by calendar fields, whatever the zone', async () => {
+  const { localDateKey, venueDayAsLocalDate, venueTodayAsLocalDate, venueWeekdayNow } = await import('@alma/shared');
+  const local = venueDayAsLocalDate('2026-09-26')!;
+  assert.equal(localDateKey(local), '2026-09-26');
+  // 20:30Z on Friday 25 Sep is Saturday 06:30 in Sydney: the venue's today
+  // is the 26th even for a browser that is still on the 25th.
+  const fridayEveningEurope = new Date('2026-09-25T20:30:00.000Z');
+  assert.equal(localDateKey(venueTodayAsLocalDate(fridayEveningEurope)), '2026-09-26');
+  assert.equal(venueWeekdayNow(fridayEveningEurope), 6);
+});

@@ -1,5 +1,12 @@
 import { Fragment, useState } from 'react';
-import type { IncidentReport, IncidentStatus, IncidentSummary } from '@alma/shared';
+import { venueInstant, type IncidentReport, type IncidentStatus, type IncidentSummary } from '@alma/shared';
+
+// Venue wall-clock now as a datetime-local value — the form used the UTC
+// clock, which is ten or eleven hours behind the kitchen.
+const venueNowInput = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+    .format(new Date())
+    .replace(', ', 'T');
 import {
   ActionFeedback,
   Badge,
@@ -45,7 +52,7 @@ export function IncidentsPage() {
     createIssue: false,
     incidentType: 'First Aid',
     location: '',
-    occurredAt: new Date().toISOString().slice(0, 16),
+    occurredAt: venueNowInput(),
     reportedBy: '',
     summary: '',
     title: '',
@@ -73,7 +80,8 @@ export function IncidentsPage() {
           createIssue: form.createIssue,
           incidentType: form.incidentType,
           location: form.location,
-          occurredAt: new Date(form.occurredAt).toISOString(),
+          // The time typed is the venue's wall clock, whatever zone the browser is in.
+          occurredAt: (venueInstant(form.occurredAt.slice(0, 10), form.occurredAt.slice(11, 16)) ?? new Date(form.occurredAt)).toISOString(),
           reportedBy: form.reportedBy,
           severity,
           summary: form.summary,
@@ -86,7 +94,7 @@ export function IncidentsPage() {
         createIssue: false,
         incidentType: 'First Aid',
         location: '',
-        occurredAt: new Date().toISOString().slice(0, 16),
+        occurredAt: venueNowInput(),
         reportedBy: '',
         summary: '',
         title: '',

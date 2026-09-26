@@ -7,7 +7,7 @@ import type { StaffProfile, StaffManagerDashboardPayload } from '@alma/shared';
 import { Badge, Button, Card, Input, PageHeader, Select } from '@alma/ui';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { toDateInput, uniqueValues, formatCents } from '../lib/datetime';
+import { toDateInput, uniqueValues, formatCents, venueTodayLocal } from '../lib/datetime';
 import { staffLabel, type ReadinessPayload, readinessLabel } from './shared';
 
 // Manager Daily Brief (#29) — the 10-second morning glance.
@@ -20,7 +20,7 @@ export function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
   // Surface venue readiness right inside the brief — managers shouldn't
   // have to bounce between pages to see if today's checklists are on track.
   const [readiness, setReadiness] = useState<ReadinessPayload | null>(null);
-  const [date, setDate] = useState(() => toDateInput(new Date()));
+  const [date, setDate] = useState(() => toDateInput(venueTodayLocal()));
   const [venue, setVenue] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

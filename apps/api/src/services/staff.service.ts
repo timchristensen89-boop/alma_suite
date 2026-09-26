@@ -89,6 +89,7 @@ import { HttpError } from '../lib/http.js';
 import { reachesEveryVenue, staffProfileAccessDenial, staffProfileReach } from '../lib/staff-reach.js';
 import { bestVenueDaySales } from '../lib/sales-day-totals.js';
 import { resolveTimesheetWindow } from '../lib/timesheet-window.js';
+import { nextDayKey, venueDayBounds, venueDayKey, venueDayStart } from '@alma/shared';
 import { env } from '../env.js';
 import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
 import { allocateTipsByVenue, posFirstCardEntries, applyTipAdjustments as applyTipAdjustmentsToRows } from '../lib/tips-allocation.js';
@@ -564,11 +565,15 @@ function dateKey(value: Date) {
   return `${year}-${month}-${day}`;
 }
 
+// One venue day as a half-open UTC window. `value` is a venue day key; no
+// value means the venue's today. This used to build the window from the
+// server's own clock, which is UTC in the containers — the manager dashboard
+// was on yesterday until 10-11am Sydney.
 function dayRange(value?: string) {
-  const reference = value ? parseDate(`${value}T00:00:00`, 'Dashboard date') : new Date();
-  const start = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  return { start, end, key: dateKey(start) };
+  const key = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : value ? null : venueDayKey();
+  const bounds = key ? venueDayBounds(key) : null;
+  if (!key || !bounds) throw new HttpError(400, 'Dashboard date is invalid');
+  return { start: bounds.gte, end: bounds.lt, key };
 }
 
 function timesheetHours(entry: { clockInAt: Date; clockOutAt: Date; breakMinutes: number }) {
@@ -6735,13 +6740,15 @@ export const staffService = {
           today.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
           return today.toISOString().slice(0, 10);
         })();
-    // Sydney midnights expressed in UTC; each shift is then attributed to its
-    // Sydney-local calendar day, so DST slack in the bounds doesn't matter.
-    const windowStart = new Date(`${startKey}T00:00:00+10:00`);
-    const windowEnd = new Date(windowStart.getTime() + 7 * 24 * 3_600_000);
     const dayKeys: string[] = Array.from({ length: 7 }, (_, i) =>
       new Date(new Date(`${startKey}T12:00:00Z`).getTime() + i * 24 * 3_600_000).toISOString().slice(0, 10)
     );
+    // Real Sydney midnights (daylight saving included — the old `+10:00`
+    // literal was an hour out for half the year), each shift then attributed
+    // to its Sydney-local calendar day.
+    const windowStart = venueDayStart(startKey);
+    const windowEnd = venueDayStart(nextDayKey(dayKeys[6]!) ?? startKey);
+    if (!windowStart || !windowEnd) throw new HttpError(400, 'weekStart is invalid');
 
     const [shifts, sales] = await Promise.all([
       prisma.rosterShift.findMany({

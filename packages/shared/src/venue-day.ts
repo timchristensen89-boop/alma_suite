@@ -156,3 +156,29 @@ export function venueMonthBounds(month: string, timeZone = VENUE_TIME_ZONE): { g
   const lt = venueDayStart(`${next}-01`, timeZone);
   return gte && lt ? { gte, lt } : null;
 }
+
+/** YYYY-MM-DD from a Date's LOCAL calendar fields — never `toISOString().slice(0, 10)`, which is the UTC date. */
+export function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * A venue day as a browser-local midnight Date, for pages that navigate by
+ * week with local Date objects. Only the calendar fields are meaningful;
+ * read them back with `localDateKey`, never `toISOString`.
+ */
+export function venueDayAsLocalDate(day: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const [year, month, date] = day.split('-').map(Number);
+  return new Date(year!, month! - 1, date!);
+}
+
+/** The venue's today as a browser-local midnight Date (see venueDayAsLocalDate). */
+export function venueTodayAsLocalDate(now: Date = new Date(), timeZone = VENUE_TIME_ZONE): Date {
+  return venueDayAsLocalDate(venueDayKey(now, timeZone)) ?? new Date(NaN);
+}
+
+/** The venue-local weekday for an instant, 0 = Sunday, matching `getDay()`. */
+export function venueWeekdayNow(now: Date = new Date(), timeZone = VENUE_TIME_ZONE): number {
+  return venueWeekday(venueDayKey(now, timeZone)) ?? now.getDay();
+}

@@ -10,6 +10,7 @@
 // and the grid shows the converted figure live as you type.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { venueDayKey } from '@alma/shared';
 import { Badge, Button, Card, Select, Spinner } from '@alma/ui';
 import { staffApi, staffApiText } from '../lib/api';
 
@@ -24,6 +25,9 @@ function mondayOf(date: Date): Date {
 }
 
 const iso = (date: Date) => date.toISOString().slice(0, 10);
+// The venue day an instant falls in, as the UTC-midnight key the grid works
+// in — `new Date()` alone gave the UTC day, a day early every Sydney morning.
+const venueDayUtc = (instant: Date) => new Date(`${venueDayKey(instant)}T00:00:00Z`);
 
 function money(cents: number | null | undefined) {
   if (cents === null || cents === undefined) return '—';
@@ -50,7 +54,7 @@ export function SalesEntryPage() {
   const [venues, setVenues] = useState<string[]>([]);
   const [venue, setVenue] = useState('');
   const [basis, setBasis] = useState<GstBasis>('INCLUSIVE');
-  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date(Date.now() - 7 * DAY_MS)));
+  const [weekStart, setWeekStart] = useState(() => mondayOf(venueDayUtc(new Date(Date.now() - 7 * DAY_MS))));
   const [values, setValues] = useState<Record<string, string>>({});
   // Every entry per day, NOT one — reports sum salesCents across sources, so a
   // day holding both a POS figure and a manual one is counted twice. The grid
@@ -250,7 +254,7 @@ export function SalesEntryPage() {
         action={
           <div className="forecast-venue-tabs">
             <button type="button" onClick={() => setWeekStart(new Date(weekStart.getTime() - 7 * DAY_MS))}>‹ Previous</button>
-            <button type="button" onClick={() => setWeekStart(mondayOf(new Date(Date.now() - 7 * DAY_MS)))}>Last week</button>
+            <button type="button" onClick={() => setWeekStart(mondayOf(venueDayUtc(new Date(Date.now() - 7 * DAY_MS))))}>Last week</button>
             <button type="button" onClick={() => setWeekStart(new Date(weekStart.getTime() + 7 * DAY_MS))}>Next ›</button>
           </div>
         }
