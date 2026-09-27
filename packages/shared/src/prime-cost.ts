@@ -1,3 +1,4 @@
+import { venueDayKey, venueDayStart } from './venue-day.js';
 // Prime cost, defined once for the Monthly Recap, the Prime Cost report and
 // anything else that adds labour to food. Covered by prime-cost.test.ts
 // (apps/api/src/lib).
@@ -117,8 +118,26 @@ const WEEK_MS = 7 * 86_400_000;
  * salaries, the same way it carries half its sales — a full month of
  * salaries against ten days of takings read as a labour blow-out on the
  * 10th of every month. Never negative, never more than the period.
+ *
+ * Elapsed time is counted in WHOLE VENUE DAYS: `now` is taken as the start
+ * of its Sydney day. Salaries accrue by the day, not by the second, and the
+ * figure must be the same for every caller on the same day. It was not: the
+ * Monthly Recap and the Prime Cost report each passed their own `new Date()`
+ * seconds apart, so for an in-progress month `Math.round(weekly × weeks)`
+ * could land either side of a half-cent — September 2026 Alma Avalon read
+ * $29,626.63 on one and $29,626.64 on the other. One date, one number.
  */
 export function elapsedPeriodWeeks(start: Date, end: Date, now: Date = new Date()): number {
-  const stop = Math.min(end.getTime(), now.getTime());
+  const today = venueDayStart(venueDayKey(now)) ?? now;
+  const stop = Math.min(end.getTime(), today.getTime());
   return Math.max(0, (stop - start.getTime()) / WEEK_MS);
+}
+
+/**
+ * THE cents a weekly fixed cost (a salary + super) contributes to [start,
+ * end) as of `now`: one rounding, in one place, consumed by every report.
+ * Two reports rounding "equivalent" arithmetic separately are two metrics.
+ */
+export function salariedPeriodCents(weeklyFixedCostCents: number, start: Date, end: Date, now: Date = new Date()): number {
+  return Math.round(weeklyFixedCostCents * elapsedPeriodWeeks(start, end, now));
 }

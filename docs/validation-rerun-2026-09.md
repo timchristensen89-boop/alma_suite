@@ -85,6 +85,18 @@ before/after matrix is built from:
   `unrecorded`, the CSV imports `unrecorded`, and countedAt 2026-08-03 for
   the two PDF records).
 
+### Third re-run (one-cent labour invariant)
+
+Only section 3 for `2026-09` is needed to prove the invariant, but running
+the full `2026-06 2026-07 2026-08 2026-09` set shows whether any other month
+moved (none should: June–August are complete months, so their elapsed
+period does not depend on the time of day). Expected direction only, not a
+result: every "agree on sales, labour and prime" line reads YES; the
+September feed line still reads `incomplete` with FoodByUs and Paramount
+`carried forward`. A run that straddles Sydney midnight between the Recap
+and Prime calls is the one remaining way the two could differ by a day of
+salary; run it in one sitting.
+
 ## 6. Cleanup (confirm each line's output — send this block's output too)
 
 ```bash

@@ -48,7 +48,7 @@ import {
   MIN_PURCHASE_COVERAGE,
   recipePortionCost,
   recipePortionCostCents,
-  elapsedPeriodWeeks,
+  salariedPeriodCents,
   resolveCostTargets,
   resolvePrimeCost,
   venueMonthBounds,
@@ -973,7 +973,6 @@ export async function labourPopulationFor(start: Date, end: Date, now: Date = ne
   // across venue KEYS by rostered hours (salaried staff rarely clock in),
   // home venue when never rostered. Keys are resolved with the same rule as
   // everything else, so "Both" stays "Both" (invalid), never a restaurant.
-  const periodWeeks = elapsedPeriodWeeks(start, end, now);
   const salariedStaff = activeStaff.filter((profile) => classifyLabourPopulation([profile], superRate).salariedIds.has(profile.id));
   const salariedIds = salariedStaff.map((p) => p.id);
   const rosterHoursByStaffVenue = new Map<string, Map<string, number>>();
@@ -999,7 +998,8 @@ export async function labourPopulationFor(start: Date, end: Date, now: Date = ne
   }
   const salaried: SalariedAllocation[] = [];
   for (const profile of salariedStaff) {
-    const fixedForPeriod = Math.round(weeklyFixedCostCents(staffCostingRate(profile, superRate)) * periodWeeks);
+    // One rounding, in @alma/shared, on whole venue days (salariedPeriodCents).
+    const fixedForPeriod = salariedPeriodCents(weeklyFixedCostCents(staffCostingRate(profile, superRate)), start, end, now);
     if (fixedForPeriod <= 0) continue;
     const home = resolveLabourVenue(null, profile.venue, configuredVenues);
     const allocations = salariedVenueAllocations(rosterHoursByStaffVenue.get(profile.id) ?? new Map<string, number>(), home.key);
