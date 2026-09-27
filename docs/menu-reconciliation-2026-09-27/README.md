@@ -323,7 +323,7 @@ New products created (Square, St Alma location, GST inclusive, present only at S
 
 ## ALMA AVALON — DRINKS (and food)
 
-Alma Avalon is **not a location in this Square account**, and Kounta/Lightspeed and the Alma Suite database were not reachable from this session, so **no Avalon change was applied anywhere**. Current Avalon POS values: NOT VERIFIED. The complete Avalon target list from the supplied PDFs (drinks, all 15 pages, plus the Avalon food PDF) is in `avalon_targets.csv` (194 priced lines) for whoever applies it in Kounta / Alma Suite.
+Alma Avalon is **not a location in this Square account**. Avalon's POS is Kounta/Lightspeed; its product export (28 Sep 2026) was reconciled line by line below (see *Kounta (Alma Avalon)*). No Avalon change has been applied yet; the import files beside this README carry the changes. The complete Avalon target list from the supplied PDFs (drinks, all 15 pages, plus the Avalon food PDF) is in `avalon_targets.csv` (194 priced lines) for whoever applies it in Kounta / Alma Suite.
 
 ## SQUARE
 
@@ -395,7 +395,7 @@ A further 163 variations are outside the scope of the supplied PDFs and were lef
 
 ## KOUNTA / LIGHTSPEED
 
-Not updated. No Lightspeed O-Series API credentials exist in this environment (the repos confirm the API is a paid add-on that was still a blocking prerequisite; item sales reach the Suite by emailed CSV instead), and the QR-ordering app that mirrors the Kounta catalogue is SSO-protected. Current Kounta prices for either venue: NOT VERIFIED. Apply from `stalma_targets.csv` (Freshwater, 291 lines) and `avalon_targets.csv` (Avalon, 194 lines) in Back Office, venue by venue.
+No API access. The owner supplied the Back Office product export (`product-export_2026-09-28_053138.csv`, 427 products, one price per product, no site column, no cost prices). Its content is the Alma Avalon catalogue; the reconciliation is in the *Kounta (Alma Avalon)* section below and in `avalon_kounta_reconciliation.csv`. Nothing has been written to Kounta from this session. Whether a separate St Alma site with its own prices exists in the same Lightspeed company is unknown; St Alma trades on Square today.
 
 ## ALMA SUITE
 
@@ -447,4 +447,139 @@ Alma Suite packages (both venues) and Kounta packages: NEEDS FOOD/DRINK COST ALL
 - Alma Avalon drinks and food: not in Square; nothing changed anywhere.
 - Square: All Saints Muscat pours not added (ambiguous existing variation).
 
-Files: `stalma_square_changes.csv` (every Square row with old/new), `stalma_targets.csv`, `avalon_targets.csv`, `square_catalog_after.csv` (full St Alma catalog after the update).
+Files: `stalma_square_changes.csv`, `stalma_targets.csv`, `avalon_targets.csv`, `square_catalog_after.csv`, and the Kounta files listed in the Kounta section.
+## KOUNTA (ALMA AVALON) — reconciliation of the 28 Sep 2026 product export
+
+Source: Back Office product export, 427 products (370 sellable, 57 modifiers). Every priced line of the Avalon drinks PDF (15 pages) and the Avalon food PDF was matched by hand to a Kounta product. Result: 101 PRICE CHANGES, 89 NO CHANGE, 8 NEW ITEMS, 0 unmatched. Tequila and mezcal already match the Avalon PDF except Ocho Plata, Ocho Reposado and El Jolgorio Mexicano.
+
+Files: `avalon_kounta_price_updates.csv` (101 rows, export format, only SellPriceIncTax changed), `avalon_kounta_new_products.csv` (8 rows modelled on comparable products, ProductID blank), `avalon_kounta_reconciliation.csv` (every line incl. NOT ON NEW MENU), `avalon_kounta_reporting_group_fix_OPTIONAL.csv` (owner decision, see below). Import path: Back Office > Products > Import. Kounta site-level price overrides are not visible in the export; if Avalon uses them, check the site price after import.
+
+| Venue | System | Product (Kounta name) | PDF item | Old | New | Status |
+|---|---|---|---|---|---|---|
+| Alma Avalon | Kounta | Guacamole & Tostadas | Guacamole | $16 | $17 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Salmon Sashimi Tacos | Salmon sashimi hard shell taco (3pc) | $21 | $22 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Sweet Corn | Sweet corn (4pc) | $16 | $17 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Halloumi | Halloumi (3pc) | $18 | $19 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Chicken Tinga Empanadas | Chicken tinga empanadas (3pc) | $21 | $22 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Battered Barramundi Taco | Taco (each) | $8 | $9 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Grilled Barramundi Taco | Taco (each) | $8 | $9 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Pork Belly Taco | Taco (each) | $8 | $9 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Zucchini Taco | Taco (each) | $8 | $9 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Carne Asada Taco | Taco (each) | $8 | $9 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Fish of the Day | Fish of the day al pastor | $46 | $47 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Agave Beef Short Ribs | Agave beef short rib | $48 | $49 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Cauliflower Steak | Cauliflower steak | $32 | $33 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Broccolini | Broccolini | $19 | $20 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Shoestring Fries | Shoestring fries | $10 | $11 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Nashi Pear Salad | Nashi pear | $18 | $19 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Churros | Churros | $18 | $19 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Pistachio Flan | Pistachio flan | $16 | $17 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Classic Margarita | Classic Margarita | $22 | $23 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Tommy's Margarita | Tommy's Margarita | $22 | $23 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Jalapeno Margarita | Jalapeño Margarita | $22 | $23 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Watermelon Margarita | Watermelon Margarita | $22 | $23 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Coconut Margarita | Coconut Margarita | $22 | $23 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Paloma | Paloma | $22 | $23 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Mezcal Tommy's | Mezcal Tommy's | $23 | $24 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Mezcalita | Mezcalita | $23 | $24 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Beach, Please | Beach, Please | $22 | $23 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Zest I Ever Had | Zest I Ever Had | $22 | $23 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Ginger Spice | Ginger Spice | $22 | $23 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Classic Daiquiri | Classic Daiquiri | $22 | $23 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Espresso Martini | Espresso Martini | $22 | $23 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Negroni | Negroni | $24 | $25 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Aperol(ish) Spritz | Aperol(ish) Spritz | $20 | $21 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Mirasol | Mirasol | $20 | $21 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Sensible Marg | Sensible Margarita | $18 | $19 | PRICE CHANGE (to apply via import) — flavour variants of the one PDF product |
+| Alma Avalon | Kounta | Sensible - Classic | Sensible Margarita | $18 | $19 | PRICE CHANGE (to apply via import) — flavour variants of the one PDF product |
+| Alma Avalon | Kounta | Sensible - Jalapeno | Sensible Margarita | $18 | $19 | PRICE CHANGE (to apply via import) — flavour variants of the one PDF product |
+| Alma Avalon | Kounta | Sensible - Watermelon | Sensible Margarita | $18 | $19 | PRICE CHANGE (to apply via import) — flavour variants of the one PDF product |
+| Alma Avalon | Kounta | Watermelon Spritz | Watermelon Spritz | $20 | $19 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Modelo Especial Bottle | Modelo Especial 4.4% | $17 | $15 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Heaps Normal Quiet XPA | Heaps Normal Quiet XPA <0.5% | $11 | $10 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Heaps Normal Another Lager | Heaps Normal Another Lager <0.5% | $11 | $10 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Discover El Tequileno Flight | Discover El Tequileño 1959 | $45 | $46 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Blanco Agave Flight | Blanco, the Essence of Agave | $38 | $39 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Anejo Aging Flight | Añejo, the Art of Ageing | $46 | $47 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Espadin Mezcal Flight | Espadín Agave, the Mezcalero's Choice | $40 | $41 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Mezcal Agave Complexity Flight | Mezcal Agave Complexity | $44 | $45 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Rare Finds Flight | Rare Finds | $85 | $86 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Moments of Clarity Riesling - 150mL Glass | 2024 Moments of Clarity Riesling 150 mL | $15 | $16 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Moments of Clarity Riesling - 250mL Glass | 2024 Moments of Clarity Riesling 250 mL | $25 | $26 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Moments of Clarity Riesling - 750mL Bottle | 2024 Moments of Clarity Riesling bottle | $72 | $73 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Frogmore Creek Riesling | 2024 Frogmore Creek Riesling bottle | $92 | $93 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Gotas de Mar Albarino - 150mL Glass | 2024 Gotas de Mar Albariño 150 mL | $18 | $19 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Gotas de Mar Albarino - 250mL Glass | 2024 Gotas de Mar Albariño 250 mL | $30 | $31 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Gotas de Mar Albarino - 750mL  Bottle | 2024 Gotas de Mar Albariño bottle | $85 | $86 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Catalina Sounds Sauv Blanc - 150ml Glass | 2024 Catalina Sounds 'Sound of White' Sauvignon Blanc 150 mL | $16 | $17 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Catalina Sounds Sauv Blanc - 250ml Glass | 2024 Catalina Sounds 'Sound of White' Sauvignon Blanc 250 mL | $26 | $27 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Catalina Sounds Sauv Blanc - 750ml Bottle | 2024 Catalina Sounds 'Sound of White' Sauvignon Blanc bottle | $76 | $77 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | i Lauri 'AVALOS' Pecorino | 2024 i Lauri 'AVALOS' Pecorino bottle | $80 | $81 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Shut The Gate Gewurztraminer | 2023 Shut The Gate 'For Freedom' Gewürztraminer bottle | $75 | $76 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Greystone Pinot Gris - 150ml Glass | 2023 Greystone Pinot Gris 150 mL | $17 | $18 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Greystone Pinot Gris - 250ml Glass | 2023 Greystone Pinot Gris 250 mL | $28 | $29 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Greystone Pinot Gris - 750ml Bottle | 2023 Greystone Pinot Gris bottle | $82 | $83 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Stephane Brocard Macon Villages - 150mL Glass | 2022 Stéphane Brocard Mâcon-Villages Chardonnay 150 mL | $25 | $26 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Stephane Brocard Macon Villages - 250mL Glass | 2022 Stéphane Brocard Mâcon-Villages Chardonnay 250 mL | $40 | $41 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Stephane Brocard Macon Villages - 750mL Bottle | 2022 Stéphane Brocard Mâcon-Villages Chardonnay bottle | $110 | $111 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Ingram Road Chardonnay - 150ml Glass | 2024 Ingram Road Chardonnay 150 mL | $15 | $16 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Ingram Road Chardonnay - 250ml Glass | 2024 Ingram Road Chardonnay 250 mL | $25 | $26 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Ingram Road Chardonnay - 750ml Bottle | 2024 Ingram Road Chardonnay bottle | $72 | $73 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Kendall Jackson Chardonnay | 2023 Kendall Jackson 'Vintner's Reserve' Chardonnay bottle | $105 | $106 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Serenello Prosecco - 125ml Glass | NV Serenello Prosecco 150 mL pour | $15 | $16 | PRICE CHANGE (to apply via import) — Kounta product is labelled 125ml; PDF pour is 150 mL |
+| Alma Avalon | Kounta | Serenello Prosecco - 750ml Bottle | NV Serenello Prosecco bottle | $75 | $76 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | R. Paulazzo Rose - 150ml Glass | 2024 R. Paulazzo Rosé 150 mL | $15 | $16 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | R. Paulazzo Rose - 250ml Glass | 2024 R. Paulazzo Rosé 250 mL | $25 | $26 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | R. Paulazzo Rose - 750ml Bottle | 2024 R. Paulazzo Rosé bottle | $72 | $73 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | La Belle 'Colette' Rose - 150ml Glass | 2024 La Belle 'Colette' Rosé 150 mL | $17 | $18 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | La Belle 'Colette' Rose - 250ml Glass | 2024 La Belle 'Colette' Rosé 250 mL | $28 | $29 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | La Belle 'Colette' Rose - 750ml Bottle | 2024 La Belle 'Colette' Rosé bottle | $82 | $83 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | El Desperado Pinot Noir - 150ml Glass | 2025 El Desperado Pinot Noir 150 mL | $15 | $16 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | El Desperado Pinot Noir - 250ml Glass | 2025 El Desperado Pinot Noir 250 mL | $25 | $26 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | El Desperado Pinot Noir - 750ml Bottle | 2025 El Desperado Pinot Noir bottle | $72 | $73 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Domaine Thomson Pinot Noir | 2024 Domaine Thomson 'Explorer' Pinot Noir bottle | $88 | $89 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Helen's Hill 'Smuggler' Pinot Noir | 2023 Helen's Hill 'The Smuggler' Pinot Noir bottle | $125 | $126 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Capa Tempranillo - 150ml Glass | 2022 Capa Single Vineyard Tempranillo 150 mL | $15 | $16 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Capa Tempranillo - 250ml Glass | 2022 Capa Single Vineyard Tempranillo 250 mL | $25 | $26 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Capa Tempranillo - 750ml Bottle | 2022 Capa Single Vineyard Tempranillo bottle | $72 | $73 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Villa Albergotti Chianti - 150ml Glass | 2022 Villa Albergotti Chianti Superiore 150 mL | $17 | $18 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Villa Albergotti Chianti - 250ml Glass | 2022 Villa Albergotti Chianti Superiore 250 mL | $28 | $29 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Villa Albergotti Chianti - 750ml Bottle | 2022 Villa Albergotti Chianti Superiore bottle | $82 | $83 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Teusner 'Avatar' GSM | 2023 Teusner 'Avatar' GSM bottle | $95 | $96 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | BenMarco Malbec - 150ml Glass | 2022 BenMarco 'Valle de Uco' Malbec 150 mL | $20 | $21 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | BenMarco Malbec - 250ml Glass | 2022 BenMarco 'Valle de Uco' Malbec 250 mL | $32 | $33 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | BenMarco Malbec - 750ml Bottle | 2022 BenMarco 'Valle de Uco' Malbec bottle | $92 | $93 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Geoff Merrill 'Jacko's' Shiraz | 2017 Geoff Merrill 'Jacko's' Shiraz bottle | $88 | $89 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Teusner 'Wark Family' Shiraz - 150ml Glass | 2023 Teusner 'Wark Family' Shiraz 150 mL | $16 | $17 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Teusner 'Wark Family' Shiraz - 250ml Glass | 2023 Teusner 'Wark Family' Shiraz 250 mL | $26 | $27 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Teusner 'Wark Family' Shiraz - 750ml Bottle | 2023 Teusner 'Wark Family' Shiraz bottle | $76 | $77 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Cannonball Cabernet Sauvignon | 2021 Cannonball Cabernet Sauvignon bottle | $105 | $106 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Ocho Plata 30mL | Ocho Plata | $17 | $21 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | Ocho Reposado 30mL | Ocho Reposado | $21 | $22 | PRICE CHANGE (to apply via import) |
+| Alma Avalon | Kounta | El Jolgorio Mexicano (Brown) 30mL | El Jolgorio Mexicano 47% | $34 | $39 | PRICE CHANGE (to apply via import) |
+
+New products for Kounta (Alma Avalon):
+
+| Venue | System | Product | Price | Category (reporting group) | Status |
+|---|---|---|---|---|---|
+| Alma Avalon | Kounta | Mexican Shrimp Cocktail | $22 | Cool (Food) | NEW ITEM (in import file) |
+| Alma Avalon | Kounta | Agave Pairing | $45 | Tasting Flights (Beverages) | NEW ITEM (in import file) |
+| Alma Avalon | Kounta | Balter XPA Can | $12 | Beer (Beverages) | NEW ITEM (in import file) |
+| Alma Avalon | Kounta | Stone & Wood Pacific Ale | $13 | Beer (Beverages) | NEW ITEM (in import file) |
+| Alma Avalon | Kounta | Taittinger Brut Reserve - 150ml Glass | $28 | Sparkling Wine (Beverages) | NEW ITEM (in import file) |
+| Alma Avalon | Kounta | Taittinger Brut Reserve - 375ml Bottle | $95 | Sparkling Wine (Beverages) | NEW ITEM (in import file) |
+| Alma Avalon | Kounta | Taittinger Brut Reserve - 750ml Bottle | $161 | Sparkling Wine (Beverages) | NEW ITEM (in import file) |
+| Alma Avalon | Kounta | El Jolgorio Sierrudo (Black Green) 30mL | $44 | Mezcal (Beverages) | NEW ITEM (in import file) |
+
+Kounta products NOT on the new Avalon menu (flag only): Prawn Tostada $21, Chicken/Eggplant/Fish Burrito $18, Coconut Flan $16, Taco Special - Chorizo $8, Cafe Patron Espresso Martini $22, 17 Classic Cocktails, 4 Pines Pale Ale $12, Lagerita $27, Founding Fathers Flight $38, Laurent Perrier La Cuvee $160, Bonnet & Cotton Beaujolais (150/250/750 at $28/$46/$72), Geoff Merrill Reserve Cab Sauv $115, Vanguardist Field $99, Eperosa Magnolia 1941 (three sizes), Patron XO Cafe $18, Batanga Blanco $11, El Tequileno Blanco (house) $10, the single-piece add-ons (Sweet Corn 1pc $4, Halloumi 1pc $6, Chicken Tinga Empanada 1pc $7, Salmon Sashimi Taco 1pc $7), Side Guacamole, Side Tortilla, Hot Sauce Trio, ice cream lines. Happy Hour, Taco Wednesday, Bottomless and Kids categories are outside the PDFs.
+
+Kounta package and reporting findings (Alma Avalon):
+
+| Venue | System | Package | Selling price | Food allocation | Beverage allocation | Status / source |
+|---|---|---|---|---|---|---|
+| Alma Avalon | Kounta | Bottomless Lunch ($99 pp on the website PDF) | $49 "Bottomless - Food" + $50 "Bottomless - Drinks" | $49 (reporting group Food) | $50, but its reporting group is **Food** | Existing split by product; the drinks half reports as Food. Fix offered in the OPTIONAL file, not applied |
+| Alma Avalon | Kounta | Grazing Menu / Feasting Menu / First Table Feasting | $49 / $79 / $39.50 | all Food | none evident | Existing, not changed |
+| Alma Avalon | Kounta | Kids Meal Deal | $17 | Food | none | Existing, not changed |
+| Alma Avalon | Kounta | any package | | | | No cost prices exist in Kounta (CostPriceIncTax is 0 on all 427 products), so there is no COGS allocation to correct there |
+
+Reporting-group anomalies (accounting mapping, owner decision, nothing changed): the eight "Mexican Classics" cocktails (Classic/Coconut/Jalapeno/Watermelon/Tommy's Margarita, Mezcal Tommy's, Mezcalita, Paloma) and "Bottomless - Drinks" carry ReportingGroup = Food; "TW - Classic" is in "Bar Stock"; the Taco Wednesday lines and Ice Cream Cup have no reporting group. The OPTIONAL CSV moves the first nine to Beverages.

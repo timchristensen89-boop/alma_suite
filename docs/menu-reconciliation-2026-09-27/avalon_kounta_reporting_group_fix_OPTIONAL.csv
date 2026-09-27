@@ -1,0 +1,10 @@
+ProductID,ProductNo,ProductName,DocketName,Barcode,SKU,Unit,DefaultSize,SellPriceIncTax,SellTaxCode,CostPriceIncTax,CostTaxCode,IsModifier,PrintDocket,Tags,CategoryNames,SellAccount,BuyAccount,InventoryAccount,ImageUrl,ReportingGroup,FriendlyName,ShowOnline,OnlineDescription,InventoryType,PurchaseFormat,PurchaseQty,Container,VariableQtyPrompt
+23392194,,Mezcalita,,,,unit,1,23,GST,0.0000,GST,0,1,,Mexican Classics,,,,,Beverages,,,,1,individual,1,UNIT,
+23392195,,Paloma,,,,unit,1,22,GST,0.0000,GST,0,1,,Mexican Classics,,,,,Beverages,,,,1,individual,1,UNIT,
+23392193,,Mezcal Tommy's,,,,unit,1,23,GST,0.0000,GST,0,1,,Mexican Classics,,,,,Beverages,,,,1,individual,1,UNIT,
+23392197,,Watermelon Margarita,,,,unit,1,22,GST,0.0000,GST,0,1,,Mexican Classics,,,,,Beverages,,,,1,individual,1,UNIT,
+23392196,,Tommy's Margarita,,,,unit,1,22,GST,0.0000,GST,0,1,,Mexican Classics,,,,,Beverages,,,,1,individual,1,UNIT,
+23392190,,Classic Margarita,,,,unit,1,22,GST,0.0000,GST,0,1,,Mexican Classics,,,,,Beverages,,,,1,individual,1,UNIT,
+23392191,,Coconut Margarita,,,,unit,1,22,GST,0.0000,GST,0,1,,Mexican Classics,,,,,Beverages,,,,1,individual,1,UNIT,
+23392056,,Bottomless - Drinks,,,,unit,1,50,GST,0.0000,GST,0,1,,Bottomless Lunch,,,,,Beverages,,,,1,individual,1,UNIT,
+23392192,,Jalapeno Margarita,,,,unit,1,22,GST,0.0000,GST,0,1,,Mexican Classics,,,,,Beverages,,,,1,individual,1,UNIT,
