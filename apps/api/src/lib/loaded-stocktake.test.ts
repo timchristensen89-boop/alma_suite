@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLoadedStocktake, moneyToCents, valuationOutliers, catalogueKey, type PdfRow } from '@alma/shared';
+import { parseLoadedStocktake, parseLoadedCountedAt, moneyToCents, valuationOutliers, catalogueKey, type PdfRow } from '@alma/shared';
 
 /**
  * Reading a count out of a Loaded PDF export.
@@ -269,4 +269,61 @@ test('an export that is not a stocktake says so instead of returning nothing', (
   const result = parseLoadedStocktake([['St Alma'], ['Some Other Report']]);
   assert.equal(result.lines.length, 0);
   assert.match(result.discrepancies[0] ?? '', /is this a stocktake export/);
+});
+
+// ── The printed date ────────────────────────────────────────────────────────
+
+test('the printed date is parsed to the venue-local instant, with the year taken from the weekday', () => {
+  const importedAt = new Date('2026-08-03T06:11:00Z');
+  const sat = parseLoadedCountedAt('Sat 1st Aug, 10:00 AM', { importedAt });
+  assert.equal(sat.ok, true);
+  if (sat.ok) {
+    assert.equal(sat.day, '2026-08-01');
+    assert.equal(sat.time, '10:00');
+    // 10:00 Sydney (AEST, UTC+10) on 1 Aug 2026.
+    assert.equal(sat.countedAt.toISOString(), '2026-08-01T00:00:00.000Z');
+    assert.match(sat.evidence, /inferred from the printed weekday \(Sat\)/);
+  }
+  const fri = parseLoadedCountedAt('Fri 31st Jul, 10:55 PM', { importedAt });
+  assert.equal(fri.ok, true);
+  if (fri.ok) assert.equal(fri.countedAt.toISOString(), '2026-07-31T12:55:00.000Z');
+});
+
+test('a weekday that does not fit the import year falls back to the year it does fit', () => {
+  // 1 Aug was a Friday in 2025.
+  const parsed = parseLoadedCountedAt('Fri 1st Aug, 9:00 AM', { importedAt: new Date('2026-08-03T06:11:00Z') });
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) assert.equal(parsed.day, '2025-08-01');
+});
+
+test('a printed year is used as printed; 12-hour and 24-hour times both read', () => {
+  const printed = parseLoadedCountedAt('04 Aug 2026, 12:52am', { importedAt: new Date('2026-08-05T00:00:00Z') });
+  assert.equal(printed.ok, true);
+  if (printed.ok) assert.equal(printed.countedAt.toISOString(), '2026-08-03T14:52:00.000Z');
+  const h24 = parseLoadedCountedAt('1 Jul 2026 23:30', { importedAt: new Date('2026-07-05T00:00:00Z') });
+  assert.equal(h24.ok, true);
+  if (h24.ok) assert.equal(h24.countedAt.toISOString(), '2026-07-01T13:30:00.000Z');
+});
+
+test('malformed, ambiguous or future dates are refused — the import time is never substituted', () => {
+  const importedAt = new Date('2026-08-03T06:11:00Z');
+  const malformed = parseLoadedCountedAt('Stocktake export', { importedAt });
+  assert.equal(malformed.ok, false);
+  if (!malformed.ok) assert.match(malformed.reason, /not in a recognised form/);
+  // No year and no weekday: nothing to place it by.
+  const ambiguous = parseLoadedCountedAt('1 Aug, 10:00 AM', { importedAt });
+  assert.equal(ambiguous.ok, false);
+  if (!ambiguous.ok) assert.match(ambiguous.reason, /supply the year/);
+  // …unless the operator supplies the year.
+  const supplied = parseLoadedCountedAt('1 Aug, 10:00 AM', { importedAt, year: 2026 });
+  assert.equal(supplied.ok, true);
+  // A weekday that never fits (31 Jul is not a Tuesday in 2023–2026).
+  const nofit = parseLoadedCountedAt('Tue 31st Jul, 10:00 AM', { importedAt });
+  assert.equal(nofit.ok, false);
+  if (!nofit.ok) assert.match(nofit.reason, /cannot be placed/);
+  // A date after the import.
+  const future = parseLoadedCountedAt('Sat 1st Aug, 10:00 AM', { importedAt: new Date('2026-07-01T00:00:00Z') });
+  assert.equal(future.ok, false);
+  assert.equal(parseLoadedCountedAt('', { importedAt }).ok, false);
+  assert.equal(parseLoadedCountedAt('Sat 1st Aug, 13:00 PM', { importedAt }).ok, false);
 });

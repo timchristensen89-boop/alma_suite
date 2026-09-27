@@ -40,6 +40,12 @@ export type PrimeCostInput = {
   purchaseCoverage?: number | null;
   /** Below this coverage a food figure is not the period's; defaults to MIN_PURCHASE_COVERAGE. */
   minPurchaseCoverage?: number;
+  /**
+   * The invoice-feed assessment (@alma/shared invoice-feed.ts). 'incomplete'
+   * withholds the food figure with its reason: purchases are still shown,
+   * as purchases. Omit when not assessed.
+   */
+  purchaseFeed?: { status: 'complete' | 'incomplete' | 'too_early'; reason: string | null } | null;
 };
 
 export type PrimeCostResolution = {
@@ -76,12 +82,16 @@ export function resolvePrimeCost(input: PrimeCostInput): PrimeCostResolution {
     reasons.push(...(food.reasons?.length ? food.reasons : ['Food cost is supplier bills only — no finalised stocktake brackets the period.']));
   }
   const coverage = input.purchaseCoverage;
-  if (coverage != null && coverage < minCoverage) {
+  const feed = input.purchaseFeed ?? null;
+  const feedIncomplete = feed?.status === 'incomplete';
+  if (feedIncomplete) {
+    reasons.push(`The supplier invoice feed is incomplete for this period, so the purchases are not the period's purchases. ${feed?.reason ?? ''}`.trim());
+  } else if (coverage != null && coverage < minCoverage) {
     reasons.push(`Supplier invoices cover ${Math.round(coverage * 100)}% of the period, so the purchases are not the period's purchases.`);
   }
   if (labour.basis === 'missing') reasons.push('No timesheets or roster shifts to cost labour from.');
 
-  const foodBasis: PrimeCostResolution['foodBasis'] = bounded && (coverage == null || coverage >= minCoverage) ? 'actual' : 'unavailable';
+  const foodBasis: PrimeCostResolution['foodBasis'] = bounded && !feedIncomplete && (coverage == null || coverage >= minCoverage) ? 'actual' : 'unavailable';
   const foodCostCents = foodBasis === 'actual' ? food.cogsCents : null;
   const primeCostCents = foodCostCents == null || labour.basis === 'missing' ? null : labour.cents + foodCostCents;
 

@@ -21,6 +21,7 @@ export * from './venue-names.js';
 export * from './cogs-quality.js';
 export * from './stocktake-freshness.js';
 export * from './stocktake-scope.js';
+export * from './invoice-feed.js';
 export * from './cost-targets.js';
 export * from './prime-cost.js';
 export * from './recipe-cost.js';
@@ -3860,13 +3861,33 @@ export type ReportsPrimeCostVenueRow = {
    */
   cogsPercent: number | null;
   primeCostPercent: number | null;
-  /** 0–1: the fraction of the period supplier invoices actually cover. */
+  /** 0–1: the share of the elapsed period supplier-invoice activity spans (invoice-feed.ts). */
   purchaseCoverage: number;
+  /** The invoice-feed assessment behind purchaseCoverage; 'incomplete' withholds food % and prime. */
+  purchaseFeed: PurchaseFeedSummary;
   timesheetHours: number;
   rosterHours: number;
   salesDays: number;
   sourceQuality: 'complete_current' | 'missing_sales' | 'missing_wages' | 'missing_cogs' | 'estimated_wages' | 'incomplete';
   missing: string[];
+};
+
+/**
+ * Whether the supplier-invoice feed appears complete enough for a period's
+ * purchases to be the period's purchases (@alma/shared invoice-feed.ts).
+ * "Complete" never means every purchase was verified.
+ */
+export type PurchaseFeedSummary = {
+  status: 'complete' | 'incomplete' | 'too_early';
+  coverage: number;
+  elapsedDays: number;
+  firstInvoiceDate: string | null;
+  lastInvoiceDate: string | null;
+  missingInterval: { from: string; to: string } | null;
+  establishedSuppliers: number;
+  /** Suppliers with regular invoices in the previous 90 days and none in this period. */
+  absentEstablishedSuppliers: Array<{ supplierName: string; lastInvoiceBefore: string }>;
+  reason: string | null;
 };
 
 // ── Monthly recap ──────────────────────────────────────────────────────────
@@ -3901,8 +3922,9 @@ export type MonthlyRecapPeriod = {
   cogsPct: number | null;
   primePct: number | null;
   stockQuality: MonthlyRecapStockQuality;
-  /** 0–1 fraction of the period supplier invoices cover. */
+  /** 0–1 share of the elapsed period supplier-invoice activity spans. */
   purchaseCoverage: number;
+  purchaseFeed: PurchaseFeedSummary;
   /** Why prime cost is unavailable, in operator words. */
   reasons: string[];
 };
@@ -3936,6 +3958,9 @@ export type ReportsPrimeCostPayload = {
     missing: string[];
     /** The date supplier invoices begin, when they do not cover the period. */
     purchasesFrom: string | null;
+    /** Roster-only labour (rows with no timesheets) that the total leaves out, and which rows. */
+    rosterOnlyWageCents: number;
+    rosterOnlyVenues: string[];
   };
   venues: ReportsPrimeCostVenueRow[];
   sources: {
