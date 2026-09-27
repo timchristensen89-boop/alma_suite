@@ -159,9 +159,10 @@ async function recapVsPrime(venues: string[], months: string[]) {
       console.log(`    Recap : sales ${money(m.salesCents)} labour ${money(m.wageCents)} food ${m.foodBasis === 'actual' ? money(m.cogsCents) : `unavailable (purchases ${money(m.purchasesCents)})`} prime ${money(m.primeCostCents)} ${m.primePct ?? '—'}%`);
       console.log(`    Prime : sales ${money(t.salesCents)} labour ${money(t.wageCents)} (${t.labourBasis}${t.rosterOnlyWageCents ? `; roster-only ${money(t.rosterOnlyWageCents)} in ${t.rosterOnlyVenues.join(', ')} excluded` : ''}) food ${t.foodBasis === 'actual' ? money(t.cogsCents) : `unavailable (purchases ${money(t.purchasesCents)})`} prime ${money(t.primeCostCents)} ${t.primeCostPercent ?? '—'}% · coverage ${Math.round(t.purchaseCoverage * 100)}%`);
       console.log(`    agree on sales, labour and prime: ${agree && m.wageCents === t.wageCents ? 'YES' : 'NO ← investigate'}`);
-      for (const row of prime.venues) console.log(`      row ${row.venue.padEnd(14)} labour ${money(row.wageCents)} (${row.labourBasis}; timesheets ${money(row.wageCents === row.rosterWageEstimateCents && row.labourBasis === 'roster_estimate' ? 0 : row.wageCents)}, roster estimate ${money(row.rosterWageEstimateCents)}, ${row.timesheetHours}h / ${row.rosterHours}h)`);
+      for (const row of prime.venues) console.log(`      row ${row.venue.padEnd(14)} [${row.venueStatus}] labour ${money(row.wageCents)} (${row.labourBasis}; explicit ${money(row.explicitWageCents)} + profile-fallback ${money(row.profileFallbackWageCents)} + salaried ${money(row.salariedWageCents)}; roster estimate ${money(row.rosterWageEstimateCents)}; ${row.timesheetHours}h / ${row.rosterHours}h)`);
+      console.log(`      allocation: unallocated (not a venue) ${money(t.unallocatedWageCents)}${t.unallocatedVenues.length ? ` in ${t.unallocatedVenues.map((v) => `"${v}"`).join(', ')}` : ''} · profile-fallback ${money(m.wageAllocation.profileFallbackCents)} · Σ configured venue rows + unallocated = ${money(prime.venues.filter((r) => r.venueStatus === 'configured').reduce((sum, r) => sum + (r.labourBasis === 'timesheets' ? r.wageCents : 0), 0) + t.unallocatedWageCents)} vs total ${money(t.wageCents)}`);
       const f = t.purchaseFeed;
-      console.log(`    invoice feed: ${f.status} · coverage ${Math.round(f.coverage * 100)}% · ${f.firstInvoiceDate ?? '—'} → ${f.lastInvoiceDate ?? '—'} over ${f.elapsedDays} elapsed days${f.missingInterval ? ` · missing ${f.missingInterval.from} → ${f.missingInterval.to}` : ''} · established suppliers ${f.establishedSuppliers}${f.absentEstablishedSuppliers.length ? ` · ABSENT: ${f.absentEstablishedSuppliers.map((s) => `${s.supplierName} (last ${s.lastInvoiceBefore})`).join('; ')}` : ''}`);
+      console.log(`    invoice feed: ${f.status} · coverage ${Math.round(f.coverage * 100)}% · ${f.firstInvoiceDate ?? '—'} → ${f.lastInvoiceDate ?? '—'} over ${f.elapsedDays} elapsed days${f.missingInterval ? ` · missing ${f.missingInterval.from} → ${f.missingInterval.to}` : ''} · expected suppliers ${f.establishedSuppliers}${f.notExpectedSuppliers.length ? ` · marked not expected: ${f.notExpectedSuppliers.join(', ')}` : ''}${f.absentEstablishedSuppliers.length ? ` · ABSENT: ${f.absentEstablishedSuppliers.map((s) => `${s.supplierName} (last ${s.lastInvoiceBefore}, ${s.absentForDays}d${s.carriedForward ? ', carried forward' : ''})`).join('; ')}` : ''}`);
       for (const r of m.reasons) console.log(`      • ${r}`);
     }
   }
@@ -272,6 +273,55 @@ async function scopeAndValuation(venues: string[], months: string[]) {
   }
 }
 
+async function unvaluedLines(venues: string[], months: string[]) {
+  section('9. Unvalued counted lines on finalised counts near the month boundaries — the valuation remediation queue (read-only; nothing is valued here)');
+  const first = venueMonthBounds(months[0]!)!.gte;
+  const last = venueMonthBounds(months[months.length - 1]!)!.lt;
+  const lines = await prisma.stocktakeLine.findMany({
+    where: {
+      countedQty: { gt: 0 },
+      stockValueCents: null,
+      stocktake: {
+        status: { in: [...FINALISED] },
+        countedAt: { gte: new Date(first.getTime() - STOCKTAKE_BOUNDARY_WINDOW_DAYS * DAY_MS), lte: new Date(last.getTime() + STOCKTAKE_BOUNDARY_WINDOW_DAYS * DAY_MS) }
+      }
+    },
+    select: {
+      id: true, label: true, countedQty: true, unit: true, location: true, notes: true, itemId: true, recipeId: true,
+      item: { select: { id: true, name: true, unit: true, countUnit: true, avgCostCents: true, latestCostCents: true, measurePerCountUnit: true, measureUnit: true, status: true } },
+      recipe: { select: { id: true, title: true, estimatedCost: true, yieldQuantity: true, yieldUnit: true } },
+      stocktake: { select: { id: true, name: true, venue: true, countedAt: true, template: true, importSource: true, scope: true } }
+    },
+    orderBy: [{ stocktake: { countedAt: 'asc' } }, { position: 'asc' }]
+  });
+  console.log(`unvalued counted lines: ${lines.length}`);
+  for (const l of lines) {
+    const st = l.stocktake;
+    const reason = !l.itemId && !l.recipeId
+      ? 'no stock item or prep recipe linked (a free-text line)'
+      : l.itemId && !l.item
+        ? 'linked item no longer exists'
+        : l.item && l.item.avgCostCents == null && l.item.latestCostCents == null
+          ? 'linked item has no cost (avgCost and latestCost both null)'
+          : l.item
+            ? `linked item has a cost (avg ${money(l.item.avgCostCents)}, latest ${money(l.item.latestCostCents)}) but the counted unit "${l.unit ?? '—'}" could not be converted to its cost unit (count unit ${l.item.countUnit ?? l.item.unit ?? '—'}, ${l.item.measurePerCountUnit ?? '—'} ${l.item.measureUnit ?? ''})`
+            : l.recipe
+              ? `prep line: recipe "${l.recipe.title}" has estimated cost ${l.recipe.estimatedCost} and yield ${l.recipe.yieldQuantity ?? '—'} ${l.recipe.yieldUnit ?? ''} — the explosion produced no value`
+              : 'unknown';
+    const needs = !l.itemId && !l.recipeId
+      ? 'a stock item to link (or confirmation the line is not stock)'
+      : l.item && l.item.avgCostCents == null && l.item.latestCostCents == null
+        ? 'a supplier invoice or an entered cost for the item'
+        : l.item
+          ? 'a unit conversion for the item (measure per count unit) or a count in the item\'s count unit'
+          : 'a recipe cost and yield';
+    console.log(`  ${venueDayKey(st.countedAt)} ${(resolveVenueLabel(st.venue, venues).venue ?? st.venue ?? '(none)').padEnd(12)} stocktake ${st.id} "${st.name}" · ${st.template ?? st.importSource ?? 'app'} · scope ${st.scope}`);
+    console.log(`      line ${l.id} · "${l.label}" · qty ${l.countedQty} ${l.unit ?? ''} · location ${l.location ?? '—'} · itemId ${l.itemId ?? '—'}${l.item ? ` (${l.item.name}, ${l.item.status})` : ''} · recipeId ${l.recipeId ?? '—'}${l.notes ? ` · notes: ${l.notes}` : ''}`);
+    console.log(`      why unvalued: ${reason}`);
+    console.log(`      to value it: ${needs}`);
+  }
+}
+
 async function main() {
   const settings = await settingsService.get();
   const venues = realVenueNames(settings.venues.map((v) => v.name));
@@ -285,6 +335,7 @@ async function main() {
   await stockOnHand(venues);
   await labourPopulations();
   await scopeAndValuation(venues, months);
+  await unvaluedLines(venues, months);
   await dataQuality(venues, months);
 }
 

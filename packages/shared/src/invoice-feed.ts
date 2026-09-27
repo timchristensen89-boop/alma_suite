@@ -17,15 +17,28 @@
 //     alone does not see.
 //
 // "Regular" is defined from history, deterministically: at least
-// ESTABLISHED_MIN_INVOICE_DATES distinct invoice dates in the lookback and a
-// last invoice within ESTABLISHED_RECENT_DAYS of the period start. An
-// occasional supplier (one or two invoices) is never mandatory. A supplier
-// is "absent" only once the elapsed period is long enough to expect it:
-// at least ABSENCE_MIN_DAYS and at least twice its longest historical gap,
-// so a fortnightly supplier is not flagged on day 10.
+// ESTABLISHED_MIN_INVOICE_DATES distinct invoice dates in the 90 days before
+// the period, with a last invoice within ESTABLISHED_RECENT_DAYS of its
+// start. An occasional supplier (one or two invoices) is never mandatory. A
+// supplier is "absent" only once the elapsed period is long enough to expect
+// it: at least ABSENCE_MIN_DAYS and at least twice its longest historical
+// gap, so a fortnightly supplier is not flagged on day 10.
 //
-// No supplier is classified food or beverage by name here. Suppliers are
-// only ever "established" or not.
+// An absence does not age out. The first version of this rule judged each
+// period from the 90 days before it alone, so FoodByUs and Paramount Liquor
+// — silent since mid-July — were flagged absent in August and then, by
+// September, were no longer "established" (last invoice > 45 days before
+// 1 Sep) and September read complete on $4.5k of purchases against $164k
+// of sales. Now a supplier that was regular as of its own last invoice
+// (ESTABLISHED_MIN_INVOICE_DATES distinct dates in the 90 days up to it)
+// stays expected, period after period, until it invoices again or the
+// supplier is explicitly marked no longer expected (`notExpectedSuppliers`
+// — Supplier.status ARCHIVED). Continued silence is never read as
+// cessation. Every carried-forward absence says so in the output.
+//
+// No supplier is classified food or beverage by name here, and no dollar
+// value decides whether a supplier matters. Suppliers are only ever
+// "expected" or not.
 
 export const INVOICE_FEED_LOOKBACK_DAYS = 90;
 export const ESTABLISHED_MIN_INVOICE_DATES = 3;
@@ -46,12 +59,20 @@ export type InvoiceFeedStatus = 'complete' | 'incomplete' | 'too_early';
 
 export type AbsentSupplier = {
   supplierName: string;
-  /** Distinct invoice dates in the lookback. */
+  /** Distinct invoice dates in the 90 days up to the supplier's last invoice. */
   invoiceDates: number;
   /** Last invoice date before the period (YYYY-MM-DD). */
   lastInvoiceBefore: string;
-  /** Longest gap between consecutive invoice dates in the lookback, in days. */
+  /** Longest gap between consecutive invoice dates in that window, in days. */
   longestGapDays: number;
+  /** Whole days from the last invoice to the period start. */
+  absentForDays: number;
+  /**
+   * True when the supplier is expected only because its earlier absence has
+   * not been resolved (its last invoice is older than ESTABLISHED_RECENT_DAYS
+   * before this period, so the per-period rule alone would have dropped it).
+   */
+  carriedForward: boolean;
 };
 
 export type InvoiceFeedAssessment = {
@@ -63,8 +84,11 @@ export type InvoiceFeedAssessment = {
   lastInvoiceDate: string | null;
   /** The uncovered stretch at the end of the elapsed period, when there is one. */
   missingInterval: { from: string; to: string } | null;
+  /** Suppliers expected in this period: regular as of the period start, or carrying an unresolved absence. */
   establishedSuppliers: string[];
   absentEstablishedSuppliers: AbsentSupplier[];
+  /** Suppliers explicitly marked no longer expected, whose silence was therefore not judged. */
+  notExpectedSuppliers: string[];
   /** Why the feed is not complete, in operator words; null when it is. */
   reason: string | null;
 };
@@ -73,17 +97,26 @@ const dayKey = (d: Date) => d.toISOString().slice(0, 10);
 const dayOf = (d: Date) => Math.floor(d.getTime() / DAY_MS);
 
 /**
- * @param invoices finalised stock invoices with an invoice date in
- *   [start − INVOICE_FEED_LOOKBACK_DAYS, end); anything else is ignored.
+ * @param invoices every finalised stock invoice with an invoice date before
+ *   `end` (the whole history is needed: an absence is judged as of the
+ *   supplier's own last invoice, however long ago). Invoices on or after
+ *   `end` are ignored.
+ * @param notExpectedSuppliers supplier names explicitly marked no longer
+ *   expected (Supplier.status ARCHIVED); their silence is not judged.
  */
-export function assessInvoiceFeed(input: { start: Date; end: Date; now: Date; invoices: InvoiceFeedInvoice[] }): InvoiceFeedAssessment {
+export function assessInvoiceFeed(input: {
+  start: Date;
+  end: Date;
+  now: Date;
+  invoices: InvoiceFeedInvoice[];
+  notExpectedSuppliers?: Iterable<string>;
+}): InvoiceFeedAssessment {
   const { start, end, now } = input;
+  const notExpected = new Set([...(input.notExpectedSuppliers ?? [])].map((n) => n.trim()));
   const elapsedEnd = new Date(Math.min(end.getTime(), now.getTime()));
   const elapsedDays = Math.max(0, (elapsedEnd.getTime() - start.getTime()) / DAY_MS);
-  const lookbackStart = new Date(start.getTime() - INVOICE_FEED_LOOKBACK_DAYS * DAY_MS);
-
   const inPeriod = input.invoices.filter((i) => i.invoiceDate >= start && i.invoiceDate < elapsedEnd);
-  const before = input.invoices.filter((i) => i.invoiceDate >= lookbackStart && i.invoiceDate < start);
+  const before = input.invoices.filter((i) => i.invoiceDate < start);
 
   // ── Cadence ──
   let coverage = 0;
@@ -107,7 +140,16 @@ export function assessInvoiceFeed(input: { start: Date; end: Date; now: Date; in
     missingInterval = { from: dayKey(start), to: dayKey(elapsedEnd) };
   }
 
-  // ── Established suppliers ──
+  // ── Expected suppliers ──
+  //
+  // Two ways to be expected in this period, both judged from history only:
+  //   (a) regular as of the period start: ≥ ESTABLISHED_MIN_INVOICE_DATES
+  //       distinct dates in the 90 days before it and a last invoice within
+  //       ESTABLISHED_RECENT_DAYS of it;
+  //   (b) regular as of the supplier's own LAST invoice (≥ the same number of
+  //       distinct dates in the 90 days up to and including it) and silent
+  //       ever since — an unresolved absence, carried forward until the
+  //       supplier invoices again or is marked not expected.
   const datesBySupplier = new Map<string, Set<number>>();
   for (const i of before) {
     const key = i.supplierName.trim();
@@ -118,18 +160,39 @@ export function assessInvoiceFeed(input: { start: Date; end: Date; now: Date; in
   }
   const startDay = dayOf(start);
   const establishedSuppliers: string[] = [];
-  const profiles = new Map<string, { lastBefore: number; longestGapDays: number; invoiceDates: number }>();
+  const notExpectedSuppliers: string[] = [];
+  const profiles = new Map<string, { lastBefore: number; longestGapDays: number; invoiceDates: number; carriedForward: boolean }>();
+  const regularOver = (days: number[], windowEnd: number) => {
+    // Distinct invoice dates in the 90 days up to (and including) windowEnd, and the longest gap between them.
+    const inWindow = days.filter((d) => d > windowEnd - INVOICE_FEED_LOOKBACK_DAYS && d <= windowEnd);
+    let longestGapDays = 0;
+    for (let k = 1; k < inWindow.length; k += 1) longestGapDays = Math.max(longestGapDays, inWindow[k]! - inWindow[k - 1]!);
+    return { count: inWindow.length, longestGapDays };
+  };
   for (const [supplier, set] of datesBySupplier) {
     const days = [...set].sort((a, b) => a - b);
-    if (days.length < ESTABLISHED_MIN_INVOICE_DATES) continue;
     const lastBefore = days[days.length - 1]!;
-    if (startDay - lastBefore > ESTABLISHED_RECENT_DAYS) continue;
-    let longestGapDays = 0;
-    for (let k = 1; k < days.length; k += 1) longestGapDays = Math.max(longestGapDays, days[k]! - days[k - 1]!);
-    establishedSuppliers.push(supplier);
-    profiles.set(supplier, { lastBefore, longestGapDays, invoiceDates: days.length });
+    if (notExpected.has(supplier)) {
+      notExpectedSuppliers.push(supplier);
+      continue;
+    }
+    // (a) as of the period start: the window ends the day before the period.
+    const asOfStart = regularOver(days, startDay - 1);
+    const recent = startDay - lastBefore <= ESTABLISHED_RECENT_DAYS;
+    if (asOfStart.count >= ESTABLISHED_MIN_INVOICE_DATES && recent) {
+      establishedSuppliers.push(supplier);
+      profiles.set(supplier, { lastBefore, longestGapDays: asOfStart.longestGapDays, invoiceDates: asOfStart.count, carriedForward: false });
+      continue;
+    }
+    // (b) as of its last invoice: was it regular then? If so, its absence since is unresolved.
+    const asOfLast = regularOver(days, lastBefore);
+    if (asOfLast.count >= ESTABLISHED_MIN_INVOICE_DATES) {
+      establishedSuppliers.push(supplier);
+      profiles.set(supplier, { lastBefore, longestGapDays: asOfLast.longestGapDays, invoiceDates: asOfLast.count, carriedForward: !recent });
+    }
   }
   establishedSuppliers.sort();
+  notExpectedSuppliers.sort();
 
   const activeInPeriod = new Set(inPeriod.map((i) => i.supplierName.trim()));
   const absentEstablishedSuppliers: AbsentSupplier[] = [];
@@ -142,7 +205,9 @@ export function assessInvoiceFeed(input: { start: Date; end: Date; now: Date; in
       supplierName: supplier,
       invoiceDates: profile.invoiceDates,
       lastInvoiceBefore: dayKey(new Date(profile.lastBefore * DAY_MS)),
-      longestGapDays: profile.longestGapDays
+      longestGapDays: profile.longestGapDays,
+      absentForDays: startDay - profile.lastBefore,
+      carriedForward: profile.carriedForward
     });
   }
 
@@ -158,7 +223,9 @@ export function assessInvoiceFeed(input: { start: Date; end: Date; now: Date; in
   }
   if (absentEstablishedSuppliers.length > 0) {
     reasons.push(
-      `${absentEstablishedSuppliers.length} established supplier${absentEstablishedSuppliers.length === 1 ? '' : 's'} with regular invoices in the previous 90 days ${absentEstablishedSuppliers.length === 1 ? 'has' : 'have'} none in this period (${absentEstablishedSuppliers.map((s) => `${s.supplierName}, last ${s.lastInvoiceBefore}`).join('; ')}).`
+      `${absentEstablishedSuppliers.length} regular supplier${absentEstablishedSuppliers.length === 1 ? '' : 's'} ${absentEstablishedSuppliers.length === 1 ? 'has' : 'have'} no invoice in this period (${absentEstablishedSuppliers
+        .map((s) => `${s.supplierName}: ${s.invoiceDates} invoice dates in the 90 days to ${s.lastInvoiceBefore}, then nothing for ${s.absentForDays} days${s.carriedForward ? ' — an unresolved absence carried forward' : ''}`)
+        .join('; ')}). An absence stands until the supplier invoices again or is marked no longer expected.`
     );
   }
   const status: InvoiceFeedStatus = reasons.length > 0 ? 'incomplete' : judgeCadence ? 'complete' : 'too_early';
@@ -171,6 +238,7 @@ export function assessInvoiceFeed(input: { start: Date; end: Date; now: Date; in
     missingInterval,
     establishedSuppliers,
     absentEstablishedSuppliers,
+    notExpectedSuppliers,
     reason: reasons.length ? reasons.join(' ') : null
   };
 }

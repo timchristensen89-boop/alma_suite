@@ -495,3 +495,46 @@ describe('venue figures say what purchases they cannot see', () => {
     assert.match(avalon.reasons.join(' '), /1 supplier invoice in this window carr(y|ies) no venue/);
   });
 });
+
+describe('group fail-closed invariant: a plausible combined number never hides an invalid venue', () => {
+  const avalonComplete: Count[] = [
+    { id: 'ao', venue: 'Alma Avalon', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_000_000 },
+    { id: 'ac', venue: 'Alma Avalon', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 }
+  ];
+  const purchases = [
+    { venue: 'Alma Avalon', invoiceDate: utc('2026-06-10T00:00:00Z'), cents: 400_000 },
+    { venue: 'St Alma', invoiceDate: utc('2026-06-11T00:00:00Z'), cents: 900_000 }
+  ];
+
+  for (const [label, stAlma] of [
+    ['no count near either boundary', [{ id: 'old', venue: 'St Alma', countedAt: utc('2026-03-01T03:00:00Z'), status: 'LOCKED', valueCents: 2_000_000 }]],
+    ['a food-only count at each boundary', [
+      { id: 'sk1', venue: 'St Alma', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 200_000, scope: 'FOOD' },
+      { id: 'sk2', venue: 'St Alma', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 150_000, scope: 'FOOD' }
+    ]],
+    ['counts of unknown scope at each boundary', [
+      { id: 'su1', venue: 'St Alma', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 2_000_000, scope: 'UNKNOWN' },
+      { id: 'su2', venue: 'St Alma', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_500_000, scope: 'UNKNOWN' }
+    ]],
+    ['combined counts with unvalued lines at each boundary', [
+      { id: 'sv1', venue: 'St Alma', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 2_000_000, unvaluedLines: 4 },
+      { id: 'sv2', venue: 'St Alma', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_500_000, unvaluedLines: 11 }
+    ]]
+  ] as Array<[string, Count[]]>) {
+    it(`Alma Avalon complete, St Alma with ${label}: the group is unavailable and names St Alma; the group figure is purchases only`, async () => {
+      const reader = fakeReader([...avalonComplete, ...stAlma], purchases);
+      const [group, avalon] = await Promise.all([
+        computeActualCogsWith(reader, { venue: null, ...JUNE }),
+        computeActualCogsWith(reader, { venue: 'Alma Avalon', ...JUNE })
+      ]);
+      assert.equal(avalon.quality, 'complete');
+      assert.equal(group.quality, 'estimated');
+      assert.equal(group.source, 'purchases_only');
+      assert.equal(group.openingStockCents, null);
+      assert.equal(group.closingStockCents, null);
+      assert.equal(group.cogsCents, 1_300_000);
+      assert.deepEqual(group.opening.venuesWithoutCount.map((v) => v.venue), ['St Alma']);
+      assert.match(group.reasons.join(' '), /St Alma/);
+    });
+  }
+});

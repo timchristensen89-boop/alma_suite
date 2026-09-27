@@ -3825,8 +3825,14 @@ export type ReportsMenuProfitabilityPayload = {
 
 export type ReportsPrimeCostVenueRow = {
   venue: string;
+  /** configured = a real venue; invalid = a label that is not one ("Both", a name); unassigned = no label. Labour under a non-configured key is in the group and in no venue. */
+  venueStatus: 'configured' | 'invalid' | 'unassigned';
   salesCents: number;
   wageCents: number;
+  /** Of actual labour: timesheets that named this venue / placed by the profile-venue fallback / the salaried share. */
+  explicitWageCents: number;
+  profileFallbackWageCents: number;
+  salariedWageCents: number;
   approvedWageCents: number;
   rosterWageEstimateCents: number;
   cogsCents: number;
@@ -3885,8 +3891,10 @@ export type PurchaseFeedSummary = {
   lastInvoiceDate: string | null;
   missingInterval: { from: string; to: string } | null;
   establishedSuppliers: number;
-  /** Suppliers with regular invoices in the previous 90 days and none in this period. */
-  absentEstablishedSuppliers: Array<{ supplierName: string; lastInvoiceBefore: string }>;
+  /** Regular suppliers with no invoice in this period; `carriedForward` = an earlier absence still unresolved. */
+  absentEstablishedSuppliers: Array<{ supplierName: string; lastInvoiceBefore: string; absentForDays: number; carriedForward: boolean }>;
+  /** Suppliers explicitly marked no longer expected (ARCHIVED); their silence is not judged. */
+  notExpectedSuppliers: string[];
   reason: string | null;
 };
 
@@ -3925,6 +3933,14 @@ export type MonthlyRecapPeriod = {
   /** 0–1 share of the elapsed period supplier-invoice activity spans. */
   purchaseCoverage: number;
   purchaseFeed: PurchaseFeedSummary;
+  /** How wageCents was allocated (lib/labour-allocation.ts); unallocated = under labels that are not venues, group only. */
+  wageAllocation: {
+    explicitCents: number;
+    profileFallbackCents: number;
+    salariedCents: number;
+    unallocatedCents: number;
+    unallocatedVenues: string[];
+  };
   /** Why prime cost is unavailable, in operator words. */
   reasons: string[];
 };
@@ -3961,6 +3977,9 @@ export type ReportsPrimeCostPayload = {
     /** Roster-only labour (rows with no timesheets) that the total leaves out, and which rows. */
     rosterOnlyWageCents: number;
     rosterOnlyVenues: string[];
+    /** Actual labour under labels that are not configured venues: in the total, in no venue row. */
+    unallocatedWageCents: number;
+    unallocatedVenues: string[];
   };
   venues: ReportsPrimeCostVenueRow[];
   sources: {

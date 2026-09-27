@@ -50,7 +50,23 @@ imports of 31 Mar, 30 Apr (St Alma) have no scope evidence and stay
 UNKNOWN. None of these affects Jun–Sep 2026 and none is proposed for
 change in this batch.
 
-## Expected effect on Jun–Sep once the "high" rows above are approved
+## What the same-dump re-run (head `c846751`) showed — correction to this table
+
+The prediction below that the St Alma 31 August pair would compose to
+$54,537.36 after scoping was **wrong**. The re-run's section 8 shows the
+Kitchen count has 11 counted lines with no value and the Bar & FOH count 4,
+so under the fail-closed valuation rule both are refused as `unvalued`
+whatever their scope. The same holds for Avalon 1 Sep (13 unvalued) and the
+St Alma drinks PDF (1 unvalued). Only the Avalon food PDF (0 unvalued) is
+sufficiently valued, and it has no beverage counterpart. The rule behaved
+correctly; the prediction did not. Until those 29 lines are valued (the
+validator's section 9 lists each one with why it is unvalued and what
+evidence would value it — nothing is valued automatically), **no boundary
+in June–September composes**, and the expected-effect table below should
+be read as the effect *after* both a scope decision and the valuation of
+those lines.
+
+## Expected effect on Jun–Sep once the "high" rows above are approved AND the unvalued lines are valued
 
 | Period · venue | Opening | Closing | Result |
 |---|---|---|---|

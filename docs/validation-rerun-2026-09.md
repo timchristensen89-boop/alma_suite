@@ -57,6 +57,17 @@ build`) and mount the resulting `dist` folders as well.
 
 ## 5. What to send back
 
+For the second re-run (after the supplier carry-forward and labour
+allocation fixes) the same steps 1–4 apply at the new branch head; the
+validator now also prints, in section 3, each Prime row's `[venueStatus]`
+and its explicit / profile-fallback / salaried split, an `allocation:` line
+(unallocated labour under non-venue keys, profile-fallback total, Σ rows +
+unallocated vs total), and `expected suppliers … ABSENT: … (…d, carried
+forward)` on the invoice-feed line; and a new section 9 listing every
+unvalued counted line near the boundaries (the valuation remediation
+queue). Section 6 still names staff and is still removed before sending.
+
+
 The whole of `/var/tmp/alma-reval/scope-reval.txt` **with section 6
 removed** (it names staff). Sections 2, 3 and 8 are the ones the
 before/after matrix is built from:
@@ -74,7 +85,7 @@ before/after matrix is built from:
   `unrecorded`, the CSV imports `unrecorded`, and countedAt 2026-08-03 for
   the two PDF records).
 
-## 6. Cleanup (confirm each line's output)
+## 6. Cleanup (confirm each line's output — send this block's output too)
 
 ```bash
 cd /opt/alma/deploy

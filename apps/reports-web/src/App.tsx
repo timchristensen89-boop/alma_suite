@@ -3738,15 +3738,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <div className="report-panel">
             <h4>Cost by venue</h4>
             <div className="table-scroll">
-              {(data.primeCost?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both').length ? (
+              {(data.primeCost?.venues ?? []).filter((row) => row.venue).length ? (
                 <SortableTable
-                  rows={(data.primeCost?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both')}
+                  rows={(data.primeCost?.venues ?? []).filter((row) => row.venue)}
                   rowKey={(row) => row.venue}
                   defaultSortKey="prime"
                   columns={[
-                    { key: 'venue', label: 'Venue', sortValue: (r) => r.venue, render: (r) => r.venue },
+                    { key: 'venue', label: 'Venue', sortValue: (r) => r.venue, render: (r) => (r.venueStatus === 'configured' ? r.venue : `${r.venue} (not a venue)`) },
                     { key: 'sales', label: 'Sales', align: 'right', sortValue: (r) => r.salesCents, render: (r) => formatCurrency(r.salesCents) },
-                    { key: 'wages', label: 'Labour', align: 'right', sortValue: (r) => r.wageCents, render: (r) => formatCurrency(r.wageCents) },
+                    { key: 'wages', label: 'Labour', align: 'right', sortValue: (r) => r.wageCents, render: (r) => `${formatCurrency(r.wageCents)}${r.labourBasis === 'roster_estimate' ? ' (roster estimate)' : ''}` },
                     { key: 'wagePct', label: 'Labour %', align: 'right', sortValue: (r) => r.wagePercent, render: (r) => formatPercent(r.wagePercent) },
                     { key: 'cogs', label: 'Food & bev', align: 'right', sortValue: (r) => r.cogsCents, render: (r) => r.foodBasis === 'actual' ? formatCurrency(r.cogsCents) : `${formatCurrency(r.purchasesCents)} purchases` },
                     { key: 'cogsPct', label: 'Food %', align: 'right', sortValue: (r) => r.cogsPercent, render: (r) => formatPercent(r.cogsPercent) },
@@ -3758,6 +3758,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               ) : (
                 <p className="subtle">No wage, sales, or COGS data found for this week.</p>
               )}
+              {data.primeCost?.totals.unallocatedWageCents ? (
+                <p className="subtle">
+                  {formatCurrency(data.primeCost.totals.unallocatedWageCents)} of labour sits under {data.primeCost.totals.unallocatedVenues.map((v) => `“${v}”`).join(', ')}, which is not a configured venue. It is in the group total and in no venue&apos;s figure.
+                </p>
+              ) : null}
             </div>
           </div>
 

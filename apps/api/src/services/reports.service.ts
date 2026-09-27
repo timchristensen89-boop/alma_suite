@@ -1,4 +1,4 @@
-import { prisma, computeActualCogs, unattributedCogs, type ActualCogs } from '@alma/db';
+import { prisma, computeActualCogs, unattributedCogs, prismaCogsReader, type ActualCogs } from '@alma/db';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { staffCostingRate, splitOvertimeHours, costForRate, weeklyFixedCostCents, salariedVenueAllocations, staffPayRateSelect } from '../lib/staff-pay-rates.js';
@@ -55,8 +55,9 @@ import {
   venueMonthKey,
   type LabourBasis
 } from '@alma/shared';
-import { summariseLowStock, summariseTemperatureAssets, venueTodayStart, assessInvoiceFeed, INVOICE_FEED_LOOKBACK_DAYS, type InvoiceFeedAssessment, type PurchaseFeedSummary } from '@alma/shared';
+import { summariseLowStock, summariseTemperatureAssets, venueTodayStart, assessInvoiceFeed, type InvoiceFeedAssessment, type PurchaseFeedSummary } from '@alma/shared';
 import { labourFigure, labourTotal, type LabourRow } from '../lib/labour-rows.js';
+import { allocateLabour, resolveLabourVenue, venueRow, type CostedShift, type CostedTimesheet, type SalariedAllocation } from '../lib/labour-allocation.js';
 import { HttpError } from '../lib/http.js';
 import { isSuspectRecipeCost } from '../lib/cogs-quality.js';
 import { allocatePackageRevenue } from '../lib/banquet-allocation.js';
@@ -902,14 +903,17 @@ function escapeHtml(value: string): string {
  * leaked $193.22 of roster-only labour into an August total labelled
  * "timesheets" (apps/api/src/lib/labour-rows.ts). One population now.
  */
-export async function labourRowsFor(venue: string | null, start: Date, end: Date, now: Date = new Date()): Promise<Map<string, LabourRow>> {
-  const superRate = await configuredSuperRateFraction();
-  const [timesheets, rosterShifts, activeStaff] = await Promise.all([
+export async function labourPopulationFor(start: Date, end: Date, now: Date = new Date()): Promise<Map<string, LabourRow>> {
+  const [superRate, configuredVenues, timesheets, rosterShifts, activeStaff] = await Promise.all([
+    configuredSuperRateFraction(),
+    prismaCogsReader.configuredVenues(),
+    // The WHOLE population, never venue-filtered: a venue's figure is its
+    // row of this allocation, so the venue report and the group's row for
+    // that venue cannot differ (lib/labour-allocation.ts).
     prisma.timesheet.findMany({
       where: {
         workDate: { gte: start, lt: end },
         status: { in: ['DRAFT', 'SUBMITTED', 'APPROVED', 'EXPORTED'] },
-        ...(venue ? { venue } : {}),
         staffProfile: { accountType: 'HUMAN' }
       },
       include: { staffProfile: { select: { venue: true, ...staffPayRateSelect } } },
@@ -921,7 +925,6 @@ export async function labourRowsFor(venue: string | null, start: Date, end: Date
         startsAt: { lt: end },
         endsAt: { gt: start },
         status: { not: 'CANCELLED' },
-        ...(venue ? { venue } : {}),
         staffProfile: { accountType: 'HUMAN' }
       },
       include: { staffProfile: { select: { venue: true, ...staffPayRateSelect } } },
@@ -938,44 +941,38 @@ export async function labourRowsFor(venue: string | null, start: Date, end: Date
     })
   ]);
 
-  const rows = new Map<string, LabourRow>();
-  const rowFor = (rowVenue: string | null | undefined): LabourRow => {
-    const key = rowVenue?.trim() || 'Unassigned';
-    const current = rows.get(key) ?? { venue: key, wageCents: 0, approvedWageCents: 0, rosterWageEstimateCents: 0, timesheetHours: 0, rosterHours: 0 };
-    rows.set(key, current);
-    return current;
-  };
-
   // Cumulative weekly hours per staff for overtime (salaried full-timers >45h/wk).
   const actualWeekHours = new Map<string, number>();
   const scheduledWeekHours = new Map<string, number>();
-  for (const entry of timesheets) {
-    const row = rowFor(entry.venue || entry.staffProfile.venue);
+  const costedTimesheets: CostedTimesheet[] = timesheets.map((entry) => {
     const hours = workedHours(entry);
     const rate = staffCostingRate(entry.staffProfile, superRate);
     const split = splitOvertimeHours(actualWeekHours, entry.staffProfileId, entry.workDate, hours, rate.appliesOvertime);
     // Salaried: only overtime is hour-costed; their weekly salary is added below.
-    const cost = rate.appliesOvertime ? costForRate({ ...rate, ordinaryRateCents: 0 }, split) : costForRate(rate, split);
-    row.timesheetHours += hours;
-    row.wageCents += cost;
-    if (entry.status === 'APPROVED' || entry.status === 'EXPORTED') row.approvedWageCents += cost;
-  }
+    const cents = rate.appliesOvertime ? costForRate({ ...rate, ordinaryRateCents: 0 }, split) : costForRate(rate, split);
+    return { venueLabel: entry.venue, profileVenueLabel: entry.staffProfile.venue, cents, approved: entry.status === 'APPROVED' || entry.status === 'EXPORTED', hours };
+  });
+  const costedShifts: CostedShift[] = [];
   for (const shift of rosterShifts) {
     // An open shift has nobody on it, so it carries no wage cost and belongs
     // to no one's hours. It is counted as work that still needs filling, not
     // as work someone is doing.
     if (!shift.staffProfile || !shift.staffProfileId) continue;
-    const row = rowFor(shift.venue || shift.staffProfile.venue);
     const hours = rosterHours(shift);
     const rate = staffCostingRate(shift.staffProfile, superRate);
     const split = splitOvertimeHours(scheduledWeekHours, shift.staffProfileId, shift.startsAt, hours, rate.appliesOvertime);
-    row.rosterHours += hours;
-    row.rosterWageEstimateCents += rate.appliesOvertime ? costForRate({ ...rate, ordinaryRateCents: 0 }, split) : costForRate(rate, split);
+    costedShifts.push({
+      venueLabel: shift.venue,
+      profileVenueLabel: shift.staffProfile.venue,
+      cents: rate.appliesOvertime ? costForRate({ ...rate, ordinaryRateCents: 0 }, split) : costForRate(rate, split),
+      hours
+    });
   }
 
   // Salaried full-timers: weekly salary + super for the ELAPSED weeks, split
-  // across venue rows by rostered hours across ALL venues (so the fraction is
-  // right even in a venue-filtered report), home venue when never rostered.
+  // across venue KEYS by rostered hours (salaried staff rarely clock in),
+  // home venue when never rostered. Keys are resolved with the same rule as
+  // everything else, so "Both" stays "Both" (invalid), never a restaurant.
   const periodWeeks = elapsedPeriodWeeks(start, end, now);
   const salariedStaff = activeStaff.filter((profile) => classifyLabourPopulation([profile], superRate).salariedIds.has(profile.id));
   const salariedIds = salariedStaff.map((p) => p.id);
@@ -993,31 +990,38 @@ export async function labourRowsFor(venue: string | null, start: Date, end: Date
     });
     for (const shift of shifts) {
       if (!shift.staffProfile || !shift.staffProfileId) continue;
-      const v = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
+      const v = resolveLabourVenue(shift.venue, shift.staffProfile.venue, configuredVenues).key;
       const h = rosterHours(shift);
       const m = rosterHoursByStaffVenue.get(shift.staffProfileId) ?? new Map<string, number>();
       m.set(v, (m.get(v) ?? 0) + h);
       rosterHoursByStaffVenue.set(shift.staffProfileId, m);
     }
   }
+  const salaried: SalariedAllocation[] = [];
   for (const profile of salariedStaff) {
     const fixedForPeriod = Math.round(weeklyFixedCostCents(staffCostingRate(profile, superRate)) * periodWeeks);
     if (fixedForPeriod <= 0) continue;
-    const allocations = salariedVenueAllocations(
-      rosterHoursByStaffVenue.get(profile.id) ?? new Map<string, number>(),
-      profile.venue?.trim() || 'Unassigned'
-    );
-    const applied = venue ? allocations.filter((a) => a.venue === venue) : allocations;
-    for (const alloc of applied) {
+    const home = resolveLabourVenue(null, profile.venue, configuredVenues);
+    const allocations = salariedVenueAllocations(rosterHoursByStaffVenue.get(profile.id) ?? new Map<string, number>(), home.key);
+    for (const alloc of allocations) {
       const cents = Math.round(fixedForPeriod * alloc.fraction);
       if (cents <= 0) continue;
-      const row = rowFor(alloc.venue);
-      row.wageCents += cents;
-      row.approvedWageCents += cents;
-      row.rosterWageEstimateCents += cents;
+      salaried.push({ venueKey: alloc.venue === home.key ? home : resolveLabourVenue(alloc.venue, null, configuredVenues), cents });
     }
   }
-  return rows;
+  return allocateLabour({ configuredVenues, timesheets: costedTimesheets, shifts: costedShifts, salaried });
+}
+
+/**
+ * The rows a report may show: the whole allocation for the group (venue
+ * null), or exactly the one row of the named venue. A venue with no labour
+ * gets an empty map, never another venue's row.
+ */
+export async function labourRowsFor(venue: string | null, start: Date, end: Date, now: Date = new Date()): Promise<Map<string, LabourRow>> {
+  const rows = await labourPopulationFor(start, end, now);
+  if (venue == null) return rows;
+  const row = venueRow(rows, venue, await prismaCogsReader.configuredVenues());
+  return row ? new Map([[row.venue, row]]) : new Map();
 }
 
 // The Recap's wage figure: Σ actual labour over the canonical rows (never a
@@ -1042,12 +1046,15 @@ export async function recapWageCents(venue: string | null, start: Date, end: Dat
  * appears complete enough for reporting", never "every purchase verified".
  */
 async function invoiceFeedFor(start: Date, end: Date, now: Date = new Date()): Promise<{ feed: InvoiceFeedAssessment; purchasesFrom: Date | null }> {
-  const lookbackStart = new Date(start.getTime() - INVOICE_FEED_LOOKBACK_DAYS * 86_400_000);
-  const [invoices, firstInvoice] = await Promise.all([
+  // The whole finalised history before `end`: an absence is judged as of
+  // the supplier's own last invoice, however long ago, so it cannot age out.
+  // An ARCHIVED supplier is the explicit "no longer expected" decision.
+  const [invoices, archived, firstInvoice] = await Promise.all([
     prisma.supplierInvoice.findMany({
-      where: { invoiceDate: { gte: lookbackStart, lt: end }, status: { not: 'DRAFT' }, triageStatus: { not: 'NO_ITEM' } },
+      where: { invoiceDate: { lt: end }, status: { not: 'DRAFT' }, triageStatus: { not: 'NO_ITEM' } },
       select: { supplierName: true, invoiceDate: true }
     }),
+    prisma.supplier.findMany({ where: { status: 'ARCHIVED' }, select: { name: true } }),
     prisma.supplierInvoice.findFirst({
       where: { invoiceDate: { lt: end }, status: { not: 'DRAFT' }, triageStatus: { not: 'NO_ITEM' } },
       orderBy: { invoiceDate: 'asc' },
@@ -1058,7 +1065,8 @@ async function invoiceFeedFor(start: Date, end: Date, now: Date = new Date()): P
     start,
     end,
     now,
-    invoices: invoices.flatMap((i) => (i.invoiceDate ? [{ supplierName: i.supplierName, invoiceDate: i.invoiceDate }] : []))
+    invoices: invoices.flatMap((i) => (i.invoiceDate ? [{ supplierName: i.supplierName, invoiceDate: i.invoiceDate }] : [])),
+    notExpectedSuppliers: archived.map((s) => s.name)
   });
   return { feed, purchasesFrom: firstInvoice?.invoiceDate ?? null };
 }
@@ -1072,7 +1080,8 @@ function purchaseFeedSummary(feed: InvoiceFeedAssessment): PurchaseFeedSummary {
     lastInvoiceDate: feed.lastInvoiceDate,
     missingInterval: feed.missingInterval,
     establishedSuppliers: feed.establishedSuppliers.length,
-    absentEstablishedSuppliers: feed.absentEstablishedSuppliers.map((s) => ({ supplierName: s.supplierName, lastInvoiceBefore: s.lastInvoiceBefore })),
+    absentEstablishedSuppliers: feed.absentEstablishedSuppliers.map((s) => ({ supplierName: s.supplierName, lastInvoiceBefore: s.lastInvoiceBefore, absentForDays: s.absentForDays, carriedForward: s.carriedForward })),
+    notExpectedSuppliers: feed.notExpectedSuppliers,
     reason: feed.reason
   };
 }
@@ -1081,7 +1090,7 @@ async function recapPeriod(venue: string | null, start: Date, end: Date, label: 
   // COGS comes from the suite-wide canonical helper (ex-GST, finalised stock
   // purchases, stocktake-bounded with a purchases-only fallback) so the Recap
   // agrees with the Stock dashboard and Prime Cost report to the cent.
-  const [salesRows, wageCents, cogs, purchases] = await Promise.all([
+  const [salesRows, labourRows, cogs, purchases] = await Promise.all([
     // One figure per venue-day, however many feeds reported it (POS close +
     // Square/Lightspeed import + manual describe the same money) — a plain
     // SUM double-counted every day two feeds covered.
@@ -1089,10 +1098,14 @@ async function recapPeriod(venue: string | null, start: Date, end: Date, label: 
       where: { serviceDate: { gte: start, lt: end }, ...(venue ? { venue } : {}) },
       select: { venue: true, serviceDate: true, salesCents: true }
     }),
-    recapWageCents(venue, start, end),
+    labourRowsFor(venue, start, end),
     computeActualCogs({ venue, start, end }),
     invoiceFeedFor(start, end)
   ]);
+  // Labour = Σ actual over the canonical allocation (the group: every row;
+  // a venue: its own row and nothing else). Never a roster estimate.
+  const labour = labourTotal(labourRows.values());
+  const wageCents = labour.wageCents;
   const salesCents = dedupedSalesCents(salesRows);
   const { cogsCents, purchasesCents, openingStockCents, closingStockCents, quality: stockQuality } = cogs;
   // Prime cost = labour + actual food COGS, or unavailable — never labour +
@@ -1113,6 +1126,13 @@ async function recapPeriod(venue: string | null, start: Date, end: Date, label: 
     stockQuality,
     purchaseCoverage: purchases.feed.coverage,
     purchaseFeed: purchaseFeedSummary(purchases.feed),
+    wageAllocation: {
+      explicitCents: [...labourRows.values()].reduce((sum, r) => sum + r.explicitWageCents, 0),
+      profileFallbackCents: labour.profileFallbackWageCents,
+      salariedCents: [...labourRows.values()].reduce((sum, r) => sum + r.salariedWageCents, 0),
+      unallocatedCents: labour.unallocatedWageCents,
+      unallocatedVenues: labour.unallocatedVenues
+    },
     reasons: prime.reasons
   };
 }
@@ -1275,9 +1295,13 @@ export const reportsService = {
 
     const rows = new Map<string, {
       venue: string;
+      venueStatus: LabourRow['venueStatus'];
       salesCents: number;
       salesDays: Set<string>;
       wageCents: number;
+      explicitWageCents: number;
+      profileFallbackWageCents: number;
+      salariedWageCents: number;
       approvedWageCents: number;
       rosterWageEstimateCents: number;
       invoiceCogsCents: number;
@@ -1289,9 +1313,13 @@ export const reportsService = {
       const key = rowVenue?.trim() || 'Unassigned';
       const current = rows.get(key) ?? {
         venue: key,
+        venueStatus: 'configured' as LabourRow['venueStatus'],
         salesCents: 0,
         salesDays: new Set<string>(),
         wageCents: 0,
+        explicitWageCents: 0,
+        profileFallbackWageCents: 0,
+        salariedWageCents: 0,
         approvedWageCents: 0,
         rosterWageEstimateCents: 0,
         invoiceCogsCents: 0,
@@ -1313,7 +1341,11 @@ export const reportsService = {
     }
     for (const labour of labourRows.values()) {
       const row = rowFor(labour.venue);
+      row.venueStatus = labour.venueStatus;
       row.wageCents += labour.wageCents;
+      row.explicitWageCents += labour.explicitWageCents;
+      row.profileFallbackWageCents += labour.profileFallbackWageCents;
+      row.salariedWageCents += labour.salariedWageCents;
       row.approvedWageCents += labour.approvedWageCents;
       row.rosterWageEstimateCents += labour.rosterWageEstimateCents;
       row.timesheetHours += labour.timesheetHours;
@@ -1372,8 +1404,12 @@ export const reportsService = {
       const prime = resolvePrimeCost({ salesCents: row.salesCents, labour: { cents: wageCents, basis: labourBasis }, food: cogs, purchaseCoverage, purchaseFeed: feed });
       return {
         venue: row.venue,
+        venueStatus: row.venueStatus,
         salesCents: row.salesCents,
         wageCents,
+        explicitWageCents: row.explicitWageCents,
+        profileFallbackWageCents: row.profileFallbackWageCents,
+        salariedWageCents: row.salariedWageCents,
         approvedWageCents: row.approvedWageCents,
         rosterWageEstimateCents: row.rosterWageEstimateCents,
         cogsCents,
@@ -1409,6 +1445,9 @@ export const reportsService = {
     const totalBase = venues.reduce((total, row) => ({
       salesCents: total.salesCents + row.salesCents,
       wageCents: labour.wageCents,
+      explicitWageCents: total.explicitWageCents + row.explicitWageCents,
+      profileFallbackWageCents: total.profileFallbackWageCents + row.profileFallbackWageCents,
+      salariedWageCents: total.salariedWageCents + row.salariedWageCents,
       approvedWageCents: labour.approvedWageCents,
       rosterWageEstimateCents: labour.rosterWageEstimateCents,
       cogsCents: total.cogsCents + row.cogsCents,
@@ -1426,6 +1465,9 @@ export const reportsService = {
     }), {
       salesCents: 0,
       wageCents: 0,
+      explicitWageCents: 0,
+      profileFallbackWageCents: 0,
+      salariedWageCents: 0,
       approvedWageCents: 0,
       rosterWageEstimateCents: 0,
       cogsCents: 0,
@@ -1471,8 +1513,11 @@ export const reportsService = {
         purchaseCoverage,
         purchaseFeed,
         purchasesFrom: purchasesFrom?.toISOString() ?? null,
+        venueStatus: 'configured' as const,
         rosterOnlyWageCents: labour.rosterOnlyEstimateCents,
         rosterOnlyVenues: labour.rosterOnlyVenues,
+        unallocatedWageCents: labour.unallocatedWageCents,
+        unallocatedVenues: labour.unallocatedVenues,
         timesheetHours: Math.round(totalBase.timesheetHours * 100) / 100,
         rosterHours: Math.round(totalBase.rosterHours * 100) / 100,
         ...totalQuality
@@ -1502,6 +1547,12 @@ export const reportsService = {
         ...(labour.basis === 'timesheets' ? ['Wages use current timesheet hours and staff pay rates. Approved wages are shown separately.'] : ['No timesheets found; roster wage estimate is used only when roster shifts exist.']),
         ...(labour.rosterOnlyVenues.length
           ? [`${labour.rosterOnlyVenues.join(', ')}: no timesheets, so the row shows its roster estimate (${recapMoney(labour.rosterOnlyEstimateCents)}); the total excludes it.`]
+          : []),
+        ...(labour.unallocatedVenues.length
+          ? [`${recapMoney(labour.unallocatedWageCents)} of actual labour sits under ${labour.unallocatedVenues.map((v) => `"${v}"`).join(', ')}, which ${labour.unallocatedVenues.length === 1 ? 'is not a configured venue' : 'are not configured venues'}; it is in the group total and in no venue's figure.`]
+          : []),
+        ...(labour.profileFallbackWageCents > 0
+          ? [`${recapMoney(labour.profileFallbackWageCents)} of timesheet labour carries no venue and is placed by the worker's profile venue.`]
           : []),
         ...(salesEntries.length ? [] : ['Sales are missing for the selected period, so wage %, COGS %, and prime cost % are not shown.'])
       ]

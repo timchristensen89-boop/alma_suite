@@ -104,3 +104,30 @@ describe('one canonical target source', () => {
     assert.deepEqual([t.wagePct, t.foodPct, t.primePct, t.configured.wage, t.configured.prime], [30, 25, 55, false, true]);
   });
 });
+
+describe('group fail-closed: an invalid venue or an incomplete purchase feed keeps prime unavailable', () => {
+  it('a stocktake-bounded food figure over an incomplete invoice feed is not the period\'s food cost', () => {
+    const prime = resolvePrimeCost({
+      salesCents: 16_443_414,
+      labour: { cents: 7_745_419, basis: 'timesheets' },
+      food: BOUNDED,
+      purchaseCoverage: 0.93,
+      purchaseFeed: { status: 'incomplete', reason: '1 regular supplier has no invoice in this period (FoodByUs: 45 invoice dates in the 90 days to 2026-07-11, then nothing for 51 days — an unresolved absence carried forward).' }
+    });
+    assert.equal(prime.foodBasis, 'unavailable');
+    assert.equal(prime.foodCostCents, null);
+    assert.equal(prime.primeCostCents, null);
+    assert.equal(prime.foodCostPercent, null);
+    assert.match(prime.reasons.join(' '), /invoice feed is incomplete .* carried forward/);
+    // The dollars recorded stay visible, as purchases; labour % stands on its own.
+    assert.equal(prime.purchasesCents, 2_800_000);
+    assert.equal(prime.wagePercent, 47.1);
+  });
+
+  it('a feed that is too early to judge does not withhold a bounded figure; a complete one does not either', () => {
+    for (const status of ['too_early', 'complete'] as const) {
+      const prime = resolvePrimeCost({ salesCents: 10_000_000, labour: LABOUR, food: BOUNDED, purchaseCoverage: 1, purchaseFeed: { status, reason: null } });
+      assert.equal(prime.foodBasis, 'actual', status);
+    }
+  });
+});
