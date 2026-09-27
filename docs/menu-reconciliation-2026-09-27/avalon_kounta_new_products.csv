@@ -1,0 +1,9 @@
+ProductID,ProductNo,ProductName,DocketName,Barcode,SKU,Unit,DefaultSize,SellPriceIncTax,SellTaxCode,CostPriceIncTax,CostTaxCode,IsModifier,PrintDocket,Tags,CategoryNames,SellAccount,BuyAccount,InventoryAccount,ImageUrl,ReportingGroup,FriendlyName,ShowOnline,OnlineDescription,InventoryType,PurchaseFormat,PurchaseQty,Container,VariableQtyPrompt
+,,Mexican Shrimp Cocktail,,,,unit,1,22,GST,0.0000,GST,0,1,,Cool,,,,,Food,,,,1,individual,1,UNIT,
+,,Agave Pairing,,,,unit,1,45,GST,0.0000,GST,0,1,,Tasting Flights,,,,,Beverages,,,,1,individual,1,UNIT,
+,,Balter XPA Can,,,,unit,1,12,GST,0.0000,GST,0,1,,Beer,,,,,Beverages,,,,1,individual,1,UNIT,
+,,Stone & Wood Pacific Ale,,,,unit,1,13,GST,0.0000,GST,0,1,,Beer,,,,,Beverages,,,,1,individual,1,UNIT,
+,,Taittinger Brut Reserve - 150ml Glass,,,,unit,1,28,GST,0.0000,GST,0,1,,Sparkling Wine,,,,,Beverages,,,,1,individual,1,UNIT,
+,,Taittinger Brut Reserve - 375ml Bottle,,,,unit,1,95,GST,0.0000,GST,0,1,,Sparkling Wine,,,,,Beverages,,,,1,individual,1,UNIT,
+,,Taittinger Brut Reserve - 750ml Bottle,,,,unit,1,161,GST,0.0000,GST,0,1,,Sparkling Wine,,,,,Beverages,,,,1,individual,1,UNIT,
+,,El Jolgorio Sierrudo (Black Green) 30mL,,,,unit,1,44,GST,0.0000,GST,0,1,,Mezcal,,,,,Beverages,,,,1,individual,1,UNIT,

@@ -1,0 +1,248 @@
+venue,system,section,pdf_item,kounta_product,kounta_product_id,kounta_category,kounta_reporting_group,old_price,new_price,status,note
+Alma Avalon,Kounta,Food,Guacamole,Guacamole & Tostadas,23392110,Cool,Food,16,17,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Mexican shrimp cocktail,,,,,,22,NEW ITEM,not in Kounta; create in 'Cool' (Food)
+Alma Avalon,Kounta,Food,Salmon sashimi hard shell taco (3pc),Salmon Sashimi Tacos,23392115,Cool,Food,21,22,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Sweet corn (4pc),Sweet Corn,23392369,Warm,Food,16,17,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Halloumi (3pc),Halloumi,23392365,Warm,Food,18,19,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Chicken tinga empanadas (3pc),Chicken Tinga Empanadas,23392363,Warm,Food,21,22,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Taco (each),Battered Barramundi Taco,23392291,Tacos,Food,8,9,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Taco (each),Grilled Barramundi Taco,23392293,Tacos,Food,8,9,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Taco (each),Pork Belly Taco,23392294,Tacos,Food,8,9,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Taco (each),Zucchini Taco,23392296,Tacos,Food,8,9,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Taco (each),Carne Asada Taco,23392292,Tacos,Food,8,9,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Fish of the day al pastor,Fish of the Day,23392184,Mains,Food,46,47,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Agave beef short rib,Agave Beef Short Ribs,23392182,Mains,Food,48,49,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Cauliflower steak,Cauliflower Steak,23392183,Mains,Food,32,33,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Broccolini,Broccolini,23392185,"Mains,Sides",Food,19,20,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Shoestring fries,Shoestring Fries,23392189,"Mains,Sides",Food,10,11,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Nashi pear,Nashi Pear Salad,23392187,"Mains,Sides",Food,18,19,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Churros,Churros,23392116,Desserts,Food,18,19,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Pistachio flan,Pistachio Flan,23392120,Desserts,Food,16,17,PRICE CHANGE,
+Alma Avalon,Kounta,Food,Grazing (pp),Grazing Menu,23392137,Grazing Set Menu,Food,49,49,NO CHANGE,
+Alma Avalon,Kounta,Food,Feasting (pp),Feasting Menu,23392126,Feasting Set Menu,Food,79,79,NO CHANGE,
+Alma Avalon,Kounta,Food,Agave pairing (pp),,,,,,45,NEW ITEM,beverage package; create in 'Tasting Flights' (Beverages)
+Alma Avalon,Kounta,Cocktails,Classic Margarita,Classic Margarita,23392190,Mexican Classics,Food,22,23,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Tommy's Margarita,Tommy's Margarita,23392196,Mexican Classics,Food,22,23,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Jalapeño Margarita,Jalapeno Margarita,23392192,Mexican Classics,Food,22,23,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Watermelon Margarita,Watermelon Margarita,23392197,Mexican Classics,Food,22,23,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Coconut Margarita,Coconut Margarita,23392191,Mexican Classics,Food,22,23,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Paloma,Paloma,23392195,Mexican Classics,Food,22,23,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Mezcal Tommy's,Mezcal Tommy's,23392193,Mexican Classics,Food,23,24,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Mezcalita,Mezcalita,23392194,Mexican Classics,Food,23,24,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,"Beach, Please","Beach, Please",23392279,Signature Cocktails,Beverages,22,23,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Zest I Ever Had,Zest I Ever Had,23392284,Signature Cocktails,Beverages,22,23,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Ginger Spice,Ginger Spice,23392282,Signature Cocktails,Beverages,22,23,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Classic Daiquiri,Classic Daiquiri,23392280,Signature Cocktails,Beverages,22,23,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Espresso Martini,Espresso Martini,23392281,Signature Cocktails,Beverages,22,23,PRICE CHANGE,
+Alma Avalon,Kounta,Cocktails,Negroni,Negroni,23392283,Signature Cocktails,Beverages,24,25,PRICE CHANGE,
+Alma Avalon,Kounta,Low & no,Aperol(ish) Spritz,Aperol(ish) Spritz,23392178,Low & No,Beverages,20,21,PRICE CHANGE,
+Alma Avalon,Kounta,Low & no,Mirasol,Mirasol,23392179,Low & No,Beverages,20,21,PRICE CHANGE,
+Alma Avalon,Kounta,Low & no,Sensible Margarita,Sensible Marg,23392180,Low & No,Beverages,18,19,PRICE CHANGE,flavour variants of the one PDF product
+Alma Avalon,Kounta,Low & no,Sensible Margarita,Sensible - Classic,23404559,Low & No,Beverages,18,19,PRICE CHANGE,flavour variants of the one PDF product
+Alma Avalon,Kounta,Low & no,Sensible Margarita,Sensible - Jalapeno,23404561,Low & No,Beverages,18,19,PRICE CHANGE,flavour variants of the one PDF product
+Alma Avalon,Kounta,Low & no,Sensible Margarita,Sensible - Watermelon,23404562,Low & No,Beverages,18,19,PRICE CHANGE,flavour variants of the one PDF product
+Alma Avalon,Kounta,Low & no,Watermelon Spritz,Watermelon Spritz,23392181,Low & No,Beverages,20,19,PRICE CHANGE,
+Alma Avalon,Kounta,Beer & cider,Corona 4.5%,Corona Bottle,23392044,Beer,Beverages,12,12,NO CHANGE,
+Alma Avalon,Kounta,Beer & cider,Modelo Especial 4.4%,Modelo Especial Bottle,23392048,Beer,Beverages,17,15,PRICE CHANGE,
+Alma Avalon,Kounta,Beer & cider,Balter Cerveza 4.0%,Balter Cerveza Bottle,23392042,Beer,Beverages,12,12,NO CHANGE,
+Alma Avalon,Kounta,Beer & cider,Balter XPA 5.0%,,,,,,12,NEW ITEM,not in Kounta; create in Beer
+Alma Avalon,Kounta,Beer & cider,Stone & Wood Pacific Ale 4.4%,,,,,,13,NEW ITEM,not in Kounta; create in Beer
+Alma Avalon,Kounta,Beer & cider,Batlow Cloudy Apple Cider 4.2%,Batlow Cider Can,23392043,Beer,Beverages,12,12,NO CHANGE,
+Alma Avalon,Kounta,Beer & cider,Heaps Normal Quiet XPA <0.5%,Heaps Normal Quiet XPA,23392046,Beer,Beverages,11,10,PRICE CHANGE,
+Alma Avalon,Kounta,Beer & cider,Heaps Normal Another Lager <0.5%,Heaps Normal Another Lager,23392045,Beer,Beverages,11,10,PRICE CHANGE,
+Alma Avalon,Kounta,Tasting flights,Discover El Tequileño 1959,Discover El Tequileno Flight,23392299,Tasting Flights,Beverages,45,46,PRICE CHANGE,
+Alma Avalon,Kounta,Tasting flights,"Blanco, the Essence of Agave",Blanco Agave Flight,23392298,Tasting Flights,Beverages,38,39,PRICE CHANGE,
+Alma Avalon,Kounta,Tasting flights,"Añejo, the Art of Ageing",Anejo Aging Flight,23392297,Tasting Flights,Beverages,46,47,PRICE CHANGE,
+Alma Avalon,Kounta,Tasting flights,"Espadín Agave, the Mezcalero's Choice",Espadin Mezcal Flight,23392300,Tasting Flights,Beverages,40,41,PRICE CHANGE,
+Alma Avalon,Kounta,Tasting flights,Mezcal Agave Complexity,Mezcal Agave Complexity Flight,23392302,Tasting Flights,Beverages,44,45,PRICE CHANGE,
+Alma Avalon,Kounta,Tasting flights,Rare Finds,Rare Finds Flight,23392303,Tasting Flights,Beverages,85,86,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Moments of Clarity Riesling 150 mL,Moments of Clarity Riesling - 150mL Glass,23392396,White Wine,Beverages,15,16,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Moments of Clarity Riesling 250 mL,Moments of Clarity Riesling - 250mL Glass,23392397,White Wine,Beverages,25,26,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Moments of Clarity Riesling bottle,Moments of Clarity Riesling - 750mL Bottle,23392398,White Wine,Beverages,72,73,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Frogmore Creek Riesling bottle,Frogmore Creek Riesling,23392385,White Wine,Beverages,92,93,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Gotas de Mar Albariño 150 mL,Gotas de Mar Albarino - 150mL Glass,23392386,White Wine,Beverages,18,19,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Gotas de Mar Albariño 250 mL,Gotas de Mar Albarino - 250mL Glass,23392387,White Wine,Beverages,30,31,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Gotas de Mar Albariño bottle,Gotas de Mar Albarino - 750mL  Bottle,23392388,White Wine,Beverages,85,86,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Catalina Sounds 'Sound of White' Sauvignon Blanc 150 mL,Catalina Sounds Sauv Blanc - 150ml Glass,23392379,White Wine,Beverages,16,17,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Catalina Sounds 'Sound of White' Sauvignon Blanc 250 mL,Catalina Sounds Sauv Blanc - 250ml Glass,23392380,White Wine,Beverages,26,27,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Catalina Sounds 'Sound of White' Sauvignon Blanc bottle,Catalina Sounds Sauv Blanc - 750ml Bottle,23392381,White Wine,Beverages,76,77,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 i Lauri 'AVALOS' Pecorino bottle,i Lauri 'AVALOS' Pecorino,23392403,White Wine,Beverages,80,81,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2023 Shut The Gate 'For Freedom' Gewürztraminer bottle,Shut The Gate Gewurztraminer,23392399,White Wine,Beverages,75,76,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2023 Greystone Pinot Gris 150 mL,Greystone Pinot Gris - 150ml Glass,23392389,White Wine,Beverages,17,18,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2023 Greystone Pinot Gris 250 mL,Greystone Pinot Gris - 250ml Glass,23392390,White Wine,Beverages,28,29,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2023 Greystone Pinot Gris bottle,Greystone Pinot Gris - 750ml Bottle,23392391,White Wine,Beverages,82,83,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 Stéphane Brocard Mâcon-Villages Chardonnay 150 mL,Stephane Brocard Macon Villages - 150mL Glass,23392400,White Wine,Beverages,25,26,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 Stéphane Brocard Mâcon-Villages Chardonnay 250 mL,Stephane Brocard Macon Villages - 250mL Glass,23392401,White Wine,Beverages,40,41,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 Stéphane Brocard Mâcon-Villages Chardonnay bottle,Stephane Brocard Macon Villages - 750mL Bottle,23392402,White Wine,Beverages,110,111,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Ingram Road Chardonnay 150 mL,Ingram Road Chardonnay - 150ml Glass,23392392,White Wine,Beverages,15,16,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Ingram Road Chardonnay 250 mL,Ingram Road Chardonnay - 250ml Glass,23392393,White Wine,Beverages,25,26,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Ingram Road Chardonnay bottle,Ingram Road Chardonnay - 750ml Bottle,23392394,White Wine,Beverages,72,73,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2023 Kendall Jackson 'Vintner's Reserve' Chardonnay bottle,Kendall Jackson Chardonnay,23392395,White Wine,Beverages,105,106,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,NV Serenello Prosecco 150 mL pour,Serenello Prosecco - 125ml Glass,23392286,Sparkling Wine,Beverages,15,16,PRICE CHANGE,Kounta product is labelled 125ml; PDF pour is 150 mL
+Alma Avalon,Kounta,Wine,NV Serenello Prosecco bottle,Serenello Prosecco - 750ml Bottle,23392287,Sparkling Wine,Beverages,75,76,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,NV Taittinger Brut Réserve 150 mL,,,,,,28,NEW ITEM,not in Kounta; create in Sparkling Wine
+Alma Avalon,Kounta,Wine,NV Taittinger Brut Réserve 375 mL,,,,,,95,NEW ITEM,not in Kounta; create in Sparkling Wine
+Alma Avalon,Kounta,Wine,NV Taittinger Brut Réserve bottle,,,,,,161,NEW ITEM,not in Kounta; create in Sparkling Wine
+Alma Avalon,Kounta,Wine,2024 R. Paulazzo Rosé 150 mL,R. Paulazzo Rose - 150ml Glass,23392274,Rose,Beverages,15,16,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 R. Paulazzo Rosé 250 mL,R. Paulazzo Rose - 250ml Glass,23392275,Rose,Beverages,25,26,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 R. Paulazzo Rosé bottle,R. Paulazzo Rose - 750ml Bottle,23392276,Rose,Beverages,72,73,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 La Belle 'Colette' Rosé 150 mL,La Belle 'Colette' Rose - 150ml Glass,23392271,Rose,Beverages,17,18,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 La Belle 'Colette' Rosé 250 mL,La Belle 'Colette' Rose - 250ml Glass,23392272,Rose,Beverages,28,29,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 La Belle 'Colette' Rosé bottle,La Belle 'Colette' Rose - 750ml Bottle,23392273,Rose,Beverages,82,83,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2025 El Desperado Pinot Noir 150 mL,El Desperado Pinot Noir - 150ml Glass,23392257,Red Wine,Beverages,15,16,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2025 El Desperado Pinot Noir 250 mL,El Desperado Pinot Noir - 250ml Glass,23392258,Red Wine,Beverages,25,26,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2025 El Desperado Pinot Noir bottle,El Desperado Pinot Noir - 750ml Bottle,23392259,Red Wine,Beverages,72,73,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2024 Domaine Thomson 'Explorer' Pinot Noir bottle,Domaine Thomson Pinot Noir,23392256,Red Wine,Beverages,88,89,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2023 Helen's Hill 'The Smuggler' Pinot Noir bottle,Helen's Hill 'Smuggler' Pinot Noir,23392262,Red Wine,Beverages,125,126,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 Capa Single Vineyard Tempranillo 150 mL,Capa Tempranillo - 150ml Glass,23392253,Red Wine,Beverages,15,16,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 Capa Single Vineyard Tempranillo 250 mL,Capa Tempranillo - 250ml Glass,23392254,Red Wine,Beverages,25,26,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 Capa Single Vineyard Tempranillo bottle,Capa Tempranillo - 750ml Bottle,23392255,Red Wine,Beverages,72,73,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 Villa Albergotti Chianti Superiore 150 mL,Villa Albergotti Chianti - 150ml Glass,23392268,Red Wine,Beverages,17,18,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 Villa Albergotti Chianti Superiore 250 mL,Villa Albergotti Chianti - 250ml Glass,23392269,Red Wine,Beverages,28,29,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 Villa Albergotti Chianti Superiore bottle,Villa Albergotti Chianti - 750ml Bottle,23392270,Red Wine,Beverages,82,83,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2023 Teusner 'Avatar' GSM bottle,Teusner 'Avatar' GSM,23392263,Red Wine,Beverages,95,96,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 BenMarco 'Valle de Uco' Malbec 150 mL,BenMarco Malbec - 150ml Glass,23392246,Red Wine,Beverages,20,21,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 BenMarco 'Valle de Uco' Malbec 250 mL,BenMarco Malbec - 250ml Glass,23392247,Red Wine,Beverages,32,33,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2022 BenMarco 'Valle de Uco' Malbec bottle,BenMarco Malbec - 750ml Bottle,23392248,Red Wine,Beverages,92,93,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2017 Geoff Merrill 'Jacko's' Shiraz bottle,Geoff Merrill 'Jacko's' Shiraz,23392260,Red Wine,Beverages,88,89,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2023 Teusner 'Wark Family' Shiraz 150 mL,Teusner 'Wark Family' Shiraz - 150ml Glass,23392264,Red Wine,Beverages,16,17,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2023 Teusner 'Wark Family' Shiraz 250 mL,Teusner 'Wark Family' Shiraz - 250ml Glass,23392265,Red Wine,Beverages,26,27,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2023 Teusner 'Wark Family' Shiraz bottle,Teusner 'Wark Family' Shiraz - 750ml Bottle,23392266,Red Wine,Beverages,76,77,PRICE CHANGE,
+Alma Avalon,Kounta,Wine,2021 Cannonball Cabernet Sauvignon bottle,Cannonball Cabernet Sauvignon,23392252,Red Wine,Beverages,105,106,PRICE CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),ArteNOM 1579,ArteNom 1579 30mL,23392308,Tequila,Beverages,20,20,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),G4 Blanco,G4 Blanco 30mL,23392334,Tequila,Beverages,18,18,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),G4 Reposado,G4 Reposado 30mL,23392335,Tequila,Beverages,21,21,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),G4 Añejo,G4 Anejo,23392333,Tequila,Beverages,33,33,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Terralta Blanco,Terralta Blanco 30mL,23392355,Tequila,Beverages,19,19,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Pasote Blanco,Pasote Blanco 30mL,23392346,Tequila,Beverages,24,24,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Arette Blanco,Arette Blanco 30mL,23392305,Tequila,Beverages,13,13,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Arette Reposado,Arette Reposado 30mL,23392306,Tequila,Beverages,15,15,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Arette Suave Artesanal Blanco,Arette Suave Blanco 30mL,23392307,Tequila,Beverages,23,23,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Alquimia Blanco,Alquimia Blanco 30mL,23392304,Tequila,Beverages,22,22,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),El Tequileño 1959 Platinum,El Tequileno Platinum 30mL,23392324,Tequila,Beverages,16,16,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),El Tequileño 1959 Gran Reserva Reposado,El Tequileno Reserva Reposado 30mL,23392326,Tequila,Beverages,17,17,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),El Tequileño 1959 Añejo,El Tequileno Anejo 30mL,23392322,Tequila,Beverages,25,25,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),El Tequileño 1959 Reposado Rare,El Tequileno Reposado Rare 30mL,23392325,Tequila,Beverages,49,49,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Calle 23 Blanco,Calle 23 Blanco 30mL,23392311,Tequila,Beverages,13,13,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Calle 23 Reposado,Calle 23 Reposado 30mL,23392312,Tequila,Beverages,15,15,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Código 1530 Rosa Blanco,Codigo 1530 Rosa Blanco 30mL,23392317,Tequila,Beverages,23,23,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Cascahuín Blanco,Cascahuin Blanco 30mL,23392313,Tequila,Beverages,15,15,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Cascahuín Plata 48%,Cascahuin Plata 48% 30mL,23392315,Tequila,Beverages,25,25,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Cascahuín Tahona Blanco,Cascahuin Tahona Blanco 30mL,23392316,Tequila,Beverages,25,25,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Cascahuín Extra Añejo,Cascahuin Extra Anejo 30mL,23392314,Tequila,Beverages,50,50,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Herradura Plata,Herradura Plata 30mL,23392337,Tequila,Beverages,15,15,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Herradura Reposado,Herradura Reposado 30mL,23392338,Tequila,Beverages,17,17,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Herradura Añejo,Herradura Anejo 30mL,23392336,Tequila,Beverages,19,19,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Herradura Ultra,Herradura Ultra 30mL,23392340,Tequila,Beverages,25,25,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Herradura Suprema Extra Añejo,Herradura Suprema Extra Anejo 30mL,23392339,Tequila,Beverages,80,80,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),El Tesoro Blanco,El Tesoro Blanco 30mL,23392328,Tequila,Beverages,22,22,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),El Tesoro Reposado,El Tesoro Reposado 30mL,23392329,Tequila,Beverages,23,23,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),El Tesoro Añejo,El Tesoro Anejo 30mL,23392327,Tequila,Beverages,25,25,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Tapatío Blanco,Tapatio Blanco 30mL,23392353,Tequila,Beverages,20,20,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Tapatío Reposado,Tapatio Reposado 30mL,23392354,Tequila,Beverages,22,22,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Fortaleza Blanco,Fortaleza Blanco 30mL,23392331,Tequila,Beverages,21,21,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Fortaleza Reposado,Fortaleza Reposado 30mL,23392332,Tequila,Beverages,24,24,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Fortaleza Añejo,Fortaleza Anejo 30mL,23392330,Tequila,Beverages,29,29,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Ocho Plata,Ocho Plata 30mL,23392344,Tequila,Beverages,17,21,PRICE CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Ocho Reposado,Ocho Reposado 30mL,23392345,Tequila,Beverages,21,22,PRICE CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Ocho Añejo,Ocho Anejo 30mL,23392342,Tequila,Beverages,23,23,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Ocho Extra Añejo,Ocho Extra Anejo 30mL,23392343,Tequila,Beverages,32,32,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Patrón Silver,Patron Silver 30mL,23392350,Tequila,Beverages,13,13,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Patrón Reposado,Patron Reposado 30mL,23392349,Tequila,Beverages,15,15,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Patrón Añejo,Patron Anejo 30mL,23392347,Tequila,Beverages,17,17,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Patrón El Cielo,Patron El Cielo 30mL,23392348,Tequila,Beverages,28,28,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Don Julio Blanco,Don Julio Blanco 30mL,23392320,Tequila,Beverages,20,20,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Don Julio Reposado,Don Julio Reposado 30mL,23392321,Tequila,Beverages,22,22,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Don Julio Añejo,Don Julio Anejo 30mL,23392319,Tequila,Beverages,25,25,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Don Julio 1942,Don Julio 1942 30ml,23392318,Tequila,Beverages,38,38,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Siete Leguas Blanco,Siete Leguas Blanco 30mL,23392352,Tequila,Beverages,21,21,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Tromba Blanco,Tromba Blanco 30mL,23392357,Tequila,Beverages,15,15,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Leyenda del Milagro Blanco,Leyenda del Milagro Blanco 30mL,23392341,Tequila,Beverages,15,15,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Tres Agaves,Tres Agaves 30mL,23392356,Tequila,Beverages,14,14,NO CHANGE,
+Alma Avalon,Kounta,Tequila (30 mL),Batanga Reposado,Batanga Reposado 30mL,23392310,Tequila,Beverages,12,12,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Aguas Mansas 45% Santiago Matatlán,Aguas Mansas 30mL (HOUSE),23392198,Mezcal,Beverages,12,12,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),El Jolgorio Espadín 47.8% San Luis del Río,El Jolgorio Espadin (Green) 30mL,23392207,Mezcal,Beverages,31,31,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Mezcal Verde 42% Tlacolula,Mezcal Verde 30mL,23392223,Mezcal,Beverages,14,14,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Nuestra Soledad 47% San Luis del Río,Nuestra Soledad San Luis del Rio 30mL,23392226,Mezcal,Beverages,17,17,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Nuestra Soledad 47% Santiago Matatlán,Nuestra Soledad Santiago Matatlan 30mL,23392227,Mezcal,Beverages,16,16,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),"Nuestra Soledad 47% La Compañía, Ejutla",Nuestra Soledad La Compania 30mL,23392224,Mezcal,Beverages,17,17,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Nuestra Soledad 47% San Baltazar Guelavila,Nuestra Soledad San Baltazar 30mL,23392225,Mezcal,Beverages,17,17,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Siete Misterios Doba Yej 44%,Siete Misterios Doba Yej 30mL,23392233,Mezcal,Beverages,15,15,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Koch El Mezcal Ancestral 47.12% Sola de Vega,Koch Ancestral Espadin 30mL,23392217,Mezcal,Beverages,19,19,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),San Cosme Mezcal 40%,San Cosme 30mL,23392232,Mezcal,Beverages,14,14,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Origen Raíz Chacaleño 48% Durango,Origen Raiz Chacaleno 30mL,23392229,Mezcal,Beverages,23,23,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Alipus Mezcal 42% San Juan del Río,Alipus San Juan 30mL,23392200,Mezcal,Beverages,16,16,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Alipus Mezcal 48% San Baltazar Guelavila,Alipus San Baltazar 30mL,23392199,Mezcal,Beverages,14,14,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Ilegal Mezcal Reposado 40%,Ilegal Reposado 30mL,23392216,Mezcal,Beverages,20,20,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Quiquiriqui 45%,Quiquiriki 30mL,23392231,Mezcal,Beverages,15,15,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Del Maguey VIDA 42%,Del Maguey Vida 30mL,23392204,Mezcal,Beverages,17,17,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Del Maguey Minero 46%,Del Maguey Minero 30mL,23392203,Mezcal,Beverages,27,27,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Aprendiz 45% (Ensemble),Aprendiz 30mL,23392201,Mezcal,Beverages,25,25,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Bruxo No.4 46% (Ensemble),Bruxo No. 4 30mL,23392202,Mezcal,Beverages,18,18,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Lágrimas de Dolores 47% Cenizo,La Grimas de Delores 30mL,23392221,Mezcal,Beverages,21,21,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Origen Raíz 48% Cenizo,Origen Raiz Cenizo 30mL,23392228,Mezcal,Beverages,20,20,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),El Jolgorio Madrecuishe 48%,El Jolgorio Madrecuishe (Pink) 30mL,23392209,Mezcal,Beverages,34,34,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Origen Raíz Madrecuishe 48%,Origen Raiz Madrecuishe 30mL,23392230,Mezcal,Beverages,28,28,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),El Jolgorio Mexicano 47%,El Jolgorio Mexicano (Brown) 30mL,23392210,Mezcal,Beverages,34,39,PRICE CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Koch El Mezcal Mexicano 46.98%,Koch Mexicano 30mL,23392219,Mezcal,Beverages,19,19,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),El Jolgorio Tepextate 48%,El Jolgorio Tepeztate (Blue) 30mL,23392212,Mezcal,Beverages,52,52,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Koch El Mezcal Tepextate 46.3%,Koch Tepeztate 30mL,23392220,Mezcal,Beverages,19,19,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),El Jolgorio Arroqueño 55%,El Jolgorio Todos Santos Arroqueno (Neon Pink),23392214,Mezcal,Beverages,36,36,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),El Jolgorio Arroqueño 52%,El Jolgorio Arroqueno (Black Pink) 30mL,23392205,Mezcal,Beverages,55,55,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Koch El Mezcal Arroqueño 47.13%,Koch Arroqueno 30mL,23392218,Mezcal,Beverages,19,19,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),El Jolgorio Cuishe 47%,El Jolgorio Cuishe (Purple) 30mL,23392206,Mezcal,Beverages,33,33,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),"El Jolgorio Tobasiche 52% La Compañía, Ejutla",El Jolgorio Tobasiche (Black Brown) 30mL,23392213,Mezcal,Beverages,50,50,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),El Jolgorio Tobasiche 50.2% El Palmar,El Jolgorio Todos Santos Tobasiche (Neon Orange) 30mL,23392215,Mezcal,Beverages,48,48,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),El Jolgorio Jabalí 50.3%,El Jolgorio Jabali (Black Tan) 30mL,23392208,Mezcal,Beverages,59,59,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),El Jolgorio Espadín Pechuga 48%,El Jolgorio Pechuga (Yellow),23392211,Mezcal,Beverages,54,54,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),Mezcal Machetazo 45% Cupreata,Mezcal Machetazo 30mL,23392222,Mezcal,Beverages,15,15,NO CHANGE,
+Alma Avalon,Kounta,Mezcal (30 mL),El Jolgorio Sierrudo 50.3%,,,,,,44,NEW ITEM,not in Kounta; create in Mezcal as 'El Jolgorio Sierrudo (Black Green) 30mL'
+Alma Avalon,Kounta,Classic Cocktails,,Last Word Mezcal,23392100,Classic Cocktails,Beverages,22,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Whiskey Sour,23392108,Classic Cocktails,Beverages,22,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Tasting Flights,,Founding Fathers Flight,23392301,Tasting Flights,Beverages,38,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Burritos,,Eggplant Burrito,23392090,Burritos,Food,18,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Amaretto Sour,23392092,Classic Cocktails,Beverages,22,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Red Wine,,Bonnet & Cotton Beaujolais - 150ml Glass,23392249,Red Wine,Beverages,28,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Warm,,Chicken Tinga Empanada (1pc),23392362,Warm,Food,7,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Bloody Mary,23392096,Classic Cocktails,Beverages,22,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Last Word,23392099,Classic Cocktails,Beverages,24,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Sparkling Wine,,Laurent Perrier La Cuvee Champagne,23392285,Sparkling Wine,Beverages,160,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Burritos,,Fish Burrito,23392091,Burritos,Food,18,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Cool,,Prawn Tostada,23392113,Cool,Food,21,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Red Wine,,Bonnet & Cotton Beaujolais - 750ml Bottle,23392251,Red Wine,Beverages,72,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Beer,,4 Pines Pale Ale,23392041,Beer,Beverages,12,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Red Wine,,Vanguardist 'Field' GSM,23392267,Red Wine,Beverages,99,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,White Wine,,Eperosa 'Magnolia 1941' Semillon - 150ml Glass,23392382,White Wine,Beverages,26,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Caipirinha,23392097,Classic Cocktails,Beverages,22,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Warm,,Sweet Corn (1pc),23392370,Warm,Food,4,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Tequila,,Patron XO Café 30mL,23392351,Tequila,Beverages,18,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Aviation,23392094,Classic Cocktails,Beverages,24,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Desserts,,Coconut Flan,23392117,Desserts,Food,16,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Red Wine,,Bonnet & Cotton Beaujolais - 250ml Glass,23392250,Red Wine,Beverages,46,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Beer,,Lagerita,23392047,Beer,Beverages,27,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Burritos,,Chicken Burrito,23392089,Burritos,Food,18,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,"Mains,Sides",,Hot Sauce Trio,23392186,"Mains,Sides",Food,5,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Martini Gin,23392102,Classic Cocktails,Beverages,24,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Red Wine,,Geoff Merrill Reserve Cab Sauv,23392261,Red Wine,Beverages,115,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,White Wine,,Eperosa 'Magnolia 1941' Semillon - 750ml Bottle,23392384,White Wine,Beverages,114,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Aperol Spritz,23392093,Classic Cocktails,Beverages,22,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Sides,,Side Guacamole,23392277,Sides,Food,5,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Desserts,,Ice Cream Scoop (Desserts),23392119,Desserts,Food,5,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Bloody Maria,23392095,Classic Cocktails,Beverages,22,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Mojito,23392104,Classic Cocktails,Beverages,22,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Cool,,Salmon Sashimi Taco (1pc),23392114,Cool,Food,7,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Sides,,Side Tortilla (1pc),23392278,Sides,Food,0.5,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Old Fashioned,23392105,Classic Cocktails,Beverages,24,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Desserts,,Ice Cream Cup,23633482,Desserts,,8,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Tacos,,Taco Special - Chorizo,23392295,Tacos,Food,8,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Martini Vodka,23392103,Classic Cocktails,Beverages,24,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Warm,,Halloumi (1pc),23392366,Warm,Food,6,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Pisco Sour,23392106,Classic Cocktails,Beverages,24,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Tequila,,El Tequileno Blanco 30mL (HOUSE),23392323,Tequila,Beverages,10,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Long Island Iced Tea,23392101,Classic Cocktails,Beverages,26,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Southside,23392107,Classic Cocktails,Beverages,24,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Tequila,,Batanga Blanco 30mL,23392309,Tequila,Beverages,11,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,"Signature Cocktails,Classic Cocktails",,Cafe Patron Espresso Martini,23392109,"Signature Cocktails,Classic Cocktails",Beverages,22,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Desserts,,Ice Cream Scoop,23392118,Desserts,Food,5,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,Classic Cocktails,,Caprioska,23392098,Classic Cocktails,Beverages,22,,NOT ON NEW MENU,"flag only, nothing changed"
+Alma Avalon,Kounta,White Wine,,Eperosa 'Magnolia 1941' Semillon - 250ml Glass,23392383,White Wine,Beverages,42,,NOT ON NEW MENU,"flag only, nothing changed"
