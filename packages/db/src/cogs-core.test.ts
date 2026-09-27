@@ -10,23 +10,32 @@ type Invoice = { venue: string | null; invoiceDate: Date; cents: number; status?
 const FINALISED = new Set(['SUBMITTED', 'REVIEWED', 'LOCKED']);
 const utc = (iso: string) => new Date(iso);
 
-function fakeReader(counts: Count[], invoices: Invoice[] = []): CogsReader {
-  const finalised = (venue: string, at: Date) => counts.filter((c) => c.venue === venue && FINALISED.has(c.status) && c.countedAt <= at);
+const CONFIGURED = ['Alma Avalon', 'St Alma'];
+
+function fakeReader(counts: Count[], invoices: Invoice[] = [], configured: string[] = CONFIGURED): CogsReader {
+  const label = (c: Count) => c.venue ?? '';
+  const finalised = (labels: string[], at: Date) => counts.filter((c) => labels.includes(label(c)) && FINALISED.has(c.status) && c.countedAt <= at);
   return {
-    async latestFinalisedCount(venue, at) {
-      const rows = finalised(venue, at).sort((a, b) => b.countedAt.getTime() - a.countedAt.getTime());
+    async configuredVenues() {
+      return configured;
+    },
+    async storedCountVenueLabels(at) {
+      return [...new Set(counts.filter((c) => FINALISED.has(c.status) && c.countedAt <= at).map(label))];
+    },
+    async latestFinalisedCount(labels, at) {
+      const rows = finalised(labels, at).sort((a, b) => b.countedAt.getTime() - a.countedAt.getTime());
       return rows[0] ? { countedAt: rows[0].countedAt } : null;
     },
-    async finalisedCountIdsBetween(venue, window, at) {
-      return finalised(venue, at)
+    async finalisedCountIdsBetween(labels, window, at) {
+      return finalised(labels, at)
         .filter((c) => c.countedAt >= window.gte && c.countedAt < window.lt)
         .map((c) => c.id);
     },
     async lineValueCents(ids) {
       return counts.filter((c) => ids.includes(c.id)).reduce((sum, c) => sum + c.valueCents, 0);
     },
-    async venuesWithFinalisedCounts(at) {
-      return [...new Set(counts.filter((c) => c.venue != null && FINALISED.has(c.status) && c.countedAt <= at).map((c) => c.venue as string))];
+    async countsUnderLabels(labels, at) {
+      return finalised(labels, at).map((c) => ({ label: label(c), countedAt: c.countedAt, valueCents: c.valueCents }));
     },
     async purchasesExGstCents(venue, start, end) {
       return invoices
@@ -202,6 +211,10 @@ describe('the all-venues figure is Σ venues, never the sum of whichever venues 
     { id: 'ao', venue: 'Alma Avalon', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_000_000 },
     { id: 'ac', venue: 'Alma Avalon', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 }
   ];
+  const stAlmaJune = [
+    { id: 'so', venue: 'St Alma', countedAt: utc('2026-05-29T03:00:00Z'), status: 'LOCKED', valueCents: 2_000_000 },
+    { id: 'sc', venue: 'St Alma', countedAt: utc('2026-06-29T03:00:00Z'), status: 'LOCKED', valueCents: 1_500_000 }
+  ];
 
   it('sums every venue when each has a valid bracket', async () => {
     const reader = fakeReader(
@@ -237,10 +250,72 @@ describe('the all-venues figure is Σ venues, never the sum of whichever venues 
   });
 
   it('untagged (venue-null) counts do not create a phantom venue', async () => {
-    const reader = fakeReader([...avalonJune, { id: 'both', venue: null, countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 5_000_000 }], []);
+    const reader = fakeReader([...avalonJune, ...stAlmaJune, { id: 'both', venue: null, countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 5_000_000 }], []);
     const bracket = await stockBracket(reader, null, JUNE.end);
     assert.equal(bracket.status, 'ok');
-    assert.equal(bracket.valueCents, 800_000);
+    assert.equal(bracket.valueCents, 800_000 + 1_500_000);
+    assert.deepEqual(bracket.offVenueCounts.map((c) => [c.sourceLabel, c.resolution, c.valueCents]), [['', 'blank', 5_000_000]]);
+  });
+});
+
+describe('configured venues define the group population; every other label is unattributed data', () => {
+  // Alma Avalon and St Alma counted at both June boundaries. Three other
+  // labels have counts too: "Both" (a marker), "Unspecified" (the Loaded
+  // CSV default) and "St View" (a Loaded location name). None of them is a
+  // restaurant. The old rule required each of them to bracket the group.
+  const fixture: Count[] = [
+    { id: 'ao', venue: 'Alma Avalon', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_000_000 },
+    { id: 'ac', venue: 'Alma Avalon', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 },
+    { id: 'so', venue: 'St Alma', countedAt: utc('2026-05-29T03:00:00Z'), status: 'LOCKED', valueCents: 2_000_000 },
+    { id: 'sc', venue: 'St Alma', countedAt: utc('2026-06-29T03:00:00Z'), status: 'LOCKED', valueCents: 1_500_000 },
+    { id: 'both', venue: 'Both', countedAt: utc('2026-02-01T03:00:00Z'), status: 'LOCKED', valueCents: 3_000_000 },
+    { id: 'unsp', venue: 'Unspecified', countedAt: utc('2026-06-15T03:00:00Z'), status: 'LOCKED', valueCents: 400_000 },
+    { id: 'view', venue: 'St View', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 5_401_803 }
+  ];
+
+  it('the group brackets on the two configured venues only, whatever else was ever written in the venue field', async () => {
+    const cogs = await computeActualCogsWith(fakeReader(fixture, PURCHASES), { venue: null, ...JUNE });
+    assert.equal(cogs.quality, 'complete');
+    assert.equal(cogs.openingStockCents, 3_000_000);
+    assert.equal(cogs.closingStockCents, 2_300_000);
+    assert.deepEqual(cogs.opening.venuesWithoutCount, []);
+  });
+
+  it('the off-venue counts stay visible, with their label, date, value and why they did not resolve', async () => {
+    const cogs = await computeActualCogsWith(fakeReader(fixture, PURCHASES), { venue: null, ...JUNE });
+    assert.deepEqual(
+      cogs.closing.offVenueCounts.map((c) => [c.sourceLabel, c.resolution, c.countedOn, c.valueCents]).sort(),
+      [
+        ['Both', 'pseudo', '2026-02-01', 3_000_000],
+        ['St View', 'unknown', '2026-06-30', 5_401_803],
+        ['Unspecified', 'unknown', '2026-06-15', 400_000]
+      ].sort()
+    );
+    assert.match(cogs.reasons.join(' '), /not a configured venue \("Both", "Unspecified", "St View"\)|not a configured venue/);
+    // …and none of their value reached the group.
+    assert.equal(cogs.closingStockCents, 2_300_000);
+  });
+
+  it('"St View" is not St Alma: a venue with only a look-alike label has no bracket', async () => {
+    const only = fixture.filter((c) => c.venue !== 'St Alma');
+    const cogs = await computeActualCogsWith(fakeReader(only, PURCHASES), { venue: null, ...JUNE });
+    assert.equal(cogs.quality, 'estimated');
+    assert.deepEqual(cogs.opening.venuesWithoutCount.map((v) => [v.venue, v.status]), [['St Alma', 'missing']]);
+    const stAlma = await computeActualCogsWith(fakeReader(only, PURCHASES), { venue: 'St Alma', ...JUNE });
+    assert.equal(stAlma.opening.status, 'missing');
+  });
+
+  it('a historical alias label resolves without rewriting the record', async () => {
+    const aliased = fixture.map((c) => (c.venue === 'St Alma' ? { ...c, venue: 'Alma Freshwater Pty Ltd' } : c));
+    const stAlma = await computeActualCogsWith(fakeReader(aliased, PURCHASES), { venue: 'St Alma', ...JUNE });
+    assert.equal(stAlma.quality, 'complete');
+    assert.equal(stAlma.openingStockCents, 2_000_000);
+  });
+
+  it('a configured venue that has never counted keeps the group unavailable and is named — it is not dropped', async () => {
+    const cogs = await computeActualCogsWith(fakeReader(fixture, PURCHASES, ['Alma Avalon', 'St Alma', 'Alma Manly']), { venue: null, ...JUNE });
+    assert.equal(cogs.quality, 'estimated');
+    assert.deepEqual(cogs.opening.venuesWithoutCount.map((v) => v.venue), ['Alma Manly']);
   });
 });
 

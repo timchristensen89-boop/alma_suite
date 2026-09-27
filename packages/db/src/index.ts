@@ -15,5 +15,7 @@ export {
   type CogsSource,
   type CogsQuality,
   type StockBracket,
-  type StockBracketStatus
+  type StockBracketStatus,
+  type OffVenueCount,
+  partitionCountLabels
 } from './cogs.js';

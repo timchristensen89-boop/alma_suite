@@ -34,8 +34,8 @@ import {
 // × units-sold (menu profitability, set-menu costing) stays separate on purpose
 // — that's the theoretical side of the theoretical-vs-actual variance.
 
-export type { ActualCogs, CogsSource, CogsQuality, StockBracket, StockBracketStatus, CogsReader } from './cogs-core.js';
-export { computeActualCogsWith, stockValueAtCentsWith, stockBracket, venueStockBracket, unattributedCogs } from './cogs-core.js';
+export type { ActualCogs, CogsSource, CogsQuality, StockBracket, StockBracketStatus, CogsReader, OffVenueCount } from './cogs-core.js';
+export { computeActualCogsWith, stockValueAtCentsWith, stockBracket, venueStockBracket, unattributedCogs, partitionCountLabels } from './cogs-core.js';
 
 const FINALISED_COUNT_STATUSES = ['SUBMITTED', 'REVIEWED', 'LOCKED'] as const;
 
@@ -56,20 +56,55 @@ async function sumInvoices(where: Record<string, unknown>): Promise<{ cents: num
   return { cents, invoices: invoices.length };
 }
 
+// Stored labels are matched exactly; '' stands for a null venue.
+const labelWhere = (labels: string[]) => {
+  const named = labels.filter((l) => l !== '');
+  const includesNull = labels.includes('');
+  if (named.length && includesNull) return { OR: [{ venue: { in: named } }, { venue: null }] };
+  if (includesNull) return { venue: null };
+  return { venue: { in: named } };
+};
+
 export const prismaCogsReader: CogsReader = {
-  async latestFinalisedCount(venue, at) {
+  async configuredVenues() {
+    // The Venue table is the canonical population (seeded with the trading
+    // venues; Settings › Venues carries the same names with their targets).
+    const rows = await prisma.venue.findMany({ select: { name: true }, orderBy: { name: 'asc' } });
+    return rows.map((row) => row.name);
+  },
+  async storedCountVenueLabels(at) {
+    const rows = await prisma.stocktake.findMany({
+      where: { countedAt: { lte: at }, status: { in: [...FINALISED_COUNT_STATUSES] } },
+      distinct: ['venue'],
+      select: { venue: true }
+    });
+    return rows.map((row) => row.venue ?? '');
+  },
+  async latestFinalisedCount(labels, at) {
     return prisma.stocktake.findFirst({
-      where: { countedAt: { lte: at }, status: { in: [...FINALISED_COUNT_STATUSES] }, venue },
+      where: { countedAt: { lte: at }, status: { in: [...FINALISED_COUNT_STATUSES] }, ...labelWhere(labels) },
       orderBy: { countedAt: 'desc' },
       select: { countedAt: true }
     });
   },
-  async finalisedCountIdsBetween(venue, window, at) {
+  async finalisedCountIdsBetween(labels, window, at) {
     const rows = await prisma.stocktake.findMany({
-      where: { countedAt: { gte: window.gte, lt: window.lt, lte: at }, status: { in: [...FINALISED_COUNT_STATUSES] }, venue },
+      where: { countedAt: { gte: window.gte, lt: window.lt, lte: at }, status: { in: [...FINALISED_COUNT_STATUSES] }, ...labelWhere(labels) },
       select: { id: true }
     });
     return rows.map((row) => row.id);
+  },
+  async countsUnderLabels(labels, at) {
+    const rows = await prisma.stocktake.findMany({
+      where: { countedAt: { lte: at }, status: { in: [...FINALISED_COUNT_STATUSES] }, ...labelWhere(labels) },
+      select: { venue: true, countedAt: true, lines: { select: { stockValueCents: true } } },
+      orderBy: { countedAt: 'desc' }
+    });
+    return rows.map((row) => ({
+      label: row.venue ?? '',
+      countedAt: row.countedAt,
+      valueCents: row.lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0)
+    }));
   },
   async lineValueCents(stocktakeIds) {
     const agg = await prisma.stocktakeLine.aggregate({
@@ -77,16 +112,6 @@ export const prismaCogsReader: CogsReader = {
       _sum: { stockValueCents: true }
     });
     return agg._sum.stockValueCents ?? 0;
-  },
-  async venuesWithFinalisedCounts(at) {
-    // Untagged (venue-null) counts are excluded: a whole-business count would
-    // double-count against the per-venue counts it overlaps.
-    const rows = await prisma.stocktake.findMany({
-      where: { countedAt: { lte: at }, status: { in: [...FINALISED_COUNT_STATUSES] }, venue: { not: null } },
-      distinct: ['venue'],
-      select: { venue: true }
-    });
-    return rows.map((row) => row.venue as string);
   },
   async purchasesExGstCents(venue, start, end) {
     const { cents } = await sumInvoices({

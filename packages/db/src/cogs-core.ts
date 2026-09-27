@@ -21,10 +21,17 @@
 //     on the Sydney day, not the server's. The containers run UTC, so a
 //     server-local day split a 9am and a 10am Sydney session that fell either
 //     side of UTC midnight.
-//   • the all-venues figure sums each venue's bracket. When ANY venue that
-//     has ever counted has no valid bracket, the group figure is missing
-//     and says which venue is short — never the sum of the others, which
-//     read as "the group holds this much stock" while a venue was absent.
+//   • the all-venues figure sums each CONFIGURED venue's bracket. The group
+//     population is the configured venues (the Venue table) plus explicitly
+//     reported unattributed data — never every distinct string ever written
+//     into a stocktake's venue field. "Both", "Unspecified", a Loaded
+//     location name: those are off-venue counts, listed for remediation,
+//     neither required to bracket the group nor folded into it. A stored
+//     label resolves to a configured venue only through the shared
+//     venue-resolution rules (exact after normalisation, or an explicit
+//     alias). When any configured venue has no valid bracket, the group
+//     figure is missing and says which venue is short — never the sum of
+//     the others.
 //
 // When a bracket is unavailable the figure falls back to purchases only and
 // `quality` says exactly which bracket failed and why; `reasons` spells it
@@ -32,9 +39,11 @@
 
 import {
   STOCKTAKE_BRACKET_TOLERANCE_DAYS,
+  resolveVenueLabel,
   stocktakeAgeDays,
   venueDayBounds,
-  venueDayKey
+  venueDayKey,
+  type VenueResolutionStatus
 } from '@alma/shared';
 
 export type CogsSource = 'stock_bounded' | 'purchases_only';
@@ -55,6 +64,14 @@ export type CogsQuality =
 
 export type StockBracketStatus = 'ok' | 'missing' | 'stale';
 
+/** A finalised count whose stored venue label is not a configured venue. */
+export type OffVenueCount = {
+  sourceLabel: string;
+  resolution: Exclude<VenueResolutionStatus, 'canonical' | 'alias'>;
+  countedOn: string;
+  valueCents: number;
+};
+
 export type StockBracket = {
   status: StockBracketStatus;
   /** Sum of the venue's (or every venue's) finalised sessions on the count day; null unless status is 'ok'. */
@@ -64,8 +81,10 @@ export type StockBracket = {
   /** Whole days between that count and the boundary; null when no count exists. */
   ageDays: number | null;
   toleranceDays: number;
-  /** All-venues only: venues whose bracket is missing or stale, with why. */
+  /** All-venues only: configured venues whose bracket is missing or stale, with why. */
   venuesWithoutCount: Array<{ venue: string; status: Exclude<StockBracketStatus, 'ok'>; countedOn: string | null; ageDays: number | null }>;
+  /** All-venues only: finalised counts on or before the boundary whose venue label is not a configured venue. Reported, never required, never summed. */
+  offVenueCounts: OffVenueCount[];
 };
 
 export type ActualCogs = {
@@ -94,14 +113,18 @@ export type ActualCogs = {
 
 /** The minimal data access the arithmetic needs; cogs.ts implements it on Prisma. */
 export type CogsReader = {
-  /** The latest finalised count for the venue on or before `at` (any age). */
-  latestFinalisedCount(venue: string, at: Date): Promise<{ countedAt: Date } | null>;
-  /** Ids of every finalised count for the venue inside the window and on or before `at`. */
-  finalisedCountIdsBetween(venue: string, window: { gte: Date; lt: Date }, at: Date): Promise<string[]>;
+  /** The configured venues — the canonical population (Venue table). */
+  configuredVenues(): Promise<string[]>;
+  /** Every distinct venue label stored on a finalised count on or before `at` (null included as ''). */
+  storedCountVenueLabels(at: Date): Promise<string[]>;
+  /** The latest finalised count under any of the given stored labels, on or before `at` (any age). */
+  latestFinalisedCount(venueLabels: string[], at: Date): Promise<{ countedAt: Date } | null>;
+  /** Ids of every finalised count under the labels inside the window and on or before `at`. */
+  finalisedCountIdsBetween(venueLabels: string[], window: { gte: Date; lt: Date }, at: Date): Promise<string[]>;
   /** Σ stockValueCents over the lines of those counts. */
   lineValueCents(stocktakeIds: string[]): Promise<number>;
-  /** Every venue that has a finalised count on or before `at`. */
-  venuesWithFinalisedCounts(at: Date): Promise<string[]>;
+  /** Finalised counts under the given (off-venue) labels on or before `at`: one row per count day, valued. */
+  countsUnderLabels(venueLabels: string[], at: Date): Promise<Array<{ label: string; countedAt: Date; valueCents: number }>>;
   /** Ex-GST finalised stock purchases in [start, end); venue null = all, including untagged invoices. */
   purchasesExGstCents(venue: string | null, start: Date, end: Date): Promise<number>;
   /** Finalised stock purchases in [start, end) with no venue on the invoice. */
@@ -109,28 +132,59 @@ export type CogsReader = {
 };
 
 const fmtDay = (at: Date) => venueDayKey(at);
+const none = (toleranceDays: number): StockBracket => ({
+  status: 'missing', valueCents: null, countedOn: null, ageDays: null, toleranceDays, venuesWithoutCount: [], offVenueCounts: []
+});
 
-/** One venue's bracket at a boundary. */
+/**
+ * Which stored labels belong to which configured venue, and which belong to
+ * none. Resolution is the shared rule (exact after normalisation, explicit
+ * alias); nothing is guessed. Historical records are read through this map
+ * and never rewritten.
+ */
+export async function partitionCountLabels(reader: CogsReader, at: Date): Promise<{
+  configured: string[];
+  labelsByVenue: Map<string, string[]>;
+  offVenue: Array<{ label: string; resolution: OffVenueCount['resolution'] }>;
+}> {
+  const [configured, labels] = await Promise.all([reader.configuredVenues(), reader.storedCountVenueLabels(at)]);
+  const labelsByVenue = new Map<string, string[]>(configured.map((venue) => [venue, []]));
+  const offVenue: Array<{ label: string; resolution: OffVenueCount['resolution'] }> = [];
+  for (const label of labels) {
+    const resolved = resolveVenueLabel(label, configured);
+    if (resolved.venue) labelsByVenue.get(resolved.venue)!.push(label);
+    else offVenue.push({ label, resolution: resolved.status === 'pseudo' || resolved.status === 'blank' ? resolved.status : 'unknown' });
+  }
+  return { configured, labelsByVenue, offVenue };
+}
+
+async function bracketForLabels(reader: CogsReader, labels: string[], at: Date, toleranceDays: number): Promise<StockBracket> {
+  if (labels.length === 0) return none(toleranceDays);
+  const latest = await reader.latestFinalisedCount(labels, at);
+  if (!latest) return none(toleranceDays);
+  const countedOn = fmtDay(latest.countedAt);
+  const ageDays = stocktakeAgeDays(latest.countedAt, at);
+  if (ageDays > toleranceDays) {
+    return { ...none(toleranceDays), status: 'stale', countedOn, ageDays };
+  }
+  // Every session the venue recorded on that venue day, not just the last one.
+  const day = venueDayBounds(countedOn);
+  const ids = day ? await reader.finalisedCountIdsBetween(labels, day, at) : [];
+  const valueCents = ids.length ? await reader.lineValueCents(ids) : 0;
+  return { ...none(toleranceDays), status: 'ok', valueCents, countedOn, ageDays };
+}
+
+/** One configured venue's bracket at a boundary, reading every stored label that resolves to it. */
 export async function venueStockBracket(
   reader: CogsReader,
   venue: string,
   at: Date,
   toleranceDays = STOCKTAKE_BRACKET_TOLERANCE_DAYS
 ): Promise<StockBracket> {
-  const latest = await reader.latestFinalisedCount(venue, at);
-  if (!latest) {
-    return { status: 'missing', valueCents: null, countedOn: null, ageDays: null, toleranceDays, venuesWithoutCount: [] };
-  }
-  const countedOn = fmtDay(latest.countedAt);
-  const ageDays = stocktakeAgeDays(latest.countedAt, at);
-  if (ageDays > toleranceDays) {
-    return { status: 'stale', valueCents: null, countedOn, ageDays, toleranceDays, venuesWithoutCount: [] };
-  }
-  // Every session the venue recorded on that venue day, not just the last one.
-  const day = venueDayBounds(countedOn);
-  const ids = day ? await reader.finalisedCountIdsBetween(venue, day, at) : [];
-  const valueCents = ids.length ? await reader.lineValueCents(ids) : 0;
-  return { status: 'ok', valueCents, countedOn, ageDays, toleranceDays, venuesWithoutCount: [] };
+  const { labelsByVenue, configured } = await partitionCountLabels(reader, at);
+  const canonical = configured.find((name) => resolveVenueLabel(name, configured).venue === resolveVenueLabel(venue, configured).venue);
+  const labels = canonical ? labelsByVenue.get(canonical) ?? [] : [];
+  return bracketForLabels(reader, labels, at, toleranceDays);
 }
 
 /** The bracket for one venue, or the sum over every venue that has ever counted. */
@@ -141,11 +195,19 @@ export async function stockBracket(
   toleranceDays = STOCKTAKE_BRACKET_TOLERANCE_DAYS
 ): Promise<StockBracket> {
   if (venue != null) return venueStockBracket(reader, venue, at, toleranceDays);
-  const venues = await reader.venuesWithFinalisedCounts(at);
+  // Group population = configured venues + explicitly reported off-venue counts.
+  const { configured: venues, labelsByVenue, offVenue } = await partitionCountLabels(reader, at);
+  const offVenueRows = offVenue.length ? await reader.countsUnderLabels(offVenue.map((o) => o.label), at) : [];
+  const offVenueCounts: OffVenueCount[] = offVenueRows.map((row) => ({
+    sourceLabel: row.label,
+    resolution: offVenue.find((o) => o.label === row.label)?.resolution ?? 'unknown',
+    countedOn: fmtDay(row.countedAt),
+    valueCents: row.valueCents
+  }));
   if (venues.length === 0) {
-    return { status: 'missing', valueCents: null, countedOn: null, ageDays: null, toleranceDays, venuesWithoutCount: [] };
+    return { ...none(toleranceDays), offVenueCounts };
   }
-  const brackets = await Promise.all(venues.map((name) => venueStockBracket(reader, name, at, toleranceDays)));
+  const brackets = await Promise.all(venues.map((name) => bracketForLabels(reader, labelsByVenue.get(name) ?? [], at, toleranceDays)));
   const short: StockBracket['venuesWithoutCount'] = [];
   let sum = 0;
   let oldest: { countedOn: string; ageDays: number } | null = null;
@@ -163,10 +225,10 @@ export async function stockBracket(
   if (short.length > 0) {
     // A group figure that quietly dropped a venue is not the group's stock.
     const status: StockBracketStatus = short.every((v) => v.status === 'stale') ? 'stale' : 'missing';
-    return { status, valueCents: null, countedOn: null, ageDays: null, toleranceDays, venuesWithoutCount: short };
+    return { ...none(toleranceDays), status, venuesWithoutCount: short, offVenueCounts };
   }
   const o = oldest as { countedOn: string; ageDays: number } | null;
-  return { status: 'ok', valueCents: sum, countedOn: o?.countedOn ?? null, ageDays: o?.ageDays ?? null, toleranceDays, venuesWithoutCount: [] };
+  return { ...none(toleranceDays), status: 'ok', valueCents: sum, countedOn: o?.countedOn ?? null, ageDays: o?.ageDays ?? null, offVenueCounts };
 }
 
 function bracketReason(which: 'opening' | 'closing', bracket: StockBracket, at: Date, venue: string | null): string | null {
@@ -216,6 +278,12 @@ export async function computeActualCogsWith(
     unattributed.invoices > 0
       ? [`${unattributed.invoices} supplier invoice${unattributed.invoices === 1 ? '' : 's'} in this window carry no venue, so their purchases are in the group figure but in no venue's.`]
       : [];
+  // Off-venue counts are data quality, not a bracket: said, never used.
+  const offVenue = [...opening.offVenueCounts, ...closing.offVenueCounts];
+  if (venue == null && offVenue.length > 0) {
+    const labels = [...new Set(offVenue.map((c) => `"${c.sourceLabel || '(blank)'}"`))];
+    venueNote.push(`${offVenue.length} finalised count${offVenue.length === 1 ? '' : 's'} carr${offVenue.length === 1 ? 'ies' : 'y'} a venue label that is not a configured venue (${labels.join(', ')}); they are listed as unattributed and are not part of any venue's or the group's stock.`);
+  }
 
   if (opening.status === 'ok' && closing.status === 'ok') {
     const rawCogsCents = (opening.valueCents ?? 0) + purchasesCents - (closing.valueCents ?? 0);
@@ -262,7 +330,7 @@ export async function stockValueAtCentsWith(reader: CogsReader, venue: string | 
  * derives (e.g. "Unassigned" = group − Σ venues). Never fabricates a count.
  */
 export function unattributedCogs(cogsCents: number, purchasesCents: number, reasons: string[]): ActualCogs {
-  const none: StockBracket = { status: 'missing', valueCents: null, countedOn: null, ageDays: null, toleranceDays: STOCKTAKE_BRACKET_TOLERANCE_DAYS, venuesWithoutCount: [] };
+  const none: StockBracket = { status: 'missing', valueCents: null, countedOn: null, ageDays: null, toleranceDays: STOCKTAKE_BRACKET_TOLERANCE_DAYS, venuesWithoutCount: [], offVenueCounts: [] };
   return {
     cogsCents,
     purchasesCents,
