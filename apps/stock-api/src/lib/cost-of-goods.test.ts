@@ -110,6 +110,29 @@ describe('scope comparability — stocktake completeness is not enough', () => {
     assert.match(c.reasons.join(' '), /unknown/);
   });
 
+  it('mapped sales above all item sales is a population problem, not 100% coverage', () => {
+    // $20,000 of mapped sales inside $18,000 of item sales cannot happen
+    // unless the two aggregates were built from different populations.
+    const c = assessCogsComparability({
+      actual: BOUNDED,
+      theoretical: summariseTheoreticalCogs([recipe({ id: 'taco', cost: 5, qty: 10, net: 20_000 })]),
+      scope: FULL_SCOPE(18_000)
+    });
+    assert.equal(c.comparable, false);
+    assert.equal(c.mappedSalesSharePercent, 111.1);
+    assert.match(c.reasons.join(' '), /not built from the same sales population/);
+  });
+
+  it('a venue figure with purchases that carry no venue is incomplete, even when stocktake-bounded', () => {
+    const c = assessCogsComparability({
+      actual: { ...BOUNDED, unattributedPurchasesCents: 50_000, unattributedInvoiceCount: 1 },
+      theoretical: summariseTheoreticalCogs([recipe({ id: 'taco', cost: 5, qty: 10, net: 18_000 })]),
+      scope: FULL_SCOPE(18_000)
+    });
+    assert.equal(c.comparable, false);
+    assert.match(c.reasons.join(' '), /1 supplier invoice in the window carr(y|ies) no venue/);
+  });
+
   it('exclusions on the theoretical side break like-for-like even at full mapping', () => {
     const c = assessCogsComparability({
       actual: BOUNDED,

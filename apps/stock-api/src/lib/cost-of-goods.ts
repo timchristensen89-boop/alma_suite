@@ -33,6 +33,9 @@ export type ActualCogsInput = {
   quality: 'complete' | 'estimated' | 'missing_opening' | 'missing_closing' | 'stale_opening' | 'stale_closing' | 'closing_implausible';
   /** The canonical helper's own reasons, passed through to the card. */
   reasons?: string[];
+  /** Venue figures: purchases on invoices with no venue — in the group, in no venue. */
+  unattributedPurchasesCents?: number;
+  unattributedInvoiceCount?: number;
 };
 
 export type TheoreticalCogsSummary = {
@@ -167,6 +170,8 @@ const ACTUAL_LABELS: Record<ActualCogsInput['quality'], string> = {
 // Mapped sales must be, to rounding, ALL item sales before the whole-venue
 // actual figure can be read against them.
 const FULL_COVERAGE_SHARE = 99.5;
+// …and above this it is not coverage at all but a population mismatch.
+const OVER_COVERAGE_SHARE = 100.5;
 
 export function assessCogsComparability(input: {
   actual: ActualCogsInput;
@@ -179,10 +184,16 @@ export function assessCogsComparability(input: {
   if (actual.quality !== 'complete') reasons.push(...(actual.reasons?.length ? actual.reasons : [ACTUAL_LABELS[actual.quality].toLowerCase()]));
   if (!scope.periodMatches) reasons.push('the two figures cover different periods');
   if (!scope.venueMatches) reasons.push('the actual figure covers a different venue set from the mapped sales');
-  const share =
-    scope.totalItemSalesCents == null ? null : pct1(Math.min(theoretical.mappedSalesCents, scope.totalItemSalesCents), scope.totalItemSalesCents);
+  // Mapped ÷ total, unclamped: mapped sales ABOVE total item sales is not
+  // "100% coverage", it is evidence that the two populations differ
+  // (double-counted feeds, a mapping crossing venues) and is said so.
+  const share = scope.totalItemSalesCents == null ? null : pct1(theoretical.mappedSalesCents, scope.totalItemSalesCents);
   if (share == null) reasons.push('total item sales for the window are unknown, so item coverage cannot be confirmed');
+  else if (share > OVER_COVERAGE_SHARE) reasons.push(`recipe-mapped sales (${share}% of all item sales) exceed the item sales they should be part of — the two figures are not built from the same sales population`);
   else if (share < FULL_COVERAGE_SHARE) reasons.push(`recipe-mapped items are ${share}% of item sales — the actual figure covers everything bought`);
+  if ((actual.unattributedInvoiceCount ?? 0) > 0) {
+    reasons.push(`${actual.unattributedInvoiceCount} supplier invoice${actual.unattributedInvoiceCount === 1 ? '' : 's'} in the window carry no venue, so the venue's actual figure is incomplete`);
+  }
   if (theoretical.suspectRecipes > 0) reasons.push(`${theoretical.suspectRecipes} batch-costed recipe${theoretical.suspectRecipes === 1 ? '' : 's'} excluded from the theoretical side`);
   if (theoretical.zeroCostRecipes > 0) reasons.push(`${theoretical.zeroCostRecipes} recipe${theoretical.zeroCostRecipes === 1 ? '' : 's'} sold with no cost on the theoretical side`);
   return { comparable: reasons.length === 0, mappedSalesSharePercent: share, reasons };

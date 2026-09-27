@@ -835,7 +835,9 @@ export const recipesService = {
     const venue = options?.venue?.trim() || null;
     const venueKey = venue ? venue.toLowerCase() : null;
 
-    const { recipes } = await this.list({ withSalesLookbackDays: lookbackDays });
+    // Sales are aggregated for the SAME venue as the actual figure, so a
+    // shared (venue-null) recipe contributes only what it sold at this venue.
+    const { recipes } = await this.list({ withSalesLookbackDays: lookbackDays, venue });
     const scoped = venueKey
       ? recipes.filter((recipe) => !recipe.venue || recipe.venue.toLowerCase() === venueKey)
       : recipes;
@@ -853,17 +855,17 @@ export const recipesService = {
       computeActualCogs({ venue: venue ?? null, start: since, end: windowEnd }),
       prisma.salesItemActualEntry.aggregate({
         _sum: { netSalesCents: true },
-        where: { serviceDate: { gte: window.fromDate, lte: window.toDate } }
+        where: { serviceDate: { gte: window.fromDate, lte: window.toDate }, ...(venue ? { venue } : {}) }
       })
     ]);
 
     const summary = summariseCostOfGoods({
-      // Scope: same window on both sides; the mapped-sales aggregate in
-      // list() is not venue-filtered, so a venue-scoped actual figure is a
-      // different venue set from the theoretical one.
+      // Scope: same window and the same venue on both sides (sales rows carry
+      // the venue they sold at). Purchases and counts that carry no venue are
+      // reported by the actual figure itself and break comparability there.
       scope: {
         periodMatches: true,
-        venueMatches: venue == null,
+        venueMatches: true,
         totalItemSalesCents: allItemSales._sum.netSalesCents ?? null
       },
       recipes: scoped.map((recipe) => ({
@@ -883,7 +885,9 @@ export const recipesService = {
         closingStockCents: actualCogs.closingStockCents,
         source: actualCogs.source,
         quality: actualCogs.quality,
-        reasons: actualCogs.reasons
+        reasons: actualCogs.reasons,
+        unattributedPurchasesCents: actualCogs.unattributedPurchasesCents,
+        unattributedInvoiceCount: actualCogs.unattributedInvoiceCount
       }
     });
 
@@ -961,7 +965,7 @@ export const recipesService = {
     };
   },
 
-  async list(options?: { withSalesLookbackDays?: number | null }): Promise<RecipesPayload> {
+  async list(options?: { withSalesLookbackDays?: number | null; venue?: string | null }): Promise<RecipesPayload> {
     const lookbackDays = options?.withSalesLookbackDays && options.withSalesLookbackDays > 0
       ? Math.min(Math.floor(options.withSalesLookbackDays), 365)
       : null;
@@ -997,7 +1001,10 @@ export const recipesService = {
           by: ['recipeId'],
           where: {
             recipeId: { not: null },
-            serviceDate: { gte: fromDate, lte: toDate }
+            serviceDate: { gte: fromDate, lte: toDate },
+            // Venue-scoped callers get venue-scoped sales, so a per-venue
+            // theoretical figure is that venue's, not the group's.
+            ...(options?.venue ? { venue: options.venue } : {})
           },
           _sum: {
             quantity: true,
