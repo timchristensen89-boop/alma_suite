@@ -22,6 +22,7 @@ export * from './stocktake-freshness.js';
 export * from './cost-targets.js';
 export * from './prime-cost.js';
 export * from './recipe-cost.js';
+export * from './venue-resolution.js';
 export * from './onboarding-completion.js';
 export * from './invoice-paste.js';
 export * from './count-scale.js';
@@ -3792,7 +3793,9 @@ export type ReportsMenuProfitabilityRow = {
   estimatedCogsCents: number | null;
   grossProfitCents: number | null;
   foodCostPercent: number | null;
-  dataQuality: Array<'actual_sales' | 'mapped_recipe_cost' | 'missing_recipe' | 'missing_cost' | 'unmapped_square_item' | 'suspect_batch_cost'>;
+  dataQuality: Array<'actual_sales' | 'mapped_recipe_cost' | 'missing_recipe' | 'missing_cost' | 'unmapped_square_item' | 'suspect_batch_cost' | 'serve_size_required'>;
+  /** True when the mapped recipe's yield is by weight/volume with no serve size — no per-serve cost exists ("Serve size required"). */
+  serveSizeRequired?: boolean;
 };
 
 export type ReportsMenuProfitabilityPayload = {
@@ -6769,8 +6772,10 @@ export type Recipe = {
   status: RecipeStatus;
   /** BATCH cost in dollars (Σ ingredient lines). Not what one serve costs — see portionCostCents. */
   estimatedCost: number;
-  /** Cost of ONE serve in cents: estimatedCost ÷ portions (recipePortionCostCents). Null when uncosted. */
+  /** Cost of ONE serve in cents: estimatedCost ÷ portions (recipePortionCost). Null when uncosted or when the serve size is required. */
   portionCostCents: number | null;
+  /** Why portionCostCents is null: 'uncosted', or 'serve_size_required' (yield by weight/volume, no serve size). */
+  portionCostReason: 'ok' | 'uncosted' | 'serve_size_required';
   notes: string | null;
   lineCount: number;
   createdAt: string;
@@ -7630,6 +7635,12 @@ export type StockCostOfGoodsPayload = {
     unmappedRecipes: number;
     zeroCostRecipes: number;
     suspectRecipes: number;
+    /** Excluded with the reason "Serve size required": yield by weight/volume, no serve size. */
+    serveSizeRequiredRecipes: number;
+    /** Their net sales — sold, but outside both the theoretical numerator and mappedSalesCents. */
+    serveSizeRequiredSalesCents: number;
+    /** Net sales of every excluded row (suspect + serve size required). */
+    excludedSalesCents: number;
   };
   dishMargin: {
     mappedRecipes: number;
