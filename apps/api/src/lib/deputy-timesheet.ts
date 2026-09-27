@@ -17,6 +17,17 @@
  * share of the tip pool. A leave row also gets no break — there is no shift
  * to take a break from.
  *
+ * Reading those two fields is where the opposite mistake lives. The first
+ * version read `LeaveRule != null`, which takes a `0` as a rule. Deputy ids
+ * start at 1, so a zero is Deputy's way of saying "none" — and a worked shift
+ * that read as leave is one row of a person's week badged "Leave", missing
+ * from the Xero push and from the tip pool, while the shifts around it
+ * import fine. So a rule id is leave only when it is a POSITIVE integer, and
+ * a bit field is set only when it is really true, 1, "1" or "true" (a string
+ * "0" or "false" is truthy in JavaScript and must not read as leave). The
+ * raw fields go into the timesheet note (deputyLeaveEvidence) so a badge can
+ * always show its working.
+ *
  * DAY WORKED. `workDate` is the calendar day a shift belongs to, stored the
  * way the rest of the suite stores it: UTC-midnight of that day (a manual
  * timesheet's `new Date('2026-08-22')` lands there, and `dayStart` reads the
@@ -38,12 +49,40 @@ export type DeputyTimesheetFields = {
   EndTime?: number;
   Mealbreak?: number | string;
   TotalTime?: number | string;
-  IsLeave?: boolean | number;
-  LeaveRule?: number | null;
+  IsLeave?: boolean | number | string | null;
+  LeaveId?: number | string | null;
+  LeaveRule?: number | string | null;
 };
 
+/** A Deputy bit field, set only when it really says so. */
+export function deputyBit(value: boolean | number | string | null | undefined): boolean {
+  if (value === true || value === 1) return true;
+  if (typeof value === 'string') {
+    const text = value.trim().toLowerCase();
+    return text === '1' || text === 'true';
+  }
+  return false;
+}
+
+/** A Deputy record id: a positive integer, or null for "none" (0, null, blank). */
+export function deputyId(value: number | string | null | undefined): number | null {
+  const numeric = typeof value === 'string' ? Number(value.trim()) : value;
+  if (typeof numeric !== 'number' || !Number.isInteger(numeric) || numeric <= 0) return null;
+  return numeric;
+}
+
 export function deputyIsLeave(ts: DeputyTimesheetFields): boolean {
-  return Boolean(ts.IsLeave) || ts.LeaveRule != null;
+  return deputyBit(ts.IsLeave) || deputyId(ts.LeaveRule) !== null;
+}
+
+/**
+ * The raw leave fields as Deputy sent them, for the timesheet note. A badge
+ * that says "Leave" should be able to show its working: whether Deputy set
+ * the flag, which rule, which leave application.
+ */
+export function deputyLeaveEvidence(ts: DeputyTimesheetFields): string {
+  const show = (value: unknown) => (value === undefined ? 'absent' : JSON.stringify(value));
+  return `Deputy IsLeave=${show(ts.IsLeave)} LeaveRule=${show(ts.LeaveRule)} LeaveId=${show(ts.LeaveId)}`;
 }
 
 /** Seconds only when the value actually looks like a number — never a date. */

@@ -4,7 +4,7 @@ import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { adminService } from '../services/admin.service.js';
 import { checklistService } from '../services/checklist.service.js';
-import { deputyService } from '../services/deputy.service.js';
+import { deputyService, parseDeputySyncOptions } from '../services/deputy.service.js';
 import { forecastService } from '../services/forecast.service.js';
 import { giftCardService } from '../services/gift-card.service.js';
 import { guestCrmService } from '../services/guest-crm.service.js';
@@ -142,11 +142,14 @@ integrationJobsRouter.post('/lightspeed/sales-sync', async (req, res, next) => {
   }
 });
 
-// Deputy sync — invoked by Cloud Scheduler. Runs employee, document, and
-// roster sync in order so document sync can match newly-imported employees.
-integrationJobsRouter.post('/deputy/sync', async (_req, res, next) => {
+// Deputy sync — invoked by Cloud Scheduler (or the VPS cron with the
+// scheduler secret). Runs employee, document, roster and timesheet sync in
+// order so document sync can match newly-imported employees. An optional body
+// { "timesheetLookbackDays": 28 } widens the timesheet window for a one-off
+// re-read of weeks the nightly 14-day window no longer covers.
+integrationJobsRouter.post('/deputy/sync', async (req, res, next) => {
   try {
-    res.json(await deputyService.runScheduledSync());
+    res.json(await deputyService.runScheduledSync(parseDeputySyncOptions(req.body)));
   } catch (error) {
     next(error);
   }
