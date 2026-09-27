@@ -51,7 +51,7 @@ Conventions used throughout:
 
 | | |
 |---|---|
-| **Source** | `Timesheet` rows (hours) costed with `lib/staff-pay-rates.ts: staffCostingRate` (award/agreed rate **incl. super**, overtime split) plus salaried staff's weekly fixed cost. |
+| **Source** | `reports.service.ts: labourRowsFor` — **the one labour population** for the Monthly Recap, the Prime Cost report and the forecast's trailing wage %: `Timesheet` rows (hours) costed with `lib/staff-pay-rates.ts: staffCostingRate` (award/agreed rate **incl. super**, overtime split in a fixed order) plus salaried staff's weekly fixed cost, per venue row; a roster estimate per row kept separate. Totals are `lib/labour-rows.ts: labourTotal` — Σ **actual** labour only; a row with no timesheets shows its roster estimate on that basis and the total reports `rosterOnlyWageCents` / `rosterOnlyVenues` for what it left out. (August 2026: the Prime Cost report's per-row `wageCents \|\| rosterWageEstimateCents` fallback put $193.22 of roster-only labour into a total labelled timesheets; the Recap had $85,607.23. Same rows now, same sum.) |
 | **Formula** | `wageCents = Σ hour-costed timesheets + Σ weeklyFixedCost(salaried) × elapsedPeriodWeeks`. `wagePercent = wageCents / salesCents`. `approvedWageCents` (APPROVED + EXPORTED only) is carried separately and is **not** what labour % uses. |
 | **Who is salaried** | Decided by the **resolved** pay rate (`classifyLabourPopulation`: weekly fixed cost > 0), never by whether a pay-profile row exists. Every active worker is in exactly one of salaried / hourly / missing-rate; the forecast payload lists them (`labourPopulation`) and names staff with no rate instead of costing them at zero. |
 | **Statuses** | Timesheets `DRAFT, SUBMITTED, APPROVED, EXPORTED` (REJECTED excluded). Roster estimate is used only when a venue has no timesheets (`sources.wages === 'roster_estimate'`). |
@@ -77,13 +77,16 @@ Three figures. They are never substituted for one another silently.
 | | |
 |---|---|
 | **Source** | `packages/db/src/cogs.ts: computeActualCogs` — the suite-wide canonical figure. |
-| **Formula** | `opening stock + purchases − closing stock` when a valid finalised stocktake brackets **each** end (`source: stock_bounded`, `quality: complete`); otherwise `purchases` only (`source: purchases_only`) with `quality` naming the failed bracket — `missing_opening/closing` (no count on or before the boundary), `stale_opening/closing` (the latest count is older than the tolerance), `estimated` (neither), `closing_implausible` — and `reasons[]` spelling it out with the count date and age. Rules and arithmetic: `packages/db/src/cogs-core.ts` (pure, tested against a fake reader). |
-| **Bracket rule** | A count brackets a boundary only when taken **on or before** it and no more than `STOCKTAKE_BRACKET_TOLERANCE_DAYS` (14 — the suite's existing "stale stocktake" limit, `@alma/shared stocktake-freshness.ts`) before it. A March count is not June's opening stock. |
+| **Formula** | `opening stock + purchases − closing stock` when a **complete** count bounds **each** end (`source: stock_bounded`, `quality: complete`); otherwise `purchases` only (`source: purchases_only`) with `quality` naming the failed boundary — `missing_opening/closing` (no finalised count within the window), `incomplete_opening/closing` (counts exist in the window but do not make a complete, valued count of known scope), `estimated` (neither), `closing_implausible` — and `reasons[]` naming every count considered and why it was used or refused. Rules and arithmetic: `packages/db/src/cogs-core.ts: composeBoundary` (pure, tested against a fake reader). |
+| **Scope** | `Stocktake.scope` ∈ FOOD, BEVERAGE, COMBINED, UNKNOWN (`@alma/shared stocktake-scope.ts`). Set from evidence only — a template's categories (all food → FOOD, all beverage → BEVERAGE), else its name ("Kitchen" / "Bar & FOH"), a Loaded sheet's headings, or a reviewed choice recorded in `scopeEvidence`. **Never inferred from the dollar value.** Every historical record is UNKNOWN (`docs/stocktake-scope-remediation.md` proposes reviewed values, record by record, no bulk backfill). A name never supports COMBINED. |
+| **Valuation completeness** | `assessStocktakeValuation`: a count bounds COGS only when **no line counted above zero is unvalued** (linked or not; an unlinked line with Loaded's own value counts as valued; a counted zero is legitimate). No percentage threshold — the share of lines says nothing about the share of dollars, so a cut-off would pass a materially incomplete count on a plausible total. The refusal names how many lines. |
+| **Boundary rule** | Candidates: finalised, known scope, sufficiently valued, within `STOCKTAKE_BOUNDARY_WINDOW_DAYS` (**±7**, symmetric) of the boundary. Complete = one COMBINED count, or one FOOD **and** one BEVERAGE count (purchases are food + beverage, so a food-only count against combined purchases is a population mismatch, however near the boundary: **completeness first, distance second**). Sessions of one scope on one venue day are one count. Per scope the nearest wins; ties go to the count on/before the boundary; a COMBINED count and a FOOD+BEVERAGE pair at equal distance → the single count. A composed boundary sums its components, keeps each one's ids/date/value/side (`components[]`), and its distance is the furthest component's; components more than 3 days apart still compose with an explicit `warnings[]` entry and no invented movement. The same instant is one month's close and the next month's open, and the rule is a pure function of the candidates around it — nothing drifts forward. Candidates not used are listed in `rejected[]` with `unknown_scope` / `unvalued` / `duplicate` / `no_counterpart`. |
 | **Purchases** | `SupplierInvoice` subtotal (ex-GST; total when no subtotal parsed), `status ≠ DRAFT`, `triageStatus ≠ NO_ITEM`, `invoiceDate` in window. Venue figures also report `unattributedPurchasesCents` / `unattributedInvoiceCount` — invoices with no venue, in the group figure and in no venue's. **Group = Σ attributed venues + unattributed**; nothing is distributed. |
-| **Stock values** | Latest valid `SUBMITTED/REVIEWED/LOCKED` count per venue, summing every session on that **venue day** (Sydney, not UTC). `openingStockCents` / `closingStockCents` are `null` when unavailable, never 0. |
+| **Stock values** | The composed boundary's value (`SUBMITTED/REVIEWED/LOCKED` only; sessions on one **venue day** — Sydney, not UTC — summed per scope). `openingStockCents` / `closingStockCents` are `null` when unavailable, never 0. |
 | **Group population** | The **configured venues** (the `Venue` table) plus explicitly reported unattributed data — never every distinct string ever written into a stocktake's venue field. A stored label counts for a venue only through `@alma/shared venue-resolution.ts: resolveVenueLabel` (exact after normalisation, or an explicit evidenced alias). `Both`, `Unspecified`, blank and unknown Loaded location names (`St View`, `Alma`) are **off-venue counts**: listed on the bracket (`offVenueCounts`: label, date, value, why) and in the validation script, never required to bracket the group, never summed, never rewritten. A configured venue with no valid bracket makes the group **unavailable and is named**. |
-| **Imports** | Both Loaded CSV importers and the Loaded PDF script resolve the location label through the same rule and store the configured venue or `null`, keeping the label in the notes; the Xero tenant resolver consults the rule first. An unknown venue is unattributed data, not a new restaurant. |
-| **Percent** | Reports: withheld (`null`) when invoices cover < 90 % of the period (`MIN_PURCHASE_COVERAGE`). Stock dashboard: shown as "% of mapped sales" only when `comparable` — which needs stocktake completeness **and** like-for-like scope: same window, same venue set, recipe-mapped items ≈ all item sales in the window, and no suspect/uncosted exclusions (`assessCogsComparability`, reasons listed on the card). Otherwise the whole-venue dollars are shown as such and no actual %, GP or variance is derived. |
+| **Imports** | Both Loaded CSV importers and the Loaded PDF script resolve the location label through the same rule (configured venues = Settings › Venues) and store the configured venue or `null`, keeping the label in the notes; the Xero tenant resolver consults the rule first. An unknown venue is unattributed data, not a new restaurant. CSV imports are `scope: UNKNOWN` ("scope not reviewed"). The PDF script parses the **printed** count date (`parseLoadedCountedAt`: year from the printed weekday; refuses when it cannot place the date — the import time is never substituted; `--year` / `--counted-at` are explicit operator overrides recorded in `countedAtSource`), sets the scope from the sheet's headings (or `--scope`), and keeps unmatched sheet lines as unlinked lines at Loaded's valuation rather than dropping them. |
+| **Purchases feed** | `@alma/shared invoice-feed.ts: assessInvoiceFeed` over finalised stock invoices from 90 days before the period: **cadence** (invoice activity spans ≥ 90 % of the elapsed period, first invoice to last plus one ordinary 7-day gap; periods under 7 days are `too_early`) and **established-supplier disappearance** (a supplier with ≥ 3 distinct invoice dates in the previous 90 days and a last invoice within 45 days of the start, with nothing in the period once ≥ 14 days and ≥ 2× its longest gap have elapsed). Occasional suppliers are never mandatory; no supplier is classified food/beverage by name. Output: status, coverage, elapsed days, first/last invoice, missing interval, established and absent suppliers, reason. `incomplete` withholds food % and prime; purchases stay visible as purchases. Meaning: "the expected feed appears complete enough for reporting" — never "every purchase verified". |
+| **Percent** | Reports: withheld (`null`) when the invoice feed is `incomplete` or coverage < 90 % (`MIN_PURCHASE_COVERAGE`). Stock dashboard: shown as "% of mapped sales" only when `comparable` — which needs stocktake completeness **and** like-for-like scope: same window, same venue set, recipe-mapped items ≈ all item sales in the window, and no suspect/uncosted exclusions (`assessCogsComparability`, reasons listed on the card). Otherwise the whole-venue dollars are shown as such and no actual %, GP or variance is derived. |
 | **Rule** | **Purchases never silently become COGS.** Gross profit and variance on the actual figure exist only when it is stocktake-bounded. |
 
 ### Food cost on the Reports Overview (what feeds prime cost)
@@ -115,7 +118,8 @@ described as an import problem.
 | | |
 |---|---|
 | **Formula** | Overview: `(wageCents + food cost cents) / salesCents`, with the food-cost basis above; `null` when food cost is unavailable or sales are zero. Recap and Prime Cost report: `@alma/shared prime-cost.ts: resolvePrimeCost` — **prime = labour + actual food COGS only when the food figure is stocktake-bounded and supplier invoices cover ≥ 90 % of the period**; otherwise `primeCostCents` is `null`, `foodBasis = 'unavailable'`, purchases are shown as purchases, and `reasons[]` says why. Labour + purchases and labour + theoretical cost are never called prime. Components are rounded separately, so labour % + food % may differ from prime % by ≤ 0.1. |
-| **Labour basis** | `labourBasis`: `timesheets`, `roster_estimate` (stands in only when no timesheets exist, and is labelled), or `missing` (no prime). |
+| **Labour basis** | `labourBasis`: `timesheets`, `roster_estimate` (stands in only when no timesheets exist, and is labelled), or `missing` (no prime). A total is never a mix: it is Σ actual, with roster-only rows reported beside it. |
+| **Purchases feed** | `purchaseFeed` on every period/row (see Actual food cost): `incomplete` → `foodBasis: unavailable`, `primeCostCents: null`, reason states the stalled interval or the absent established suppliers. |
 | **Targets** | One source: `@alma/shared cost-targets.ts: resolveCostTargets` over Settings › Venues (`targetWagePercent`, `targetPrimeCostPercent`; food = prime − labour). Group = mean of configured venues; defaults 30/30/60 only when nothing is configured; `source` says which. Recap, Overview and forecast read the same resolver (decision 2). |
 | **Tone** | `costTone`: ≤ target positive, ≤ target + 5 warning, above danger (however severe), `null` neutral. When the import is incomplete the tone is neutral and the caveat is shown alongside the reading. One rule for every pill and bar. |
 | **Narrative** | `overviewNarrative` writes "Prime cost (labour + food) is …" from the same object and names the period ("for 1 Sep to 30 Sep"), never "this week" by default. |
@@ -137,8 +141,8 @@ described as an import problem.
 
 | | |
 |---|---|
-| **Source** | `StocktakesSummary.latestCount` via the canonical stock-value rule (`@alma/db stockBracket`). |
-| **Value** | The latest valid finalised count (per venue; Σ venues for the group). `status: stale` (older than 14 days) or `missing` (a venue short, named) carries **no** value. Never a sum over historical stocktakes — the old `totalValueCents` aggregated every line ever recorded. |
+| **Source** | `StocktakesSummary.latestCount` via the canonical stock-value rule (`@alma/db stockBracket`) with the **operational freshness window** (`STOCKTAKE_STALE_DAYS`, 14 — a different question from the ±7-day period-boundary window). |
+| **Value** | The latest **complete** count inside the window (per venue; Σ venues for the group): one COMBINED count or a FOOD + BEVERAGE pair, of known scope, sufficiently valued. `status: missing` (no finalised count in the window) or `incomplete` (counts exist but do not make a complete count; a venue short is named) carries **no** value and `reasons[]` says why. Never a sum over historical stocktakes — the old `totalValueCents` aggregated every line ever recorded. |
 
 ## Temperature status (Compliance)
 
@@ -228,6 +232,16 @@ Tick each against a browser set to a European timezone as well as Sydney.
 - [ ] With no stocktake bracketing the period and only supplier bills, prime shows "—" and the bills are listed as purchases, not food cost.
 - [ ] A period whose costs exceed sales reads "Costs exceeded sales." in red; the import caveat appears only when sales days are short.
 
+**Stock › Stocktakes**
+- [ ] Every count in the lists shows its scope ("Food", "Beverage", "Combined", "Scope unknown") beside its template; a count started from a Kitchen template reads Food, from a Bar & FOH template Beverage, from "Full count" Scope unknown.
+- [ ] The "Stock on hand" card shows a value only when the latest counts make a complete count (kitchen + bar, or a combined count) within 14 days, and otherwise says which side is missing or which count has no scope / unvalued lines.
+- [ ] The create form's "What this count covers" defaults to "From the template"; choosing a value is recorded as a reviewed decision (`scopeEvidence`).
+
+**Reports › Monthly Recap / Prime Cost**
+- [ ] Recap and Prime Cost labour agree to the cent for the same period and venue; a Prime row with no timesheets shows "roster estimate" and the totals' warning names it.
+- [ ] A period with a stalled invoice feed (or an established supplier absent) shows purchases as purchases, food % and prime "—", and the reason names the missing interval or the suppliers.
+- [ ] A month whose only counts near a boundary are kitchen-only or bar-only shows COGS unavailable with the reason naming the count and the missing counterpart; Alma Avalon June 2026 must not read complete.
+
 **Stock › Dashboard**
 - [ ] "Low stock" count and the "Needs attention" table agree (table non-empty whenever the count > 0; "Showing 10 of N" when more).
 - [ ] Cost cards: theoretical % sits under theoretical $, the actual card names its method, and actual %, GP and variance appear only when the card says the scope is like-for-like (expect them absent while any Square item is unmapped).
@@ -290,9 +304,23 @@ Tick each against a browser set to a European timezone as well as Sydney.
 10. **Roster instants vs UTC-midnight bounds / overnight shifts.** HOLD until
     the payroll source's treatment is traced; reporting must reconcile to
     it rather than invent an allocation.
-11. **COGS bracket tolerance.** Set to the existing 14-day stale-stocktake
-    rule. If counts are meant to be monthly with a longer grace, say so
-    and the one constant moves.
+11. ~~COGS bracket tolerance~~ — **decided**: period boundaries use a
+    symmetric ±7-day window (`STOCKTAKE_BOUNDARY_WINDOW_DAYS`); operational
+    freshness stays at 14 days (`STOCKTAKE_STALE_DAYS`) and is a separate
+    question. Implemented.
+13. ~~Stocktake scope~~ — **decided**: FOOD / BEVERAGE / COMBINED / UNKNOWN
+    on every count, set from evidence, never from the value; a boundary is
+    one COMBINED count or a FOOD + BEVERAGE pair; unvalued counted lines
+    refuse the count. Implemented. **Open**: the reviewed scopes for the
+    historical records (`docs/stocktake-scope-remediation.md`), and whether
+    the Alma Avalon 30 June CSV export was a full count.
+14. ~~Invoice-feed completeness~~ — **decided**: cadence + established-
+    supplier disappearance (`assessInvoiceFeed`). Implemented. **Open**:
+    whether a `too_early` period (under 7 days) should show food % at all.
+15. **Component date gap.** FOOD and BEVERAGE components more than 3 days
+    apart compose with a warning. If accounting requires _unavailable_
+    instead, the constant is `STOCKTAKE_COMPONENT_GAP_WARNING_DAYS` and the
+    test "components more than 3 days apart still compose" flips.
 12. ~~Recipes with a yield in grams and no serve size~~ — **decided**:
     excluded with the reason `Serve size required`, implemented.
 
