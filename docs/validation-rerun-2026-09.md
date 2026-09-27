@@ -90,3 +90,85 @@ docker compose ps --format '{{.Name}} {{.Status}}'                              
 `/var/tmp/scope-out.txt` and the copy of the validation output on the Mac
 (`~/Desktop/alma-validation.txt`, which contains section 6 with staff
 names) should be deleted once the matrix is confirmed.
+
+## 7. Evidence queries the validator does not print (all SELECT; run against `alma_reval`)
+
+```bash
+cd /opt/alma/deploy
+Q() { docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d alma_reval -X -A -F " | "'; }
+```
+
+**7a. Supplier cadence per month (which suppliers the rule treats as established, and why).** For each of Jun–Sep: every supplier's distinct invoice dates in the 90 days before the month, its last invoice before the month, its longest gap, and whether it invoiced in the month. `established` = ≥ 3 dates AND last invoice ≤ 45 days before the start; `absent flagged` = established, no invoice in the month, and the month's elapsed days ≥ max(14, 2 × longest gap).
+
+```sql
+Q <<'SQL'
+WITH months(m, start_at, end_at) AS (VALUES
+  ('2026-06', timestamptz '2026-05-31 14:00Z', timestamptz '2026-06-30 14:00Z'),
+  ('2026-07', timestamptz '2026-06-30 14:00Z', timestamptz '2026-07-31 14:00Z'),
+  ('2026-08', timestamptz '2026-07-31 14:00Z', timestamptz '2026-08-31 14:00Z'),
+  ('2026-09', timestamptz '2026-08-31 14:00Z', timestamptz '2026-09-30 14:00Z')),
+inv AS (
+  SELECT "supplierName" AS s, "invoiceDate"::date AS d
+  FROM "SupplierInvoice" WHERE status <> 'DRAFT' AND "triageStatus" <> 'NO_ITEM' AND "invoiceDate" IS NOT NULL),
+lb AS (
+  SELECT m.m, i.s, i.d FROM months m JOIN inv i ON i.d >= (m.start_at - interval '90 days')::date AND i.d < m.start_at::date),
+gaps AS (
+  SELECT m, s, d, d - lag(d) OVER (PARTITION BY m, s ORDER BY d) AS gap FROM (SELECT DISTINCT m, s, d FROM lb) x),
+prof AS (
+  SELECT m, s, count(DISTINCT d) AS dates, max(d) AS last_before, coalesce(max(gap), 0) AS longest_gap FROM gaps GROUP BY m, s),
+inm AS (
+  SELECT m.m, i.s, count(*) AS invoices_in_month, min(i.d) AS first_in, max(i.d) AS last_in
+  FROM months m JOIN inv i ON i.d >= m.start_at::date AND i.d < m.end_at::date GROUP BY m.m, i.s)
+SELECT p.m, p.s AS supplier, p.dates AS dates_prior_90d, p.last_before, p.longest_gap AS longest_gap_days,
+       (p.dates >= 3 AND (mo.start_at::date - p.last_before) <= 45) AS established,
+       coalesce(im.invoices_in_month, 0) AS invoices_in_month, im.first_in, im.last_in,
+       LEAST(EXTRACT(EPOCH FROM (mo.end_at - mo.start_at))/86400, EXTRACT(EPOCH FROM (now() - mo.start_at))/86400)::int AS elapsed_days,
+       (p.dates >= 3 AND (mo.start_at::date - p.last_before) <= 45 AND coalesce(im.invoices_in_month,0) = 0
+        AND LEAST(EXTRACT(EPOCH FROM (mo.end_at - mo.start_at))/86400, EXTRACT(EPOCH FROM (now() - mo.start_at))/86400) >= GREATEST(14, 2*p.longest_gap)) AS absent_flagged
+FROM prof p JOIN months mo ON mo.m = p.m LEFT JOIN inm im ON im.m = p.m AND im.s = p.s
+ORDER BY p.m, established DESC, p.s;
+SQL
+```
+
+**7b. Component-gap evidence: every finalised count within ±7 days of each boundary, per venue, with its scope, value and unvalued-line count, so the FOOD/BEVERAGE date gaps that could compose are visible.** (Scopes are all UNKNOWN in the dump; the gap question is about the dates.)
+
+```sql
+Q <<'SQL'
+WITH b(boundary) AS (VALUES (timestamptz '2026-05-31 14:00Z'), (timestamptz '2026-06-30 14:00Z'), (timestamptz '2026-07-31 14:00Z'), (timestamptz '2026-08-31 14:00Z'), (timestamptz '2026-09-30 14:00Z')),
+c AS (
+  SELECT s.id, s.name, s.venue, s.template, s."importSource", s.scope, s."countedAt",
+         count(l.id) AS lines,
+         count(l.id) FILTER (WHERE l."countedQty" > 0 AND l."stockValueCents" IS NULL) AS unvalued,
+         coalesce(sum(l."stockValueCents"),0)/100.0 AS value
+  FROM "Stocktake" s LEFT JOIN "StocktakeLine" l ON l."stocktakeId" = s.id
+  WHERE s.status IN ('SUBMITTED','REVIEWED','LOCKED') GROUP BY s.id)
+SELECT to_char(b.boundary AT TIME ZONE 'Australia/Sydney', 'YYYY-MM-DD') AS boundary_day, c.venue,
+       to_char(c."countedAt" AT TIME ZONE 'Australia/Sydney', 'YYYY-MM-DD HH24:MI') AS counted_sydney,
+       round(EXTRACT(EPOCH FROM (c."countedAt" - b.boundary))/86400, 2) AS signed_days,
+       c.scope, c.value, c.lines, c.unvalued, c.template, c."importSource", left(c.id, 8) AS id8, c.name
+FROM b JOIN c ON abs(EXTRACT(EPOCH FROM (c."countedAt" - b.boundary))) <= 7*86400
+ORDER BY b.boundary, c.venue, c."countedAt";
+SQL
+```
+
+**7c. The August labour rows without PII.** The validator's section 3 already prints every Prime row's basis. This names the roster shifts behind any roster-only row by shift venue label and an 8-character profile-id prefix only (no names).
+
+```sql
+Q <<'SQL'
+SELECT coalesce(nullif(trim(r.venue),''), nullif(trim(p.venue),''), 'Unassigned') AS row_key,
+       left(r."staffProfileId", 8) AS profile_id8,
+       count(*) AS shifts,
+       round(sum(EXTRACT(EPOCH FROM (r."endsAt" - r."startsAt"))/3600 - coalesce(r."breakMinutes",0)/60.0)::numeric, 2) AS roster_hours,
+       (SELECT count(*) FROM "Timesheet" t WHERE t."staffProfileId" = r."staffProfileId" AND t."workDate" >= '2026-07-31' AND t."workDate" < '2026-08-31' AND t.status IN ('DRAFT','SUBMITTED','APPROVED','EXPORTED')) AS timesheets_in_aug
+FROM "RosterShift" r JOIN "StaffProfile" p ON p.id = r."staffProfileId"
+WHERE r."startsAt" < '2026-08-31 14:00Z' AND r."endsAt" > '2026-07-31 14:00Z' AND r.status <> 'CANCELLED' AND p."accountType" = 'HUMAN'
+  AND coalesce(nullif(trim(r.venue),''), nullif(trim(p.venue),''), 'Unassigned') NOT IN ('Alma Avalon', 'St Alma')
+GROUP BY 1, 2 ORDER BY 1, 2;
+SQL
+```
+
+Send 7a–7c with the validator output (section 6 removed).
+
+## 8. Alternative: run everything in the Claude session instead of on the VPS
+
+The session container has Postgres 16 installed (cluster `main`, currently stopped) and the branch checked out, but no route to the VPS and no copy of the dump. Uploading `alma-alma_suite_v18-20260926T170002Z.sql.gz` (78 MB) into the session lets the restore, migration, validator, evidence queries and cleanup all run there, with nothing on the VPS touched at all. The upload should be deleted from the session afterwards along with the restored database.
