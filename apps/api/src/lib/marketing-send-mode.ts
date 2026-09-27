@@ -9,6 +9,11 @@
 // Send live button was enabled either way (the API then refused with 503).
 // Now the API reports the execution mode per channel and the UI derives
 // every sentence and every control from it.
+//
+// A channel is LIVE only when BOTH hold: the provider is configured (the
+// capability) AND the application-level live switch for that channel is
+// on (the decision). Credentials arriving on a deploy must never turn a
+// rehearsal into a real send; the switch is the operator saying so.
 
 export type MarketingChannelMode = 'LIVE' | 'SIMULATION' | 'SETUP_REQUIRED';
 
@@ -34,6 +39,8 @@ export type MarketingSendModeEnv = {
   smtpHost?: string | null;
   smtpUser?: string | null;
   smtpPass?: string | null;
+  /** MARKETING_EMAIL_LIVE_SEND_ENABLED=true — the explicit decision, separate from the credentials. */
+  emailLiveSendEnabled: boolean;
   socialLivePublishEnabled: boolean;
 };
 
@@ -46,17 +53,24 @@ export function emailProviderFor(env: MarketingSendModeEnv): 'resend' | 'smtp' |
 
 export function resolveMarketingSendModes(env: MarketingSendModeEnv): MarketingSendModes {
   const provider = emailProviderFor(env);
-  const email: MarketingChannelSendMode = provider
+  const providerName = provider === 'resend' ? 'Resend' : 'SMTP';
+  const email: MarketingChannelSendMode = !provider
     ? {
-        mode: 'LIVE',
-        provider,
-        detail: `Email sends for real through ${provider === 'resend' ? 'Resend' : 'SMTP'}. Live sends need a test send first, an explicit confirmation, and an admin.`
-      }
-    : {
         mode: 'SETUP_REQUIRED',
         provider: null,
         detail: 'No email provider is configured (RESEND_API_KEY + RESEND_FROM, or SMTP_HOST/USER/PASS). Campaigns can be simulated only.'
-      };
+      }
+    : !env.emailLiveSendEnabled
+      ? {
+          mode: 'SIMULATION',
+          provider,
+          detail: `${providerName} is configured but live campaign sends are switched off (MARKETING_EMAIL_LIVE_SEND_ENABLED is not true). Campaigns simulate; test sends to an operator still go through ${providerName}.`
+        }
+      : {
+          mode: 'LIVE',
+          provider,
+          detail: `Email sends for real through ${providerName}: the provider is configured and the live switch is on. Live sends need a test send first, an explicit confirmation, and an admin.`
+        };
   // There is no SMS provider in the suite; the channel exists as a
   // simulation target only.
   const sms: MarketingChannelSendMode = {
@@ -71,8 +85,10 @@ export function resolveMarketingSendModes(env: MarketingSendModeEnv): MarketingS
 
   const emailSentence =
     email.mode === 'LIVE'
-      ? `Email can send live via ${email.provider === 'resend' ? 'Resend' : 'SMTP'} (test first, then an admin confirms).`
-      : 'Email is simulation only — no provider is configured.';
+      ? `Email can send live via ${providerName} (test first, then an admin confirms).`
+      : email.mode === 'SIMULATION'
+        ? `Email is simulation only — ${providerName} is configured but the live-send switch is off.`
+        : 'Email is simulation only — no provider is configured.';
   const socialSentence = social.mode === 'LIVE' ? 'Social posts can publish live.' : 'Social posts are simulated.';
   return {
     email,
