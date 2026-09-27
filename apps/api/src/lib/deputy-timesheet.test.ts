@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deputyBreakMinutes, deputyIsLeave, deputyWorkDate } from './deputy-timesheet.js';
+import { deputyBit, deputyBreakMinutes, deputyId, deputyIsLeave, deputyLeaveEvidence, deputyWorkDate } from './deputy-timesheet.js';
 import { dayRateKind } from '@alma/shared';
 
 // 10:00 → 18:00, epoch seconds.
@@ -41,9 +41,73 @@ test('no span and no TotalTime falls back to the numeric Mealbreak', () => {
 test('leave is flagged by IsLeave or by a LeaveRule id', () => {
   assert.equal(deputyIsLeave({ IsLeave: true }), true);
   assert.equal(deputyIsLeave({ IsLeave: 1 }), true);
+  assert.equal(deputyIsLeave({ IsLeave: '1' }), true);
+  assert.equal(deputyIsLeave({ IsLeave: 'true' }), true);
   assert.equal(deputyIsLeave({ LeaveRule: 7 }), true);
+  assert.equal(deputyIsLeave({ LeaveRule: '7' }), true);
   assert.equal(deputyIsLeave({ IsLeave: false }), false);
   assert.equal(deputyIsLeave({}), false);
+});
+
+test('a LeaveRule of 0 is Deputy saying "no rule", not a leave rule', () => {
+  // The shape that would badge one worked shift in a week as leave while its
+  // neighbours import fine: a row carrying LeaveRule 0 where the others carry
+  // null. Zero is not an id Deputy ever issues.
+  assert.equal(deputyIsLeave({ IsLeave: false, LeaveRule: 0 }), false);
+  assert.equal(deputyIsLeave({ LeaveRule: 0 }), false);
+  assert.equal(deputyIsLeave({ LeaveRule: '0' }), false);
+  assert.equal(deputyIsLeave({ LeaveRule: null }), false);
+  assert.equal(deputyIsLeave({ LeaveRule: -1 }), false);
+  assert.equal(deputyIsLeave({ IsLeave: 0, LeaveRule: 0, LeaveId: 0 }), false);
+});
+
+test('a string "0" or "false" bit is not leave, however truthy JavaScript finds it', () => {
+  assert.equal(deputyIsLeave({ IsLeave: '0' }), false);
+  assert.equal(deputyIsLeave({ IsLeave: 'false' }), false);
+  assert.equal(deputyIsLeave({ IsLeave: '' }), false);
+  assert.equal(deputyIsLeave({ IsLeave: null }), false);
+});
+
+test('a LeaveId on its own does not make a shift leave', () => {
+  // Deputy sets IsLeave on every leave timesheet it creates; the id alone is
+  // corroboration, never the trigger, so tightening the read cannot flag more
+  // rows than before.
+  assert.equal(deputyIsLeave({ LeaveId: 44 }), false);
+  assert.equal(deputyIsLeave({ IsLeave: true, LeaveId: 44 }), true);
+});
+
+test('deputyBit and deputyId read Deputy\'s loose scalars strictly', () => {
+  assert.equal(deputyBit(true), true);
+  assert.equal(deputyBit(1), true);
+  assert.equal(deputyBit(' TRUE '), true);
+  assert.equal(deputyBit(false), false);
+  assert.equal(deputyBit(0), false);
+  assert.equal(deputyBit('0'), false);
+  assert.equal(deputyBit(2), false);
+  assert.equal(deputyBit(undefined), false);
+  assert.equal(deputyId(7), 7);
+  assert.equal(deputyId('12'), 12);
+  assert.equal(deputyId(0), null);
+  assert.equal(deputyId('0'), null);
+  assert.equal(deputyId(1.5), null);
+  assert.equal(deputyId(null), null);
+  assert.equal(deputyId(undefined), null);
+  assert.equal(deputyId('abc'), null);
+});
+
+test('the leave evidence note shows the raw fields, including absent ones', () => {
+  assert.equal(
+    deputyLeaveEvidence({ IsLeave: true, LeaveRule: 7 }),
+    'Deputy IsLeave=true LeaveRule=7 LeaveId=absent'
+  );
+  assert.equal(
+    deputyLeaveEvidence({ IsLeave: false, LeaveRule: 0, LeaveId: null }),
+    'Deputy IsLeave=false LeaveRule=0 LeaveId=null'
+  );
+});
+
+test('a worked shift carrying LeaveRule 0 still gets its unpaid break', () => {
+  assert.equal(deputyBreakMinutes({ ...span(8), TotalTime: 7.5, IsLeave: false, LeaveRule: 0 }), 30);
 });
 
 test('a leave row takes no break, whatever the numbers say', () => {

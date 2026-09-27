@@ -106,6 +106,49 @@ describe('totalTipsPerDay', () => {
     assert.equal(day?.guessedDate, true);
   });
 
+  // Rows that name their sale: the sales-feed export shape (SaleID, SaleDate, Tip).
+  const sale = (dateKey: string, tipCents: number, rowId: string, venue = 'Alma Avalon') => ({ venue, dateKey, tipCents, rowId });
+
+  it('two sales tipping the same amount are two tips, not one total seen twice', () => {
+    // Without ids these two identical rows would read as a repeated day total.
+    const [day] = totalTipsPerDay([sale('2026-09-20', 1000, 'SP-1'), sale('2026-09-20', 1000, 'SP-2')]);
+    assert.equal(day?.cents, 2000);
+    assert.equal(day?.repeated, false);
+    assert.equal(day?.saleIds, 2);
+  });
+
+  it('one sale listed per line item, each line repeating its tip, is one tip', () => {
+    const [day] = totalTipsPerDay([sale('2026-09-20', 1500, 'SP-9'), sale('2026-09-20', 1500, 'SP-9'), sale('2026-09-20', 1500, 'SP-9')]);
+    assert.equal(day?.cents, 1500);
+    assert.equal(day?.repeated, true);
+    assert.equal(day?.saleIds, 1);
+  });
+
+  it('mixes identified sales with unidentified rows as parts', () => {
+    const [day] = totalTipsPerDay([
+      sale('2026-09-20', 1000, 'SP-1'),
+      sale('2026-09-20', 1000, 'SP-1'),
+      { venue: 'Alma Avalon', dateKey: '2026-09-20', tipCents: 500, rowId: null }
+    ]);
+    assert.equal(day?.cents, 1500);
+    assert.equal(day?.repeated, false);
+  });
+
+  it('reproduces a real sales-feed day: 84 tipped sales over twelve days sum plainly', () => {
+    // 2–13 Sep 2026 export: per-day totals matched a plain sum of the Tip
+    // column because every row is its own sale. Seven sales, some equal.
+    const rows = [1000, 1000, 500, 2000, 1000, 750, 500].map((cents, index) => sale('2026-09-05', cents, `SP-${index}`));
+    const [day] = totalTipsPerDay(rows);
+    assert.equal(day?.cents, 6750);
+    assert.equal(day?.rows, 7);
+    assert.equal(day?.saleIds, 7);
+  });
+
+  it('reports no sale ids for a report without an id column', () => {
+    const [day] = totalTipsPerDay([row('2026-08-19', 16105), row('2026-08-19', 16105)]);
+    assert.equal(day?.saleIds, 0);
+  });
+
   it('still counts an undated repeated total once', () => {
     // Undated AND repeated: the repeat guard resolves it, so the caller has a
     // trustworthy figure and does not need to refuse it.

@@ -21,7 +21,7 @@ import type { AuthUser } from '@alma/shared';
 import type { IntegrationConnection } from '@prisma/client';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
-import { deputyBreakMinutes, deputyIsLeave, deputyWorkDate } from '../lib/deputy-timesheet.js';
+import { deputyBreakMinutes, deputyIsLeave, deputyLeaveEvidence, deputyWorkDate } from '../lib/deputy-timesheet.js';
 import {
   decryptIntegrationSecret,
   encryptIntegrationSecret
@@ -1086,9 +1086,11 @@ type DeputyTimesheet = {
   Cost?: number;
   OperationalUnit?: number;
   // Deputy files approved leave as timesheets too: IsLeave with the rule that
-  // granted it. See ../lib/deputy-timesheet.ts for why these matter.
-  IsLeave?: boolean | number;
-  LeaveRule?: number | null;
+  // granted it. See ../lib/deputy-timesheet.ts for why these matter, and for
+  // why a 0 in either id field is "none" rather than leave.
+  IsLeave?: boolean | number | string | null;
+  LeaveId?: number | string | null;
+  LeaveRule?: number | string | null;
   IsInProgress?: boolean;
   Discarded?: boolean;
   TimeApproved?: boolean | number;
@@ -1149,8 +1151,9 @@ export async function syncTimesheets(
   // once, and only when this window actually contains leave; a failure just
   // means rows say "Leave" instead of which kind.
   let leaveRuleNames: Map<number, string> | null = null;
-  const leaveKindFor = async (ruleId: number | null | undefined): Promise<string> => {
-    if (ruleId == null) return 'Leave';
+  const leaveKindFor = async (ruleRaw: number | string | null | undefined): Promise<string> => {
+    const ruleId = typeof ruleRaw === 'string' ? Number(ruleRaw.trim()) : ruleRaw;
+    if (typeof ruleId !== 'number' || !Number.isInteger(ruleId) || ruleId <= 0) return 'Leave';
     if (!leaveRuleNames) {
       try {
         const rules = await apiPost<Array<{ Id: number; Name?: string }>>(connection, '/resource/LeaveRule/QUERY', { max: 500 });
@@ -1221,7 +1224,9 @@ export async function syncTimesheets(
     const noteParts = [
       'Deputy sync: timesheet',
       `Deputy timesheet id: ${ts.Id}`,
-      isLeave ? `Leave: ${leaveKind}` : null,
+      // The raw fields ride along so the "Leave" badge can be checked against
+      // what Deputy actually sent, without another API call.
+      isLeave ? `Leave: ${leaveKind} (${deputyLeaveEvidence(ts)})` : null,
       typeof ts.TotalTime === 'number' ? `Deputy hours: ${ts.TotalTime}` : null,
       typeof ts.Cost === 'number' && ts.Cost > 0 ? `Deputy cost: ${ts.Cost}` : null
     ].filter(Boolean);
@@ -1274,11 +1279,76 @@ export async function syncTimesheets(
   };
 }
 
+/**
+ * The Deputy Timesheet rows for a set of ids, exactly as Deputy sends them.
+ * Read only — nothing is written. This is what the timesheet-leave diagnostic
+ * prints next to the suite's own rows, so "is this leave in Deputy, or did the
+ * import read it as leave?" is answered from the fields rather than guessed.
+ */
+export async function inspectTimesheets(connection: IntegrationConnection, deputyIds: number[]): Promise<DeputyTimesheet[]> {
+  const ids = Array.from(new Set(deputyIds.filter((id) => Number.isInteger(id) && id > 0)));
+  if (ids.length === 0) return [];
+  const rows = await apiPost<DeputyTimesheet[]>(connection, '/resource/Timesheet/QUERY', {
+    search: { s1: { field: 'Id', type: 'in', data: ids } },
+    max: Math.min(500, Math.max(ids.length, 1))
+  });
+  return Array.isArray(rows) ? rows : [];
+}
+
 // ── Service surface used by routes + scheduler ───────────────────────────
 
 type SyncTrigger = 'MANUAL' | 'SCHEDULED';
 
-async function runSyncForRoute(actor: AuthUser, trigger: SyncTrigger, task: 'roster' | 'employees' | 'documents' | 'timesheets' | 'all') {
+/**
+ * Optional window for the timesheet part of a sync. The defaults (14 days
+ * back, 1 forward) cover the nightly run; a wider lookback is for re-reading
+ * a week that has already slid out of that window — for instance after a fix
+ * to how a Deputy field is read, so the corrected reading reaches rows the
+ * nightly sync will never revisit on its own. Bounded so a typo cannot ask
+ * Deputy for years of timesheets in one request.
+ */
+export type DeputySyncOptions = {
+  timesheetLookbackDays?: number;
+  timesheetLookforwardDays?: number;
+};
+
+const MAX_TIMESHEET_LOOKBACK_DAYS = 120;
+const MAX_TIMESHEET_LOOKFORWARD_DAYS = 31;
+
+export function parseDeputySyncOptions(input: unknown): DeputySyncOptions {
+  const body = input && typeof input === 'object' && !Array.isArray(input) ? (input as Record<string, unknown>) : {};
+  const readDays = (value: unknown, label: string, min: number, max: number): number | undefined => {
+    if (value === undefined || value === null || value === '') return undefined;
+    const days = typeof value === 'string' ? Number(value.trim()) : value;
+    if (typeof days !== 'number' || !Number.isInteger(days) || days < min || days > max) {
+      throw new HttpError(400, `${label} must be a whole number of days between ${min} and ${max}.`);
+    }
+    return days;
+  };
+  return {
+    timesheetLookbackDays: readDays(body.timesheetLookbackDays ?? body.lookbackDays, 'timesheetLookbackDays', 1, MAX_TIMESHEET_LOOKBACK_DAYS),
+    timesheetLookforwardDays: readDays(
+      body.timesheetLookforwardDays ?? body.lookforwardDays,
+      'timesheetLookforwardDays',
+      0,
+      MAX_TIMESHEET_LOOKFORWARD_DAYS
+    )
+  };
+}
+
+function timesheetWindow(options: DeputySyncOptions): TimesheetSyncOptions {
+  return {
+    ...(options.timesheetLookbackDays !== undefined ? { lookbackDays: options.timesheetLookbackDays } : {}),
+    ...(options.timesheetLookforwardDays !== undefined ? { lookforwardDays: options.timesheetLookforwardDays } : {})
+  };
+}
+
+async function runSyncForRoute(
+  actor: AuthUser,
+  trigger: SyncTrigger,
+  task: 'roster' | 'employees' | 'documents' | 'timesheets' | 'all',
+  options: DeputySyncOptions = {}
+) {
   const connection = await connectedDeputyConnection();
 
   // 'all' runs each resource independently so a transient failure on one
@@ -1298,7 +1368,7 @@ async function runSyncForRoute(actor: AuthUser, trigger: SyncTrigger, task: 'ros
     try { employees = await syncEmployees(connection); } catch (error) { failures.push(`employees: ${reason(error)}`); }
     try { documents = await syncDocuments(connection); } catch (error) { failures.push(`documents: ${reason(error)}`); }
     try { roster = await syncRoster(connection); } catch (error) { failures.push(`roster: ${reason(error)}`); }
-    try { timesheets = await syncTimesheets(connection); } catch (error) { failures.push(`timesheets: ${reason(error)}`); }
+    try { timesheets = await syncTimesheets(connection, timesheetWindow(options)); } catch (error) { failures.push(`timesheets: ${reason(error)}`); }
 
     console.log(
       `[deputy] sync(all) results — employees:${employees?.created ?? '–'}/${employees?.updated ?? '–'} ` +
@@ -1357,12 +1427,12 @@ async function runSyncForRoute(actor: AuthUser, trigger: SyncTrigger, task: 'ros
       });
       return { ok: true, trigger, actorId: actor.id, documents: result };
     }
-    const result = await syncTimesheets(connection);
+    const result = await syncTimesheets(connection, timesheetWindow(options));
     await markSyncRun(connection, trigger, 'SUCCESS', {
       recordsImported: result.created,
       recordsUpdated: result.updated
     });
-    return { ok: true, trigger, actorId: actor.id, timesheets: result };
+    return { ok: true, trigger, actorId: actor.id, timesheets: result, timesheetWindow: timesheetWindow(options) };
   } catch (error) {
     const errorSummary = error instanceof Error ? error.message : 'Deputy sync failed';
     await markSyncRun(connection, trigger, 'ERROR', { errorSummary });
@@ -1399,15 +1469,17 @@ export const deputyService = {
   async syncDocumentsNow(actor: AuthUser) {
     return runSyncForRoute(actor, 'MANUAL', 'documents');
   },
-  async syncTimesheetsNow(actor: AuthUser) {
-    return runSyncForRoute(actor, 'MANUAL', 'timesheets');
+  async syncTimesheetsNow(actor: AuthUser, options: DeputySyncOptions = {}) {
+    return runSyncForRoute(actor, 'MANUAL', 'timesheets', options);
   },
-  async syncAllNow(actor: AuthUser) {
-    return runSyncForRoute(actor, 'MANUAL', 'all');
+  async syncAllNow(actor: AuthUser, options: DeputySyncOptions = {}) {
+    return runSyncForRoute(actor, 'MANUAL', 'all', options);
   },
 
-  // Called by integration-jobs.ts /jobs/deputy/sync (Cloud Scheduler).
-  async runScheduledSync() {
+  // Called by integration-jobs.ts /jobs/deputy/sync (Cloud Scheduler, or the
+  // VPS cron with the scheduler secret). Options widen the timesheet window
+  // for a one-off re-read; the scheduled default is the nightly window.
+  async runScheduledSync(options: DeputySyncOptions = {}) {
     return runSyncForRoute(
       {
         id: 'system:integration-scheduler',
@@ -1424,17 +1496,20 @@ export const deputyService = {
         appAccess: []
       } as AuthUser,
       'SCHEDULED',
-      'all'
+      'all',
+      options
     );
   },
 
   // Exposed so integration.service.ts can call into the sync handlers
-  // directly when needed (e.g. for tests).
+  // directly when needed (e.g. for tests), and so the VPS diagnostic
+  // (scripts/timesheet-leave-diagnose.sh) can read Deputy rows as sent.
   _internal: {
     syncRoster,
     syncEmployees,
     syncDocuments,
     syncTimesheets,
+    inspectTimesheets,
     connectedDeputyConnection
   }
 };

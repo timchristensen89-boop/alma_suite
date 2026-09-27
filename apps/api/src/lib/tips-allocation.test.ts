@@ -157,6 +157,14 @@ it('POS-first tips: the rule is per venue AND per day, not global', () => {
   assert.equal(kept.length, 3);
 });
 
+it('POS-first tips: the emailed Lightspeed report is an import too, and yields to the register', () => {
+  const kept = posFirstCardEntries([
+    cardRow('Alma Avalon', '2026-09-20', 'alma-pos', 4200),
+    cardRow('Alma Avalon', '2026-09-20', 'lightspeed-email', 4200)
+  ]);
+  assert.deepEqual(kept.map((r) => r.source), ['alma-pos']);
+});
+
 it('POS-first tips: manual (control) entries are always kept', () => {
   const kept = posFirstCardEntries([
     cardRow('St Alma', '2026-08-19', 'alma-pos', 5000),

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { integrationService } from '../services/integration.service.js';
-import { deputyService } from '../services/deputy.service.js';
+import { deputyService, parseDeputySyncOptions } from '../services/deputy.service.js';
 import { sevenroomsService } from '../services/sevenrooms.service.js';
 import { lightspeedInboundService } from '../services/lightspeed-inbound.service.js';
 import { enquiryService } from '../services/enquiry.service.js';
@@ -64,10 +64,13 @@ integrationsRouter.post('/deputy/sync-documents', requireManager, async (req, re
   }
 });
 
+// Body may carry { lookbackDays, lookforwardDays } to widen the timesheet
+// window for a one-off re-read (bounded in parseDeputySyncOptions). Without a
+// body it is the nightly window.
 integrationsRouter.post('/deputy/sync-timesheets', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new Error('Not authenticated');
-    res.json(await deputyService.syncTimesheetsNow(req.user));
+    res.json(await deputyService.syncTimesheetsNow(req.user, parseDeputySyncOptions(req.body)));
   } catch (error) {
     next(error);
   }
@@ -76,7 +79,7 @@ integrationsRouter.post('/deputy/sync-timesheets', requireManager, async (req, r
 integrationsRouter.post('/deputy/sync-all', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new Error('Not authenticated');
-    res.json(await deputyService.syncAllNow(req.user));
+    res.json(await deputyService.syncAllNow(req.user, parseDeputySyncOptions(req.body)));
   } catch (error) {
     next(error);
   }

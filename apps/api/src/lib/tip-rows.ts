@@ -10,8 +10,16 @@
  * that was actually in the till.
  *
  * So: identical values repeated across a day are one total seen several times.
- * Values that differ are genuine parts and are added up. Getting this wrong
- * either way changes what staff are paid, so it is pure and it is tested.
+ * Values that differ are genuine parts and are added up.
+ *
+ * The opposite trap is a report with one row per SALE (the sales-feed export:
+ * SaleID, SaleDate, Tip). Two $10 tips on two different sales are two parts,
+ * not one total seen twice — so when rows carry an id, rows with different
+ * ids are always parts, and only rows sharing one id (an order listed once
+ * per line item, each line repeating the order's tip) collapse to one figure.
+ *
+ * Getting this wrong either way changes what staff are paid, so it is pure
+ * and it is tested.
  */
 
 export type ParsedTipRow = {
@@ -25,6 +33,12 @@ export type ParsedTipRow = {
    * same trading day. Omitted means dated.
    */
   dated?: boolean;
+  /**
+   * The sale / transaction / receipt the row belongs to, when the report has
+   * such a column. Distinct ids are distinct money. Omitted or null means the
+   * report has no row identity, and the repeated-total rule decides.
+   */
+  rowId?: string | null;
 };
 
 export type TipDayTotal = {
@@ -41,20 +55,58 @@ export type TipDayTotal = {
    * takings.
    */
   guessedDate: boolean;
+  /** How many distinct sale ids the day's rows carried (0 when the report has none). */
+  saleIds: number;
 };
 
+type DayBucket = { venue: string; dateKey: string; rows: ParsedTipRow[]; datedRows: number };
+
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+/** Rows that share an id and an amount are one sale seen per line; otherwise parts. */
+function centsForIdentifiedRows(rows: ParsedTipRow[]): { cents: number; saleIds: number } {
+  const byId = new Map<string, number[]>();
+  let cents = 0;
+  for (const row of rows) {
+    const id = row.rowId?.trim();
+    if (!id) {
+      cents += row.tipCents;
+      continue;
+    }
+    const amounts = byId.get(id) ?? [];
+    amounts.push(row.tipCents);
+    byId.set(id, amounts);
+  }
+  for (const amounts of byId.values()) {
+    cents += new Set(amounts).size === 1 ? amounts[0]! : sum(amounts);
+  }
+  return { cents, saleIds: byId.size };
+}
+
 export function totalTipsPerDay(rows: ParsedTipRow[]): TipDayTotal[] {
-  const byDay = new Map<string, { venue: string; dateKey: string; values: number[]; datedRows: number }>();
+  const byDay = new Map<string, DayBucket>();
   for (const row of rows) {
     const key = `${row.venue}|${row.dateKey}`;
-    const existing = byDay.get(key) ?? { venue: row.venue, dateKey: row.dateKey, values: [], datedRows: 0 };
-    existing.values.push(row.tipCents);
+    const existing = byDay.get(key) ?? { venue: row.venue, dateKey: row.dateKey, rows: [], datedRows: 0 };
+    existing.rows.push(row);
     if (row.dated !== false) existing.datedRows += 1;
     byDay.set(key, existing);
   }
 
-  return Array.from(byDay.values()).map(({ venue, dateKey, values, datedRows }) => {
+  return Array.from(byDay.values()).map(({ venue, dateKey, rows: dayRows, datedRows }) => {
+    const values = dayRows.map((row) => row.tipCents);
     const distinct = new Set(values);
+    const identified = dayRows.some((row) => row.rowId?.trim());
+    if (identified) {
+      const { cents, saleIds } = centsForIdentifiedRows(dayRows);
+      // One sale listed on several lines, each carrying the same tip: that is
+      // the repeated shape again, just scoped to a sale rather than a day.
+      const allSameId = new Set(dayRows.map((row) => row.rowId?.trim() || '')).size === 1;
+      const repeated = allSameId && values.length > 1 && distinct.size === 1 && values[0]! > 0;
+      return { venue, dateKey, cents, rows: values.length, repeated, guessedDate: datedRows === 0, saleIds };
+    }
     // One value, seen more than once, and it is real money: a repeated total.
     // Zeroes are exempt — a day of all-zero rows is genuinely zero either way,
     // and treating it as "repeated" would say something misleading in the log.
@@ -62,10 +114,11 @@ export function totalTipsPerDay(rows: ParsedTipRow[]): TipDayTotal[] {
     return {
       venue,
       dateKey,
-      cents: repeated ? values[0]! : values.reduce((sum, value) => sum + value, 0),
+      cents: repeated ? values[0]! : sum(values),
       rows: values.length,
       repeated,
-      guessedDate: datedRows === 0
+      guessedDate: datedRows === 0,
+      saleIds: 0
     };
   });
 }
