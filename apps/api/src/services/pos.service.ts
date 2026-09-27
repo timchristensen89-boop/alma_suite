@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { HttpError } from '../lib/http.js';
 import { env } from '../env.js';
-import { parseDishDietary, venueDayStart, type AuthUser, type PriceWindow } from '@alma/shared';
+import { parseDishDietary, recipePortionCostCents, venueDayStart, type AuthUser, type PriceWindow } from '@alma/shared';
 import { nswHolidayName } from '../lib/nsw-holidays.js';
 import { courseDishIds, stillFixed } from '../lib/set-menu-plan.js';
 import { mailService } from './mail.service.js';
@@ -3063,10 +3063,11 @@ export const posService = {
     let itemName = str(body.itemName);
     let amountCents = 0;
     if (recipeId) {
-      const recipe = await prisma.recipe.findUnique({ where: { id: recipeId }, select: { title: true, estimatedCost: true } });
+      const recipe = await prisma.recipe.findUnique({ where: { id: recipeId }, select: { title: true, estimatedCost: true, yieldQuantity: true, portionSize: true } });
       if (recipe) {
         itemName = itemName || recipe.title;
-        amountCents = Math.round((recipe.estimatedCost ?? 0) * 100) * quantity;
+        // A wasted serve costs one serve, not the batch (shared rule).
+        amountCents = (recipePortionCostCents(recipe) ?? 0) * quantity;
       }
     }
     if (!itemName) throw new HttpError(400, 'Pick the wasted item.');

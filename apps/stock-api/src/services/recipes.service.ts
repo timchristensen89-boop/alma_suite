@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma, computeActualCogs } from '@alma/db';
 import {
+  recipePortionCostCents,
   recipeBulkDeleteInputSchema,
   recipeCategoryCreateInputSchema,
   recipeCategoryUpdateInputSchema,
@@ -204,6 +205,7 @@ function toRecipePayload(row: RecipeRow): Recipe {
     isPrepRecipe: row.isPrepRecipe,
     status: normaliseRecipeStatus(row.status),
     estimatedCost: row.estimatedCost,
+    portionCostCents: recipePortionCostCents(row),
     notes: row.notes,
     lineCount: row._count.lines,
     venuePrices: row.venuePrices?.map((p) => ({ venue: p.venue, salePriceCents: p.salePriceCents })) ?? [],
@@ -254,6 +256,7 @@ function toRecipeWithLinesPayload(row: RecipeWithLinesRow): RecipeWithLines {
     isPrepRecipe: row.isPrepRecipe,
     status: normaliseRecipeStatus(row.status),
     estimatedCost: row.estimatedCost,
+    portionCostCents: recipePortionCostCents(row),
     notes: row.notes,
     lineCount: row.lines.length,
     venuePrices: row.venuePrices?.map((p) => ({ venue: p.venue, salePriceCents: p.salePriceCents })) ?? [],
@@ -866,6 +869,8 @@ export const recipesService = {
       recipes: scoped.map((recipe) => ({
         id: recipe.id,
         estimatedCost: recipe.estimatedCost ?? null,
+        yieldQuantity: recipe.yieldQuantity,
+        portionSize: recipe.portionSize,
         salePriceCents: recipe.salePriceCents ?? null,
         actualSales: recipe.actualSales
           ? { quantitySold: recipe.actualSales.quantitySold, netSalesCents: recipe.actualSales.netSalesCents }

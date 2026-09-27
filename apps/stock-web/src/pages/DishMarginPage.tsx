@@ -235,10 +235,9 @@ export function DishMarginPage() {
 
   const enriched = useMemo<EnrichedRecipe[]>(() => {
     return recipes.map((r) => {
-      // `estimatedCost` is dollars (a number like 8.50); convert to cents.
-      const costCents = typeof r.estimatedCost === 'number' && r.estimatedCost > 0
-        ? Math.round(r.estimatedCost * 100)
-        : null;
+      // One SERVE's cost (the API divides the batch cost by the recipe's
+      // portions); `estimatedCost` is the batch and must not be read per serve.
+      const costCents = r.portionCostCents ?? null;
       const sellCents = effectiveSellCents(r, venueFilter);
       const hasVenueOverride =
         venueFilter !== 'all' &&

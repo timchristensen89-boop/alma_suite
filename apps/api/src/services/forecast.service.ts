@@ -35,7 +35,8 @@ import {
   type ForecastFixedCost,
   type ForecastOutlookPayload,
   type ForecastVenueOutlook,
-  type ForecastWeek
+  type ForecastWeek,
+  recipePortionCostCents
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import {
@@ -317,7 +318,7 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
         }),
         prisma.salesItemActualEntry.findMany({
           where: { venue, serviceDate: { gte: trailingStart, lt: trailingEnd }, recipeId: { not: null } },
-          select: { quantity: true, netSalesCents: true, grossSalesCents: true, recipe: { select: { estimatedCost: true } } }
+          select: { quantity: true, netSalesCents: true, grossSalesCents: true, recipe: { select: { estimatedCost: true, yieldQuantity: true, portionSize: true } } }
         })
       ]);
       const salesCents = salesAgg._sum.salesCents ?? 0;
@@ -336,7 +337,8 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
         let mappedCostCents = 0;
         let mappedNetCents = 0;
         for (const row of mappedItemRows) {
-          const costCentsPerServe = Math.round((row.recipe?.estimatedCost ?? 0) * 100);
+          // One serve's cost, not the batch (shared rule).
+          const costCentsPerServe = row.recipe ? recipePortionCostCents(row.recipe) ?? 0 : 0;
           if (costCentsPerServe <= 0 || row.quantity <= 0) continue;
           const netCents = row.netSalesCents > 0 ? row.netSalesCents : row.grossSalesCents;
           if (netCents <= 0) continue;

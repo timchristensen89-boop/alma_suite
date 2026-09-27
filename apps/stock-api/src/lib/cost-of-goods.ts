@@ -10,12 +10,15 @@
 // the flag that would have marked the actual figure as purchases-only for a
 // window no stocktake bracketed. Purchases must never silently become COGS.
 
-import { isSuspectRecipeCost } from '@alma/shared';
+import { isSuspectRecipeCost, recipePortionCostCents } from '@alma/shared';
 
 export type CogsRecipeInput = {
   id: string;
-  /** Recipe.estimatedCost in dollars, as stored (the batch cost). */
+  /** Recipe.estimatedCost in dollars, as stored: the BATCH cost. */
   estimatedCost: number | null;
+  /** Batch yield and serve size, so the batch can be brought to one serve (recipePortionCostCents). */
+  yieldQuantity?: number | null;
+  portionSize?: number | null;
   salePriceCents: number | null;
   actualSales: { quantitySold: number; netSalesCents: number } | null;
 };
@@ -115,10 +118,14 @@ export function summariseTheoreticalCogs(recipes: CogsRecipeInput[]): Theoretica
       unmappedRecipes += 1;
       continue;
     }
-    const costCents = Math.round((recipe.estimatedCost ?? 0) * 100);
-    // Same guard the Reports menu profitability applies: a recipe that
-    // costs at least what it sells for is a batch spec costed per serve,
-    // and would push theoretical food cost wildly high.
+    // One SERVE's cost — the batch cost brought to a portion by the recipe's
+    // own yield and serve size. Multiplying the batch by units sold was the
+    // defect the suspect guard below was papering over.
+    const costCents = recipePortionCostCents({ estimatedCost: recipe.estimatedCost, yieldQuantity: recipe.yieldQuantity, portionSize: recipe.portionSize }) ?? 0;
+    // Same guard the Reports menu profitability applies: a recipe that still
+    // costs at least what it sells for per serve is a costing error (a
+    // yield recorded in grams with no serve size, say); it is counted and
+    // excluded, never silently folded in.
     if (isSuspectRecipeCost(costCents, sales.netSalesCents, qty)) {
       suspectRecipes += 1;
       continue;

@@ -46,6 +46,7 @@ import {
   type StocktakeReviewItem,
   STOCKTAKE_STALE_DAYS,
   MIN_PURCHASE_COVERAGE,
+  recipePortionCostCents,
   elapsedPeriodWeeks,
   resolveCostTargets,
   resolvePrimeCost,
@@ -201,9 +202,11 @@ function normaliseMenuText(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim() ?? '';
 }
 
-function recipeCostCents(recipe: { estimatedCost: number } | null | undefined) {
-  if (!recipe || recipe.estimatedCost <= 0) return null;
-  return Math.round(recipe.estimatedCost * 100);
+// One SERVE's cost in cents (shared rule): the stored estimatedCost is the
+// batch, so a batch recipe sold by the portion must be divided by its yield.
+function recipeCostCents(recipe: { estimatedCost: number; yieldQuantity: number | null; portionSize: number | null } | null | undefined) {
+  if (!recipe) return null;
+  return recipePortionCostCents(recipe);
 }
 
 function primeQuality(input: { sales: number; wages: number; cogs: number; rosterEstimate: number }) {
@@ -1520,7 +1523,7 @@ export const reportsService = {
           ...(data.category ? { categoryName: data.category } : {})
         },
         include: {
-          recipe: { select: { id: true, title: true, estimatedCost: true } }
+          recipe: { select: { id: true, title: true, estimatedCost: true, yieldQuantity: true, portionSize: true } }
         },
         orderBy: [{ netSalesCents: 'desc' }, { itemName: 'asc' }]
       }),
@@ -1530,7 +1533,7 @@ export const reportsService = {
           ...(data.category ? { categoryName: data.category } : {})
         },
         include: {
-          almaRecipe: { select: { id: true, title: true, estimatedCost: true } }
+          almaRecipe: { select: { id: true, title: true, estimatedCost: true, yieldQuantity: true, portionSize: true } }
         }
       })
     ]);
@@ -1843,17 +1846,10 @@ export const reportsService = {
       : [];
     const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
 
-    // A component is one portion of its recipe, not the whole batch.
+    // A component is one portion of its recipe, not the whole batch (shared rule).
     const costPerPortionCents = (recipeId: string | null): number | null => {
       const recipe = recipeId ? recipeById.get(recipeId) : null;
-      if (!recipe || recipe.estimatedCost == null || recipe.estimatedCost <= 0) return null;
-      const portions =
-        recipe.portionSize && recipe.portionSize > 0 && recipe.yieldQuantity && recipe.yieldQuantity > 0
-          ? recipe.yieldQuantity / recipe.portionSize
-          : recipe.yieldQuantity && recipe.yieldQuantity > 0
-            ? recipe.yieldQuantity
-            : 1;
-      return Math.round((recipe.estimatedCost * 100) / portions);
+      return recipe ? recipePortionCostCents(recipe) : null;
     };
 
     type DishRow = {
@@ -2116,16 +2112,8 @@ export const reportsService = {
     // The cost of ONE pour, the same way the rest of the suite costs a recipe:
     // estimatedCost is the batch, portions divide it. Wine is normally one
     // portion per recipe, but a carafe recipe entered as a yield would not be.
-    const pourCostCents = (recipe: { estimatedCost: number | null; portionSize: number | null; yieldQuantity: number | null }) => {
-      if (recipe.estimatedCost == null || recipe.estimatedCost <= 0) return null;
-      const portions =
-        recipe.portionSize && recipe.portionSize > 0 && recipe.yieldQuantity && recipe.yieldQuantity > 0
-          ? recipe.yieldQuantity / recipe.portionSize
-          : recipe.yieldQuantity && recipe.yieldQuantity > 0
-            ? recipe.yieldQuantity
-            : 1;
-      return Math.round((recipe.estimatedCost * 100) / portions);
-    };
+    const pourCostCents = (recipe: { estimatedCost: number | null; portionSize: number | null; yieldQuantity: number | null }) =>
+      recipePortionCostCents(recipe);
 
     const wines: WineFact[] = catalogue.map((row) => ({
       id: row.id,
@@ -2348,17 +2336,11 @@ export const reportsService = {
     ]);
 
     // Per-portion cost (cents): a component is one portion of its recipe, not
-    // the whole batch, so divide the batch cost by the portion count.
+    // the whole batch (shared rule).
     const costPerPortionCents = new Map<string, number>();
     for (const recipe of recipes) {
-      if (recipe.estimatedCost == null || recipe.estimatedCost <= 0) continue;
-      const portions =
-        recipe.portionSize && recipe.portionSize > 0 && recipe.yieldQuantity && recipe.yieldQuantity > 0
-          ? recipe.yieldQuantity / recipe.portionSize
-          : recipe.yieldQuantity && recipe.yieldQuantity > 0
-            ? recipe.yieldQuantity
-            : 1;
-      costPerPortionCents.set(recipe.id, Math.round((recipe.estimatedCost * 100) / portions));
+      const cents = recipePortionCostCents(recipe);
+      if (cents != null) costPerPortionCents.set(recipe.id, cents);
     }
 
     type MenuGroup = { key: string; label: string; venue: string; parent: RegExp; component: 'star' | 'bb' };

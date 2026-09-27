@@ -40,7 +40,8 @@ import {
   hasHours,
   unitsForPeriod,
   splitUnitsByDay,
-  classifyEarningsRateName
+  classifyEarningsRateName,
+  recipePortionCostCents
 } from '@alma/shared';
 import { env } from '../env.js';
 import {
@@ -6190,6 +6191,8 @@ export const integrationService = {
               venue: true,
               category: true,
               estimatedCost: true,
+              yieldQuantity: true,
+              portionSize: true,
               salePriceCents: true
             }
           },
@@ -6226,7 +6229,8 @@ export const integrationService = {
       filters: query,
       categories,
       mappings: mappings.map((mapping) => {
-        const recipeCostCents = mapping.almaRecipe ? Math.round(mapping.almaRecipe.estimatedCost * 100) : null;
+        // One serve's cost, not the batch (shared rule).
+        const recipeCostCents = mapping.almaRecipe ? recipePortionCostCents(mapping.almaRecipe) : null;
         const salePriceCents = mapping.priceMoneyAmount;
         const grossProfitCents = salePriceCents !== null && recipeCostCents !== null ? salePriceCents - recipeCostCents : null;
         return {
@@ -6285,6 +6289,7 @@ export const integrationService = {
         venue: recipe.venue,
         category: recipe.category,
         estimatedCost: recipe.estimatedCost,
+        portionCostCents: recipePortionCostCents(recipe),
         salePriceCents: recipe.salePriceCents,
         lineCount: recipe._count.lines
       })),

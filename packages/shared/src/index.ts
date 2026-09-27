@@ -21,6 +21,7 @@ export * from './cogs-quality.js';
 export * from './stocktake-freshness.js';
 export * from './cost-targets.js';
 export * from './prime-cost.js';
+export * from './recipe-cost.js';
 export * from './onboarding-completion.js';
 export * from './invoice-paste.js';
 export * from './count-scale.js';
@@ -2728,7 +2729,10 @@ export type SquareRecipeOption = {
   title: string;
   venue: string | null;
   category: string | null;
+  /** Batch cost in dollars. */
   estimatedCost: number;
+  /** One serve's cost in cents (recipePortionCostCents); null when uncosted. */
+  portionCostCents: number | null;
   salePriceCents: number | null;
   lineCount: number;
 };
@@ -6763,7 +6767,10 @@ export type Recipe = {
   yieldUnit: string | null;
   isPrepRecipe: boolean;
   status: RecipeStatus;
+  /** BATCH cost in dollars (Σ ingredient lines). Not what one serve costs — see portionCostCents. */
   estimatedCost: number;
+  /** Cost of ONE serve in cents: estimatedCost ÷ portions (recipePortionCostCents). Null when uncosted. */
+  portionCostCents: number | null;
   notes: string | null;
   lineCount: number;
   createdAt: string;

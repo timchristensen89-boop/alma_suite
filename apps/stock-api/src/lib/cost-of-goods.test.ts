@@ -135,6 +135,27 @@ describe('scope comparability — stocktake completeness is not enough', () => {
   });
 });
 
+describe('a sold serve is costed at the batch ÷ its portions', () => {
+  it('a 40-serve batch costing $50 contributes $1.25 per serve, not $50', () => {
+    // Guacamole: 2 kg batch, 50 g serves, $50.00 batch cost; 10 sold at $9.
+    const t = summariseTheoreticalCogs([
+      { id: 'guac', estimatedCost: 50, yieldQuantity: 2000, portionSize: 50, salePriceCents: 900, actualSales: { quantitySold: 10, netSalesCents: 9_000 } }
+    ]);
+    assert.equal(t.suspectRecipes, 0);
+    assert.equal(t.mappedRecipes, 1);
+    assert.equal(t.cogsCents, 1_250);
+    assert.equal(t.percentOfMappedSales, 13.9);
+  });
+
+  it('the same batch read per serve would have been thrown out as suspect — that guard was hiding the defect', () => {
+    const t = summariseTheoreticalCogs([
+      { id: 'guac', estimatedCost: 50, yieldQuantity: null, portionSize: null, salePriceCents: 900, actualSales: { quantitySold: 10, netSalesCents: 9_000 } }
+    ]);
+    assert.equal(t.suspectRecipes, 1);
+    assert.equal(t.cogsCents, 0);
+  });
+});
+
 describe('summariseTheoreticalCogs', () => {
   it('sums recipe cost × units over recipes that sold, and only their sales', () => {
     const t = summariseTheoreticalCogs([recipe({ id: 'taco', cost: 5, qty: 10, net: 18_000 }), recipe({ id: 'unsold', sold: false })]);
