@@ -21,6 +21,7 @@ import { basename } from 'node:path';
 import { prisma } from '@alma/db';
 import {
   parseLoadedStocktake,
+  resolveVenueLabel,
   aliasKey,
   catalogueKey,
   valuationOutliers,
@@ -72,9 +73,13 @@ async function main() {
   if (!path) throw new Error('Usage: import-loaded-stocktake.ts <file.pdf> [--apply]');
 
   const sheet = parseLoadedStocktake(await pdfRows(path));
+  // The sheet's first line is Loaded's location name, not necessarily a
+  // configured venue. Resolve through the shared rule; unknown stays null.
+  const configuredVenues = (await prisma.venue.findMany({ select: { name: true } })).map((v) => v.name);
+  const venueResolution = resolveVenueLabel(sheet.venue, configuredVenues);
 
   console.log(`\n${basename(path)}`);
-  console.log(`  Venue      ${sheet.venue ?? '(none found)'}`);
+  console.log(`  Venue      ${sheet.venue ?? '(none found)'} → ${venueResolution.venue ?? 'NOT a configured venue; will import unattributed'} (${venueResolution.status})`);
   console.log(`  Counted    ${sheet.countedAtText ?? '(none found)'} by ${sheet.countedBy ?? '(unknown)'}`);
   console.log(`  Lines      ${sheet.lines.length}`);
   console.log(`  Value      ${money(sheet.summedTotalCents)}${
@@ -235,7 +240,7 @@ async function main() {
     const created = await tx.stocktake.create({
       data: {
         name: `${sheet.venue ?? 'Venue'} — ${sheet.countedAtText ?? basename(path)} (from Loaded)`,
-        venue: sheet.venue,
+        venue: venueResolution.venue,
         countedAt,
         status: 'IN_PROGRESS',
         importSource: `loaded-pdf:${basename(path)}`,

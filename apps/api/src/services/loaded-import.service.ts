@@ -6,7 +6,7 @@
 // If you change one, change the other.
 
 import { prisma } from '@alma/db';
-import type { AuthUser } from '@alma/shared';
+import { resolveVenueLabel, type AuthUser, type VenueResolution } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 
 function parseCsv(text: string): string[][] {
@@ -200,7 +200,10 @@ export const loadedImportService = {
     for (const item of allItems) itemByName.set(item.name.toLowerCase(), item);
 
     type Line = { csvRow: number; itemName: string; matchedItemId: string | null; category: string | null; area: string | null; quantity: number | null; unit: string | null; valueCents: number | null; costCents: number | null };
-    type Session = { date: string; venue: string; lines: Line[] };
+    // Location labels resolve to a configured venue through the shared rule
+    // or stay unattributed (null) with the label kept; never guessed.
+    const configuredVenues = (await prisma.venue.findMany({ select: { name: true }, orderBy: { name: 'asc' } })).map((v) => v.name);
+    type Session = { date: string; venueLabel: string; venue: string | null; venueResolution: VenueResolution['status']; lines: Line[] };
     const groups = new Map<string, Session>();
     let matched = 0;
     let unmatched = 0;
@@ -208,7 +211,8 @@ export const loadedImportService = {
     rows.forEach((raw, index) => {
       const csvRow = index + 2;
       const date = pick(raw, 'date', 'counted at', 'count date') || new Date().toISOString().slice(0, 10);
-      const venue = pick(raw, 'venue', 'location') || 'Unspecified';
+      const venueLabel = pick(raw, 'venue', 'location');
+      const resolved = resolveVenueLabel(venueLabel, configuredVenues);
       const itemName = pick(raw, 'item', 'item name', 'name');
       const category = pick(raw, 'category', 'group') || null;
       const area = pick(raw, 'area', 'count area', 'location') || null;
@@ -217,8 +221,8 @@ export const loadedImportService = {
       const valueCents = parseCostToCents(pick(raw, 'value', 'stock value'));
       const costCents = parseCostToCents(pick(raw, 'cost', 'latest cost'));
 
-      const key = `${date}|${venue}`;
-      const existing = groups.get(key) ?? { date, venue, lines: [] };
+      const key = `${date}|${venueLabel}`;
+      const existing = groups.get(key) ?? { date, venueLabel, venue: resolved.venue, venueResolution: resolved.status, lines: [] };
       const match = itemByName.get(itemName.toLowerCase());
       if (match) matched += 1;
       else unmatched += 1;
@@ -228,7 +232,7 @@ export const loadedImportService = {
 
     return {
       sessions: Array.from(groups.values()).sort((a, b) => a.date.localeCompare(b.date)),
-      summary: { totalRows: rows.length, matchedItems: matched, unmatchedItems: unmatched, sessionCount: groups.size }
+      summary: { totalRows: rows.length, matchedItems: matched, unmatchedItems: unmatched, sessionCount: groups.size, unattributedSessions: Array.from(groups.values()).filter((s) => s.venue == null).length }
     };
   },
 
@@ -248,14 +252,18 @@ export const loadedImportService = {
       }
       const stocktake = await prisma.stocktake.create({
         data: {
-          name: `Loaded import · ${session.venue} · ${session.date}`,
+          name: `Loaded import · ${session.venueLabel || '(no location)'} · ${session.date}`,
+          // Configured venue or null — never the raw label as a venue.
           venue: session.venue,
           countedAt,
           status: 'LOCKED',
           lockedAt: new Date(),
           lockedByUserId: actor.id ?? null,
           importSource: `Loaded CSV import ${new Date().toISOString().slice(0, 10)}`,
-          notes: `Imported from Loaded by ${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim()
+          notes: `Imported from Loaded by ${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() +
+            (session.venue
+              ? ` · location "${session.venueLabel}" → ${session.venue} (${session.venueResolution})`
+              : ` · location "${session.venueLabel || ''}" not resolved to a configured venue (${session.venueResolution}); unattributed`)
         }
       });
       sessionsCreated += 1;

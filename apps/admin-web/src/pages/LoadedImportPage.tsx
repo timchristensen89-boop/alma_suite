@@ -35,7 +35,9 @@ type ItemPreview = {
 type StocktakePreview = {
   sessions: Array<{
     date: string;
-    venue: string;
+    venueLabel: string;
+    venue: string | null;
+    venueResolution: string;
     lines: Array<{ csvRow: number; itemName: string; matchedItemId: string | null; quantity: number | null; unit: string | null; valueCents: number | null }>;
   }>;
   summary: { totalRows: number; matchedItems: number; unmatchedItems: number; sessionCount: number };
@@ -316,7 +318,7 @@ function StocktakeImportPanel() {
               <li key={idx} className="loaded-replacement-row">
                 <Badge tone="info">{session.date}</Badge>
                 <div className="loaded-replacement-row-body">
-                  <strong>{session.venue} · {session.lines.length} lines</strong>
+                  <strong>{session.venue ?? `${session.venueLabel || '(no location)'} — not a configured venue, will import unattributed`} · {session.lines.length} lines</strong>
                   <small>
                     Matched: {session.lines.filter((line) => line.matchedItemId).length} ·
                     Unmatched: {session.lines.filter((line) => !line.matchedItemId).length}
