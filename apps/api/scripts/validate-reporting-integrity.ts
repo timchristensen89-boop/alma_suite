@@ -23,7 +23,9 @@
  */
 import { prisma, computeActualCogs, stockBracket, prismaCogsReader, partitionCountLabels, type ActualCogs } from '@alma/db';
 import {
-  STOCKTAKE_BRACKET_TOLERANCE_DAYS,
+  STOCKTAKE_BOUNDARY_WINDOW_DAYS,
+  STOCKTAKE_STALE_DAYS,
+  assessStocktakeValuation,
   isSuspectRecipeCost,
   realVenueNames,
   recipePortionCost,
@@ -47,8 +49,13 @@ function section(title: string) {
 }
 
 function describeBracket(label: string, b: ActualCogs['opening']) {
-  const venues = b.venuesWithoutCount.length ? ` · without a valid count: ${b.venuesWithoutCount.map((v) => `${v.venue} (${v.status}${v.countedOn ? `, ${v.countedOn}, ${v.ageDays}d` : ''})`).join('; ')}` : '';
-  return `${label}: ${b.status.toUpperCase()} value=${money(b.valueCents)} countedOn=${b.countedOn ?? '—'} age=${b.ageDays ?? '—'}d (limit ${b.toleranceDays}d)${venues}`;
+  const head = `${label}: ${b.status.toUpperCase()} value=${money(b.valueCents)} composition=${b.composition ?? '—'} nearest=${b.countedOn ?? '—'} distance=${b.distanceDays ?? '—'}d (window ±${b.windowDays}d)`;
+  const lines = [head];
+  for (const c of b.components) lines.push(`      used     ${c.scope.padEnd(9)} ${c.countedOn} (${c.side}, ${c.distanceDays}d) ${money(c.valueCents)} ← ${c.names.join(' + ')}`);
+  for (const r of b.rejected) lines.push(`      rejected ${r.scope.padEnd(9)} ${r.countedOn} (${r.distanceDays}d) ${money(r.valueCents)} "${r.name}" — ${r.reason}: ${r.detail}`);
+  for (const v of b.venuesWithoutCount) lines.push(`      short    ${v.venue}: ${v.status} — ${v.detail}`);
+  for (const w of b.warnings) lines.push(`      warning  ${w}`);
+  return lines.join('\n    ');
 }
 
 async function stocktakeCadence(venues: string[]) {
@@ -115,7 +122,7 @@ async function stocktakeCadence(venues: string[]) {
 }
 
 async function actualCogs(venues: string[], months: string[]) {
-  section(`2. Actual COGS (tolerance ${STOCKTAKE_BRACKET_TOLERANCE_DAYS} days)`);
+  section(`2. Actual COGS (boundary window ±${STOCKTAKE_BOUNDARY_WINDOW_DAYS} days; a boundary is one COMBINED count or a FOOD + BEVERAGE pair, of known scope, sufficiently valued)`);
   for (const month of months) {
     const bounds = venueMonthBounds(month)!;
     console.log(`\n── ${month} (${bounds.gte.toISOString()} → ${bounds.lt.toISOString()})`);
@@ -132,6 +139,7 @@ async function actualCogs(venues: string[], months: string[]) {
       }
       console.log(`    quality=${c.quality} source=${c.source} → ${c.quality === 'complete' ? `actual COGS ${money(c.cogsCents)}` : `UNAVAILABLE (purchases shown as purchases ${money(c.purchasesCents)})`}`);
       for (const r of c.reasons) console.log(`      • ${r}`);
+      for (const w of c.warnings) console.log(`      ⚠ ${w}`);
     }
   }
 }
@@ -149,8 +157,11 @@ async function recapVsPrime(venues: string[], months: string[]) {
       const agree = m.primeCostCents === t.primeCostCents && m.salesCents === t.salesCents;
       console.log(`\n  ${month} · ${venue ?? 'GROUP'} · targets ${recap.targets.source} (wage ${recap.targets.wagePct} / food ${recap.targets.foodPct} / prime ${recap.targets.primePct})`);
       console.log(`    Recap : sales ${money(m.salesCents)} labour ${money(m.wageCents)} food ${m.foodBasis === 'actual' ? money(m.cogsCents) : `unavailable (purchases ${money(m.purchasesCents)})`} prime ${money(m.primeCostCents)} ${m.primePct ?? '—'}%`);
-      console.log(`    Prime : sales ${money(t.salesCents)} labour ${money(t.wageCents)} (${t.labourBasis}) food ${t.foodBasis === 'actual' ? money(t.cogsCents) : `unavailable (purchases ${money(t.purchasesCents)})`} prime ${money(t.primeCostCents)} ${t.primeCostPercent ?? '—'}% · coverage ${Math.round(t.purchaseCoverage * 100)}%`);
-      console.log(`    agree on sales and prime: ${agree ? 'YES' : 'NO ← investigate'}`);
+      console.log(`    Prime : sales ${money(t.salesCents)} labour ${money(t.wageCents)} (${t.labourBasis}${t.rosterOnlyWageCents ? `; roster-only ${money(t.rosterOnlyWageCents)} in ${t.rosterOnlyVenues.join(', ')} excluded` : ''}) food ${t.foodBasis === 'actual' ? money(t.cogsCents) : `unavailable (purchases ${money(t.purchasesCents)})`} prime ${money(t.primeCostCents)} ${t.primeCostPercent ?? '—'}% · coverage ${Math.round(t.purchaseCoverage * 100)}%`);
+      console.log(`    agree on sales, labour and prime: ${agree && m.wageCents === t.wageCents ? 'YES' : 'NO ← investigate'}`);
+      for (const row of prime.venues) console.log(`      row ${row.venue.padEnd(14)} labour ${money(row.wageCents)} (${row.labourBasis}; timesheets ${money(row.wageCents === row.rosterWageEstimateCents && row.labourBasis === 'roster_estimate' ? 0 : row.wageCents)}, roster estimate ${money(row.rosterWageEstimateCents)}, ${row.timesheetHours}h / ${row.rosterHours}h)`);
+      const f = t.purchaseFeed;
+      console.log(`    invoice feed: ${f.status} · coverage ${Math.round(f.coverage * 100)}% · ${f.firstInvoiceDate ?? '—'} → ${f.lastInvoiceDate ?? '—'} over ${f.elapsedDays} elapsed days${f.missingInterval ? ` · missing ${f.missingInterval.from} → ${f.missingInterval.to}` : ''} · established suppliers ${f.establishedSuppliers}${f.absentEstablishedSuppliers.length ? ` · ABSENT: ${f.absentEstablishedSuppliers.map((s) => `${s.supplierName} (last ${s.lastInvoiceBefore})`).join('; ')}` : ''}`);
       for (const r of m.reasons) console.log(`      • ${r}`);
     }
   }
@@ -202,9 +213,9 @@ async function stockOnHand(venues: string[]) {
   section('5. Stock on hand: corrected (latest valid count) vs old (every stocktake line ever)');
   const now = new Date();
   for (const venue of [null, ...venues]) {
-    const bracket = await stockBracket(prismaCogsReader, venue, now);
+    const bracket = await stockBracket(prismaCogsReader, venue, now, STOCKTAKE_STALE_DAYS);
     const old = await prisma.stocktakeLine.aggregate({ _sum: { stockValueCents: true }, where: venue ? { stocktake: { OR: [{ venue }, { venue: null }] } } : {} });
-    console.log(`  ${venue ?? 'GROUP'}: NEW ${bracket.status === 'ok' ? money(bracket.valueCents) : `unavailable (${bracket.status}${bracket.countedOn ? `, latest ${bracket.countedOn}, ${bracket.ageDays}d` : ''})`}  ·  OLD summary aggregate ${money(old._sum.stockValueCents ?? 0)}`);
+    console.log(`  ${venue ?? 'GROUP'}: NEW ${bracket.status === 'ok' ? `${money(bracket.valueCents)} (${bracket.composition}, ${bracket.countedOn})` : `unavailable (${bracket.status}${bracket.rejected.length ? `: ${bracket.rejected.map((r) => `${r.countedOn} ${r.scope} ${r.reason}`).join('; ')}` : ''}${bracket.venuesWithoutCount.length ? `: ${bracket.venuesWithoutCount.map((v) => `${v.venue} ${v.detail}`).join('; ')}` : ''})`}  ·  OLD summary aggregate ${money(old._sum.stockValueCents ?? 0)}`);
   }
 }
 
@@ -241,6 +252,26 @@ async function dataQuality(venues: string[], months: string[]) {
   for (const row of unmappedItems) console.log(`  ${row.venue}: ${row._count._all} rows, ${money(row._sum.netSalesCents ?? 0)}`);
 }
 
+async function scopeAndValuation(venues: string[], months: string[]) {
+  section('8. Scope and valuation of every finalised count near the month boundaries (what the composition rule sees)');
+  const first = venueMonthBounds(months[0]!)!.gte;
+  const last = venueMonthBounds(months[months.length - 1]!)!.lt;
+  const counts = await prisma.stocktake.findMany({
+    where: {
+      status: { in: [...FINALISED] },
+      countedAt: { gte: new Date(first.getTime() - STOCKTAKE_BOUNDARY_WINDOW_DAYS * DAY_MS), lte: new Date(last.getTime() + STOCKTAKE_BOUNDARY_WINDOW_DAYS * DAY_MS) }
+    },
+    select: { id: true, name: true, venue: true, countedAt: true, countedAtText: true, countedAtSource: true, scope: true, scopeEvidence: true, importSource: true, template: true, lines: { select: { itemId: true, recipeId: true, countedQty: true, stockValueCents: true } } },
+    orderBy: { countedAt: 'asc' }
+  });
+  for (const c of counts) {
+    const v = assessStocktakeValuation(c.lines);
+    const resolved = resolveVenueLabel(c.venue, venues);
+    console.log(`  ${venueDayKey(c.countedAt)} ${(resolved.venue ?? `"${c.venue ?? ''}" (off-venue)`).padEnd(14)} ${c.scope.padEnd(9)} ${money(v.valueCents).padStart(12)}  lines ${v.lines} counted ${v.counted} zero ${v.zero} linked+valued ${v.linkedValued} unlinked+valued ${v.unlinkedValued} UNVALUED ${v.unvalued} → ${v.sufficient ? 'sufficient' : `INSUFFICIENT (${v.reason})`}`);
+    console.log(`      "${c.name}" · template ${c.template ?? '—'} · source ${c.importSource ?? 'app'} · countedAt ${c.countedAt.toISOString()} (${c.countedAtSource ?? 'unrecorded'}${c.countedAtText ? `, printed "${c.countedAtText}"` : ''}) · scope evidence: ${c.scopeEvidence ?? '—'}`);
+  }
+}
+
 async function main() {
   const settings = await settingsService.get();
   const venues = realVenueNames(settings.venues.map((v) => v.name));
@@ -253,6 +284,7 @@ async function main() {
   await theoreticalScope(venues);
   await stockOnHand(venues);
   await labourPopulations();
+  await scopeAndValuation(venues, months);
   await dataQuality(venues, months);
 }
 

@@ -13,6 +13,7 @@ import type {
   StocktakePrepRecipeOption,
   StocktakeStatus,
   StocktakeTemplate,
+  StocktakeScope,
   StocktakeTemplatesPayload,
   StocktakeTemplateResolved,
   StocktakeWithLines,
@@ -89,11 +90,23 @@ type StocktakeDraft = {
   name: string;
   venue: string;
   template: string;
+  /** '' = let the API derive it from the template (categories, then name); otherwise a reviewed choice. */
+  scope: '' | StocktakeScope;
   countedAt: string;
   status: StocktakeStatus;
   notes: string;
   lines: LineDraft[];
 };
+
+const SCOPE_LABELS: Record<StocktakeScope, string> = {
+  FOOD: 'Food',
+  BEVERAGE: 'Beverage',
+  COMBINED: 'Combined',
+  UNKNOWN: 'Scope unknown'
+};
+function scopeLabel(scope: StocktakeScope | undefined) {
+  return scope ? SCOPE_LABELS[scope] : 'Scope unknown';
+}
 
 function formatCurrency(cents: number) {
   return (cents / 100).toLocaleString(undefined, {
@@ -285,6 +298,7 @@ function emptyDraft(items: StockItem[], blind = true): StocktakeDraft {
     name: `Stocktake ${new Date().toLocaleDateString()}`,
     venue: '',
     template: 'Full count',
+    scope: '',
     countedAt: formatDateTimeInput(new Date().toISOString()),
     status: 'IN_PROGRESS',
     notes: '',
@@ -309,6 +323,7 @@ function draftFromTemplate(
     name: `${template.name} ${new Date().toLocaleDateString()}`,
     venue: template.venue ?? '',
     template: template.name,
+    scope: '',
     countedAt: formatDateTimeInput(new Date().toISOString()),
     status: 'IN_PROGRESS',
     notes: '',
@@ -323,6 +338,7 @@ function draftFromStocktake(stocktake: StocktakeWithLines): StocktakeDraft {
     name: stocktake.name,
     venue: stocktake.venue ?? '',
     template: stocktake.template ?? '',
+    scope: stocktake.scope ?? '',
     countedAt: formatDateTimeInput(stocktake.countedAt),
     status: stocktake.status,
     notes: stocktake.notes ?? '',
@@ -908,7 +924,7 @@ export function StocktakePage() {
                     <td>
                       <span className="cell-stack">
                         <strong>{stocktake.name}</strong>
-                        <span className="subtle">{stocktake.template ?? 'No template'}</span>
+                        <span className="subtle">{stocktake.template ?? 'No template'} · {scopeLabel(stocktake.scope)}</span>
                       </span>
                     </td>
                     <td>{stocktake.venue ?? 'Unassigned'}</td>
@@ -1141,7 +1157,7 @@ export function StocktakePage() {
                               <td>
                                 <span className="cell-stack">
                                   <strong>{stocktake.name}</strong>
-                                  <span className="subtle">{stocktake.template ?? '—'}</span>
+                                  <span className="subtle">{stocktake.template ?? '—'} · {scopeLabel(stocktake.scope)}</span>
                                 </span>
                               </td>
                               <td>{stocktake.venue ?? '—'}</td>
@@ -1754,6 +1770,7 @@ function StocktakeForm({
       name: draft.name.trim(),
       venue: draft.venue.trim(),
       template: draft.template.trim(),
+      ...(draft.scope ? { scope: draft.scope } : {}),
       countedAt: new Date(draft.countedAt).toISOString(),
       status,
       notes: draft.notes.trim(),
@@ -1834,6 +1851,21 @@ function StocktakeForm({
       </div>
       <div className="form-grid two">
         <Input label="Template" value={draft.template} onChange={(event) => update('template', event.currentTarget.value)} placeholder="Full count, Bar, Kitchen…" />
+        <Select
+          label="What this count covers"
+          value={draft.scope}
+          onChange={(event) => update('scope', event.currentTarget.value as StocktakeDraft['scope'])}
+          options={[
+            { label: 'From the template (Kitchen → food, Bar & FOH → beverage)', value: '' },
+            { label: 'Food (kitchen) only', value: 'FOOD' },
+            { label: 'Beverage (bar & FOH) only', value: 'BEVERAGE' },
+            { label: 'Combined — the whole venue', value: 'COMBINED' },
+            { label: 'Unknown / mixed', value: 'UNKNOWN' }
+          ]}
+        />
+      </div>
+      <div className="form-grid two">
+        <span className="subtle">Cost of goods needs a combined count, or a food count plus a beverage count, at each month end. A count marked Unknown cannot bound it.</span>
         <Textarea label="Notes" rows={2} value={draft.notes} onChange={(event) => update('notes', event.currentTarget.value)} />
       </div>
 

@@ -5,7 +5,7 @@
 // Both implementations talk to the same Prisma DB; logic kept in lockstep.
 // If you change one, change the other.
 
-import { prisma } from '@alma/db';
+import { prisma, prismaCogsReader } from '@alma/db';
 import { resolveVenueLabel, type AuthUser, type VenueResolution } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 
@@ -202,7 +202,8 @@ export const loadedImportService = {
     type Line = { csvRow: number; itemName: string; matchedItemId: string | null; category: string | null; area: string | null; quantity: number | null; unit: string | null; valueCents: number | null; costCents: number | null };
     // Location labels resolve to a configured venue through the shared rule
     // or stay unattributed (null) with the label kept; never guessed.
-    const configuredVenues = (await prisma.venue.findMany({ select: { name: true }, orderBy: { name: 'asc' } })).map((v) => v.name);
+    // Settings › Venues, with the Venue table as fallback (the canonical population; the table is empty in production).
+    const configuredVenues = await prismaCogsReader.configuredVenues();
     type Session = { date: string; venueLabel: string; venue: string | null; venueResolution: VenueResolution['status']; lines: Line[] };
     const groups = new Map<string, Session>();
     let matched = 0;

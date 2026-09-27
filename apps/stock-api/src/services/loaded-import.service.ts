@@ -12,7 +12,7 @@
 // with `importSource: 'Loaded'` so reports treat them as authoritative
 // but they can't be edited without a manager reopen + reason.
 
-import { prisma } from '@alma/db';
+import { prisma, prismaCogsReader } from '@alma/db';
 import { resolveVenueLabel, type AuthUser, type VenueResolution } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 
@@ -302,7 +302,8 @@ export const loadedImportService = {
     // alias), or null. An unknown location — "St View", "Unspecified", a
     // blank — is imported unattributed with its label kept for remediation;
     // it is never guessed into a restaurant.
-    const configuredVenues = (await prisma.venue.findMany({ select: { name: true }, orderBy: { name: 'asc' } })).map((v) => v.name);
+    // Settings › Venues, with the Venue table as fallback (the canonical population; the table is empty in production).
+    const configuredVenues = await prismaCogsReader.configuredVenues();
     type SessionGroup = {
       date: string;
       /** The CSV's own location text, untouched. */
