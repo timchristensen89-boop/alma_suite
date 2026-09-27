@@ -101,6 +101,41 @@ The Deputy scheduled job runs employee, document, and roster sync in that order 
 
 No body is required; `POST /api/integration-jobs/deputy/sync` with the scheduler bearer is enough.
 
+### Timesheets: the window, and re-reading an older week
+
+The timesheet part of the sync reads 14 days back and 1 day forward. Each Deputy
+timesheet upserts onto its own row (`deputyTimesheetId`), so a re-read converges
+rather than duplicating. A body widens the window for a one-off re-read — for
+example after a change to how a Deputy field is read, so the corrected reading
+reaches rows the nightly window has already moved past:
+
+```json
+{"timesheetLookbackDays": 28}
+```
+
+Bounds are 1–120 days back and 0–31 forward (`timesheetLookforwardDays`). The
+manager routes `POST /api/integrations/deputy/sync-timesheets` and `/sync-all`
+accept the same keys (`lookbackDays` / `lookforwardDays` are aliases). On the
+VPS, with the scheduler secret read from the API env file as the daily-sales
+cron does:
+
+```
+curl -fsS -m 300 -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(grep -m1 ^INTEGRATION_SCHEDULER_SECRET= /opt/alma/deploy/env/suite-api.env | cut -d= -f2-)" \
+  -d '{"timesheetLookbackDays":28}' https://api.almagroup.com.au/api/integration-jobs/deputy/sync
+```
+
+**Leave.** A Deputy timesheet imports as leave (`isLeave`, badged on the
+Timesheets page) only when Deputy's `IsLeave` bit is set or `LeaveRule` is a
+positive rule id; a `0` or blank rule id is "no rule", never leave. The row's
+note records the raw Deputy fields (`Deputy IsLeave=… LeaveRule=… LeaveId=…`)
+so the badge can be checked without another API call. To see one person's week
+side by side with what Deputy holds today, run the read-only
+`scripts/timesheet-leave-diagnose.sh` on the VPS (`STAFF=<name>
+WEEK_ENDING=<Sunday>`); it prints each row, Deputy's own fields, whether the two
+agree, and the exact re-sync command. A row Deputy itself marks as leave stays
+leave after a re-sync — correct it in Deputy first.
+
 ## Cloud Scheduler Commands
 
 Create these from a secure shell where the secret is already available in an environment variable. Do not paste the real value into shared notes.
@@ -146,6 +181,58 @@ gcloud scheduler jobs create http alma-integrations-daily-9am \
 ```
 
 If you already have the early-morning Xero + Square jobs above, either delete those (`gcloud scheduler jobs delete alma-xero-supplier-import --location australia-southeast1`) or leave them — `runScheduledIntegrationImports` is idempotent and safe to call twice.
+
+## Lightspeed emailed reports (Avalon card tips and item sales)
+
+The Lightspeed (Kounta) API is a paid add-on, so Alma Avalon's data arrives the
+free way: scheduled Insights reports emailed as CSV to the reports mailbox on
+`mail.almagroup.com.au`. The VPS IMAP poller (`scripts/sevenrooms-imap-poll.py`,
+same transport as SevenRooms) forwards each email to
+`POST /webhooks/lightspeed/email?token=…`, and
+`apps/api/src/services/lightspeed-inbound.service.ts` reads every CSV
+attachment. Each email is recorded once on `IntegrationWebhookEvent`
+(provider `LIGHTSPEED`, account `inbound-email`) with what it wrote, what it
+refused and why.
+
+**Where to look first.** Staff → Tips → *Emailed Lightspeed reports* lists the
+last 14 days of emails with their outcome and notes. The same record prints on
+the VPS with `scripts/tips-diagnose.sh`. A day with no card tips is one of:
+
+- no email arrived (check the Lightspeed schedule and the mailbox rule);
+- the email had no tips column (the report's tile lost it);
+- the day was refused — undated rows that could be several days run together,
+  or two tiles that disagree on the day's figure;
+- the day was skipped because card tips were already recorded by hand or by
+  the API sync (the emailed figure is never written on top of them).
+
+**How the tips column is read** (`apps/api/src/lib/lightspeed-tips.ts`,
+`tip-rows.ts`, all unit-tested):
+
+- One tips/gratuity column per attachment; the most total-looking wins; rate,
+  percentage and count columns are never money.
+- The date column is found by pattern, so Looker's view prefix and timeframe
+  suffix ("Sales Data Sale Closed Date", "Sale Closed Date Date", "Payments
+  Payment Date", the sales feed's "SaleDate") all work, as do `dd/mm/yyyy`,
+  `dd-mm-yyyy` and "20 Sep 2026". A date on one row carries forward over the
+  blank-date value rows Looker writes beneath it.
+- Rows are totalled per attachment, per venue, per day. Identical values
+  repeated across a day are one day total (the revenue-centre shape that once
+  paid a week at 3×); differing values are parts and add up. When the report
+  has a sale id column (the sales-feed export), rows with different ids are
+  always separate sales — two $10 tips are $20.
+- Attachments are then merged: tiles that agree are one figure; tiles that
+  disagree are refused with both figures named. Ranking tiles (top 10, highest,
+  drop-off, discounts) are never read; "Untitled" / "Summary of …" tiles are
+  read for tips but not for item sales.
+- Today is never written (the day is not over), $0 days are skipped, and
+  several undated rows on one guessed day are refused rather than summed.
+
+**Setting the report up so it lands.** Schedule a daily report with the date
+filter on *Yesterday*, include the business date column (e.g. *Sale Closed
+Date*) and keep the tips column on one tile. If Lightspeed will only email the
+reconciliation overview, the per-sale sales-feed export (SaleID, SaleDate, Tip)
+can still be pasted into Staff → Tips → *Manual CSV import*; the paste keys each
+sale by its id and a re-paste updates rather than duplicates.
 
 ## Daily sales → Xero (POS takings into the books)
 
