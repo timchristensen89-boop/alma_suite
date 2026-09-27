@@ -12,6 +12,7 @@ import type {
   HomeOperationalSummary,
   StaffClockStatusPayload
 } from '@alma/shared';
+import { VENUE_TIME_ZONE } from '@alma/shared';
 import {
   AlmaAppIcon,
   SUITE_APPS,
@@ -123,16 +124,25 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
+// Wall-clock fields in the venue's zone, so a kiosk or a phone anywhere
+// greets and dates the way the venue's clock does.
+function venueClock(d: Date): { hours: number; minutes: number } {
+  const parts = new Intl.DateTimeFormat('en-AU', { timeZone: VENUE_TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d);
+  const pick = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return { hours: pick('hour') % 24, minutes: pick('minute') };
+}
+
 function greetingFor(d: Date): string {
-  const h = d.getHours();
+  const h = venueClock(d).hours;
   if (h < 12) return 'Good morning';
   if (h < 17) return 'Good afternoon';
   return 'Good evening';
 }
 
 function fmtTime(d: Date): { h: number; m: string; ap: string } {
-  let h = d.getHours();
-  const m = d.getMinutes();
+  const clock = venueClock(d);
+  let h = clock.hours;
+  const m = clock.minutes;
   const ap = h >= 12 ? 'pm' : 'am';
   h = h % 12;
   if (h === 0) h = 12;
@@ -693,7 +703,8 @@ export function App() {
   const dateLabel = now.toLocaleDateString('en-AU', {
     weekday: 'long',
     day: 'numeric',
-    month: 'long'
+    month: 'long',
+    timeZone: VENUE_TIME_ZONE
   });
   const shiftRows = payload?.clockedIn ?? [];
   const venueLabel = payload?.venue ?? user?.venue ?? 'Venue';

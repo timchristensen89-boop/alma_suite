@@ -82,7 +82,7 @@ jobs:
       # than the first are kept literal, so the step ran `pnpm --filter X`
       # with no command and died with "Unknown option: 'recursive'".
       - name: Run tests
-        run: pnpm --filter @alma/api --filter @alma/stock-api --filter @alma/stock-web --filter @alma/ui --filter @alma/db test
+        run: pnpm --filter @alma/api --filter @alma/stock-api --filter @alma/stock-web --filter @alma/reports-web --filter @alma/ui --filter @alma/db test
 
   frontend-build:
     name: Frontend builds

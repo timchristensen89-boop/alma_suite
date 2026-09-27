@@ -284,7 +284,7 @@ export function SquareMenuMappingPage() {
                   <strong>Current mapping</strong>
                   <span>{mapping.almaRecipe ? mapping.almaRecipe.title : mapping.stockItem ? mapping.stockItem.name : 'Not mapped'}</span>
                   <small>
-                    Recipe cost: {recipeCost(mapping.almaRecipe?.estimatedCost)} · Margin: {marginLabel(mapping)}
+                    Serve cost: {recipeCost(mapping.margin?.recipeCostCents == null ? null : mapping.margin.recipeCostCents / 100)} · Margin: {marginLabel(mapping)}
                   </small>
                 </div>
                 <div className="field">
@@ -296,7 +296,7 @@ export function SquareMenuMappingPage() {
                     emptyLabel="No recipe selected"
                     options={recipes.map((recipe) => ({
                       value: recipe.id,
-                      label: `${recipe.title}${recipe.venue ? ` · ${recipe.venue}` : ''} · ${recipeCost(recipe.estimatedCost)}`
+                      label: `${recipe.title}${recipe.venue ? ` · ${recipe.venue}` : ''} · ${recipeCost(recipe.portionCostCents == null ? null : recipe.portionCostCents / 100)} per serve`
                     }))}
                   />
                   {selectedRecipes[mapping.id] ? (

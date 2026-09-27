@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { staffApi } from '../lib/api';
+import { localDateKey, venueTodayAsLocalDate } from '@alma/shared';
 
 // ── Register audit ──────────────────────────────────────────────────────────
 // Every discount, comp, price change, wastage entry, void and refund the
@@ -67,7 +68,8 @@ function addDays(date: Date, days: number): Date {
   return next;
 }
 
-const dayKey = (date: Date) => date.toISOString().slice(0, 10);
+// Local calendar fields: toISOString() named the day BEFORE for any browser east of UTC.
+const dayKey = (date: Date) => localDateKey(date);
 
 function formatRange(from: Date, to: Date) {
   const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
@@ -86,7 +88,7 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 export function RegisterAuditPage() {
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(venueTodayAsLocalDate()));
   const [venue, setVenue] = useState('All venues');
   const [audit, setAudit] = useState<Audit | null>(null);
   const [error, setError] = useState<string | null>(null);

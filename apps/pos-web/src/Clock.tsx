@@ -23,7 +23,7 @@ const RESET_AFTER_ACTION_MS = 6000;
 const RESET_IDLE_MS = 25000;
 
 function timeOf(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+  return new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', timeZone: 'Australia/Sydney' });
 }
 
 export function Clock() {
@@ -124,8 +124,8 @@ export function Clock() {
       <header className="clock-head">
         <img src={ALMA_MARK} alt="" className="clock-mark" />
         <div>
-          <strong>{now.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}</strong>
-          <span>{now.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+          <strong>{now.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', timeZone: 'Australia/Sydney' })}</strong>
+          <span>{now.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Australia/Sydney' })}</span>
         </div>
       </header>
 

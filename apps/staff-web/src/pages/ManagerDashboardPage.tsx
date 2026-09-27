@@ -21,7 +21,8 @@ import {
   roundHours,
   uniqueValues,
   timesheetHours,
-  formatCents
+  formatCents,
+  venueTodayLocal
 } from '../lib/datetime';
 import { COMPLIANCE_WEB_URL, RESERVE_WEB_URL, STOCK_WEB_URL } from '../config/suiteLinks';
 import type { ForecastOutlookPayload } from '@alma/shared';
@@ -53,7 +54,7 @@ export function ManagerDashboardPage({ staff, roster }: { staff: StaffProfile[];
   const [dashboard, setDashboard] = useState<StaffManagerDashboardPayload | null>(null);
   const [operations, setOperations] = useState<StaffManagerOperationsPayload | null>(null);
   const [forecast, setForecast] = useState<ForecastOutlookPayload | null>(null);
-  const [date, setDate] = useState(() => toDateInput(new Date()));
+  const [date, setDate] = useState(() => toDateInput(venueTodayLocal()));
   const [venue, setVenue] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -305,22 +306,22 @@ export function ManagerDashboardPage({ staff, roster }: { staff: StaffProfile[];
       {/* ── Pulse strip ── */}
       <div className="live-pulse-strip">
         <button type="button" className={dashboard?.totals.pendingTimesheets ? 'is-active' : ''} onClick={() => navigate('/timesheets')}>
-          <strong>{dashboard?.totals.pendingTimesheets ?? 0}</strong><span>Timesheets</span>
+          <strong>{dashboard ? dashboard.totals.pendingTimesheets : '—'}</strong><span>Timesheets</span>
         </button>
         <button type="button" className={operations?.metrics.clockExceptions ? 'is-warning' : ''} onClick={() => navigate('/roster')}>
-          <strong>{operations?.metrics.clockExceptions ?? 0}</strong><span>Exceptions</span>
+          <strong>{operations ? operations.metrics.clockExceptions : '—'}</strong><span>Exceptions</span>
         </button>
         <button type="button" className={operations?.metrics.pendingConfirmations ? 'is-muted' : ''} onClick={() => navigate('/roster')}>
-          <strong>{operations?.metrics.pendingConfirmations ?? 0}</strong><span>Unconfirmed</span>
+          <strong>{operations ? operations.metrics.pendingConfirmations : '—'}</strong><span>Unconfirmed</span>
         </button>
         <button type="button" className={dashboard?.totals.lowStockItems ? 'is-warning' : ''} onClick={() => window.location.assign(STOCK_WEB_URL || '/')}>
-          <strong>{dashboard?.totals.lowStockItems ?? 0}</strong><span>Low stock</span>
+          <strong>{dashboard ? dashboard.totals.lowStockItems : '—'}</strong><span>Low stock</span>
         </button>
         <button type="button" className={dashboard?.totals.criticalIssues ? 'is-danger' : dashboard?.totals.openIssues ? 'is-warning' : ''} onClick={() => window.location.assign(COMPLIANCE_WEB_URL || '/')}>
-          <strong>{(dashboard?.totals.criticalIssues ?? 0) + (dashboard?.totals.openIssues ?? 0)}</strong><span>Compliance</span>
+          <strong>{dashboard ? dashboard.totals.criticalIssues + dashboard.totals.openIssues : '—'}</strong><span>Compliance</span>
         </button>
         <button type="button" onClick={() => window.location.assign(RESERVE_WEB_URL || '/')}>
-          <strong>{operations?.metrics.bookingsToday ?? 0}</strong><span>Bookings</span>
+          <strong>{operations ? operations.metrics.bookingsToday : '—'}</strong><span>Bookings</span>
         </button>
       </div>
 

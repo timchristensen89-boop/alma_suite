@@ -2,7 +2,31 @@
 // Lifted out of App.tsx as the first step of the staff-web breakup
 // (docs/STAFF_WEB_BREAKUP.md) — no behaviour change, just a shared home so
 // per-feature page modules can import from one place.
-import type { RosterShift, StaffProfile, Timesheet } from '@alma/shared';
+import { venueDayKey, type RosterShift, type StaffProfile, type Timesheet } from '@alma/shared';
+
+/** The venue's calendar day (Sydney), YYYY-MM-DD, whatever zone the browser is in. */
+export function venueTodayKey(now: Date = new Date()) {
+  return venueDayKey(now);
+}
+
+/**
+ * The venue's today as a browser-local midnight Date, for pages that navigate
+ * by week with local Date objects. `new Date()` alone gives the BROWSER's
+ * day, which for a manager in Europe is still yesterday for most of the
+ * Sydney trading day — so "this week" opened on the previous week whenever
+ * Sydney had already crossed into Monday.
+ */
+export function venueTodayLocal(now: Date = new Date()) {
+  const [year, month, day] = venueTodayKey(now).split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/** Add days to a YYYY-MM-DD key without touching a browser-local Date. */
+export function addDaysToKey(key: string, days: number) {
+  const date = new Date(`${key}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
 
 export function startOfWeek(reference: Date) {
   const start = new Date(reference);

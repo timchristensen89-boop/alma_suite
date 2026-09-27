@@ -403,6 +403,16 @@ export const mailService = {
     return isResendConfigured() || isSmtpConfigured();
   },
 
+  /** Which transport a send would use right now, or null when none is configured. */
+  provider(): 'resend' | 'smtp' | null {
+    return isResendConfigured() ? 'resend' : isSmtpConfigured() ? 'smtp' : null;
+  },
+
+  /** The env the send-mode rule needs, read from the same variables the transports use. */
+  sendModeEnv() {
+    return { resendApiKey, resendFrom, mailFrom, smtpHost, smtpUser, smtpPass };
+  },
+
   // Generic HTML email — used for sending report documents (e.g. Monthly Recap).
   async sendDocument(input: { to: string; subject: string; text: string; html: string }): Promise<EmailDeliveryResult> {
     return deliverEmail(input);

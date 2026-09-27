@@ -11,7 +11,7 @@
  */
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
-import type { ReportsStockSummary, StocktakeReviewItem } from '@alma/shared';
+import { summariseLowStock, type ReportsStockSummary, type StocktakeReviewItem } from '@alma/shared';
 
 function stocktakeLineValue(lines: Array<{ stockValueCents: number | null }>) {
   return lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0);
@@ -118,11 +118,8 @@ export const stockReportsService = {
         })
       ]);
 
-    const lowStockCount = venueRows.filter((row) => {
-      const threshold = row.reorderPoint ?? row.parLevel ?? row.stockItem.parLevel;
-      return row.onHand !== null && threshold > 0 && row.onHand <= threshold;
-    }).length;
-    const outOfStockCount = venueRows.filter((row) => row.onHand !== null && row.onHand <= 0).length;
+    // Same rule as the Stock dashboard (@alma/shared low-stock.ts).
+    const { lowStockItems: lowStockCount, outOfStockItems: outOfStockCount } = summariseLowStock(venueRows);
     const venueStockOnHandByKey = new Map(
       venueRows.map((row) => [`${row.venue}:${row.stockItemId}`, row.onHand] as const)
     );

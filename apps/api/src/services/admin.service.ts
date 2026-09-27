@@ -172,10 +172,10 @@ function addScheduled(row: CostingRow, staffProfileId: string, hours: number, co
   if (missingRate) row.missingRateHours += hours;
 }
 
+// One rule for "which email transport": the same one mail.service sends
+// with, so integration health and the marketing app can't disagree.
 function provider() {
-  if (process.env.RESEND_API_KEY && (process.env.RESEND_FROM || process.env.MAIL_FROM)) return 'resend';
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) return 'smtp';
-  return 'none';
+  return mailService.provider() ?? 'none';
 }
 
 function hasAdminPermission(value: unknown) {

@@ -262,6 +262,11 @@ export const env = {
     }
   },
   marketing: {
+    email: {
+      // The application-level switch. Provider credentials alone never turn
+      // a rehearsal into a real campaign send (see marketing-send-mode.ts).
+      liveSendEnabled: process.env.MARKETING_EMAIL_LIVE_SEND_ENABLED === 'true'
+    },
     socialPublishing: {
       livePublishingEnabled: process.env.MARKETING_SOCIAL_LIVE_PUBLISH_ENABLED === 'true',
       metaGraphApiVersion: process.env.META_GRAPH_API_VERSION ?? 'v19.0',

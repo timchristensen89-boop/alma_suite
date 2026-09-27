@@ -15,6 +15,7 @@ import type {
   StaffLeaveStatus,
   StaffLeaveType
 } from '@alma/shared';
+import { localDateKey, venueTodayAsLocalDate } from '@alma/shared';
 import { ActionFeedback, Badge, Button, EmptyState, Input, Select, Textarea } from '@alma/ui';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -69,13 +70,13 @@ export type LabourWeekPayload = {
   totals: { salesCents: number; estCostCents: number; overtimeCostCents: number };
 };
 
+// Monday of the VENUE's current week (Sydney), as YYYY-MM-DD. The labour
+// week is keyed by venue days server-side; asking the browser for its own
+// Monday sent the previous week from Europe on a Sunday evening.
 export function labourMondayOf(offsetWeeks = 0): string {
-  const now = new Date();
+  const now = venueTodayAsLocalDate();
   now.setDate(now.getDate() - ((now.getDay() + 6) % 7) + offsetWeeks * 7);
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return localDateKey(now);
 }
 
 export function labourMoney(cents: number) {

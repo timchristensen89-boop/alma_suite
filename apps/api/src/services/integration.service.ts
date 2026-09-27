@@ -40,7 +40,9 @@ import {
   hasHours,
   unitsForPeriod,
   splitUnitsByDay,
-  classifyEarningsRateName
+  classifyEarningsRateName,
+  recipePortionCostCents,
+  resolveVenueLabel
 } from '@alma/shared';
 import { env } from '../env.js';
 import {
@@ -2002,10 +2004,13 @@ async function configuredVenueNames() {
 // often "St Alma Pty Ltd" while the venue is just "St Alma").
 function resolveVenueFromTenantName(tenantName: string | null, venues: string[]): string | null {
   if (!tenantName) return null;
+  // The shared venue-resolution rule first: exact after normalisation, or an
+  // explicit alias (the legal-entity names live there with their evidence).
+  const shared = resolveVenueLabel(tenantName, venues);
+  if (shared.venue) return shared.venue;
+  if (shared.status === 'pseudo' || shared.status === 'blank') return null;
   const target = normaliseMatchText(tenantName);
   if (!target) return null;
-  const exact = venues.find((venue) => normaliseMatchText(venue) === target);
-  if (exact) return exact;
   const contained = venues.find((venue) => {
     const v = normaliseMatchText(venue);
     return v.length > 0 && (target.includes(v) || v.includes(target));
@@ -6190,6 +6195,9 @@ export const integrationService = {
               venue: true,
               category: true,
               estimatedCost: true,
+              yieldQuantity: true,
+              yieldUnit: true,
+              portionSize: true,
               salePriceCents: true
             }
           },
@@ -6226,7 +6234,8 @@ export const integrationService = {
       filters: query,
       categories,
       mappings: mappings.map((mapping) => {
-        const recipeCostCents = mapping.almaRecipe ? Math.round(mapping.almaRecipe.estimatedCost * 100) : null;
+        // One serve's cost, not the batch (shared rule).
+        const recipeCostCents = mapping.almaRecipe ? recipePortionCostCents(mapping.almaRecipe) : null;
         const salePriceCents = mapping.priceMoneyAmount;
         const grossProfitCents = salePriceCents !== null && recipeCostCents !== null ? salePriceCents - recipeCostCents : null;
         return {
@@ -6285,6 +6294,7 @@ export const integrationService = {
         venue: recipe.venue,
         category: recipe.category,
         estimatedCost: recipe.estimatedCost,
+        portionCostCents: recipePortionCostCents(recipe),
         salePriceCents: recipe.salePriceCents,
         lineCount: recipe._count.lines
       })),

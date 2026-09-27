@@ -3,10 +3,10 @@
 // app live in ./shared.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { StaffProfile } from '@alma/shared';
+import { realVenueNames, type StaffProfile } from '@alma/shared';
 import { Badge, Button, Card, Input, PageHeader, Select } from '@alma/ui';
 import { api } from '../lib/api';
-import { toDateInput, uniqueValues } from '../lib/datetime';
+import { toDateInput, uniqueValues, venueTodayLocal } from '../lib/datetime';
 import { type ReadinessRow, type ReadinessPayload, readinessLabel } from './shared';
 
 function readinessTone(status: ReadinessRow['status']): 'positive' | 'warning' | 'danger' | 'muted' {
@@ -18,7 +18,7 @@ function readinessTone(status: ReadinessRow['status']): 'positive' | 'warning' |
 
 export function VenueReadinessPage({ staff }: { staff: StaffProfile[] }) {
   const [payload, setPayload] = useState<ReadinessPayload | null>(null);
-  const [date, setDate] = useState(() => toDateInput(new Date()));
+  const [date, setDate] = useState(() => toDateInput(venueTodayLocal()));
   const [venue, setVenue] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +26,7 @@ export function VenueReadinessPage({ staff }: { staff: StaffProfile[] }) {
   const venueOptions = useMemo(
     () => [
       { label: 'All venues', value: '' },
-      ...uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]).map((item) => ({ label: item, value: item }))
+      ...realVenueNames(staff.map((member) => member.venue)).map((item) => ({ label: item, value: item }))
     ],
     [staff]
   );
@@ -112,7 +112,7 @@ export function VenueReadinessPage({ staff }: { staff: StaffProfile[] }) {
             ))}
           </ul>
         ) : (
-          <p className="subtle">No {title.toLowerCase()} checklists scheduled for today.</p>
+          <p className="subtle">{loading ? 'Loading…' : error ? 'Readiness is unavailable right now.' : `No ${title.toLowerCase()} checklists scheduled for today.`}</p>
         )}
       </Card>
     );

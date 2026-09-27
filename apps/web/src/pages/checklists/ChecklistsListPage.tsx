@@ -7,7 +7,7 @@ import type {
   ShiftTaskListResponse,
   StartAssignedChecklistResult
 } from '@alma/shared';
-import { describeChecklistCadence, isChecklistCadence } from '@alma/shared';
+import { describeChecklistCadence, isChecklistCadence, venueDayKey } from '@alma/shared';
 import {
   Badge,
   Button,
@@ -88,7 +88,8 @@ export function ChecklistsListPage() {
         return false;
       }
       if (dateFilter) {
-        const runDay = new Date(run.runDate).toISOString().slice(0, 10);
+        // The venue day the run happened on, not its UTC date.
+        const runDay = venueDayKey(new Date(run.runDate));
         if (runDay !== dateFilter) return false;
       }
       return true;

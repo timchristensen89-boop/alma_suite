@@ -24,6 +24,8 @@
  * write wrong quantities into stock on hand.
  */
 
+import { VENUE_TIME_ZONE, venueInstant, venueWeekday } from './venue-day.js';
+
 /** A row of cells as extracted from the PDF, in left-to-right order. */
 export type PdfRow = string[];
 
@@ -401,5 +403,92 @@ export function parseLoadedStocktake(rows: PdfRow[]): LoadedStocktake {
     summedTotalCents,
     discrepancies: sawAnyQuantityColumn || lines.length > 0 ? discrepancies : ['No item rows found — is this a stocktake export?'],
     isBlank
+  };
+}
+
+// ── The printed date ────────────────────────────────────────────────────────
+//
+// Loaded prints when the count was taken — "Sat 1st Aug, 10:00 AM" — without
+// a year. The importer used to stamp the stocktake with the moment the
+// import ran, so a 31 July count and a 1 August count both read "3 August"
+// and neither could bound July or August. The date is parsed here, or it is
+// refused: the import time is never substituted for the count time.
+
+const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+export type ParsedCountedAt =
+  | { ok: true; countedAt: Date; day: string; time: string; evidence: string }
+  | { ok: false; reason: string };
+
+/**
+ * Parse Loaded's printed date into a venue-local instant.
+ *
+ * Accepts "Sat 1st Aug, 10:00 AM", "Fri 31st Jul, 10:55 PM", "04 Aug 2026,
+ * 12:52am", "1 Aug 2026 10:00". When the year is not printed it is taken
+ * from the printed weekday: the most recent year, at or before the import,
+ * in which that day of that month fell on that weekday (1 Aug is a Saturday
+ * in 2026, a Friday in 2025). A date with neither a year nor a weekday is
+ * ambiguous and is refused unless `year` is supplied by the operator.
+ * A result after the import time is refused too: a count cannot postdate
+ * its own import.
+ */
+export function parseLoadedCountedAt(text: string | null | undefined, options: { importedAt: Date; year?: number }): ParsedCountedAt {
+  const raw = (text ?? '').trim();
+  if (!raw) return { ok: false, reason: 'the sheet prints no date' };
+  const match =
+    /^(?:([A-Za-z]{3})[A-Za-z]*\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3})[A-Za-z]*\.?,?(?:\s+(\d{4}))?,?\s+(\d{1,2}):(\d{2})\s*([AaPp][Mm])?$/.exec(raw);
+  if (!match) return { ok: false, reason: `the printed date "${raw}" is not in a recognised form` };
+  const [, weekdayText, dayText, monthText, yearText, hourText, minuteText, meridiem] = match;
+  const month = MONTHS.indexOf((monthText ?? '').toLowerCase());
+  if (month < 0) return { ok: false, reason: `the printed date "${raw}" names an unknown month` };
+  const weekday = weekdayText ? WEEKDAYS.indexOf(weekdayText.toLowerCase()) : -1;
+  if (weekdayText && weekday < 0) return { ok: false, reason: `the printed date "${raw}" names an unknown weekday` };
+  let hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return { ok: false, reason: `the printed time in "${raw}" is not a 12-hour time` };
+    hour = (hour % 12) + (meridiem.toLowerCase() === 'pm' ? 12 : 0);
+  } else if (hour > 23) {
+    return { ok: false, reason: `the printed time in "${raw}" is not a valid time` };
+  }
+  if (minute > 59) return { ok: false, reason: `the printed time in "${raw}" is not a valid time` };
+  const dayOfMonth = Number(dayText);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const time = `${pad(hour)}:${pad(minute)}`;
+
+  const candidateYears: number[] = [];
+  let evidence: string;
+  if (yearText) {
+    candidateYears.push(Number(yearText));
+    evidence = 'printed with its year';
+  } else if (options.year != null) {
+    candidateYears.push(options.year);
+    evidence = `year ${options.year} supplied by the operator`;
+  } else if (weekday >= 0) {
+    const importYear = options.importedAt.getUTCFullYear();
+    for (let y = importYear; y >= importYear - 3; y -= 1) candidateYears.push(y);
+    evidence = `year inferred from the printed weekday (${weekdayText})`;
+  } else {
+    return { ok: false, reason: `the printed date "${raw}" has no year and no weekday to infer one from; supply the year` };
+  }
+
+  for (const year of candidateYears) {
+    const day = `${year}-${pad(month + 1)}-${pad(dayOfMonth)}`;
+    const dayWeekday = venueWeekday(day);
+    if (dayWeekday === null) continue;
+    // A day that does not exist rolls over (31 Feb → 3 Mar); refuse that.
+    if (new Date(`${day}T00:00:00Z`).getUTCDate() !== dayOfMonth) continue;
+    if (weekday >= 0 && dayWeekday !== weekday) continue;
+    const instant = venueInstant(day, time);
+    if (!instant) continue;
+    if (instant.getTime() > options.importedAt.getTime()) continue;
+    return { ok: true, countedAt: instant, day, time, evidence: `${evidence}; ${raw} → ${day} ${time} ${VENUE_TIME_ZONE}` };
+  }
+  return {
+    ok: false,
+    reason: weekday >= 0
+      ? `no year at or before the import in which ${dayText} ${monthText} fell on a ${weekdayText}; the printed date "${raw}" cannot be placed`
+      : `the printed date "${raw}" resolves to a moment after the import`
   };
 }

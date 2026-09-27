@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test prisma/migration-order.test.ts",
+    "test": "node --import tsx --test prisma/migration-order.test.ts $(find src -name \"*.test.ts\" | sort)",
     "generate": "prisma generate",
     "migrate": "prisma migrate dev --schema prisma/schema.prisma",
     "migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
@@ -31,6 +31,7 @@
     "sync:govee-temperature": "tsx prisma/sync-govee-temperature.ts"
   },
   "dependencies": {
+    "@alma/shared": "workspace:*",
     "@prisma/client": "^6.5.0",
     "bcryptjs": "^2.4.3",
     "prisma": "^6.5.0"

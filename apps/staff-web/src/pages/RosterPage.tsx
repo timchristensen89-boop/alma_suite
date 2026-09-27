@@ -24,7 +24,8 @@ import {
   roundHours,
   uniqueValues,
   initials,
-  formatCents
+  formatCents,
+  venueTodayLocal
 } from '../lib/datetime';
 import { historicalSalesForDate, normaliseHistoricalVenue } from '../data/historicalSales';
 import type { ForecastOutlookPayload } from '@alma/shared';
@@ -235,13 +236,13 @@ export function RosterPage({
   roster: RosterShift[];
   reload: (rosterStart?: Date, rosterEnd?: Date) => Promise<void>;
 }) {
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(venueTodayLocal()));
   const [boardDays, setBoardDays] = useState<7 | 14>(7);
   const [viewMode, setViewMode] = useState<'team' | 'area'>('area');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | RosterShift['status']>('all');
   const [staffProfileId, setStaffProfileId] = useState(staff[0]?.id ?? '');
-  const [date, setDate] = useState(() => toDateInput(new Date()));
+  const [date, setDate] = useState(() => toDateInput(venueTodayLocal()));
   const [startTime, setStartTime] = useState('10:00');
   const [endTime, setEndTime] = useState('16:00');
   const [area, setArea] = useState('Floor');
@@ -1812,7 +1813,7 @@ export function RosterPage({
                 type="button"
                 className="alma-roster-weeknav-btn alma-roster-weeknav-btn--text"
                 onClick={() => {
-                  const today = new Date();
+                  const today = venueTodayLocal();
                   setWeekStart(startOfWeek(today));
                   setDate(toDateInput(today));
                   setMobileSelectedDay(toDateInput(today));
@@ -2384,14 +2385,14 @@ export function RosterPage({
                 </button>
               </div>
               <span className="deputy-board-weeknav-range">{formatRange(weekStart, rosterRangeEnd)}</span>
-              {sameDay(weekStart, startOfWeek(new Date())) ? (
+              {sameDay(weekStart, startOfWeek(venueTodayLocal())) ? (
                 <span className="deputy-board-weeknav-now">This week</span>
               ) : (
                 <button
                   type="button"
                   className="deputy-board-weeknav-btn deputy-board-weeknav-btn--text"
                   onClick={() => {
-                    const today = new Date();
+                    const today = venueTodayLocal();
                     setRosterWeek(startOfWeek(today));
                     setMobileSelectedDay(toDateInput(today));
                   }}

@@ -2560,18 +2560,24 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     >
       <div className="giftcards-page">
         {(() => {
-          const outstandingCents = giftCards
-            .filter((c) => !c.testMode && c.status === 'ACTIVE')
-            .reduce((sum, c) => sum + c.balanceCents, 0);
-          const activeCount = giftCards.filter((c) => !c.testMode && c.status === 'ACTIVE').length;
-          const outstandingLabel = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(outstandingCents / 100);
+          // Server ledger, over EVERY card — the list below is the newest
+          // 100 matching the search, so nothing summed over it is a total
+          // (that is how the header read $14,506 while the tile read
+          // $66,873 for the same liability).
+          const ledger = data?.ledger ?? null;
+          const outstandingLabel = ledger ? formatCents(ledger.activeBalanceCents) : '—';
+          const activeCount = ledger?.activeCards ?? null;
           return (
             <AlmaHomeBubble
               app="giftcards"
               appName="Gift Cards"
               appIcon={<DocumentIcon />}
               eyebrow="Gift card command"
-              description={`Sell, redeem, reconcile. The card register holds ${outstandingLabel} in outstanding balance across ${activeCount} active cards.`}
+              description={
+                ledger && activeCount != null
+                  ? `Sell, redeem, reconcile. The card register holds ${outstandingLabel} in outstanding balance across ${activeCount} active card${activeCount === 1 ? '' : 's'}.`
+                  : 'Sell, redeem, reconcile.'
+              }
               statusLabel="Week to date"
               statusHint={(() => {
                 if (loading) return 'Loading card data…';
@@ -2631,47 +2637,36 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
               </div>
             </section>
 
-            {/* Revenue dashboard — month-over-month view of issued/redeemed/outstanding */}
+            {/* Revenue dashboard — month-over-month view of issued/redeemed/outstanding.
+                Every figure is the server ledger: every card, every COMPLETED
+                redemption on a real card, on the VENUE month (Sydney), so the
+                total and the venue split beside it are the same sum. */}
             {(() => {
-              const now = new Date();
-              const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-              const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-              const prevMonthEnd = monthStart;
-              const issuedThisMonth = giftCards.filter((c) => !c.testMode && c.paidAt && new Date(c.paidAt) >= monthStart);
-              const issuedLastMonth = giftCards.filter((c) => !c.testMode && c.paidAt && new Date(c.paidAt) >= prevMonthStart && new Date(c.paidAt) < prevMonthEnd);
-              const issuedThisCents = issuedThisMonth.reduce((s, c) => s + c.initialValueCents, 0);
-              const issuedLastCents = issuedLastMonth.reduce((s, c) => s + c.initialValueCents, 0);
-              // Test cards out, the same as issued above. They were in this
-              // half of the dashboard and not the other, so redeeming a test
-              // card moved the redeemed figure without ever having moved the
-              // issued one — the two columns were counting different things.
-              // Dated by redeemedAt, which is what the field means.
-              const realCards = giftCards.filter((c) => !c.testMode);
-              const redeemedBetween = (start: Date, end: Date | null) =>
-                realCards.reduce(
-                  (sum, c) =>
-                    sum +
-                    c.redemptions
-                      .filter((r) => {
-                        const at = new Date(r.redeemedAt);
-                        return at >= start && (end === null || at < end);
-                      })
-                      .reduce((s, r) => s + r.amountCents, 0),
-                  0
-                );
-              const redeemedThisCents = redeemedBetween(monthStart, null);
-              const redeemedLastCents = redeemedBetween(prevMonthStart, prevMonthEnd);
-              const outstandingCents = data?.totals.activeBalanceCents ?? 0;
-              const issuedDelta = issuedLastCents > 0 ? ((issuedThisCents - issuedLastCents) / issuedLastCents) * 100 : null;
-              const redeemedDelta = redeemedLastCents > 0 ? ((redeemedThisCents - redeemedLastCents) / redeemedLastCents) * 100 : null;
-              const monthName = now.toLocaleDateString(undefined, { month: 'long' });
+              const ledger = data?.ledger ?? null;
+              const ready = !loading && ledger != null;
+              const issuedDelta = ledger && ledger.issuedLastMonthCents > 0 ? ((ledger.issuedThisMonthCents - ledger.issuedLastMonthCents) / ledger.issuedLastMonthCents) * 100 : null;
+              const redeemedDelta = ledger && ledger.redeemedLastMonthCents > 0 ? ((ledger.redeemedThisMonthCents - ledger.redeemedLastMonthCents) / ledger.redeemedLastMonthCents) * 100 : null;
+              const monthLabel = ledger
+                ? new Date(`${ledger.month}-15T00:00:00Z`).toLocaleDateString('en-AU', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+                : 'This month';
+              const originLabel: Record<string, string> = {
+                GIFTUP_IMPORT: 'imported from GiftUp',
+                PHYSICAL_COUNTER: 'physical cards',
+                DONATION: 'donations',
+                CAMPAIGN_REWARD: 'campaign rewards',
+                ONLINE: 'sold online',
+                COUNTER: 'sold at the counter',
+                OTHER: 'other'
+              };
               return (
-                <Card title="Revenue dashboard" subtitle={`${monthName} — issued, redeemed, and outstanding`}>
+                <Card title="Revenue dashboard" subtitle={`${monthLabel} (venue calendar month) — issued, redeemed, and outstanding`}>
                   <div className="giftcards-revenue-grid">
                     <div className="giftcards-revenue-tile">
                       <span className="giftcards-revenue-eyebrow">Issued this month</span>
-                      <strong className="giftcards-revenue-value">{formatCents(issuedThisCents)}</strong>
-                      <span className="giftcards-revenue-meta">{issuedThisMonth.length} card{issuedThisMonth.length === 1 ? '' : 's'}</span>
+                      <strong className="giftcards-revenue-value">{ready ? formatCents(ledger.issuedThisMonthCents) : '—'}</strong>
+                      <span className="giftcards-revenue-meta">
+                        {ready ? `${ledger.issuedThisMonthCards} card${ledger.issuedThisMonthCards === 1 ? '' : 's'} paid this month` : loading ? 'Loading…' : 'Unavailable'}
+                      </span>
                       {issuedDelta !== null ? (
                         <span className={`giftcards-revenue-delta is-${issuedDelta >= 0 ? 'positive' : 'danger'}`}>
                           {issuedDelta >= 0 ? '▲' : '▼'} {Math.abs(issuedDelta).toFixed(0)}% vs last month
@@ -2680,15 +2675,16 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                     </div>
                     <div className="giftcards-revenue-tile">
                       <span className="giftcards-revenue-eyebrow">Redeemed this month</span>
-                      <strong className="giftcards-revenue-value">{formatCents(redeemedThisCents)}</strong>
-                      {/* Per-venue split, server-computed over every redemption —
-                          this is what tells each venue what gift card revenue
-                          actually landed with them. */}
+                      <strong className="giftcards-revenue-value">{ready ? formatCents(ledger.redeemedThisMonthCents) : '—'}</strong>
+                      {/* Per-venue split from the same ledger — it sums to the
+                          figure above by construction. */}
                       <span className="giftcards-revenue-meta">
-                        {(data?.totals.redeemedByVenue ?? [])
-                          .filter((row) => row.monthCents > 0)
-                          .map((row) => `${row.venue} ${formatCents(row.monthCents)}`)
-                          .join(' · ') || 'No redemptions yet this month'}
+                        {ready
+                          ? ledger.redeemedByVenue
+                              .filter((row) => row.monthCents > 0)
+                              .map((row) => `${row.venue} ${formatCents(row.monthCents)}`)
+                              .join(' · ') || 'No redemptions yet this month'
+                          : loading ? 'Loading…' : 'Unavailable'}
                       </span>
                       {redeemedDelta !== null ? (
                         <span className={`giftcards-revenue-delta is-${redeemedDelta >= 0 ? 'positive' : 'warning'}`}>
@@ -2698,9 +2694,16 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                     </div>
                     <div className="giftcards-revenue-tile is-liability">
                       <span className="giftcards-revenue-eyebrow">Outstanding liability</span>
-                      <strong className="giftcards-revenue-value">{formatCents(outstandingCents)}</strong>
-                      <span className="giftcards-revenue-meta">{data?.totals.active ?? 0} active card{(data?.totals.active ?? 0) === 1 ? '' : 's'}</span>
-                      <span className="giftcards-revenue-note">A leading indicator of repeat visits</span>
+                      <strong className="giftcards-revenue-value">{ready ? formatCents(ledger.activeBalanceCents) : '—'}</strong>
+                      <span className="giftcards-revenue-meta">
+                        {ready ? `${ledger.activeCards} active card${ledger.activeCards === 1 ? '' : 's'} · balance on active, non-test cards` : loading ? 'Loading…' : 'Unavailable'}
+                      </span>
+                      {ready ? (
+                        <span className="giftcards-revenue-note">
+                          {ledger.byOrigin.map((row) => `${originLabel[row.origin] ?? row.origin} ${formatCents(row.activeBalanceCents)} (${row.activeCards})`).join(' · ')}
+                          {ledger.expiredRetainedCents > 0 ? ` · plus ${formatCents(ledger.expiredRetainedCents)} on ${ledger.expiredCards} expired card${ledger.expiredCards === 1 ? '' : 's'}, not counted` : ''}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </Card>
@@ -2709,26 +2712,31 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
 
             <div className="stats-grid">
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open active gift cards">
-                <StatCard label="Active" value={data?.totals.active ?? 0} hint="Can be redeemed" loading={loading} />
+                <StatCard label="Active" value={data?.totals.active ?? 0} hint="Can be redeemed · every card, test excluded" loading={loading} />
               </button>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open sold gift cards">
-                <StatCard label="Issued (lifetime)" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
+                <StatCard label="Issued (lifetime)" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`Every card ever activated, incl. expired and cancelled · ${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
               </button>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open redeemed gift cards">
                 <StatCard
                   label="Redeemed (lifetime)"
                   value={formatCents(data?.totals.redeemedValueCents ?? 0)}
+                  // Face value less balance — including drawdown from before
+                  // the GiftUp import, which has no redemption row here. The
+                  // hint reconciles that to what Alma itself recorded.
                   hint={
-                    (data?.totals.redeemedByVenue ?? [])
-                      .filter((row) => row.lifetimeCents > 0)
-                      .map((row) => `${row.venue} ${formatCents(row.lifetimeCents)}`)
-                      .join(' · ') || `${data?.totals.redeemed ?? 0} fully used`
+                    data?.ledger
+                      ? `${formatCents(data.ledger.redemptionsRecordedCents)} recorded in Alma (${data.ledger.redeemedByVenue
+                          .filter((row) => row.lifetimeCents > 0)
+                          .map((row) => `${row.venue} ${formatCents(row.lifetimeCents)}`)
+                          .join(' · ') || 'no venue rows'})${data.ledger.unrecordedDrawdownCents > 0 ? ` · ${formatCents(data.ledger.unrecordedDrawdownCents)} drawn down with no Alma record (GiftUp history)` : ''}${data.ledger.overRecordedCents > 0 ? ` · ${formatCents(data.ledger.overRecordedCents)} recorded beyond card drawdown — check` : ''}${data.ledger.cancelledWrittenOffCents > 0 ? ` · ${formatCents(data.ledger.cancelledWrittenOffCents)} written off on ${data.ledger.cancelledCards} cancelled card${data.ledger.cancelledCards === 1 ? '' : 's'} (not in this figure)` : ''}`
+                      : `${data?.totals.redeemed ?? 0} fully used`
                   }
                   loading={loading}
                 />
               </button>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open gift card balance report">
-                <StatCard label="Outstanding" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Liability on the books" loading={loading} />
+                <StatCard label="Outstanding" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Liability on the books · balance on active cards" loading={loading} />
               </button>
             </div>
             {/* Order actions first — the follow-ups sit above the register so
@@ -2738,8 +2746,8 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
               title="Order actions"
               description="Cards that need payment, email, expiry, or manager follow-up."
               count={orderActionItems.length}
-              tone={orderActionItems.length ? 'warning' : 'positive'}
-              empty={<p className="subtle">No gift card orders need action.</p>}
+              tone={loading ? 'neutral' : orderActionItems.length ? 'warning' : 'positive'}
+              empty={<p className="subtle">{loading ? 'Loading card data…' : data ? 'No gift card orders need action.' : 'Order actions are unavailable right now.'}</p>}
             >
               {orderActionItems.slice(0, 10).map((item) => (
                 <div key={item.id} className="action-panel-row">

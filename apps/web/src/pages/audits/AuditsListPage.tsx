@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import type { AuditRun, AuditSummary, AuditTemplate } from '@alma/shared';
+import { localDateKey, venueTodayAsLocalDate, type AuditRun, type AuditSummary, type AuditTemplate } from '@alma/shared';
 import {
   ActionFeedback,
   Badge,
@@ -31,7 +31,7 @@ export function AuditsListPage() {
 
   // Build per-template 8-week score trend (most recent 8 weeks, oldest left)
   const trendByTemplate = (() => {
-    const now = new Date();
+    const now = venueTodayAsLocalDate();
     const eightWeeksAgo = new Date(now);
     eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 8 * 7);
     const buckets = new Map<string, Array<{ templateName: string; week: string; score: number | null; runCount: number }>>();
@@ -48,7 +48,7 @@ export function AuditsListPage() {
         weekStart.setDate(weekStart.getDate() - 7 * i);
         weekStart.setHours(0, 0, 0, 0);
         weekStart.setDate(weekStart.getDate() - weekStart.getDay() + (weekStart.getDay() === 0 ? -6 : 1));
-        weeks.push({ templateName: name, week: weekStart.toISOString().slice(0, 10), score: null, runCount: 0 });
+        weeks.push({ templateName: name, week: localDateKey(weekStart), score: null, runCount: 0 });
       }
       buckets.set(templateId, weeks);
     }
@@ -60,7 +60,7 @@ export function AuditsListPage() {
       const weekStart = new Date(runDate);
       weekStart.setHours(0, 0, 0, 0);
       weekStart.setDate(weekStart.getDate() - weekStart.getDay() + (weekStart.getDay() === 0 ? -6 : 1));
-      const key = weekStart.toISOString().slice(0, 10);
+      const key = localDateKey(weekStart);
       const bucket = buckets.get(run.template.id);
       if (!bucket) continue;
       const week = bucket.find((w) => w.week === key);

@@ -99,6 +99,7 @@ export const stockReads = {
       id: String(r.id),
       estimatedCost: Number(r.estimatedCost ?? 0),
       yieldQuantity: r.yieldQuantity == null ? null : Number(r.yieldQuantity),
+      yieldUnit: r.yieldUnit == null ? null : String(r.yieldUnit),
       portionSize: r.portionSize == null ? null : Number(r.portionSize)
     }));
   },
@@ -187,6 +188,7 @@ export interface RecipeCostRow {
   id: string;
   estimatedCost: number;
   yieldQuantity: number | null;
+  yieldUnit: string | null;
   portionSize: number | null;
 }
 

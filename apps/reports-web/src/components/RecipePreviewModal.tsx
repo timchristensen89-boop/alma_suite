@@ -55,9 +55,7 @@ export function RecipePreviewModal({
 
   const perPortionCents = cost
     ? cost.costPerPortionCents
-    : recipe?.estimatedCost != null
-      ? Math.round(recipe.estimatedCost * 100)
-      : null;
+    : recipe?.portionCostCents ?? null; // one serve, never the batch
 
   return (
     <div className="recipe-preview-backdrop" role="dialog" aria-modal="true" onClick={onClose}>

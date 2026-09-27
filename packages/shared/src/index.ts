@@ -1,3 +1,5 @@
+import type { CostTargets } from './cost-targets.js';
+import { STOCKTAKE_SCOPES, type StocktakeScope } from './stocktake-scope.js';
 export * from './price-window.js';
 export * from './roster-calendar.js';
 export * from './donations.js';
@@ -13,6 +15,17 @@ export * from './venue-day.js';
 export * from './guest-tags.js';
 export * from './guest-import.js';
 export * from './temperature-escalation.js';
+export * from './temperature-status.js';
+export * from './low-stock.js';
+export * from './venue-names.js';
+export * from './cogs-quality.js';
+export * from './stocktake-freshness.js';
+export * from './stocktake-scope.js';
+export * from './invoice-feed.js';
+export * from './cost-targets.js';
+export * from './prime-cost.js';
+export * from './recipe-cost.js';
+export * from './venue-resolution.js';
 export * from './onboarding-completion.js';
 export * from './invoice-paste.js';
 export * from './count-scale.js';
@@ -2720,7 +2733,10 @@ export type SquareRecipeOption = {
   title: string;
   venue: string | null;
   category: string | null;
+  /** Batch cost in dollars. */
   estimatedCost: number;
+  /** One serve's cost in cents (recipePortionCostCents); null when uncosted. */
+  portionCostCents: number | null;
   salePriceCents: number | null;
   lineCount: number;
 };
@@ -3780,7 +3796,9 @@ export type ReportsMenuProfitabilityRow = {
   estimatedCogsCents: number | null;
   grossProfitCents: number | null;
   foodCostPercent: number | null;
-  dataQuality: Array<'actual_sales' | 'mapped_recipe_cost' | 'missing_recipe' | 'missing_cost' | 'unmapped_square_item' | 'suspect_batch_cost'>;
+  dataQuality: Array<'actual_sales' | 'mapped_recipe_cost' | 'missing_recipe' | 'missing_cost' | 'unmapped_square_item' | 'suspect_batch_cost' | 'serve_size_required'>;
+  /** True when the mapped recipe's yield is by weight/volume with no serve size — no per-serve cost exists ("Serve size required"). */
+  serveSizeRequired?: boolean;
 };
 
 export type ReportsMenuProfitabilityPayload = {
@@ -3807,8 +3825,14 @@ export type ReportsMenuProfitabilityPayload = {
 
 export type ReportsPrimeCostVenueRow = {
   venue: string;
+  /** configured = a real venue; invalid = a label that is not one ("Both", a name); unassigned = no label. Labour under a non-configured key is in the group and in no venue. */
+  venueStatus: 'configured' | 'invalid' | 'unassigned';
   salesCents: number;
   wageCents: number;
+  /** Of actual labour: timesheets that named this venue / placed by the profile-venue fallback / the salaried share. */
+  explicitWageCents: number;
+  profileFallbackWageCents: number;
+  salariedWageCents: number;
   approvedWageCents: number;
   rosterWageEstimateCents: number;
   cogsCents: number;
@@ -3817,11 +3841,20 @@ export type ReportsPrimeCostVenueRow = {
   invoiceCogsCents: number;
   wastageCents: number;
   purchasesCents: number;
-  openingStockCents: number;
-  closingStockCents: number;
+  /** Null when no finalised stocktake within tolerance brackets the boundary — never zero. */
+  openingStockCents: number | null;
+  closingStockCents: number | null;
   cogsSource: 'stock_bounded' | 'purchases_only';
-  cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'estimated' | 'closing_implausible';
-  primeCostCents: number;
+  cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'incomplete_opening' | 'incomplete_closing' | 'estimated' | 'closing_implausible';
+  /** Why the actual figure is not a complete opening + purchases − closing (empty when complete). */
+  cogsReasons: string[];
+  /** 'actual' = stocktake-bounded and invoice-covered; otherwise cogsCents is bills only and prime is withheld. */
+  foodBasis: 'actual' | 'unavailable';
+  /** Where wageCents came from; a roster estimate is never presented as actuals. */
+  labourBasis: 'timesheets' | 'roster_estimate' | 'missing';
+  /** Labour + actual food COGS; null when the food basis is unavailable or labour is missing. */
+  primeCostCents: number | null;
+  primeReasons: string[];
   wagePercent: number | null;
   /**
    * Null when supplier invoices do not cover the period.
@@ -3834,13 +3867,35 @@ export type ReportsPrimeCostVenueRow = {
    */
   cogsPercent: number | null;
   primeCostPercent: number | null;
-  /** 0–1: the fraction of the period supplier invoices actually cover. */
+  /** 0–1: the share of the elapsed period supplier-invoice activity spans (invoice-feed.ts). */
   purchaseCoverage: number;
+  /** The invoice-feed assessment behind purchaseCoverage; 'incomplete' withholds food % and prime. */
+  purchaseFeed: PurchaseFeedSummary;
   timesheetHours: number;
   rosterHours: number;
   salesDays: number;
   sourceQuality: 'complete_current' | 'missing_sales' | 'missing_wages' | 'missing_cogs' | 'estimated_wages' | 'incomplete';
   missing: string[];
+};
+
+/**
+ * Whether the supplier-invoice feed appears complete enough for a period's
+ * purchases to be the period's purchases (@alma/shared invoice-feed.ts).
+ * "Complete" never means every purchase was verified.
+ */
+export type PurchaseFeedSummary = {
+  status: 'complete' | 'incomplete' | 'too_early';
+  coverage: number;
+  elapsedDays: number;
+  firstInvoiceDate: string | null;
+  lastInvoiceDate: string | null;
+  missingInterval: { from: string; to: string } | null;
+  establishedSuppliers: number;
+  /** Regular suppliers with no invoice in this period; `carriedForward` = an earlier absence still unresolved. */
+  absentEstablishedSuppliers: Array<{ supplierName: string; lastInvoiceBefore: string; absentForDays: number; carriedForward: boolean }>;
+  /** Suppliers explicitly marked no longer expected (ARCHIVED); their silence is not judged. */
+  notExpectedSuppliers: string[];
+  reason: string | null;
 };
 
 // ── Monthly recap ──────────────────────────────────────────────────────────
@@ -3852,7 +3907,7 @@ export const reportsMonthlyRecapEmailInputSchema = reportsMonthlyRecapQuerySchem
   to: z.string().email()
 });
 
-export type MonthlyRecapStockQuality = 'complete' | 'missing_opening' | 'missing_closing' | 'estimated' | 'closing_implausible';
+export type MonthlyRecapStockQuality = 'complete' | 'missing_opening' | 'missing_closing' | 'incomplete_opening' | 'incomplete_closing' | 'estimated' | 'closing_implausible';
 
 export type MonthlyRecapPeriod = {
   label: string;
@@ -3860,15 +3915,34 @@ export type MonthlyRecapPeriod = {
   end: string;
   salesCents: number;
   wageCents: number;
-  openingStockCents: number;
-  closingStockCents: number;
+  /** Null when no finalised stocktake within tolerance brackets the boundary — never zero. */
+  openingStockCents: number | null;
+  closingStockCents: number | null;
   purchasesCents: number;
+  /** The canonical COGS dollars: opening + purchases − closing when bounded, else purchases (see foodBasis). */
   cogsCents: number;
-  primeCostCents: number;
+  /** 'actual' only when stocktake-bounded and invoice-covered. */
+  foodBasis: 'actual' | 'unavailable';
+  /** Labour + actual food COGS; null when the food basis is unavailable. Never labour + purchases. */
+  primeCostCents: number | null;
   wagePct: number | null;
+  /** Null unless foodBasis is 'actual'. */
   cogsPct: number | null;
   primePct: number | null;
   stockQuality: MonthlyRecapStockQuality;
+  /** 0–1 share of the elapsed period supplier-invoice activity spans. */
+  purchaseCoverage: number;
+  purchaseFeed: PurchaseFeedSummary;
+  /** How wageCents was allocated (lib/labour-allocation.ts); unallocated = under labels that are not venues, group only. */
+  wageAllocation: {
+    explicitCents: number;
+    profileFallbackCents: number;
+    salariedCents: number;
+    unallocatedCents: number;
+    unallocatedVenues: string[];
+  };
+  /** Why prime cost is unavailable, in operator words. */
+  reasons: string[];
 };
 
 export type MonthlyRecapRecommendation = {
@@ -3884,7 +3958,8 @@ export type MonthlyRecapPayload = {
   monthLabel: string;
   ytdBasis: 'FY';
   ytdLabel: string;
-  targets: { wagePct: number; cogsPct: number; primePct: number };
+  /** Resolved from venue settings (resolveCostTargets); `source` says whether they are configured or defaults. */
+  targets: CostTargets;
   monthCurrent: MonthlyRecapPeriod;
   monthPriorYear: MonthlyRecapPeriod;
   ytdCurrent: MonthlyRecapPeriod;
@@ -3899,6 +3974,12 @@ export type ReportsPrimeCostPayload = {
     missing: string[];
     /** The date supplier invoices begin, when they do not cover the period. */
     purchasesFrom: string | null;
+    /** Roster-only labour (rows with no timesheets) that the total leaves out, and which rows. */
+    rosterOnlyWageCents: number;
+    rosterOnlyVenues: string[];
+    /** Actual labour under labels that are not configured venues: in the total, in no venue row. */
+    unallocatedWageCents: number;
+    unallocatedVenues: string[];
   };
   venues: ReportsPrimeCostVenueRow[];
   sources: {
@@ -4367,7 +4448,22 @@ export type MarketingSegmentPreviewPayload = {
   guests: ReserveGuest[];
 };
 
+export type MarketingChannelSendMode = {
+  mode: 'LIVE' | 'SIMULATION' | 'SETUP_REQUIRED';
+  provider: string | null;
+  detail: string;
+};
+
+/** Per-channel execution mode, resolved by the API from its real configuration. */
+export type MarketingSendModes = {
+  email: MarketingChannelSendMode;
+  sms: MarketingChannelSendMode;
+  social: MarketingChannelSendMode;
+  summary: string;
+};
+
 export type MarketingOverview = {
+  sendModes: MarketingSendModes;
   guests: ReserveGuest[];
   tags: GuestTag[];
   templates: MarketingEmailTemplate[];
@@ -4619,23 +4715,64 @@ export type GiftCardCheckoutResult = {
   amountPaidCents?: number;
 };
 
+export type GiftCardLedgerOrigin = 'GIFTUP_IMPORT' | 'PHYSICAL_COUNTER' | 'DONATION' | 'CAMPAIGN_REWARD' | 'ONLINE' | 'COUNTER' | 'OTHER';
+
+/**
+ * Every-card, venue-month gift card accounting (apps/api lib/gift-card-ledger).
+ * Each figure names its scope; see docs/metric-definitions.md.
+ */
+export type GiftCardLedger = {
+  month: string;
+  /** Current position: redeemable now. */
+  activeCards: number;
+  activeBalanceCents: number;
+  expiredCards: number;
+  expiredRetainedCents: number;
+  redeemedCards: number;
+  cancelledCards: number;
+  /** Historical account over every activated card (ACTIVE, REDEEMED, EXPIRED, CANCELLED):
+   *  issued = activeBalance + expiredRetained + redemptionsRecorded + unrecordedDrawdown − overRecorded + cancelledWrittenOff. */
+  issuedValueCents: number;
+  drawnDownCents: number;
+  redemptionsRecordedCents: number;
+  unrecordedDrawdownCents: number;
+  overRecordedCents: number;
+  cancelledWrittenOffCents: number;
+  recordedOnCancelledCents: number;
+  issuedThisMonthCents: number;
+  issuedThisMonthCards: number;
+  issuedLastMonthCents: number;
+  redeemedThisMonthCents: number;
+  redeemedLastMonthCents: number;
+  redeemedByVenue: Array<{ venue: string; lifetimeCents: number; monthCents: number }>;
+  byOrigin: Array<{ origin: GiftCardLedgerOrigin; activeCards: number; activeBalanceCents: number; issuedValueCents: number }>;
+  testCards: number;
+};
+
 export type GiftCardOverview = {
+  /** The newest cards matching the search — a page, never a total. */
   giftCards: GiftCard[];
+  list: { limit: number; capped: boolean; query: string | null };
   totals: {
+    /** ACTIVE non-test cards, over every card. */
     active: number;
     pending: number;
     redeemed: number;
     test: number;
+    /** Remaining balance on ACTIVE non-test cards — the liability. */
     activeBalanceCents: number;
+    /** Face value of every activated non-test card, whatever its status now. */
     soldValueCents: number;
+    /** Face − balance over non-cancelled activated cards (recorded + unrecorded − over-recorded). */
     redeemedValueCents: number;
     /**
-     * Redemption revenue split by venue (lifetime + current month), computed
-     * server-side over every redemption. "Unallocated" collects rows that
-     * predate the venue requirement.
+     * Redemption revenue split by venue (lifetime + current venue month),
+     * computed server-side over every redemption. "Unallocated" collects
+     * rows that predate the venue requirement.
      */
     redeemedByVenue: Array<{ venue: string; lifetimeCents: number; monthCents: number }>;
   };
+  ledger: GiftCardLedger;
 };
 
 export type GiftCardPromoQuote = {
@@ -5585,8 +5722,12 @@ export type StockItemsPayload = {
 export type StockItemsSummary = {
   totalItems: number;
   activeItems: number;
+  /** Rows at or under their threshold (see @alma/shared low-stock.ts). */
   lowStockItems: number;
+  /** Rows counted at or under zero, threshold or not. */
   outOfStockItems?: number;
+  /** Rows the attention table shows: low OR out of stock. */
+  attentionItems?: number;
   categories: number;
   totalOnHand: number;
   venueStockItems?: number;
@@ -6675,7 +6816,12 @@ export type Recipe = {
   yieldUnit: string | null;
   isPrepRecipe: boolean;
   status: RecipeStatus;
+  /** BATCH cost in dollars (Σ ingredient lines). Not what one serve costs — see portionCostCents. */
   estimatedCost: number;
+  /** Cost of ONE serve in cents: estimatedCost ÷ portions (recipePortionCost). Null when uncosted or when the serve size is required. */
+  portionCostCents: number | null;
+  /** Why portionCostCents is null: 'uncosted', or 'serve_size_required' (yield by weight/volume, no serve size). */
+  portionCostReason: 'ok' | 'uncosted' | 'serve_size_required';
   notes: string | null;
   lineCount: number;
   createdAt: string;
@@ -7304,6 +7450,9 @@ export type Stocktake = {
   venue: string | null;
   template: string | null;
   countedAt: string;
+  /** What was counted: FOOD, BEVERAGE, COMBINED or UNKNOWN (historical / ambiguous). Never inferred from the value. */
+  scope: StocktakeScope;
+  scopeEvidence: string | null;
   status: StocktakeStatus;
   notes: string | null;
   appliedAt: string | null;
@@ -7456,7 +7605,27 @@ export type StocktakesSummary = {
   submitted: number;
   applied?: number;
   lastCountedAt: string | null;
-  totalValueCents: number;
+  /**
+   * The latest complete count (per venue, summed for the group) under the
+   * canonical stock-value rule: one COMBINED count or a FOOD + BEVERAGE
+   * pair, of known scope and sufficiently valued, within `windowDays`
+   * (the operational freshness window). 'missing' = no finalised count in
+   * the window; 'incomplete' = counts exist but do not make a complete count
+   * (unknown scope, one side only, unvalued lines), with why. A group with
+   * a venue short is never the sum of the others. Never a sum over
+   * historical stocktakes.
+   */
+  latestCount: {
+    status: 'ok' | 'missing' | 'incomplete';
+    valueCents: number | null;
+    countedOn: string | null;
+    distanceDays: number | null;
+    windowDays: number;
+    composition: 'combined' | 'food_and_beverage' | null;
+    venuesWithoutCount: string[];
+    /** Why the value is unavailable, in operator words; empty when ok. */
+    reasons: string[];
+  };
 };
 
 export type StocktakeReviewItem = Stocktake & {
@@ -7466,20 +7635,69 @@ export type StocktakeReviewItem = Stocktake & {
   negativeVarianceQuantity: number;
 };
 
-// Cost of Goods summary — Theoretical (sold qty × recipe cost) vs Actual
-// (supplier purchases in the window) with the variance, plus dish-margin
-// and supplier price-movement summaries.
+// Cost of Goods summary for the Stock dashboard. Theoretical (sold qty ×
+// recipe cost) and Actual (opening + purchases − closing, or purchases only
+// when no stocktake brackets the window) are reported SEPARATELY, each with
+// its own percentage of the same denominator, and the actual side says
+// which method produced it. See apps/stock-api/src/lib/cost-of-goods.ts.
+export type StockCostOfGoodsActualQuality = 'complete' | 'estimated' | 'missing_opening' | 'missing_closing' | 'incomplete_opening' | 'incomplete_closing' | 'closing_implausible';
+
 export type StockCostOfGoodsPayload = {
   generatedAt: string;
   venue: string | null;
   lookbackDays: number;
-  theoreticalCogsCents: number;
-  actualCogsCents: number;
-  actualMethod: 'supplier_purchases';
-  varianceCents: number;
+  /** Inclusive venue-day keys the figures cover. */
+  window: { from: string; to: string };
+  /** The ONLY sales figure here: net sales of Square items mapped to recipes that sold. Not venue takings. */
+  salesBasis: 'recipe_mapped_item_sales';
+  mappedSalesCents: number;
+  theoretical: {
+    cogsCents: number;
+    percentOfMappedSales: number | null;
+    grossProfitCents: number;
+    grossProfitPercent: number | null;
+  };
+  actual: {
+    cogsCents: number;
+    /** actual ÷ mapped sales — only a fact when `comparable`. */
+    percentOfMappedSales: number | null;
+    grossProfitCents: number | null;
+    grossProfitPercent: number | null;
+    source: 'stock_bounded' | 'purchases_only';
+    quality: StockCostOfGoodsActualQuality;
+    /** True only when period, venue and item coverage match AND stocktakes bracket the window. */
+    comparable: boolean;
+    comparability: {
+      comparable: boolean;
+      /** mapped sales ÷ all item sales in the window, %; null when unknown. */
+      mappedSalesSharePercent: number | null;
+      /** Why the two figures are not like-for-like; empty when comparable. */
+      reasons: string[];
+    };
+    /** Plain-language method, e.g. "Supplier bills only — no stocktake brackets this window". */
+    label: string;
+    purchasesCents: number;
+    /** Null when no finalised stocktake within tolerance brackets the boundary — never zero. */
+    openingStockCents: number | null;
+    closingStockCents: number | null;
+    /** Why the actual figure is not a complete opening + purchases − closing, in operator words. */
+    reasons: string[];
+  };
+  /** actual − theoretical; null unless the actual figure is comparable. */
+  varianceCents: number | null;
   variancePercent: number | null;
-  netSalesCents: number;
-  cogsPercentOfSales: number | null;
+  coverage: {
+    mappedRecipes: number;
+    unmappedRecipes: number;
+    zeroCostRecipes: number;
+    suspectRecipes: number;
+    /** Excluded with the reason "Serve size required": yield by weight/volume, no serve size. */
+    serveSizeRequiredRecipes: number;
+    /** Their net sales — sold, but outside both the theoretical numerator and mappedSalesCents. */
+    serveSizeRequiredSalesCents: number;
+    /** Net sales of every excluded row (suspect + serve size required). */
+    excludedSalesCents: number;
+  };
   dishMargin: {
     mappedRecipes: number;
     unmappedRecipes: number;
@@ -7503,7 +7721,10 @@ export type StockDashboardPayload = {
     openStocktakes: number;
     readyForReviewStocktakes: number;
   };
+  /** The most urgent attention rows (out of stock first, then by shortfall); capped. */
   lowStockItems: StockLowStockItem[];
+  /** How many attention rows exist in total, so "showing 10 of N" is honest. */
+  lowStockItemsTotal?: number;
   reorderNotices?: StockReorderNotice[];
   recentItems: StockItem[];
   readyForReviewStocktakes: StocktakeReviewItem[];
@@ -7668,10 +7889,15 @@ export const stocktakeLineInputSchema = z.object({
   notes: z.string().optional().or(z.literal(''))
 });
 
+export const stocktakeScopeSchema = z.enum(STOCKTAKE_SCOPES);
+
 export const stocktakeCreateInputSchema = z.object({
   name: z.string().min(2, 'Name is required'),
   venue: z.string().optional().or(z.literal('')),
   template: z.string().optional().or(z.literal('')),
+  // Optional: an explicit, reviewed scope. Absent, the API derives it from
+  // the template's categories/name, else UNKNOWN. Never from the value.
+  scope: stocktakeScopeSchema.optional(),
   countedAt: z.string().min(4, 'Counted-at date is required'),
   status: stocktakeStatusSchema.default('IN_PROGRESS'),
   notes: z.string().optional().or(z.literal('')),
@@ -8072,6 +8298,17 @@ export type ForecastOutlookPayload = {
   venues: ForecastVenueOutlook[];
   totals: {
     weeks: ForecastWeek[];
+  };
+  /**
+   * Who the labour figure is made of: Σ hourly shift cost + Σ salaried
+   * weekly share. Every active worker is in exactly one class; a worker
+   * with no resolvable rate is listed, not silently costed at zero.
+   */
+  labourPopulation: {
+    salaried: number;
+    hourly: number;
+    missingRate: number;
+    staff: Array<{ staffProfileId: string; name: string; classification: 'salaried' | 'hourly' | 'missing_rate'; rateSource: string }>;
   };
   // Data-quality alerts (stale Square feed, skipped venues, holiday-table
   // coverage) — surfaced as a banner so estimates are never mistaken for

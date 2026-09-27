@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { prisma } from '@alma/db';
+import { prisma, prismaCogsReader, stockBracket, type StockBracket } from '@alma/db';
 import {
   stocktakeCorrectionInputSchema,
   stocktakeBulkDeleteInputSchema,
@@ -21,7 +21,11 @@ import {
   type AuthUser,
   type StocktakePrepApplySummary,
   type StocktakePrepPreview,
-  type StocktakesSummary
+  type StocktakesSummary,
+  STOCKTAKE_STALE_DAYS,
+  scopeForTemplate,
+  type ScopeDerivation,
+  type StocktakeScope
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { buildCountSheetSections } from '../lib/count-sheet.js';
@@ -149,6 +153,36 @@ function normaliseOptionalText(value: string | undefined) {
   return value.trim() || null;
 }
 
+/**
+ * The scope a new count gets, from evidence: an explicit reviewed choice,
+ * else the categories of the template it was started from, else the
+ * template's name. Never from its value; UNKNOWN when nothing supports it.
+ */
+async function deriveCountScope(input: { scope?: StocktakeScope; template: string | null; venue: string | null; actor?: AuthUser | null }): Promise<ScopeDerivation> {
+  if (input.scope) return { scope: input.scope, evidence: `set to ${input.scope} by ${input.actor?.email ?? 'unknown user'} on creation` };
+  if (!input.template) return { scope: 'UNKNOWN', evidence: 'no template' };
+  const template = await prisma.stocktakeTemplate.findFirst({
+    where: { name: input.template, ...(input.venue ? { OR: [{ venue: input.venue }, { venue: null }] } : {}) },
+    orderBy: [{ venue: 'desc' }, { updatedAt: 'desc' }],
+    select: { name: true, categoryIds: true }
+  });
+  const categoryNames = template?.categoryIds.length
+    ? (await prisma.stockCategory.findMany({ where: { id: { in: template.categoryIds } }, select: { name: true } })).map((c) => c.name)
+    : [];
+  return scopeForTemplate({ name: template?.name ?? input.template, categoryNames });
+}
+
+/** Why a stock-on-hand value is unavailable, in operator words. */
+function describeUnavailableBracket(bracket: StockBracket, venue: string | null): string[] {
+  if (bracket.status === 'ok') return [];
+  if (venue == null && bracket.venuesWithoutCount.length > 0) return bracket.venuesWithoutCount.map((v) => `${v.venue}: ${v.detail}`);
+  if (bracket.status === 'missing') return [`No finalised stocktake in the last ${bracket.windowDays} days.`];
+  const lone = bracket.rejected.filter((r) => r.reason === 'no_counterpart').map((r) => `${r.scope} count ${r.countedOn} has no ${r.scope === 'FOOD' ? 'BEVERAGE' : 'FOOD'} counterpart`);
+  const unknown = bracket.rejected.filter((r) => r.reason === 'unknown_scope').map((r) => `${r.countedOn} "${r.name}" has no scope set`);
+  const unvalued = bracket.rejected.filter((r) => r.reason === 'unvalued').map((r) => `${r.countedOn} "${r.name}": ${r.detail}`);
+  return [...lone, ...unknown, ...unvalued];
+}
+
 function sumLineValueCents(lines: { stockValueCents: number | null }[]): number {
   return lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0);
 }
@@ -161,6 +195,8 @@ function toStocktakePayload(row: StocktakeRow): Stocktake {
     venue: row.venue,
     template: row.template,
     countedAt: row.countedAt.toISOString(),
+    scope: row.scope,
+    scopeEvidence: row.scopeEvidence,
     status: row.status,
     notes: row.notes,
     appliedAt: row.appliedAt?.toISOString() ?? null,
@@ -208,6 +244,8 @@ function toStocktakeWithLinesPayload(row: StocktakeWithLinesRow): StocktakeWithL
     venue: row.venue,
     template: row.template,
     countedAt: row.countedAt.toISOString(),
+    scope: row.scope,
+    scopeEvidence: row.scopeEvidence,
     status: row.status,
     notes: row.notes,
     appliedAt: row.appliedAt?.toISOString() ?? null,
@@ -587,6 +625,8 @@ function toStocktakeReviewPayload(
     venue: row.venue,
     template: row.template,
     countedAt: row.countedAt.toISOString(),
+    scope: row.scope,
+    scopeEvidence: row.scopeEvidence,
     status: row.status,
     notes: row.notes,
     appliedAt: row.appliedAt?.toISOString() ?? null,
@@ -772,7 +812,12 @@ export const stocktakesService = {
 
   async summary(actor?: AuthUser | null): Promise<StocktakesSummary> {
     const scope = stocktakeScope(actor);
-    const [total, inProgress, submitted, applied, latest, valueAgg] = await Promise.all([
+    // The value shown is the LATEST valid finalised count (per venue, summed
+    // for the group) through the canonical stock-value rule in @alma/db —
+    // never a sum over every stocktake line ever recorded, which is what the
+    // old aggregate returned and grew with every count taken.
+    const valueVenue = !actor || isVenueUnscopedActor(actor) ? null : actor.venue ?? null;
+    const [total, inProgress, submitted, applied, latest, bracket] = await Promise.all([
       prisma.stocktake.count({ where: scope }),
       prisma.stocktake.count({ where: { AND: [scope, { status: 'IN_PROGRESS' }] } }),
       prisma.stocktake.count({ where: { AND: [scope, { status: 'SUBMITTED' }] } }),
@@ -782,10 +827,9 @@ export const stocktakesService = {
         orderBy: { countedAt: 'desc' },
         select: { countedAt: true }
       }),
-      prisma.stocktakeLine.aggregate({
-        where: { stocktake: scope },
-        _sum: { stockValueCents: true }
-      })
+      // Operational freshness window (STOCKTAKE_STALE_DAYS), not the ±7-day
+      // period-boundary window: this tile answers "what is on hand now?".
+      stockBracket(prismaCogsReader, valueVenue, new Date(), STOCKTAKE_STALE_DAYS)
     ]);
 
     return {
@@ -794,7 +838,16 @@ export const stocktakesService = {
       submitted,
       applied,
       lastCountedAt: latest?.countedAt.toISOString() ?? null,
-      totalValueCents: valueAgg._sum.stockValueCents ?? 0
+      latestCount: {
+        status: bracket.status,
+        valueCents: bracket.valueCents,
+        countedOn: bracket.countedOn,
+        distanceDays: bracket.distanceDays,
+        windowDays: bracket.windowDays,
+        composition: bracket.composition,
+        venuesWithoutCount: bracket.venuesWithoutCount.map((v) => v.venue),
+        reasons: describeUnavailableBracket(bracket, valueVenue)
+      }
     };
   },
 
@@ -821,7 +874,7 @@ export const stocktakesService = {
           )
         );
 
-    const STALE_DAYS = 14;
+    const STALE_DAYS = STOCKTAKE_STALE_DAYS;
     const staleCutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000);
 
     const venueStatuses = await Promise.all(
@@ -912,6 +965,7 @@ export const stocktakesService = {
     const requestedVenue = normaliseOptionalText(data.venue);
     const venue = targetVenueForActor(requestedVenue, actor);
     const submittedAt = data.status === 'SUBMITTED' ? new Date() : null;
+    const scope = await deriveCountScope({ scope: data.scope, template: normaliseOptionalText(data.template) ?? null, venue, actor });
 
     const row = await prisma.$transaction(async (tx) => {
       const costById = await loadLineCostItems(tx, data.lines);
@@ -924,6 +978,9 @@ export const stocktakesService = {
           venue,
           template: normaliseOptionalText(data.template) ?? null,
           countedAt,
+          countedAtSource: 'entered',
+          scope: scope.scope,
+          scopeEvidence: scope.evidence,
           status: data.status,
           submittedAt,
           submittedByUserId: submittedAt ? actor?.id ?? null : null,
@@ -1051,6 +1108,12 @@ export const stocktakesService = {
           ...(data.venue !== undefined && { venue }),
           ...(data.template !== undefined && {
             template: normaliseOptionalText(data.template)
+          }),
+          // A scope sent on an update is a reviewed decision; history is
+          // never re-derived or silently rewritten.
+          ...(data.scope !== undefined && data.scope !== existing.scope && {
+            scope: data.scope,
+            scopeEvidence: `set to ${data.scope} on review by ${actor?.email ?? 'unknown user'} (was ${existing.scope})`
           }),
           ...(countedAt !== undefined && { countedAt }),
           ...(data.status !== undefined && { status: data.status }),

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { TemperatureAsset, TemperatureIntegration, TemperatureLog, TemperatureSensor, TemperatureSummary } from '@alma/shared';
+import { summariseTemperatureAssets, type TemperatureAsset, type TemperatureIntegration, type TemperatureLog, type TemperatureSensor, type TemperatureSummary } from '@alma/shared';
 import { ActionFeedback, Button, Card, Input, Select } from '@alma/ui';
 import { useAsync } from '../hooks/useAsync';
 import { api } from '../lib/api';
@@ -378,17 +378,10 @@ export function TemperaturesPage() {
   const filteredSensors = (sensors.data ?? []).filter((sensor) =>
     selectedVenue === 'all' ? true : sensor.asset?.venue === selectedVenue
   );
-  const todayStart = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return today;
-  }, []);
-  const filteredStats = {
-    activeAssets: filteredAssets.filter((asset) => asset.status === 'ACTIVE').length,
-    outOfRangeNow: filteredAssets.filter((asset) => asset.logs[0]?.status === 'OUT_OF_RANGE').length,
-    missingToday: filteredAssets.filter((asset) => !asset.logs[0] || new Date(asset.logs[0].recordedAt) < todayStart).length,
-    syncedToday: filteredAssets.filter((asset) => asset.lastSyncAt && new Date(asset.lastSyncAt) >= todayStart).length
-  };
+  // Same rule as /api/summary and the Reports compliance section: active
+  // assets only, "today" is the venue's day (not the browser's), and a
+  // missing log is never counted as out of range.
+  const filteredStats = summariseTemperatureAssets(filteredAssets);
   const manualAsset = filteredAssets.find((asset) => asset.id === manualLog.assetId) ?? null;
 
   useEffect(() => {

@@ -248,11 +248,16 @@ export const checklistService = {
   // for that day yet are returned as "missing" so the manager sees the gap.
   // Optional venue filter narrows to templates with that `area` value.
   async getTodayReadiness(options: { date?: string; venue?: string } = {}) {
-    const target = options.date ? new Date(options.date) : new Date();
-    const startOfDay = new Date(target);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(startOfDay);
-    endOfDay.setDate(endOfDay.getDate() + 1);
+    // Same venue-day window as /checklists/runs?today=1 — this used the
+    // server's (UTC) midnight, so the readiness board and the runs list
+    // disagreed about which runs were "today" every Sydney morning.
+    const dayKey = options.date && /^\d{4}-\d{2}-\d{2}$/.test(options.date)
+      ? options.date
+      : venueDayKey(options.date ? new Date(options.date) : new Date());
+    const bounds = venueDayBounds(dayKey);
+    if (!bounds) throw new HttpError(400, 'Readiness date is invalid');
+    const startOfDay = bounds.gte;
+    const endOfDay = bounds.lt;
 
     const venueFilter = options.venue?.trim() || null;
 

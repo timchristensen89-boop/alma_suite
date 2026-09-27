@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useHubTabBadge } from '../components/HubTabs';
-import type { RosterShift, StaffClockSession, StaffProfile, Timesheet } from '@alma/shared';
+import { venueDayKey, type RosterShift, type StaffClockSession, type StaffProfile, type Timesheet } from '@alma/shared';
 import {
   ActionFeedback,
   Badge,
@@ -23,6 +23,7 @@ import { useAuth } from '../lib/auth';
 import {
   startOfWeek,
   addDays,
+  venueTodayLocal,
   shiftTimeRange,
   timeOf,
   toDateInput,
@@ -98,7 +99,9 @@ function groupTimesheetsByStaff(entries: Timesheet[], staff: StaffProfile[]): Ti
 type TimesheetSelection = { type: 'all' } | { type: 'venue'; venue: string } | { type: 'staff'; id: string };
 
 export function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?: RosterShift[] }) {
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  // The venue's week, not the browser's: a manager reviewing from Europe on a
+  // Sunday evening is already looking at Monday's Sydney timesheets.
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(venueTodayLocal()));
   // Range mode: 'week' uses the week navigator; '30'/'90' look back N days.
   const [rangeMode, setRangeMode] = useState<'week' | '30' | '90'>('week');
   const [statusFilter, setStatusFilter] = useState<'all' | Timesheet['status']>('all');
@@ -106,7 +109,7 @@ export function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; 
   const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
   const [staffProfileId, setStaffProfileId] = useState(staff[0]?.id ?? '');
   const [showTerminatedStaff, setShowTerminatedStaff] = useState(false);
-  const [workDate, setWorkDate] = useState(() => toDateInput(new Date()));
+  const [workDate, setWorkDate] = useState(() => toDateInput(venueTodayLocal()));
   const [startTime, setStartTime] = useState('10:00');
   const [endTime, setEndTime] = useState('16:00');
   const [breakMinutes, setBreakMinutes] = useState('30');
@@ -169,11 +172,11 @@ export function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; 
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   // Effective query window: the navigated week, or a rolling N-day lookback.
   const rangeStart = useMemo(
-    () => (rangeMode === 'week' ? weekStart : addDays(new Date(), -Number(rangeMode))),
+    () => (rangeMode === 'week' ? weekStart : addDays(venueTodayLocal(), -Number(rangeMode))),
     [rangeMode, weekStart]
   );
   const rangeEnd = useMemo(
-    () => (rangeMode === 'week' ? weekEnd : addDays(new Date(), 1)),
+    () => (rangeMode === 'week' ? weekEnd : addDays(venueTodayLocal(), 1)),
     [rangeMode, weekEnd]
   );
   const selectedMember = staff.find((member) => member.id === staffProfileId);
@@ -286,9 +289,11 @@ export function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; 
     setLoading(true);
     setMessage(null);
     try {
+      // Venue day keys, not instants: workDate is a calendar day, and an
+      // instant's calendar day depends on which zone you ask in.
       const query = new URLSearchParams({
-        start: rangeStart.toISOString(),
-        end: rangeEnd.toISOString(),
+        start: toDateInput(rangeStart),
+        end: toDateInput(rangeEnd),
         status: statusFilter,
         venue: venueFilter
       });
@@ -969,7 +974,12 @@ export function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; 
       />
 
       <div className="stats-grid">
-        <StatCard label="Submitted" value={submittedCount} hint="Awaiting approval" loading={loading} />
+        <StatCard
+          label="Submitted"
+          value={submittedCount}
+          hint={`Awaiting approval · ${formatRange(rangeStart, addDays(rangeEnd, -1))}${venueFilter === 'all' ? '' : ` · ${venueFilter}`}`}
+          loading={loading}
+        />
         <StatCard label="Approved" value={approvedCount} hint="Ready for Xero" loading={loading} />
         <StatCard label="Approved hours" value={roundHours(approvedHours)} hint={formatRange(weekStart, addDays(weekEnd, -1))} loading={loading} />
       </div>
@@ -1485,12 +1495,14 @@ type ClockDriftResult = {
 function computeClockDrift(timesheet: Timesheet, clockSessions: StaffClockSession[]): ClockDriftResult | null {
   // Match clock sessions where the staff member is the same and the clock-in
   // falls on the same calendar date as the timesheet's workDate.
-  const tsDate = new Date(timesheet.workDate);
-  const dayKey = tsDate.toISOString().slice(0, 10);
+  // workDate is UTC midnight of the venue day, so its UTC date IS the venue
+  // day key; a clock-in instant must be read in the venue zone to compare
+  // (its UTC date is the day before until 10-11am Sydney).
+  const dayKey = new Date(timesheet.workDate).toISOString().slice(0, 10);
   const candidates = clockSessions.filter((s) =>
     s.staffProfileId === timesheet.staffProfileId &&
     s.clockOutAt !== null &&
-    s.clockInAt.slice(0, 10) === dayKey
+    venueDayKey(new Date(s.clockInAt)) === dayKey
   );
   if (candidates.length === 0) return null;
 

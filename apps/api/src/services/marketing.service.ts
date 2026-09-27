@@ -33,6 +33,7 @@ import {
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { mailService } from './mail.service.js';
+import { resolveMarketingSendModes } from '../lib/marketing-send-mode.js';
 import { AUTOMATION_LIBRARY } from '../data/marketingAutomationLibrary.js';
 
 const BIG_SPENDER_THRESHOLD_CENTS = 50_000;
@@ -1572,6 +1573,13 @@ export const marketingService = {
     ]);
 
     return {
+      // What each channel can actually do right now — the app derives its
+      // banner and its send controls from this, never from static copy.
+      sendModes: resolveMarketingSendModes({
+        ...mailService.sendModeEnv(),
+        emailLiveSendEnabled: env.marketing.email.liveSendEnabled,
+        socialLivePublishEnabled: env.marketing.socialPublishing.livePublishingEnabled
+      }),
       guests: guests.map(guestToPayload),
       tags: tags.map(tagToPayload),
       templates: templates.map(templateToPayload),
@@ -2263,6 +2271,12 @@ export const marketingService = {
     }
     if (!mailService.isConfigured()) {
       throw new HttpError(503, 'Email provider not configured. Set RESEND_API_KEY or SMTP_* in env before live sending.');
+    }
+    // The provider being configured is the capability; this is the decision.
+    // Both are required (marketing-send-mode.ts), so a credential landing on
+    // a deploy cannot turn a rehearsal into a real send.
+    if (!env.marketing.email.liveSendEnabled) {
+      throw new HttpError(503, 'Live campaign sends are switched off. Set MARKETING_EMAIL_LIVE_SEND_ENABLED=true to enable them; simulation and test sends still work.');
     }
     if (input.confirmToken !== campaignId) {
       throw new HttpError(400, 'Confirmation token mismatch. Reload the campaign and try again.');
@@ -3341,6 +3355,7 @@ export const marketingService = {
         return {
           ranAt: new Date().toISOString(),
           mailConfigured: mailService.isConfigured(),
+          liveSendEnabled: env.marketing.email.liveSendEnabled,
           dryRun,
           claimSkipped: true,
           totalSent: 0,
@@ -3355,7 +3370,9 @@ export const marketingService = {
       where: { active: true, ...(options?.venue ? { venue: options.venue } : {}) },
       include: automationWithTemplateArgs.include
     });
-    const mailReady = mailService.isConfigured();
+    // Automations send real email to guests: provider AND the live switch.
+    const mailReady = mailService.isConfigured() && env.marketing.email.liveSendEnabled;
+    const mailSkipReason = !mailService.isConfigured() ? 'mail_not_configured' : 'live_send_disabled';
 
     // Once-ever milestones vs windowed/recurring; event triggers dedup by reservation.
     const COOLDOWN_DAYS: Record<string, number> = {
@@ -3480,7 +3497,7 @@ export const marketingService = {
         }
         if (dryRun || !mailReady) {
           skipped += 1;
-          if (!dryRun) await recordRun('SKIPPED', 'mail_not_configured');
+          if (!dryRun) await recordRun('SKIPPED', mailSkipReason);
           continue;
         }
 

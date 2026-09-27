@@ -38,14 +38,21 @@ export function NotificationsDrawer() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
+  // "Nothing to flag" is only true once a load has succeeded; before that,
+  // and after a failed refresh, the empty list means "don't know".
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
       const data = await api<Notification[]>('/api/notifications');
       setItems(data);
+      setLoaded(true);
+      setFailed(false);
     } catch (err) {
       console.error(err);
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -86,7 +93,11 @@ export function NotificationsDrawer() {
             <div className="notifications-body">
               {items.length === 0 ? (
                 <div className="notifications-empty">
-                  Nothing to flag right now — everything is in range, in date, and on time.
+                  {!loaded && loading
+                    ? 'Checking for anything to flag…'
+                    : failed
+                      ? 'Could not load notifications — this list may be out of date.'
+                      : 'Nothing to flag right now — everything is in range, in date, and on time.'}
                 </div>
               ) : (
                 items.map((item) => (

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { complianceAttentionLine } from '@alma/shared';
 import type {
   IncidentSummary,
   IssueSummary,
@@ -42,21 +43,26 @@ export function DashboardPage() {
   const openIncidents = data?.incidents.open ?? 0;
 
   // Data-driven editorial header copy per design — leads with whatever the
-  // operator needs to see first.
+  // operator needs to see first. Missing logs, recorded breaches and overdue
+  // issues each get their own clause from the shared helper; they used to be
+  // added into one number and described as "out of range".
   const openIssues = data?.issues.open ?? 0;
-  const overdueChecks = (data?.temperatures.outOfRangeNow ?? 0) + (data?.temperatures.missingToday ?? 0);
-  const headerTitle = openIssues > 0 || overdueChecks > 0 ? 'One thing' : 'All quiet';
-  const headerItalic = openIssues > 0 || overdueChecks > 0 ? 'needs your eye.' : 'on the floor.';
-  const headerSub = (() => {
-    if (loading) return 'Loading latest snapshot…';
-    if (error) return 'Could not refresh the summary.';
-    if (openIssues > 0 && overdueChecks > 0) {
-      return `${openIssues} open issue${openIssues === 1 ? '' : 's'} and ${overdueChecks} temperature${overdueChecks === 1 ? '' : 's'} out of range today.`;
-    }
-    if (openIssues > 0) return `${openIssues} open issue${openIssues === 1 ? '' : 's'} sitting on the board.`;
-    if (overdueChecks > 0) return `${overdueChecks} temperature${overdueChecks === 1 ? '' : 's'} out of range today.`;
-    return 'Issues, checklists and logs are all current.';
-  })();
+  const missingToday = data?.temperatures.missingToday ?? 0;
+  const attention = complianceAttentionLine({
+    openIssues,
+    overdueIssues: data?.issues.overdue ?? 0,
+    outOfRangeNow: outOfRange,
+    missingToday
+  });
+  const settled = !loading && !error && data != null;
+  const headerSub = loading ? 'Loading latest snapshot…' : error ? 'Could not refresh the summary.' : attention.text;
+  const statusDot: 'terracotta' | 'amber' | 'forest' | 'slate' = !settled
+    ? 'slate'
+    : attention.tone === 'danger'
+      ? 'terracotta'
+      : attention.tone === 'warning'
+        ? 'amber'
+        : 'forest';
 
   return (
     <div className="page-stack">
@@ -66,9 +72,9 @@ export function DashboardPage() {
         appIcon={<ShieldIcon />}
         eyebrow="Standards command"
         description="Audits, allergens, food safety logs. The unglamorous backbone that keeps the doors open."
-        statusLabel={openIssues > 0 ? `${openIssues} open` : 'All venues · today'}
-        statusHint={openIssues > 0 || overdueChecks > 0 ? headerSub : 'No issues. Logs are current.'}
-        statusDot={openIssues > 0 ? 'terracotta' : overdueChecks > 0 ? 'amber' : 'forest'}
+        statusLabel={!settled ? 'All venues · today' : openIssues > 0 ? `${openIssues} open` : 'All venues · today'}
+        statusHint={headerSub}
+        statusDot={statusDot}
         actions={
           <>
             <Link to="/issues/new" className="alma-home-bubble-btn alma-home-bubble-btn--primary">
@@ -199,6 +205,7 @@ export function DashboardPage() {
         >
           <div className="attention-list">
             <AttentionRow
+              loading={loading || !data}
               icon={<IconIssues size={16} />}
               tone={hasCritical ? 'danger' : 'neutral'}
               title="Critical issues"
@@ -207,6 +214,7 @@ export function DashboardPage() {
               to="/issues"
             />
             <AttentionRow
+              loading={loading || !data}
               icon={<IconClock size={16} />}
               tone={(data?.issues.overdue ?? 0) > 0 ? 'warning' : 'neutral'}
               title="Overdue follow-ups"
@@ -217,6 +225,7 @@ export function DashboardPage() {
             {managerAccess ? (
               <>
                 <AttentionRow
+              loading={loading || !data}
                   icon={<IconTemperature size={16} />}
                   tone={outOfRange > 0 ? 'danger' : 'positive'}
                   title="Out-of-range fridges"
@@ -225,6 +234,7 @@ export function DashboardPage() {
                   to="/temperatures"
                 />
                 <AttentionRow
+              loading={loading || !data}
                   icon={<IconStaff size={16} />}
                   tone={expiring > 0 ? 'warning' : 'neutral'}
                   title="Staff records expiring"
@@ -235,6 +245,7 @@ export function DashboardPage() {
               </>
             ) : null}
             <AttentionRow
+              loading={loading || !data}
               icon={<IconIncident size={16} />}
               tone={openIncidents > 0 ? 'info' : 'neutral'}
               title="Open incidents"
@@ -294,7 +305,8 @@ function AttentionRow({
   title,
   value,
   hint,
-  to
+  to,
+  loading = false
 }: {
   icon: React.ReactNode;
   tone: AttentionTone;
@@ -302,15 +314,18 @@ function AttentionRow({
   value: number;
   hint: string;
   to: string;
+  loading?: boolean;
 }) {
+  // A row that has not loaded is neither green nor zero.
+  const shownTone = loading ? 'neutral' : tone;
   return (
     <Link to={to} className="attention-row">
-      <span className={`attention-row-icon tone-${tone}`}>{icon}</span>
+      <span className={`attention-row-icon tone-${shownTone}`}>{icon}</span>
       <div className="attention-row-body">
         <strong>{title}</strong>
-        <span className="subtle">{hint}</span>
+        <span className="subtle">{loading ? 'Loading…' : hint}</span>
       </div>
-      <Badge tone={tone === 'neutral' ? 'muted' : tone}>{value}</Badge>
+      <Badge tone={shownTone === 'neutral' ? 'muted' : shownTone}>{loading ? '…' : value}</Badge>
       <IconArrowRight size={14} className="attention-row-chevron" />
     </Link>
   );

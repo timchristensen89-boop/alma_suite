@@ -47,6 +47,7 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cogs, setCogs] = useState<StockCostOfGoodsPayload | null>(null);
+  const [cogsError, setCogsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,9 +85,16 @@ export function DashboardPage() {
         const params = new URLSearchParams({ days: '30' });
         if (selectedVenue) params.set('venue', selectedVenue);
         const payload = await api<StockCostOfGoodsPayload>(`/api/recipes/cost-of-goods?${params.toString()}`);
-        if (!cancelled) setCogs(payload);
-      } catch {
-        if (!cancelled) setCogs(null);
+        if (!cancelled) {
+          setCogs(payload);
+          setCogsError(null);
+        }
+      } catch (err) {
+        // Unavailable is not "loading": the card used to spin forever here.
+        if (!cancelled) {
+          setCogs(null);
+          setCogsError(err instanceof ApiError ? err.message : 'Could not load cost of goods');
+        }
       }
     }
     loadCogs();
@@ -134,46 +142,53 @@ export function DashboardPage() {
         }
       />
 
-      {/* The money first: what the venues sold, what the food cost, and what
-          is left — over the last 30 days, before the operational counts. */}
+      {/* The money first: what the mapped menu sold, what it cost on paper,
+          what the bills say it cost, and what is left — over the last 30
+          days. Each percentage sits under the dollar figure it was computed
+          from, and the actual figure says which method produced it. */}
       <div className="stat-grid">
         <StatCard
-          label="Sales (30d)"
-          value={cogs ? formatMoney(cogs.netSalesCents) : '—'}
-          hint={activeVenue ? `Net sales · ${activeVenue}` : 'Net sales · all venues'}
+          label="Mapped item sales (30d)"
+          value={cogs ? formatMoney(cogs.mappedSalesCents) : '—'}
+          hint={
+            cogs
+              ? `Square items mapped to recipes · ${cogs.coverage.mappedRecipes} dishes${activeVenue ? ` · ${activeVenue}` : ' · all venues'}`
+              : 'Not venue takings — only items mapped to recipes'
+          }
         />
         <StatCard
-          label="Food & drink cost (30d)"
-          value={cogs ? formatMoney(cogs.actualCogsCents) : '—'}
+          label="Theoretical food & drink cost (30d)"
+          value={cogs ? formatMoney(cogs.theoretical.cogsCents) : '—'}
           hint={
-            cogs?.cogsPercentOfSales != null
-              ? `${formatPercent(cogs.cogsPercentOfSales)} of sales`
-              : 'Actual supplier purchases'
+            cogs?.theoretical.percentOfMappedSales != null
+              ? `${formatPercent(cogs.theoretical.percentOfMappedSales)} of mapped sales · recipe cost × units sold${cogs.coverage.zeroCostRecipes > 0 ? ` · ${cogs.coverage.zeroCostRecipes} uncosted` : ''}`
+              : 'Recipe cost × units sold'
           }
+          tone={cogs && cogs.coverage.zeroCostRecipes > 0 ? 'warning' : undefined}
+        />
+        <StatCard
+          label={cogs && cogs.actual.source !== 'stock_bounded' ? 'Supplier purchases (30d)' : 'Actual food & drink cost (30d)'}
+          value={cogs ? formatMoney(cogs.actual.cogsCents) : '—'}
+          hint={
+            cogs
+              ? cogs.actual.comparable
+                ? `${formatPercent(cogs.actual.percentOfMappedSales)} of mapped sales · ${cogs.actual.label}`
+                : `${cogs.actual.label} — whole-venue figure, not a % of mapped sales`
+              : 'Opening + purchases − closing, or bills only'
+          }
+          tone={cogs && !cogs.actual.comparable ? 'warning' : undefined}
         />
         <StatCard
           label="Gross profit (30d)"
-          value={cogs && cogs.netSalesCents > 0 ? formatMoney(cogs.netSalesCents - cogs.actualCogsCents) : '—'}
+          value={cogs && cogs.mappedSalesCents > 0 ? formatMoney(cogs.theoretical.grossProfitCents) : '—'}
           hint={
-            cogs && cogs.netSalesCents > 0
-              ? `${formatPercent(((cogs.netSalesCents - cogs.actualCogsCents) / cogs.netSalesCents) * 100)} GP after actual COGS`
-              : 'Needs sales in the window'
+            cogs && cogs.mappedSalesCents > 0
+              ? cogs.actual.comparable && cogs.actual.grossProfitPercent != null
+                ? `${formatPercent(cogs.theoretical.grossProfitPercent)} on recipe cost · ${formatPercent(cogs.actual.grossProfitPercent)} on actual`
+                : `${formatPercent(cogs.theoretical.grossProfitPercent)} on recipe cost · actual GP needs like-for-like scope (${cogs.actual.comparability.reasons[0] ?? 'see Cost of Goods'})`
+              : 'Needs mapped sales in the window'
           }
-          tone={
-            cogs && cogs.netSalesCents > 0 && (cogs.netSalesCents - cogs.actualCogsCents) / cogs.netSalesCents < 0.6
-              ? 'warning'
-              : undefined
-          }
-        />
-        <StatCard
-          label="Cost vs theoretical"
-          value={cogs ? formatMoney(cogs.varianceCents) : '—'}
-          hint={
-            cogs?.variancePercent != null
-              ? `${formatPercent(cogs.variancePercent)} vs recipe cost of what sold`
-              : 'Actual − theoretical'
-          }
-          tone={cogs?.variancePercent != null && Math.abs(cogs.variancePercent) > 15 ? 'warning' : undefined}
+          tone={cogs?.theoretical.grossProfitPercent != null && cogs.theoretical.grossProfitPercent < 60 ? 'warning' : undefined}
         />
       </div>
 
@@ -199,7 +214,7 @@ export function DashboardPage() {
                 ? `${dashboard?.summary.outOfStockItems ?? 0} out of stock at ${activeVenue}`
                 : `${dashboard?.summary.outOfStockItems ?? 0} out of stock across venue stock`
             }
-            tone={(dashboard?.summary.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'}
+            tone={loading || !dashboard ? undefined : (dashboard.summary.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'}
           />
         </Link>
         <Link to="/items" className="stat-card-link" aria-label="Open on hand stock">
@@ -228,7 +243,7 @@ export function DashboardPage() {
       <div className="ov-two st-dashboard-pair">
         <Card
           title="Needs attention"
-          subtitle="Low-stock and out-of-stock items, sorted by most recent change."
+          subtitle="Low-stock and out-of-stock items, most urgent first — the same rows the Low stock count above is made of."
           action={
             <Link className="btn btn-ghost btn-sm" to="/reorder">
               View below par
@@ -274,10 +289,22 @@ export function DashboardPage() {
                 ) : (
                   <tr>
                     <td colSpan={7} className="table-empty-cell">
-                      No low-stock items right now.
+                      {loading
+                        ? 'Loading low-stock items…'
+                        : error || !dashboard
+                          ? 'Low-stock items are unavailable right now.'
+                          : `No low-stock or out-of-stock items${activeVenue ? ` at ${activeVenue}` : ''} right now.`}
                     </td>
                   </tr>
                 )}
+                {dashboard && (dashboard.lowStockItemsTotal ?? dashboard.lowStockItems.length) > dashboard.lowStockItems.length ? (
+                  <tr>
+                    <td colSpan={7} className="table-empty-cell">
+                      Showing the {dashboard.lowStockItems.length} most urgent of {dashboard.lowStockItemsTotal} items.{' '}
+                      <Link to="/reorder">View all below par →</Link>
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -318,7 +345,7 @@ export function DashboardPage() {
                 ) : (
                   <tr>
                     <td colSpan={5} className="table-empty-cell">
-                      No submitted stocktakes are waiting for review.
+                      {loading ? 'Loading stocktakes…' : error || !dashboard ? 'Stocktakes are unavailable right now.' : 'No submitted stocktakes are waiting for review.'}
                     </td>
                   </tr>
                 )}
@@ -330,9 +357,11 @@ export function DashboardPage() {
 
       <Card
         title="Cost of Goods"
-        subtitle="Last 30 days. Theoretical (sold × recipe cost) vs Actual (supplier purchases)."
+        subtitle={`${cogs ? `${cogs.window.from} to ${cogs.window.to}` : 'Last 30 days'}. Theoretical (sold × recipe cost) vs actual (opening + purchases − closing when stocktakes bracket the window; otherwise supplier bills only, which is not comparable).`}
       >
-        {!cogs ? (
+        {cogsError ? (
+          <EmptyState icon={<IconRecipes size={24} />} title="Cost of goods unavailable" description={cogsError} />
+        ) : !cogs ? (
           <Spinner label="Loading cost of goods" />
         ) : cogs.dishMargin.mappedRecipes === 0 ? (
           <EmptyState
@@ -347,15 +376,27 @@ export function DashboardPage() {
             <div className="stat-grid">
               <StatCard
                 icon={<IconRecipes size={18} />}
-                label="Theoretical COGS"
-                value={formatMoney(cogs.theoreticalCogsCents)}
-                hint={`Recipe cost of what sold · ${cogs.dishMargin.mappedRecipes} dishes mapped`}
+                label="Actual vs theoretical"
+                value={cogs.varianceCents == null ? '—' : formatMoney(cogs.varianceCents)}
+                hint={
+                  cogs.variancePercent != null
+                    ? `${formatPercent(cogs.variancePercent)} vs recipe cost of what sold`
+                    : `Not comparable: ${cogs.actual.comparability.reasons.join('; ')}`
+                }
+                tone={cogs.variancePercent != null && Math.abs(cogs.variancePercent) > 15 ? 'warning' : undefined}
+              />
+              <StatCard
+                icon={<IconRecipes size={18} />}
+                label="Costing coverage"
+                value={`${cogs.coverage.mappedRecipes} dishes`}
+                hint={`${cogs.coverage.zeroCostRecipes} uncosted · ${cogs.coverage.suspectRecipes} batch-costed (excluded) · ${cogs.coverage.serveSizeRequiredRecipes} serve size required (excluded${cogs.coverage.serveSizeRequiredSalesCents > 0 ? `, ${formatMoney(cogs.coverage.serveSizeRequiredSalesCents)} of sales` : ''}) · ${cogs.coverage.unmappedRecipes} with no sales`}
+                tone={cogs.coverage.zeroCostRecipes + cogs.coverage.suspectRecipes + cogs.coverage.serveSizeRequiredRecipes > 0 ? 'warning' : undefined}
               />
               <StatCard
                 icon={<IconItems size={18} />}
                 label="Avg dish margin"
                 value={cogs.dishMargin.avgMarginPercent != null ? formatPercent(cogs.dishMargin.avgMarginPercent) : '—'}
-                hint={`${cogs.dishMargin.unmappedRecipes} dishes with no sales`}
+                hint="Unweighted mean across dishes that sold"
               />
             </div>
             <p className="subtle" style={{ marginTop: 12 }}>

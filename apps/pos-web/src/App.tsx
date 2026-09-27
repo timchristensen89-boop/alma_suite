@@ -6,6 +6,7 @@ import { POS_SURFACES, SUITE_APP_LINKS } from './suiteApps';
 // requirement and a dish's label are the same words rather than two sets that
 // nearly match.
 import { answerableGuestTags, dietaryKind, dietaryLabel, dietaryShort, dishAnswersGuest, guestTagIsAllergy, menuForDay, parseDishDietary } from '@alma/shared';
+import { venueWeekdayNow } from '@alma/shared';
 
 // Lazy: jsQR is ~130KB the till never needs until somebody actually taps
 // "Scan the card" — the register's first paint shouldn't carry it.
@@ -371,7 +372,9 @@ function isNetworkError(err: unknown) {
 
 // Weekend surcharge computed locally from cached rules during an outage.
 function offlineSurcharge(subtotalCents: number, rules: Array<{ kind: string; percent: number; weekdays: string }>): { cents: number; label: string | null } {
-  const weekday = new Date().getDay();
+  // The venue's weekday — a register is in the venue, but the rule must
+  // hold from any zone.
+  const weekday = venueWeekdayNow();
   const rule = rules.find(
     (candidate) => candidate.kind === 'SURCHARGE' && candidate.weekdays.split(',').filter(Boolean).map(Number).includes(weekday)
   );
@@ -459,11 +462,11 @@ export function App() {
   // The weekday the register prices by — device-local, the same convention
   // as the offline weekend surcharge, and re-checked each minute so Taco
   // Tuesday ends when Tuesday does, even on a register nobody reloads.
-  const [priceDay, setPriceDay] = useState<number>(() => new Date().getDay());
+  const [priceDay, setPriceDay] = useState<number>(() => venueWeekdayNow());
   useEffect(() => {
     const tick = window.setInterval(() => {
       setPriceDay((current) => {
-        const day = new Date().getDay();
+        const day = venueWeekdayNow();
         return day === current ? current : day;
       });
     }, 60_000);
@@ -5859,7 +5862,7 @@ export function App() {
                 {bill.tableLabel ? `Table ${bill.tableLabel}` : `Order #${bill.orderNumber}`}
                 {bill.covers ? ` · ${bill.covers} guests` : ''}
                 <br />
-                {new Date().toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}
+                {new Date().toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Australia/Sydney' })}
               </p>
             </div>
             <div className="pos-receipt-lines">

@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { AdminStaffCostingPayload } from '@alma/shared';
 import { Badge, Button, Card, Input, Spinner } from '@alma/ui';
 import { staffApi } from '../lib/api';
+import { localDateKey, venueTodayAsLocalDate } from '@alma/shared';
 
-function startOfWeek(date = new Date()) {
+function startOfWeek(date = venueTodayAsLocalDate()) {
   const next = new Date(date);
   next.setHours(0, 0, 0, 0);
   const day = next.getDay();
@@ -18,7 +19,7 @@ function addDays(date: Date, days: number) {
 }
 
 function isoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return localDateKey(date);
 }
 
 function money(cents: number | null | undefined) {

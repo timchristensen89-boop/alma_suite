@@ -804,8 +804,13 @@ function toTableCallPayload(row: {
 export const reserveService = {
   async dashboard(actor: AuthUser, input: { date?: string; venue?: string }) {
     const venue = actorVenueScope(actor, input.venue, 'Reserve');
-    const date = input.date ? startOfDay(parseDate(input.date, 'Dashboard date')) : startOfDay(new Date());
-    const nextDay = endOfDay(date);
+    // The venue's day, not the server's (UTC) day — a `YYYY-MM-DDT00:00:00`
+    // from the client parses as UTC midnight, ten hours into the Sydney day.
+    const dashboardDay = input.date ? venueServiceDay(input.date, 'Dashboard date') : venueDayKey();
+    const dashboardBounds = venueDayBounds(dashboardDay);
+    if (!dashboardBounds) throw new HttpError(400, 'Dashboard date is invalid');
+    const date = dashboardBounds.gte;
+    const nextDay = dashboardBounds.lt;
     const nextWeek = addDays(date, 7);
 
     const [todayReservations, upcomingReservations, recentGuests, recentNoShows, availabilityRules, integration] =
@@ -886,7 +891,7 @@ export const reserveService = {
   },
 
   async diary(actor: AuthUser, input: { start?: string; end?: string; venue?: string }) {
-    const start = input.start ? parseDate(input.start, 'Diary start date') : startOfDay(new Date());
+    const start = input.start ? parseDate(input.start, 'Diary start date') : venueDayBounds(venueDayKey())!.gte;
     const end = input.end ? parseDate(input.end, 'Diary end date') : addDays(start, 7);
     if (end <= start) throw new HttpError(400, 'Diary end date must be after start date');
     const venue = actorVenueScope(actor, input.venue, 'Reserve');
@@ -1016,8 +1021,10 @@ export const reserveService = {
 
   async listReservations(actor: AuthUser, input: { venue?: string; date?: string; status?: string }) {
     const venue = actorVenueScope(actor, input.venue, 'Reserve');
-    const date = input.date ? startOfDay(parseDate(input.date, 'Reservation date')) : null;
-    const nextDay = date ? endOfDay(date) : null;
+    const listBounds = input.date ? venueDayBounds(venueServiceDay(input.date, 'Reservation date')) : null;
+    if (input.date && !listBounds) throw new HttpError(400, 'Reservation date is invalid');
+    const date = listBounds?.gte ?? null;
+    const nextDay = listBounds?.lt ?? null;
     const status = cleanText(input.status);
 
     const reservations = await prisma.reserveReservation.findMany({

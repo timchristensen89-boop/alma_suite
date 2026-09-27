@@ -103,7 +103,7 @@ const MARKETING_NAV_ITEMS = [
   { href: '/', label: 'Overview', description: 'Metrics, alerts, and activity', icon: <IconDashboard /> },
   { href: '/guests', label: 'Guests', description: 'Profiles, consent, and tags', icon: <IconUsers /> },
   { href: '/segments', label: 'Segments', description: 'Tag and audience logic', icon: <IconChecklist /> },
-  { href: '/campaigns', label: 'Campaigns', description: 'Preview and simulate', icon: <IconMegaphone /> },
+  { href: '/campaigns', label: 'Campaigns', description: 'Preview, simulate, send', icon: <IconMegaphone /> },
   { href: '/content', label: 'Content', description: 'Social overview', icon: <IconImages /> },
   { href: '/content/assets', label: 'Assets', description: 'Upload and library', icon: <IconFiles /> },
   { href: '/content/composer', label: 'Composer', description: 'Draft and preview posts', icon: <IconEdit /> },
@@ -1584,10 +1584,20 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       }
     >
       <div className="marketing-page">
+        {/* Execution mode comes from the API's real configuration — the
+            banner used to say "can send live" while the Campaigns card said
+            "simulation only", and neither knew whether a provider existed. */}
         <div className="alma-preview-banner" role="status">
-          <span className="alma-preview-banner-tag">Pilot</span>
+          <span className="alma-preview-banner-tag">{overview?.sendModes.email.mode === 'LIVE' ? 'Live' : overview ? 'Simulation' : 'Loading'}</span>
           <span className="alma-preview-banner-text">
-            <strong>Email campaigns can now send live.</strong> Every send requires a test first + an explicit "SEND" confirmation, admin role, and routes through the Resend / SMTP provider. Social posts and SMS remain simulated until publisher tokens are wired.
+            {overview ? (
+              <>
+                <strong>{overview.sendModes.email.mode === 'LIVE' ? 'Email campaigns can send live.' : 'Email campaigns are simulation only.'}</strong>{' '}
+                {overview.sendModes.summary}
+              </>
+            ) : (
+              'Checking which channels can send…'
+            )}
           </span>
         </div>
         <AlmaHomeBubble
@@ -2364,7 +2374,16 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
             {isActiveSection('/campaigns') ? (
             <section id="campaigns" className="marketing-page-section">
-              <Card title="Campaigns" subtitle="Recipient preview and simulation only. No external send.">
+              <Card
+                title="Campaigns"
+                subtitle={
+                  !overview
+                    ? 'Checking send mode…'
+                    : overview.sendModes.email.mode === 'LIVE'
+                      ? `Preview, simulate, test-send, then send live. ${overview.sendModes.email.detail} ${overview.sendModes.sms.detail}`
+                      : `Recipient preview and simulation only. ${overview.sendModes.email.detail}`
+                }
+              >
               <form className="marketing-form" onSubmit={(event) => void saveCampaign(event)}>
                 <div className="form-grid two">
                   <Select label="Venue" value={campaignForm.venue} onChange={(event) => { const el = event.currentTarget; setCampaignForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
@@ -2409,14 +2428,35 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                       <Button type="button" size="sm" variant="secondary" onClick={() => void createContentPostFromCampaign(campaign.id)}>Create social post</Button>
                       <Button type="button" size="sm" variant="secondary" onClick={() => void issueGiftCardsForCampaign(campaign.id)}>🎁 Issue gift cards</Button>
                       <Button type="button" size="sm" variant="secondary" onClick={() => void simulateCampaign(campaign.id)} disabled={loadingCampaignId === campaign.id}>Simulate send</Button>
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void testSendCampaign(campaign.id)} disabled={loadingCampaignId === campaign.id}>📧 Test send</Button>
-                      <Button type="button" size="sm" onClick={() => void liveSendCampaign(campaign)} disabled={loadingCampaignId === campaign.id || !campaign.simulatedAt || Boolean(campaign.sentAt)}>
-                        {campaign.sentAt ? 'Sent ✓' : 'Send live'}
-                      </Button>
+                      {(() => {
+                        // Live controls exist only where the channel can
+                        // actually send: email with a configured provider.
+                        // SMS has no provider in the suite, so it never gets them.
+                        const channelMode = campaign.channel === 'EMAIL' ? overview?.sendModes.email : campaign.channel === 'SMS' ? overview?.sendModes.sms : null;
+                        const canSendLive = channelMode?.mode === 'LIVE';
+                        if (!canSendLive) {
+                          return (
+                            <span className="subtle" title={channelMode?.detail ?? 'Checking send mode…'}>
+                              {campaign.channel === 'SMS' ? 'SMS: simulation only' : channelMode ? 'Live send unavailable — provider not configured' : 'Checking send mode…'}
+                            </span>
+                          );
+                        }
+                        return (
+                          <>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => void testSendCampaign(campaign.id)} disabled={loadingCampaignId === campaign.id}>📧 Test send</Button>
+                            <Button type="button" size="sm" onClick={() => void liveSendCampaign(campaign)} disabled={loadingCampaignId === campaign.id || !campaign.simulatedAt || Boolean(campaign.sentAt)}>
+                              {campaign.sentAt ? 'Sent ✓' : 'Send live'}
+                            </Button>
+                          </>
+                        );
+                      })()}
                     </div>
                     <ActionFeedback
                       message={
-                        feedback.target === `campaign-preview:${campaign.id}` || feedback.target === `campaign-simulate:${campaign.id}`
+                        feedback.target === `campaign-preview:${campaign.id}` ||
+                        feedback.target === `campaign-simulate:${campaign.id}` ||
+                        feedback.target === `campaign-test:${campaign.id}` ||
+                        feedback.target === `campaign-live:${campaign.id}`
                           ? feedback.message
                           : null
                       }
