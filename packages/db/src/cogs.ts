@@ -1,4 +1,5 @@
 import { prisma } from './prisma.js';
+import { realVenueNames } from '@alma/shared';
 import {
   computeActualCogsWith,
   stockValueAtCentsWith,
@@ -67,10 +68,20 @@ const labelWhere = (labels: string[]) => {
 
 export const prismaCogsReader: CogsReader = {
   async configuredVenues() {
-    // The Venue table is the canonical population (seeded with the trading
-    // venues; Settings › Venues carries the same names with their targets).
+    // Settings › Venues (AppSettings.venues, the list the admin maintains
+    // and every report reads for targets) is the canonical population. The
+    // Venue table is a fallback only: on the production database it holds
+    // no rows (validation, 27 Sep 2026), so reading it alone made every
+    // count off-venue. Pseudo markers never count as venues.
+    const settings = await prisma.appSettings.findUnique({ where: { id: 'singleton' }, select: { venues: true } });
+    const fromSettings = Array.isArray(settings?.venues)
+      ? realVenueNames(
+          (settings.venues as unknown[]).map((v) => (typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string' ? (v as { name: string }).name : null))
+        )
+      : [];
+    if (fromSettings.length > 0) return fromSettings;
     const rows = await prisma.venue.findMany({ select: { name: true }, orderBy: { name: 'asc' } });
-    return rows.map((row) => row.name);
+    return realVenueNames(rows.map((row) => row.name));
   },
   async storedCountVenueLabels(at) {
     const rows = await prisma.stocktake.findMany({
