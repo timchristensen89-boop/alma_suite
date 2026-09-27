@@ -21,12 +21,13 @@
  * Months default to: last complete month, the month before it, and the
  * current month to date.
  */
-import { prisma, computeActualCogs, stockBracket, prismaCogsReader, type ActualCogs } from '@alma/db';
+import { prisma, computeActualCogs, stockBracket, prismaCogsReader, partitionCountLabels, type ActualCogs } from '@alma/db';
 import {
   STOCKTAKE_BRACKET_TOLERANCE_DAYS,
   isSuspectRecipeCost,
   realVenueNames,
-  recipePortionCostCents,
+  recipePortionCost,
+  resolveVenueLabel,
   shiftMonthKey,
   venueDayKey,
   venueMonthBounds,
@@ -40,7 +41,6 @@ import { configuredSuperRateFraction, settingsService } from '../src/services/se
 const money = (cents: number | null | undefined) => (cents == null ? 'unavailable' : `$${(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 const DAY_MS = 86_400_000;
 const FINALISED = ['SUBMITTED', 'REVIEWED', 'LOCKED'] as const;
-const GRAM_UNITS = new Set(['g', 'gram', 'grams', 'kg', 'kilogram', 'kilograms', 'ml', 'millilitre', 'millilitres', 'l', 'litre', 'litres']);
 
 function section(title: string) {
   console.log(`\n${'═'.repeat(78)}\n${title}\n${'═'.repeat(78)}`);
@@ -52,21 +52,37 @@ function describeBracket(label: string, b: ActualCogs['opening']) {
 }
 
 async function stocktakeCadence(venues: string[]) {
-  section('1. Stocktake cadence (finalised counts, grouped by venue day)');
+  section('1. Stocktake cadence (finalised counts, grouped by venue day) — operational freshness vs boundary validity');
+  console.log('Two different questions: "how recently was this venue counted?" (freshness) and "how far is the count used for a period boundary from that boundary?" (validity). A recent count is not a month-end bracket unless it sits near the month end.');
   const counts = await prisma.stocktake.findMany({
     where: { status: { in: [...FINALISED] } },
-    select: { venue: true, countedAt: true, status: true },
+    select: { venue: true, countedAt: true, status: true, lines: { select: { stockValueCents: true } } },
     orderBy: { countedAt: 'asc' }
   });
+  // Stored labels resolve to configured venues through the shared rule; the
+  // rest are off-venue and listed on their own.
   const byVenue = new Map<string, string[]>();
+  const offVenue: Array<{ label: string; status: string; day: string; valueCents: number }> = [];
   for (const c of counts) {
-    const key = c.venue ?? '(null venue)';
+    const resolved = resolveVenueLabel(c.venue, venues);
     const day = venueDayKey(c.countedAt);
-    const list = byVenue.get(key) ?? [];
+    const valueCents = c.lines.reduce((sum, l) => sum + (l.stockValueCents ?? 0), 0);
+    if (!resolved.venue) {
+      offVenue.push({ label: c.venue ?? '(null)', status: resolved.status, day, valueCents });
+      continue;
+    }
+    const list = byVenue.get(resolved.venue) ?? [];
     if (list[list.length - 1] !== day) list.push(day);
-    byVenue.set(key, list);
+    byVenue.set(resolved.venue, list);
   }
   const now = new Date();
+  console.log(`\nOperational freshness today (${venueDayKey(now)}):`);
+  for (const venue of venues) {
+    const days = byVenue.get(venue) ?? [];
+    const latest = days[days.length - 1] ?? null;
+    const age = latest ? Math.floor((now.getTime() - new Date(latest).getTime()) / DAY_MS) : null;
+    console.log(`  ${venue}: latest count ${latest ?? 'none'} · ${age ?? '—'} days ago`);
+  }
   for (const [venue, days] of byVenue) {
     const gaps: number[] = [];
     for (let i = 1; i < days.length; i += 1) gaps.push(Math.round((new Date(days[i]!).getTime() - new Date(days[i - 1]!).getTime()) / DAY_MS));
@@ -77,19 +93,25 @@ async function stocktakeCadence(venues: string[]) {
     console.log(`\n${venue}${pseudo}\n  count days (${days.length}): ${days.join(', ')}\n  gaps (days): ${gaps.join(', ') || '—'} · median ${median ?? '—'} · min ${sorted[0] ?? '—'} · max ${sorted[sorted.length - 1] ?? '—'} → ${cadence}`);
     // Month boundaries over the last 12 months: which have a bracket under each tolerance?
     const rows: string[] = [];
+    const supported = new Map<number, number>([[7, 0], [14, 0], [21, 0], [31, 0]]);
     let month = venueMonthKey(now);
     for (let i = 0; i < 13; i += 1) {
       const bounds = venueMonthBounds(month)!;
       const at = bounds.gte;
       const latest = [...days].reverse().find((d) => new Date(d) <= at) ?? null;
       const age = latest ? Math.floor((at.getTime() - new Date(latest).getTime()) / DAY_MS) : null;
-      rows.push(`${month}-01: latest count ${latest ?? 'none'} age ${age ?? '—'}d → 14d:${age != null && age <= 14 ? 'ok' : 'NO'} 21d:${age != null && age <= 21 ? 'ok' : 'NO'} 31d:${age != null && age <= 31 ? 'ok' : 'NO'}`);
+      const ok = (limit: number) => (age != null && age <= limit ? 'ok' : 'NO');
+      rows.push(`${month}-01: candidate count ${latest ?? 'none'} · distance ${age ?? '—'}d → 7d:${ok(7)} 14d:${ok(14)} 21d:${ok(21)} 31d:${ok(31)}`);
+      if (age != null) for (const [limit, tally] of supported) if (age <= limit) supported.set(limit, tally + 1);
       month = shiftMonthKey(month, -1)!;
     }
-    console.log(`  month-boundary brackets:\n    ${rows.join('\n    ')}`);
+    console.log(`  boundary validity (13 month starts):\n    ${rows.join('\n    ')}`);
+    console.log(`  boundaries supported: ${[...supported.entries()].map(([l, n]) => `${l}d → ${n}/13`).join(' · ')}`);
   }
-  const off = counts.filter((c) => !c.venue || !venues.includes(c.venue)).length;
-  console.log(`\nFinalised counts on a null or non-configured venue: ${off} of ${counts.length}`);
+  console.log(`\nOff-venue finalised counts (label is not a configured venue; listed, never used, never rewritten): ${offVenue.length} of ${counts.length}`);
+  for (const row of offVenue) console.log(`  label "${row.label}" (${row.status}) · counted ${row.day} · value ${money(row.valueCents)} · unattributed`);
+  const parts = await partitionCountLabels(prismaCogsReader, now);
+  console.log(`Stored labels → configured venue: ${[...parts.labelsByVenue.entries()].map(([v, labels]) => `${v} ← [${labels.map((l) => `"${l}"`).join(', ')}]`).join(' · ')}`);
 }
 
 async function actualCogs(venues: string[], months: string[]) {
@@ -103,6 +125,11 @@ async function actualCogs(venues: string[], months: string[]) {
       console.log(`    ${describeBracket('opening', c.opening)}`);
       console.log(`    purchases (ex-GST, finalised): ${money(c.purchasesCents)}${venue ? ` · unattributed (no venue on invoice): ${money(c.unattributedPurchasesCents)} across ${c.unattributedInvoiceCount} invoice(s)` : ''}`);
       console.log(`    ${describeBracket('closing', c.closing)}`);
+      if (venue == null && (c.opening.offVenueCounts.length || c.closing.offVenueCounts.length)) {
+        const seen = new Map<string, (typeof c.opening.offVenueCounts)[number]>();
+        for (const o of [...c.opening.offVenueCounts, ...c.closing.offVenueCounts]) seen.set(`${o.sourceLabel}|${o.countedOn}`, o);
+        console.log(`    off-venue counts on or before the boundaries: ${[...seen.values()].map((o) => `"${o.sourceLabel || '(blank)'}" ${o.countedOn} ${money(o.valueCents)} (${o.resolution})`).join('; ')}`);
+      }
       console.log(`    quality=${c.quality} source=${c.source} → ${c.quality === 'complete' ? `actual COGS ${money(c.cogsCents)}` : `UNAVAILABLE (purchases shown as purchases ${money(c.purchasesCents)})`}`);
       for (const r of c.reasons) console.log(`      • ${r}`);
     }
@@ -138,7 +165,7 @@ async function theoreticalScope(venues: string[]) {
     where: { status: 'ACTIVE' },
     select: { id: true, title: true, venue: true, estimatedCost: true, yieldQuantity: true, yieldUnit: true, portionSize: true, isPrepRecipe: true }
   });
-  const serveSizeRequired = recipes.filter((r) => !r.isPrepRecipe && (r.estimatedCost ?? 0) > 0 && (r.yieldQuantity ?? 0) > 1 && !(r.portionSize && r.portionSize > 0) && GRAM_UNITS.has((r.yieldUnit ?? '').trim().toLowerCase()));
+  const serveSizeRequired = recipes.filter((r) => !r.isPrepRecipe && recipePortionCost(r).reason === 'serve_size_required');
   const uncosted = recipes.filter((r) => !r.isPrepRecipe && !((r.estimatedCost ?? 0) > 0));
   console.log(`active recipes ${recipes.length} · menu (non-prep) ${recipes.filter((r) => !r.isPrepRecipe).length} · uncosted ${uncosted.length} · SERVE SIZE REQUIRED (yield in g/ml/kg/l, no serve size) ${serveSizeRequired.length}`);
   for (const r of serveSizeRequired.slice(0, 25)) console.log(`  serve size required: ${r.title} (${r.venue ?? 'shared'}) yield ${r.yieldQuantity} ${r.yieldUnit}, batch ${money(Math.round((r.estimatedCost ?? 0) * 100))}`);
@@ -148,24 +175,26 @@ async function theoreticalScope(venues: string[]) {
       prisma.salesItemActualEntry.groupBy({ by: ['recipeId'], where: { serviceDate: { gte: start, lt: end }, recipeId: { not: null }, ...(venue ? { venue } : {}) }, _sum: { netSalesCents: true, quantity: true } })
     ]);
     const byId = new Map(recipes.map((r) => [r.id, r]));
-    let mappedCents = 0, theoretical = 0, suspect = 0, zero = 0, valid = 0, excluded = 0;
+    let mappedCents = 0, theoretical = 0, suspect = 0, zero = 0, valid = 0, excluded = 0, validCents = 0, excludedCents = 0, suspectCents = 0;
     for (const row of mapped) {
       const r = byId.get(row.recipeId!);
       const net = row._sum.netSalesCents ?? 0;
       const qty = row._sum.quantity ?? 0;
       mappedCents += net;
-      if (!r) { excluded += 1; continue; }
-      if (serveSizeRequired.some((s) => s.id === r.id)) { excluded += 1; continue; }
-      const serve = recipePortionCostCents(r) ?? 0;
+      if (!r) { excluded += 1; excludedCents += net; continue; }
+      if (serveSizeRequired.some((s) => s.id === r.id)) { excluded += 1; excludedCents += net; continue; }
+      const serve = recipePortionCost(r).cents ?? 0;
       if (serve <= 0) { zero += 1; continue; }
-      if (isSuspectRecipeCost(serve, net, qty)) { suspect += 1; continue; }
+      if (isSuspectRecipeCost(serve, net, qty)) { suspect += 1; suspectCents += net; continue; }
       valid += 1;
+      validCents += net;
       theoretical += serve * qty;
     }
     const totalCents = total._sum.netSalesCents ?? 0;
     const share = totalCents > 0 ? Math.round((mappedCents / totalCents) * 1000) / 10 : null;
     console.log(`\n  ${venue ?? 'GROUP'}: total item sales ${money(totalCents)} · mapped ${money(mappedCents)} (${share ?? '—'}%)${share != null && share > 100.5 ? '  ⚠ MAPPED > TOTAL: population mismatch' : ''}`);
-    console.log(`    recipes with valid serve cost ${valid} · serve-size-required/unknown ${excluded} · zero-cost ${zero} · suspect ${suspect} · theoretical COGS (valid serves) ${money(theoretical)}${totalCents > 0 ? ` = ${Math.round((theoretical / totalCents) * 1000) / 10}% of item sales` : ''}`);
+    console.log(`    valid-cost sales ${money(validCents)} · SERVE SIZE REQUIRED / unknown-recipe sales ${money(excludedCents)} (${excluded} recipes) · suspect sales ${money(suspectCents)} (${suspect}) · zero-cost recipes ${zero} (sales kept in denominator)`);
+    console.log(`    theoretical COGS over valid-cost sales ${money(theoretical)}${validCents > 0 ? ` = ${Math.round((theoretical / validCents) * 1000) / 10}% of the ${money(validCents)} it covers` : ''} · coverage of all item sales ${totalCents > 0 ? `${Math.round((validCents / totalCents) * 1000) / 10}%` : '—'}`);
   }
 }
 
