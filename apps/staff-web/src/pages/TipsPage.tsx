@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { StaffProfile, StaffTipsSummary } from '@alma/shared';
+import type { LightspeedInboundReport, StaffProfile, StaffTipsSummary } from '@alma/shared';
 import {
   ActionFeedback,
   Badge,
@@ -54,6 +54,25 @@ export function TipsPage({ staff }: { staff: StaffProfile[] }) {
   // base business account exists, so no selector is shown.
   const [abaAccounts, setAbaAccounts] = useState<Array<{ key: string; label: string; maskedAccount: string }>>([]);
   const [abaAccountKey, setAbaAccountKey] = useState('');
+  // What the emailed Lightspeed reports did with their tips column. Avalon's
+  // card tips arrive this way, and when a day has none the reason is in these
+  // records and nowhere a manager could otherwise see.
+  const [inboundReports, setInboundReports] = useState<LightspeedInboundReport[] | null>(null);
+  const [inboundError, setInboundError] = useState<string | null>(null);
+
+  const loadInboundReports = useCallback(async () => {
+    setInboundError(null);
+    try {
+      setInboundReports(await api<LightspeedInboundReport[]>('/api/staff/tips/lightspeed-inbound?days=14'));
+    } catch (err) {
+      setInboundReports(null);
+      setInboundError(err instanceof Error ? err.message : 'Could not load the emailed report log.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadInboundReports();
+  }, [loadInboundReports]);
 
   useEffect(() => {
     void (async () => {
@@ -746,6 +765,104 @@ export function TipsPage({ staff }: { staff: StaffProfile[] }) {
               />
             </div>
           </details>
+        </Card>
+      </TipsSection>
+
+      {/* Emailed Lightspeed report log — why a day has, or has not, got card tips */}
+      <TipsSection
+        title="Emailed Lightspeed reports"
+        summary={inboundReports === null
+          ? 'Last 14 days'
+          : inboundReports.length === 0
+            ? 'None received in 14 days'
+            : `${inboundReports.length} received · ${inboundReports.reduce((sum, report) => sum + report.tipDaysUpserted, 0)} tip day${inboundReports.reduce((sum, report) => sum + report.tipDaysUpserted, 0) === 1 ? '' : 's'} written`}
+        defaultOpen={false}
+      >
+        <Card
+          title="Emailed Lightspeed reports"
+          subtitle="Each scheduled Insights report that reached the suite, and what its tips column did. A day with no card tips is explained here, not guessed at."
+        >
+          <div className="toolbar-right">
+            <Button type="button" variant="secondary" onClick={() => void loadInboundReports()}>Refresh</Button>
+          </div>
+          {inboundError ? <p className="error-text">{inboundError}</p> : null}
+          {inboundReports && inboundReports.length === 0 ? (
+            <EmptyState
+              title="No emailed report in the last 14 days"
+              description="Nothing from Lightspeed Insights has reached the suite. Check the scheduled report in Lightspeed and the mailbox forwarding on the server before looking for a parsing problem."
+            />
+          ) : null}
+          {inboundReports && inboundReports.length > 0 ? (
+            <div className="table-scroll">
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>Received</th>
+                    <th>Report</th>
+                    <th>Tips</th>
+                    <th>Outcome</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inboundReports.map((report) => {
+                    const received = new Date(report.receivedAt).toLocaleString('en-AU', {
+                      timeZone: 'Australia/Sydney',
+                      weekday: 'short',
+                      day: 'numeric',
+                      month: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    });
+                    const tone: 'positive' | 'warning' | 'danger' | 'muted' = report.errorSummary || !report.processedAt
+                      ? 'danger'
+                      : report.tipDaysRefused > 0 || report.tipDaysSkipped > 0
+                        ? 'warning'
+                        : report.tipDaysUpserted > 0
+                          ? 'positive'
+                          : report.warnings.length > 0
+                            ? 'warning'
+                            : 'muted';
+                    const outcome = report.errorSummary
+                      ? report.errorSummary
+                      : !report.processedAt
+                        ? 'Received but never processed'
+                        : report.tipDaysUpserted > 0
+                          ? `${report.tipDaysUpserted} day${report.tipDaysUpserted === 1 ? '' : 's'} written`
+                          : report.tipDaysRefused > 0
+                            ? `${report.tipDaysRefused} day${report.tipDaysRefused === 1 ? '' : 's'} refused`
+                            : report.tipDaysSkipped > 0
+                              ? `${report.tipDaysSkipped} day${report.tipDaysSkipped === 1 ? '' : 's'} already recorded elsewhere`
+                              : 'No tips column found';
+                    return (
+                      <tr key={`${report.receivedAt}-${report.subject}`}>
+                        <td>{received}</td>
+                        <td>
+                          <div>{report.subject}</div>
+                          <span className="subtle">
+                            {report.attachmentsParsed} attachment{report.attachmentsParsed === 1 ? '' : 's'} · {report.dayTotalsUpserted} sales day{report.dayTotalsUpserted === 1 ? '' : 's'}
+                          </span>
+                        </td>
+                        <td>{report.tipCents > 0 ? formatCents(report.tipCents) : <span className="subtle">—</span>}</td>
+                        <td>
+                          <Badge tone={tone}>{outcome}</Badge>
+                          {report.warnings.length > 0 ? (
+                            <details className="staff-profile-collapsible">
+                              <summary>{report.warnings.length} note{report.warnings.length === 1 ? '' : 's'}</summary>
+                              <ul className="subtle">
+                                {report.warnings.map((warning, index) => (
+                                  <li key={index}>{warning}</li>
+                                ))}
+                              </ul>
+                            </details>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </Card>
       </TipsSection>
 

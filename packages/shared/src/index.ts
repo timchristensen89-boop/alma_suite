@@ -5103,6 +5103,27 @@ export type StaffTipsSummary = {
   entitlements: StaffTipEntitlement[];
 };
 
+/**
+ * One emailed Lightspeed (Kounta) report as the inbound importer saw it: what
+ * it wrote, what it refused, and why. Read from IntegrationWebhookEvent so the
+ * Tips page can say why a day has no card tips without anyone opening the
+ * database.
+ */
+export type LightspeedInboundReport = {
+  receivedAt: string;
+  processedAt: string | null;
+  status: string;
+  subject: string;
+  errorSummary: string | null;
+  attachmentsParsed: number;
+  tipDaysUpserted: number;
+  tipDaysRefused: number;
+  tipDaysSkipped: number;
+  tipCents: number;
+  dayTotalsUpserted: number;
+  warnings: string[];
+};
+
 export type StaffTipHistory = {
   id: string;
   venue: string;

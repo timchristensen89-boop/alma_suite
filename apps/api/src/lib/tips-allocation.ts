@@ -179,11 +179,12 @@ export function allocateTipsByVenue(input: {
 /**
  * POS-first de-duplication of card-tip rows.
  *
- * Card tips reach the pool from up to three feeds - the register itself
- * ('alma-pos'), the Square import ('square') and the Lightspeed import
- * ('lightspeed') - and they all live in one table, summed. When a venue takes
- * card on the register AND an import runs for the same day, the same tips are
- * counted twice and staff are paid twice.
+ * Card tips reach the pool from up to four feeds - the register itself
+ * ('alma-pos'), the Square import ('square'), the Lightspeed API import
+ * ('lightspeed') and the emailed Lightspeed report ('lightspeed-email') - and
+ * they all live in one table, summed. When a venue takes card on the register
+ * AND an import runs for the same day, the same tips are counted twice and
+ * staff are paid twice.
  *
  * The rule, decided with the venues: the POS output is the source of truth. For
  * any venue+day the register recorded a card tip on, the import rows for that
@@ -191,7 +192,7 @@ export function allocateTipsByVenue(input: {
  * import feed is used only where the register has nothing (e.g. a venue that
  * takes payment entirely through Lightspeed).
  */
-const IMPORT_TIP_SOURCES = new Set(['square', 'lightspeed']);
+const IMPORT_TIP_SOURCES = new Set(['square', 'lightspeed', 'lightspeed-email']);
 
 export type TipAdjustmentInput = {
   staffProfileId: string;

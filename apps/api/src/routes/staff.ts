@@ -2,6 +2,7 @@ import { Router, type Request } from 'express';
 import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { HttpError } from '../lib/http.js';
 import { integrationService } from '../services/integration.service.js';
+import { lightspeedInboundService } from '../services/lightspeed-inbound.service.js';
 import { shiftTaskService } from '../services/shift-task.service.js';
 import { staffService } from '../services/staff.service.js';
 import { pushService } from '../services/push.service.js';
@@ -1217,6 +1218,17 @@ staffRouter.get('/tips', requireManager, async (req, res, next) => {
 staffRouter.post('/tips/cash-entry', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.saveTipsCashEntry(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// What each emailed Lightspeed report did with its tips column, so a week
+// with no card tips explains itself on the Tips page.
+staffRouter.get('/tips/lightspeed-inbound', requireManager, async (req, res, next) => {
+  try {
+    const days = typeof req.query.days === 'string' ? Number(req.query.days) : undefined;
+    res.json(await lightspeedInboundService.recentInboundReports({ days }));
   } catch (error) {
     next(error);
   }
