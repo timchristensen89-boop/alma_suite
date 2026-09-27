@@ -356,6 +356,8 @@ function toStocktakeReviewPayload(
     venue: row.venue,
     template: row.template,
     countedAt: row.countedAt.toISOString(),
+    scope: row.scope,
+    scopeEvidence: row.scopeEvidence,
     status: row.status,
     notes: row.notes,
     appliedAt: row.appliedAt?.toISOString() ?? null,

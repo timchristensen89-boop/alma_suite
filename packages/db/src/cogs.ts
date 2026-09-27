@@ -1,5 +1,5 @@
 import { prisma } from './prisma.js';
-import { realVenueNames } from '@alma/shared';
+import { STOCKTAKE_BOUNDARY_WINDOW_DAYS, assessStocktakeValuation, realVenueNames } from '@alma/shared';
 import {
   computeActualCogsWith,
   stockValueAtCentsWith,
@@ -22,11 +22,12 @@ import {
 //   • Finalised stock purchases only — status ≠ DRAFT AND triageStatus ≠ NO_ITEM
 //     (NO_ITEM = a document excluded by the stock-import rules, e.g. rent), so a
 //     draft or a non-stock bill never lands in COGS.
-//   • Stocktake-bounded with a purchases-only fallback — when a finalised
-//     stocktake taken within STOCKTAKE_BRACKET_TOLERANCE_DAYS of each boundary
-//     brackets the period, COGS = opening + purchases − closing (true accrual;
-//     captures wastage/shrinkage automatically). Otherwise purchases only,
-//     with `quality` and `reasons` saying which bracket failed and why.
+//   • Stocktake-bounded with a purchases-only fallback — when each boundary
+//     carries a complete, valued count of known scope (one COMBINED count, or
+//     a FOOD + BEVERAGE pair) within STOCKTAKE_BOUNDARY_WINDOW_DAYS (±7),
+//     COGS = opening + purchases − closing (true accrual; captures
+//     wastage/shrinkage automatically). Otherwise purchases only, with
+//     `quality` and `reasons` saying which boundary failed and why.
 //
 // The rules and arithmetic live in cogs-core.ts (pure, tested against a fake
 // reader); this file is the Prisma reader plus the exported entry points.
@@ -35,8 +36,10 @@ import {
 // × units-sold (menu profitability, set-menu costing) stays separate on purpose
 // — that's the theoretical side of the theoretical-vs-actual variance.
 
-export type { ActualCogs, CogsSource, CogsQuality, StockBracket, StockBracketStatus, CogsReader, OffVenueCount } from './cogs-core.js';
-export { computeActualCogsWith, stockValueAtCentsWith, stockBracket, venueStockBracket, unattributedCogs, partitionCountLabels } from './cogs-core.js';
+export type {
+  ActualCogs, CogsSource, CogsQuality, StockBracket, StockBracketStatus, CogsReader, OffVenueCount, ScopedCount, BracketComponent, RejectedCount, RejectedCountReason, VenueShort
+} from './cogs-core.js';
+export { computeActualCogsWith, stockValueAtCentsWith, stockBracket, venueStockBracket, unattributedCogs, partitionCountLabels, composeBoundary } from './cogs-core.js';
 
 const FINALISED_COUNT_STATUSES = ['SUBMITTED', 'REVIEWED', 'LOCKED'] as const;
 
@@ -91,19 +94,19 @@ export const prismaCogsReader: CogsReader = {
     });
     return rows.map((row) => row.venue ?? '');
   },
-  async latestFinalisedCount(labels, at) {
-    return prisma.stocktake.findFirst({
-      where: { countedAt: { lte: at }, status: { in: [...FINALISED_COUNT_STATUSES] }, ...labelWhere(labels) },
-      orderBy: { countedAt: 'desc' },
-      select: { countedAt: true }
-    });
-  },
-  async finalisedCountIdsBetween(labels, window, at) {
+  async finalisedCountsNear(labels, window) {
     const rows = await prisma.stocktake.findMany({
-      where: { countedAt: { gte: window.gte, lt: window.lt, lte: at }, status: { in: [...FINALISED_COUNT_STATUSES] }, ...labelWhere(labels) },
-      select: { id: true }
+      where: { countedAt: { gte: window.gte, lte: window.lte }, status: { in: [...FINALISED_COUNT_STATUSES] }, ...labelWhere(labels) },
+      select: {
+        id: true,
+        name: true,
+        countedAt: true,
+        scope: true,
+        lines: { select: { itemId: true, recipeId: true, countedQty: true, stockValueCents: true } }
+      },
+      orderBy: { countedAt: 'asc' }
     });
-    return rows.map((row) => row.id);
+    return rows.map((row) => ({ id: row.id, name: row.name, countedAt: row.countedAt, scope: row.scope, valuation: assessStocktakeValuation(row.lines) }));
   },
   async countsUnderLabels(labels, at) {
     const rows = await prisma.stocktake.findMany({
@@ -116,13 +119,6 @@ export const prismaCogsReader: CogsReader = {
       countedAt: row.countedAt,
       valueCents: row.lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0)
     }));
-  },
-  async lineValueCents(stocktakeIds) {
-    const agg = await prisma.stocktakeLine.aggregate({
-      where: { stocktakeId: { in: stocktakeIds } },
-      _sum: { stockValueCents: true }
-    });
-    return agg._sum.stockValueCents ?? 0;
   },
   async purchasesExGstCents(venue, start, end) {
     const { cents } = await sumInvoices({
@@ -137,12 +133,13 @@ export const prismaCogsReader: CogsReader = {
   }
 };
 
-// Value of the latest valid finalised stocktake on or before `at` — the
-// canonical "stock on hand" valuation. Null when no count within tolerance
-// brackets the boundary, or (all venues) when any venue that has counted has
-// no valid count, so a missing venue never reads as zero stock.
-export async function stockValueAtCents(venue: string | null, at: Date): Promise<number | null> {
-  return stockValueAtCentsWith(prismaCogsReader, venue, at);
+// Value of the latest complete count within `windowDays` of `at` — the
+// canonical "stock on hand" valuation. Null when no complete composition
+// sits inside the window, or (all venues) when any configured venue has
+// none, so a missing venue never reads as zero stock. Operational tiles pass
+// their own freshness window; period boundaries use the default.
+export async function stockValueAtCents(venue: string | null, at: Date, windowDays = STOCKTAKE_BOUNDARY_WINDOW_DAYS): Promise<number | null> {
+  return stockValueAtCentsWith(prismaCogsReader, venue, at, windowDays);
 }
 
 // Ex-GST finalised stock purchases in [start, end).

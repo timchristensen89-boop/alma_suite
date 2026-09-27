@@ -237,8 +237,9 @@ describe('summariseActualCogs', () => {
     const base = { cogsCents: 100, purchasesCents: 100, openingStockCents: 0, closingStockCents: 0, source: 'purchases_only' as const };
     const t = summariseTheoreticalCogs([recipe({ id: 'taco' })]);
     const scope = FULL_SCOPE(18_000);
-    assert.match(summariseActualCogs({ ...base, quality: 'missing_opening' }, t, scope).label, /start of the window/);
-    assert.match(summariseActualCogs({ ...base, quality: 'missing_closing' }, t, scope).label, /end of the window/);
+    assert.match(summariseActualCogs({ ...base, quality: 'missing_opening' }, t, scope).label, /window start/);
+    assert.match(summariseActualCogs({ ...base, quality: 'incomplete_opening' }, t, scope).label, /complete, valued food \+ beverage count/);
+    assert.match(summariseActualCogs({ ...base, quality: 'missing_closing' }, t, scope).label, /window end/);
     assert.match(summariseActualCogs({ ...base, quality: 'closing_implausible' }, t, scope).label, /reads higher/);
   });
 });

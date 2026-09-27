@@ -3725,11 +3725,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     ? undefined
                     : data.stocktakes.latestCount.status === 'ok'
                       ? `Counted ${data.stocktakes.latestCount.countedOn}`
-                      : data.stocktakes.latestCount.status === 'stale'
-                        ? `Latest count ${data.stocktakes.latestCount.countedOn} is ${data.stocktakes.latestCount.ageDays} days old (limit ${data.stocktakes.latestCount.toleranceDays})`
+                      : data.stocktakes.latestCount.reasons.length
+                        ? data.stocktakes.latestCount.reasons.join(' · ')
                         : data.stocktakes.latestCount.venuesWithoutCount.length
-                          ? `No valid count for ${data.stocktakes.latestCount.venuesWithoutCount.join(', ')}`
-                          : 'No finalised count'
+                          ? `No complete count for ${data.stocktakes.latestCount.venuesWithoutCount.join(', ')}`
+                          : `No finalised count in the last ${data.stocktakes.latestCount.windowDays} days`
                 }
               />
             </EditorialPanel>

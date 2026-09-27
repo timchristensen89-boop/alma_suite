@@ -1,10 +1,22 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { computeActualCogsWith, stockBracket, stockValueAtCentsWith, type CogsReader } from './cogs-core.js';
+import { assessStocktakeValuation, type StocktakeScope } from '@alma/shared';
+import { composeBoundary, computeActualCogsWith, stockBracket, stockValueAtCentsWith, type CogsReader, type ScopedCount } from './cogs-core.js';
 
 // A fake of the stock and purchase tables, keyed the way the reader reads
-// them, so every test states its population explicitly.
-type Count = { id: string; venue: string | null; countedAt: Date; status: string; valueCents: number };
+// them, so every test states its population explicitly. A count's scope
+// defaults to COMBINED here (the tests below about scope say otherwise
+// explicitly); `unvaluedLines` adds lines counted above zero with no value.
+type Count = {
+  id: string;
+  venue: string | null;
+  countedAt: Date;
+  status: string;
+  valueCents: number;
+  scope?: StocktakeScope;
+  unvaluedLines?: number;
+  name?: string;
+};
 type Invoice = { venue: string | null; invoiceDate: Date; cents: number; status?: string };
 
 const FINALISED = new Set(['SUBMITTED', 'REVIEWED', 'LOCKED']);
@@ -12,9 +24,20 @@ const utc = (iso: string) => new Date(iso);
 
 const CONFIGURED = ['Alma Avalon', 'St Alma'];
 
+function scoped(c: Count): ScopedCount {
+  // Three valued lines carrying the value, plus any unvalued ones.
+  const lines = [
+    { itemId: 'a', countedQty: 1, stockValueCents: c.valueCents - 2 },
+    { itemId: 'b', countedQty: 1, stockValueCents: 1 },
+    { itemId: 'c', countedQty: 2, stockValueCents: 1 },
+    ...Array.from({ length: c.unvaluedLines ?? 0 }, () => ({ itemId: null, countedQty: 3, stockValueCents: null }))
+  ];
+  return { id: c.id, name: c.name ?? c.id, countedAt: c.countedAt, scope: c.scope ?? 'COMBINED', valuation: assessStocktakeValuation(lines) };
+}
+
 function fakeReader(counts: Count[], invoices: Invoice[] = [], configured: string[] = CONFIGURED): CogsReader {
   const label = (c: Count) => c.venue ?? '';
-  const finalised = (labels: string[], at: Date) => counts.filter((c) => labels.includes(label(c)) && FINALISED.has(c.status) && c.countedAt <= at);
+  const finalised = (labels: string[]) => counts.filter((c) => labels.includes(label(c)) && FINALISED.has(c.status));
   return {
     async configuredVenues() {
       return configured;
@@ -22,20 +45,15 @@ function fakeReader(counts: Count[], invoices: Invoice[] = [], configured: strin
     async storedCountVenueLabels(at) {
       return [...new Set(counts.filter((c) => FINALISED.has(c.status) && c.countedAt <= at).map(label))];
     },
-    async latestFinalisedCount(labels, at) {
-      const rows = finalised(labels, at).sort((a, b) => b.countedAt.getTime() - a.countedAt.getTime());
-      return rows[0] ? { countedAt: rows[0].countedAt } : null;
-    },
-    async finalisedCountIdsBetween(labels, window, at) {
-      return finalised(labels, at)
-        .filter((c) => c.countedAt >= window.gte && c.countedAt < window.lt)
-        .map((c) => c.id);
-    },
-    async lineValueCents(ids) {
-      return counts.filter((c) => ids.includes(c.id)).reduce((sum, c) => sum + c.valueCents, 0);
+    async finalisedCountsNear(labels, window) {
+      return finalised(labels)
+        .filter((c) => c.countedAt >= window.gte && c.countedAt <= window.lte)
+        .map(scoped);
     },
     async countsUnderLabels(labels, at) {
-      return finalised(labels, at).map((c) => ({ label: label(c), countedAt: c.countedAt, valueCents: c.valueCents }));
+      return finalised(labels)
+        .filter((c) => c.countedAt <= at)
+        .map((c) => ({ label: label(c), countedAt: c.countedAt, valueCents: c.valueCents }));
     },
     async purchasesExGstCents(venue, start, end) {
       return invoices
@@ -49,12 +67,13 @@ function fakeReader(counts: Count[], invoices: Invoice[] = [], configured: strin
   };
 }
 
-// June 2026 as a venue month: Sydney is UTC+10 in June.
+// June and July 2026 as venue months: Sydney is UTC+10 in winter.
 const JUNE = { start: utc('2026-05-31T14:00:00Z'), end: utc('2026-06-30T14:00:00Z') };
+const JULY = { start: utc('2026-06-30T14:00:00Z'), end: utc('2026-07-31T14:00:00Z') };
 const PURCHASES = [{ venue: 'Alma Avalon', invoiceDate: utc('2026-06-10T00:00:00Z'), cents: 400_000 }];
 
-describe('actual COGS = opening + purchases − closing, only with two valid brackets', () => {
-  it('two counts within tolerance of each boundary give a complete, stock-bounded figure', async () => {
+describe('actual COGS = opening + purchases − closing, only with two complete boundaries', () => {
+  it('two combined counts within the window of each boundary give a complete, stock-bounded figure', async () => {
     const reader = fakeReader(
       [
         { id: 'o', venue: 'Alma Avalon', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_000_000 },
@@ -68,13 +87,14 @@ describe('actual COGS = opening + purchases − closing, only with two valid bra
     assert.equal(cogs.cogsCents, 1_000_000 + 400_000 - 800_000);
     assert.equal(cogs.openingStockCents, 1_000_000);
     assert.equal(cogs.closingStockCents, 800_000);
+    assert.equal(cogs.opening.composition, 'combined');
+    assert.deepEqual(cogs.opening.components.map((c) => c.stocktakeIds), [['o']]);
     assert.deepEqual(cogs.reasons, []);
   });
 
-  it('the symptom: one stale count bracketing both ends must NOT read as complete', async () => {
-    // A single March count is the latest count before both 1 June and 30
-    // June. It used to become opening AND closing, so COGS = purchases,
-    // labelled complete.
+  it('the symptom: one old count near neither boundary must NOT read as complete', async () => {
+    // A single March count used to become opening AND closing, so COGS =
+    // purchases, labelled complete.
     const reader = fakeReader([{ id: 'm', venue: 'Alma Avalon', countedAt: utc('2026-03-15T03:00:00Z'), status: 'LOCKED', valueCents: 900_000 }], PURCHASES);
     const cogs = await computeActualCogsWith(reader, { venue: 'Alma Avalon', ...JUNE });
     assert.equal(cogs.quality, 'estimated');
@@ -82,13 +102,12 @@ describe('actual COGS = opening + purchases − closing, only with two valid bra
     assert.equal(cogs.cogsCents, 400_000);
     assert.equal(cogs.openingStockCents, null);
     assert.equal(cogs.closingStockCents, null);
-    assert.equal(cogs.opening.status, 'stale');
-    assert.equal(cogs.opening.countedOn, '2026-03-15');
-    assert.equal(cogs.closing.status, 'stale');
-    assert.match(cogs.reasons.join(' '), /past the 14-day limit/);
+    assert.equal(cogs.opening.status, 'missing');
+    assert.equal(cogs.closing.status, 'missing');
+    assert.match(cogs.reasons.join(' '), /no finalised stocktake within 7 days of 2026-06-01/);
   });
 
-  it('a valid opening with a stale closing names the closing bracket', async () => {
+  it('a valid opening with a closing outside the window names the closing boundary as missing', async () => {
     const reader = fakeReader(
       [
         { id: 'o', venue: 'Alma Avalon', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_000_000 },
@@ -97,39 +116,13 @@ describe('actual COGS = opening + purchases − closing, only with two valid bra
       PURCHASES
     );
     const cogs = await computeActualCogsWith(reader, { venue: 'Alma Avalon', ...JUNE });
-    assert.equal(cogs.quality, 'stale_closing');
+    assert.equal(cogs.quality, 'missing_closing');
     assert.equal(cogs.openingStockCents, 1_000_000);
     assert.equal(cogs.closingStockCents, null);
-    assert.equal(cogs.closing.ageDays, 20);
-    assert.match(cogs.reasons[0] ?? '', /Closing stock is unavailable.*2026-06-10.*20 days/);
+    assert.match(cogs.reasons[0] ?? '', /Closing stock is unavailable.*within 7 days of 2026-07-01/);
   });
 
-  it('no count at all names the missing bracket, distinct from stale', async () => {
-    const reader = fakeReader([{ id: 'c', venue: 'Alma Avalon', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 }], PURCHASES);
-    const cogs = await computeActualCogsWith(reader, { venue: 'Alma Avalon', ...JUNE });
-    assert.equal(cogs.quality, 'missing_opening');
-    assert.equal(cogs.opening.status, 'missing');
-    assert.match(cogs.reasons[0] ?? '', /no finalised stocktake on or before 2026-06-01/);
-  });
-
-  it('a count exactly at the boundary brackets it (age 0); one the day after does not', async () => {
-    const reader = fakeReader(
-      [
-        { id: 'o', venue: 'Alma Avalon', countedAt: JUNE.start, status: 'LOCKED', valueCents: 1_000_000 },
-        { id: 'c', venue: 'Alma Avalon', countedAt: utc('2026-07-01T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 }
-      ],
-      PURCHASES
-    );
-    const cogs = await computeActualCogsWith(reader, { venue: 'Alma Avalon', ...JUNE });
-    assert.equal(cogs.opening.status, 'ok');
-    assert.equal(cogs.opening.ageDays, 0);
-    // The 1 July count is after the boundary; the latest count before it is
-    // the 1 June one, 30 days old, so the closing bracket is stale, not zero.
-    assert.equal(cogs.closing.status, 'stale');
-    assert.equal(cogs.closing.ageDays, 30);
-  });
-
-  it('draft and in-progress counts are never brackets', async () => {
+  it('draft and in-progress counts are never boundaries', async () => {
     const reader = fakeReader(
       [
         { id: 'o', venue: 'Alma Avalon', countedAt: utc('2026-05-30T03:00:00Z'), status: 'IN_PROGRESS', valueCents: 1_000_000 },
@@ -156,37 +149,196 @@ describe('actual COGS = opening + purchases − closing, only with two valid bra
   });
 });
 
-describe('sessions on the same venue day are one count', () => {
-  it('sums the bar and kitchen sessions either side of UTC midnight on one Sydney day', async () => {
-    // 09:30 and 10:30 Sydney on 30 June = 23:30 UTC 29 June and 00:30 UTC 30 June.
-    const reader = fakeReader(
-      [
-        { id: 'o', venue: 'St Alma', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_000_000 },
-        { id: 'bar', venue: 'St Alma', countedAt: utc('2026-06-29T23:30:00Z'), status: 'LOCKED', valueCents: 704_872 },
-        { id: 'kitchen', venue: 'St Alma', countedAt: utc('2026-06-30T00:30:00Z'), status: 'LOCKED', valueCents: 6_297_678 }
-      ],
-      []
-    );
-    const cogs = await computeActualCogsWith(reader, { venue: 'St Alma', ...JUNE });
-    assert.equal(cogs.closing.countedOn, '2026-06-30');
-    assert.equal(cogs.closingStockCents, 704_872 + 6_297_678);
+describe('scope: a boundary is one COMBINED count, or one FOOD count plus one BEVERAGE count', () => {
+  const at = utc('2026-08-31T14:00:00Z'); // 1 Sep 00:00 Sydney = the Aug/Sep boundary
+  const count = (id: string, scope: StocktakeScope, iso: string, valueCents: number, extra: Partial<Count> = {}): ScopedCount =>
+    scoped({ id, venue: 'St Alma', countedAt: utc(iso), status: 'SUBMITTED', valueCents, scope, ...extra });
+
+  it('a valid COMBINED count satisfies the boundary', () => {
+    const b = composeBoundary([count('full', 'COMBINED', '2026-08-31T07:00:00Z', 5_000_000)], at);
+    assert.equal(b.status, 'ok');
+    assert.equal(b.composition, 'combined');
+    assert.equal(b.valueCents, 5_000_000);
+    assert.equal(b.distanceDays, 0);
   });
 
-  it('a session from an earlier day is not folded into the latest count', async () => {
-    const reader = fakeReader(
-      [
-        { id: 'o', venue: 'St Alma', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_000_000 },
-        { id: 'old', venue: 'St Alma', countedAt: utc('2026-06-20T03:00:00Z'), status: 'LOCKED', valueCents: 5_000_000 },
-        { id: 'c', venue: 'St Alma', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 }
-      ],
-      []
+  it('a FOOD count alone refuses — it is not the venue\'s stock, however near the boundary', () => {
+    const b = composeBoundary([count('kitchen', 'FOOD', '2026-08-31T07:00:00Z', 440_127)], at);
+    assert.equal(b.status, 'incomplete');
+    assert.equal(b.valueCents, null);
+    assert.deepEqual(b.rejected.map((r) => [r.stocktakeId, r.reason]), [['kitchen', 'no_counterpart']]);
+    assert.match(b.rejected[0]!.detail, /no BEVERAGE count within 7 days/);
+  });
+
+  it('a BEVERAGE count alone refuses the same way', () => {
+    const b = composeBoundary([count('bar', 'BEVERAGE', '2026-09-01T05:00:00Z', 2_087_049)], at);
+    assert.equal(b.status, 'incomplete');
+    assert.deepEqual(b.rejected.map((r) => r.reason), ['no_counterpart']);
+  });
+
+  it('a FOOD count and a BEVERAGE count compose: the values sum, both components are kept, distance is the furthest', () => {
+    // The real 31 Aug St Alma pair: kitchen 30 Aug 15:50Z, bar 30 Aug 17:00Z.
+    const b = composeBoundary(
+      [count('kitchen', 'FOOD', '2026-08-30T15:50:00Z', 440_127), count('bar', 'BEVERAGE', '2026-08-30T17:00:00Z', 5_013_609)],
+      at
     );
-    const cogs = await computeActualCogsWith(reader, { venue: 'St Alma', ...JUNE });
-    assert.equal(cogs.closingStockCents, 800_000);
+    assert.equal(b.status, 'ok');
+    assert.equal(b.composition, 'food_and_beverage');
+    assert.equal(b.valueCents, 440_127 + 5_013_609);
+    assert.deepEqual(
+      b.components.map((c) => [c.scope, c.countedOn, c.valueCents, c.stocktakeIds, c.side]),
+      [
+        ['FOOD', '2026-08-31', 440_127, ['kitchen'], 'before'],
+        ['BEVERAGE', '2026-08-31', 5_013_609, ['bar'], 'before']
+      ]
+    );
+    assert.equal(b.distanceDays, 0);
+    assert.deepEqual(b.warnings, []);
+  });
+
+  it('an UNKNOWN-scope count refuses and says why, even when it is the only count and sits on the boundary', () => {
+    const b = composeBoundary([count('legacy', 'UNKNOWN', '2026-08-31T07:00:00Z', 4_833_95)], at);
+    assert.equal(b.status, 'incomplete');
+    assert.deepEqual(b.rejected.map((r) => r.reason), ['unknown_scope']);
+    assert.match(b.rejected[0]!.detail, /never inferred from its value/);
+  });
+
+  it('a count with unvalued counted lines refuses however plausible its total', () => {
+    // 151 of 311 lines unlinked and unvalued: the St Alma 2 June bar count.
+    const b = composeBoundary([count('bar', 'COMBINED', '2026-08-31T07:00:00Z', 2_181_124, { unvaluedLines: 151 })], at);
+    assert.equal(b.status, 'incomplete');
+    assert.deepEqual(b.rejected.map((r) => r.reason), ['unvalued']);
+    assert.match(b.rejected[0]!.detail, /151 of 154 counted lines carry no value/);
+  });
+
+  it('a FOOD + BEVERAGE pair with one unvalued component is not complete', () => {
+    const b = composeBoundary(
+      [count('kitchen', 'FOOD', '2026-08-30T15:50:00Z', 440_127, { unvaluedLines: 2 }), count('bar', 'BEVERAGE', '2026-08-30T17:00:00Z', 5_013_609)],
+      at
+    );
+    assert.equal(b.status, 'incomplete');
+    assert.deepEqual(b.rejected.map((r) => [r.stocktakeId, r.reason]).sort(), [['bar', 'no_counterpart'], ['kitchen', 'unvalued']]);
+  });
+
+  it('components more than 3 days apart still compose, with an explicit warning and no invented movement', () => {
+    const b = composeBoundary(
+      [count('kitchen', 'FOOD', '2026-08-26T07:00:00Z', 400_000), count('bar', 'BEVERAGE', '2026-09-01T07:00:00Z', 5_000_000)],
+      at
+    );
+    assert.equal(b.status, 'ok');
+    assert.equal(b.valueCents, 5_400_000);
+    assert.equal(b.distanceDays, 5);
+    assert.match(b.warnings[0] ?? '', /FOOD \(2026-08-26\) and BEVERAGE \(2026-09-01\) counts are 6 days apart/);
+  });
+
+  it('components 3 days apart or less carry no warning', () => {
+    const b = composeBoundary(
+      [count('kitchen', 'FOOD', '2026-08-29T07:00:00Z', 400_000), count('bar', 'BEVERAGE', '2026-09-01T07:00:00Z', 5_000_000)],
+      at
+    );
+    assert.equal(b.status, 'ok');
+    assert.deepEqual(b.warnings, []);
+  });
+
+  it('the window is ±7 days: day 7 either side qualifies, day 8 does not', () => {
+    const inside = composeBoundary([count('c', 'COMBINED', '2026-08-24T14:00:00Z', 1)], at); // exactly 7 days before
+    assert.equal(inside.status, 'ok');
+    const after = composeBoundary([count('c', 'COMBINED', '2026-09-07T13:59:00Z', 1)], at); // 6.99 days after
+    assert.equal(after.status, 'ok');
+    const outside = composeBoundary([count('c', 'COMBINED', '2026-08-23T13:00:00Z', 1)], at); // 8 days before
+    assert.equal(outside.status, 'missing');
+    assert.deepEqual(outside.rejected, []);
+  });
+
+  it('duplicates of one scope: the nearest wins and the other is listed as a duplicate', () => {
+    const b = composeBoundary(
+      [count('near', 'COMBINED', '2026-08-30T07:00:00Z', 100), count('far', 'COMBINED', '2026-08-27T07:00:00Z', 200)],
+      at
+    );
+    assert.equal(b.valueCents, 100);
+    assert.deepEqual(b.rejected.map((r) => [r.stocktakeId, r.reason]), [['far', 'duplicate']]);
+  });
+
+  it('a distance tie is deterministic: the count on or before the boundary wins', () => {
+    const before = count('before', 'COMBINED', '2026-08-31T07:00:00Z', 100); // 7 hours before
+    const after = count('after', 'COMBINED', '2026-08-31T21:00:00Z', 200); // 7 hours after
+    assert.equal(composeBoundary([before, after], at).components[0]!.stocktakeIds[0], 'before');
+    assert.equal(composeBoundary([after, before], at).components[0]!.stocktakeIds[0], 'before');
+  });
+
+  it('a COMBINED count and a FOOD + BEVERAGE pair at equal distance: the single count wins; a nearer pair wins', () => {
+    const full = count('full', 'COMBINED', '2026-08-31T07:00:00Z', 5_000_000);
+    const kitchen = count('kitchen', 'FOOD', '2026-08-31T08:00:00Z', 400_000);
+    const bar = count('bar', 'BEVERAGE', '2026-08-31T09:00:00Z', 4_500_000);
+    assert.equal(composeBoundary([full, kitchen, bar], at).composition, 'combined');
+    const farFull = count('full', 'COMBINED', '2026-08-27T07:00:00Z', 5_000_000);
+    const nearer = composeBoundary([farFull, kitchen, bar], at);
+    assert.equal(nearer.composition, 'food_and_beverage');
+    assert.equal(nearer.valueCents, 4_900_000);
+  });
+
+  it('sessions of one scope on one venue day are one count, either side of UTC midnight', () => {
+    // 09:30 and 10:30 Sydney on 31 Aug = 23:30 UTC 30 Aug and 00:30 UTC 31 Aug.
+    const b = composeBoundary(
+      [count('bar1', 'BEVERAGE', '2026-08-30T23:30:00Z', 704_872), count('bar2', 'BEVERAGE', '2026-08-31T00:30:00Z', 6_297_678), count('kitchen', 'FOOD', '2026-08-31T05:00:00Z', 10)],
+      at
+    );
+    assert.equal(b.status, 'ok');
+    assert.equal(b.valueCents, 704_872 + 6_297_678 + 10);
+    assert.deepEqual(b.components.find((c) => c.scope === 'BEVERAGE')!.stocktakeIds, ['bar1', 'bar2']);
   });
 });
 
-describe('stock on hand is the latest valid count, not the sum of every count ever taken', () => {
+describe('boundaries between adjacent periods are shared, and never drift', () => {
+  // The real September opening: St Alma kitchen + bar on 30/31 Aug.
+  const counts: Count[] = [
+    { id: 'jun-k', venue: 'St Alma', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 300_000, scope: 'FOOD' },
+    { id: 'jun-b', venue: 'St Alma', countedAt: utc('2026-06-30T04:00:00Z'), status: 'LOCKED', valueCents: 5_000_000, scope: 'BEVERAGE' },
+    { id: 'jul-k', venue: 'St Alma', countedAt: utc('2026-07-31T03:00:00Z'), status: 'LOCKED', valueCents: 250_000, scope: 'FOOD' },
+    { id: 'jul-b', venue: 'St Alma', countedAt: utc('2026-08-01T00:00:00Z'), status: 'LOCKED', valueCents: 4_800_000, scope: 'BEVERAGE' },
+    { id: 'aug-k', venue: 'St Alma', countedAt: utc('2026-08-30T15:50:00Z'), status: 'SUBMITTED', valueCents: 440_127, scope: 'FOOD' },
+    { id: 'aug-b', venue: 'St Alma', countedAt: utc('2026-08-30T17:00:00Z'), status: 'SUBMITTED', valueCents: 5_013_609, scope: 'BEVERAGE' }
+  ];
+
+  it('June\'s closing and July\'s opening are the same composition of the same records', async () => {
+    const reader = fakeReader(counts);
+    const june = await computeActualCogsWith(reader, { venue: 'St Alma', ...JUNE });
+    const july = await computeActualCogsWith(reader, { venue: 'St Alma', ...JULY });
+    assert.equal(june.closing.status, 'ok');
+    assert.equal(july.quality, 'complete');
+    assert.deepEqual(june.closing.components, july.opening.components);
+    assert.equal(june.closingStockCents, july.openingStockCents);
+  });
+
+  it('a period does not drift forward onto the next period\'s counts when nearer ones exist at its own boundary', async () => {
+    const reader = fakeReader(counts);
+    const july = await computeActualCogsWith(reader, { venue: 'St Alma', ...JULY });
+    assert.deepEqual(july.closing.components.map((c) => c.stocktakeIds).flat().sort(), ['jul-b', 'jul-k']);
+    const august = await computeActualCogsWith(reader, { venue: 'St Alma', start: JULY.end, end: utc('2026-08-31T14:00:00Z') });
+    assert.deepEqual(august.opening.components.map((c) => c.stocktakeIds).flat().sort(), ['jul-b', 'jul-k']);
+    assert.deepEqual(august.closing.components.map((c) => c.stocktakeIds).flat().sort(), ['aug-b', 'aug-k']);
+  });
+
+  it('a food-only boundary makes the period unavailable — never food-only stock against combined purchases', async () => {
+    // Alma Avalon June as it stands: 31 May food-only opening, 30 June ambiguous (UNKNOWN) closing.
+    const reader = fakeReader(
+      [
+        { id: 'may-food', venue: 'Alma Avalon', countedAt: utc('2026-05-30T16:00:00Z'), status: 'REVIEWED', valueCents: 408_811, scope: 'FOOD' },
+        { id: 'jun-unknown', venue: 'Alma Avalon', countedAt: utc('2026-06-29T16:00:00Z'), status: 'LOCKED', valueCents: 483_395, scope: 'UNKNOWN' }
+      ],
+      PURCHASES
+    );
+    const cogs = await computeActualCogsWith(reader, { venue: 'Alma Avalon', ...JUNE });
+    assert.equal(cogs.quality, 'estimated');
+    assert.equal(cogs.opening.status, 'incomplete');
+    assert.equal(cogs.closing.status, 'incomplete');
+    assert.match(cogs.reasons[0] ?? '', /a FOOD count \(2026-05-31, \$4,088\.11\) has no BEVERAGE counterpart/);
+    assert.match(cogs.reasons[1] ?? '', /1 count of unknown scope \(2026-06-30, \$4,833\.95\)/);
+    assert.equal(cogs.cogsCents, 400_000);
+  });
+});
+
+describe('stock on hand is the latest complete count inside the window, not the sum of every count ever taken', () => {
   it('three historical counts contribute nothing to the current value', async () => {
     const reader = fakeReader([
       { id: 'jan', venue: 'Alma Avalon', countedAt: utc('2026-01-31T03:00:00Z'), status: 'LOCKED', valueCents: 4_000_000 },
@@ -200,53 +352,51 @@ describe('stock on hand is the latest valid count, not the sum of every count ev
     assert.equal(bracket.countedOn, '2026-06-30');
   });
 
-  it('and once that count is older than the tolerance, the value is unavailable — not the stale figure', async () => {
+  it('and once that count is outside the window, the value is unavailable — not the old figure', async () => {
     const reader = fakeReader([{ id: 'jun', venue: 'Alma Avalon', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 }]);
     assert.equal(await stockValueAtCentsWith(reader, 'Alma Avalon', utc('2026-08-01T00:00:00Z')), null);
+    // An operational tile may pass its own (freshness) window.
+    assert.equal(await stockValueAtCentsWith(reader, 'Alma Avalon', utc('2026-07-10T00:00:00Z'), 14), 800_000);
   });
 });
 
 describe('the all-venues figure is Σ venues, never the sum of whichever venues happened to count', () => {
-  const avalonJune = [
+  const avalonJune: Count[] = [
     { id: 'ao', venue: 'Alma Avalon', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_000_000 },
     { id: 'ac', venue: 'Alma Avalon', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 }
   ];
-  const stAlmaJune = [
+  const stAlmaJune: Count[] = [
     { id: 'so', venue: 'St Alma', countedAt: utc('2026-05-29T03:00:00Z'), status: 'LOCKED', valueCents: 2_000_000 },
     { id: 'sc', venue: 'St Alma', countedAt: utc('2026-06-29T03:00:00Z'), status: 'LOCKED', valueCents: 1_500_000 }
   ];
 
-  it('sums every venue when each has a valid bracket', async () => {
-    const reader = fakeReader(
-      [
-        ...avalonJune,
-        { id: 'so', venue: 'St Alma', countedAt: utc('2026-05-29T03:00:00Z'), status: 'LOCKED', valueCents: 2_000_000 },
-        { id: 'sc', venue: 'St Alma', countedAt: utc('2026-06-29T03:00:00Z'), status: 'LOCKED', valueCents: 1_500_000 }
-      ],
-      PURCHASES
-    );
+  it('sums every venue when each has a complete boundary', async () => {
+    const reader = fakeReader([...avalonJune, ...stAlmaJune], PURCHASES);
     const cogs = await computeActualCogsWith(reader, { venue: null, ...JUNE });
     assert.equal(cogs.quality, 'complete');
     assert.equal(cogs.openingStockCents, 3_000_000);
     assert.equal(cogs.closingStockCents, 2_300_000);
     assert.equal(cogs.cogsCents, 3_000_000 + 400_000 - 2_300_000);
+    assert.equal(cogs.opening.components.length, 2);
   });
 
-  it('a venue with no valid count makes the group bracket unavailable and is named', async () => {
-    // St Alma has counted before (March), so it is part of the group; it has
-    // no count within tolerance of either June boundary. The group figure used
-    // to be Avalon alone, presented as the group.
+  it('a venue with no valid count makes the group boundary unavailable and is named', async () => {
     const reader = fakeReader([...avalonJune, { id: 's', venue: 'St Alma', countedAt: utc('2026-03-01T03:00:00Z'), status: 'LOCKED', valueCents: 2_000_000 }], PURCHASES);
     const cogs = await computeActualCogsWith(reader, { venue: null, ...JUNE });
     assert.equal(cogs.source, 'purchases_only');
     assert.equal(cogs.quality, 'estimated');
     assert.equal(cogs.openingStockCents, null);
-    assert.deepEqual(
-      cogs.opening.venuesWithoutCount.map((v) => [v.venue, v.status]),
-      [['St Alma', 'stale']]
-    );
-    assert.match(cogs.reasons[0] ?? '', /St Alma's latest count \(2026-03-01\)/);
+    assert.deepEqual(cogs.opening.venuesWithoutCount.map((v) => [v.venue, v.status]), [['St Alma', 'missing']]);
+    assert.match(cogs.reasons[0] ?? '', /St Alma: no finalised stocktake within 7 days/);
     assert.equal(await stockValueAtCentsWith(reader, null, JUNE.end), null);
+  });
+
+  it('a venue whose only count near the boundary is food-only makes the group incomplete and says so', async () => {
+    const reader = fakeReader([...avalonJune, { id: 'sk', venue: 'St Alma', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 200_000, scope: 'FOOD' }], PURCHASES);
+    const cogs = await computeActualCogsWith(reader, { venue: null, ...JUNE });
+    assert.equal(cogs.opening.status, 'incomplete');
+    assert.deepEqual(cogs.opening.venuesWithoutCount.map((v) => [v.venue, v.status]), [['St Alma', 'incomplete']]);
+    assert.match(cogs.reasons[0] ?? '', /St Alma: a FOOD count \(2026-05-30, \$2,000\.00\) has no BEVERAGE counterpart/);
   });
 
   it('untagged (venue-null) counts do not create a phantom venue', async () => {
@@ -259,10 +409,6 @@ describe('the all-venues figure is Σ venues, never the sum of whichever venues 
 });
 
 describe('configured venues define the group population; every other label is unattributed data', () => {
-  // Alma Avalon and St Alma counted at both June boundaries. Three other
-  // labels have counts too: "Both" (a marker), "Unspecified" (the Loaded
-  // CSV default) and "St View" (a Loaded location name). None of them is a
-  // restaurant. The old rule required each of them to bracket the group.
   const fixture: Count[] = [
     { id: 'ao', venue: 'Alma Avalon', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_000_000 },
     { id: 'ac', venue: 'Alma Avalon', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 },
@@ -291,12 +437,11 @@ describe('configured venues define the group population; every other label is un
         ['Unspecified', 'unknown', '2026-06-15', 400_000]
       ].sort()
     );
-    assert.match(cogs.reasons.join(' '), /not a configured venue \("Both", "Unspecified", "St View"\)|not a configured venue/);
-    // …and none of their value reached the group.
+    assert.match(cogs.reasons.join(' '), /not a configured venue/);
     assert.equal(cogs.closingStockCents, 2_300_000);
   });
 
-  it('"St View" is not St Alma: a venue with only a look-alike label has no bracket', async () => {
+  it('"St View" is not St Alma: a venue with only a look-alike label has no boundary', async () => {
     const only = fixture.filter((c) => c.venue !== 'St Alma');
     const cogs = await computeActualCogsWith(fakeReader(only, PURCHASES), { venue: null, ...JUNE });
     assert.equal(cogs.quality, 'estimated');
@@ -317,6 +462,17 @@ describe('configured venues define the group population; every other label is un
     assert.equal(cogs.quality, 'estimated');
     assert.deepEqual(cogs.opening.venuesWithoutCount.map((v) => v.venue), ['Alma Manly']);
   });
+
+  it('venue isolation: one venue\'s counts never serve another venue\'s boundary', async () => {
+    const reader = fakeReader([
+      { id: 'ao', venue: 'Alma Avalon', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_000_000 },
+      { id: 'ac', venue: 'Alma Avalon', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 }
+    ]);
+    const stAlma = await computeActualCogsWith(reader, { venue: 'St Alma', ...JUNE });
+    assert.equal(stAlma.opening.status, 'missing');
+    assert.equal(stAlma.closing.status, 'missing');
+    assert.deepEqual(stAlma.opening.rejected, []);
+  });
 });
 
 describe('venue figures say what purchases they cannot see', () => {
@@ -332,7 +488,6 @@ describe('venue figures say what purchases they cannot see', () => {
       computeActualCogsWith(reader, { venue: 'Alma Avalon', ...JUNE }),
       computeActualCogsWith(reader, { venue: 'St Alma', ...JUNE })
     ]);
-    // Group = Σ attributed venues + unattributed; never forced onto a venue.
     assert.equal(group.purchasesCents, 550_000);
     assert.equal(avalon.purchasesCents + stAlma.purchasesCents + avalon.unattributedPurchasesCents, group.purchasesCents);
     assert.equal(avalon.unattributedInvoiceCount, 1);

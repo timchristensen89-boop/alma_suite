@@ -121,6 +121,17 @@ enum StocktakeStatus {
   REOPENED
 }
 
+// What a count covered. FOOD (kitchen sheet), BEVERAGE (bar & FOH sheet),
+// COMBINED (the venue's whole holding) or UNKNOWN. Historical and ambiguous
+// counts are UNKNOWN and cannot bound cost of goods; the scope is never
+// inferred from the dollar value. See packages/shared/src/stocktake-scope.ts.
+enum StocktakeScope {
+  FOOD
+  BEVERAGE
+  COMBINED
+  UNKNOWN
+}
+
 enum ShiftTaskType {
   CHECKLIST
   STOCKTAKE
@@ -3077,6 +3088,17 @@ model Stocktake {
   venue                String?
   template             String?
   countedAt            DateTime
+  /// The printed date text a count was imported with ("Sat 1st Aug, 10:00 AM"),
+  /// kept verbatim so countedAt can be checked against its source.
+  countedAtText        String?
+  /// Where countedAt came from: 'entered' (the app), 'printed' (parsed from the
+  /// imported sheet), 'operator' (supplied on import by hand), 'import_time'
+  /// (legacy: the moment the import ran, NOT when the count was taken).
+  countedAtSource      String?
+  scope                StocktakeScope        @default(UNKNOWN)
+  /// What the scope was set from — a template's categories, a sheet's headings,
+  /// an operator's review — so it can be audited and never silently rewritten.
+  scopeEvidence        String?
   status               StocktakeStatus       @default(IN_PROGRESS)
   notes                String?
   appliedAt            DateTime?

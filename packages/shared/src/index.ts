@@ -1,4 +1,5 @@
 import type { CostTargets } from './cost-targets.js';
+import { STOCKTAKE_SCOPES, type StocktakeScope } from './stocktake-scope.js';
 export * from './price-window.js';
 export * from './roster-calendar.js';
 export * from './donations.js';
@@ -19,6 +20,7 @@ export * from './low-stock.js';
 export * from './venue-names.js';
 export * from './cogs-quality.js';
 export * from './stocktake-freshness.js';
+export * from './stocktake-scope.js';
 export * from './cost-targets.js';
 export * from './prime-cost.js';
 export * from './recipe-cost.js';
@@ -3836,7 +3838,7 @@ export type ReportsPrimeCostVenueRow = {
   openingStockCents: number | null;
   closingStockCents: number | null;
   cogsSource: 'stock_bounded' | 'purchases_only';
-  cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'stale_opening' | 'stale_closing' | 'estimated' | 'closing_implausible';
+  cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'incomplete_opening' | 'incomplete_closing' | 'estimated' | 'closing_implausible';
   /** Why the actual figure is not a complete opening + purchases − closing (empty when complete). */
   cogsReasons: string[];
   /** 'actual' = stocktake-bounded and invoice-covered; otherwise cogsCents is bills only and prime is withheld. */
@@ -3876,7 +3878,7 @@ export const reportsMonthlyRecapEmailInputSchema = reportsMonthlyRecapQuerySchem
   to: z.string().email()
 });
 
-export type MonthlyRecapStockQuality = 'complete' | 'missing_opening' | 'missing_closing' | 'stale_opening' | 'stale_closing' | 'estimated' | 'closing_implausible';
+export type MonthlyRecapStockQuality = 'complete' | 'missing_opening' | 'missing_closing' | 'incomplete_opening' | 'incomplete_closing' | 'estimated' | 'closing_implausible';
 
 export type MonthlyRecapPeriod = {
   label: string;
@@ -7404,6 +7406,9 @@ export type Stocktake = {
   venue: string | null;
   template: string | null;
   countedAt: string;
+  /** What was counted: FOOD, BEVERAGE, COMBINED or UNKNOWN (historical / ambiguous). Never inferred from the value. */
+  scope: StocktakeScope;
+  scopeEvidence: string | null;
   status: StocktakeStatus;
   notes: string | null;
   appliedAt: string | null;
@@ -7557,18 +7562,25 @@ export type StocktakesSummary = {
   applied?: number;
   lastCountedAt: string | null;
   /**
-   * The latest valid finalised count (per venue, summed for the group) under
-   * the canonical stock-value rule: a count older than `toleranceDays` is
-   * 'stale' and carries no value; a group with a venue short is 'missing'
-   * and names the venue. Never a sum over historical stocktakes.
+   * The latest complete count (per venue, summed for the group) under the
+   * canonical stock-value rule: one COMBINED count or a FOOD + BEVERAGE
+   * pair, of known scope and sufficiently valued, within `windowDays`
+   * (the operational freshness window). 'missing' = no finalised count in
+   * the window; 'incomplete' = counts exist but do not make a complete count
+   * (unknown scope, one side only, unvalued lines), with why. A group with
+   * a venue short is never the sum of the others. Never a sum over
+   * historical stocktakes.
    */
   latestCount: {
-    status: 'ok' | 'missing' | 'stale';
+    status: 'ok' | 'missing' | 'incomplete';
     valueCents: number | null;
     countedOn: string | null;
-    ageDays: number | null;
-    toleranceDays: number;
+    distanceDays: number | null;
+    windowDays: number;
+    composition: 'combined' | 'food_and_beverage' | null;
     venuesWithoutCount: string[];
+    /** Why the value is unavailable, in operator words; empty when ok. */
+    reasons: string[];
   };
 };
 
@@ -7584,7 +7596,7 @@ export type StocktakeReviewItem = Stocktake & {
 // when no stocktake brackets the window) are reported SEPARATELY, each with
 // its own percentage of the same denominator, and the actual side says
 // which method produced it. See apps/stock-api/src/lib/cost-of-goods.ts.
-export type StockCostOfGoodsActualQuality = 'complete' | 'estimated' | 'missing_opening' | 'missing_closing' | 'stale_opening' | 'stale_closing' | 'closing_implausible';
+export type StockCostOfGoodsActualQuality = 'complete' | 'estimated' | 'missing_opening' | 'missing_closing' | 'incomplete_opening' | 'incomplete_closing' | 'closing_implausible';
 
 export type StockCostOfGoodsPayload = {
   generatedAt: string;
@@ -7833,10 +7845,15 @@ export const stocktakeLineInputSchema = z.object({
   notes: z.string().optional().or(z.literal(''))
 });
 
+export const stocktakeScopeSchema = z.enum(STOCKTAKE_SCOPES);
+
 export const stocktakeCreateInputSchema = z.object({
   name: z.string().min(2, 'Name is required'),
   venue: z.string().optional().or(z.literal('')),
   template: z.string().optional().or(z.literal('')),
+  // Optional: an explicit, reviewed scope. Absent, the API derives it from
+  // the template's categories/name, else UNKNOWN. Never from the value.
+  scope: stocktakeScopeSchema.optional(),
   countedAt: z.string().min(4, 'Counted-at date is required'),
   status: stocktakeStatusSchema.default('IN_PROGRESS'),
   notes: z.string().optional().or(z.literal('')),

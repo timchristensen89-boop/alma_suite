@@ -813,12 +813,12 @@ export function StocktakePage() {
             !summary
               ? 'Latest valid count'
               : summary.latestCount.status === 'ok'
-                ? `Latest finalised count, ${summary.latestCount.countedOn}`
-                : summary.latestCount.status === 'stale'
-                  ? `Latest count ${summary.latestCount.countedOn} is ${summary.latestCount.ageDays} days old (limit ${summary.latestCount.toleranceDays})`
+                ? `Latest complete count, ${summary.latestCount.countedOn}${summary.latestCount.composition === 'food_and_beverage' ? ' (kitchen + bar)' : ''}`
+                : summary.latestCount.reasons.length
+                  ? summary.latestCount.reasons.join(' · ')
                   : summary.latestCount.venuesWithoutCount.length
-                    ? `No valid count for ${summary.latestCount.venuesWithoutCount.join(', ')}`
-                    : 'No finalised count yet'
+                    ? `No complete count for ${summary.latestCount.venuesWithoutCount.join(', ')}`
+                    : `No finalised count in the last ${summary.latestCount.windowDays} days`
           }
           tone={summary && summary.latestCount.status !== 'ok' ? 'warning' : 'neutral'}
         />

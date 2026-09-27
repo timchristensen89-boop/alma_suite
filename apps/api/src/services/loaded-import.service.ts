@@ -256,6 +256,12 @@ export const loadedImportService = {
           // Configured venue or null — never the raw label as a venue.
           venue: session.venue,
           countedAt,
+          // The CSV's own date (noon, server-local): a real count date, not the import time.
+          countedAtSource: 'imported_date',
+          // A Loaded CSV does not say whether the sheet was the kitchen, the
+          // bar or both; the scope stays UNKNOWN until someone reviews it.
+          scope: 'UNKNOWN',
+          scopeEvidence: 'Loaded CSV import: scope not reviewed',
           status: 'LOCKED',
           lockedAt: new Date(),
           lockedByUserId: actor.id ?? null,
