@@ -3063,7 +3063,7 @@ export const posService = {
     let itemName = str(body.itemName);
     let amountCents = 0;
     if (recipeId) {
-      const recipe = await prisma.recipe.findUnique({ where: { id: recipeId }, select: { title: true, estimatedCost: true, yieldQuantity: true, portionSize: true } });
+      const recipe = await prisma.recipe.findUnique({ where: { id: recipeId }, select: { title: true, estimatedCost: true, yieldQuantity: true, yieldUnit: true, portionSize: true } });
       if (recipe) {
         itemName = itemName || recipe.title;
         // A wasted serve costs one serve, not the batch (shared rule).

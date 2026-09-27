@@ -10,14 +10,15 @@
 // the flag that would have marked the actual figure as purchases-only for a
 // window no stocktake bracketed. Purchases must never silently become COGS.
 
-import { isSuspectRecipeCost, recipePortionCostCents } from '@alma/shared';
+import { isSuspectRecipeCost, recipePortionCost, SERVE_SIZE_REQUIRED } from '@alma/shared';
 
 export type CogsRecipeInput = {
   id: string;
   /** Recipe.estimatedCost in dollars, as stored: the BATCH cost. */
   estimatedCost: number | null;
-  /** Batch yield and serve size, so the batch can be brought to one serve (recipePortionCostCents). */
+  /** Batch yield, its unit and serve size, so the batch can be brought to one serve (recipePortionCost). */
   yieldQuantity?: number | null;
+  yieldUnit?: string | null;
   portionSize?: number | null;
   salePriceCents: number | null;
   actualSales: { quantitySold: number; netSalesCents: number } | null;
@@ -53,6 +54,12 @@ export type TheoreticalCogsSummary = {
   zeroCostRecipes: number;
   /** Costed at or above their take per serve — batch specs costed per serve; excluded. */
   suspectRecipes: number;
+  /** Yield by weight/volume with no serve size — no valid per-serve cost exists; excluded with the reason "Serve size required". */
+  serveSizeRequiredRecipes: number;
+  /** Net sales of the serve-size-required recipes: sold, but outside the theoretical figure. */
+  serveSizeRequiredSalesCents: number;
+  /** Net sales of every excluded row (suspect + serve size required): in item sales, not in mappedSalesCents. */
+  excludedSalesCents: number;
   avgMarginPercent: number | null;
 };
 
@@ -112,6 +119,9 @@ export function summariseTheoreticalCogs(recipes: CogsRecipeInput[]): Theoretica
   let unmappedRecipes = 0;
   let zeroCostRecipes = 0;
   let suspectRecipes = 0;
+  let serveSizeRequiredRecipes = 0;
+  let serveSizeRequiredSalesCents = 0;
+  let excludedSalesCents = 0;
   let marginSum = 0;
   let marginCount = 0;
   for (const recipe of recipes) {
@@ -124,13 +134,23 @@ export function summariseTheoreticalCogs(recipes: CogsRecipeInput[]): Theoretica
     // One SERVE's cost — the batch cost brought to a portion by the recipe's
     // own yield and serve size. Multiplying the batch by units sold was the
     // defect the suspect guard below was papering over.
-    const costCents = recipePortionCostCents({ estimatedCost: recipe.estimatedCost, yieldQuantity: recipe.yieldQuantity, portionSize: recipe.portionSize }) ?? 0;
+    const portion = recipePortionCost({ estimatedCost: recipe.estimatedCost, yieldQuantity: recipe.yieldQuantity, yieldUnit: recipe.yieldUnit, portionSize: recipe.portionSize });
+    if (portion.reason === 'serve_size_required') {
+      // No valid per-serve cost exists. The row leaves numerator AND
+      // denominator, and its sales are counted so the coverage says so.
+      serveSizeRequiredRecipes += 1;
+      serveSizeRequiredSalesCents += sales.netSalesCents;
+      excludedSalesCents += sales.netSalesCents;
+      continue;
+    }
+    const costCents = portion.cents ?? 0;
     // Same guard the Reports menu profitability applies: a recipe that still
     // costs at least what it sells for per serve is a costing error (a
     // yield recorded in grams with no serve size, say); it is counted and
     // excluded, never silently folded in.
     if (isSuspectRecipeCost(costCents, sales.netSalesCents, qty)) {
       suspectRecipes += 1;
+      excludedSalesCents += sales.netSalesCents;
       continue;
     }
     mappedRecipes += 1;
@@ -153,6 +173,9 @@ export function summariseTheoreticalCogs(recipes: CogsRecipeInput[]): Theoretica
     unmappedRecipes,
     zeroCostRecipes,
     suspectRecipes,
+    serveSizeRequiredRecipes,
+    serveSizeRequiredSalesCents,
+    excludedSalesCents,
     avgMarginPercent: marginCount > 0 ? Math.round((marginSum / marginCount) * 10) / 10 : null
   };
 }
@@ -195,6 +218,7 @@ export function assessCogsComparability(input: {
     reasons.push(`${actual.unattributedInvoiceCount} supplier invoice${actual.unattributedInvoiceCount === 1 ? '' : 's'} in the window carry no venue, so the venue's actual figure is incomplete`);
   }
   if (theoretical.suspectRecipes > 0) reasons.push(`${theoretical.suspectRecipes} batch-costed recipe${theoretical.suspectRecipes === 1 ? '' : 's'} excluded from the theoretical side`);
+  if (theoretical.serveSizeRequiredRecipes > 0) reasons.push(`${theoretical.serveSizeRequiredRecipes} recipe${theoretical.serveSizeRequiredRecipes === 1 ? '' : 's'} excluded — ${SERVE_SIZE_REQUIRED.toLowerCase()} (yield by weight or volume with no serve size)`);
   if (theoretical.zeroCostRecipes > 0) reasons.push(`${theoretical.zeroCostRecipes} recipe${theoretical.zeroCostRecipes === 1 ? '' : 's'} sold with no cost on the theoretical side`);
   return { comparable: reasons.length === 0, mappedSalesSharePercent: share, reasons };
 }

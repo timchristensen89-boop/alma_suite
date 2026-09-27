@@ -46,6 +46,7 @@ import {
   type StocktakeReviewItem,
   STOCKTAKE_STALE_DAYS,
   MIN_PURCHASE_COVERAGE,
+  recipePortionCost,
   recipePortionCostCents,
   elapsedPeriodWeeks,
   resolveCostTargets,
@@ -205,9 +206,9 @@ function normaliseMenuText(value: string | null | undefined) {
 
 // One SERVE's cost in cents (shared rule): the stored estimatedCost is the
 // batch, so a batch recipe sold by the portion must be divided by its yield.
-function recipeCostCents(recipe: { estimatedCost: number; yieldQuantity: number | null; portionSize: number | null } | null | undefined) {
+function recipeCostCents(recipe: { estimatedCost: number; yieldQuantity: number | null; yieldUnit: string | null; portionSize: number | null } | null | undefined) {
   if (!recipe) return null;
-  return recipePortionCostCents(recipe);
+  return recipePortionCost(recipe).cents;
 }
 
 function primeQuality(input: { sales: number; wages: number; cogs: number; rosterEstimate: number }) {
@@ -1524,7 +1525,7 @@ export const reportsService = {
           ...(data.category ? { categoryName: data.category } : {})
         },
         include: {
-          recipe: { select: { id: true, title: true, estimatedCost: true, yieldQuantity: true, portionSize: true } }
+          recipe: { select: { id: true, title: true, estimatedCost: true, yieldQuantity: true, yieldUnit: true, portionSize: true } }
         },
         orderBy: [{ netSalesCents: 'desc' }, { itemName: 'asc' }]
       }),
@@ -1534,7 +1535,7 @@ export const reportsService = {
           ...(data.category ? { categoryName: data.category } : {})
         },
         include: {
-          almaRecipe: { select: { id: true, title: true, estimatedCost: true, yieldQuantity: true, portionSize: true } }
+          almaRecipe: { select: { id: true, title: true, estimatedCost: true, yieldQuantity: true, yieldUnit: true, portionSize: true } }
         }
       })
     ]);
@@ -1563,6 +1564,8 @@ export const reportsService = {
           ?? null;
       const mappedRecipe = mapping?.status === 'MAPPED' ? mapping.almaRecipe : null;
       const unitRecipeCostCents = recipeCostCents(mappedRecipe);
+      // A gram/mL yield with no serve size has no per-serve cost: "Serve size required".
+      const serveSizeRequiredRow = mappedRecipe ? recipePortionCost(mappedRecipe).reason === 'serve_size_required' : false;
       const mappingStatus: ReportsMenuProfitabilityRow['mappingStatus'] = !mapping || mapping.status !== 'MAPPED'
         ? 'unmapped'
         : !mappedRecipe
@@ -1594,6 +1597,7 @@ export const reportsService = {
         almaRecipeId: mappedRecipe?.id ?? null,
         almaRecipeTitle: mappedRecipe?.title ?? null,
         recipeCostCents: unitRecipeCostCents,
+        serveSizeRequired: serveSizeRequiredRow,
         estimatedCogsCents: null,
         grossProfitCents: null,
         foodCostPercent: null,
@@ -1620,7 +1624,7 @@ export const reportsService = {
       if (row.mappingStatus === 'mapped') dataQuality.push('mapped_recipe_cost');
       if (row.mappingStatus === 'unmapped') dataQuality.push('unmapped_square_item');
       if (row.mappingStatus === 'missing_recipe') dataQuality.push('missing_recipe');
-      if (row.mappingStatus === 'missing_cost') dataQuality.push('missing_cost');
+      if (row.mappingStatus === 'missing_cost') dataQuality.push(row.serveSizeRequired ? 'serve_size_required' : 'missing_cost');
       // A recipe that costs as much as (or more than) it sells for is a
       // batch/prep recipe costed per serve, not a real menu economics row.
       // Keep it visible and flagged, but keep it out of every total (shared
@@ -1842,7 +1846,7 @@ export const reportsService = {
     const recipes = recipeIds.length
       ? await prisma.recipe.findMany({
           where: { id: { in: recipeIds } },
-          select: { id: true, title: true, kind: true, salePriceCents: true, estimatedCost: true, portionSize: true, yieldQuantity: true }
+          select: { id: true, title: true, kind: true, salePriceCents: true, estimatedCost: true, portionSize: true, yieldQuantity: true, yieldUnit: true }
         })
       : [];
     const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
@@ -2081,7 +2085,7 @@ export const reportsService = {
           pours: {
             include: {
               recipe: {
-                select: { id: true, status: true, salePriceCents: true, estimatedCost: true, portionSize: true, yieldQuantity: true }
+                select: { id: true, status: true, salePriceCents: true, estimatedCost: true, portionSize: true, yieldQuantity: true, yieldUnit: true }
               }
             }
           }
@@ -2332,7 +2336,7 @@ export const reportsService = {
       useStockApiReads
         ? stockReads.recipeCosts()
         : prisma.recipe.findMany({
-            select: { id: true, estimatedCost: true, yieldQuantity: true, portionSize: true }
+            select: { id: true, estimatedCost: true, yieldQuantity: true, yieldUnit: true, portionSize: true }
           })
     ]);
 

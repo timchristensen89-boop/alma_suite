@@ -389,8 +389,8 @@ export function DashboardPage() {
                 icon={<IconRecipes size={18} />}
                 label="Costing coverage"
                 value={`${cogs.coverage.mappedRecipes} dishes`}
-                hint={`${cogs.coverage.zeroCostRecipes} uncosted · ${cogs.coverage.suspectRecipes} batch-costed (excluded) · ${cogs.coverage.unmappedRecipes} with no sales`}
-                tone={cogs.coverage.zeroCostRecipes + cogs.coverage.suspectRecipes > 0 ? 'warning' : undefined}
+                hint={`${cogs.coverage.zeroCostRecipes} uncosted · ${cogs.coverage.suspectRecipes} batch-costed (excluded) · ${cogs.coverage.serveSizeRequiredRecipes} serve size required (excluded${cogs.coverage.serveSizeRequiredSalesCents > 0 ? `, ${formatMoney(cogs.coverage.serveSizeRequiredSalesCents)} of sales` : ''}) · ${cogs.coverage.unmappedRecipes} with no sales`}
+                tone={cogs.coverage.zeroCostRecipes + cogs.coverage.suspectRecipes + cogs.coverage.serveSizeRequiredRecipes > 0 ? 'warning' : undefined}
               />
               <StatCard
                 icon={<IconItems size={18} />}

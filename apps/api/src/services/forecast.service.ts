@@ -330,7 +330,7 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
         }),
         prisma.salesItemActualEntry.findMany({
           where: { venue, serviceDate: { gte: trailingStart, lt: trailingEnd }, recipeId: { not: null } },
-          select: { quantity: true, netSalesCents: true, grossSalesCents: true, recipe: { select: { estimatedCost: true, yieldQuantity: true, portionSize: true } } }
+          select: { quantity: true, netSalesCents: true, grossSalesCents: true, recipe: { select: { estimatedCost: true, yieldQuantity: true, yieldUnit: true, portionSize: true } } }
         })
       ]);
       const salesCents = salesAgg._sum.salesCents ?? 0;

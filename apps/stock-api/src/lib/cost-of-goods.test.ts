@@ -170,6 +170,32 @@ describe('a sold serve is costed at the batch ÷ its portions', () => {
     assert.equal(t.percentOfMappedSales, 13.9);
   });
 
+  it('a gram yield with no serve size contributes nothing and is reported as "Serve size required" — coverage drops, it does not pretend', () => {
+    // Same guacamole, serve size never entered. It sold $9,000 of a $27,000
+    // item-sales window alongside a properly costed taco.
+    const summary = summariseCostOfGoods({
+      recipes: [
+        { id: 'guac', estimatedCost: 50, yieldQuantity: 2000, yieldUnit: 'g', portionSize: null, salePriceCents: 900, actualSales: { quantitySold: 10, netSalesCents: 9_000 } },
+        { id: 'taco', estimatedCost: 5, yieldQuantity: null, portionSize: null, salePriceCents: 2000, actualSales: { quantitySold: 10, netSalesCents: 18_000 } }
+      ],
+      actual: BOUNDED,
+      scope: FULL_SCOPE(27_000)
+    });
+    const t = summary.theoretical;
+    assert.equal(t.serveSizeRequiredRecipes, 1);
+    assert.equal(t.serveSizeRequiredSalesCents, 9_000);
+    assert.equal(t.excludedSalesCents, 9_000);
+    // Numerator: the taco only. Denominator: the taco's sales only — the
+    // partial figure is stated over the sales it covers, not over all sales.
+    assert.equal(t.cogsCents, 5_000);
+    assert.equal(t.mappedSalesCents, 18_000);
+    assert.equal(t.percentOfMappedSales, 27.8);
+    // Coverage against all item sales falls to 66.7%, so nothing "actual" is derived.
+    assert.equal(summary.actual.comparability.mappedSalesSharePercent, 66.7);
+    assert.equal(summary.actual.comparable, false);
+    assert.match(summary.actual.comparability.reasons.join(' '), /serve size required/);
+  });
+
   it('the same batch read per serve would have been thrown out as suspect — that guard was hiding the defect', () => {
     const t = summariseTheoreticalCogs([
       { id: 'guac', estimatedCost: 50, yieldQuantity: null, portionSize: null, salePriceCents: 900, actualSales: { quantitySold: 10, netSalesCents: 9_000 } }

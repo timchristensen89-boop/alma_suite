@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma, computeActualCogs } from '@alma/db';
 import {
-  recipePortionCostCents,
+  recipePortionCost,
   recipeBulkDeleteInputSchema,
   recipeCategoryCreateInputSchema,
   recipeCategoryUpdateInputSchema,
@@ -205,7 +205,8 @@ function toRecipePayload(row: RecipeRow): Recipe {
     isPrepRecipe: row.isPrepRecipe,
     status: normaliseRecipeStatus(row.status),
     estimatedCost: row.estimatedCost,
-    portionCostCents: recipePortionCostCents(row),
+    portionCostCents: recipePortionCost(row).cents,
+    portionCostReason: recipePortionCost(row).reason,
     notes: row.notes,
     lineCount: row._count.lines,
     venuePrices: row.venuePrices?.map((p) => ({ venue: p.venue, salePriceCents: p.salePriceCents })) ?? [],
@@ -256,7 +257,8 @@ function toRecipeWithLinesPayload(row: RecipeWithLinesRow): RecipeWithLines {
     isPrepRecipe: row.isPrepRecipe,
     status: normaliseRecipeStatus(row.status),
     estimatedCost: row.estimatedCost,
-    portionCostCents: recipePortionCostCents(row),
+    portionCostCents: recipePortionCost(row).cents,
+    portionCostReason: recipePortionCost(row).reason,
     notes: row.notes,
     lineCount: row.lines.length,
     venuePrices: row.venuePrices?.map((p) => ({ venue: p.venue, salePriceCents: p.salePriceCents })) ?? [],
@@ -872,6 +874,7 @@ export const recipesService = {
         id: recipe.id,
         estimatedCost: recipe.estimatedCost ?? null,
         yieldQuantity: recipe.yieldQuantity,
+        yieldUnit: recipe.yieldUnit,
         portionSize: recipe.portionSize,
         salePriceCents: recipe.salePriceCents ?? null,
         actualSales: recipe.actualSales
@@ -954,7 +957,10 @@ export const recipesService = {
         mappedRecipes: summary.theoretical.mappedRecipes,
         unmappedRecipes: summary.theoretical.unmappedRecipes,
         zeroCostRecipes: summary.theoretical.zeroCostRecipes,
-        suspectRecipes: summary.theoretical.suspectRecipes
+        suspectRecipes: summary.theoretical.suspectRecipes,
+        serveSizeRequiredRecipes: summary.theoretical.serveSizeRequiredRecipes,
+        serveSizeRequiredSalesCents: summary.theoretical.serveSizeRequiredSalesCents,
+        excludedSalesCents: summary.theoretical.excludedSalesCents
       },
       dishMargin: {
         mappedRecipes: summary.theoretical.mappedRecipes,
