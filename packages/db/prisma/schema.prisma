@@ -3092,8 +3092,10 @@ model Stocktake {
   /// kept verbatim so countedAt can be checked against its source.
   countedAtText        String?
   /// Where countedAt came from: 'entered' (the app), 'printed' (parsed from the
-  /// imported sheet), 'operator' (supplied on import by hand), 'import_time'
-  /// (legacy: the moment the import ran, NOT when the count was taken).
+  /// imported sheet), 'operator' (supplied on import by hand), 'imported_date'
+  /// (the Loaded CSV's own date at noon), or null on records written before
+  /// this existed (the two Loaded PDF imports of 3 Aug 2026 carry the import
+  /// time, NOT the count time — see docs/stocktake-scope-remediation.md).
   countedAtSource      String?
   scope                StocktakeScope        @default(UNKNOWN)
   /// What the scope was set from — a template's categories, a sheet's headings,

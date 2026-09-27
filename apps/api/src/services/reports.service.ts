@@ -976,6 +976,7 @@ export async function labourPopulationFor(start: Date, end: Date, now: Date = ne
   const salariedStaff = activeStaff.filter((profile) => classifyLabourPopulation([profile], superRate).salariedIds.has(profile.id));
   const salariedIds = salariedStaff.map((p) => p.id);
   const rosterHoursByStaffVenue = new Map<string, Map<string, number>>();
+  const rosterKeys = new Map<string, ReturnType<typeof resolveLabourVenue>>();
   if (salariedIds.length > 0) {
     const shifts = await prisma.rosterShift.findMany({
       where: {
@@ -989,7 +990,9 @@ export async function labourPopulationFor(start: Date, end: Date, now: Date = ne
     });
     for (const shift of shifts) {
       if (!shift.staffProfile || !shift.staffProfileId) continue;
-      const v = resolveLabourVenue(shift.venue, shift.staffProfile.venue, configuredVenues).key;
+      const resolved = resolveLabourVenue(shift.venue, shift.staffProfile.venue, configuredVenues);
+      rosterKeys.set(resolved.key, resolved);
+      const v = resolved.key;
       const h = rosterHours(shift);
       const m = rosterHoursByStaffVenue.get(shift.staffProfileId) ?? new Map<string, number>();
       m.set(v, (m.get(v) ?? 0) + h);
@@ -1006,7 +1009,9 @@ export async function labourPopulationFor(start: Date, end: Date, now: Date = ne
     for (const alloc of allocations) {
       const cents = Math.round(fixedForPeriod * alloc.fraction);
       if (cents <= 0) continue;
-      salaried.push({ venueKey: alloc.venue === home.key ? home : resolveLabourVenue(alloc.venue, null, configuredVenues), cents });
+      // The roster keys were resolved above; reuse that resolution so an
+      // unassigned slice stays 'unassigned' rather than re-reading the word.
+      salaried.push({ venueKey: alloc.venue === home.key ? home : rosterKeys.get(alloc.venue) ?? resolveLabourVenue(alloc.venue, null, configuredVenues), cents });
     }
   }
   return allocateLabour({ configuredVenues, timesheets: costedTimesheets, shifts: costedShifts, salaried });
@@ -1174,13 +1179,13 @@ function recapRecommendations(
     recs.push({
       tone: 'danger',
       title: `Closing stock ${recapMoney(month.closingStockCents ?? 0)} exceeds opening + purchases`,
-      detail: `Closing stock can't be more than opening stock (${recapMoney(month.openingStockCents ?? 0)}) plus purchases (${recapMoney(month.purchasesCents)}), so the latest stocktake is mis-valued — almost always a unit/pack error on one high-value line (e.g. a spirit counted in mL but costed per bottle). COGS is shown from purchases only until the stocktake is corrected. Open the latest stocktake and check its highest-value lines.`
+      detail: `Closing stock can't be more than opening stock (${recapMoney(month.openingStockCents ?? 0)}) plus purchases (${recapMoney(month.purchasesCents)}), so the latest stocktake is mis-valued — almost always a unit/pack error on one high-value line (e.g. a spirit counted in mL but costed per bottle). Purchases are shown as purchases and COGS is unavailable until the stocktake is corrected. Open the latest stocktake and check its highest-value lines.`
     });
   } else if (month.foodBasis !== 'actual') {
     recs.push({
       tone: 'info',
       title: 'Prime cost is not available for this month',
-      detail: `${month.reasons.join(' ')} Purchases of ${recapMoney(month.purchasesCents)} are shown as purchases; food cost and prime cost need a finalised stocktake within 14 days of each month boundary and a full month of supplier invoices.`
+      detail: `${month.reasons.join(' ')} Purchases of ${recapMoney(month.purchasesCents)} are shown as purchases; food cost and prime cost need a complete, valued food + beverage count within 7 days of each month boundary and a full month of supplier invoices.`
     });
   }
   return recs;
@@ -1435,7 +1440,8 @@ export const reportsService = {
         timesheetHours: Math.round(row.timesheetHours * 100) / 100,
         rosterHours: Math.round(row.rosterHours * 100) / 100,
         salesDays: row.salesDays.size,
-        ...primeQuality({ sales: row.salesCents, wages: row.wageCents, cogs: cogsCents, rosterEstimate: row.rosterWageEstimateCents })
+        // Quality counts COGS only on the actual basis: bills are not COGS.
+        ...primeQuality({ sales: row.salesCents, wages: row.wageCents, cogs: prime.foodBasis === 'actual' ? cogsCents : 0, rosterEstimate: row.rosterWageEstimateCents })
       };
     }).sort((a, b) => a.venue.localeCompare(b.venue));
 
@@ -1481,12 +1487,6 @@ export const reportsService = {
       rosterHours: 0,
       salesDays: 0
     });
-    const totalQuality = primeQuality({
-      sales: totalBase.salesCents,
-      wages: totalBase.wageCents,
-      cogs: totalBase.cogsCents,
-      rosterEstimate: totalBase.rosterWageEstimateCents
-    });
     const totalLabourBasis = labour.basis;
     const totalPrime = resolvePrimeCost({
       salesCents: totalBase.salesCents,
@@ -1494,6 +1494,12 @@ export const reportsService = {
       food: allVenuesCogs,
       purchaseCoverage,
       purchaseFeed: feed
+    });
+    const totalQuality = primeQuality({
+      sales: totalBase.salesCents,
+      wages: totalBase.wageCents,
+      cogs: totalPrime.foodBasis === 'actual' ? totalBase.cogsCents : 0,
+      rosterEstimate: totalBase.rosterWageEstimateCents
     });
 
     return {
@@ -1543,7 +1549,7 @@ export const reportsService = {
             ]),
         allVenuesCogs.source === 'stock_bounded'
           ? 'COGS is the canonical figure: opening stock + ex-GST purchases − closing stock for the period.'
-          : 'COGS is estimated from ex-GST purchases only — lock an opening and closing stocktake at the period boundaries for a true opening + purchases − closing figure.',
+          : 'COGS is unavailable: the figures shown are ex-GST supplier purchases, as purchases. A complete, valued food + beverage count within 7 days of each period boundary is needed for opening + purchases − closing.',
         ...(labour.basis === 'timesheets' ? ['Wages use current timesheet hours and staff pay rates. Approved wages are shown separately.'] : ['No timesheets found; roster wage estimate is used only when roster shifts exist.']),
         ...(labour.rosterOnlyVenues.length
           ? [`${labour.rosterOnlyVenues.join(', ')}: no timesheets, so the row shows its roster estimate (${recapMoney(labour.rosterOnlyEstimateCents)}); the total excludes it.`]

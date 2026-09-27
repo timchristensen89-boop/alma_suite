@@ -820,9 +820,11 @@ function MonthlyRecapSection({ venues }: { venues: string[] }) {
   function exportCsv() {
     if (!recap) return;
     const rows = [recap.monthCurrent, recap.monthPriorYear, recap.ytdCurrent, recap.ytdPriorYear];
-    const header = ['Period', 'Sales', 'Wages', 'Wage %', 'COGS', 'COGS %', 'Opening stock', 'Purchases', 'Closing stock', 'Prime cost', 'Prime %'];
+    // COGS is written only on the actual (stocktake-bounded) basis; a
+    // purchases-only month leaves it blank and its bills sit under Purchases.
+    const header = ['Period', 'Sales', 'Wages', 'Wage %', 'COGS', 'COGS %', 'Food basis', 'Opening stock', 'Purchases', 'Closing stock', 'Prime cost', 'Prime %'];
     const lines = rows.map((p) => [
-      `"${p.label}"`, p.salesCents / 100, p.wageCents / 100, p.wagePct ?? '', p.cogsCents / 100, p.cogsPct ?? '',
+      `"${p.label}"`, p.salesCents / 100, p.wageCents / 100, p.wagePct ?? '', p.foodBasis === 'actual' ? p.cogsCents / 100 : '', p.cogsPct ?? '', p.foodBasis,
       p.openingStockCents == null ? '' : p.openingStockCents / 100, p.purchasesCents / 100, p.closingStockCents == null ? '' : p.closingStockCents / 100, p.primeCostCents == null ? '' : p.primeCostCents / 100, p.primePct ?? ''
     ].join(','));
     const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv' });
@@ -3772,7 +3774,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <EditorialPanel eyebrow={weekWindowLabel} title="Cost data quality">
               <Metric label="Sales source" value={data.primeCost?.sources.sales.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.sales === 'missing' ? 'warning' : 'positive'} />
               <Metric label="Labour source" value={data.primeCost?.sources.wages.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.wages === 'missing' ? 'warning' : 'positive'} />
-              <Metric label="Food cost source" value={data.primeCost?.sources.cogs.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.cogs === 'missing' ? 'warning' : 'positive'} />
+              <Metric label="Food cost source" value={data.primeCost?.sources.cogs.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.cogs === 'stock_bounded' ? 'positive' : 'warning'} />
               {(data.primeCost?.warnings ?? []).map((warning) => (
                 <p key={warning} className="subtle">{warning}</p>
               ))}

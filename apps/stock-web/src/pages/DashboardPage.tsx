@@ -167,7 +167,7 @@ export function DashboardPage() {
           tone={cogs && cogs.coverage.zeroCostRecipes > 0 ? 'warning' : undefined}
         />
         <StatCard
-          label="Actual food & drink cost (30d)"
+          label={cogs && cogs.actual.source !== 'stock_bounded' ? 'Supplier purchases (30d)' : 'Actual food & drink cost (30d)'}
           value={cogs ? formatMoney(cogs.actual.cogsCents) : '—'}
           hint={
             cogs
