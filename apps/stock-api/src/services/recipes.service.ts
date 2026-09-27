@@ -877,7 +877,8 @@ export const recipesService = {
         openingStockCents: actualCogs.openingStockCents,
         closingStockCents: actualCogs.closingStockCents,
         source: actualCogs.source,
-        quality: actualCogs.quality
+        quality: actualCogs.quality,
+        reasons: actualCogs.reasons
       }
     });
 
@@ -935,7 +936,8 @@ export const recipesService = {
         label: summary.actual.label,
         purchasesCents: summary.actual.purchasesCents,
         openingStockCents: summary.actual.openingStockCents,
-        closingStockCents: summary.actual.closingStockCents
+        closingStockCents: summary.actual.closingStockCents,
+        reasons: actualCogs.reasons
       },
       varianceCents: summary.varianceCents,
       variancePercent: summary.variancePercent,

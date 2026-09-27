@@ -1,4 +1,4 @@
-import { prisma, computeActualCogs, type ActualCogs } from '@alma/db';
+import { prisma, computeActualCogs, unattributedCogs, type ActualCogs } from '@alma/db';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { staffCostingRate, splitOvertimeHours, costForRate, weeklyFixedCostCents, salariedVenueAllocations, staffPayRateSelect } from '../lib/staff-pay-rates.js';
@@ -43,7 +43,8 @@ import {
   type ReportsStaffSummary,
   type ReportsStockSummary,
   type SalesItemActualSummary,
-  type StocktakeReviewItem
+  type StocktakeReviewItem,
+  STOCKTAKE_STALE_DAYS
 } from '@alma/shared';
 import { summariseLowStock, summariseTemperatureAssets, venueTodayStart } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
@@ -1011,8 +1012,8 @@ function recapRecommendations(
   if (month.stockQuality === 'closing_implausible') {
     recs.push({
       tone: 'danger',
-      title: `Closing stock ${recapMoney(month.closingStockCents)} exceeds opening + purchases`,
-      detail: `Closing stock can't be more than opening stock (${recapMoney(month.openingStockCents)}) plus purchases (${recapMoney(month.purchasesCents)}), so the latest stocktake is mis-valued — almost always a unit/pack error on one high-value line (e.g. a spirit counted in mL but costed per bottle). COGS is shown from purchases only until the stocktake is corrected. Open the latest stocktake and check its highest-value lines.`
+      title: `Closing stock ${recapMoney(month.closingStockCents ?? 0)} exceeds opening + purchases`,
+      detail: `Closing stock can't be more than opening stock (${recapMoney(month.openingStockCents ?? 0)}) plus purchases (${recapMoney(month.purchasesCents)}), so the latest stocktake is mis-valued — almost always a unit/pack error on one high-value line (e.g. a spirit counted in mL but costed per bottle). COGS is shown from purchases only until the stocktake is corrected. Open the latest stocktake and check its highest-value lines.`
     });
   } else if (month.stockQuality !== 'complete') {
     recs.push({ tone: 'info', title: 'COGS is estimated (no stocktake bounds)', detail: 'No locked stocktake found at the period boundaries, so COGS uses purchases only. Lock an opening and closing stocktake for a true opening + purchases − closing figure.' });
@@ -1295,22 +1296,16 @@ export const reportsService = {
       realPurchasesSum += cogs.purchasesCents;
     });
     if (rows.has('Unassigned')) {
-      cogsByVenue.set('Unassigned', {
-        cogsCents: Math.max(0, allVenuesCogs.cogsCents - realCogsSum),
-        purchasesCents: Math.max(0, allVenuesCogs.purchasesCents - realPurchasesSum),
-        openingStockCents: 0,
-        closingStockCents: 0,
-        openingStockAvailable: false,
-        closingStockAvailable: false,
-        source: 'purchases_only',
-        quality: 'estimated'
-      });
+      // What the group figure holds that no venue does: untagged invoices.
+      // Stated as the difference, sign and all — a negative residual means
+      // the venue figures overlap the group and must be visible, not floored.
+      const residualCogs = allVenuesCogs.cogsCents - realCogsSum;
+      const residualPurchases = allVenuesCogs.purchasesCents - realPurchasesSum;
+      cogsByVenue.set('Unassigned', unattributedCogs(residualCogs, residualPurchases, [
+        `Purchases on invoices that carry no venue: the group figure less the venue figures${residualPurchases < 0 ? ' (negative: the venue figures exceed the group, so a venue is double-counted)' : ''}.`
+      ]));
     }
-    const cogsFor = (key: string): ActualCogs =>
-      cogsByVenue.get(key) ?? {
-        cogsCents: 0, purchasesCents: 0, openingStockCents: 0, closingStockCents: 0,
-        openingStockAvailable: false, closingStockAvailable: false, source: 'purchases_only', quality: 'estimated'
-      };
+    const cogsFor = (key: string): ActualCogs => cogsByVenue.get(key) ?? unattributedCogs(0, 0, ['No purchases or stock counts recorded for this venue in the period.']);
 
     /**
      * How much of the period the purchase data actually covers.
@@ -1360,6 +1355,7 @@ export const reportsService = {
         closingStockCents: cogs.closingStockCents,
         cogsSource: cogs.source,
         cogsQuality: cogs.quality,
+        cogsReasons: cogs.reasons,
         primeCostCents,
         // Wages span the whole period, so their percentage always stands.
         wagePercent: pct(wageCents, row.salesCents),
@@ -1383,8 +1379,9 @@ export const reportsService = {
       invoiceCogsCents: total.invoiceCogsCents + row.invoiceCogsCents,
       wastageCents: total.wastageCents + row.wastageCents,
       purchasesCents: total.purchasesCents + row.purchasesCents,
-      openingStockCents: total.openingStockCents + row.openingStockCents,
-      closingStockCents: total.closingStockCents + row.closingStockCents,
+      // A sum with a missing venue is not the group's stock: null wins.
+      openingStockCents: total.openingStockCents == null || row.openingStockCents == null ? null : total.openingStockCents + row.openingStockCents,
+      closingStockCents: total.closingStockCents == null || row.closingStockCents == null ? null : total.closingStockCents + row.closingStockCents,
       primeCostCents: total.primeCostCents + row.primeCostCents,
       timesheetHours: total.timesheetHours + row.timesheetHours,
       rosterHours: total.rosterHours + row.rosterHours,
@@ -1398,8 +1395,8 @@ export const reportsService = {
       invoiceCogsCents: 0,
       wastageCents: 0,
       purchasesCents: 0,
-      openingStockCents: 0,
-      closingStockCents: 0,
+      openingStockCents: 0 as number | null,
+      closingStockCents: 0 as number | null,
       primeCostCents: 0,
       timesheetHours: 0,
       rosterHours: 0,
@@ -1418,6 +1415,7 @@ export const reportsService = {
         ...totalBase,
         cogsSource: allVenuesCogs.source,
         cogsQuality: allVenuesCogs.quality,
+        cogsReasons: allVenuesCogs.reasons,
         wagePercent: pct(totalBase.wageCents, totalBase.salesCents),
         cogsPercent: purchasesCoverPeriod ? pct(totalBase.cogsCents, totalBase.salesCents) : null,
         primeCostPercent: purchasesCoverPeriod ? pct(totalBase.primeCostCents, totalBase.salesCents) : null,
@@ -2856,7 +2854,7 @@ export const reportsService = {
       ? [venue]
       : Array.from(new Set((await prisma.stocktake.findMany({ where: { venue: { not: null } }, select: { venue: true }, distinct: ['venue'] })).map((s) => s.venue!).filter(Boolean)));
 
-    const STALE_DAYS = 14;
+    const STALE_DAYS = STOCKTAKE_STALE_DAYS;
     const staleCutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000);
 
     const venueStatuses = await Promise.all(venues.map(async (v) => {

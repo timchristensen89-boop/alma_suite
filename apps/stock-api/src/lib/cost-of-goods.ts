@@ -23,10 +23,13 @@ export type CogsRecipeInput = {
 export type ActualCogsInput = {
   cogsCents: number;
   purchasesCents: number;
-  openingStockCents: number;
-  closingStockCents: number;
+  /** Null when the bracket is unavailable — the canonical helper never returns zero for a missing count. */
+  openingStockCents: number | null;
+  closingStockCents: number | null;
   source: 'stock_bounded' | 'purchases_only';
-  quality: 'complete' | 'estimated' | 'missing_opening' | 'missing_closing' | 'closing_implausible';
+  quality: 'complete' | 'estimated' | 'missing_opening' | 'missing_closing' | 'stale_opening' | 'stale_closing' | 'closing_implausible';
+  /** The canonical helper's own reasons, passed through to the card. */
+  reasons?: string[];
 };
 
 export type TheoreticalCogsSummary = {
@@ -149,6 +152,8 @@ const ACTUAL_LABELS: Record<ActualCogsInput['quality'], string> = {
   estimated: 'Supplier bills only — no stocktake brackets this window',
   missing_opening: 'Supplier bills only — no stocktake at the start of the window',
   missing_closing: 'Supplier bills only — no stocktake at the end of the window',
+  stale_opening: 'Supplier bills only — the latest stocktake before the window start is older than the 14-day limit',
+  stale_closing: 'Supplier bills only — the latest stocktake before the window end is older than the 14-day limit',
   closing_implausible: 'Supplier bills only — the closing stocktake reads higher than opening + purchases'
 };
 
@@ -163,7 +168,8 @@ export function assessCogsComparability(input: {
 }): CogsComparability {
   const { actual, theoretical, scope } = input;
   const reasons: string[] = [];
-  if (actual.quality !== 'complete') reasons.push(ACTUAL_LABELS[actual.quality].toLowerCase());
+  // The canonical helper's dated reasons win over the generic label.
+  if (actual.quality !== 'complete') reasons.push(...(actual.reasons?.length ? actual.reasons : [ACTUAL_LABELS[actual.quality].toLowerCase()]));
   if (!scope.periodMatches) reasons.push('the two figures cover different periods');
   if (!scope.venueMatches) reasons.push('the actual figure covers a different venue set from the mapped sales');
   const share =

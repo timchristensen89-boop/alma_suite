@@ -17,6 +17,7 @@ export * from './temperature-status.js';
 export * from './low-stock.js';
 export * from './venue-names.js';
 export * from './cogs-quality.js';
+export * from './stocktake-freshness.js';
 export * from './onboarding-completion.js';
 export * from './invoice-paste.js';
 export * from './count-scale.js';
@@ -3821,10 +3822,13 @@ export type ReportsPrimeCostVenueRow = {
   invoiceCogsCents: number;
   wastageCents: number;
   purchasesCents: number;
-  openingStockCents: number;
-  closingStockCents: number;
+  /** Null when no finalised stocktake within tolerance brackets the boundary — never zero. */
+  openingStockCents: number | null;
+  closingStockCents: number | null;
   cogsSource: 'stock_bounded' | 'purchases_only';
-  cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'estimated' | 'closing_implausible';
+  cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'stale_opening' | 'stale_closing' | 'estimated' | 'closing_implausible';
+  /** Why the actual figure is not a complete opening + purchases − closing (empty when complete). */
+  cogsReasons: string[];
   primeCostCents: number;
   wagePercent: number | null;
   /**
@@ -3856,7 +3860,7 @@ export const reportsMonthlyRecapEmailInputSchema = reportsMonthlyRecapQuerySchem
   to: z.string().email()
 });
 
-export type MonthlyRecapStockQuality = 'complete' | 'missing_opening' | 'missing_closing' | 'estimated' | 'closing_implausible';
+export type MonthlyRecapStockQuality = 'complete' | 'missing_opening' | 'missing_closing' | 'stale_opening' | 'stale_closing' | 'estimated' | 'closing_implausible';
 
 export type MonthlyRecapPeriod = {
   label: string;
@@ -3864,8 +3868,9 @@ export type MonthlyRecapPeriod = {
   end: string;
   salesCents: number;
   wageCents: number;
-  openingStockCents: number;
-  closingStockCents: number;
+  /** Null when no finalised stocktake within tolerance brackets the boundary — never zero. */
+  openingStockCents: number | null;
+  closingStockCents: number | null;
   purchasesCents: number;
   cogsCents: number;
   primeCostCents: number;
@@ -7535,7 +7540,7 @@ export type StocktakeReviewItem = Stocktake & {
 // when no stocktake brackets the window) are reported SEPARATELY, each with
 // its own percentage of the same denominator, and the actual side says
 // which method produced it. See apps/stock-api/src/lib/cost-of-goods.ts.
-export type StockCostOfGoodsActualQuality = 'complete' | 'estimated' | 'missing_opening' | 'missing_closing' | 'closing_implausible';
+export type StockCostOfGoodsActualQuality = 'complete' | 'estimated' | 'missing_opening' | 'missing_closing' | 'stale_opening' | 'stale_closing' | 'closing_implausible';
 
 export type StockCostOfGoodsPayload = {
   generatedAt: string;
@@ -7572,8 +7577,11 @@ export type StockCostOfGoodsPayload = {
     /** Plain-language method, e.g. "Supplier bills only — no stocktake brackets this window". */
     label: string;
     purchasesCents: number;
-    openingStockCents: number;
-    closingStockCents: number;
+    /** Null when no finalised stocktake within tolerance brackets the boundary — never zero. */
+    openingStockCents: number | null;
+    closingStockCents: number | null;
+    /** Why the actual figure is not a complete opening + purchases − closing, in operator words. */
+    reasons: string[];
   };
   /** actual − theoretical; null unless the actual figure is comparable. */
   varianceCents: number | null;

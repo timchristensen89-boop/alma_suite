@@ -21,7 +21,8 @@ import {
   type AuthUser,
   type StocktakePrepApplySummary,
   type StocktakePrepPreview,
-  type StocktakesSummary
+  type StocktakesSummary,
+  STOCKTAKE_STALE_DAYS
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { buildCountSheetSections } from '../lib/count-sheet.js';
@@ -821,7 +822,7 @@ export const stocktakesService = {
           )
         );
 
-    const STALE_DAYS = 14;
+    const STALE_DAYS = STOCKTAKE_STALE_DAYS;
     const staleCutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000);
 
     const venueStatuses = await Promise.all(

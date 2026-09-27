@@ -667,7 +667,9 @@ function RecapCard({ title, period, compare, compareLabel }: { title: string; pe
       <Metric label="COGS" cents={period.cogsCents} prev={compare.cogsCents} pct={period.cogsPct} />
       <Metric label="Prime cost" cents={period.primeCostCents} prev={compare.primeCostCents} pct={period.primePct} />
       <div className="recap-card-foot">
-        Opening {formatCurrency(period.openingStockCents)} + purchases {formatCurrency(period.purchasesCents)} − closing {formatCurrency(period.closingStockCents)}
+        {period.openingStockCents != null && period.closingStockCents != null
+          ? <>Opening {formatCurrency(period.openingStockCents)} + purchases {formatCurrency(period.purchasesCents)} − closing {formatCurrency(period.closingStockCents)}</>
+          : <>Purchases {formatCurrency(period.purchasesCents)} · opening {period.openingStockCents == null ? 'unavailable' : formatCurrency(period.openingStockCents)} · closing {period.closingStockCents == null ? 'unavailable' : formatCurrency(period.closingStockCents)}</>}
       </div>
     </div>
   );
@@ -815,7 +817,7 @@ function MonthlyRecapSection({ venues }: { venues: string[] }) {
     const header = ['Period', 'Sales', 'Wages', 'Wage %', 'COGS', 'COGS %', 'Opening stock', 'Purchases', 'Closing stock', 'Prime cost', 'Prime %'];
     const lines = rows.map((p) => [
       `"${p.label}"`, p.salesCents / 100, p.wageCents / 100, p.wagePct ?? '', p.cogsCents / 100, p.cogsPct ?? '',
-      p.openingStockCents / 100, p.purchasesCents / 100, p.closingStockCents / 100, p.primeCostCents / 100, p.primePct ?? ''
+      p.openingStockCents == null ? '' : p.openingStockCents / 100, p.purchasesCents / 100, p.closingStockCents == null ? '' : p.closingStockCents / 100, p.primeCostCents / 100, p.primePct ?? ''
     ].join(','));
     const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
