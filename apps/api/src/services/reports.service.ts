@@ -44,7 +44,14 @@ import {
   type ReportsStockSummary,
   type SalesItemActualSummary,
   type StocktakeReviewItem,
-  STOCKTAKE_STALE_DAYS
+  STOCKTAKE_STALE_DAYS,
+  MIN_PURCHASE_COVERAGE,
+  elapsedPeriodWeeks,
+  resolveCostTargets,
+  resolvePrimeCost,
+  venueMonthBounds,
+  venueMonthKey,
+  type LabourBasis
 } from '@alma/shared';
 import { summariseLowStock, summariseTemperatureAssets, venueTodayStart } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
@@ -55,7 +62,7 @@ import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { mailService } from './mail.service.js';
 import { integrationService } from './integration.service.js';
 import { deputyService } from './deputy.service.js';
-import { configuredSuperRateFraction } from './settings.service.js';
+import { configuredSuperRateFraction, settingsService } from './settings.service.js';
 import { buildSalesErrorCsv, parseSalesCsv, salesTemplateCsv, type GstBasis } from '../lib/sales-import.js';
 
 const reportsOverviewQuerySchema = z.object({
@@ -857,11 +864,6 @@ function recapMonthLabel(month: string): string {
   const m = Number(month.slice(5, 7));
   return new Date(y, m - 1, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
 }
-// AU financial year starts 1 July.
-function financialYearStart(date: Date): Date {
-  const year = date.getMonth() >= 6 ? date.getFullYear() : date.getFullYear() - 1;
-  return new Date(year, 6, 1);
-}
 function recapMoney(cents: number): string {
   return `$${Math.round(cents / 100).toLocaleString('en-AU')}`;
 }
@@ -871,7 +873,7 @@ function escapeHtml(value: string): string {
 
 // Exported: the forecast engine reuses this as the canonical "actual wages for
 // a period" figure (timesheet hours + salaried weekly fixed cost, super baked in).
-export async function recapWageCents(venue: string | null, start: Date, end: Date): Promise<number> {
+export async function recapWageCents(venue: string | null, start: Date, end: Date, now: Date = new Date()): Promise<number> {
   const superRate = await configuredSuperRateFraction();
   const [timesheets, salariedStaff] = await Promise.all([
     prisma.timesheet.findMany({
@@ -905,10 +907,12 @@ export async function recapWageCents(venue: string | null, start: Date, end: Dat
     // Salaried: only overtime is hour-costed; their weekly salary is added below.
     cents += rate.appliesOvertime ? costForRate({ ...rate, ordinaryRateCents: 0 }, split) : costForRate(rate, split);
   }
-  // Full weekly salary + super for every active salaried full-timer, every week,
-  // attributed to this venue by the fraction of their rostered hours worked here
-  // (full salary when venue is null / org-wide).
-  const periodWeeks = Math.max(0, (end.getTime() - start.getTime()) / (7 * 86_400_000));
+  // Weekly salary + super for every active salaried full-timer, for the weeks
+  // of the period that have ELAPSED (a half-elapsed month carries half its
+  // salaries, as it carries half its sales), attributed to this venue by the
+  // fraction of their rostered hours worked here (full salary when venue is
+  // null / org-wide).
+  const periodWeeks = elapsedPeriodWeeks(start, end, now);
   const salariedIds = salariedStaff.map((p) => p.id);
   const rosterHoursByStaffVenue = new Map<string, Map<string, number>>();
   if (salariedIds.length > 0) {
@@ -950,11 +954,35 @@ export async function recapWageCents(venue: string | null, start: Date, end: Dat
   return cents;
 }
 
+/**
+ * How much of [start, end) the purchase data actually covers, as a 0–1
+ * fraction, from the date supplier invoices begin in the suite.
+ *
+ * Prime cost read 31.8% for FY25/26 — wages 29.1% plus COGS 2.7% — against
+ * a real hospitality figure nearer 60%. Nothing was miscalculated: supplier
+ * invoices only begin in April 2026, so three months of purchases were
+ * being divided by twelve months of sales. A percentage of sales is only a
+ * fact when both sides span the same days, so the covered fraction is
+ * measured and food/prime percentages are withheld below it (the
+ * resolvePrimeCost rule).
+ */
+async function purchaseCoverageFor(start: Date, end: Date): Promise<{ coverage: number; purchasesFrom: Date | null }> {
+  const firstInvoice = await prisma.supplierInvoice.findFirst({
+    where: { invoiceDate: { lt: end } },
+    orderBy: { invoiceDate: 'asc' },
+    select: { invoiceDate: true }
+  });
+  const periodMs = Math.max(1, end.getTime() - start.getTime());
+  const coveredFrom = firstInvoice?.invoiceDate ? new Date(Math.max(start.getTime(), firstInvoice.invoiceDate.getTime())) : end;
+  const coverage = Math.min(1, Math.max(0, (end.getTime() - coveredFrom.getTime()) / periodMs));
+  return { coverage: Math.round(coverage * 100) / 100, purchasesFrom: firstInvoice?.invoiceDate ?? null };
+}
+
 async function recapPeriod(venue: string | null, start: Date, end: Date, label: string): Promise<MonthlyRecapPeriod> {
   // COGS comes from the suite-wide canonical helper (ex-GST, finalised stock
   // purchases, stocktake-bounded with a purchases-only fallback) so the Recap
   // agrees with the Stock dashboard and Prime Cost report to the cent.
-  const [salesRows, wageCents, cogs] = await Promise.all([
+  const [salesRows, wageCents, cogs, purchases] = await Promise.all([
     // One figure per venue-day, however many feeds reported it (POS close +
     // Square/Lightspeed import + manual describe the same money) — a plain
     // SUM double-counted every day two feeds covered.
@@ -963,23 +991,35 @@ async function recapPeriod(venue: string | null, start: Date, end: Date, label: 
       select: { venue: true, serviceDate: true, salesCents: true }
     }),
     recapWageCents(venue, start, end),
-    computeActualCogs({ venue, start, end })
+    computeActualCogs({ venue, start, end }),
+    purchaseCoverageFor(start, end)
   ]);
   const salesCents = dedupedSalesCents(salesRows);
   const { cogsCents, purchasesCents, openingStockCents, closingStockCents, quality: stockQuality } = cogs;
-  const primeCostCents = wageCents + cogsCents;
-  const pct = (n: number) => (salesCents > 0 ? Math.round((n / salesCents) * 1000) / 10 : null);
+  // Prime cost = labour + actual food COGS, or unavailable — never labour +
+  // bills. The one rule, shared with the Prime Cost report (@alma/shared).
+  const prime = resolvePrimeCost({
+    salesCents,
+    labour: { cents: wageCents, basis: wageCents > 0 ? 'timesheets' : 'missing' },
+    food: cogs,
+    purchaseCoverage: purchases.coverage
+  });
   return {
     label, start: start.toISOString(), end: end.toISOString(),
-    salesCents, wageCents, openingStockCents, closingStockCents, purchasesCents, cogsCents, primeCostCents,
-    wagePct: pct(wageCents), cogsPct: pct(cogsCents), primePct: pct(primeCostCents), stockQuality
+    salesCents, wageCents, openingStockCents, closingStockCents, purchasesCents, cogsCents,
+    foodBasis: prime.foodBasis,
+    primeCostCents: prime.primeCostCents,
+    wagePct: prime.wagePercent, cogsPct: prime.foodCostPercent, primePct: prime.primeCostPercent,
+    stockQuality,
+    purchaseCoverage: purchases.coverage,
+    reasons: prime.reasons
   };
 }
 
 function recapRecommendations(
   month: MonthlyRecapPeriod,
   priorYear: MonthlyRecapPeriod,
-  targets: { wagePct: number; cogsPct: number; primePct: number }
+  targets: { wagePct: number; foodPct: number; primePct: number }
 ): MonthlyRecapRecommendation[] {
   const recs: MonthlyRecapRecommendation[] = [];
   const fmt = (n: number | null) => (n == null ? '—' : `${n.toFixed(1)}%`);
@@ -996,8 +1036,8 @@ function recapRecommendations(
   if (month.wagePct != null && month.wagePct > targets.wagePct) {
     recs.push({ tone: 'warning', title: `Wages ${fmt(month.wagePct)} of sales — over ${targets.wagePct}%`, detail: 'Review rostering on quiet shifts and overtime; the Staff Costing report breaks this down by venue and role.' });
   }
-  if (month.cogsPct != null && month.cogsPct > targets.cogsPct) {
-    recs.push({ tone: 'warning', title: `COGS ${fmt(month.cogsPct)} of sales — over ${targets.cogsPct}%`, detail: 'Check supplier price movement and waste, and confirm the closing stocktake is locked for an accurate figure.' });
+  if (month.cogsPct != null && month.cogsPct > targets.foodPct) {
+    recs.push({ tone: 'warning', title: `COGS ${fmt(month.cogsPct)} of sales — over ${targets.foodPct}%`, detail: 'Check supplier price movement and waste, and confirm the closing stocktake is locked for an accurate figure.' });
   }
   if (priorYear.salesCents > 0) {
     const salesPct = Math.round(((month.salesCents - priorYear.salesCents) / priorYear.salesCents) * 1000) / 10;
@@ -1015,14 +1055,19 @@ function recapRecommendations(
       title: `Closing stock ${recapMoney(month.closingStockCents ?? 0)} exceeds opening + purchases`,
       detail: `Closing stock can't be more than opening stock (${recapMoney(month.openingStockCents ?? 0)}) plus purchases (${recapMoney(month.purchasesCents)}), so the latest stocktake is mis-valued — almost always a unit/pack error on one high-value line (e.g. a spirit counted in mL but costed per bottle). COGS is shown from purchases only until the stocktake is corrected. Open the latest stocktake and check its highest-value lines.`
     });
-  } else if (month.stockQuality !== 'complete') {
-    recs.push({ tone: 'info', title: 'COGS is estimated (no stocktake bounds)', detail: 'No locked stocktake found at the period boundaries, so COGS uses purchases only. Lock an opening and closing stocktake for a true opening + purchases − closing figure.' });
+  } else if (month.foodBasis !== 'actual') {
+    recs.push({
+      tone: 'info',
+      title: 'Prime cost is not available for this month',
+      detail: `${month.reasons.join(' ')} Purchases of ${recapMoney(month.purchasesCents)} are shown as purchases; food cost and prime cost need a finalised stocktake within 14 days of each month boundary and a full month of supplier invoices.`
+    });
   }
   return recs;
 }
 
 function renderMonthlyRecapText(recap: MonthlyRecapPayload): string {
-  const line = (p: MonthlyRecapPeriod) => `${p.label}: Sales ${recapMoney(p.salesCents)} | Wages ${recapMoney(p.wageCents)} (${p.wagePct ?? '—'}%) | COGS ${recapMoney(p.cogsCents)} (${p.cogsPct ?? '—'}%) | Prime ${recapMoney(p.primeCostCents)} (${p.primePct ?? '—'}%)`;
+  const line = (p: MonthlyRecapPeriod) =>
+    `${p.label}: Sales ${recapMoney(p.salesCents)} | Wages ${recapMoney(p.wageCents)} (${p.wagePct ?? '—'}%) | ${p.foodBasis === 'actual' ? `COGS ${recapMoney(p.cogsCents)} (${p.cogsPct ?? '—'}%)` : `Purchases ${recapMoney(p.purchasesCents)} (COGS unavailable)`} | Prime ${p.primeCostCents == null ? 'unavailable' : `${recapMoney(p.primeCostCents)} (${p.primePct ?? '—'}%)`}`;
   return [
     `Monthly Recap — ${recap.monthLabel}${recap.venue ? ` · ${recap.venue}` : ''}`,
     '', 'THIS MONTH', line(recap.monthCurrent), 'SAME MONTH LAST YEAR', line(recap.monthPriorYear),
@@ -1032,7 +1077,7 @@ function renderMonthlyRecapText(recap: MonthlyRecapPayload): string {
 }
 
 function renderMonthlyRecapHtml(recap: MonthlyRecapPayload): string {
-  const row = (p: MonthlyRecapPeriod) => `<tr><td style="padding:6px 8px">${escapeHtml(p.label)}</td><td style="padding:6px 8px;text-align:right">${recapMoney(p.salesCents)}</td><td style="padding:6px 8px;text-align:right">${recapMoney(p.wageCents)} (${p.wagePct ?? '—'}%)</td><td style="padding:6px 8px;text-align:right">${recapMoney(p.cogsCents)} (${p.cogsPct ?? '—'}%)</td><td style="padding:6px 8px;text-align:right"><strong>${recapMoney(p.primeCostCents)} (${p.primePct ?? '—'}%)</strong></td></tr>`;
+  const row = (p: MonthlyRecapPeriod) => `<tr><td style="padding:6px 8px">${escapeHtml(p.label)}</td><td style="padding:6px 8px;text-align:right">${recapMoney(p.salesCents)}</td><td style="padding:6px 8px;text-align:right">${recapMoney(p.wageCents)} (${p.wagePct ?? '—'}%)</td><td style="padding:6px 8px;text-align:right">${p.foodBasis === 'actual' ? `${recapMoney(p.cogsCents)} (${p.cogsPct ?? '—'}%)` : `purchases ${recapMoney(p.purchasesCents)} · COGS unavailable`}</td><td style="padding:6px 8px;text-align:right"><strong>${p.primeCostCents == null ? 'unavailable' : `${recapMoney(p.primeCostCents)} (${p.primePct ?? '—'}%)`}</strong></td></tr>`;
   return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1f2a1e;max-width:700px">
   <h2 style="font-family:Georgia,serif">Monthly Recap — ${escapeHtml(recap.monthLabel)}${recap.venue ? ` · ${escapeHtml(recap.venue)}` : ''}</h2>
   <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e3ddd2">
@@ -1041,7 +1086,7 @@ function renderMonthlyRecapHtml(recap: MonthlyRecapPayload): string {
   </table>
   <h3>Recommendations</h3>
   <ul style="font-size:13px;line-height:1.5">${recap.recommendations.map((r) => `<li><strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.detail)}</li>`).join('')}</ul>
-  <p style="color:#8a8a8a;font-size:11px">Generated ${new Date(recap.generatedAt).toLocaleString('en-AU')}. COGS = opening stock + purchases − closing stock. Targets: wages ${recap.targets.wagePct}% / COGS ${recap.targets.cogsPct}% / prime ${recap.targets.primePct}% of sales.</p>
+  <p style="color:#8a8a8a;font-size:11px">Generated ${new Date(recap.generatedAt).toLocaleString('en-AU')}. COGS = opening stock + purchases − closing stock; prime cost = wages + COGS only when COGS is stocktake-bounded. Targets (${recap.targets.source === 'venue' ? 'venue settings' : recap.targets.source === 'group_average' ? 'average of venue settings' : 'defaults'}): wages ${recap.targets.wagePct}% / COGS ${recap.targets.foodPct}% / prime ${recap.targets.primePct}% of sales.</p>
 </div>`;
 }
 
@@ -1226,7 +1271,9 @@ export const reportsService = {
     // rarely clock in), falling back to their home venue when never rostered.
     // The split needs each staffer's roster across ALL venues (so the fraction is
     // right even in a venue-filtered report), hence a dedicated unscoped query.
-    const primePeriodWeeks = Math.max(0, (end.getTime() - start.getTime()) / (7 * 86_400_000));
+    // Elapsed weeks only: a period still in progress carries the salaries
+    // for the days that have passed, matching its sales (@alma/shared).
+    const primePeriodWeeks = elapsedPeriodWeeks(start, end);
     const salariedIds = activeStaff.map((p) => p.id);
     const salariedRosterHoursByStaffVenue = new Map<string, Map<string, number>>();
     if (salariedIds.length > 0) {
@@ -1307,40 +1354,21 @@ export const reportsService = {
     }
     const cogsFor = (key: string): ActualCogs => cogsByVenue.get(key) ?? unattributedCogs(0, 0, ['No purchases or stock counts recorded for this venue in the period.']);
 
-    /**
-     * How much of the period the purchase data actually covers.
-     *
-     * Prime cost read 31.8% for FY25/26 — wages 29.1% plus COGS 2.7% — against
-     * a real hospitality figure nearer 60%. Nothing was miscalculated: supplier
-     * invoices only begin in April 2026, so three months of purchases were
-     * being divided by twelve months of sales. The report already warned that
-     * COGS was purchases-only, but a warning beside a confident number loses;
-     * people read the number.
-     *
-     * A percentage of sales is only meaningful when both sides span the same
-     * days, so the covered fraction is measured and the COGS and prime-cost
-     * percentages are withheld when it does not. A blank says "we cannot tell
-     * you this" — which is true — where 2.7% says something false.
-     */
-    const firstInvoice = await prisma.supplierInvoice.findFirst({
-      where: { invoiceDate: { lt: end } },
-      orderBy: { invoiceDate: 'asc' },
-      select: { invoiceDate: true }
-    });
-    const periodMs = Math.max(1, end.getTime() - start.getTime());
-    const coveredFrom = firstInvoice?.invoiceDate
-      ? new Date(Math.max(start.getTime(), firstInvoice.invoiceDate.getTime()))
-      : end;
-    const purchaseCoverage = Math.min(1, Math.max(0, (end.getTime() - coveredFrom.getTime()) / periodMs));
-    /** Below this, a COGS percentage of sales is not a fact about the period. */
-    const MIN_PURCHASE_COVERAGE = 0.9;
+    const { coverage: purchaseCoverage, purchasesFrom } = await purchaseCoverageFor(start, end);
     const purchasesCoverPeriod = purchaseCoverage >= MIN_PURCHASE_COVERAGE;
 
+    const labourBasisFor = (row: { wageCents: number; rosterWageEstimateCents: number }): LabourBasis =>
+      row.wageCents > 0 ? 'timesheets' : row.rosterWageEstimateCents > 0 ? 'roster_estimate' : 'missing';
+
     const venues = Array.from(rows.values()).map((row) => {
+      // The roster estimate stands in for wages only when no timesheet exists,
+      // and the row says so (labourBasis) rather than presenting it as actuals.
+      const labourBasis = labourBasisFor(row);
       const wageCents = row.wageCents || row.rosterWageEstimateCents;
       const cogs = cogsFor(row.venue);
       const cogsCents = cogs.cogsCents;
-      const primeCostCents = wageCents + cogsCents;
+      // Prime = labour + actual food COGS, or unavailable (@alma/shared).
+      const prime = resolvePrimeCost({ salesCents: row.salesCents, labour: { cents: wageCents, basis: labourBasis }, food: cogs, purchaseCoverage });
       return {
         venue: row.venue,
         salesCents: row.salesCents,
@@ -1356,13 +1384,16 @@ export const reportsService = {
         cogsSource: cogs.source,
         cogsQuality: cogs.quality,
         cogsReasons: cogs.reasons,
-        primeCostCents,
+        foodBasis: prime.foodBasis,
+        labourBasis,
+        primeCostCents: prime.primeCostCents,
+        primeReasons: prime.reasons,
         // Wages span the whole period, so their percentage always stands.
-        wagePercent: pct(wageCents, row.salesCents),
-        // COGS and prime cost do not, when purchases only cover part of it.
-        cogsPercent: purchasesCoverPeriod ? pct(cogsCents, row.salesCents) : null,
-        primeCostPercent: purchasesCoverPeriod ? pct(primeCostCents, row.salesCents) : null,
-        purchaseCoverage: Math.round(purchaseCoverage * 100) / 100,
+        wagePercent: prime.wagePercent,
+        // Food and prime percentages exist only on the actual basis.
+        cogsPercent: prime.foodCostPercent,
+        primeCostPercent: prime.primeCostPercent,
+        purchaseCoverage,
         timesheetHours: Math.round(row.timesheetHours * 100) / 100,
         rosterHours: Math.round(row.rosterHours * 100) / 100,
         salesDays: row.salesDays.size,
@@ -1382,7 +1413,8 @@ export const reportsService = {
       // A sum with a missing venue is not the group's stock: null wins.
       openingStockCents: total.openingStockCents == null || row.openingStockCents == null ? null : total.openingStockCents + row.openingStockCents,
       closingStockCents: total.closingStockCents == null || row.closingStockCents == null ? null : total.closingStockCents + row.closingStockCents,
-      primeCostCents: total.primeCostCents + row.primeCostCents,
+      // Unavailable in any venue = unavailable for the group.
+      primeCostCents: total.primeCostCents == null || row.primeCostCents == null ? null : total.primeCostCents + row.primeCostCents,
       timesheetHours: total.timesheetHours + row.timesheetHours,
       rosterHours: total.rosterHours + row.rosterHours,
       salesDays: Math.max(total.salesDays, row.salesDays)
@@ -1397,7 +1429,7 @@ export const reportsService = {
       purchasesCents: 0,
       openingStockCents: 0 as number | null,
       closingStockCents: 0 as number | null,
-      primeCostCents: 0,
+      primeCostCents: 0 as number | null,
       timesheetHours: 0,
       rosterHours: 0,
       salesDays: 0
@@ -1408,6 +1440,13 @@ export const reportsService = {
       cogs: totalBase.cogsCents,
       rosterEstimate: totalBase.rosterWageEstimateCents
     });
+    const totalLabourBasis = labourBasisFor(totalBase);
+    const totalPrime = resolvePrimeCost({
+      salesCents: totalBase.salesCents,
+      labour: { cents: totalBase.wageCents, basis: totalLabourBasis },
+      food: allVenuesCogs,
+      purchaseCoverage
+    });
 
     return {
       period: { start: start.toISOString(), end: end.toISOString() },
@@ -1416,11 +1455,15 @@ export const reportsService = {
         cogsSource: allVenuesCogs.source,
         cogsQuality: allVenuesCogs.quality,
         cogsReasons: allVenuesCogs.reasons,
-        wagePercent: pct(totalBase.wageCents, totalBase.salesCents),
-        cogsPercent: purchasesCoverPeriod ? pct(totalBase.cogsCents, totalBase.salesCents) : null,
-        primeCostPercent: purchasesCoverPeriod ? pct(totalBase.primeCostCents, totalBase.salesCents) : null,
-        purchaseCoverage: Math.round(purchaseCoverage * 100) / 100,
-        purchasesFrom: firstInvoice?.invoiceDate?.toISOString() ?? null,
+        foodBasis: totalPrime.foodBasis,
+        labourBasis: totalLabourBasis,
+        primeCostCents: totalPrime.primeCostCents,
+        primeReasons: totalPrime.reasons,
+        wagePercent: totalPrime.wagePercent,
+        cogsPercent: totalPrime.foodCostPercent,
+        primeCostPercent: totalPrime.primeCostPercent,
+        purchaseCoverage,
+        purchasesFrom: purchasesFrom?.toISOString() ?? null,
         timesheetHours: Math.round(totalBase.timesheetHours * 100) / 100,
         rosterHours: Math.round(totalBase.rosterHours * 100) / 100,
         ...totalQuality
@@ -1438,8 +1481,8 @@ export const reportsService = {
         ...(purchasesCoverPeriod
           ? []
           : [
-              firstInvoice?.invoiceDate
-                ? `Supplier invoices only start ${firstInvoice.invoiceDate
+              purchasesFrom
+                ? `Supplier invoices only start ${purchasesFrom
                     .toISOString()
                     .slice(0, 10)}, covering ${Math.round(
                     purchaseCoverage * 100
@@ -2707,32 +2750,36 @@ export const reportsService = {
   async monthlyRecap(input: unknown, actor: AuthUser): Promise<MonthlyRecapPayload> {
     const query = reportsMonthlyRecapQuerySchema.parse(input ?? {});
     const venue = actorVenueScope(actor, query.venue);
-    const today = new Date();
-    const month = query.month ?? `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    // Venue-local months: the containers run UTC, so a server-local month
+    // started ten or eleven hours into the Sydney first of the month.
+    const month = query.month ?? venueMonthKey(new Date());
     const yy = Number(month.slice(0, 4));
     const mm = Number(month.slice(5, 7));
-    const monthStart = new Date(yy, mm - 1, 1);
-    const monthEnd = new Date(yy, mm, 1);
-    const priorMonthStart = new Date(yy - 1, mm - 1, 1);
-    const priorMonthEnd = new Date(yy - 1, mm, 1);
-    const fyStart = financialYearStart(monthStart);
-    const priorFyStart = new Date(fyStart.getFullYear() - 1, 6, 1);
-    const priorFyYtdEnd = new Date(monthEnd.getFullYear() - 1, monthEnd.getMonth(), 1);
+    const priorMonthKey = `${yy - 1}-${String(mm).padStart(2, '0')}`;
+    const thisMonth = venueMonthBounds(month);
+    const priorMonth = venueMonthBounds(priorMonthKey);
+    if (!thisMonth || !priorMonth) throw new HttpError(400, 'Month must be YYYY-MM');
+    // AU financial year starts 1 July.
+    const fyYear = mm >= 7 ? yy : yy - 1;
+    const fyStart = venueMonthBounds(`${fyYear}-07`)!.gte;
+    const priorFyStart = venueMonthBounds(`${fyYear - 1}-07`)!.gte;
 
-    const [monthCurrent, monthPriorYear, ytdCurrent, ytdPriorYear] = await Promise.all([
-      recapPeriod(venue, monthStart, monthEnd, recapMonthLabel(month)),
-      recapPeriod(venue, priorMonthStart, priorMonthEnd, recapMonthLabel(`${yy - 1}-${String(mm).padStart(2, '0')}`)),
-      recapPeriod(venue, fyStart, monthEnd, 'FY to date'),
-      recapPeriod(venue, priorFyStart, priorFyYtdEnd, 'Prior FY to date')
+    const [monthCurrent, monthPriorYear, ytdCurrent, ytdPriorYear, settings] = await Promise.all([
+      recapPeriod(venue, thisMonth.gte, thisMonth.lt, recapMonthLabel(month)),
+      recapPeriod(venue, priorMonth.gte, priorMonth.lt, recapMonthLabel(priorMonthKey)),
+      recapPeriod(venue, fyStart, thisMonth.lt, 'FY to date'),
+      recapPeriod(venue, priorFyStart, priorMonth.lt, 'Prior FY to date'),
+      settingsService.get()
     ]);
-    const targets = { wagePct: 30, cogsPct: 30, primePct: 60 };
+    // One target source for the suite: venue settings, averaged for the group.
+    const targets = resolveCostTargets(settings.venues, venue);
     return {
       generatedAt: new Date().toISOString(),
       venue: venue ?? null,
       month,
       monthLabel: recapMonthLabel(month),
       ytdBasis: 'FY',
-      ytdLabel: `FY ${fyStart.getFullYear()}/${String(fyStart.getFullYear() + 1).slice(2)} to ${recapMonthLabel(month)}`,
+      ytdLabel: `FY ${fyYear}/${String(fyYear + 1).slice(2)} to ${recapMonthLabel(month)}`,
       targets,
       monthCurrent,
       monthPriorYear,

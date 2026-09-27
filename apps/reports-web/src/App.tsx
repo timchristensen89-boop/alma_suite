@@ -62,7 +62,8 @@ import {
   stockApi
 } from './lib/api';
 import { venueDayKey, venueTodayAsLocalDate } from '@alma/shared';
-import { COST_TARGETS, buildOverviewCosts, costTone, overviewNarrative, type OverviewCosts } from './lib/overview-costs';
+import { buildOverviewCosts, costTone, overviewNarrative, type OverviewCosts } from './lib/overview-costs';
+import { resolveCostTargets, type VenueTargetInput } from '@alma/shared';
 import { ADMIN_WEB_URL, COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForWeek, normaliseHistoricalVenue, isVenueOpenOnDate } from './data/historicalSales';
 import { Donut, HBars, TrendLine, CHART_COLORS } from './components/Charts';
@@ -644,28 +645,32 @@ function formatPercent(value: number | null | undefined) {
 
 function RecapCard({ title, period, compare, compareLabel }: { title: string; period: MonthlyRecapPeriod; compare: MonthlyRecapPeriod; compareLabel: string }) {
   const delta = (cur: number, prev: number) => (prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10 : null);
-  function Metric({ label, cents, prev, pct }: { label: string; cents: number; prev: number; pct: number | null }) {
-    const d = delta(cents, prev);
+  function Metric({ label, cents, prev, pct, unavailable }: { label: string; cents: number | null; prev: number | null; pct: number | null; unavailable?: string }) {
+    const d = cents == null || prev == null ? null : delta(cents, prev);
     return (
       <div className="recap-metric">
         <span className="recap-metric-label">{label}</span>
-        <strong>{formatCurrency(cents)}{pct != null ? <em> · {pct.toFixed(1)}%</em> : null}</strong>
+        <strong>{cents == null ? unavailable ?? 'Unavailable' : formatCurrency(cents)}{pct != null ? <em> · {pct.toFixed(1)}%</em> : null}</strong>
         <span className={`recap-metric-delta${d == null ? '' : d >= 0 ? ' is-up' : ' is-down'}`}>
           {d == null ? `vs ${compareLabel} —` : `${d >= 0 ? '+' : ''}${d.toFixed(1)}% vs ${compareLabel}`}
         </span>
       </div>
     );
   }
+  const actual = period.foodBasis === 'actual';
   return (
     <div className="recap-card">
       <div className="recap-card-head">
         <strong>{title}</strong>
-        {period.stockQuality !== 'complete' ? <Badge tone="warning">COGS est.</Badge> : null}
+        {actual ? null : <Badge tone="warning">Prime unavailable</Badge>}
       </div>
       <Metric label="Sales" cents={period.salesCents} prev={compare.salesCents} pct={null} />
       <Metric label="Wages" cents={period.wageCents} prev={compare.wageCents} pct={period.wagePct} />
-      <Metric label="COGS" cents={period.cogsCents} prev={compare.cogsCents} pct={period.cogsPct} />
-      <Metric label="Prime cost" cents={period.primeCostCents} prev={compare.primeCostCents} pct={period.primePct} />
+      {actual
+        ? <Metric label="COGS (opening + purchases − closing)" cents={period.cogsCents} prev={compare.foodBasis === 'actual' ? compare.cogsCents : null} pct={period.cogsPct} />
+        : <Metric label="Purchases (supplier bills; COGS unavailable)" cents={period.purchasesCents} prev={compare.purchasesCents} pct={null} />}
+      <Metric label="Prime cost (wages + COGS)" cents={period.primeCostCents} prev={compare.primeCostCents} pct={period.primePct} unavailable="Unavailable" />
+      {actual ? null : <p className="subtle">{period.reasons.join(' ')}</p>}
       <div className="recap-card-foot">
         {period.openingStockCents != null && period.closingStockCents != null
           ? <>Opening {formatCurrency(period.openingStockCents)} + purchases {formatCurrency(period.purchasesCents)} − closing {formatCurrency(period.closingStockCents)}</>
@@ -681,12 +686,13 @@ function RecapCharts({ recap }: { recap: MonthlyRecapPayload }) {
   const metrics = [
     { key: 'sales', label: 'Sales', cur: cur.salesCents, prev: prev.salesCents },
     { key: 'wages', label: 'Wages', cur: cur.wageCents, prev: prev.wageCents },
-    { key: 'cogs', label: 'COGS', cur: cur.cogsCents, prev: prev.cogsCents },
-    { key: 'prime', label: 'Prime cost', cur: cur.primeCostCents, prev: prev.primeCostCents }
+    { key: 'cogs', label: cur.foodBasis === 'actual' ? 'COGS' : 'Purchases (COGS unavailable)', cur: cur.foodBasis === 'actual' ? cur.cogsCents : cur.purchasesCents, prev: prev.foodBasis === 'actual' ? prev.cogsCents : prev.purchasesCents },
+    // Prime is a bar only when it exists; a zero bar would read as "no cost".
+    ...(cur.primeCostCents != null && prev.primeCostCents != null ? [{ key: 'prime', label: 'Prime cost', cur: cur.primeCostCents, prev: prev.primeCostCents }] : [])
   ];
   const ratios = [
     { key: 'wage', label: 'Wage % of sales', pct: cur.wagePct, target: recap.targets.wagePct },
-    { key: 'cogs', label: 'COGS % of sales', pct: cur.cogsPct, target: recap.targets.cogsPct },
+    { key: 'cogs', label: 'COGS % of sales', pct: cur.cogsPct, target: recap.targets.foodPct },
     { key: 'prime', label: 'Prime % of sales', pct: cur.primePct, target: recap.targets.primePct }
   ];
   return (
@@ -817,7 +823,7 @@ function MonthlyRecapSection({ venues }: { venues: string[] }) {
     const header = ['Period', 'Sales', 'Wages', 'Wage %', 'COGS', 'COGS %', 'Opening stock', 'Purchases', 'Closing stock', 'Prime cost', 'Prime %'];
     const lines = rows.map((p) => [
       `"${p.label}"`, p.salesCents / 100, p.wageCents / 100, p.wagePct ?? '', p.cogsCents / 100, p.cogsPct ?? '',
-      p.openingStockCents == null ? '' : p.openingStockCents / 100, p.purchasesCents / 100, p.closingStockCents == null ? '' : p.closingStockCents / 100, p.primeCostCents / 100, p.primePct ?? ''
+      p.openingStockCents == null ? '' : p.openingStockCents / 100, p.purchasesCents / 100, p.closingStockCents == null ? '' : p.closingStockCents / 100, p.primeCostCents == null ? '' : p.primeCostCents / 100, p.primePct ?? ''
     ].join(','));
     const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -1355,7 +1361,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   );
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   // Per-venue prime-cost target % set by admins in Admin → Wage forecasts.
-  const [primeTargets, setPrimeTargets] = useState<Record<string, number>>({});
+  const [settingsVenues, setSettingsVenues] = useState<VenueTargetInput[]>([]);
   // 4-week historical prime cost trend (most recent on the right, current week as the 5th).
   // Four prior weeks, each built with the SAME rule as the current period
   // (buildOverviewCosts) so the trend bars and the headline agree on what
@@ -1584,7 +1590,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       try {
         const settings = await staffApi<{ venues?: Array<{ name: string; weeklyForecastSalesCents?: number; targetWagePercent?: number; targetPrimeCostPercent?: number }> }>('/api/settings');
         const next: Record<string, ForecastInput> = {};
-        const primes: Record<string, number> = {};
+        setSettingsVenues((settings.venues ?? []).map((v) => ({ name: v.name, targetWagePercent: v.targetWagePercent ?? null, targetPrimeCostPercent: v.targetPrimeCostPercent ?? null })));
         for (const venue of settings.venues ?? []) {
           if (typeof venue.weeklyForecastSalesCents === 'number' || typeof venue.targetWagePercent === 'number') {
             next[venue.name] = {
@@ -1592,15 +1598,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               targetWagePercent: typeof venue.targetWagePercent === 'number' ? String(venue.targetWagePercent) : '32'
             };
           }
-          if (typeof venue.targetPrimeCostPercent === 'number') {
-            primes[venue.name] = venue.targetPrimeCostPercent;
-          }
         }
         if (Object.keys(next).length > 0) {
           setForecastInputs((current) => ({ ...current, ...next }));
-        }
-        if (Object.keys(primes).length > 0) {
-          setPrimeTargets(primes);
         }
       } catch {
         /* fallback to localStorage values already loaded */
@@ -2045,9 +2045,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // venue table, donut and the Stock section's food-cost feature all read
   // this one object (see lib/overview-costs.ts), so no two surfaces can
   // describe different figures as "prime cost".
+  // The overview is group-wide, so the group targets: the mean of the venue
+  // settings, or the defaults when none are set (one rule with the Recap).
+  const costTargets = resolveCostTargets(settingsVenues, null);
   const primeCostTarget = (() => {
-    const vals = Object.values(primeTargets);
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : COST_TARGETS.prime;
+    return costTargets.primePct;
   })();
   // Import evidence: the API's salesDays is the most days any venue has a
   // sales figure for; the period should have one for every day that has
@@ -2454,7 +2456,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     // Hero sentence and tone from the SAME figure the prime panel displays
     // (it used to read wages + ~$0 actual COGS while the panel showed wages +
     // theoretical food cost).
-    const narrative = overviewNarrative({ costs: overviewCosts, primeTarget: primeCostTarget, loading, periodLabel: periodWindowLabel });
+    const narrative = overviewNarrative({ costs: overviewCosts, primeTarget: primeCostTarget, labourTarget: costTargets.wagePct, loading, periodLabel: periodWindowLabel });
     const heroTone = narrative.tone;
     // Build 5-week trend (4 historical + current period as the last point)
     const trendPoints = [...primeCostHistory, { weekStart: isoDate(weekStart), costs: overviewCosts, salesCents: overviewCosts.salesCents }];
@@ -2605,13 +2607,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               {
                 label: 'Labour · Wages',
                 pct: overviewCosts.wagePercent,
-                target: COST_TARGETS.labour,
+                target: costTargets.wagePct,
                 hint: 'Wages (timesheets + salaried) divided by sales, against the target guide.'
               },
               {
                 label: 'Food & bev · COGS',
                 pct: overviewCosts.cogsPercent,
-                target: COST_TARGETS.food,
+                target: costTargets.foodPct,
                 hint:
                   overviewCosts.basis === 'theoretical'
                     ? 'Estimated from recipes times units sold.'
@@ -3392,9 +3394,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             const payroll = wageTotals.approvedCostCents + tipsPoolCents;
             const tone = incomplete || labourPct == null
               ? 'neutral'
-              : labourPct <= COST_TARGETS.labour
+              : labourPct <= costTargets.wagePct
                 ? 'positive'
-                : labourPct <= COST_TARGETS.labour + 5
+                : labourPct <= costTargets.wagePct + 5
                   ? 'warning'
                   : 'danger';
             return (
@@ -3408,7 +3410,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     {incomplete
                       ? <>Sales are recorded for {overviewCosts.salesImport.salesDays} of {overviewCosts.salesImport.expectedSalesDays} days so far, so the labour % overstates cost until the import catches up. Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>
                       : labourPct != null
-                        ? <>Aim for ≤ {COST_TARGETS.labour}%. Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>
+                        ? <>Aim for ≤ {costTargets.wagePct}%. Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>
                         : <>Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>}
                   </span>
                 </div>
@@ -3656,7 +3658,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {/* Food-cost feature — the section's one headline ratio, with prime,
               purchases, and wastage alongside instead of a second metric grid. */}
           {(() => {
-            const tone = stockDisplayCogsCents <= 0 ? 'neutral' : costTone(stockDisplayCogsPct, COST_TARGETS.food);
+            const tone = stockDisplayCogsCents <= 0 ? 'neutral' : costTone(stockDisplayCogsPct, costTargets.foodPct);
             return (
               <section className={`ov-prime is-${tone} rs-prime-cols-money`} aria-label="Food and beverage cost for the week">
                 <div className="ov-prime-main">
@@ -3666,7 +3668,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   </div>
                   <span className="ov-prime-note">
                     {stockDisplayCogsCents > 0
-                      ? <>Aim for ≤ {COST_TARGETS.food}%. Food &amp; bev cost of <strong>{formatCurrency(stockDisplayCogsCents)}</strong>{stockUsingTheoretical ? ' (estimated from recipes × units sold)' : ' (actual: opening + purchases − closing)'}.</>
+                      ? <>Aim for ≤ {costTargets.foodPct}%. Food &amp; bev cost of <strong>{formatCurrency(stockDisplayCogsCents)}</strong>{stockUsingTheoretical ? ' (estimated from recipes × units sold)' : ' (actual: opening + purchases − closing)'}.</>
                       : <>No food cost to show yet — take a stocktake, or map your Square items to recipes in Stock, to see it here.</>}
                   </span>
                 </div>
@@ -3731,10 +3733,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     { key: 'sales', label: 'Sales', align: 'right', sortValue: (r) => r.salesCents, render: (r) => formatCurrency(r.salesCents) },
                     { key: 'wages', label: 'Labour', align: 'right', sortValue: (r) => r.wageCents, render: (r) => formatCurrency(r.wageCents) },
                     { key: 'wagePct', label: 'Labour %', align: 'right', sortValue: (r) => r.wagePercent, render: (r) => formatPercent(r.wagePercent) },
-                    { key: 'cogs', label: 'Food & bev', align: 'right', sortValue: (r) => r.cogsCents, render: (r) => formatCurrency(r.cogsCents) },
+                    { key: 'cogs', label: 'Food & bev', align: 'right', sortValue: (r) => r.cogsCents, render: (r) => r.foodBasis === 'actual' ? formatCurrency(r.cogsCents) : `${formatCurrency(r.purchasesCents)} purchases` },
                     { key: 'cogsPct', label: 'Food %', align: 'right', sortValue: (r) => r.cogsPercent, render: (r) => formatPercent(r.cogsPercent) },
-                    { key: 'prime', label: 'Total cost', align: 'right', sortValue: (r) => r.primeCostCents, render: (r) => formatCurrency(r.primeCostCents) },
-                    { key: 'primePct', label: 'Total %', align: 'right', sortValue: (r) => r.primeCostPercent, render: (r) => formatPercent(r.primeCostPercent) },
+                    { key: 'prime', label: 'Prime cost', align: 'right', sortValue: (r) => r.primeCostCents ?? -1, render: (r) => r.primeCostCents == null ? '—' : formatCurrency(r.primeCostCents) },
+                    { key: 'primePct', label: 'Prime %', align: 'right', sortValue: (r) => r.primeCostPercent, render: (r) => formatPercent(r.primeCostPercent) },
                     { key: 'quality', label: 'Quality', sortValue: (r) => r.sourceQuality, render: (r) => qualityLabel(r.sourceQuality) }
                   ]}
                 />

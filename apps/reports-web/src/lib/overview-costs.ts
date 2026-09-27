@@ -22,11 +22,14 @@
 //    needs evidence about the import (missing days), not a threshold on the
 //    ratio itself.
 
+import { DEFAULT_COST_TARGETS } from '@alma/shared';
+
 export type CostTone = 'positive' | 'warning' | 'danger' | 'neutral';
 
 // Plain-restaurant cost targets (% of sales). Prime can be overridden
 // per-venue by admins; labour and food are fixed guides.
-export const COST_TARGETS = { food: 30, labour: 30, prime: 60 } as const;
+// Targets come from `resolveCostTargets` (@alma/shared) on the venue
+// settings; this module never carries its own numbers.
 
 /** Percent of `denominator`, rounded to one decimal — the API's `pct` rule. */
 export function pct(numerator: number, denominator: number): number | null {
@@ -265,10 +268,12 @@ export type OverviewNarrative = {
 export function overviewNarrative(input: {
   costs: OverviewCosts | null;
   primeTarget: number;
+  labourTarget?: number;
   loading: boolean;
   periodLabel: string;
 }): OverviewNarrative {
   const { costs, primeTarget, loading, periodLabel } = input;
+  const labourTarget = input.labourTarget ?? DEFAULT_COST_TARGETS.wagePct;
   const guide = `${primeTarget.toFixed(0)}%`;
   if (loading) return { headline: 'Pulling the numbers together.', sub: 'Loading the period in numbers.', tone: 'neutral' };
   if (!costs || !costs.hasSales) {
@@ -287,7 +292,7 @@ export function overviewNarrative(input: {
     return {
       headline: 'Labour only so far.',
       sub: `Labour is ${labour} of sales for ${periodLabel}. Food cost is not available for this window (${costs.basisLabel}), so prime cost cannot be read against the ${guide} guide yet.${importCaveat}`,
-      tone: costs.salesImport.incomplete ? 'neutral' : costTone(costs.wagePercent, COST_TARGETS.labour) === 'danger' ? 'warning' : 'neutral'
+      tone: costs.salesImport.incomplete ? 'neutral' : costTone(costs.wagePercent, labourTarget) === 'danger' ? 'warning' : 'neutral'
     };
   }
   const prime = costs.primeCostPercent;

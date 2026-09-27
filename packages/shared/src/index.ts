@@ -1,3 +1,4 @@
+import type { CostTargets } from './cost-targets.js';
 export * from './price-window.js';
 export * from './roster-calendar.js';
 export * from './donations.js';
@@ -18,6 +19,8 @@ export * from './low-stock.js';
 export * from './venue-names.js';
 export * from './cogs-quality.js';
 export * from './stocktake-freshness.js';
+export * from './cost-targets.js';
+export * from './prime-cost.js';
 export * from './onboarding-completion.js';
 export * from './invoice-paste.js';
 export * from './count-scale.js';
@@ -3829,7 +3832,13 @@ export type ReportsPrimeCostVenueRow = {
   cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'stale_opening' | 'stale_closing' | 'estimated' | 'closing_implausible';
   /** Why the actual figure is not a complete opening + purchases − closing (empty when complete). */
   cogsReasons: string[];
-  primeCostCents: number;
+  /** 'actual' = stocktake-bounded and invoice-covered; otherwise cogsCents is bills only and prime is withheld. */
+  foodBasis: 'actual' | 'unavailable';
+  /** Where wageCents came from; a roster estimate is never presented as actuals. */
+  labourBasis: 'timesheets' | 'roster_estimate' | 'missing';
+  /** Labour + actual food COGS; null when the food basis is unavailable or labour is missing. */
+  primeCostCents: number | null;
+  primeReasons: string[];
   wagePercent: number | null;
   /**
    * Null when supplier invoices do not cover the period.
@@ -3872,12 +3881,21 @@ export type MonthlyRecapPeriod = {
   openingStockCents: number | null;
   closingStockCents: number | null;
   purchasesCents: number;
+  /** The canonical COGS dollars: opening + purchases − closing when bounded, else purchases (see foodBasis). */
   cogsCents: number;
-  primeCostCents: number;
+  /** 'actual' only when stocktake-bounded and invoice-covered. */
+  foodBasis: 'actual' | 'unavailable';
+  /** Labour + actual food COGS; null when the food basis is unavailable. Never labour + purchases. */
+  primeCostCents: number | null;
   wagePct: number | null;
+  /** Null unless foodBasis is 'actual'. */
   cogsPct: number | null;
   primePct: number | null;
   stockQuality: MonthlyRecapStockQuality;
+  /** 0–1 fraction of the period supplier invoices cover. */
+  purchaseCoverage: number;
+  /** Why prime cost is unavailable, in operator words. */
+  reasons: string[];
 };
 
 export type MonthlyRecapRecommendation = {
@@ -3893,7 +3911,8 @@ export type MonthlyRecapPayload = {
   monthLabel: string;
   ytdBasis: 'FY';
   ytdLabel: string;
-  targets: { wagePct: number; cogsPct: number; primePct: number };
+  /** Resolved from venue settings (resolveCostTargets); `source` says whether they are configured or defaults. */
+  targets: CostTargets;
   monthCurrent: MonthlyRecapPeriod;
   monthPriorYear: MonthlyRecapPeriod;
   ytdCurrent: MonthlyRecapPeriod;
