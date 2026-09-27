@@ -7551,7 +7551,20 @@ export type StocktakesSummary = {
   submitted: number;
   applied?: number;
   lastCountedAt: string | null;
-  totalValueCents: number;
+  /**
+   * The latest valid finalised count (per venue, summed for the group) under
+   * the canonical stock-value rule: a count older than `toleranceDays` is
+   * 'stale' and carries no value; a group with a venue short is 'missing'
+   * and names the venue. Never a sum over historical stocktakes.
+   */
+  latestCount: {
+    status: 'ok' | 'missing' | 'stale';
+    valueCents: number | null;
+    countedOn: string | null;
+    ageDays: number | null;
+    toleranceDays: number;
+    venuesWithoutCount: string[];
+  };
 };
 
 export type StocktakeReviewItem = Stocktake & {

@@ -3716,7 +3716,22 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <EditorialPanel eyebrow="Stock on hand" title="Stock health">
               <Metric label="Current stock value" value={formatCurrency(stockValueCents)} tone="info" />
               <Metric label={stockLowStockLabel} value={data.stockSummary?.lowStockItems ?? 0} tone={(data.stockSummary?.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'} />
-              <Metric label="Latest stocktake value" value={formatCurrency(data.stocktakes?.totalValueCents ?? 0)} tone="neutral" />
+              <Metric
+                label="Latest stocktake value"
+                value={data.stocktakes?.latestCount.valueCents != null ? formatCurrency(data.stocktakes.latestCount.valueCents) : 'Unavailable'}
+                tone="neutral"
+                hint={
+                  !data.stocktakes
+                    ? undefined
+                    : data.stocktakes.latestCount.status === 'ok'
+                      ? `Counted ${data.stocktakes.latestCount.countedOn}`
+                      : data.stocktakes.latestCount.status === 'stale'
+                        ? `Latest count ${data.stocktakes.latestCount.countedOn} is ${data.stocktakes.latestCount.ageDays} days old (limit ${data.stocktakes.latestCount.toleranceDays})`
+                        : data.stocktakes.latestCount.venuesWithoutCount.length
+                          ? `No valid count for ${data.stocktakes.latestCount.venuesWithoutCount.join(', ')}`
+                          : 'No finalised count'
+                }
+              />
             </EditorialPanel>
           </div>
 

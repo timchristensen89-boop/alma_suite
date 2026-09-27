@@ -806,6 +806,22 @@ export function StocktakePage() {
         <StatCard label="Last counted" value={loading ? '—' : summary?.lastCountedAt ? formatDate(summary.lastCountedAt) : 'Never'} hint="Most recent count" />
         <StatCard label="In progress" value={loading ? '—' : String(summary?.inProgress ?? 0)} hint="Counts not yet submitted" tone={summary && summary.inProgress > 0 ? 'warning' : 'neutral'} />
         <StatCard label="Ready for review" value={loading ? '—' : String(summary?.submitted ?? 0)} hint="Submitted counts" tone={summary && summary.submitted > 0 ? 'warning' : 'neutral'} />
+        <StatCard
+          label="Stock on hand"
+          value={loading ? '—' : summary?.latestCount.valueCents != null ? formatCurrency(summary.latestCount.valueCents) : 'Unavailable'}
+          hint={
+            !summary
+              ? 'Latest valid count'
+              : summary.latestCount.status === 'ok'
+                ? `Latest finalised count, ${summary.latestCount.countedOn}`
+                : summary.latestCount.status === 'stale'
+                  ? `Latest count ${summary.latestCount.countedOn} is ${summary.latestCount.ageDays} days old (limit ${summary.latestCount.toleranceDays})`
+                  : summary.latestCount.venuesWithoutCount.length
+                    ? `No valid count for ${summary.latestCount.venuesWithoutCount.join(', ')}`
+                    : 'No finalised count yet'
+          }
+          tone={summary && summary.latestCount.status !== 'ok' ? 'warning' : 'neutral'}
+        />
       </div>
 
       <LoadedStocktakeImportCard onImported={() => void load()} />

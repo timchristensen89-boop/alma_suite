@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { prisma } from '@alma/db';
+import { prisma, prismaCogsReader, stockBracket } from '@alma/db';
 import {
   stocktakeCorrectionInputSchema,
   stocktakeBulkDeleteInputSchema,
@@ -773,7 +773,12 @@ export const stocktakesService = {
 
   async summary(actor?: AuthUser | null): Promise<StocktakesSummary> {
     const scope = stocktakeScope(actor);
-    const [total, inProgress, submitted, applied, latest, valueAgg] = await Promise.all([
+    // The value shown is the LATEST valid finalised count (per venue, summed
+    // for the group) through the canonical stock-value rule in @alma/db —
+    // never a sum over every stocktake line ever recorded, which is what the
+    // old aggregate returned and grew with every count taken.
+    const valueVenue = !actor || isVenueUnscopedActor(actor) ? null : actor.venue ?? null;
+    const [total, inProgress, submitted, applied, latest, bracket] = await Promise.all([
       prisma.stocktake.count({ where: scope }),
       prisma.stocktake.count({ where: { AND: [scope, { status: 'IN_PROGRESS' }] } }),
       prisma.stocktake.count({ where: { AND: [scope, { status: 'SUBMITTED' }] } }),
@@ -783,10 +788,7 @@ export const stocktakesService = {
         orderBy: { countedAt: 'desc' },
         select: { countedAt: true }
       }),
-      prisma.stocktakeLine.aggregate({
-        where: { stocktake: scope },
-        _sum: { stockValueCents: true }
-      })
+      stockBracket(prismaCogsReader, valueVenue, new Date())
     ]);
 
     return {
@@ -795,7 +797,14 @@ export const stocktakesService = {
       submitted,
       applied,
       lastCountedAt: latest?.countedAt.toISOString() ?? null,
-      totalValueCents: valueAgg._sum.stockValueCents ?? 0
+      latestCount: {
+        status: bracket.status,
+        valueCents: bracket.valueCents,
+        countedOn: bracket.countedOn,
+        ageDays: bracket.ageDays,
+        toleranceDays: bracket.toleranceDays,
+        venuesWithoutCount: bracket.venuesWithoutCount.map((v) => v.venue)
+      }
     };
   },
 

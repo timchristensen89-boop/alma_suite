@@ -177,6 +177,26 @@ describe('sessions on the same venue day are one count', () => {
   });
 });
 
+describe('stock on hand is the latest valid count, not the sum of every count ever taken', () => {
+  it('three historical counts contribute nothing to the current value', async () => {
+    const reader = fakeReader([
+      { id: 'jan', venue: 'Alma Avalon', countedAt: utc('2026-01-31T03:00:00Z'), status: 'LOCKED', valueCents: 4_000_000 },
+      { id: 'mar', venue: 'Alma Avalon', countedAt: utc('2026-03-31T03:00:00Z'), status: 'LOCKED', valueCents: 4_500_000 },
+      { id: 'may', venue: 'Alma Avalon', countedAt: utc('2026-05-31T03:00:00Z'), status: 'LOCKED', valueCents: 4_200_000 },
+      { id: 'jun', venue: 'Alma Avalon', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 }
+    ]);
+    // The old summary aggregate would have said $135,000.
+    assert.equal(await stockValueAtCentsWith(reader, 'Alma Avalon', utc('2026-07-05T00:00:00Z')), 800_000);
+    const bracket = await stockBracket(reader, 'Alma Avalon', utc('2026-07-05T00:00:00Z'));
+    assert.equal(bracket.countedOn, '2026-06-30');
+  });
+
+  it('and once that count is older than the tolerance, the value is unavailable — not the stale figure', async () => {
+    const reader = fakeReader([{ id: 'jun', venue: 'Alma Avalon', countedAt: utc('2026-06-30T03:00:00Z'), status: 'LOCKED', valueCents: 800_000 }]);
+    assert.equal(await stockValueAtCentsWith(reader, 'Alma Avalon', utc('2026-08-01T00:00:00Z')), null);
+  });
+});
+
 describe('the all-venues figure is Σ venues, never the sum of whichever venues happened to count', () => {
   const avalonJune = [
     { id: 'ao', venue: 'Alma Avalon', countedAt: utc('2026-05-30T03:00:00Z'), status: 'LOCKED', valueCents: 1_000_000 },
