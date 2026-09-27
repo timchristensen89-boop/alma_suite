@@ -57,6 +57,8 @@ import {
 } from '../lib/forecast-math.js';
 import { NSW_HOLIDAYS_COVERED_UNTIL, nswHolidayName } from '../lib/nsw-holidays.js';
 import { blendedTheoreticalCogsPct, isSuspectRecipeCost } from '../lib/cogs-quality.js';
+import { classifyLabourPopulation } from '../lib/forecast/labour-population.js';
+import { GST_RATE } from '../lib/forecast/gst.js';
 import {
   costForRate,
   salariedVenueAllocations,
@@ -149,7 +151,7 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
 
   const superRate = await configuredSuperRateFraction();
 
-  const [salesRows, actualCoverRows, liveCoverRows, noShowRows, shiftRows, salariedStaff] = await Promise.all([
+  const [salesRows, actualCoverRows, liveCoverRows, noShowRows, shiftRows, activeStaff] = await Promise.all([
     prisma.salesActualEntry.groupBy({
       by: ['venue', 'serviceDate'],
       where: { venue: { in: venueNames }, serviceDate: { gte: historyStart, lte: today } },
@@ -200,16 +202,26 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
         staffProfile: { select: { venue: true, ...staffPayRateSelect } }
       }
     }),
+    // Every active worker, classified below by their RESOLVED rate — not by
+    // whether a pay-profile row exists, which put casuals with a profile in
+    // neither population (skipped as salaried, with no fixed cost).
     prisma.staffProfile.findMany({
       where: {
         accountType: 'HUMAN',
         mergedIntoStaffProfileId: null,
-        employmentStatus: 'ACTIVE',
-        payProfile: { isNot: null }
+        employmentStatus: 'ACTIVE'
       },
-      select: { id: true, venue: true, ...staffPayRateSelect }
+      select: { id: true, venue: true, firstName: true, lastName: true, ...staffPayRateSelect }
     })
   ]);
+  const labourPopulation = classifyLabourPopulation(activeStaff, superRate);
+  const salariedStaff = activeStaff.filter((profile) => labourPopulation.salariedIds.has(profile.id));
+  if (labourPopulation.summary.missingRate > 0) {
+    const names = activeStaff.filter((p) => labourPopulation.missingRateIds.has(p.id)).map((p) => `${p.firstName} ${p.lastName}`.trim()).slice(0, 5);
+    warnings.push(
+      `${labourPopulation.summary.missingRate} active staff have no pay rate (${names.join(', ')}${labourPopulation.summary.missingRate > names.length ? ', …' : ''}); their rostered shifts carry no cost in this forecast. Set a rate under Staff › Pay.`
+    );
+  }
 
   // venue → dateKey → cents / covers
   const salesByVenue = new Map<string, Map<string, number>>();
@@ -241,7 +253,7 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
   const venueWeeksWithRoster = new Set<string>(); // `${venue}|${weekKey}`
   const salariedRosterHours = new Map<string, Map<string, Map<string, number>>>(); // weekKey → staffId → venue → hours
   const overtimeTracker = new Map<string, number>();
-  const salariedIds = new Set(salariedStaff.map((s) => s.id));
+  const salariedIds = labourPopulation.salariedIds;
 
   const sortedShifts = [...shiftRows].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
   for (const shift of sortedShifts) {
@@ -258,7 +270,7 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     venueWeeksWithRoster.add(`${venue}|${weekKey}`);
     const hours = rosterHoursForShift(shift);
     const rate = staffCostingRate(shift.staffProfile, superRate);
-    if (rate.appliesOvertime || salariedIds.has(shift.staffProfileId)) {
+    if (salariedIds.has(shift.staffProfileId)) {
       // Salaried: fixed weekly cost handled below; track hours for allocation.
       const byStaff = salariedRosterHours.get(weekKey) ?? new Map<string, Map<string, number>>();
       const byVenue = byStaff.get(shift.staffProfileId) ?? new Map<string, number>();
@@ -635,6 +647,18 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     horizonWeeks: options.weeks,
     venues,
     totals: { weeks: totalsWeeks },
+    // Every included worker's classification, so the labour figure is
+    // explainable: Σ hourly shifts + Σ salaried weekly share, nobody twice,
+    // nobody dropped without being named.
+    labourPopulation: {
+      ...labourPopulation.summary,
+      staff: labourPopulation.rows.map((row) => ({
+        staffProfileId: row.staffProfileId,
+        name: (() => { const p = activeStaff.find((s) => s.id === row.staffProfileId); return p ? `${p.firstName} ${p.lastName}`.trim() : row.staffProfileId; })(),
+        classification: row.classification,
+        rateSource: row.rateSource
+      }))
+    },
     warnings
   };
 
@@ -956,19 +980,27 @@ async function buildCashflow(weeks: number): Promise<ForecastCashflowPayload> {
     }
   }
 
-  // 6) GST: 1/11th of takings less 1/11th of purchases, remitted at the next
-  //    BAS due date. Only GST accrued inside the window is projected.
+  // 6) GST: takings and the forecast purchases are both EX-GST figures
+  //    (SalesActualEntry.salesCents is net of GST from Square and Lightspeed;
+  //    the COGS % that projects purchases is on ex-GST bills), so the GST on
+  //    them is 10% on top — not 1/11th, which is the GST inside a
+  //    GST-INCLUSIVE amount and understated the liability by 9%. Remitted at
+  //    the next BAS due date; only GST accrued inside the window is
+  //    projected. A net refund position (credits exceed collected) is no
+  //    outflow and is noted, not floored into silence.
   {
     const due = nextOccurrence(BAS_DUE_BY_QUARTER_END_MONTH[quarterEndMonth(today)]!, today);
     if (due < horizonEnd) {
-      const qtdCollectedCents = Math.round((qtdSalesAgg._sum.salesCents ?? 0) / 11);
+      const gstOn = (exGstCents: number) => Math.round(exGstCents * GST_RATE);
+      const qtdCollectedCents = gstOn(qtdSalesAgg._sum.salesCents ?? 0);
       const qtdCreditsCents = qtdBillTaxAgg._sum.taxCents ?? 0;
-      const gstCents = Math.max(
-        0,
-        qtdCollectedCents - qtdCreditsCents + Math.round(accruedSalesCents / 11 - accruedPurchasesCents / 11)
-      );
-      add(outflows, weekIndexOf(due), 'gst_remittance', gstCents);
-      notes.push('GST is 1/11th of takings less purchase credits, accrued from the quarter start (actuals) through the projection (forecast).');
+      const gstCents = qtdCollectedCents - qtdCreditsCents + gstOn(accruedSalesCents) - gstOn(accruedPurchasesCents);
+      if (gstCents > 0) {
+        add(outflows, weekIndexOf(due), 'gst_remittance', gstCents);
+        notes.push('GST is 10% on ex-GST takings less GST credits on purchases, accrued from the quarter start (actual bills) through the projection (forecast).');
+      } else {
+        notes.push(`GST credits exceed GST collected for the quarter to date by $${Math.round(-gstCents / 100).toLocaleString()}, so no BAS payment is projected; the refund is not counted as an inflow.`);
+      }
     }
   }
 

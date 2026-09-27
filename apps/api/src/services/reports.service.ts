@@ -64,6 +64,7 @@ import { mailService } from './mail.service.js';
 import { integrationService } from './integration.service.js';
 import { deputyService } from './deputy.service.js';
 import { configuredSuperRateFraction, settingsService } from './settings.service.js';
+import { classifyLabourPopulation } from '../lib/forecast/labour-population.js';
 import { buildSalesErrorCsv, parseSalesCsv, salesTemplateCsv, type GstBasis } from '../lib/sales-import.js';
 
 const reportsOverviewQuerySchema = z.object({
@@ -878,7 +879,7 @@ function escapeHtml(value: string): string {
 // a period" figure (timesheet hours + salaried weekly fixed cost, super baked in).
 export async function recapWageCents(venue: string | null, start: Date, end: Date, now: Date = new Date()): Promise<number> {
   const superRate = await configuredSuperRateFraction();
-  const [timesheets, salariedStaff] = await Promise.all([
+  const [timesheets, activeStaff] = await Promise.all([
     prisma.timesheet.findMany({
       where: {
         workDate: { gte: start, lt: end },
@@ -888,19 +889,20 @@ export async function recapWageCents(venue: string | null, start: Date, end: Dat
       },
       include: { staffProfile: { select: staffPayRateSelect } }
     }),
-    // All active salaried staff regardless of home venue — their full weekly
-    // salary is split across venues by rostered hours below (salaried staff
-    // rarely clock in, so roster is the reliable venue signal).
+    // Every active worker; the salaried ones (by RESOLVED rate, not by the
+    // presence of a pay-profile row) get their weekly salary split across
+    // venues by rostered hours below (salaried staff rarely clock in, so
+    // roster is the reliable venue signal).
     prisma.staffProfile.findMany({
       where: {
         accountType: 'HUMAN',
         mergedIntoStaffProfileId: null,
-        employmentStatus: 'ACTIVE',
-        payProfile: { isNot: null }
+        employmentStatus: 'ACTIVE'
       },
       select: { id: true, venue: true, ...staffPayRateSelect }
     })
   ]);
+  const salariedStaff = activeStaff.filter((profile) => classifyLabourPopulation([profile], superRate).salariedIds.has(profile.id));
   const weekHours = new Map<string, number>();
   let cents = 0;
   for (const entry of timesheets) {
@@ -1198,8 +1200,7 @@ export const reportsService = {
         where: {
           accountType: 'HUMAN',
           mergedIntoStaffProfileId: null,
-          employmentStatus: 'ACTIVE',
-          payProfile: { isNot: null }
+          employmentStatus: 'ACTIVE'
         },
         select: { id: true, venue: true, ...staffPayRateSelect }
       })

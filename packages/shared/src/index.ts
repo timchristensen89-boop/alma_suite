@@ -8214,6 +8214,17 @@ export type ForecastOutlookPayload = {
   totals: {
     weeks: ForecastWeek[];
   };
+  /**
+   * Who the labour figure is made of: Σ hourly shift cost + Σ salaried
+   * weekly share. Every active worker is in exactly one class; a worker
+   * with no resolvable rate is listed, not silently costed at zero.
+   */
+  labourPopulation: {
+    salaried: number;
+    hourly: number;
+    missingRate: number;
+    staff: Array<{ staffProfileId: string; name: string; classification: 'salaried' | 'hourly' | 'missing_rate'; rateSource: string }>;
+  };
   // Data-quality alerts (stale Square feed, skipped venues, holiday-table
   // coverage) — surfaced as a banner so estimates are never mistaken for
   // clean data.
