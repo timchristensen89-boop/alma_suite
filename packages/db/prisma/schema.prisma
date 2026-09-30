@@ -429,6 +429,26 @@ enum GiftCardPromoDiscountType {
   FIXED_AMOUNT
 }
 
+enum GstTreatment {
+  STANDARD_TAXABLE
+  GST_FREE
+  INPUT_TAXED
+  FACE_VALUE_VOUCHER
+  MIXED
+}
+
+enum FinancialDocumentType {
+  RECEIPT
+  TAX_INVOICE
+  CREDIT_NOTE
+  ADJUSTMENT_NOTE
+}
+
+enum FinancialDocumentStatus {
+  ISSUED
+  VOID
+}
+
 enum SuiteChatChannelType {
   GENERAL
   VENUE
@@ -2255,6 +2275,7 @@ model GiftCard {
   redemptions             GiftCardRedemption[]
   customArtwork           GiftCardArtwork?
   donation                GiftCardDonation?
+  financialDocuments      FinancialDocument[]
 
   @@index([status])
   @@index([purchaserEmail])
@@ -2362,6 +2383,183 @@ model GiftCardRedemption {
   @@index([giftCardId])
   @@index([redeemedAt])
   @@index([venue])
+}
+
+// A company that can issue receipts, tax invoices and credit notes.
+//
+// Alma is not one legal entity: Alma Avalon and St Alma are separate
+// companies with separate ABNs. A tax invoice has to name the actual supplier
+// and its ABN, so every financial document points at one of these rows — and
+// copies its details onto itself at issue, so a later edit here never rewrites
+// a document that has already gone out.
+//
+// @domain: finance | home: suite
+model LegalEntity {
+  id             String              @id @default(cuid())
+  // Short handle, e.g. "TCC" or "AF". Unique so settings can refer to it.
+  code           String              @unique
+  legalName      String
+  tradingName    String?
+  // Eleven digits, checksum-validated on the way in (isValidAbn).
+  abn            String
+  // An unregistered entity cannot issue a tax invoice, whatever it sells.
+  gstRegistered  Boolean             @default(true)
+  address        String?
+  email          String?
+  phone          String?
+  website        String?
+  // Document numbers read <prefix>-INV-000184 / <prefix>-CN-000012. Entities
+  // sharing a prefix share a sequence.
+  documentPrefix String              @default("ALMA")
+  active         Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  documents      FinancialDocument[]
+
+  @@index([active])
+}
+
+// A receipt, tax invoice, credit note or adjustment note Alma issued.
+//
+// Immutable once issued: everything printed on the PDF is stored here (the
+// issuer's details are a snapshot, the lines are rows below), so the PDF is
+// re-rendered from this row on demand and always says the same thing. The
+// only changes after issue are email bookkeeping and voiding.
+//
+// Stripe is the truth about the payment, recorded in the stripe* columns; the
+// GST treatment is Alma's, per line.
+//
+// @domain: finance | home: suite
+model FinancialDocument {
+  id                      String                  @id @default(cuid())
+  // ALMA-INV-000184. Series + sequence is the gap-free counter's key; the
+  // number is the printed form of the two.
+  number                  String                  @unique
+  series                  String
+  sequence                Int
+  type                    FinancialDocumentType
+  status                  FinancialDocumentStatus @default(ISSUED)
+  // One-word summary of the lines: a single shared treatment, or MIXED.
+  gstTreatment            GstTreatment
+  // What was sold. sourceType is 'GIFT_CARD' today; the engine is generic.
+  sourceType              String
+  sourceId                String
+  // The human handle for the source (the gift card code).
+  sourceReference         String?
+  // The latch that makes issuing exactly-once: "GIFT_CARD:<id>" on the live
+  // sale document for a card. Webhook, success page and sweep can all race to
+  // issue; the second insert hits this unique key and rolls back, taking its
+  // sequence number with it. Null on credit notes, and cleared when a
+  // document is voided so a corrected one can be issued.
+  saleKey                 String?                 @unique
+  giftCardId              String?
+  // Credit and adjustment notes point at the sale document they reduce.
+  creditsDocumentId       String?
+  legalEntityId           String
+  issuerLegalName         String
+  issuerTradingName       String?
+  issuerAbn               String
+  issuerAddress           String?
+  issuerEmail             String?
+  issuerPhone             String?
+  issuerWebsite           String?
+  issuerGstRegistered     Boolean
+  customerName            String
+  customerOrganisation    String?
+  customerAbn             String?
+  customerEmail           String?
+  // Purchase order / reference the buyer asked to be quoted.
+  customerReference       String?
+  currency                String                  @default("aud")
+  // GST-inclusive. Credit notes store positive amounts; the type says which
+  // way the money went.
+  totalCents              Int
+  // The GST-inclusive part of totalCents that is a taxable supply.
+  taxableCents            Int
+  gstCents                Int
+  // STRIPE | CARD | CASH | EFTPOS | GIFTUP | OTHER
+  paymentProvider         String
+  paymentReference        String?
+  // "Visa ending 4242", from the Stripe charge when there is one.
+  paymentMethodSummary    String?
+  stripePaymentIntentId   String?
+  stripeCheckoutSessionId String?
+  stripeChargeId          String?
+  // Set on credit notes raised from a Stripe refund. Unique so a replayed
+  // webhook can never credit the same refund twice.
+  stripeRefundId          String?                 @unique
+  // When the money moved: the payment for a sale, the refund for a credit.
+  paidAt                  DateTime?
+  // When the thing was supplied (the card sale), as distinct from issuedAt.
+  supplyDate              DateTime?
+  issuedAt                DateTime                @default(now())
+  // Null when issued automatically.
+  issuedById              String?
+  // AUTO_STRIPE | MANUAL | STRIPE_REFUND | CATCH_UP
+  issueSource             String
+  // Why a credit note was raised.
+  reason                  String?
+  // Printed note (e.g. a council's PO wording).
+  note                    String?
+  emailedAt               DateTime?
+  emailedTo               String?
+  emailError              String?
+  emailCount              Int                     @default(0)
+  voidedAt                DateTime?
+  voidedById              String?
+  voidReason              String?
+  testMode                Boolean                 @default(false)
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  legalEntity             LegalEntity             @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
+  giftCard                GiftCard?               @relation(fields: [giftCardId], references: [id], onDelete: SetNull)
+  creditsDocument         FinancialDocument?      @relation("FinancialDocumentCredits", fields: [creditsDocumentId], references: [id], onDelete: Restrict)
+  credits                 FinancialDocument[]     @relation("FinancialDocumentCredits")
+  lines                   FinancialDocumentLine[]
+
+  @@unique([series, sequence])
+  @@index([sourceType, sourceId])
+  @@index([giftCardId])
+  @@index([creditsDocumentId])
+  @@index([legalEntityId])
+  @@index([issuedAt])
+  @@index([type, status])
+  @@index([customerEmail])
+  @@index([stripePaymentIntentId])
+}
+
+// One printed line. Amounts are GST-inclusive; taxableAmountCents says how
+// much of the line is a taxable supply, which is how a face value voucher and
+// a taxable service fee sit on the same document honestly.
+//
+// @domain: finance | home: suite
+model FinancialDocumentLine {
+  id                 String            @id @default(cuid())
+  documentId         String
+  position           Int
+  description        String
+  detail             String?
+  quantity           Int               @default(1)
+  unitAmountCents    Int
+  amountCents        Int
+  gstTreatment       GstTreatment
+  taxableAmountCents Int
+  gstCents           Int
+  document           FinancialDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, position])
+}
+
+// Gap-free document numbering, one row per series ("ALMA-INV", "ALMA-CN").
+// Incremented with a single INSERT ... ON CONFLICT DO UPDATE ... RETURNING
+// inside the transaction that creates the document, so a rolled-back issue
+// gives its number back and two concurrent issues queue on the row lock.
+//
+// @domain: finance | home: suite
+model FinancialDocumentSequence {
+  series     String   @id
+  lastNumber Int      @default(0)
+  updatedAt  DateTime @updatedAt
 }
 
 // @domain: workforce | home: workforce
@@ -2521,6 +2719,10 @@ model AppSettings {
   onboardingSettings       Json      @default("{}")
   staffDefaults            Json      @default("{}")
   giftCardSettings         Json      @default("{}")
+  // Receipts / tax invoices: which company issues gift cards, whether
+  // documents are issued and emailed automatically. Shape and defaults live in
+  // packages/shared/src/financial-documents.ts (normaliseInvoiceSettings).
+    invoiceSettings          Json      @default("{}")
   // ABA (direct-entry) bank-file details for paying staff tips, set in-app via
   // Settings. Read by staff.service buildAbaConfig (with env-var fallback).
   tipsAbaSettings          Json      @default("{}")
