@@ -18,6 +18,7 @@ import {
   financialDocumentTitle,
   formatAbn,
   isCreditDocument,
+  maskedGiftCardReference,
   type FinancialDocumentDetail,
   type PaymentProvider
 } from '@alma/shared';
@@ -153,7 +154,38 @@ function paymentLabel(doc: FinancialDocumentDetail): string {
 
 function sourceLabel(doc: FinancialDocumentDetail): string | null {
   if (!doc.sourceReference) return null;
-  return doc.sourceType === 'GIFT_CARD' ? `Gift card ${doc.sourceReference}` : doc.sourceReference;
+  // The code is the card's bearer secret; the document names it by its last
+  // four. The full code stays on the row (sourceReference) for staff.
+  return doc.sourceType === 'GIFT_CARD' ? `Gift card ${maskedGiftCardReference(doc.sourceReference)}` : doc.sourceReference;
+}
+
+const GIFT_CARD_CODE = /\bALMA-[A-Z0-9]{4,}\b/g;
+
+/**
+ * A line's text with any whole gift card code cut to "ending XXXX". Lines are
+ * stored as issued, and documents issued before the lines named the card by
+ * its last four still carry the full code ("ALMA gift card ALMA-22480BB1");
+ * this keeps it off the printed copy without rewriting the record. Narrow on
+ * purpose: only the ALMA-<code> shape, and only in line text.
+ */
+export function maskGiftCardCodes(text: string): string {
+  return text.replace(GIFT_CARD_CODE, (code) => maskedGiftCardReference(code));
+}
+
+/**
+ * Why the fee line carries GST. When a promo brings the voucher's price under
+ * its face value, only the part of the fee that takes the total paid above
+ * face value is taxable (s100-5(2)), so the note names that amount instead of
+ * calling the whole fee taxable. Sale documents for gift cards only.
+ */
+export function feeNote(doc: FinancialDocumentDetail): string | null {
+  if (isCreditDocument(doc.type) || doc.sourceType !== 'GIFT_CARD') return null;
+  const taxable = doc.lines.find((line) => line.taxableAmountCents > 0);
+  if (!taxable) return null;
+  if (taxable.taxableAmountCents < taxable.amountCents) {
+    return `The part of the service fee paid above the card's face value (${centsToDollars(taxable.taxableAmountCents)}) is a taxable supply (s100-5(2) GST Act).`;
+  }
+  return FEE_NOTE;
 }
 
 async function embedLogo(pdf: PDFDocument, png: Uint8Array | null | undefined): Promise<PDFImage | null> {
@@ -396,12 +428,15 @@ export async function renderFinancialDocumentPdf(
   for (const line of doc.lines) {
     const taxable = line.taxableAmountCents !== 0;
     const partlyTaxable = taxable && line.taxableAmountCents !== line.amountCents;
-    const detail = [line.detail, line.quantity > 1 ? `${line.quantity} × ${centsToDollars(line.unitAmountCents)}` : null]
+    const detail = [
+      line.detail && maskGiftCardCodes(line.detail),
+      line.quantity > 1 ? `${line.quantity} × ${centsToDollars(line.unitAmountCents)}` : null
+    ]
       .filter(Boolean)
       .join(' · ');
     const descriptionLines = layout(
       [
-        { text: `${line.description}${taxable ? ' *' : ''}`, size: 9.5, bold: true },
+        { text: `${maskGiftCardCodes(line.description)}${taxable ? ' *' : ''}`, size: 9.5, bold: true },
         { text: detail, size: 8, color: MUTED, gap: 1 }
       ],
       descriptionWidth
@@ -461,7 +496,7 @@ export async function renderFinancialDocumentPdf(
   /* Notes: why the GST reads the way it does, and anything the buyer asked for. */
   const notes = [
     doc.lines.some((line) => line.gstTreatment === 'FACE_VALUE_VOUCHER') ? VOUCHER_NOTE : null,
-    !isCredit && doc.sourceType === 'GIFT_CARD' && doc.lines.some((line) => line.taxableAmountCents > 0) ? FEE_NOTE : null,
+    feeNote(doc),
     doc.note
   ].filter((note): note is string => Boolean(note?.trim()));
   if (notes.length > 0) {

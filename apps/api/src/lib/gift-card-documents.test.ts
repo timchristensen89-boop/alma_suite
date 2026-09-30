@@ -10,9 +10,11 @@ import {
   maskGiftCardCode,
   paymentMethodSummary,
   paymentProviderForCard,
+  planStripeRefundCredits,
   promoCodeForDocument,
   stripeCheckoutSessionIdForDocument,
   stripePaymentIntentIdForCard,
+  stripeRefundCreditReason,
   type GiftCardDocumentEligibility,
   type GiftCardPaymentFacts
 } from './gift-card-documents.js';
@@ -240,5 +242,43 @@ describe('an issuer that is not registered for GST', () => {
       untaxed.map((line) => [line.description, line.amountCents]),
       lines.map((line) => [line.description, line.amountCents])
     );
+  });
+});
+
+describe('which Stripe refunds still need a credit note', () => {
+  const refund = (id: string, status: string, amount = 20_00) => ({ id, status, amount, created: 1_790_000_000, reason: null });
+
+  it('credits a succeeded refund with no live note, once', () => {
+    const plan = planStripeRefundCredits(
+      [refund('re_a', 'succeeded'), refund('re_b', 'succeeded'), refund('re_c', 'pending')],
+      [{ stripeRefundId: 're_a', number: 'ALMA-CN-000001', status: 'ISSUED' }]
+    );
+    assert.deepEqual(plan.toCredit.map((item) => item.id), ['re_b']);
+    assert.deepEqual(plan.failedButCredited, []);
+  });
+
+  it('credits again a refund whose note was voided (a note raised by hand counts like any other)', () => {
+    const plan = planStripeRefundCredits(
+      [refund('re_a', 'succeeded')],
+      [{ stripeRefundId: 're_a', number: 'ALMA-CN-000001', status: 'VOID' }]
+    );
+    assert.deepEqual(plan.toCredit.map((item) => item.id), ['re_a']);
+  });
+
+  it('never credits a failed refund, and flags one that already has a live note', () => {
+    const plan = planStripeRefundCredits(
+      [refund('re_a', 'failed'), refund('re_b', 'canceled'), refund('re_c', 'requires_action')],
+      [
+        { stripeRefundId: 're_a', number: 'ALMA-CN-000001', status: 'ISSUED' },
+        { stripeRefundId: 're_c', number: 'ALMA-CN-000002', status: 'ISSUED' }
+      ]
+    );
+    assert.deepEqual(plan.toCredit, []);
+    assert.deepEqual(plan.failedButCredited.map((item) => [item.refund.id, item.noteNumber]), [['re_a', 'ALMA-CN-000001']]);
+  });
+
+  it('says why the money went back', () => {
+    assert.equal(stripeRefundCreditReason({ reason: 'requested_by_customer' }), 'Refunded in Stripe (requested by customer)');
+    assert.equal(stripeRefundCreditReason({ reason: null }), 'Refunded in Stripe');
   });
 });

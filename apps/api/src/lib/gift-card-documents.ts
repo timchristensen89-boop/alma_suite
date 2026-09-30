@@ -162,3 +162,56 @@ export function applyIssuerGstStatus(lines: FinancialDocumentLineDraft[], issuer
 export function maskGiftCardCode(code: string): string {
   return `***${code.slice(-4)}`;
 }
+
+/** The parts of a Stripe refund the reconciliation reads. */
+export type StripeRefundFacts = {
+  id: string;
+  status: string | null;
+  amount: number;
+  created: number;
+  reason: string | null;
+};
+
+/** A credit note that carries a Stripe refund id. */
+export type StripeRefundNote = {
+  stripeRefundId: string | null;
+  number: string;
+  status: string;
+};
+
+/**
+ * Which of a payment's Stripe refunds still need a credit note, and which
+ * credited refunds Stripe has since reported as failed.
+ *
+ * A refund is credited once it has succeeded and no ISSUED note carries its
+ * id. Voiding a note releases the id (see financialDocumentService.void), so
+ * a void note normally never matches; one voided before that rule still
+ * holds its id, and raiseCreditNote releases it when the refund is credited
+ * again. A failed or cancelled refund is never credited; if a live note
+ * already stands for it, the owner decides whether to void it — documents
+ * are not rewritten behind anyone's back.
+ */
+export function planStripeRefundCredits<R extends StripeRefundFacts>(
+  refunds: R[],
+  notes: StripeRefundNote[]
+): { toCredit: R[]; failedButCredited: Array<{ refund: R; noteNumber: string }> } {
+  const live = new Map(
+    notes.filter((note) => note.status === 'ISSUED' && note.stripeRefundId).map((note) => [note.stripeRefundId, note.number])
+  );
+  const toCredit: R[] = [];
+  const failedButCredited: Array<{ refund: R; noteNumber: string }> = [];
+  for (const refund of refunds) {
+    const noteNumber = live.get(refund.id);
+    if (refund.status === 'succeeded') {
+      if (!noteNumber) toCredit.push(refund);
+    } else if (noteNumber && (refund.status === 'failed' || refund.status === 'canceled')) {
+      failedButCredited.push({ refund, noteNumber });
+    }
+  }
+  return { toCredit, failedButCredited };
+}
+
+/** The reason printed on a credit note raised for a Stripe refund. */
+export function stripeRefundCreditReason(refund: Pick<StripeRefundFacts, 'reason'>): string {
+  return `Refunded in Stripe${refund.reason ? ` (${refund.reason.replace(/_/g, ' ')})` : ''}`;
+}

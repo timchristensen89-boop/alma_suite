@@ -17,7 +17,9 @@ import {
   summariseLines,
   legalEntityInputSchema,
   issueGiftCardDocumentInputSchema,
-  centsToDollars
+  centsToDollars,
+  creditNoteInputSchema,
+  maskedGiftCardReference
 } from '@alma/shared';
 
 const card = (overrides: Partial<Parameters<typeof composeGiftCardSaleLines>[0]> = {}) => ({
@@ -99,7 +101,7 @@ describe('gift card bought with a promo code', () => {
     assert.deepEqual(
       lines.map((line) => [line.description, line.amountCents, line.gstCents]),
       [
-        ['ALMA gift card ALMA-22480BB1', 100_00, 0],
+        ['ALMA gift card ending 0BB1', 100_00, 0],
         ['Promo code SPRING', -10_00, 0],
         ['Service fee — card processing', 315, 0]
       ]
@@ -158,7 +160,8 @@ describe('credit notes', () => {
     const totals = summariseLines(lines);
     assert.equal(totals.totalCents, 50_00);
     assert.equal(totals.taxableCents, 169); // 5000 × 350 / 10350
-    assert.equal(totals.gstCents, 15);
+    // GST on what is left (181c → 16c) decides it: 32c − 16c = 16c reversed now.
+    assert.equal(totals.gstCents, 16);
   });
 
   it('has the last partial refund take exactly what is left, GST included', () => {
@@ -173,6 +176,27 @@ describe('credit notes', () => {
     const first = summariseLines(composeCreditLines(original, [], 100_00));
     assert.throws(() => composeCreditLines(original, [first], 350 + 1), /Only \$3\.50 is left/);
     assert.deepEqual(remainingCreditable(original, [first]).totalCents, 350);
+  });
+
+  it('never strands a cent of GST on the last credit', () => {
+    // 346c then 4c of taxable supply: one eleventh of each slice rounds to
+    // 31c + 0c and would leave 1c of GST with no taxable amount to reverse.
+    const first = summariseLines(composeCreditLines(original, [], 102_36));
+    const second = summariseLines(composeCreditLines(original, [first], 100));
+    const last = summariseLines(composeCreditLines(original, [first, second], 14));
+    assert.equal(first.totalCents + second.totalCents + last.totalCents, 103_50);
+    assert.equal(first.taxableCents + second.taxableCents + last.taxableCents, 350);
+    assert.equal(first.gstCents + second.gstCents + last.gstCents, 32);
+    assert.equal(remainingCreditable(original, [first, second, last]).gstCents, 0);
+  });
+
+  it('reverses exactly the original GST however a refund is sliced', () => {
+    for (const slices of [[1, 103_49], [350, 100_00], [3_50, 50_00, 50_00], [17, 17, 17, 102_99], [99_99, 1, 3_50]]) {
+      const prior: ReturnType<typeof summariseLines>[] = [];
+      for (const slice of slices) prior.push(summariseLines(composeCreditLines(original, prior, slice)));
+      assert.equal(prior.reduce((sum, credit) => sum + credit.gstCents, 0), 32, `slices ${slices.join('+')}`);
+      assert.equal(prior.reduce((sum, credit) => sum + credit.taxableCents, 0), 350, `slices ${slices.join('+')}`);
+    }
   });
 
   it('refuses a zero or negative credit', () => {
@@ -233,6 +257,24 @@ describe('ABN', () => {
   it('allows a blank buyer ABN but not a wrong one', () => {
     assert.equal(issueGiftCardDocumentInputSchema.safeParse({ customerAbn: '' }).success, true);
     assert.equal(issueGiftCardDocumentInputSchema.safeParse({ customerAbn: '12 345 678 901' }).success, false);
+  });
+});
+
+describe('manual credit notes', () => {
+  it('needs the Stripe refund id when the money went back through Stripe', () => {
+    const base = { amountCents: 50_00, reason: 'Refunded in Stripe' };
+    assert.equal(creditNoteInputSchema.safeParse({ ...base, refundMethod: 'STRIPE' }).success, false);
+    assert.equal(creditNoteInputSchema.safeParse({ ...base, refundMethod: 'STRIPE', stripeRefundId: 'ch_123' }).success, false);
+    assert.equal(creditNoteInputSchema.safeParse({ ...base, refundMethod: 'STRIPE', stripeRefundId: 're_3Pq9xYz' }).success, true);
+    assert.equal(creditNoteInputSchema.safeParse({ ...base, refundMethod: 'CASH' }).success, true);
+  });
+});
+
+describe('gift cards on documents', () => {
+  it('shows only the last four characters of the code', () => {
+    assert.equal(maskedGiftCardReference('ALMA-22480BB1'), 'ending 0BB1');
+    const [line] = composeGiftCardSaleLines(card());
+    assert.ok(!line?.description.includes('ALMA-22480BB1'));
   });
 });
 

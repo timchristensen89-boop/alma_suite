@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { loggablePath } from './log-path.js';
 import { captureApiError } from './sentry.js';
 
 export class HttpError extends Error {
@@ -45,7 +46,9 @@ function safeContext(req: Request): string {
 function logFailure(req: Request, status: number, message: string) {
   // 404s on lookups are routine (typos at the counter); everything else is a
   // real failure someone will ask about.
-  const line = `[api] ${req.method} ${req.originalUrl.split('?')[0]} -> ${status} "${message}" by ${actor(req)}${safeContext(req)}`;
+  // The path can carry a card code (/api/invoices/gift-cards/:code); it is
+  // masked like the body's code below.
+  const line = `[api] ${req.method} ${loggablePath(req.originalUrl)} -> ${status} "${message}" by ${actor(req)}${safeContext(req)}`;
   if (status >= 500) console.error(line);
   else console.warn(line);
 }

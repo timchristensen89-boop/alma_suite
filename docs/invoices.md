@@ -57,10 +57,10 @@ access can view, issue and email.
    than something the suite can work out: pick the company that is the
    merchant of record for the Stripe account the cards are sold through.
 3. **Turn on automatic issuing** (optional). *Issue a receipt or tax invoice as
-   soon as Stripe confirms payment.* The moment it is first switched on is
-   recorded, and only cards paid from then on are covered — switching it on
-   never sends receipts for last month's sales. *Email it to the purchaser* is
-   a separate switch (on by default).
+   soon as Stripe confirms payment.* The moment it was last switched on is
+   recorded, and only cards paid from then on are covered — switching it on,
+   or back on after a pause, never sends receipts for the sales made while it
+   was off. *Email it to the purchaser* is a separate switch (on by default).
 4. **Footer note** (optional) is printed on every new document, e.g. a
    standing line about the gift card terms.
 
@@ -92,8 +92,9 @@ worth.
 **Refunds.** A credit note splits the refund between the taxable and
 non-taxable parts of what is left, in proportion; the note that takes the
 remainder takes exactly the remainder, so the GST reverses to the cent. On the
-$103.50 tax invoice: a $50.00 refund credits $0.15 GST; a second refund of the
-remaining $53.50 credits the other $0.17 — $0.32 in total. The split is
+$103.50 tax invoice: a $50.00 refund credits $0.16 GST (the GST still owed on
+what is left decides it, so no cent is ever stranded); a second refund of the
+remaining $53.50 credits the other $0.16 — $0.32 in total. The split is
 printed on the note so the accountant can check it, or reallocate it if a
 refund was specifically of the fee.
 
@@ -126,12 +127,19 @@ refund.updated
 The full list the endpoint should be subscribed to is in `DEPLOYMENT.md`.
 
 One refund sends all three; the handler looks at every refund on the payment
-and credits the ones that have no note yet, so repeats and replays do
-nothing. A refund larger than what is left to credit (because someone already
-credited it by hand) is logged and skipped rather than failed — a failure would
-make Stripe retry for days a request that can never succeed. If Stripe later
+and credits the ones that have no live note yet, keyed on the Stripe refund id
+(`re_…`), so repeats and replays do nothing — and neither does a refund that
+was already credited by hand with its refund id. A refund larger than what is
+left to credit is logged and skipped rather than failed — a failure would make
+Stripe retry for days a request that can never succeed. If Stripe later
 reports a credited refund as failed, the note stays and a warning is logged;
 void it by hand if the money did not go back.
+
+The same check runs once, right after a Stripe-paid card's sale document is
+issued: a refund made before the document existed — before it was issued at
+all, or while the card's previous document was void — is credited against the
+new document straight away. It is a single short attempt; if Stripe does not
+answer, the next refund event for that payment catches up.
 
 ## Scheduler
 
@@ -164,7 +172,22 @@ says why it did nothing (automatic issuing off, no issuer chosen).
   have a corrected one issued by hand.
 - **Credit note** records money given back. It does not move money and does
   not cancel the card — refund in Stripe (or at the counter) and cancel the
-  card as you do today.
+  card as you do today. A Stripe refund is normally credited by the webhook
+  without anyone touching it. To credit one by hand, choose refund method
+  Stripe and paste the **Stripe refund id** (`re_…`, on the refund in the
+  Stripe Dashboard); it is required. When Stripe is configured the suite checks
+  that it is a succeeded refund of this sale's payment and that the credit is
+  no more than the refund. The refund id is the same key the webhook credits
+  on, so the webhook never raises a second note for it, and a refund already
+  credited is refused with the number of the note that covers it.
+- **Voiding a Stripe credit note** releases its refund: the refund id moves
+  from the note to its payment reference, and the refund can be credited
+  again — by the next refund event for that payment, by issuing a corrected
+  sale document, or by hand with the same refund id (to credit a different
+  amount, say).
+- **Issuing by hand for a card that already has a live document** is refused
+  with that document's number. Email it from its row, or void it and issue
+  again to change the details.
 
 ## Known limits
 
@@ -172,9 +195,6 @@ says why it did nothing (automatic issuing off, no issuer chosen).
   webhook raises the credit note. Counter refunds are credited by hand.
 - **Partial credits split in proportion** between taxable and non-taxable. A
   refund that is specifically of the fee needs the accountant to reallocate.
-- **A refund made before the card had a document** is not credited
-  automatically when the document is issued later; raise the credit note by
-  hand with refund method Stripe.
 - **Counter and POS sales are not issued automatically.** They already get a
   POS receipt; issue a tax invoice by hand if the buyer asks for one.
 - **No Xero push yet.** Documents are Alma's record; the Stripe payouts still

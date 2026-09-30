@@ -3,6 +3,7 @@ import {
   DOCUMENT_PREFIX_PATTERN,
   FINANCIAL_DOCUMENT_TYPES,
   GST_TREATMENT_LABELS,
+  STRIPE_REFUND_ID_PATTERN,
   formatAbn,
   isCreditDocument,
   isValidAbn,
@@ -42,9 +43,14 @@ import { openDocumentPdf } from './lib/openPdf';
 
 const moneyFormat = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 
-/** Always two decimals: a document total reads $100.00, never $100. */
+/**
+ * Always two decimals: a document total reads $100.00, never $100.
+ *
+ * `|| 0` folds negative zero into zero. Credits are negated for display, and
+ * Intl prints -0 as "-$0.00" — the GST column of a GST-free credit note.
+ */
 export function money(cents: number) {
-  return moneyFormat.format(cents / 100);
+  return moneyFormat.format((cents || 0) / 100);
 }
 
 /** Documents are dated in Sydney, whatever timezone the browser is in. */
@@ -264,6 +270,21 @@ function loadError(error: unknown, fallback: string): LoadError {
   };
 }
 
+/**
+ * What anyone but a manager sees in place of the page: the API refuses them
+ * every request on it, so App.tsx shows this rather than a page of 403s.
+ */
+export function InvoicesManagersOnly() {
+  return (
+    <Card title="Invoices" subtitle="Receipts, tax invoices and credit notes.">
+      <p className="subtle">
+        Receipts and tax invoices are looked after by the managers. If a guest needs one, give a manager their gift card
+        code.
+      </p>
+    </Card>
+  );
+}
+
 export function InvoicesPage({ isOwner }: { isOwner: boolean }) {
   const [setup, setSetup] = useState<InvoiceSettingsResponse | null>(null);
   const [setupError, setSetupError] = useState<LoadError | null>(null);
@@ -285,23 +306,18 @@ export function InvoicesPage({ isOwner }: { isOwner: boolean }) {
   // screen: a mismatch hides the controls rather than showing ones that 403.
   const canManage = isOwner && Boolean(setup?.canManage);
 
-  if (setupError?.status === 403) {
-    return (
-      <Card title="Invoices" subtitle="Receipts, tax invoices and credit notes.">
-        <p className="subtle">
-          Receipts and tax invoices are looked after by the managers. If a guest needs one, give a manager their gift card
-          code.
-        </p>
-      </Card>
-    );
-  }
+  if (setupError?.status === 403) return <InvoicesManagersOnly />;
 
+  // Keyed, as is the register below: the save that finishes setup moves these
+  // cards from above the register to below it, and without keys React
+  // matches children by position — it would unmount them and mount fresh
+  // copies, losing "Invoice settings saved." the moment it was shown.
   const ownerCards =
     canManage && setup ? (
-      <>
+      <Fragment key="owner-cards">
         <CompaniesCard entities={setup.entities} issuerId={setup.settings.giftCardIssuingEntityId} onChanged={loadSetup} />
         <InvoiceSettingsCard setup={setup} onSaved={setSetup} />
-      </>
+      </Fragment>
     ) : null;
 
   return (
@@ -311,7 +327,7 @@ export function InvoicesPage({ isOwner }: { isOwner: boolean }) {
       {/* Unfinished setup is the job at hand, so its controls come first; once
           done they drop below the register, which is what the page is for. */}
       {setup?.setupIssue ? ownerCards : null}
-      <DocumentRegister canManage={canManage} />
+      <DocumentRegister key="register" canManage={canManage} />
       {setup && !setup.setupIssue ? ownerCards : null}
     </>
   );
@@ -818,6 +834,8 @@ type CreditNoteRequest = {
   reason: string;
   refundMethod: RefundMethod;
   refundReference: string;
+  /** Stripe refunds only: the re_… id the refund webhook credits on. */
+  stripeRefundId?: string;
   email: boolean;
 };
 
@@ -913,8 +931,15 @@ function DocumentRegister({ canManage }: { canManage: boolean }) {
           tone: 'success',
           text: `${DOCUMENT_TYPE_LABELS[created.type]} ${created.number} issued for ${money(created.totalCents)}${input.email ? ' and emailed' : ''}.`
         };
+      } catch (error) {
+        // A 502 is "…was issued, but the email did not send": the note exists.
+        // Reported as a problem, but returned rather than thrown so the form
+        // closes — submitting it again would issue a second note for the same
+        // money. The new note's own Email button is the retry.
+        if (error instanceof ApiError && error.status === 502) return { tone: 'error', text: error.message };
+        throw error;
       } finally {
-        // Also after a failure: a 502 means the note exists and only the email failed.
+        // Also after a failure: the 502 above, or a 409 for a refund already credited.
         refresh(doc.id);
       }
     });
@@ -1354,9 +1379,11 @@ function CreditNoteForm({
   const [reason, setReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<RefundMethod>(defaultRefundMethod(doc.paymentProvider));
   const [reference, setReference] = useState('');
+  const [stripeRefundId, setStripeRefundId] = useState('');
   const [emailIt, setEmailIt] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const noteName = doc.type === 'TAX_INVOICE' ? 'adjustment note' : 'credit note';
+  const viaStripe = refundMethod === 'STRIPE';
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1373,6 +1400,16 @@ function CreditNoteForm({
       setProblem(`Say why the money went back — it is printed on the ${noteName}.`);
       return;
     }
+    // The same rule as the API's: the refund id is the key a Stripe refund is
+    // credited on, by hand or by the webhook, so it is never counted twice.
+    if (viaStripe && !stripeRefundId.trim()) {
+      setProblem('Add the Stripe refund id (re_…) so this refund cannot be credited twice.');
+      return;
+    }
+    if (viaStripe && !STRIPE_REFUND_ID_PATTERN.test(stripeRefundId.trim())) {
+      setProblem('A Stripe refund id starts with re_ — copy it from the refund in Stripe.');
+      return;
+    }
     if (emailIt && !doc.customerEmail) {
       setProblem('There is no customer email on this document to send it to. Untick the email and send it from the new note instead.');
       return;
@@ -1386,7 +1423,15 @@ function CreditNoteForm({
     ) {
       return;
     }
-    onSubmit({ amountCents, reason: reason.trim(), refundMethod, refundReference: reference.trim(), email: emailIt });
+    onSubmit({
+      amountCents,
+      reason: reason.trim(),
+      refundMethod,
+      refundReference: reference.trim(),
+      // Left behind if the method was switched away from Stripe: not sent.
+      stripeRefundId: viaStripe ? stripeRefundId.trim() : undefined,
+      email: emailIt
+    });
   }
 
   return (
@@ -1416,11 +1461,27 @@ function CreditNoteForm({
           options={REFUND_METHODS}
         />
       </div>
-      {refundMethod === 'STRIPE' ? (
-        <p className="subtle">
-          A refund made in Stripe raises its own credit note here automatically. Check the credit notes above before adding one,
-          or the refund will be counted twice.
-        </p>
+      {viaStripe ? (
+        <>
+          <p className="subtle">
+            A refund made in Stripe raises its own credit note here automatically. Check the credit notes above before adding
+            one — if it is already there, this refund has been credited.
+          </p>
+          <div className="form-grid two">
+            <Input
+              id={`${id}-stripe-refund`}
+              label="Stripe refund id"
+              required
+              value={stripeRefundId}
+              onChange={(event) => setStripeRefundId(event.currentTarget.value)}
+              placeholder="re_…"
+              hint="Copy it from the refund in Stripe. Stripe refunds are also credited automatically; the id stops the same refund being credited twice."
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={255}
+            />
+          </div>
+        </>
       ) : null}
       <div className="form-grid two">
         <Input

@@ -3,7 +3,7 @@ import { CardArtGallery } from './cardArt/Gallery';
 import { CounterApp } from './CounterApp';
 import { DonationsPage } from './DonationsPage';
 import { GiftCardDocumentControls } from './GiftCardDocumentControls';
-import { InvoicesPage } from './InvoicesPage';
+import { InvoicesManagersOnly, InvoicesPage } from './InvoicesPage';
 import { ScanSheet } from './ScanSheet';
 import { CustomCardDesigner, type CustomCardDesignerHandle } from './CustomCardDesigner';
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
@@ -132,7 +132,8 @@ const GIFTCARD_NAV_ITEMS = [
     icon: <IconFileText />,
     // Every manager sees the register and can resend a PDF; the owner-only
     // controls (companies, settings, credit notes, voids) are gated inside.
-    ownerOnly: false
+    // Staff and the venue iPads would only meet a 403, so the door is hidden.
+    managerOnly: true
   },
   {
     href: '/admin#settings',
@@ -1507,6 +1508,17 @@ export function isGiftCardOwner(user?: { email?: string | null } | null) {
   return user?.email?.toLowerCase() === GIFT_CARD_OWNER_EMAIL;
 }
 
+/**
+ * A manager by the API's own rule (isManager in auth-middleware): a person,
+ * not a shared venue iPad, with the ADMIN or MANAGER role or Alma Admin.
+ * Receipts and the Invoices page are requireManager on the server, so for
+ * anyone else their every request is a guaranteed 403.
+ */
+export function isGiftCardManager(user?: Pick<AuthUser, 'accountType' | 'role' | 'isAdmin'> | null) {
+  if (!user || user.accountType === 'VENUE_DEVICE') return false;
+  return user.role === 'ADMIN' || user.role === 'MANAGER' || user.isAdmin;
+}
+
 /** Which nav item the current URL belongs to. Shared by the sidebar and the phone task bar. */
 function giftCardSectionFromLocation() {
   const path = window.location.pathname;
@@ -1536,18 +1548,26 @@ function useActiveGiftCardHref() {
 }
 
 /**
+ * The nav a user may see. Owner-only and manager-only items show only for the
+ * people the API lets in — Donations for Tim, Invoices for managers — so
+ * nobody is offered a door that opens onto a 403.
+ */
+function visibleGiftCardNavItems(isOwner: boolean, isManager: boolean) {
+  return GIFTCARD_NAV_ITEMS.filter((item) => (!item.ownerOnly || isOwner) && (!item.managerOnly || isManager));
+}
+
+/**
  * The phone task bar: the counter jobs first — redeem, sell, orders, activate —
- * and the rest behind More in sidebar order. Same owner-only filter as the
+ * and the rest behind More in sidebar order. Same owner/manager filter as the
  * sidebar, so Donations only shows for the person the API lets in.
  */
 const GIFTCARD_PRIMARY_TASKS = ['/redeem#redeem', '/counter', '/orders#recent', '/activate#activate'];
 /** Bar labels are one word where the sidebar's wrap to two lines on a 390px bar. */
 const GIFTCARD_BAR_LABELS: Record<string, string> = { '/counter': 'Sell', '/activate#activate': 'Activate', '/admin#settings': 'Setup' };
 
-function GiftCardTaskBar({ isOwner }: { isOwner: boolean }) {
+function GiftCardTaskBar({ isOwner, isManager }: { isOwner: boolean; isManager: boolean }) {
   const [activeHref] = useActiveGiftCardHref();
-  const items: TaskBarItem[] = GIFTCARD_NAV_ITEMS
-    .filter((item) => !item.ownerOnly || isOwner)
+  const items: TaskBarItem[] = visibleGiftCardNavItems(isOwner, isManager)
     .map((item) => ({
       key: item.href,
       label: GIFTCARD_BAR_LABELS[item.href] ?? item.label,
@@ -1561,11 +1581,8 @@ function GiftCardTaskBar({ isOwner }: { isOwner: boolean }) {
   return <TaskBar items={items} label="Gift card pages" />;
 }
 
-function SidebarNav({ isOwner }: { isOwner: boolean }) {
-  const navItems = useMemo(
-    () => GIFTCARD_NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner),
-    [isOwner]
-  );
+function SidebarNav({ isOwner, isManager }: { isOwner: boolean; isManager: boolean }) {
+  const navItems = useMemo(() => visibleGiftCardNavItems(isOwner, isManager), [isOwner, isManager]);
   const navRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
@@ -1856,7 +1873,7 @@ function purchasesCsv(rows: GiftCardPurchaseRow[]): string {
   return [head.join(','), ...lines].join('\n');
 }
 
-function GiftCardPurchases({ isOwner }: { isOwner: boolean }) {
+function GiftCardPurchases({ isOwner, isManager }: { isOwner: boolean; isManager: boolean }) {
   const [rangeKey, setRangeKey] = useState<ReportRangeKey>('all');
   const [source, setSource] = useState('all');
   const [query, setQuery] = useState('');
@@ -2064,7 +2081,17 @@ function GiftCardPurchases({ isOwner }: { isOwner: boolean }) {
                     <dt>Recipient</dt><dd>{row.recipientName || '—'}{row.recipientEmail ? ` · ${row.recipientEmail}` : ''}</dd>
                     <dt>Message</dt><dd>{row.message || '—'}</dd>
                     <dt>Value</dt><dd>{formatCents(row.initialValueCents)}{row.discountCents ? ` (${formatCents(row.discountCents)} promo${row.promoCode ? ` ${row.promoCode}` : ''})` : ''} · paid {row.amountPaidCents == null ? '—' : formatCents(row.amountPaidCents)}</dd>
-                    <dt>Receipt</dt><dd><GiftCardDocumentControls code={row.code} isOwner={isOwner} /></dd>
+                    {/* The purchase log is itself manager-only, so a row here
+                        means a manager — gated all the same, by the same rule
+                        as the Redeem screen, should that ever change. */}
+                    <dt>Receipt</dt>
+                    <dd>
+                      {isManager ? (
+                        <GiftCardDocumentControls code={row.code} isOwner={isOwner} />
+                      ) : (
+                        <span className="subtle">Receipts are available to managers.</span>
+                      )}
+                    </dd>
                     <dt>Balance</dt><dd>{formatCents(row.balanceCents)} left · {formatCents(row.redeemedCents)} redeemed across {row.redemptionCount} redemption{row.redemptionCount === 1 ? '' : 's'}{row.lastRedeemedAt ? ` · last ${when(row.lastRedeemedAt)}` : ''}</dd>
                     <dt>Design</dt>
                     <dd>
@@ -2555,7 +2582,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   return (
     <AppShell
       brand={<ProductLogo appId="giftcards" size="md" showBrandMark={false} />}
-      sidebar={<SidebarNav isOwner={isGiftCardOwner(user)} />}
+      sidebar={<SidebarNav isOwner={isGiftCardOwner(user)} isManager={isGiftCardManager(user)} />}
       topBar={
         <TopBar
           title="ALMA Gift Cards"
@@ -2942,7 +2969,14 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
               // field must never submit a redemption.
               <div className="giftcards-invoice-card-section">
                 <span className="giftcards-invoice-card-label">Receipt or tax invoice</span>
-                <GiftCardDocumentControls key={card.code} code={card.code} isOwner={isGiftCardOwner(user)} />
+                {/* Only a manager's lookup loads the controls: for staff and
+                    the venue iPads every receipt request is a 403, so they
+                    get the line that tells them who to ask instead. */}
+                {isGiftCardManager(user) ? (
+                  <GiftCardDocumentControls key={card.code} code={card.code} isOwner={isGiftCardOwner(user)} />
+                ) : (
+                  <span className="subtle">Receipts are available to managers.</span>
+                )}
               </div>
             ) : null}
             {card && card.status !== 'CANCELLED' && card.status !== 'EXPIRED' ? (
@@ -2961,7 +2995,12 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           </Card>
         ) : null}
 
-        {activeGiftCardPage === 'reporting' ? <><GiftCardReporting /><GiftCardPurchases isOwner={isGiftCardOwner(user)} /></> : null}
+        {activeGiftCardPage === 'reporting' ? (
+          <>
+            <GiftCardReporting />
+            <GiftCardPurchases isOwner={isGiftCardOwner(user)} isManager={isGiftCardManager(user)} />
+          </>
+        ) : null}
         {activeGiftCardPage === 'donations' ? (
           isGiftCardOwner(user) ? (
             <DonationsPage />
@@ -2979,9 +3018,13 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         ) : null}
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
         {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
-        {activeGiftCardPage === 'invoices' ? <InvoicesPage isOwner={isGiftCardOwner(user)} /> : null}
+        {activeGiftCardPage === 'invoices' ? (
+          // The nav item is hidden from everyone else; a typed URL gets the
+          // explanation rather than a page whose every request will 403.
+          isGiftCardManager(user) ? <InvoicesPage isOwner={isGiftCardOwner(user)} /> : <InvoicesManagersOnly />
+        ) : null}
       </div>
-      <GiftCardTaskBar isOwner={isGiftCardOwner(user)} />
+      <GiftCardTaskBar isOwner={isGiftCardOwner(user)} isManager={isGiftCardManager(user)} />
     </AppShell>
   );
 }

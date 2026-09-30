@@ -7,6 +7,7 @@ import {
   FINANCIAL_DOCUMENT_STATUSES,
   FINANCIAL_DOCUMENT_TYPES,
   FinancialDocumentError,
+  centsToDollars,
   composeCreditLines,
   composeGiftCardSaleLines,
   creditDocumentType,
@@ -43,6 +44,7 @@ import {
   type PaymentProvider
 } from '@alma/shared';
 import Stripe from 'stripe';
+import { ZodError } from 'zod';
 import { env } from '../env.js';
 import { renderFinancialDocumentPdf } from '../lib/financial-document-pdf.js';
 import {
@@ -53,9 +55,12 @@ import {
   maskGiftCardCode,
   paymentMethodSummary,
   paymentProviderForCard,
+  planStripeRefundCredits,
   promoCodeForDocument,
   stripeCheckoutSessionIdForDocument,
-  stripePaymentIntentIdForCard
+  stripePaymentIntentIdForCard,
+  stripeRefundCreditReason,
+  type StripeRefundFacts
 } from '../lib/gift-card-documents.js';
 import { HttpError } from '../lib/http.js';
 import { mailService } from './mail.service.js';
@@ -286,26 +291,34 @@ async function lockDocument(tx: Prisma.TransactionClient, id: string) {
   await tx.$queryRaw`SELECT "id" FROM "FinancialDocument" WHERE "id" = ${id} FOR UPDATE`;
 }
 
+/** One attempt, not held open: for Stripe calls a waiting flow must not stall on. */
+const QUICK_STRIPE_REQUEST: Stripe.RequestOptions = { timeout: 8000, maxNetworkRetries: 0 };
+
 /**
- * The card on a Stripe payment, for "Visa ending 4242". Best effort and a
- * single attempt: a slow or failed lookup leaves the brand off the document
- * rather than holding up the gift card flow that is waiting on it.
+ * The card on a Stripe payment, for "Visa ending 4242", and when the charge
+ * was made. Best effort and a single attempt: a slow or failed lookup leaves
+ * the brand off the document rather than holding up the gift card flow that
+ * is waiting on it.
+ *
+ * paidAt is the charge's created time — when the money moved — not the
+ * PaymentIntent's, which is when checkout began and can be a day earlier.
  */
 async function stripeCardDetails(paymentIntentId: string | null, code: string) {
-  const none = { brand: null, last4: null, chargeId: null };
+  const none = { brand: null, last4: null, chargeId: null, paidAt: null };
   if (!paymentIntentId || !stripe) return none;
   try {
     const intent = await stripe.paymentIntents.retrieve(
       paymentIntentId,
       { expand: ['latest_charge'] },
-      { timeout: 8000, maxNetworkRetries: 0 }
+      QUICK_STRIPE_REQUEST
     );
     const charge = intent.latest_charge && typeof intent.latest_charge === 'object' ? intent.latest_charge : null;
     const card = charge?.payment_method_details?.card ?? null;
     return {
       brand: card?.brand ?? null,
       last4: card?.last4 ?? null,
-      chargeId: charge?.id ?? (typeof intent.latest_charge === 'string' ? intent.latest_charge : null)
+      chargeId: charge?.id ?? (typeof intent.latest_charge === 'string' ? intent.latest_charge : null),
+      paidAt: charge?.created ? new Date(charge.created * 1000) : null
     };
   } catch (error) {
     console.warn('[invoices] could not read the card from Stripe; issuing without it', {
@@ -484,6 +497,11 @@ type CreditNoteOptions = {
   issueSource?: 'MANUAL' | 'STRIPE_REFUND';
 };
 
+/** A released refund id kept beside whatever reference the note already had. */
+function referenceWithRefund(reference: string | null, refundId: string) {
+  return reference && !reference.includes(refundId) ? `${reference} · ${refundId}` : reference ?? refundId;
+}
+
 export const financialDocumentService = {
   isInvoiceOwner,
 
@@ -523,9 +541,12 @@ export const financialDocumentService = {
         'Automatic issuing needs a company to issue from. Choose the gift card issuing company, or turn automatic issuing off.'
       );
     }
-    // Automatic issuing covers cards paid from the moment it was first turned
-    // on, so switching it on never sends receipts for last month's sales.
-    if (next.autoIssueGiftCards && !current.autoIssueFrom) next.autoIssueFrom = new Date().toISOString();
+    // Automatic issuing covers cards paid from the moment it was last turned
+    // on, so switching it on — or back on after a pause — never sends
+    // receipts for the sales of the weeks it was off.
+    if (next.autoIssueGiftCards && (!current.autoIssueGiftCards || !current.autoIssueFrom)) {
+      next.autoIssueFrom = new Date().toISOString();
+    }
     await prisma.appSettings.upsert({
       where: { id: SETTINGS_ID },
       create: { id: SETTINGS_ID, invoiceSettings: next as unknown as Prisma.InputJsonValue },
@@ -660,8 +681,10 @@ export const financialDocumentService = {
       stripeCheckoutSessionId: stripeCheckoutSessionIdForDocument(card.stripeCheckoutSessionId),
       stripeChargeId: stripeCard.chargeId,
       stripeRefundId: null,
-      paidAt: card.paidAt,
-      supplyDate: card.paidAt,
+      // Stripe's charge time when it answered; the card's own paidAt (when
+      // the webhook activated it) otherwise. The card row is left as it is.
+      paidAt: stripeCard.paidAt ?? card.paidAt,
+      supplyDate: stripeCard.paidAt ?? card.paidAt,
       issuedById: actor?.id ?? null,
       issueSource,
       reason: null,
@@ -674,6 +697,15 @@ export const financialDocumentService = {
         createNumberedDocument(tx, documentSeries(entity.documentPrefix, type), data, lines)
       );
       console.info(`[invoices] issued ${created.number} for gift card code=${maskGiftCardCode(card.code)} (${issueSource})`);
+      // A refund made before this document existed — before it was issued at
+      // all, or while the card's previous document was void — is credited now
+      // rather than waiting for a Stripe event that may never come again.
+      // Not on the checkout path itself (AUTO_STRIPE): the payment has only
+      // just completed, so there is nothing to credit, and the buyer's success
+      // page would wait on another Stripe call for it.
+      if (provider === 'STRIPE' && stripePaymentIntentId && issueSource !== 'AUTO_STRIPE') {
+        await this.reconcileStripeRefundsQuietly({ id: created.id, number: created.number, stripePaymentIntentId }, card.code);
+      }
       return { document: await this.get(created.id), created: true };
     } catch (error) {
       // Lost the race to the saleKey latch. The winner's document is the one;
@@ -695,7 +727,18 @@ export const financialDocumentService = {
   ): Promise<FinancialDocumentDetail> {
     const parsed = issueGiftCardDocumentInputSchema.parse(input ?? {});
     const { document, created } = await this.issueGiftCardSale(code, parsed, actor, issueSource);
-    if (!created) return document;
+    if (!created) {
+      // Someone pressing Issue expects a new document; handing back the old
+      // one as if it were new would hide that the details they typed were
+      // never used. The automatic paths just want to know one exists.
+      if (issueSource === 'MANUAL') {
+        throw new HttpError(
+          409,
+          `${document.number} was already issued for this card. Email it from its row, or void it and issue again to change the details.`
+        );
+      }
+      return document;
+    }
     if (issueSource !== 'MANUAL') {
       const settings = await readSettings();
       if (settings.autoEmail) await this.emailQuietly(document);
@@ -894,6 +937,12 @@ export const financialDocumentService = {
   /**
    * Raise a credit or adjustment note against a sale document. `created` is
    * false when a Stripe refund already has its note (a replayed webhook).
+   *
+   * A Stripe refund is credited on its refund id, whichever way it arrives:
+   * the webhook passes it in `options`, a person types it on the form
+   * (creditNoteInputSchema requires it for refund method Stripe). The id is
+   * unique on FinancialDocument, so one refund can never be credited twice —
+   * by hand and then again when Stripe's event lands.
    */
   async raiseCreditNote(
     saleDocumentId: string,
@@ -902,6 +951,12 @@ export const financialDocumentService = {
     options: CreditNoteOptions = {}
   ): Promise<{ document: FinancialDocumentDetail; created: boolean; email: boolean }> {
     const parsed = creditNoteInputSchema.parse(input);
+    const issueSource = options.issueSource ?? 'MANUAL';
+    const stripeRefundId = options.stripeRefundId ?? (parsed.refundMethod === 'STRIPE' ? blank(parsed.stripeRefundId) : null);
+    // A replayed webhook is told quietly that the note exists; a person is
+    // told which note already covers the refund they typed.
+    const alreadyCredited = (number: string) =>
+      new HttpError(409, `Stripe refund ${stripeRefundId} is already credited by ${number}.`);
     let result: { id: string; created: boolean };
     try {
       result = await prisma.$transaction(async (tx) => {
@@ -910,9 +965,24 @@ export const financialDocumentService = {
         // sends for one refund — must each see the other, or together they
         // could credit more than was paid.
         await lockDocument(tx, saleDocumentId);
-        if (options.stripeRefundId) {
-          const already = await tx.financialDocument.findUnique({ where: { stripeRefundId: options.stripeRefundId }, select: { id: true } });
-          if (already) return { id: already.id, created: false };
+        if (stripeRefundId) {
+          const already = await tx.financialDocument.findUnique({
+            where: { stripeRefundId },
+            select: { id: true, number: true, status: true, paymentReference: true }
+          });
+          if (already?.status === 'ISSUED') {
+            if (issueSource === 'MANUAL') throw alreadyCredited(already.number);
+            return { id: already.id, created: false };
+          }
+          // A note voided before voiding released the refund id still holds
+          // it. Release it the way void does now, so the refund can be
+          // credited against the live sale.
+          if (already) {
+            await tx.financialDocument.update({
+              where: { id: already.id },
+              data: { stripeRefundId: null, paymentReference: referenceWithRefund(already.paymentReference, stripeRefundId) }
+            });
+          }
         }
         const original = await tx.financialDocument.findUnique({
           where: { id: saleDocumentId },
@@ -974,11 +1044,11 @@ export const financialDocumentService = {
           stripePaymentIntentId: stripeRefund ? original.stripePaymentIntentId : null,
           stripeCheckoutSessionId: null,
           stripeChargeId: null,
-          stripeRefundId: options.stripeRefundId ?? null,
+          stripeRefundId: stripeRefundId ?? null,
           paidAt: options.paidAt ?? new Date(),
           supplyDate: original.supplyDate,
           issuedById: actor?.id ?? null,
-          issueSource: options.issueSource ?? 'MANUAL',
+          issueSource,
           reason: parsed.reason,
           note: null,
           testMode: original.testMode
@@ -987,19 +1057,67 @@ export const financialDocumentService = {
         return { id: created.id, created: true };
       });
     } catch (error) {
-      if (options.stripeRefundId && isUniqueViolation(error, 'stripeRefundId')) {
-        const winner = await prisma.financialDocument.findUnique({ where: { stripeRefundId: options.stripeRefundId }, select: { id: true } });
-        if (winner) return { document: await this.get(winner.id), created: false, email: false };
+      if (stripeRefundId && isUniqueViolation(error, 'stripeRefundId')) {
+        const winner = await prisma.financialDocument.findUnique({ where: { stripeRefundId }, select: { id: true, number: true } });
+        if (winner) {
+          if (issueSource === 'MANUAL') throw alreadyCredited(winner.number);
+          return { document: await this.get(winner.id), created: false, email: false };
+        }
       }
       throw error;
     }
     const document = await this.get(result.id);
     if (result.created) {
       console.info(
-        `[invoices] credited ${document.creditsDocumentNumber} with ${document.number} (${document.totalCents}c, ${options.issueSource ?? 'MANUAL'})`
+        `[invoices] credited ${document.creditsDocumentNumber} with ${document.number} (${document.totalCents}c, ${issueSource})`
       );
     }
     return { document, created: result.created, email: parsed.email };
+  },
+
+  /**
+   * Check a Stripe refund id typed on the credit note form against Stripe:
+   * it must be a succeeded refund of this sale's payment, and the credit no
+   * more than it. Without Stripe (or for a sale Stripe never saw) the id is
+   * taken on its shape alone — the unique id still stops a second note.
+   */
+  async verifyManualStripeRefund(saleDocumentId: string, refundId: string, amountCents: number): Promise<CreditNoteOptions> {
+    const sale = await prisma.financialDocument.findUnique({
+      where: { id: saleDocumentId },
+      select: { number: true, stripePaymentIntentId: true }
+    });
+    if (!sale) throw new HttpError(404, 'Document not found.');
+    if (!stripe || !sale.stripePaymentIntentId) return { stripeRefundId: refundId };
+    let refund: Stripe.Refund;
+    try {
+      refund = await stripe.refunds.retrieve(refundId, {}, QUICK_STRIPE_REQUEST);
+    } catch (error) {
+      if (error instanceof Stripe.errors.StripeError && error.code === 'resource_missing') {
+        throw new HttpError(422, `Stripe has no refund ${refundId}. Copy the refund id (re_…) from the payment in Stripe.`);
+      }
+      console.warn(`[invoices] could not check Stripe refund ${refundId} for ${sale.number}`, { reason: reasonOf(error) });
+      // 503, not 502: the web reads a 502 from this route as "the note was
+      // issued and only the email failed" and closes the form. Nothing has
+      // been issued here, so the form must stay open for a retry.
+      throw new HttpError(503, 'Could not check the refund with Stripe. Nothing was issued — try again in a moment.');
+    }
+    const refundIntent = typeof refund.payment_intent === 'string' ? refund.payment_intent : refund.payment_intent?.id ?? null;
+    if (refundIntent !== sale.stripePaymentIntentId) {
+      throw new HttpError(422, `Stripe refund ${refundId} is not a refund of the payment on ${sale.number}.`);
+    }
+    if (refund.status !== 'succeeded') {
+      throw new HttpError(
+        422,
+        `Stripe refund ${refundId} has not gone through (it is ${refund.status ?? 'unknown'}). Credit it once Stripe shows it as succeeded.`
+      );
+    }
+    if (amountCents > refund.amount) {
+      throw new HttpError(
+        422,
+        `Stripe refund ${refundId} was ${centsToDollars(refund.amount)}, so a credit note for it cannot be more than that.`
+      );
+    }
+    return { stripeRefundId: refundId, paidAt: new Date(refund.created * 1000) };
   },
 
   /** Credit by hand. Never touches the gift card itself — cancelling it stays its own action. */
@@ -1009,12 +1127,101 @@ export const financialDocumentService = {
     actor?: AuthUser | null,
     options: CreditNoteOptions = {}
   ): Promise<FinancialDocumentDetail> {
-    const { document, created, email } = await this.raiseCreditNote(saleDocumentId, input, actor, options);
+    const parsed = creditNoteInputSchema.parse(input);
+    const refundId = parsed.refundMethod === 'STRIPE' ? blank(parsed.stripeRefundId) : null;
+    // Outside the transaction: a network call must never hold the sale lock.
+    const verified =
+      refundId && !options.stripeRefundId ? await this.verifyManualStripeRefund(saleDocumentId, refundId, parsed.amountCents) : {};
+    const { document, created, email } = await this.raiseCreditNote(saleDocumentId, parsed, actor, { ...verified, ...options });
     if (!created || !email) return document;
     if (!document.customerEmail) throw issuedButNotEmailed(document, 'there is no email address for this customer');
     const outcome = await deliverDocument(document, document.customerEmail);
     if (!outcome.sent) throw issuedButNotEmailed(document, outcome.reason);
     return this.get(document.id);
+  },
+
+  /**
+   * Credit every refund in `refunds` (all of one payment's Stripe refunds)
+   * that has succeeded and has no live credit note, against `sale`. Each
+   * note is raised under the sale's row lock and keyed on the refund id, so
+   * running this twice at once, or alongside a person crediting by hand,
+   * credits each refund once. Business refusals (more than is left to
+   * credit, the sale was voided) are logged and skipped.
+   *
+   * Takes the refunds rather than asking Stripe so it can be exercised
+   * without Stripe; reconcileStripeRefunds is the caller that asks.
+   */
+  async creditStripeRefunds(sale: { id: string; number: string }, refunds: StripeRefundFacts[]) {
+    const existing = refunds.length
+      ? await prisma.financialDocument.findMany({
+          where: { stripeRefundId: { in: refunds.map((refund) => refund.id) } },
+          select: { stripeRefundId: true, number: true, status: true }
+        })
+      : [];
+    const plan = planStripeRefundCredits(refunds, existing);
+    // Stripe can fail a refund after reporting it succeeded. The note stays
+    // (documents are not silently rewritten); the owner decides.
+    for (const { refund, noteNumber } of plan.failedButCredited) {
+      console.warn(
+        `[invoices] Stripe refund ${refund.id} is now ${refund.status} but ${noteNumber} still stands. Void it if the money did not go back.`
+      );
+    }
+    const credited: string[] = [];
+    const skipped: Array<{ refundId: string; reason: string }> = [];
+    for (const refund of plan.toCredit) {
+      try {
+        const { document, created } = await this.raiseCreditNote(
+          sale.id,
+          { amountCents: refund.amount, reason: stripeRefundCreditReason(refund), refundMethod: 'STRIPE', stripeRefundId: refund.id, email: false },
+          null,
+          { stripeRefundId: refund.id, paidAt: new Date(refund.created * 1000), issueSource: 'STRIPE_REFUND' }
+        );
+        if (created) credited.push(document.number);
+      } catch (error) {
+        // A ZodError here is a refund id the credit note schema will not take
+        // (Stripe gives some non-card refunds a pyr_ id): it can never be
+        // credited automatically, so retrying the webhook would not help.
+        if ((error instanceof HttpError && error.statusCode < 500) || error instanceof ZodError) {
+          console.warn(`[invoices] Stripe refund ${refund.id} on ${sale.number} not credited: ${error.message}`);
+          skipped.push({ refundId: refund.id, reason: error.message });
+          continue;
+        }
+        throw error;
+      }
+    }
+    return { credited, skipped };
+  },
+
+  /** Ask Stripe for a payment's refunds and credit the ones with no note. */
+  async reconcileStripeRefunds(
+    sale: { id: string; number: string; stripePaymentIntentId: string },
+    requestOptions?: Stripe.RequestOptions
+  ) {
+    if (!stripe) return { credited: [] as string[], skipped: [] as Array<{ refundId: string; reason: string }> };
+    const refunds = await stripe.refunds.list({ payment_intent: sale.stripePaymentIntentId, limit: 100 }, requestOptions);
+    return this.creditStripeRefunds(sale, refunds.data);
+  },
+
+  /**
+   * reconcileStripeRefunds for a sale document that was just issued. One
+   * short attempt, never thrown: it runs inside the issue and checkout flows,
+   * and a refund it misses is still credited by the next refund event.
+   */
+  async reconcileStripeRefundsQuietly(sale: { id: string; number: string; stripePaymentIntentId: string }, code: string) {
+    if (!stripe) return;
+    try {
+      const { credited, skipped } = await this.reconcileStripeRefunds(sale, QUICK_STRIPE_REQUEST);
+      if (credited.length || skipped.length) {
+        console.info(
+          `[invoices] ${sale.number} (code=${maskGiftCardCode(code)}) had earlier Stripe refunds: credited ${credited.join(', ') || 'none'}` +
+            (skipped.length ? `, ${skipped.length} not credited` : '')
+        );
+      }
+    } catch (error) {
+      console.warn(`[invoices] could not check Stripe for refunds on ${sale.number} (code=${maskGiftCardCode(code)})`, {
+        reason: reasonOf(error)
+      });
+    }
   },
 
   /**
@@ -1039,51 +1246,7 @@ export const financialDocumentService = {
       console.warn(`[invoices] refund on ${sale.number} not credited: Stripe is not configured`);
       return { skipped: 'stripe not configured' };
     }
-
-    const refunds = await stripe.refunds.list({ payment_intent: paymentIntentId, limit: 100 });
-    const existing = await prisma.financialDocument.findMany({
-      where: { stripeRefundId: { in: refunds.data.map((refund) => refund.id) } },
-      select: { stripeRefundId: true, number: true, status: true }
-    });
-    const noteFor = new Map(existing.map((note) => [note.stripeRefundId, note]));
-    const credited: string[] = [];
-    const skipped: Array<{ refundId: string; reason: string }> = [];
-
-    for (const refund of refunds.data) {
-      const note = noteFor.get(refund.id);
-      if (refund.status !== 'succeeded') {
-        // Stripe can fail a refund after reporting it succeeded. The note
-        // stays (documents are not silently rewritten); the owner decides.
-        if (note?.status === 'ISSUED' && (refund.status === 'failed' || refund.status === 'canceled')) {
-          console.warn(
-            `[invoices] Stripe refund ${refund.id} is now ${refund.status} but ${note.number} still stands. Void it if the money did not go back.`
-          );
-        }
-        continue;
-      }
-      if (note) continue;
-      try {
-        const { document, created } = await this.raiseCreditNote(
-          sale.id,
-          {
-            amountCents: refund.amount,
-            reason: `Refunded in Stripe${refund.reason ? ` (${refund.reason.replace(/_/g, ' ')})` : ''}`,
-            refundMethod: 'STRIPE',
-            email: false
-          },
-          null,
-          { stripeRefundId: refund.id, paidAt: new Date(refund.created * 1000), issueSource: 'STRIPE_REFUND' }
-        );
-        if (created) credited.push(document.number);
-      } catch (error) {
-        if (error instanceof HttpError && error.statusCode < 500) {
-          console.warn(`[invoices] Stripe refund ${refund.id} on ${sale.number} not credited: ${error.message}`);
-          skipped.push({ refundId: refund.id, reason: error.message });
-          continue;
-        }
-        throw error;
-      }
-    }
+    const { credited, skipped } = await this.reconcileStripeRefunds({ ...sale, stripePaymentIntentId: paymentIntentId });
     return { paymentIntentId, document: sale.number, credited, skipped };
   },
 
@@ -1092,7 +1255,10 @@ export const financialDocumentService = {
     const number = await prisma.$transaction(async (tx) => {
       // Same lock a credit note takes, so a void and a credit cannot cross.
       await lockDocument(tx, id);
-      const doc = await tx.financialDocument.findUnique({ where: { id }, select: { type: true, status: true, number: true } });
+      const doc = await tx.financialDocument.findUnique({
+        where: { id },
+        select: { type: true, status: true, number: true, stripeRefundId: true, paymentReference: true }
+      });
       if (!doc) throw new HttpError(404, 'Document not found.');
       if (doc.status !== 'ISSUED') throw new HttpError(409, `${doc.number} is already void.`);
       if (!isCreditDocument(doc.type)) {
@@ -1101,10 +1267,27 @@ export const financialDocumentService = {
           throw new HttpError(409, `${doc.number} has credit notes against it. Void its credit notes first.`);
         }
       }
+      // A void credit note must not keep its Stripe refund. The refund id is
+      // the unique key a refund is credited on, so a note that held it after
+      // being voided would stop that money ever being credited again — not
+      // against the live sale when the note was voided for a wrong amount,
+      // and not against a corrected sale document issued after the original
+      // was voided too. The id moves to paymentReference so the void note
+      // still says which refund it was.
+      const releaseRefund = doc.stripeRefundId
+        ? { stripeRefundId: null, paymentReference: referenceWithRefund(doc.paymentReference, doc.stripeRefundId) }
+        : {};
       await tx.financialDocument.update({
         where: { id },
         // Releasing saleKey is what lets a corrected document be issued for the card.
-        data: { status: 'VOID', voidedAt: new Date(), voidedById: actor?.id ?? null, voidReason: parsed.reason, saleKey: null }
+        data: {
+          status: 'VOID',
+          voidedAt: new Date(),
+          voidedById: actor?.id ?? null,
+          voidReason: parsed.reason,
+          saleKey: null,
+          ...releaseRefund
+        }
       });
       return doc.number;
     });

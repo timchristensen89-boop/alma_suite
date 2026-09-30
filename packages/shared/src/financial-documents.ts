@@ -167,9 +167,22 @@ export type GiftCardSaleInput = {
 export class FinancialDocumentError extends Error {}
 
 /**
+ * How a gift card is named on a document: "ending 8BB1", never the whole code.
+ * The code is a bearer secret — the public print, QR and wallet endpoints and
+ * the counter all take it as proof of ownership — and a tax invoice is exactly
+ * the kind of document that gets forwarded to a bookkeeper. The last four are
+ * enough to identify the supply; the full code stays on the document row
+ * (sourceReference) for staff searching the register.
+ */
+export function maskedGiftCardReference(code: string): string {
+  const trimmed = code.trim();
+  return `ending ${trimmed.slice(-4)}`;
+}
+
+/**
  * The lines of a gift card sale.
  *
- *   ALMA gift card ALMA-XXXX           face value      no GST
+ *   ALMA gift card ending XXXX         face value      no GST
  *   Promo code SPRING (if any)         − discount      no GST
  *   Service fee — card processing      paid − price    taxable to the extent
  *                                                      paid exceeds face value
@@ -202,7 +215,7 @@ export function composeGiftCardSaleLines(input: GiftCardSaleInput): FinancialDoc
 
   const lines: FinancialDocumentLineDraft[] = [
     {
-      description: `ALMA gift card ${input.code}`,
+      description: `ALMA gift card ${maskedGiftCardReference(input.code)}`,
       detail: [
         'Face value voucher',
         input.recipientName ? `for ${input.recipientName}` : null
@@ -312,7 +325,14 @@ export function composeCreditLines(
   const taxable = takesRemainder
     ? remaining.taxableCents
     : Math.min(remaining.taxableCents, Math.round((amount * remaining.taxableCents) / Math.max(1, remaining.totalCents)));
-  const gst = takesRemainder ? remaining.gstCents : Math.min(remaining.gstCents, gstInclusiveComponentCents(taxable));
+  // GST follows what is LEFT, not what is taken: the GST still owed on the
+  // taxable remainder after this credit decides how much this credit reverses.
+  // Taking one eleventh of each slice instead can strand a cent — two credits
+  // of 346c and 4c round to 31c + 0c, leaving 1c of GST on 0c of taxable
+  // supply that no later credit could ever reverse.
+  const gst = takesRemainder
+    ? remaining.gstCents
+    : Math.max(0, Math.min(remaining.gstCents, remaining.gstCents - gstInclusiveComponentCents(remaining.taxableCents - taxable)));
   const nonTaxable = amount - taxable;
 
   const lines: FinancialDocumentLineDraft[] = [];
@@ -328,7 +348,7 @@ export function composeCreditLines(
       gstCents: 0
     });
   }
-  if (taxable > 0) {
+  if (taxable > 0 || gst > 0) {
     lines.push({
       description: 'Refund — taxable',
       detail: 'Reverses GST charged on the original document',
@@ -414,9 +434,10 @@ export function centsToDollars(cents: number): string {
  *   something derivable; until it is made, nothing is issued.
  * autoIssueGiftCards — issue the document the moment Stripe confirms payment.
  * autoEmail — email it to the purchaser as well.
- * autoIssueFrom — set by the server when auto-issue is first switched on. The
+ * autoIssueFrom — set by the server each time auto-issue is switched on. The
  *   catch-up job only issues for cards paid after this moment, so switching
- *   the feature on never mass-emails last month's buyers.
+ *   the feature on (or back on after a pause) never mass-emails the buyers
+ *   of the weeks it was off.
  */
 export type InvoiceSettings = {
   giftCardIssuingEntityId: string | null;
@@ -508,14 +529,39 @@ export const emailFinancialDocumentInputSchema = z.object({
 });
 export type EmailFinancialDocumentInput = z.infer<typeof emailFinancialDocumentInputSchema>;
 
-export const creditNoteInputSchema = z.object({
-  amountCents: z.number().int().positive(),
-  reason: z.string().trim().min(3).max(300),
-  /** How the money went back: STRIPE (already refunded there), CASH, CARD, EFTPOS, OTHER. */
-  refundMethod: z.enum(['STRIPE', 'CARD', 'CASH', 'EFTPOS', 'OTHER']).default('OTHER'),
-  refundReference: optionalText(80),
-  email: z.boolean().default(false)
-});
+export const STRIPE_REFUND_ID_PATTERN = /^re_[A-Za-z0-9]+$/;
+
+/**
+ * A credit note raised by hand. When the money went back through Stripe the
+ * refund id is required: it is the same key the refund webhook credits on
+ * (FinancialDocument.stripeRefundId is unique), so one refund can never be
+ * credited twice — once by hand and again when Stripe's event arrives.
+ */
+export const creditNoteInputSchema = z
+  .object({
+    amountCents: z.number().int().positive(),
+    reason: z.string().trim().min(3).max(300),
+    /** How the money went back: STRIPE (already refunded there), CASH, CARD, EFTPOS, OTHER. */
+    refundMethod: z.enum(['STRIPE', 'CARD', 'CASH', 'EFTPOS', 'OTHER']).default('OTHER'),
+    refundReference: optionalText(80),
+    /** Stripe refund id (re_…). Required when refundMethod is STRIPE. */
+    stripeRefundId: z
+      .string()
+      .trim()
+      .regex(STRIPE_REFUND_ID_PATTERN, 'A Stripe refund id starts with re_ — copy it from the refund in Stripe.')
+      .optional()
+      .or(z.literal('')),
+    email: z.boolean().default(false)
+  })
+  .superRefine((value, ctx) => {
+    if (value.refundMethod === 'STRIPE' && !value.stripeRefundId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['stripeRefundId'],
+        message: 'Add the Stripe refund id (re_…) so this refund cannot be credited twice.'
+      });
+    }
+  });
 export type CreditNoteInput = z.infer<typeof creditNoteInputSchema>;
 
 export const voidFinancialDocumentInputSchema = z.object({
