@@ -147,11 +147,19 @@ Gift card checkout uses Stripe Checkout Sessions. Configure a Stripe webhook end
 https://<giftcards-domain>/api/gift-cards/webhook
 ```
 
-Subscribe it to:
+Subscribe it to every event the handler acts on:
 
 ```text
 checkout.session.completed
+checkout.session.async_payment_succeeded
+checkout.session.async_payment_failed
+checkout.session.expired
+charge.refunded
+refund.created
+refund.updated
 ```
+
+The first four activate or close off a card's checkout (the async pair only fire for delayed payment methods; subscribe anyway so a delayed payment is never left pending). The last three turn a refund made in the Stripe Dashboard into a credit note against the card's receipt or tax invoice — one refund sends all three and the handler ignores repeats. See `docs/invoices.md`.
 
 Keep `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in the API host's secret manager. Prefer an account-level Stripe secret key. If using an Organization API key, also set `STRIPE_CONTEXT` to the target Stripe account context, for example the `acct_...` account id. Without these values, the checkout endpoint returns a clear setup error and does not create fake successful payments.
 

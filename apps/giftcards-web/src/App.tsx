@@ -2,6 +2,8 @@ import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef,
 import { CardArtGallery } from './cardArt/Gallery';
 import { CounterApp } from './CounterApp';
 import { DonationsPage } from './DonationsPage';
+import { GiftCardDocumentControls } from './GiftCardDocumentControls';
+import { InvoicesPage } from './InvoicesPage';
 import { ScanSheet } from './ScanSheet';
 import { CustomCardDesigner, type CustomCardDesignerHandle } from './CustomCardDesigner';
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
@@ -58,6 +60,7 @@ import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import {
+  IconFileText,
   IconGift,
   IconKeyRound,
   IconReceipt,
@@ -121,6 +124,15 @@ const GIFTCARD_NAV_ITEMS = [
     label: 'Activate pre-printed',
     description: 'A card that already has a number on it',
     icon: <IconKeyRound />
+  },
+  {
+    href: '/invoices#invoices',
+    label: 'Invoices',
+    description: 'Receipts, tax invoices and credit notes',
+    icon: <IconFileText />,
+    // Every manager sees the register and can resend a PDF; the owner-only
+    // controls (companies, settings, credit notes, voids) are gated inside.
+    ownerOnly: false
   },
   {
     href: '/admin#settings',
@@ -1503,6 +1515,7 @@ function giftCardSectionFromLocation() {
   if (path.startsWith('/donations')) return '/donations#donations';
   if (path.startsWith('/admin')) return '/admin#settings';
   if (path.startsWith('/activate')) return '/activate#activate';
+  if (path.startsWith('/invoices')) return '/invoices#invoices';
   if (path.startsWith('/counter')) return '/counter';
   return '/redeem#redeem';
 }
@@ -1843,7 +1856,7 @@ function purchasesCsv(rows: GiftCardPurchaseRow[]): string {
   return [head.join(','), ...lines].join('\n');
 }
 
-function GiftCardPurchases() {
+function GiftCardPurchases({ isOwner }: { isOwner: boolean }) {
   const [rangeKey, setRangeKey] = useState<ReportRangeKey>('all');
   const [source, setSource] = useState('all');
   const [query, setQuery] = useState('');
@@ -2051,6 +2064,7 @@ function GiftCardPurchases() {
                     <dt>Recipient</dt><dd>{row.recipientName || '—'}{row.recipientEmail ? ` · ${row.recipientEmail}` : ''}</dd>
                     <dt>Message</dt><dd>{row.message || '—'}</dd>
                     <dt>Value</dt><dd>{formatCents(row.initialValueCents)}{row.discountCents ? ` (${formatCents(row.discountCents)} promo${row.promoCode ? ` ${row.promoCode}` : ''})` : ''} · paid {row.amountPaidCents == null ? '—' : formatCents(row.amountPaidCents)}</dd>
+                    <dt>Receipt</dt><dd><GiftCardDocumentControls code={row.code} isOwner={isOwner} /></dd>
                     <dt>Balance</dt><dd>{formatCents(row.balanceCents)} left · {formatCents(row.redeemedCents)} redeemed across {row.redemptionCount} redemption{row.redemptionCount === 1 ? '' : 's'}{row.lastRedeemedAt ? ` · last ${when(row.lastRedeemedAt)}` : ''}</dd>
                     <dt>Design</dt>
                     <dd>
@@ -2496,7 +2510,9 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           ? 'donations'
           : currentPath.startsWith('/activate')
             ? 'activate'
-            : 'redeem';
+            : currentPath.startsWith('/invoices')
+              ? 'invoices'
+              : 'redeem';
   const pageCopy = {
     redeem: {
       eyebrow: 'Daily workflow',
@@ -2528,6 +2544,11 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       eyebrow: 'At the counter',
       title: 'Activate physical gift card',
       description: 'Sell a pre-printed card at the venue. Scan or type the printed code, enter the amount paid, and the card goes live immediately.'
+    },
+    invoices: {
+      eyebrow: 'Accounts',
+      title: 'Invoices & receipts',
+      description: 'Receipts, tax invoices and credit notes for gift card sales — who sold it, what carried GST, and the PDF the customer got.'
     }
   }[activeGiftCardPage];
 
@@ -2916,6 +2937,14 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 })()}
               </form>
             ) : null}
+            {card ? (
+              // Outside the redemption form on purpose: Enter in a receipt
+              // field must never submit a redemption.
+              <div className="giftcards-invoice-card-section">
+                <span className="giftcards-invoice-card-label">Receipt or tax invoice</span>
+                <GiftCardDocumentControls key={card.code} code={card.code} isOwner={isGiftCardOwner(user)} />
+              </div>
+            ) : null}
             {card && card.status !== 'CANCELLED' && card.status !== 'EXPIRED' ? (
               <form className="giftcards-form giftcards-cancel-form" onSubmit={(event) => void cancelCard(event)}>
                 <Textarea label="Void / cancellation reason" required rows={2} value={cancelReason} onChange={(event) => setCancelReason(event.currentTarget.value)} />
@@ -2932,7 +2961,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           </Card>
         ) : null}
 
-        {activeGiftCardPage === 'reporting' ? <><GiftCardReporting /><GiftCardPurchases /></> : null}
+        {activeGiftCardPage === 'reporting' ? <><GiftCardReporting /><GiftCardPurchases isOwner={isGiftCardOwner(user)} /></> : null}
         {activeGiftCardPage === 'donations' ? (
           isGiftCardOwner(user) ? (
             <DonationsPage />
@@ -2950,6 +2979,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         ) : null}
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
         {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
+        {activeGiftCardPage === 'invoices' ? <InvoicesPage isOwner={isGiftCardOwner(user)} /> : null}
       </div>
       <GiftCardTaskBar isOwner={isGiftCardOwner(user)} />
     </AppShell>
@@ -3094,6 +3124,7 @@ export function App() {
   const isActivatePath = window.location.pathname.startsWith('/activate');
   const isReportingPath = window.location.pathname.startsWith('/reporting');
   const isDonationsPath = window.location.pathname.startsWith('/donations');
+  const isInvoicesPath = window.location.pathname.startsWith('/invoices');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
   if (isArtPath) return <CardArtGallery />;
@@ -3104,7 +3135,8 @@ export function App() {
     !isAdminPath &&
     !isActivatePath &&
     !isReportingPath &&
-    !isDonationsPath
+    !isDonationsPath &&
+    !isInvoicesPath
   ) {
     return <PublicGiftCardShop />;
   }

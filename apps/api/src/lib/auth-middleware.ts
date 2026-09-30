@@ -224,7 +224,9 @@ export async function authMiddleware(
       if (!hasAnyEnabledAppAccess(req.user, ['MARKETING', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Alma Marketing is currently in Preview and isn’t open to your role.'));
       }
-    } else if (req.path.startsWith('/api/gift-cards')) {
+    } else if (req.path.startsWith('/api/gift-cards') || req.path.startsWith('/api/invoices')) {
+      // Invoices live in the Gift Cards app (they are only gift card sales
+      // today), so the same grant opens them.
       if (!hasAnyEnabledAppAccess(req.user, ['GIFTCARDS', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Gift Cards isn’t enabled on your account. Ask a manager.'));
       }

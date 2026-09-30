@@ -35,6 +35,7 @@ import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { buildGiftCardLedger } from '../lib/gift-card-ledger.js';
 import { mailService } from './mail.service.js';
+import { financialDocumentService } from './financial-document.service.js';
 import { giftCardWalletService } from './gift-card-wallet.service.js';
 
 const stripe = env.stripe.secretKey
@@ -1893,6 +1894,9 @@ export const giftCardService = {
       },
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
     });
+    // Receipt or tax invoice, when the owner has switched automatic issuing on.
+    // Never throws: a document problem must not cost the buyer their card.
+    await financialDocumentService.issueAfterStripePayment(card.id);
     const payload = toGiftCardPayload(card);
     if (card.emailedAt) return payload;
     // Scheduled delivery (e.g. for a birthday) — defer the send. The

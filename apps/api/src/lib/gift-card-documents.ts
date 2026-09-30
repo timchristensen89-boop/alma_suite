@@ -1,0 +1,164 @@
+// Which gift cards get a receipt or tax invoice, and what the document says
+// about how they were paid. Pure, so every case the Stripe map turned up is
+// pinned by gift-card-documents.test.ts.
+//
+// Two traps shaped this file:
+//  - paidAt is not a money flag. Campaign reward cards and test cards have it
+//    set with nothing paid; donations and comps have it null. Only "money
+//    actually came in" earns a document.
+//  - stripeCheckoutSessionId is overloaded with synthetic keys (TEST-…,
+//    physical:…, donation:…, giftup:…, campaign:…). It is never proof that
+//    Stripe was involved, so nothing here reads it as such.
+
+import type { FinancialDocumentLineDraft, PaymentProvider } from '@alma/shared';
+
+export type GiftCardDocumentEligibility = {
+  status: 'PENDING_PAYMENT' | 'ACTIVE' | 'REDEEMED' | 'CANCELLED' | 'EXPIRED';
+  testMode: boolean;
+  amountPaidCents: number | null;
+  paidAt: Date | string | null;
+  tender: string | null;
+};
+
+export type GiftCardPaymentFacts = {
+  tender: string | null;
+  testMode: boolean;
+  promoCodeSnapshot: string | null;
+  stripePaymentIntentId: string | null;
+};
+
+/** promoCodeSnapshot value the GiftUp import writes. Not a promo code. */
+export const GIFTUP_IMPORT_MARKER = 'GIFTUP_IMPORT';
+
+/**
+ * Why a card cannot have a sale document, or null when it can.
+ *
+ * Checked in this order so the sentence names the real reason: a test card is
+ * a test card whatever else is true of it, and an unpaid checkout has no paid
+ * amount yet, which would otherwise read as "nothing was paid".
+ */
+export function giftCardDocumentIneligibleReason(card: GiftCardDocumentEligibility): string | null {
+  if (card.testMode) return 'This is a test card. No money was taken, so there is nothing to receipt.';
+  if (card.status === 'PENDING_PAYMENT') {
+    return 'This card is still awaiting payment. A receipt can be issued once the payment is confirmed.';
+  }
+  if (card.tender === 'COMP') {
+    return 'This card was given away (complimentary or a donation), so there is no sale to receipt.';
+  }
+  if (!card.amountPaidCents || card.amountPaidCents <= 0) {
+    return 'Nothing was paid for this card (a complimentary, donation or campaign card), so there is nothing to receipt.';
+  }
+  if (!card.paidAt) return 'There is no payment date recorded for this card, so there is nothing to receipt.';
+  return null;
+}
+
+const COUNTER_TENDERS = new Set<PaymentProvider>(['STRIPE', 'CARD', 'CASH', 'EFTPOS']);
+
+/** How the money came in, as the document records it. */
+export function paymentProviderForCard(card: { promoCodeSnapshot: string | null; tender: string | null }): PaymentProvider {
+  // GiftUp imports carry tender STRIPE, but the money went through GiftUp.
+  if (card.promoCodeSnapshot === GIFTUP_IMPORT_MARKER) return 'GIFTUP';
+  const tender = (card.tender ?? '').toUpperCase() as PaymentProvider;
+  return COUNTER_TENDERS.has(tender) ? tender : 'OTHER';
+}
+
+/**
+ * The PaymentIntent to ask Stripe about, or null when this card was not a real
+ * Stripe payment. GiftUp imports and test cards both say tender STRIPE; only
+ * the combination below is a charge that exists in Alma's Stripe account.
+ */
+export function stripePaymentIntentIdForCard(card: GiftCardPaymentFacts): string | null {
+  if (card.tender !== 'STRIPE' || card.testMode || card.promoCodeSnapshot === GIFTUP_IMPORT_MARKER) return null;
+  return card.stripePaymentIntentId?.trim() || null;
+}
+
+/** Only a real Checkout Session id is worth copying onto a document. */
+export function stripeCheckoutSessionIdForDocument(sessionId: string | null): string | null {
+  const id = sessionId?.trim() ?? '';
+  return id.startsWith('cs_') ? id : null;
+}
+
+/**
+ * The promo code to print on the discount line. promoCodeSnapshot doubles as
+ * an origin marker for cards that were never discounted by a code.
+ */
+export function promoCodeForDocument(snapshot: string | null): string | null {
+  const code = snapshot?.trim();
+  if (!code) return null;
+  if (code === GIFTUP_IMPORT_MARKER || code === 'PHYSICAL_COUNTER' || code === 'DONATION') return null;
+  if (code.startsWith('CAMPAIGN_REWARD:')) return null;
+  return code;
+}
+
+const CARD_BRANDS: Record<string, string> = {
+  amex: 'American Express',
+  cartes_bancaires: 'Cartes Bancaires',
+  diners: 'Diners Club',
+  discover: 'Discover',
+  eftpos_au: 'eftpos',
+  jcb: 'JCB',
+  link: 'Link',
+  mastercard: 'Mastercard',
+  unionpay: 'UnionPay',
+  visa: 'Visa'
+};
+
+/** Stripe's brand id ("mastercard", "eftpos_au") as a person would write it. */
+export function cardBrandLabel(brand: string | null | undefined): string | null {
+  const id = brand?.trim().toLowerCase();
+  if (!id || id === 'unknown') return null;
+  return CARD_BRANDS[id] ?? id.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+/** "Visa ending 4242", "Cash", "Card (at the counter)". */
+export function paymentMethodSummary(provider: PaymentProvider, brand?: string | null, last4?: string | null): string {
+  switch (provider) {
+    case 'STRIPE': {
+      const label = cardBrandLabel(brand);
+      const digits = last4?.trim();
+      if (label && digits) return `${label} ending ${digits}`;
+      if (digits) return `Card ending ${digits}`;
+      return label ?? 'Stripe';
+    }
+    case 'CARD':
+      return 'Card (at the counter)';
+    case 'CASH':
+      return 'Cash';
+    case 'EFTPOS':
+      return 'EFTPOS';
+    case 'GIFTUP':
+      return 'GiftUp';
+    case 'OTHER':
+      return 'Other';
+  }
+}
+
+/** The exactly-once latch for a card's live sale document. */
+export function giftCardSaleKey(cardId: string): string {
+  return `GIFT_CARD:${cardId}`;
+}
+
+/** ALMA-INV → ALMA-CN: credit notes number in their own series. */
+export function creditSeriesFor(saleSeries: string): string {
+  return saleSeries.endsWith('-INV') ? `${saleSeries.slice(0, -'-INV'.length)}-CN` : `${saleSeries}-CN`;
+}
+
+/**
+ * An issuer that is not registered for GST makes no taxable supplies (s9-5),
+ * so nothing on its documents carries GST — the service fee included. The fee
+ * is part of what was paid for the voucher, so it takes the voucher's
+ * treatment. With every line at zero the document comes out as a receipt.
+ */
+export function applyIssuerGstStatus(lines: FinancialDocumentLineDraft[], issuerGstRegistered: boolean): FinancialDocumentLineDraft[] {
+  if (issuerGstRegistered) return lines;
+  return lines.map((line) =>
+    line.taxableAmountCents === 0 && line.gstCents === 0
+      ? line
+      : { ...line, gstTreatment: 'FACE_VALUE_VOUCHER', taxableAmountCents: 0, gstCents: 0 }
+  );
+}
+
+/** Enough of a card code to correlate log lines — never the whole bearer secret. */
+export function maskGiftCardCode(code: string): string {
+  return `***${code.slice(-4)}`;
+}

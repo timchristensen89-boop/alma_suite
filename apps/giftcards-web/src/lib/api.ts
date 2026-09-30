@@ -39,6 +39,13 @@ export class ApiError extends Error {
   }
 }
 
+function unreachableApiError() {
+  return new ApiError(
+    `Cannot reach the ALMA Gift Cards API at ${API_BASE_URL}. Check that the API server is running and the frontend API URL is correct.`,
+    0
+  );
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
@@ -53,10 +60,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       headers
     });
   } catch {
-    throw new ApiError(
-      `Cannot reach the ALMA Gift Cards API at ${API_BASE_URL}. Check that the API server is running and the frontend API URL is correct.`,
-      0
-    );
+    throw unreachableApiError();
   }
 
   if (!response.ok) {
@@ -69,6 +73,42 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const body = await response.text();
   if (!body) return undefined as T;
   return JSON.parse(body) as T;
+}
+
+/**
+ * Fetch a binary endpoint (a receipt or invoice PDF) as a Blob.
+ *
+ * The session is a bearer token in localStorage — auth cookies do not survive
+ * cross-site in production — so a plain link or window.open to the API
+ * arrives without it and gets a 401. Putting the token in the query string
+ * would leak the session into browser history, proxy logs and referrers, so
+ * the bytes are fetched with the header and handed to the browser as an
+ * object URL instead (lib/openPdf.ts). No JSON Content-Type: nothing is sent.
+ */
+export async function apiBlob(path: string): Promise<Blob> {
+  const headers = new Headers();
+  const token = window.localStorage.getItem(AUTH_TOKEN_KEY);
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${normalisePath(API_BASE_URL, path)}`, {
+      credentials: 'include',
+      headers
+    });
+  } catch {
+    throw unreachableApiError();
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      setApiAuthToken(null);
+      throw new ApiError('Please sign in again.', 401);
+    }
+    const body = await response.json().catch(() => ({ message: null }));
+    throw new ApiError(body.message ?? 'Could not download that file. Try again.', response.status);
+  }
+  return response.blob();
 }
 
 function urlWithSuiteToken(href: string, token: string) {
