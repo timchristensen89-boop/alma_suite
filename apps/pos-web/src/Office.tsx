@@ -14,7 +14,7 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 type Profile = { id: string; name: string; venue?: string | null; matchKind: string; categoriesCsv: string; printerIp: string | null; active: boolean; sortOrder: number };
 type Rule = { id: string; kind: string; label: string; percent: number; weekdays: string; holidays: boolean; startMinute: number | null; endMinute: number | null; active: boolean };
 type ModGroup = { id: string; name: string; required: boolean; maxSelect: number; categories: string[]; options: Array<{ id: string; name: string; priceCents: number }> };
-type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; receiptLogo: string | null ; xeroTenantId: string | null; xeroSalesAccount: string | null; xeroTipsAccount: string | null };
+type Identity = { venue: string; postToReports: boolean; businessName: string; abn: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; receiptLogo: string | null ; xeroTenantId: string | null; xeroSalesAccount: string | null; xeroTipsAccount: string | null; xeroGiftCardAccount?: string | null };
 type MenuHide = { id: string; kind: string; key: string; hiddenBy?: string | null; createdAt: string };
 type MenuShape = { categories: Array<{ name: string; items: Array<{ recipeId: string; title: string; priceCents: number }> }> };
 type Special = { id: string; title: string; salePriceCents: number; category: string; venue: string | null };
@@ -1332,6 +1332,19 @@ export function Office() {
                         .catch((err) => setError(messageForError(err, 'Could not save.')));
                     }}
                   />
+                  <input
+                    defaultValue={identity.xeroGiftCardAccount ?? ''}
+                    placeholder="Gift card liability account (blank = gift cards not posted)"
+                    title="Gift cards sold at the till post here with no GST (BAS excluded): the money is owed back until the card is redeemed. Left blank, gift card sales stay off the daily invoice."
+                    className="office-input"
+                    onBlur={(event) => {
+                      const xeroGiftCardAccount = event.currentTarget.value.trim();
+                      if (xeroGiftCardAccount === (identity.xeroGiftCardAccount ?? '')) return;
+                      void api('/api/pos/venue-settings', { method: 'PUT', body: JSON.stringify({ venue: identity.venue, xeroGiftCardAccount }) })
+                        .then(() => setInfo('Saved.'))
+                        .catch((err) => setError(messageForError(err, 'Could not save.')));
+                    }}
+                  />
                 </div>
                 <XeroDailySalesRow venue={identity.venue} />
                 <div className="office-row office-logo-row">
@@ -1431,18 +1444,18 @@ function XeroDailySalesRow({ venue }: { venue: string }) {
   const push = (dryRun: boolean) => {
     setBusy(true);
     setNote(null);
-    void api<{ skipped: boolean; reason?: string; invoiceNumber: string | null; preview?: { lineItems: Array<{ Description: string; UnitAmount: number }> } }>(
+    void api<{ skipped: boolean; reason?: string; invoiceNumber: string | null; giftCardNote?: string | null; preview?: { lineItems: Array<{ Description: string; UnitAmount: number }>; giftCardNote?: string | null } }>(
       '/api/pos/xero/push',
       { method: 'POST', body: JSON.stringify({ venue, serviceDate: date, dryRun }) }
     )
       .then((result) => {
         if (result.preview) {
           const lines = result.preview.lineItems.map((line) => `${line.Description}: $${line.UnitAmount.toFixed(2)}`).join(' · ');
-          setNote(`Would post ${result.invoiceNumber}: ${lines || 'no lines'}`);
+          setNote(`Would post ${result.invoiceNumber}: ${lines || 'no lines'}${result.preview.giftCardNote ? ` — ${result.preview.giftCardNote}` : ''}`);
         } else if (result.skipped) {
           setNote(result.reason ?? 'Nothing to do.');
         } else {
-          setNote(`Posted ${result.invoiceNumber}.`);
+          setNote(`Posted ${result.invoiceNumber}.${result.giftCardNote ? ` ${result.giftCardNote}` : ''}`);
         }
         load();
       })
@@ -1459,7 +1472,7 @@ function XeroDailySalesRow({ venue }: { venue: string }) {
       <span className="office-variant-opts">
         {posted
           ? posted.status === 'POSTED'
-            ? `Posted ${posted.invoiceNumber ?? ''} — $${(posted.totalCents / 100).toFixed(2)}`
+            ? `Posted ${posted.invoiceNumber ?? ''} — $${(posted.totalCents / 100).toFixed(2)}${posted.detail ? ` · ${posted.detail}` : ''}`
             : `Failed: ${posted.detail ?? 'unknown error'}`
           : status
             ? `Not posted — $${((status.summary?.netIncCents ?? 0) / 100).toFixed(2)} takings that day`
