@@ -34,6 +34,12 @@ import QRCode from 'qrcode';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { buildGiftCardLedger } from '../lib/gift-card-ledger.js';
+import {
+  UNCONFIRMED_CHECKOUT_REFUND_NOTE,
+  checkoutSessionDisposition,
+  isSystemCancelledBeforePayment,
+  paidCheckoutAction
+} from '../lib/checkout-session-state.js';
 import { mailService } from './mail.service.js';
 import { giftCardWalletService } from './gift-card-wallet.service.js';
 
@@ -206,10 +212,6 @@ function walletConfigStatus() {
         env.giftCards.googleWallet.privateKey
     )
   };
-}
-
-function isStripePaymentConfirmed(session: Stripe.Checkout.Session) {
-  return session.mode === 'payment' && session.status === 'complete' && session.payment_status === 'paid';
 }
 
 function paymentIntentId(session: Stripe.Checkout.Session) {
@@ -931,19 +933,28 @@ export const giftCardService = {
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
     });
     if (!card) throw new HttpError(404, 'Gift card checkout session not found');
-    if (card.status === 'PENDING_PAYMENT' && stripe) {
+    // Ask Stripe about a card still waiting for payment, and about one the
+    // system closed off before its payment was confirmed — that card may
+    // since have been paid for, and must not stay cancelled if it was.
+    if ((card.status === 'PENDING_PAYMENT' || isSystemCancelledBeforePayment(card)) && stripe) {
       const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['payment_intent'] });
-      if (isStripePaymentConfirmed(session)) {
+      const disposition = checkoutSessionDisposition(session);
+      if (disposition === 'paid') {
         const updated = await this.handleCheckoutCompleted(session);
         if (updated) return publicGiftCard(updated);
         card = await prisma.giftCard.findUnique({
           where: { stripeCheckoutSessionId: sessionId },
           include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
         });
-      } else if (session.status === 'expired' || session.payment_status === 'unpaid' || session.payment_status === 'no_payment_required') {
+      } else if (disposition === 'abandoned') {
         await this.disregardUnconfirmedCheckout(session, 'Stripe did not confirm payment for this checkout.');
         throw new HttpError(404, 'Gift card payment was not confirmed by Stripe.');
       }
+      // 'pending': the customer is still paying (an open session reports
+      // payment_status 'unpaid'), or a delayed payment is processing. This
+      // endpoint is polled every few seconds from the counter iPad while the
+      // QR is on screen; closing the card off here cancelled it before the
+      // customer had finished paying. Fall through to "not confirmed yet".
     }
     if (!card || card.status !== 'ACTIVE' || !card.paidAt) {
       throw new HttpError(404, 'Gift card payment has not been confirmed by Stripe yet.');
@@ -1865,8 +1876,15 @@ export const giftCardService = {
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
     });
     if (!existing) return null;
-    if (!isStripePaymentConfirmed(session)) {
-      await this.disregardUnconfirmedCheckout(session, 'Stripe checkout completed without confirmed payment.');
+    const disposition = checkoutSessionDisposition(session);
+    if (disposition !== 'paid') {
+      // checkout.session.completed also fires for a delayed payment method
+      // whose money has not arrived yet (complete + 'unpaid'). That card
+      // waits for async_payment_succeeded / _failed; only an expired session
+      // is closed off.
+      if (disposition === 'abandoned') {
+        await this.disregardUnconfirmedCheckout(session, 'Stripe checkout completed without confirmed payment.');
+      }
       return null;
     }
     const paidAmountCents = sessionAmountCents(session);
@@ -1879,21 +1897,67 @@ export const giftCardService = {
       await this.disregardUnconfirmedCheckout(session, 'Stripe payment amount did not match the gift card value.');
       throw new HttpError(400, 'Stripe payment amount did not match the gift card value.');
     }
-    if (existing.status !== 'PENDING_PAYMENT') {
+    const action = paidCheckoutAction(existing);
+    if (action === 'already_settled') {
+      // A duplicate webhook, a second poll, a retry: already done.
       return toGiftCardPayload(existing);
     }
-    const card = await prisma.giftCard.update({
-      where: { id: cardId },
+    if (action === 'needs_attention') {
+      // Money arrived for a card a person cancelled. It is not reinstated
+      // behind their back; it is flagged where the card is looked up, once.
+      const flag = `Stripe confirmed payment ${paymentIntentId(session) ?? session.id} after this card was cancelled — refund it in Stripe or reinstate the card.`;
+      console.error('[gift-cards] payment confirmed for a cancelled card', {
+        giftCardId: existing.id,
+        code: `***${existing.code.slice(-4)}`,
+        session: session.id
+      });
+      if (!(existing.refundNote ?? '').includes(flag)) {
+        const flagged = await prisma.giftCard.update({
+          where: { id: existing.id },
+          data: { refundNote: [existing.refundNote, flag].filter(Boolean).join(' ') },
+          include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
+        });
+        return toGiftCardPayload(flagged);
+      }
+      return toGiftCardPayload(existing);
+    }
+
+    // Activate EXACTLY ONCE. The webhook, the success-page / counter poll and
+    // the lifecycle sweep can all arrive here together; the conditional update
+    // lets one of them win and the rest see it done — so the card email (and
+    // anything after it) goes out once, not once per caller.
+    const claimed = await prisma.giftCard.updateMany({
+      where:
+        action === 'activate'
+          ? { id: cardId, status: 'PENDING_PAYMENT' }
+          // 'recover': closed off by the system before this payment was
+          // confirmed. Same conditions as isSystemCancelledBeforePayment, so a
+          // manager's cancellation landing in between is never overwritten.
+          : { id: cardId, status: 'CANCELLED', paidAt: null, cancelledById: null, refundNote: UNCONFIRMED_CHECKOUT_REFUND_NOTE },
       data: {
         status: 'ACTIVE',
+        // A system cancellation zeroed the balance; nothing was ever redeemed.
+        balanceCents: existing.initialValueCents,
         paidAt: new Date(),
         amountPaidCents: paidAmountCents ?? expectedAmountCents,
         stripeCheckoutSessionId: session.id,
-        stripePaymentIntentId: paymentIntentId(session)
-      },
+        stripePaymentIntentId: paymentIntentId(session),
+        ...(action === 'recover' ? { cancelledAt: null, cancelReason: null, refundNote: null } : {})
+      }
+    });
+    const card = await prisma.giftCard.findUniqueOrThrow({
+      where: { id: cardId },
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
     });
     const payload = toGiftCardPayload(card);
+    if (claimed.count === 0) return payload;
+    if (action === 'recover') {
+      console.warn('[gift-cards] activated a card that was closed off before its payment was confirmed', {
+        giftCardId: card.id,
+        code: `***${card.code.slice(-4)}`,
+        session: session.id
+      });
+    }
     if (card.emailedAt) return payload;
     // Scheduled delivery (e.g. for a birthday) — defer the send. The
     // /jobs/gift-cards/drain Cloud Scheduler endpoint picks it up
@@ -1969,16 +2033,19 @@ export const giftCardService = {
         const session = await stripe.checkout.sessions.retrieve(card.stripeCheckoutSessionId, {
           expand: ['payment_intent']
         });
-        if (isStripePaymentConfirmed(session)) {
+        const disposition = checkoutSessionDisposition(session);
+        if (disposition === 'paid') {
           // The webhook was lost. Activate and send it now — late is recoverable,
           // cancelled is not.
           await this.handleCheckoutCompleted(session);
           recovered += 1;
-        } else if (session.status === 'expired' || session.payment_status === 'unpaid') {
+        } else if (disposition === 'abandoned') {
           await this.disregardUnconfirmedCheckout(session, `Checkout abandoned — Stripe reports no payment after ${abandonedAfterHours}h.`);
           abandoned += 1;
         } else {
-          // Still open at Stripe. Leave it and look again tomorrow.
+          // Still open at Stripe, or a delayed payment still processing
+          // (complete + 'unpaid', which the old check cancelled). Leave it and
+          // look again tomorrow.
           unresolved += 1;
         }
       } catch (error) {
@@ -2134,8 +2201,11 @@ export const giftCardService = {
     if (!where) return null;
     const existing = await prisma.giftCard.findUnique({ where });
     if (!existing || existing.paidAt || existing.status !== 'PENDING_PAYMENT') return null;
-    return prisma.giftCard.update({
-      where: { id: existing.id },
+    // Conditional: a payment confirmed between the read above and this write
+    // must win. An unconditional update here could cancel a card that had
+    // just been activated.
+    const closed = await prisma.giftCard.updateMany({
+      where: { id: existing.id, status: 'PENDING_PAYMENT', paidAt: null },
       data: {
         status: 'CANCELLED',
         balanceCents: 0,
@@ -2144,8 +2214,12 @@ export const giftCardService = {
         amountPaidCents: sessionAmountCents(session),
         cancelledAt: new Date(),
         cancelReason: reason,
-        refundNote: 'No gift card issued because Stripe did not confirm payment.'
-      },
+        refundNote: UNCONFIRMED_CHECKOUT_REFUND_NOTE
+      }
+    });
+    if (closed.count === 0) return null;
+    return prisma.giftCard.findUnique({
+      where: { id: existing.id },
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
     });
   },
