@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { kindBucket, sydneyTodayUtcMidnight } from './pos.service.js';
+import { buildPosXeroLineItems, posLineBucket } from '../lib/pos-xero-lines.js';
 import type { Request } from 'express';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { Prisma, type IntegrationConnection } from '@prisma/client';
@@ -9325,11 +9326,15 @@ export const integrationService = {
     const recipeMeta = new Map(recipes.map((recipe) => [recipe.id, recipe]));
     let foodIncCents = 0;
     let beverageIncCents = 0;
+    // Gift cards sold at the till are their own bucket: a voucher is a
+    // liability, not a food sale (lib/pos-xero-lines.ts).
+    let giftCardIncCents = 0;
     for (const order of orders) {
       for (const line of order.lines) {
         const meta = line.recipeId ? recipeMeta.get(line.recipeId) : null;
-        const bucket = meta ? kindBucket(meta.kind, meta.category) : line.course === 'Drinks' ? 'BEVERAGE' : 'FOOD';
-        if (bucket === 'BEVERAGE') beverageIncCents += line.totalCents;
+        const bucket = posLineBucket(line, meta ? kindBucket(meta.kind, meta.category) : null);
+        if (bucket === 'GIFT_CARD') giftCardIncCents += line.totalCents;
+        else if (bucket === 'BEVERAGE') beverageIncCents += line.totalCents;
         else foodIncCents += line.totalCents;
       }
     }
@@ -9354,6 +9359,7 @@ export const integrationService = {
       surchargeIncCents,
       foodIncCents,
       beverageIncCents,
+      giftCardIncCents,
       tipCents,
       payments: [...paymentsByMethod.entries()].map(([method, amountCents]) => ({ method, amountCents }))
     };
@@ -9427,24 +9433,22 @@ export const integrationService = {
 
     const dateKey = serviceDate.toISOString().slice(0, 10);
     const invoiceNumber = `ALMA-POS-${venue.replace(/[^A-Za-z0-9]+/g, '-').toUpperCase()}-${dateKey.replace(/-/g, '')}`;
-    const salesAccount = setting?.xeroSalesAccount?.trim() || '200';
-    const tipsAccount = setting?.xeroTipsAccount?.trim() || '';
-
-    // Xero takes dollars; every figure here is GST-exclusive except tips,
-    // which are a pass-through to staff and carry no GST.
-    const exGst = (incCents: number) => Number(((incCents * 10) / 11 / 100).toFixed(2));
-    const lineItems: Array<Record<string, unknown>> = [];
-    const pushLine = (description: string, amount: number, accountCode: string, taxType: string) => {
-      if (Math.abs(amount) < 0.005) return;
-      lineItems.push({ Description: description, Quantity: 1, UnitAmount: amount, AccountCode: accountCode, TaxType: taxType });
-    };
-
-    pushLine(`Food sales — ${dateKey}`, exGst(summary.foodIncCents), salesAccount, 'OUTPUT');
-    pushLine(`Beverage sales — ${dateKey}`, exGst(summary.beverageIncCents), salesAccount, 'OUTPUT');
-    pushLine('Surcharge', exGst(summary.surchargeIncCents), salesAccount, 'OUTPUT');
-    pushLine('Discounts and comps', -exGst(summary.discountCents), salesAccount, 'OUTPUT');
-    pushLine('Refunds', -exGst(summary.refundCents), salesAccount, 'OUTPUT');
-    if (tipsAccount) pushLine('Card tips (payable to staff)', Number((summary.tipCents / 100).toFixed(2)), tipsAccount, 'NONE');
+    // The line items, including where gift card sales go, are built in
+    // lib/pos-xero-lines.ts where the classification is tested.
+    const { lineItems, giftCardNotPostedCents } = buildPosXeroLineItems(
+      summary,
+      {
+        sales: setting?.xeroSalesAccount?.trim() || '200',
+        tips: setting?.xeroTipsAccount?.trim() || '',
+        giftCard: setting?.xeroGiftCardAccount?.trim() || ''
+      },
+      dateKey
+    );
+    // With no gift card liability account set, voucher sales stay off the
+    // invoice rather than going to a guessed account — and say so.
+    const giftCardNote = giftCardNotPostedCents > 0
+      ? `Gift card sales of $${(giftCardNotPostedCents / 100).toFixed(2)} not posted: set the gift card liability account for ${venue} in the POS Office.`
+      : null;
 
     if (lineItems.length === 0) {
       return { venue, skipped: true as const, reason: 'Nothing to post.', invoiceNumber: null };
@@ -9459,7 +9463,7 @@ export const integrationService = {
         skipped: true as const,
         reason: 'Dry run — nothing posted.',
         invoiceNumber,
-        preview: { tenantId, contactName, date: dateKey, lineItems },
+        preview: { tenantId, contactName, date: dateKey, lineItems, giftCardNotPostedCents, giftCardNote },
         summary
       };
     }
@@ -9495,14 +9499,14 @@ export const integrationService = {
         invoiceNumber,
         totalCents: summary.netIncCents + summary.tipCents,
         status: 'POSTED',
-        detail: null as string | null
+        detail: giftCardNote
       };
       await prisma.posXeroPost.upsert({
         where: { venue_serviceDate: { venue, serviceDate } },
         create: record,
         update: record
       });
-      return { venue, skipped: false as const, invoiceNumber, invoiceId: invoice?.InvoiceID ?? null, summary };
+      return { venue, skipped: false as const, invoiceNumber, invoiceId: invoice?.InvoiceID ?? null, summary, giftCardNotPostedCents, giftCardNote };
     } catch (error) {
       const detail = error instanceof Error ? error.message.slice(0, 400) : 'Unknown error';
       await prisma.posXeroPost.upsert({

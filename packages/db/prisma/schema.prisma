@@ -5743,7 +5743,7 @@ model PosVenueSetting {
   xeroTipsAccount     String? // blank = tips stay out of the invoice
   xeroCashAccount     String? // clearing account cash lands in
   xeroCardAccount     String? // clearing account card settlements land in
-  xeroGiftCardAccount String? // gift-card redemptions (liability drawdown)
+  xeroGiftCardAccount String? // gift card liability: voucher sales post here, BAS excluded
 }
 
 model PosRule {

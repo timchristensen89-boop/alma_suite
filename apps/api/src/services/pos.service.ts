@@ -1926,7 +1926,8 @@ export const posService = {
       receiptLogo: row?.receiptLogo ?? null,
       xeroTenantId: row?.xeroTenantId ?? null,
       xeroSalesAccount: row?.xeroSalesAccount ?? null,
-      xeroTipsAccount: row?.xeroTipsAccount ?? null
+      xeroTipsAccount: row?.xeroTipsAccount ?? null,
+      xeroGiftCardAccount: row?.xeroGiftCardAccount ?? null
     };
   },
 
@@ -1945,6 +1946,7 @@ export const posService = {
     if (body.xeroTenantId !== undefined) patch.xeroTenantId = str(body.xeroTenantId).slice(0, 80) || null;
     if (body.xeroSalesAccount !== undefined) patch.xeroSalesAccount = str(body.xeroSalesAccount).slice(0, 20) || null;
     if (body.xeroTipsAccount !== undefined) patch.xeroTipsAccount = str(body.xeroTipsAccount).slice(0, 20) || null;
+    if (body.xeroGiftCardAccount !== undefined) patch.xeroGiftCardAccount = str(body.xeroGiftCardAccount).slice(0, 20) || null;
     if (body.receiptLogo !== undefined) {
       const logo = str(body.receiptLogo);
       if (logo && (!logo.startsWith('data:image/') || logo.length > 400_000)) {
