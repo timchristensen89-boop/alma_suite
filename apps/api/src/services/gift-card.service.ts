@@ -1950,11 +1950,15 @@ export const giftCardService = {
       where: { id: cardId },
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
     });
-    // Receipt or tax invoice, when the owner has switched automatic issuing on.
-    // Never throws: a document problem must not cost the buyer their card.
-    await financialDocumentService.issueAfterStripePayment(card.id);
     const payload = toGiftCardPayload(card);
     if (claimed.count === 0) return payload;
+    // Only the caller that activated the card gets here, so the receipt or
+    // tax invoice is issued once per payment (it is also idempotent on its
+    // own: the card's saleKey latch). Before the email's early returns, so a
+    // scheduled-delivery card still gets its document now. Off unless the
+    // owner has switched automatic issuing on; never throws — a document
+    // problem must not cost the buyer their card.
+    await financialDocumentService.issueAfterStripePayment(card.id);
     if (action === 'recover') {
       console.warn('[gift-cards] activated a card that was closed off before its payment was confirmed', {
         giftCardId: card.id,
