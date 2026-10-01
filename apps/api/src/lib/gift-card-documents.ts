@@ -215,3 +215,25 @@ export function planStripeRefundCredits<R extends StripeRefundFacts>(
 export function stripeRefundCreditReason(refund: Pick<StripeRefundFacts, 'reason'>): string {
   return `Refunded in Stripe${refund.reason ? ` (${refund.reason.replace(/_/g, ' ')})` : ''}`;
 }
+
+/**
+ * Whether issuing a sale document should also ask Stripe for the payment's
+ * refunds and credit them.
+ *
+ * Why it ever does: a refund made BEFORE the document existed — a card
+ * receipted by hand days later, or a corrected document reissued after a
+ * void — has no credit note yet, and no new refund event will arrive to
+ * raise one. So a manual issue and the catch-up job reconcile.
+ *
+ * Why the checkout never does (AUTO_STRIPE): the payment confirmed a moment
+ * ago, so it cannot have been refunded yet. The call would only add a Stripe
+ * round trip to the buyer's success page and the counter iPad, for nothing.
+ * Refunds made later are still credited by the refund webhooks.
+ */
+export function shouldReconcileRefundsOnIssue(input: {
+  provider: string;
+  stripePaymentIntentId: string | null | undefined;
+  issueSource: string;
+}): boolean {
+  return input.provider === 'STRIPE' && Boolean(input.stripePaymentIntentId) && input.issueSource !== 'AUTO_STRIPE';
+}

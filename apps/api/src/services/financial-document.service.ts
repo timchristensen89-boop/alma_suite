@@ -41,7 +41,8 @@ import {
   type IssueGiftCardDocumentInput,
   type LegalEntity,
   type LegalEntityInput,
-  type PaymentProvider
+  type PaymentProvider,
+  type IssuedButNotEmailedDetails
 } from '@alma/shared';
 import Stripe from 'stripe';
 import { ZodError } from 'zod';
@@ -59,6 +60,7 @@ import {
   promoCodeForDocument,
   stripeCheckoutSessionIdForDocument,
   stripePaymentIntentIdForCard,
+  shouldReconcileRefundsOnIssue,
   stripeRefundCreditReason,
   type StripeRefundFacts
 } from '../lib/gift-card-documents.js';
@@ -408,7 +410,9 @@ function issuedButNotEmailed(doc: FinancialDocumentDetail, reason: string) {
   return new HttpError(
     502,
     `${SHORT_TITLES[doc.type]} ${doc.number} was issued, but the email did not send: ${because} Use Email on the document to try again.`,
-    { documentId: doc.id }
+    // The web reads THIS, never the status, to decide the document exists:
+    // a 502 also comes from a proxy or a Stripe outage that issued nothing.
+    { issued: true, documentId: doc.id, documentNumber: doc.number } satisfies IssuedButNotEmailedDetails
   );
 }
 
@@ -496,11 +500,6 @@ type CreditNoteOptions = {
   paidAt?: Date;
   issueSource?: 'MANUAL' | 'STRIPE_REFUND';
 };
-
-/** A released refund id kept beside whatever reference the note already had. */
-function referenceWithRefund(reference: string | null, refundId: string) {
-  return reference && !reference.includes(refundId) ? `${reference} · ${refundId}` : reference ?? refundId;
-}
 
 export const financialDocumentService = {
   isInvoiceOwner,
@@ -697,13 +696,10 @@ export const financialDocumentService = {
         createNumberedDocument(tx, documentSeries(entity.documentPrefix, type), data, lines)
       );
       console.info(`[invoices] issued ${created.number} for gift card code=${maskGiftCardCode(card.code)} (${issueSource})`);
-      // A refund made before this document existed — before it was issued at
-      // all, or while the card's previous document was void — is credited now
-      // rather than waiting for a Stripe event that may never come again.
-      // Not on the checkout path itself (AUTO_STRIPE): the payment has only
-      // just completed, so there is nothing to credit, and the buyer's success
-      // page would wait on another Stripe call for it.
-      if (provider === 'STRIPE' && stripePaymentIntentId && issueSource !== 'AUTO_STRIPE') {
+      // A refund made before this document existed is credited now; never on
+      // the checkout path, where nothing can have been refunded yet
+      // (lib/gift-card-documents.ts shouldReconcileRefundsOnIssue).
+      if (stripePaymentIntentId && shouldReconcileRefundsOnIssue({ provider, stripePaymentIntentId, issueSource })) {
         await this.reconcileStripeRefundsQuietly({ id: created.id, number: created.number, stripePaymentIntentId }, card.code);
       }
       return { document: await this.get(created.id), created: true };
@@ -957,6 +953,9 @@ export const financialDocumentService = {
     // told which note already covers the refund they typed.
     const alreadyCredited = (number: string) =>
       new HttpError(409, `Stripe refund ${stripeRefundId} is already credited by ${number}.`);
+    // A form resubmitted after a lost response: the same request id finds the
+    // note the first submission raised, so the retry is safe.
+    const clientRequestId = issueSource === 'MANUAL' ? parsed.clientRequestId ?? null : null;
     let result: { id: string; created: boolean };
     try {
       result = await prisma.$transaction(async (tx) => {
@@ -965,23 +964,20 @@ export const financialDocumentService = {
         // sends for one refund — must each see the other, or together they
         // could credit more than was paid.
         await lockDocument(tx, saleDocumentId);
+        if (clientRequestId) {
+          const repeat = await tx.financialDocument.findUnique({ where: { clientRequestId }, select: { id: true } });
+          if (repeat) return { id: repeat.id, created: false };
+        }
         if (stripeRefundId) {
+          // Only a LIVE note holds the latch; a voided one keeps the refund id
+          // for the record but no longer counts as crediting it.
           const already = await tx.financialDocument.findUnique({
-            where: { stripeRefundId },
-            select: { id: true, number: true, status: true, paymentReference: true }
+            where: { stripeRefundLatch: stripeRefundId },
+            select: { id: true, number: true }
           });
-          if (already?.status === 'ISSUED') {
+          if (already) {
             if (issueSource === 'MANUAL') throw alreadyCredited(already.number);
             return { id: already.id, created: false };
-          }
-          // A note voided before voiding released the refund id still holds
-          // it. Release it the way void does now, so the refund can be
-          // credited against the live sale.
-          if (already) {
-            await tx.financialDocument.update({
-              where: { id: already.id },
-              data: { stripeRefundId: null, paymentReference: referenceWithRefund(already.paymentReference, stripeRefundId) }
-            });
           }
         }
         const original = await tx.financialDocument.findUnique({
@@ -1045,6 +1041,8 @@ export const financialDocumentService = {
           stripeCheckoutSessionId: null,
           stripeChargeId: null,
           stripeRefundId: stripeRefundId ?? null,
+          stripeRefundLatch: stripeRefundId ?? null,
+          clientRequestId,
           paidAt: options.paidAt ?? new Date(),
           supplyDate: original.supplyDate,
           issuedById: actor?.id ?? null,
@@ -1057,8 +1055,12 @@ export const financialDocumentService = {
         return { id: created.id, created: true };
       });
     } catch (error) {
-      if (stripeRefundId && isUniqueViolation(error, 'stripeRefundId')) {
-        const winner = await prisma.financialDocument.findUnique({ where: { stripeRefundId }, select: { id: true, number: true } });
+      if (clientRequestId && isUniqueViolation(error, 'clientRequestId')) {
+        const repeat = await prisma.financialDocument.findUnique({ where: { clientRequestId }, select: { id: true } });
+        if (repeat) return { document: await this.get(repeat.id), created: false, email: false };
+      }
+      if (stripeRefundId && isUniqueViolation(error, 'stripeRefundLatch')) {
+        const winner = await prisma.financialDocument.findUnique({ where: { stripeRefundLatch: stripeRefundId }, select: { id: true, number: true } });
         if (winner) {
           if (issueSource === 'MANUAL') throw alreadyCredited(winner.number);
           return { document: await this.get(winner.id), created: false, email: false };
@@ -1257,7 +1259,7 @@ export const financialDocumentService = {
       await lockDocument(tx, id);
       const doc = await tx.financialDocument.findUnique({
         where: { id },
-        select: { type: true, status: true, number: true, stripeRefundId: true, paymentReference: true }
+        select: { type: true, status: true, number: true }
       });
       if (!doc) throw new HttpError(404, 'Document not found.');
       if (doc.status !== 'ISSUED') throw new HttpError(409, `${doc.number} is already void.`);
@@ -1267,26 +1269,20 @@ export const financialDocumentService = {
           throw new HttpError(409, `${doc.number} has credit notes against it. Void its credit notes first.`);
         }
       }
-      // A void credit note must not keep its Stripe refund. The refund id is
-      // the unique key a refund is credited on, so a note that held it after
-      // being voided would stop that money ever being credited again — not
-      // against the live sale when the note was voided for a wrong amount,
-      // and not against a corrected sale document issued after the original
-      // was voided too. The id moves to paymentReference so the void note
-      // still says which refund it was.
-      const releaseRefund = doc.stripeRefundId
-        ? { stripeRefundId: null, paymentReference: referenceWithRefund(doc.paymentReference, doc.stripeRefundId) }
-        : {};
       await tx.financialDocument.update({
         where: { id },
-        // Releasing saleKey is what lets a corrected document be issued for the card.
         data: {
           status: 'VOID',
           voidedAt: new Date(),
           voidedById: actor?.id ?? null,
           voidReason: parsed.reason,
+          // The latches go; the record stays. Releasing saleKey lets a
+          // corrected document be issued for the card. Releasing
+          // stripeRefundLatch lets the refund be credited again against the
+          // live (or reissued) sale — while stripeRefundId, the link to the
+          // real Stripe refund, is kept on this void note for good.
           saleKey: null,
-          ...releaseRefund
+          stripeRefundLatch: null
         }
       });
       return doc.number;

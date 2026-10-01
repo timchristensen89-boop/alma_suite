@@ -180,11 +180,20 @@ says why it did nothing (automatic issuing off, no issuer chosen).
   no more than the refund. The refund id is the same key the webhook credits
   on, so the webhook never raises a second note for it, and a refund already
   credited is refused with the number of the note that covers it.
-- **Voiding a Stripe credit note** releases its refund: the refund id moves
-  from the note to its payment reference, and the refund can be credited
-  again — by the next refund event for that payment, by issuing a corrected
-  sale document, or by hand with the same refund id (to credit a different
-  amount, say).
+- **Voiding a Stripe credit note** keeps the link to the real refund: the void
+  note still carries its Stripe refund id (with who voided it, when and why).
+  What voiding releases is the refund's *latch* (`stripeRefundLatch`, the
+  unique key that stops a refund being credited twice), so the refund can be
+  credited again — by the next refund event for that payment, by issuing a
+  corrected sale document, or by hand with the same refund id (to credit a
+  different amount, say). A refund is counted as credited only by a live note.
+- **Retrying a credit note is safe.** The form sends one request id per
+  submission; if the response was lost and the manager submits again, the
+  server returns the note it already raised instead of a second one.
+- **"Issued, but the email did not send"** is the only failure after which a
+  document exists. The server marks it explicitly and the screen closes the
+  form; every other failure (a Stripe outage, a gateway error) leaves the form
+  open with nothing issued.
 - **Issuing by hand for a card that already has a live document** is refused
   with that document's number. Email it from its row, or void it and issue
   again to change the details.

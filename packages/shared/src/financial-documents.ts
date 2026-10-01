@@ -551,6 +551,12 @@ export const creditNoteInputSchema = z
       .regex(STRIPE_REFUND_ID_PATTERN, 'A Stripe refund id starts with re_ — copy it from the refund in Stripe.')
       .optional()
       .or(z.literal('')),
+    /**
+     * One per submission of the credit note form. A retry after a lost
+     * response sends the same id and gets the note that was already raised,
+     * never a second one for the same money.
+     */
+    clientRequestId: z.string().trim().uuid().optional(),
     email: z.boolean().default(false)
   })
   .superRefine((value, ctx) => {
@@ -682,3 +688,29 @@ export type GiftCardDocumentsResponse = {
   ineligibleReason: string | null;
   documents: FinancialDocumentSummary[];
 };
+
+/* ------------------------------------------------------------------ */
+/* Issued, but the email failed                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The marker the API puts in an error's `details` when a document WAS issued
+ * and only its email failed. The web decides "issued" from this marker and
+ * nothing else — never from the HTTP status, because a 502 also comes from a
+ * proxy, a load balancer or a Stripe outage, and none of those issued
+ * anything.
+ */
+export type IssuedButNotEmailedDetails = {
+  issued: true;
+  documentId: string;
+  documentNumber: string;
+};
+
+export function issuedButNotEmailedDetails(details: unknown): IssuedButNotEmailedDetails | null {
+  if (!details || typeof details !== 'object') return null;
+  const value = details as Record<string, unknown>;
+  if (value.issued !== true) return null;
+  if (typeof value.documentId !== 'string' || !value.documentId) return null;
+  if (typeof value.documentNumber !== 'string' || !value.documentNumber) return null;
+  return { issued: true, documentId: value.documentId, documentNumber: value.documentNumber };
+}

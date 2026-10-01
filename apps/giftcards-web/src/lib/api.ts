@@ -34,7 +34,12 @@ function normalisePath(baseUrl: string, path: string) {
 }
 
 export class ApiError extends Error {
-  constructor(message: string, public readonly status: number) {
+  /**
+   * `details` is the server's structured detail, when it sent any — e.g. the
+   * marker that a document WAS issued and only its email failed
+   * (issuedButNotEmailedDetails). Absent for a proxy or gateway error.
+   */
+  constructor(message: string, public readonly status: number, public readonly details: unknown = null) {
     super(message);
   }
 }
@@ -64,9 +69,16 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    const body = await response.json().catch(() => ({ message: 'Request failed' }));
+    // A gateway or proxy error has no JSON body: say plainly that nothing was
+    // confirmed, rather than a bare "Request failed".
+    const body = await response.json().catch(() => ({
+      message:
+        response.status >= 500
+          ? `The server did not answer properly (HTTP ${response.status}). Nothing has been confirmed — reload before trying again.`
+          : 'Request failed'
+    }));
     if (response.status === 401) setApiAuthToken(null);
-    throw new ApiError(body.message ?? 'Request failed', response.status);
+    throw new ApiError(body.message ?? 'Request failed', response.status, body.details ?? null);
   }
 
   if (response.status === 204) return undefined as T;
@@ -148,4 +160,18 @@ export function installSuiteHandoff() {
       almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
     }).almaCreateSuiteHandoffUrl;
   };
+}
+
+/**
+ * One id per form submission, so a retry after a lost response is recognised
+ * by the server as the same request (credit notes: clientRequestId).
+ */
+export function newRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

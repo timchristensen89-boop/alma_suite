@@ -81,6 +81,8 @@ CREATE TABLE "FinancialDocument" (
     "stripeCheckoutSessionId" TEXT,
     "stripeChargeId" TEXT,
     "stripeRefundId" TEXT,
+    "stripeRefundLatch" TEXT,
+    "clientRequestId" TEXT,
     "paidAt" TIMESTAMP(3),
     "supplyDate" TIMESTAMP(3),
     "issuedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -141,7 +143,10 @@ CREATE UNIQUE INDEX "FinancialDocument_number_key" ON "FinancialDocument"("numbe
 CREATE UNIQUE INDEX "FinancialDocument_saleKey_key" ON "FinancialDocument"("saleKey");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "FinancialDocument_stripeRefundId_key" ON "FinancialDocument"("stripeRefundId");
+CREATE UNIQUE INDEX "FinancialDocument_stripeRefundLatch_key" ON "FinancialDocument"("stripeRefundLatch");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "FinancialDocument_clientRequestId_key" ON "FinancialDocument"("clientRequestId");
 
 -- CreateIndex
 CREATE INDEX "FinancialDocument_sourceType_sourceId_idx" ON "FinancialDocument"("sourceType", "sourceId");
@@ -166,6 +171,9 @@ CREATE INDEX "FinancialDocument_customerEmail_idx" ON "FinancialDocument"("custo
 
 -- CreateIndex
 CREATE INDEX "FinancialDocument_stripePaymentIntentId_idx" ON "FinancialDocument"("stripePaymentIntentId");
+
+-- CreateIndex
+CREATE INDEX "FinancialDocument_stripeRefundId_idx" ON "FinancialDocument"("stripeRefundId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "FinancialDocument_series_sequence_key" ON "FinancialDocument"("series", "sequence");

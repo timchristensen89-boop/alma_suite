@@ -19,6 +19,7 @@ import {
   issueGiftCardDocumentInputSchema,
   centsToDollars,
   creditNoteInputSchema,
+  issuedButNotEmailedDetails,
   maskedGiftCardReference
 } from '@alma/shared';
 
@@ -301,5 +302,29 @@ describe('money on documents', () => {
     assert.equal(centsToDollars(103_50), '$103.50');
     assert.equal(centsToDollars(1_234_567_89), '$1,234,567.89');
     assert.equal(centsToDollars(-5), '-$0.05');
+  });
+});
+
+describe('telling "issued but the email failed" from a real failure', () => {
+  it('reads the explicit marker the API sends when the document exists', () => {
+    assert.deepEqual(
+      issuedButNotEmailedDetails({ issued: true, documentId: 'doc_1', documentNumber: 'ALMA-CN-000003' }),
+      { issued: true, documentId: 'doc_1', documentNumber: 'ALMA-CN-000003' }
+    );
+  });
+
+  it('never reads a bare 502 — a proxy, a load balancer or a Stripe outage — as issued', () => {
+    for (const details of [undefined, null, {}, 'Bad Gateway', { message: 'upstream' }, { issued: 'true', documentId: 'x', documentNumber: 'y' }, { issued: true }, { issued: true, documentId: '', documentNumber: 'ALMA-CN-1' }]) {
+      assert.equal(issuedButNotEmailedDetails(details), null);
+    }
+  });
+});
+
+describe('retrying a credit note', () => {
+  it('carries one request id per submission', () => {
+    const base = { amountCents: 10_00, reason: 'Partial refund', refundMethod: 'CASH' };
+    assert.equal(creditNoteInputSchema.safeParse({ ...base, clientRequestId: '9b2f6c3e-8a41-4f0e-9d6b-1c2a3b4c5d6e' }).success, true);
+    assert.equal(creditNoteInputSchema.safeParse({ ...base, clientRequestId: 'not-a-uuid' }).success, false);
+    assert.equal(creditNoteInputSchema.safeParse(base).success, true);
   });
 });

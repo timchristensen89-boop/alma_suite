@@ -2485,9 +2485,18 @@ model FinancialDocument {
   stripePaymentIntentId   String?
   stripeCheckoutSessionId String?
   stripeChargeId          String?
-  // Set on credit notes raised from a Stripe refund. Unique so a replayed
-  // webhook can never credit the same refund twice.
-  stripeRefundId          String?                 @unique
+  // The Stripe refund a credit note records. Permanent: voiding the note
+  // never clears it, so a void note still says which real refund it was.
+  stripeRefundId          String?
+  // The exactly-once latch for crediting a refund: equal to stripeRefundId
+  // on an ISSUED note, cleared when the note is voided (as saleKey is for a
+  // sale). Unique, so a replayed webhook, the three events Stripe sends for
+  // one refund, and a person crediting by hand can never credit it twice —
+  // yet a voided note does not stop the refund being credited again.
+  stripeRefundLatch       String?                 @unique
+  // Set by the form that raised a credit note by hand, one per submission,
+  // so a retry after a lost response returns the same note, not a second one.
+  clientRequestId         String?                 @unique
   // When the money moved: the payment for a sale, the refund for a credit.
   paidAt                  DateTime?
   // When the thing was supplied (the card sale), as distinct from issuedAt.
@@ -2526,6 +2535,7 @@ model FinancialDocument {
   @@index([type, status])
   @@index([customerEmail])
   @@index([stripePaymentIntentId])
+  @@index([stripeRefundId])
 }
 
 // One printed line. Amounts are GST-inclusive; taxableAmountCents says how

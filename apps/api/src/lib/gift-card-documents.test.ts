@@ -11,6 +11,7 @@ import {
   paymentMethodSummary,
   paymentProviderForCard,
   planStripeRefundCredits,
+  shouldReconcileRefundsOnIssue,
   promoCodeForDocument,
   stripeCheckoutSessionIdForDocument,
   stripePaymentIntentIdForCard,
@@ -280,5 +281,45 @@ describe('which Stripe refunds still need a credit note', () => {
   it('says why the money went back', () => {
     assert.equal(stripeRefundCreditReason({ reason: 'requested_by_customer' }), 'Refunded in Stripe (requested by customer)');
     assert.equal(stripeRefundCreditReason({ reason: null }), 'Refunded in Stripe');
+  });
+});
+
+describe('Stripe refunds looked up when a document is issued', () => {
+  const stripeSale = { provider: 'STRIPE', stripePaymentIntentId: 'pi_123' };
+
+  it('never on the checkout path: the payment confirmed a moment ago and cannot have been refunded', () => {
+    assert.equal(shouldReconcileRefundsOnIssue({ ...stripeSale, issueSource: 'AUTO_STRIPE' }), false);
+  });
+
+  it('when a document is issued by hand or by the catch-up job, so an earlier refund is credited', () => {
+    assert.equal(shouldReconcileRefundsOnIssue({ ...stripeSale, issueSource: 'MANUAL' }), true);
+    assert.equal(shouldReconcileRefundsOnIssue({ ...stripeSale, issueSource: 'CATCH_UP' }), true);
+  });
+
+  it('never for a sale Stripe did not take', () => {
+    for (const provider of ['CASH', 'EFTPOS', 'CARD', 'GIFTUP', 'OTHER']) {
+      assert.equal(shouldReconcileRefundsOnIssue({ provider, stripePaymentIntentId: 'pi_123', issueSource: 'MANUAL' }), false);
+    }
+    assert.equal(shouldReconcileRefundsOnIssue({ provider: 'STRIPE', stripePaymentIntentId: null, issueSource: 'MANUAL' }), false);
+  });
+});
+
+describe('a voided Stripe credit note keeps its refund id but stops counting', () => {
+  const refund = { id: 're_1', amount: 50_00, status: 'succeeded', created: 1, reason: null };
+
+  it('a refund whose only note was voided is credited again', () => {
+    const plan = planStripeRefundCredits([refund], [{ stripeRefundId: 're_1', number: 'ALMA-CN-000001', status: 'VOID' }]);
+    assert.deepEqual(plan.toCredit.map((r) => r.id), ['re_1']);
+  });
+
+  it('a refund with a live note is not credited twice', () => {
+    const plan = planStripeRefundCredits(
+      [refund],
+      [
+        { stripeRefundId: 're_1', number: 'ALMA-CN-000001', status: 'VOID' },
+        { stripeRefundId: 're_1', number: 'ALMA-CN-000002', status: 'ISSUED' }
+      ]
+    );
+    assert.equal(plan.toCredit.length, 0);
   });
 });

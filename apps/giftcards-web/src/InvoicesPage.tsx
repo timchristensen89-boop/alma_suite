@@ -17,10 +17,11 @@ import {
   type InvoiceSettings,
   type InvoiceSettingsResponse,
   type LegalEntity,
-  type PaymentProvider
+  type PaymentProvider,
+  issuedButNotEmailedDetails
 } from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
-import { ApiError, api } from './lib/api';
+import { ApiError, api, newRequestId } from './lib/api';
 import { openDocumentPdf } from './lib/openPdf';
 
 /**
@@ -836,6 +837,8 @@ type CreditNoteRequest = {
   refundReference: string;
   /** Stripe refunds only: the re_… id the refund webhook credits on. */
   stripeRefundId?: string;
+  /** One per opening of the form: a retry returns the note already raised. */
+  clientRequestId: string;
   email: boolean;
 };
 
@@ -932,14 +935,18 @@ function DocumentRegister({ canManage }: { canManage: boolean }) {
           text: `${DOCUMENT_TYPE_LABELS[created.type]} ${created.number} issued for ${money(created.totalCents)}${input.email ? ' and emailed' : ''}.`
         };
       } catch (error) {
-        // A 502 is "…was issued, but the email did not send": the note exists.
-        // Reported as a problem, but returned rather than thrown so the form
-        // closes — submitting it again would issue a second note for the same
-        // money. The new note's own Email button is the retry.
-        if (error instanceof ApiError && error.status === 502) return { tone: 'error', text: error.message };
+        // The note exists only if the server SAYS so, with the explicit
+        // marker. Then the problem is reported but returned, not thrown, so
+        // the form closes — submitting again would be pointless. Any other
+        // failure, a bare 502 from a proxy or a Stripe outage included, leaves
+        // the form open with what was typed; resubmitting it is safe because
+        // it carries the same clientRequestId.
+        if (error instanceof ApiError && issuedButNotEmailedDetails(error.details)) {
+          return { tone: 'error', text: error.message };
+        }
         throw error;
       } finally {
-        // Also after a failure: the 502 above, or a 409 for a refund already credited.
+        // Also after a failure: the note may exist, or a refund already credited.
         refresh(doc.id);
       }
     });
@@ -1382,6 +1389,9 @@ function CreditNoteForm({
   const [stripeRefundId, setStripeRefundId] = useState('');
   const [emailIt, setEmailIt] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // Kept for the life of this form, so every retry of one credit note is the
+  // same request to the server.
+  const [clientRequestId] = useState(newRequestId);
   const noteName = doc.type === 'TAX_INVOICE' ? 'adjustment note' : 'credit note';
   const viaStripe = refundMethod === 'STRIPE';
 
@@ -1430,6 +1440,7 @@ function CreditNoteForm({
       refundReference: reference.trim(),
       // Left behind if the method was switched away from Stripe: not sent.
       stripeRefundId: viaStripe ? stripeRefundId.trim() : undefined,
+      clientRequestId,
       email: emailIt
     });
   }

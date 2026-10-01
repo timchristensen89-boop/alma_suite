@@ -3,7 +3,8 @@ import {
   isCreditDocument,
   normaliseAbn,
   type FinancialDocumentDetail,
-  type GiftCardDocumentsResponse
+  type GiftCardDocumentsResponse,
+  issuedButNotEmailedDetails
 } from '@alma/shared';
 import { ActionFeedback, Button, Input, Spinner } from '@alma/ui';
 import { ApiError, api } from './lib/api';
@@ -129,13 +130,15 @@ export function GiftCardDocumentControls({ code, isOwner }: { code: string; isOw
       // The server's sentence says which case it is — 409 no issuing company
       // chosen yet, 409 a document already issued for this card (by Stripe's
       // confirmation or another manager), 422 a card that cannot have one,
-      // 502 a document that WAS issued but whose email failed — so it is
-      // shown as written. The reload below brings in any document that
-      // exists, which hides this form.
+      // or a document that WAS issued but whose email failed — so it is shown
+      // as written. The reload below brings in any document that exists,
+      // which hides this form.
       setIssueFeedback({ tone: 'error', text: error instanceof Error ? error.message : 'Could not issue the receipt.' });
-      // After a 502 the document exists: close the form rather than leave it
-      // ready to submit again. The document's own Email button is the retry.
-      if (error instanceof ApiError && error.status === 502) closeIssueForm();
+      // Only the server's explicit marker means the document exists; a bare
+      // 502 from a proxy or an outage does not. Then the form closes and the
+      // document's own Email button is the retry. Otherwise it stays open,
+      // and a resubmit is safe: a second issue for the card is refused (409).
+      if (error instanceof ApiError && issuedButNotEmailedDetails(error.details)) closeIssueForm();
     } finally {
       setIssuing(false);
       reload();
