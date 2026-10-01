@@ -5,6 +5,7 @@ import { HttpError } from '../lib/http.js';
 import { adminService } from '../services/admin.service.js';
 import { checklistService } from '../services/checklist.service.js';
 import { deputyService, parseDeputySyncOptions } from '../services/deputy.service.js';
+import { financialDocumentService } from '../services/financial-document.service.js';
 import { forecastService } from '../services/forecast.service.js';
 import { giftCardService } from '../services/gift-card.service.js';
 import { guestCrmService } from '../services/guest-crm.service.js';
@@ -185,6 +186,17 @@ integrationJobsRouter.post('/gift-cards/sweep', async (req, res, next) => {
         Number.isFinite(hours) ? { abandonedAfterHours: hours } : {}
       )
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Issues the receipt or tax invoice for any Stripe-paid gift card the
+// automatic hook missed (a lost webhook, an outage mid-issue). Hourly is
+// plenty; it does nothing until automatic issuing is switched on.
+integrationJobsRouter.post('/invoices/catch-up', async (_req, res, next) => {
+  try {
+    res.json(await financialDocumentService.catchUpGiftCardDocuments());
   } catch (error) {
     next(error);
   }

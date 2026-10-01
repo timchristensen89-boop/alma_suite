@@ -87,6 +87,20 @@ type DonationVoucherEmailInput = {
   senderName: string;
 };
 
+type FinancialDocumentEmailInput = {
+  to: string;
+  /** "Tax invoice", "Receipt", "Credit note", "Adjustment note". */
+  documentTitle: string;
+  number: string;
+  issuerName: string;
+  customerName: string;
+  totalCents: number;
+  gstCents: number;
+  isCredit: boolean;
+  pdf: Buffer;
+  filename: string;
+};
+
 type PasswordResetEmailInput = {
   to: string;
   firstName?: string | null;
@@ -1191,6 +1205,110 @@ export const mailService = {
             If the button doesn't work, paste this link into your browser:<br>
             <span style="word-break:break-all;color:#64705f">${safePrintable}</span>
           </p>
+        </div>
+          </td>
+        </tr>
+      </table>
+          </td>
+        </tr>
+      </table>
+      </body>
+      </html>
+    `;
+
+    return deliverEmail({
+      to: input.to,
+      subject,
+      text,
+      html,
+      attachments,
+      from: process.env.GIFTCARD_FROM?.trim() || undefined
+    });
+  },
+
+  /**
+   * A receipt, tax invoice or credit note, with the PDF attached.
+   *
+   * The PDF is the document; the email is only its envelope, so the body says
+   * what it is and how much and nothing the PDF could contradict. It goes to
+   * the customer who bought the card, so it comes from the gift card sender.
+   */
+  async sendFinancialDocument(input: FinancialDocumentEmailInput): Promise<EmailDeliveryResult> {
+    const customerName = input.customerName.trim();
+    const greeting = customerName ? `Hi ${customerName},` : 'Hello,';
+    const kind = input.documentTitle.toLowerCase();
+    const subject = `${input.documentTitle} ${input.number} — ALMA gift card`;
+    const total = formatMoney(input.totalCents);
+    const gst = formatMoney(input.gstCents);
+    const sentence = input.isCredit
+      ? `${input.issuerName} has issued ${kind} ${input.number} for the refund on your ALMA gift card.`
+      : `Thank you for buying an ALMA gift card. Here is your ${kind} ${input.number} from ${input.issuerName}.`;
+    const amountLabel = input.isCredit ? 'Amount credited' : 'Total paid';
+    const gstLine = input.isCredit
+      ? input.gstCents > 0
+        ? `GST adjustment ${gst}`
+        : 'No GST to adjust'
+      : input.gstCents > 0
+        ? `Includes GST of ${gst}`
+        : 'No GST';
+    const text = [
+      greeting,
+      '',
+      sentence,
+      '',
+      `${amountLabel}: ${total} (${gstLine})`,
+      '',
+      'Your document is attached as a PDF.'
+    ].join('\n');
+
+    const attachments: EmailAttachment[] = [
+      { filename: input.filename, content: input.pdf, contentType: 'application/pdf' }
+    ];
+    const headerLogo = brandLogo('cream');
+    if (headerLogo) {
+      attachments.push({ filename: 'alma-group.png', content: headerLogo, contentType: 'image/png', contentId: 'almagrouplogo' });
+    }
+    const headerMark = headerLogo
+      ? '<img src="cid:almagrouplogo" alt="ALMA Group" width="150" style="display:block;width:150px;max-width:60%;height:auto;border:0" />'
+      : `<div style="font-size:34px;font-weight:900;letter-spacing:-0.04em;line-height:0.95">alma</div>
+         <div style="font-size:13px;font-weight:800;letter-spacing:0.52em;margin-left:3px;margin-top:8px">GROUP</div>`;
+
+    // Same table scaffold as the gift card email, for the same reason: Outlook
+    // and several webmail clients drop auto margins on a div.
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta name="color-scheme" content="light only">
+        <meta name="supported-color-schemes" content="light only">
+        <title>${escapeHtml(subject)}</title>
+      </head>
+      <body style="margin:0;padding:0;width:100%;background:#faf8f3">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#faf8f3">
+        <tr>
+          <td align="center" style="padding:24px 12px">
+      <table role="presentation" width="680" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:680px;border-collapse:collapse">
+        <tr>
+          <td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#1f3524;text-align:left;background:#faf8f3">
+        <div style="background:#1f3524;color:#fff1e6;padding:32px 30px 30px;border-radius:18px 18px 0 0">
+          ${headerMark}
+        </div>
+        <div style="padding:30px;background:#faf8f3;border:1px solid #e6ded0;border-top:0;border-radius:0 0 18px 18px">
+          <p style="font-size:17px;margin:0 0 10px">${escapeHtml(greeting)}</p>
+          <p style="font-size:15px;margin:0 0 22px;color:#4c5d4d">${escapeHtml(sentence)}</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#ffffff;border:1px solid #e6ded0;border-radius:12px;margin:0 0 22px">
+            <tr>
+              <td style="padding:16px 18px;font-size:13px;color:#64705f">${escapeHtml(input.documentTitle)}</td>
+              <td align="right" style="padding:16px 18px;font-family:'Courier New',monospace;font-size:14px;font-weight:700;color:#1f3524">${escapeHtml(input.number)}</td>
+            </tr>
+            <tr>
+              <td style="padding:0 18px 16px;font-size:13px;color:#64705f">${escapeHtml(amountLabel)}</td>
+              <td align="right" style="padding:0 18px 16px;font-size:18px;font-weight:800;color:#1f3524">${escapeHtml(total)}<div style="font-size:12px;font-weight:400;color:#64705f">${escapeHtml(gstLine)}</div></td>
+            </tr>
+          </table>
+          <p style="font-size:15px;margin:0">Your document is attached as a PDF.</p>
         </div>
           </td>
         </tr>

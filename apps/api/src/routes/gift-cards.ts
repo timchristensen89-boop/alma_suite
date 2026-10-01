@@ -2,6 +2,7 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import type Stripe from 'stripe';
 import { requireManager } from '../lib/auth-middleware.js';
 import { HttpError } from '../lib/http.js';
+import { financialDocumentService } from '../services/financial-document.service.js';
 import {
   constructStripeWebhookEvent,
   giftCardService
@@ -397,6 +398,12 @@ export async function stripeGiftCardWebhook(req: { body: Buffer; header(name: st
           ? 'Stripe checkout expired before payment was confirmed.'
           : 'Stripe asynchronous payment failed.'
       );
+    }
+    // A refund made in the Stripe Dashboard becomes a credit note against the
+    // card's receipt or tax invoice. One refund sends all three events; the
+    // handler reconciles against the refunds that exist, so repeats are no-ops.
+    if (event.type === 'charge.refunded' || event.type === 'refund.created' || event.type === 'refund.updated') {
+      await financialDocumentService.handleStripeRefund(event.data.object);
     }
     res.json({ received: true });
   } catch (error) {

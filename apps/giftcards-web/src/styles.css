@@ -4317,3 +4317,261 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
 .donation-send-panel { display: grid; gap: 10px; padding: 4px 0; }
 .donation-send-hint { margin: 0; font-size: 12.5px; }
 .donation-linkish small.donation-cell-note { display: block; font-weight: 400; opacity: 0.7; }
+
+/* ------------------------------------------------------------------ */
+/* Invoices & receipts                                                 */
+/* ------------------------------------------------------------------ */
+/* Suite tokens only — no hard-coded ink or paper — so
+   html[data-theme='dark'] re-themes all of it through the variables. */
+
+.giftcards-invoice-mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.giftcards-invoice-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.giftcards-invoice-nowrap { white-space: nowrap; }
+.giftcards-invoice-block { display: block; margin-top: 2px; }
+
+.giftcards-invoice-setup-issue {
+  margin: 0 0 10px;
+  font-weight: 600;
+  color: var(--tone-warning-fg);
+}
+
+.giftcards-invoice-steps {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--color-text);
+}
+
+.giftcards-invoice-filters {
+  display: grid;
+  grid-template-columns: minmax(200px, 2fr) repeat(3, minmax(140px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+@media (max-width: 860px) {
+  .giftcards-invoice-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .giftcards-invoice-filters > :first-child { grid-column: 1 / -1; }
+}
+
+/* The name matches the suite's [class*="table-scroll"] phone rules too:
+   pinned first column and the edge fade. It is also the size container the
+   detail panel measures itself against. */
+.giftcards-invoice-table-scroll {
+  overflow-x: auto;
+  container-type: inline-size;
+}
+
+.giftcards-invoice-table .giftcards-invoice-row { cursor: pointer; }
+.giftcards-invoice-table-scroll .giftcards-invoice-row.is-open td {
+  background: var(--color-surface-muted);
+  border-bottom-color: transparent;
+}
+
+/* The row takes the click; the button inside it is for keyboards. */
+.giftcards-invoice-rowtoggle {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.giftcards-invoice-rowtoggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.giftcards-invoice-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* The panel spans the row under its document. It is exactly as wide as the
+   scroll box and pinned to its left edge, so on a phone the text stays on
+   screen while the columns above scroll sideways, and a long paragraph can
+   never widen the table. */
+.giftcards-invoice-table-scroll .giftcards-invoice-table td.giftcards-invoice-detail-cell {
+  position: static;
+  padding: 0;
+  background: var(--color-surface-muted);
+  box-shadow: none;
+}
+
+.giftcards-invoice-detail {
+  contain: inline-size;
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: 100cqi;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  font-size: 13px;
+}
+.giftcards-invoice-detail p { margin: 0; }
+
+.giftcards-invoice-parties {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px 22px;
+}
+.giftcards-invoice-parties section {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.giftcards-invoice-parties h4,
+.giftcards-invoice-credits h4,
+.giftcards-invoice-card-label {
+  margin: 0 0 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* An inset sheet on the panel, like the printed lines table. */
+.giftcards-invoice-lines-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.giftcards-invoice-totals {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: end;
+  gap: 4px 18px;
+  margin: 0;
+}
+.giftcards-invoice-totals dt {
+  color: var(--color-text-muted);
+  text-align: right;
+}
+.giftcards-invoice-totals dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.giftcards-invoice-note { white-space: pre-line; }
+
+.giftcards-invoice-credits {
+  display: grid;
+  gap: 6px;
+}
+
+.giftcards-invoice-credit,
+.giftcards-invoice-controls-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.giftcards-invoice-actions { align-items: center; }
+
+.giftcards-form.giftcards-invoice-subform { gap: 14px; }
+.giftcards-invoice-subform {
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.giftcards-invoice-subhead {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.giftcards-invoice-field {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+.giftcards-invoice-field-error { font-size: 12px; }
+
+.giftcards-invoice-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.giftcards-invoice-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.giftcards-invoice-email {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 10px;
+}
+.giftcards-invoice-email .field {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+
+/* Gift card record (purchases log <dd>, Redeem screen) */
+.giftcards-invoice-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.giftcards-invoice-controls-doc {
+  display: grid;
+  gap: 4px;
+}
+
+.giftcards-invoice-issue {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.giftcards-invoice-link {
+  justify-self: start;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.giftcards-invoice-card-section {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}

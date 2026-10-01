@@ -51,6 +51,11 @@
       "label": "Shared / tenant",
       "home": "suite",
       "app": "api"
+    },
+    "finance": {
+      "label": "Financial documents (receipts, tax invoices, credit notes)",
+      "home": "suite",
+      "app": "api/giftcards-web"
     }
   },
   "appOwnership": {
@@ -82,7 +87,8 @@
       "giftcards",
       "comms",
       "integrations",
-      "shared"
+      "shared",
+      "finance"
     ],
     "apps/web": [],
     "apps/reports-web": [],
@@ -211,7 +217,11 @@
     "Venue": "shared",
     "AppSettings": "shared",
     "AlmaTask": "shared",
-    "LoyaltyLedgerEntry": "reserve"
+    "LoyaltyLedgerEntry": "reserve",
+    "LegalEntity": "finance",
+    "FinancialDocument": "finance",
+    "FinancialDocumentLine": "finance",
+    "FinancialDocumentSequence": "finance"
   },
   "seams": [
     {

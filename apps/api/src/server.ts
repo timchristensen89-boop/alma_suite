@@ -20,6 +20,7 @@ import { posRouter } from './routes/pos.js';
 import { forecastModuleRouter } from './routes/forecast-module.js';
 import { forecastRouter } from './routes/forecast.js';
 import { giftCardsRouter, stripeGiftCardWebhook } from './routes/gift-cards.js';
+import { financialDocumentsRouter } from './routes/financial-documents.js';
 import { qrRouter } from './routes/qr.js';
 import { healthRouter } from './routes/health.js';
 import { incidentsRouter } from './routes/incidents.js';
@@ -209,6 +210,7 @@ app.use('/api/forecast-module', forecastModuleRouter);
 app.use('/api/reserve', reserveRouter);
 app.use('/api/marketing', marketingRouter);
 app.use('/api/gift-cards', giftCardsRouter);
+app.use('/api/invoices', financialDocumentsRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/website', websiteRouter);
 
