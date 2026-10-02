@@ -117,6 +117,29 @@ per-card statement a manager can send the company.
 Defaults: minimum 10, **no tiers** (no discount until configured). Hard cap
 50% on any configured discount.
 
+## Tests and the pre-deploy gate
+
+Three layers, all in the repo:
+
+- `apps/api/src/lib/corporate-gift-cards.test.ts` and `apps/api/src/routes/corporate-gift-cards.test.ts` — pure unit tests (pricing, CSV parsing/validation, lifecycle guards, route permission guards). Run by the ordinary `pnpm --filter @alma/api test`, no database.
+- `apps/api/src/services/corporate-gift-card.integration.test.ts` — real-Postgres tests for pool allocation (conditional update, no double allocation, idempotent CSV re-upload, exhaustion), the drain and redemption filters (consumer `NULL` rows still eligible, `UNALLOCATED` never), resend rules, cancellation and manual payment. Opt-in through `ALMA_TEST_DATABASE_URL`; skipped otherwise.
+- CI job `Postgres integration (corporate gift cards)` in `.github/workflows/ci.yml` — starts an empty `postgres:16`, applies the whole migration history with `prisma migrate deploy`, then runs the integration suite.
+
+The workflow is `workflow_dispatch` only while the Actions minutes are exhausted, so it does **not** run automatically on a pull request. Until the `pull_request` trigger is restored, the gate before deploying anything that touches gift cards is manual and explicit:
+
+```sh
+# 1. Empty scratch database (any local Postgres 16 works).
+createdb alma_corp_test
+# 2. Full migration history on it.
+DATABASE_URL=postgresql://localhost/alma_corp_test pnpm --filter @alma/db migrate:deploy
+# 3. The integration suite against it.
+ALMA_TEST_DATABASE_URL=postgresql://localhost/alma_corp_test \
+  pnpm --filter @alma/api exec node --import tsx --test src/services/corporate-gift-card.integration.test.ts
+# 4. Or trigger the CI job by hand: Actions → CI → Run workflow (branch).
+```
+
+"Tests passed locally" without step 2–3 (or the CI job) is not a pass for this feature.
+
 ## Deliberately not in v1
 
 Corporate login or portal, invoice/PO purchasing and credit terms, tax

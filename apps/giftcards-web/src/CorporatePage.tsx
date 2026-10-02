@@ -879,7 +879,8 @@ function CsvImport({ orderId, busy, onDone }: { orderId: string; busy: boolean; 
       </div>
       {result ? (
         <div className="giftcards-corporate-quote">
-          <div className="line"><span>Rows in file</span><span>{result.summary.rowCount}</span></div>
+          <div className="line"><span>Valid rows in file</span><span>{result.summary.rowCount}</span></div>
+          {result.errors.length > 0 ? <div className="line error-text"><span>Problems to fix before anything is allocated</span><span>{result.errors.length}</span></div> : null}
           <div className="line"><span>New cards to allocate</span><span>{result.summary.toAllocate}</span></div>
           <div className="line"><span>Already allocated from an earlier upload</span><span>{result.summary.alreadyAllocated}</span></div>
           <div className="line"><span>Unallocated cards available</span><span>{result.summary.available}</span></div>

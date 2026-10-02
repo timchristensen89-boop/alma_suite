@@ -4613,6 +4613,10 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
 }
 .giftcards-corporate-pool strong { font-size: 1.15rem; }
 
+/* Tier editor: the Remove button sits on the input baseline, not the hint line. */
+.giftcards-corporate-tiers td { vertical-align: top; }
+.giftcards-corporate-tiers td:last-child { padding-top: 17px; }
+
 .giftcards-corporate-row { cursor: pointer; }
 .giftcards-corporate-row.is-open td { background: var(--color-surface-muted); }
 

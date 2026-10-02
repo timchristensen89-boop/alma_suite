@@ -35,6 +35,12 @@ type Card = {
   initialValueCents: number;
   expiresAt?: string | null;
   recipientName?: string | null;
+  /**
+   * Corporate pool cards are ACTIVE liability from issuance but belong to
+   * nobody until a manager allocates them — the API refuses redemption, so
+   * the till says so instead of offering a balance that cannot be used.
+   */
+  allocationStatus?: 'UNALLOCATED' | 'ALLOCATED' | null;
   // The design the buyer chose. 'custom' comes with a rendered image URL; a
   // preset is drawn live by GiftCardArt. Both arrive on the lookup payload.
   design?: string | null;
@@ -560,7 +566,9 @@ function BalancePanel() {
           {/* The balance is the answer; everything else is context. */}
           <p className="counter-code">{money(card.balanceCents)}</p>
           <p className="counter-issued-value">
-            {card.status === 'ACTIVE'
+            {card.allocationStatus === 'UNALLOCATED'
+              ? 'Corporate pool card — not allocated yet, cannot be used'
+              : card.status === 'ACTIVE'
               ? 'Good to use'
               : card.status === 'REDEEMED'
                 ? 'Fully used'
@@ -724,14 +732,16 @@ function RedeemPanel() {
           <p className="counter-balance">{money(card.balanceCents)}</p>
           <DonationConditions card={card} />
           <p className="counter-note">
-            {card.status !== 'ACTIVE'
+            {card.allocationStatus === 'UNALLOCATED'
+              ? 'This is a corporate pool card that has not been allocated to anyone yet — it cannot be used until a manager allocates it.'
+              : card.status !== 'ACTIVE'
               ? `This card is ${card.status.toLowerCase().replace('_', ' ')} — it cannot be used.`
               : card.recipientName
                 ? `For ${card.recipientName}`
                 : 'Ready to use'}
           </p>
 
-          {card.status === 'ACTIVE' && card.balanceCents > 0 ? (
+          {card.status === 'ACTIVE' && card.balanceCents > 0 && card.allocationStatus !== 'UNALLOCATED' ? (
             <>
               <div className="counter-amounts">
                 {/* Taking the whole balance is the common case, so it is one

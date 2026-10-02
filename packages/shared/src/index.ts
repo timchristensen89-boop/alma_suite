@@ -4698,6 +4698,15 @@ export type GiftCard = {
   createdAt: string;
   updatedAt: string;
   redemptions: GiftCardRedemption[];
+  /**
+   * Corporate pool linkage. Both are null (or absent) on every consumer,
+   * counter and imported card. A card issued on a corporate order carries
+   * the order id and `UNALLOCATED` until a manager hands it to a recipient,
+   * after which it is `ALLOCATED`; an unallocated card is live liability but
+   * cannot be redeemed, printed or emailed, and staff screens say so.
+   */
+  corporateOrderId?: string | null;
+  allocationStatus?: 'UNALLOCATED' | 'ALLOCATED' | null;
 };
 
 export type GiftCardPublic = Pick<

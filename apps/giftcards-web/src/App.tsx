@@ -2350,7 +2350,7 @@ function GiftCardAdminSettings({ user }: { user: AuthUser }) {
             />
           </div>
           <div className="giftcards-invoice-table-scroll">
-            <table className="giftcards-invoice-table">
+            <table className="giftcards-invoice-table giftcards-corporate-tiers">
               <thead>
                 <tr>
                   <th>Orders of at least</th>
@@ -3006,6 +3006,13 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                   <span>{formatCents(card.balanceCents)} remaining of {formatCents(card.initialValueCents)}</span>
                   <Badge tone={statusTone(card.status)}>{card.status.replace('_', ' ')}</Badge>
                   {card.testMode ? <Badge tone="warning">TEST MODE</Badge> : null}
+                  {card.allocationStatus === 'UNALLOCATED' ? <Badge tone="warning">CORPORATE POOL · NOT ALLOCATED</Badge> : null}
+                  {card.allocationStatus === 'UNALLOCATED' ? (
+                    <small>
+                      This card belongs to a corporate order and has not been allocated to anyone yet. It cannot be redeemed, printed or
+                      emailed until a manager allocates it from the Corporate page.
+                    </small>
+                  ) : null}
                   {card.emailedAt ? <small>Email sent {new Date(card.emailedAt).toLocaleString('en-AU')}</small> : null}
                   {card.emailError ? <small>Email issue: {card.emailError}</small> : null}
                   {card.cancelReason ? <small>Cancel note: {card.cancelReason}</small> : null}
@@ -3052,10 +3059,15 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                   const validAmount = amountCents > 0;
                   const overBalance = validAmount && card && amountCents > card.balanceCents;
                   const cardActive = Boolean(card && card.status === 'ACTIVE');
-                  const disableRedeem = !card || !cardActive || !validAmount || Boolean(overBalance);
-                  const buttonLabel = validAmount
-                    ? `Redeem ${formatCents(amountCents)}`
-                    : 'Enter amount to redeem';
+                  // A corporate pool card is ACTIVE liability but nobody's yet —
+                  // the API refuses the redeem, so the button says why up front.
+                  const unallocatedPool = Boolean(card && card.allocationStatus === 'UNALLOCATED');
+                  const disableRedeem = !card || !cardActive || unallocatedPool || !validAmount || Boolean(overBalance);
+                  const buttonLabel = unallocatedPool
+                    ? 'Not allocated — cannot redeem'
+                    : validAmount
+                      ? `Redeem ${formatCents(amountCents)}`
+                      : 'Enter amount to redeem';
                   return (
                     <>
                       {overBalance ? (
