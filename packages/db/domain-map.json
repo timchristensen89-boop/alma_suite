@@ -197,6 +197,8 @@
     "GiftCard": "giftcards",
     "GiftCardPromoCode": "giftcards",
     "GiftCardRedemption": "giftcards",
+    "CorporateAccount": "giftcards",
+    "CorporateGiftCardOrder": "giftcards",
     "CommsThread": "comms",
     "CommsMessage": "comms",
     "CommsRecipient": "comms",

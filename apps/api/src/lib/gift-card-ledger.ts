@@ -45,7 +45,7 @@ export type LedgerRedemptionInput = {
   cardTestMode: boolean;
 };
 
-export type GiftCardOrigin = 'GIFTUP_IMPORT' | 'PHYSICAL_COUNTER' | 'DONATION' | 'CAMPAIGN_REWARD' | 'ONLINE' | 'COUNTER' | 'OTHER';
+export type GiftCardOrigin = 'GIFTUP_IMPORT' | 'PHYSICAL_COUNTER' | 'DONATION' | 'CAMPAIGN_REWARD' | 'ONLINE' | 'COUNTER' | 'CORPORATE' | 'OTHER';
 
 export const UNALLOCATED_VENUE = 'Unallocated';
 
@@ -58,6 +58,9 @@ export function giftCardOrigin(card: Pick<LedgerCardInput, 'promoCodeSnapshot' |
   if (snapshot.startsWith('CAMPAIGN_REWARD')) return 'CAMPAIGN_REWARD';
   if (card.saleChannel === 'ONLINE') return 'ONLINE';
   if (card.saleChannel === 'COUNTER') return 'COUNTER';
+  // Bulk-purchased pool cards. Liability like any other card; the origin only
+  // says who paid for it.
+  if (card.saleChannel === 'CORPORATE') return 'CORPORATE';
   return 'OTHER';
 }
 

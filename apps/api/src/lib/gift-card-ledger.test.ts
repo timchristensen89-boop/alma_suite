@@ -209,6 +209,7 @@ describe('giftCardOrigin', () => {
     assert.equal(giftCardOrigin({ promoCodeSnapshot: 'GIFTUP_IMPORT', saleChannel: 'ONLINE' }), 'GIFTUP_IMPORT');
     assert.equal(giftCardOrigin({ promoCodeSnapshot: 'PHYSICAL_COUNTER', saleChannel: 'COUNTER' }), 'PHYSICAL_COUNTER');
     assert.equal(giftCardOrigin({ promoCodeSnapshot: null, saleChannel: 'COUNTER' }), 'COUNTER');
+    assert.equal(giftCardOrigin({ promoCodeSnapshot: null, saleChannel: 'CORPORATE' }), 'CORPORATE');
     assert.equal(giftCardOrigin({ promoCodeSnapshot: 'CAMPAIGN_REWARD:x', saleChannel: 'ONLINE' }), 'CAMPAIGN_REWARD');
     assert.equal(giftCardOrigin({ promoCodeSnapshot: null, saleChannel: 'DONATION' }), 'DONATION');
   });

@@ -419,6 +419,41 @@ enum GiftCardStatus {
   EXPIRED
 }
 
+// Corporate pool cards. NULL on every card that is not part of a corporate
+// order — the consumer, counter, GiftUp and donation flows never set it, so
+// historical rows are untouched. UNALLOCATED is real issued liability with no
+// recipient yet; ALLOCATED has a recipient and is deliverable.
+enum GiftCardAllocationStatus {
+  UNALLOCATED
+  ALLOCATED
+}
+
+enum CorporateOrderStatus {
+  AWAITING_PAYMENT
+  ISSUED
+  CANCELLED
+}
+
+enum CorporatePaymentStatus {
+  AWAITING_PAYMENT
+  PAID
+  CANCELLED
+}
+
+// INVOICE is reserved for later. Creating an order with it is refused until
+// the issuing entity, GST treatment and credit terms are decided.
+enum CorporatePaymentMethod {
+  STRIPE
+  MANUAL_OFFLINE
+  INVOICE
+}
+
+enum CorporateDiscountSource {
+  NONE
+  GLOBAL_TIER
+  ACCOUNT_OVERRIDE
+}
+
 enum GiftCardRedemptionStatus {
   COMPLETED
   VOIDED
@@ -488,6 +523,7 @@ model Issue {
   checklistLinks    ChecklistItem[]
   auditLinks        AuditFinding[]
   incidentLinks     IncidentReport[]
+
   @@index([status])
   @@index([createdAt])
   @@index([dueDate])
@@ -506,6 +542,7 @@ model IssueEvidence {
   note      String?
   createdAt DateTime @default(now())
   issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
   @@index([issueId])
 }
 
@@ -541,6 +578,7 @@ model IssueActivity {
   actor     String
   createdAt DateTime @default(now())
   issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
   @@index([issueId, createdAt])
 }
 
@@ -572,6 +610,7 @@ model ChecklistItemTemplate {
   description String?
   position    Int
   template    ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
   @@index([templateId])
 }
 
@@ -590,6 +629,7 @@ model ChecklistRun {
   shiftTaskAssignments ShiftTaskAssignment[]
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
+
   @@index([templateId])
   @@index([runDate])
   @@index([status, runDate])
@@ -609,6 +649,7 @@ model ChecklistItem {
   linkedIssueId  String?
   run            ChecklistRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
   linkedIssue    Issue?              @relation(fields: [linkedIssueId], references: [id])
+
   @@index([runId])
   @@index([linkedIssueId])
 }
@@ -633,6 +674,7 @@ model AuditTemplateSection {
   description String?
   position    Int
   template    AuditTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
   @@index([templateId])
 }
 
@@ -649,6 +691,7 @@ model AuditRun {
   findings   AuditFinding[]
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
+
   @@index([templateId])
   @@index([runDate])
 }
@@ -664,6 +707,7 @@ model AuditFinding {
   linkedIssueId String?
   auditRun      AuditRun @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
   linkedIssue   Issue?   @relation(fields: [linkedIssueId], references: [id])
+
   @@index([auditRunId])
   @@index([linkedIssueId])
 }
@@ -2231,14 +2275,14 @@ model MarketingContentPublishAttempt {
 
 // @domain: giftcards | home: suite
 model GiftCard {
-  id                      String               @id @default(cuid())
-  code                    String               @unique
-  status                  GiftCardStatus       @default(PENDING_PAYMENT)
+  id                      String                    @id @default(cuid())
+  code                    String                    @unique
+  status                  GiftCardStatus            @default(PENDING_PAYMENT)
   initialValueCents       Int
   balanceCents            Int
-  discountCents           Int                  @default(0)
+  discountCents           Int                       @default(0)
   amountPaidCents         Int?
-  currency                String               @default("aud")
+  currency                String                    @default("aud")
   purchaserName           String
   purchaserEmail          String
   recipientName           String?
@@ -2247,9 +2291,9 @@ model GiftCard {
   design                  String?
   promoCodeId             String?
   promoCodeSnapshot       String?
-  testMode                Boolean              @default(false)
+  testMode                Boolean                   @default(false)
   scheduledDeliveryAt     DateTime?
-  stripeCheckoutSessionId String?              @unique
+  stripeCheckoutSessionId String?                   @unique
   stripePaymentIntentId   String?
   emailedAt               DateTime?
   emailError              String?
@@ -2260,7 +2304,7 @@ model GiftCard {
   paidAt                  DateTime?
   // How the sale happened. ONLINE is the public buy page; COUNTER is a staff
   // member selling face to face.
-  saleChannel             String               @default("ONLINE")
+  saleChannel             String                    @default("ONLINE")
   // What the money came in as: STRIPE, CARD, CASH, EFTPOS or COMP. Counter
   // sales rung through the venue's own POS record the tender here so the gift
   // card reconciles against takings instead of floating free.
@@ -2269,20 +2313,37 @@ model GiftCard {
   tenderReference         String?
   soldByStaffId           String?
   expiresAt               DateTime?
-  createdAt               DateTime             @default(now())
-  updatedAt               DateTime             @updatedAt
-  promoCode               GiftCardPromoCode?   @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  // Corporate bulk orders. A pool card is an ordinary ACTIVE gift card that
+  // belongs to an order and has not been given to anyone yet. Recipient,
+  // message, scheduledDeliveryAt, emailedAt and emailError are the SAME
+  // columns every other card uses — allocation fills them in, it does not
+  // create a second card. All five are NULL on non-corporate cards.
+  corporateOrderId        String?
+  allocationStatus        GiftCardAllocationStatus?
+  // Idempotency key for a CSV row (or a single allocation request) within the
+  // order, so a retried upload cannot allocate a second card to the same row.
+  allocationKey           String?
+  // Free text from the allocating row or form: "12 Ocean St settlement".
+  allocationReference     String?
+  allocatedAt             DateTime?
+  allocatedById           String?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  promoCode               GiftCardPromoCode?        @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  corporateOrder          CorporateGiftCardOrder?   @relation(fields: [corporateOrderId], references: [id], onDelete: Restrict)
   redemptions             GiftCardRedemption[]
   customArtwork           GiftCardArtwork?
   donation                GiftCardDonation?
   financialDocuments      FinancialDocument[]
 
+  @@unique([corporateOrderId, allocationKey])
   @@index([status])
   @@index([purchaserEmail])
   @@index([recipientEmail])
   @@index([createdAt])
   @@index([promoCodeId])
   @@index([testMode])
+  @@index([corporateOrderId, allocationStatus])
 }
 
 // Customer-designed card artwork from the public "Create your own" designer.
@@ -2572,6 +2633,98 @@ model FinancialDocumentSequence {
   updatedAt  DateTime @updatedAt
 }
 
+// A company that buys gift cards in bulk. Staff-operated in v1: there is no
+// login for the company, so nothing here is a credential. Commercial terms
+// (discount override, minimum quantity) are set by the gift card owner; the
+// order snapshots whatever was in force when it was placed.
+//
+// @domain: giftcards | home: suite
+model CorporateAccount {
+  id                      String                   @id @default(cuid())
+  companyName             String
+  tradingName             String?
+  abn                     String?
+  contactName             String
+  contactEmail            String
+  contactPhone            String?
+  accountsEmail           String?
+  billingAddress          String?
+  active                  Boolean                  @default(true)
+  // Flat discount in basis points that replaces the global quantity tiers for
+  // this account. NULL means the global tiers apply.
+  discountOverrideBps     Int?
+  // Replaces the global minimum order quantity for this account. NULL = global.
+  minimumQuantityOverride Int?
+  notes                   String?
+  createdById             String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  orders                  CorporateGiftCardOrder[]
+
+  @@index([active])
+  @@index([companyName])
+}
+
+// One bulk purchase. The cards it produced are ordinary GiftCard rows that
+// point back here; redemption never needs to know the order exists. Money
+// columns are the commercial snapshot at purchase time and are never
+// recomputed from settings afterwards.
+//
+// @domain: giftcards | home: suite
+model CorporateGiftCardOrder {
+  id                      String                  @id @default(cuid())
+  // Human reference: CG-<number>.
+  number                  Int                     @unique @default(autoincrement())
+  corporateAccountId      String
+  quantity                Int
+  // Per card, in cents. Every card in an order has the same face value.
+  faceValueCents          Int
+  faceValueTotalCents     Int
+  discountSource          CorporateDiscountSource @default(NONE)
+  discountBps             Int                     @default(0)
+  discountCents           Int                     @default(0)
+  // What the buyer owes for the cards: face total − discount.
+  amountDueCents          Int
+  // Card-processing fee charged on top for Stripe payment, same rule as the
+  // public shop. Zero for offline payment. Never part of the cards' value.
+  serviceFeeCents         Int                     @default(0)
+  // Tiers, minimums and the override in force when the order was priced.
+  pricingSnapshot         Json                    @default("{}")
+  paymentMethod           CorporatePaymentMethod
+  paymentStatus           CorporatePaymentStatus  @default(AWAITING_PAYMENT)
+  status                  CorporateOrderStatus    @default(AWAITING_PAYMENT)
+  stripeCheckoutSessionId String?                 @unique
+  stripePaymentIntentId   String?
+  // STRIPE, CARD, CASH, EFTPOS or BANK_TRANSFER — how the money came in.
+  tender                  String?
+  paymentReference        String?
+  amountPaidCents         Int?
+  paidAt                  DateTime?
+  paymentRecordedById     String?
+  issuedAt                DateTime?
+  // Buyer-side references, stored for any payment method. Used by the
+  // invoice/PO path when it is switched on; informational until then.
+  poNumber                String?
+  customerReference       String?
+  defaultMessage          String?
+  internalNote            String?
+  // A retried create with the same key returns the existing order.
+  clientRequestId         String?                 @unique
+  testMode                Boolean                 @default(false)
+  cancelledAt             DateTime?
+  cancelReason            String?
+  cancelledById           String?
+  createdById             String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  corporateAccount        CorporateAccount        @relation(fields: [corporateAccountId], references: [id], onDelete: Restrict)
+  giftCards               GiftCard[]
+
+  @@index([corporateAccountId, createdAt])
+  @@index([status])
+  @@index([paymentStatus])
+}
+
 // @domain: workforce | home: workforce
 model Timesheet {
   id                 String          @id @default(cuid())
@@ -2732,7 +2885,7 @@ model AppSettings {
   // Receipts / tax invoices: which company issues gift cards, whether
   // documents are issued and emailed automatically. Shape and defaults live in
   // packages/shared/src/financial-documents.ts (normaliseInvoiceSettings).
-    invoiceSettings          Json      @default("{}")
+  invoiceSettings          Json      @default("{}")
   // ABA (direct-entry) bank-file details for paying staff tips, set in-app via
   // Settings. Read by staff.service buildAbaConfig (with env-var fallback).
   tipsAbaSettings          Json      @default("{}")
@@ -2860,6 +3013,7 @@ model IncidentReport {
   updatedAt         DateTime         @updatedAt
   linkedIssue       Issue?           @relation(fields: [linkedIssueId], references: [id])
   people            IncidentPerson[]
+
   @@index([linkedIssueId])
 }
 
@@ -2875,6 +3029,7 @@ model IncidentPerson {
   witnessStatement String?
   createdAt        DateTime       @default(now())
   incidentReport   IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+
   @@index([incidentReportId])
 }
 
@@ -4049,8 +4204,8 @@ model StockItemAlias {
 
   @@unique([aliasKey, supplierId])
   @@index([stockItemId])
-  @@map("stock_item_aliases")
   @@index([supplierId])
+  @@map("stock_item_aliases")
 }
 
 /// A spelling of a UNIT (not a product): "KILO" means kg, "Unit" means each,
