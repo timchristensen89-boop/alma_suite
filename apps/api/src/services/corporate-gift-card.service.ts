@@ -749,8 +749,19 @@ export const corporateGiftCardService = {
   async reconcileStripe(order: OrderRow): Promise<OrderRow> {
     if (order.status !== 'AWAITING_PAYMENT') return order;
     // Paid (by any method) but the pool was never created: finish that
-    // before anything else, every time the order is read.
-    if (order.paymentStatus === 'PAID') return recoverIssuance(order);
+    // before anything else, every time the order is read. A read must still
+    // succeed if the repair fails again (the order screen is where staff see
+    // "paid, issuing cards" and the retry), so the failure is logged and the
+    // pending order returned; the webhook path keeps throwing so Stripe
+    // retries on its own schedule.
+    if (order.paymentStatus === 'PAID') {
+      try {
+        return await recoverIssuance(order);
+      } catch (error) {
+        console.error('[corporate-gift-cards] issuance retry failed; order stays paid-but-unissued', { orderId: order.id, reason: error instanceof Error ? error.message : 'unknown' });
+        return order;
+      }
+    }
     if (order.paymentStatus !== 'AWAITING_PAYMENT') return order;
     if (order.paymentMethod !== 'STRIPE' || !order.stripeCheckoutSessionId || !stripe) return order;
     let session: Stripe.Checkout.Session;

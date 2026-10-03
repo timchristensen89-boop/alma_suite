@@ -232,6 +232,19 @@ describe('corporate gift cards against a real database', { skip: TEST_DB ? false
         assert.match(JSON.stringify(error, Object.getOwnPropertyNames(error as object)), /ITEST issuance failure/);
         return true;
       });
+      // While issuance keeps failing: reading the order must not fail with it
+      // (staff need to see "paid, issuing cards"), but the webhook must, so
+      // Stripe keeps retrying.
+      const stillPending = await h.corporate.getOrder(order.id);
+      assert.equal(`${stillPending.status}/${stillPending.paymentStatus}`, 'AWAITING_PAYMENT/PAID');
+      assert.equal(stillPending.cards.length, 0);
+      await assert.rejects(
+        h.corporate.handleStripeSession(
+          { id: 'cs_itest_retry', mode: 'payment', status: 'complete', payment_status: 'paid', amount_total: order.amountDueCents, metadata: { corporateOrderId: order.id } } as unknown as Parameters<typeof h.corporate.handleStripeSession>[0],
+          'completed'
+        ),
+        /ITEST issuance failure/
+      );
     } finally {
       await h.prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS itest_block_pool_insert ON "GiftCard"`);
       await h.prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS itest_block_pool_insert()`);
