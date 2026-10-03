@@ -20,10 +20,24 @@ be added later without touching orders or pools.
 ## Lifecycle of an order
 
 ```
-create ──► AWAITING_PAYMENT ──► PAID ──► ISSUED (pool of N UNALLOCATED cards)
+create ──► AWAITING_PAYMENT ──► PAID (issuance pending) ──► ISSUED (pool of N UNALLOCATED cards)
                  │
-                 └──► CANCELLED (owner, before issuance only)
+                 └──► CANCELLED (owner, while unpaid only)
 ```
+
+Two columns carry this: `status` (`AWAITING_PAYMENT` → `ISSUED` / `CANCELLED`)
+and `paymentStatus` (`AWAITING_PAYMENT` → `PAID` / `CANCELLED`). Payment is
+persisted first and the pool is created in a second transaction, so
+`status = AWAITING_PAYMENT, paymentStatus = PAID` is a real, expected state:
+**issuance pending**. It means money received, no cards yet. In that state
+the order cannot be cancelled and cannot be paid again; the pool is created by
+re-running issuance, which every read of the order (`GET /orders/:id`, the
+order screen's poll), every Stripe webhook for the order and the Stripe
+reconcile all do. Issuance is idempotent (row lock, existing-pool check,
+conditional status flip), so retries and races produce one pool.
+`CANCELLED + PAID` cannot be reached: cancel and payment both require
+`paymentStatus = AWAITING_PAYMENT` in their conditional update, so whichever
+lands second loses with a 409.
 
 1. **Create** (manager). Quantity × one face value. Price comes from the
    global quantity tiers (Admin setup → Corporate pricing) or the account's

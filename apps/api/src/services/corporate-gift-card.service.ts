@@ -36,6 +36,7 @@ import { checkoutSessionDisposition } from '../lib/checkout-session-state.js';
 import {
   cancelBlockedReason,
   corporateOrderReference,
+  issuancePending,
   issueBlockedReason,
   parseScheduledDeliveryAt,
   paymentBlockedReason,
@@ -346,6 +347,25 @@ async function issueCards(orderId: string): Promise<OrderRow> {
   });
 }
 
+/**
+ * Finish an order that is paid but has no pool yet (issuancePending). The
+ * payment write and the pool write are two transactions, so a crash between
+ * them strands money without cards; this re-runs issuance, which is itself
+ * guarded (row lock, existing-pool check, conditional status flip), so two
+ * recoveries racing produce one pool and the loser simply sees ISSUED.
+ */
+async function recoverIssuance(order: OrderRow): Promise<OrderRow> {
+  if (!issuancePending(order)) return order;
+  console.warn(`[corporate-gift-cards] ${corporateOrderReference(order.number)} is paid but has no cards — issuing now`);
+  try {
+    return await issueCards(order.id);
+  } catch (error) {
+    const latest = await loadOrder(order.id);
+    if (latest.status === 'ISSUED') return latest;
+    throw error;
+  }
+}
+
 /** Record Stripe's confirmation, once, then issue. */
 async function settleStripePayment(order: OrderRow, session: Stripe.Checkout.Session): Promise<OrderRow> {
   const paid = typeof session.amount_total === 'number' ? session.amount_total : null;
@@ -366,7 +386,11 @@ async function settleStripePayment(order: OrderRow, session: Stripe.Checkout.Ses
       stripePaymentIntentId: intent
     }
   });
-  if (claimed.count === 0) return loadOrder(order.id);
+  if (claimed.count === 0) {
+    // Somebody else recorded it first. If they also issued, done; if they
+    // did not get that far, finish it here.
+    return recoverIssuance(await loadOrder(order.id));
+  }
   console.info(`[corporate-gift-cards] ${corporateOrderReference(order.number)} paid via Stripe, issuing ${order.quantity} cards`);
   return issueCards(order.id);
 }
@@ -723,7 +747,11 @@ export const corporateGiftCardService = {
    * can be created; the order itself stays open.
    */
   async reconcileStripe(order: OrderRow): Promise<OrderRow> {
-    if (order.status !== 'AWAITING_PAYMENT' || order.paymentStatus !== 'AWAITING_PAYMENT') return order;
+    if (order.status !== 'AWAITING_PAYMENT') return order;
+    // Paid (by any method) but the pool was never created: finish that
+    // before anything else, every time the order is read.
+    if (order.paymentStatus === 'PAID') return recoverIssuance(order);
+    if (order.paymentStatus !== 'AWAITING_PAYMENT') return order;
     if (order.paymentMethod !== 'STRIPE' || !order.stripeCheckoutSessionId || !stripe) return order;
     let session: Stripe.Checkout.Session;
     try {
@@ -758,7 +786,12 @@ export const corporateGiftCardService = {
       return;
     }
     if (checkoutSessionDisposition(session) !== 'paid') return;
-    if (order.paymentStatus === 'PAID') return;
+    if (order.paymentStatus === 'PAID') {
+      // Duplicate webhook for a settled order — unless the earlier delivery
+      // recorded the payment and then failed before issuing. Finish it.
+      await recoverIssuance(order);
+      return;
+    }
     await settleStripePayment(order, session);
   },
 
@@ -817,7 +850,7 @@ export const corporateGiftCardService = {
         paymentRecordedById: actor?.id ?? null
       }
     });
-    if (claimed.count === 0) throw new HttpError(409, 'This order was paid by somebody else a moment ago.');
+    if (claimed.count === 0) throw new HttpError(409, 'This order changed a moment ago (paid or cancelled by somebody else). Reload it.');
     console.info(`[corporate-gift-cards] ${corporateOrderReference(order.number)} marked paid ${data.tender} ${order.amountDueCents}c by ${actor?.email ?? actor?.id ?? 'unknown'}`);
     return orderDetail(await issueCards(order.id));
   },
@@ -827,11 +860,14 @@ export const corporateGiftCardService = {
     const order = await loadOrder(orderId);
     const blocked = cancelBlockedReason(order);
     if (blocked) throw new HttpError(409, blocked);
+    // Both conditions, not just the lifecycle status: a payment racing this
+    // cancel flips paymentStatus first, and that must make the cancel lose.
+    // CANCELLED + PAID is a state that cannot be reached.
     const cancelled = await prisma.corporateGiftCardOrder.updateMany({
-      where: { id: order.id, status: 'AWAITING_PAYMENT' },
+      where: { id: order.id, status: 'AWAITING_PAYMENT', paymentStatus: 'AWAITING_PAYMENT' },
       data: { status: 'CANCELLED', paymentStatus: 'CANCELLED', cancelledAt: new Date(), cancelReason: data.reason.trim(), cancelledById: actor?.id ?? null }
     });
-    if (cancelled.count === 0) throw new HttpError(409, 'Order changed; reload and try again.');
+    if (cancelled.count === 0) throw new HttpError(409, 'This order changed a moment ago (it may have just been paid). Reload it.');
     if (order.stripeCheckoutSessionId && stripe) {
       try {
         await stripe.checkout.sessions.expire(order.stripeCheckoutSessionId);

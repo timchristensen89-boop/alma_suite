@@ -218,6 +218,111 @@ describe('corporate gift cards against a real database', { skip: TEST_DB ? false
     await rejects(h.corporate.cancelOrder(issued.id, { reason: 'too late' }, actor), 409, /Cancel individual cards/);
   });
 
+  it('a paid order whose issuance failed is not cancellable, not re-payable, and is recovered without duplicating the pool', async () => {
+    const account = await newAccount();
+    const { order } = await h.corporate.createOrder({ corporateAccountId: account.id, quantity: 5, faceValueCents: 5000, paymentMethod: 'MANUAL_OFFLINE' }, actor);
+
+    // Make issuance itself fail AFTER the payment is persisted: a trigger that
+    // rejects every pool-card insert. The payment transaction commits, the
+    // pool transaction aborts — exactly what a crash between the two leaves.
+    await h.prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION itest_block_pool_insert() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'ITEST issuance failure'; END $$ LANGUAGE plpgsql`);
+    await h.prisma.$executeRawUnsafe(`CREATE TRIGGER itest_block_pool_insert BEFORE INSERT ON "GiftCard" FOR EACH ROW WHEN (NEW."corporateOrderId" IS NOT NULL) EXECUTE FUNCTION itest_block_pool_insert()`);
+    try {
+      await assert.rejects(h.corporate.recordManualPayment(order.id, { tender: 'BANK_TRANSFER', paymentReference: 'BT-CRASH' }, actor), (error: unknown) => {
+        assert.match(JSON.stringify(error, Object.getOwnPropertyNames(error as object)), /ITEST issuance failure/);
+        return true;
+      });
+    } finally {
+      await h.prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS itest_block_pool_insert ON "GiftCard"`);
+      await h.prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS itest_block_pool_insert()`);
+    }
+
+    const stranded = await h.prisma.corporateGiftCardOrder.findUniqueOrThrow({ where: { id: order.id } });
+    assert.equal(stranded.status, 'AWAITING_PAYMENT');
+    assert.equal(stranded.paymentStatus, 'PAID');
+    assert.equal(stranded.amountPaidCents, order.amountDueCents);
+    assert.equal(await h.prisma.giftCard.count({ where: { corporateOrderId: order.id } }), 0, 'payment persisted, no cards: the stranded state');
+
+    // Money in, no cards: neither cancellable nor payable again.
+    await rejects(h.corporate.cancelOrder(order.id, { reason: 'Trying to back out of a paid order' }, actor), 409, /has been paid/);
+    await rejects(h.corporate.recordManualPayment(order.id, { tender: 'CASH' }, actor), 409, /already been paid/);
+    const untouched = await h.prisma.corporateGiftCardOrder.findUniqueOrThrow({ where: { id: order.id } });
+    assert.equal(`${untouched.status}/${untouched.paymentStatus}`, 'AWAITING_PAYMENT/PAID');
+
+    // Reading the order recovers it: the pool is created, the payment untouched.
+    const recovered = await h.corporate.getOrder(order.id);
+    assert.equal(recovered.status, 'ISSUED');
+    assert.equal(recovered.paymentStatus, 'PAID');
+    assert.equal(recovered.cards.length, 5);
+    assert.equal(recovered.paidAt, stranded.paidAt?.toISOString());
+    assert.equal(recovered.paymentReference, 'BT-CRASH');
+    assert.equal(recovered.amountPaidCents, order.amountDueCents);
+
+    // Every further retry path is a no-op: a second read, a duplicate Stripe
+    // webhook for the (now settled) order, and a direct reconcile.
+    assert.equal((await h.corporate.getOrder(order.id)).cards.length, 5);
+    await h.corporate.handleStripeSession(
+      { id: 'cs_itest_dup', mode: 'payment', status: 'complete', payment_status: 'paid', amount_total: order.amountDueCents, metadata: { corporateOrderId: order.id } } as unknown as Parameters<typeof h.corporate.handleStripeSession>[0],
+      'completed'
+    );
+    assert.equal(await h.prisma.giftCard.count({ where: { corporateOrderId: order.id } }), 5);
+    await rejects(h.corporate.cancelOrder(order.id, { reason: 'still no' }, actor), 409, /Cancel individual cards/);
+  });
+
+  it('concurrent recoveries of a paid-but-unissued order (webhook, poll, reads) create exactly one pool', async () => {
+    const account = await newAccount();
+    const { order } = await h.corporate.createOrder({ corporateAccountId: account.id, quantity: 5, faceValueCents: 5000, paymentMethod: 'MANUAL_OFFLINE' }, actor);
+    // Put the order straight into the stranded state (what the previous test
+    // proved a mid-issuance failure leaves behind).
+    await h.prisma.corporateGiftCardOrder.update({ where: { id: order.id }, data: { paymentStatus: 'PAID', paidAt: new Date(), amountPaidCents: order.amountDueCents, tender: 'BANK_TRANSFER' } });
+    const session = { id: 'cs_itest_race', mode: 'payment', status: 'complete', payment_status: 'paid', amount_total: order.amountDueCents, metadata: { corporateOrderId: order.id } } as unknown as Parameters<typeof h.corporate.handleStripeSession>[0];
+    const results = await Promise.allSettled([
+      h.corporate.getOrder(order.id),
+      h.corporate.getOrder(order.id),
+      h.corporate.handleStripeSession(session, 'completed'),
+      h.corporate.handleStripeSession(session, 'completed'),
+      h.corporate.getOrder(order.id)
+    ]);
+    for (const result of results) assert.equal(result.status, 'fulfilled', result.status === 'rejected' ? String(result.reason) : '');
+    const row = await h.prisma.corporateGiftCardOrder.findUniqueOrThrow({ where: { id: order.id } });
+    assert.equal(`${row.status}/${row.paymentStatus}`, 'ISSUED/PAID');
+    assert.equal(await h.prisma.giftCard.count({ where: { corporateOrderId: order.id } }), 5, 'one pool, however many recoveries raced');
+    assert.equal(new Set((await h.prisma.giftCard.findMany({ where: { corporateOrderId: order.id }, select: { code: true } })).map((card) => card.code)).size, 5);
+  });
+
+  it('a payment and a cancellation racing on the same order never produce CANCELLED + PAID', async () => {
+    const account = await newAccount();
+    let paidWins = 0;
+    let cancelWins = 0;
+    for (let round = 0; round < 6; round += 1) {
+      const { order } = await h.corporate.createOrder({ corporateAccountId: account.id, quantity: 5, faceValueCents: 5000, paymentMethod: 'MANUAL_OFFLINE' }, actor);
+      // Alternate who gets the first tick so both orderings are exercised.
+      const pay = () => h.corporate.recordManualPayment(order.id, { tender: 'CASH' }, actor);
+      const cancel = () => h.corporate.cancelOrder(order.id, { reason: 'Racing the payment' }, actor);
+      const results = await Promise.allSettled(round % 2 === 0 ? [pay(), cancel()] : [cancel(), pay()]);
+      const fulfilled = results.filter((result) => result.status === 'fulfilled').length;
+      assert.equal(fulfilled, 1, `exactly one side wins: ${results.map((result) => (result.status === 'rejected' ? String((result.reason as Error).message) : 'ok')).join(' | ')}`);
+      for (const result of results) {
+        if (result.status === 'rejected') assert.equal((result.reason as { statusCode?: number }).statusCode, 409);
+      }
+      const row = await h.prisma.corporateGiftCardOrder.findUniqueOrThrow({ where: { id: order.id } });
+      const cards = await h.prisma.giftCard.count({ where: { corporateOrderId: order.id } });
+      assert.notEqual(`${row.status}/${row.paymentStatus}`, 'CANCELLED/PAID');
+      if (row.status === 'CANCELLED') {
+        cancelWins += 1;
+        assert.equal(row.paymentStatus, 'CANCELLED');
+        assert.equal(row.amountPaidCents ?? 0, 0);
+        assert.equal(cards, 0);
+      } else {
+        paidWins += 1;
+        assert.equal(`${row.status}/${row.paymentStatus}`, 'ISSUED/PAID');
+        assert.equal(cards, 5);
+        assert.equal(row.cancelledAt, null);
+      }
+    }
+    assert.equal(paidWins + cancelWins, 6);
+  });
+
   it('test checkout mode issues immediately with no money and keeps those cards out of the account figures', async () => {
     await setSettings({ testCheckoutEnabled: true, corporate: TIERS });
     const account = await newAccount({ companyName: 'Test Mode Co' });

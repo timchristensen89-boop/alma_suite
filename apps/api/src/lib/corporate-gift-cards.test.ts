@@ -15,6 +15,7 @@ import {
   csvCell,
   drainEligible,
   giftCardEmailRecipients,
+  issuancePending,
   issueBlockedReason,
   parseCsv,
   parseScheduledDeliveryAt,
@@ -156,11 +157,21 @@ describe('order lifecycle', () => {
     assert.ok(issueBlockedReason(cancelled));
   });
 
-  it('an order is cancellable only before its cards exist', () => {
+  it('an order is cancellable only while unpaid: a paid-but-unissued order is money with no cards, not a cancellation', () => {
     assert.equal(cancelBlockedReason(awaiting), null);
-    assert.equal(cancelBlockedReason(paid), null);
+    assert.match(cancelBlockedReason(paid) ?? '', /has been paid/);
     assert.ok(cancelBlockedReason(issued));
     assert.ok(cancelBlockedReason(cancelled));
+  });
+
+  it('paid + AWAITING_PAYMENT is the issuance-pending state, nothing else is', () => {
+    assert.equal(issuancePending(paid), true);
+    assert.equal(issuancePending(awaiting), false);
+    assert.equal(issuancePending(issued), false);
+    assert.equal(issuancePending(cancelled), false);
+    // Pending issuance may be retried (issue allowed) but not paid again.
+    assert.equal(issueBlockedReason(paid), null);
+    assert.match(paymentBlockedReason(paid) ?? '', /being issued/);
   });
 
   it('invoice / PO purchasing is refused at the boundary', () => {

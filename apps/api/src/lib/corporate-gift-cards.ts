@@ -30,8 +30,21 @@ export type CorporateOrderState = {
  */
 export function paymentBlockedReason(order: CorporateOrderState): string | null {
   if (order.status === 'CANCELLED') return 'This order was cancelled.';
-  if (order.paymentStatus === 'PAID' || order.status === 'ISSUED') return 'This order has already been paid and its cards issued.';
+  if (order.status === 'ISSUED') return 'This order has already been paid and its cards issued.';
+  if (order.paymentStatus === 'PAID') return 'This order has already been paid. Its cards are being issued; open the order to finish that.';
   return null;
+}
+
+/**
+ * Paid, not yet issued. Payment is persisted first and the pool is created
+ * in a second transaction, so a crash, a lost connection or a failed insert
+ * between the two leaves an order here. It is money received with no cards
+ * against it: never cancellable, never payable again, and finished by
+ * re-running the (idempotent) issuance — which every read of the order and
+ * every Stripe webhook/poll does.
+ */
+export function issuancePending(order: Pick<CorporateOrderState, 'status' | 'paymentStatus'>): boolean {
+  return order.status === 'AWAITING_PAYMENT' && order.paymentStatus === 'PAID';
 }
 
 /** Issuing is allowed exactly when the order is paid and not yet issued. */
@@ -43,13 +56,18 @@ export function issueBlockedReason(order: CorporateOrderState): string | null {
 }
 
 /**
- * An order can be cancelled only before its cards exist. After issuance the
+ * An order can be cancelled only while it is unpaid. After payment the cards
+ * exist or are about to; after issuance the
  * cards are real liability with real codes; each is cancelled individually
  * through the ordinary gift-card cancel, which records a reason per card.
  */
 export function cancelBlockedReason(order: CorporateOrderState): string | null {
   if (order.status === 'CANCELLED') return 'This order is already cancelled.';
   if (order.status === 'ISSUED') return 'Cards have been issued. Cancel individual cards instead, so each cancellation carries its own reason.';
+  // Paid but not yet issued: the money is in and the pool is about to exist
+  // (or is being recovered). Cancelling here would turn a real payment into a
+  // CANCELLED order with nothing to refund against.
+  if (order.paymentStatus === 'PAID') return 'This order has been paid. Its cards are being issued; once they exist, cancel individual cards instead.';
   return null;
 }
 

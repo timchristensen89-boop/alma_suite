@@ -75,6 +75,14 @@ const ORDER_STATUS_LABEL: Record<CorporateOrderSummary['status'], string> = {
   AWAITING_PAYMENT: 'Awaiting payment',
   CANCELLED: 'Cancelled'
 };
+/** Paid but the pool was never created (the server stopped between the two writes). Recovered on every read. */
+function issuancePending(order: Pick<CorporateOrderSummary, 'status' | 'paymentStatus'>): boolean {
+  return order.status === 'AWAITING_PAYMENT' && order.paymentStatus === 'PAID';
+}
+function orderStatusBadge(order: Pick<CorporateOrderSummary, 'status' | 'paymentStatus'>) {
+  if (issuancePending(order)) return <Badge tone="warning">Paid · issuing cards</Badge>;
+  return <Badge tone={ORDER_STATUS_TONE[order.status]}>{ORDER_STATUS_LABEL[order.status]}</Badge>;
+}
 const PAYMENT_LABEL: Record<CorporateOrderSummary['paymentMethod'], string> = {
   STRIPE: 'Card (Stripe)',
   MANUAL_OFFLINE: 'Offline (bank transfer, EFTPOS, cash)',
@@ -446,7 +454,7 @@ function OrdersTable({ orders }: { orders: CorporateOrderSummary[] }) {
               <td>{dollars(order.faceValueTotalCents)}</td>
               <td>{dollars(order.amountDueCents)}{order.discountCents ? <span className="subtle giftcards-invoice-block">{percent(order.discountBps)} off</span> : null}</td>
               <td>{PAYMENT_LABEL[order.paymentMethod]}</td>
-              <td><Badge tone={ORDER_STATUS_TONE[order.status]}>{ORDER_STATUS_LABEL[order.status]}</Badge></td>
+              <td>{orderStatusBadge(order)}</td>
               <td>{order.status === 'ISSUED' ? `${order.pool.unallocated} unallocated · ${order.pool.allocated} sent/scheduled` : '—'}</td>
               <td>{day(order.createdAt)}</td>
             </tr>
@@ -617,7 +625,8 @@ function OrderView({ orderId, isOwner }: { orderId: string; isOwner: boolean }) 
   // While a Stripe payment is outstanding, poll: the webhook normally lands
   // first, and this catches the buyer paying while the screen is open.
   useEffect(() => {
-    if (!order || order.status !== 'AWAITING_PAYMENT' || order.paymentMethod !== 'STRIPE') return;
+    // Also while paid-but-unissued: every read retries issuance server-side.
+    if (!order || order.status !== 'AWAITING_PAYMENT' || (order.paymentMethod !== 'STRIPE' && !issuancePending(order))) return;
     const timer = window.setInterval(() => void load(), 8000);
     return () => window.clearInterval(timer);
   }, [order, load]);
@@ -647,8 +656,9 @@ function OrderView({ orderId, isOwner }: { orderId: string; isOwner: boolean }) 
   }
 
   const pool = order.pool;
-  const awaitingStripe = order.status === 'AWAITING_PAYMENT' && order.paymentMethod === 'STRIPE';
-  const awaitingOffline = order.status === 'AWAITING_PAYMENT' && order.paymentMethod === 'MANUAL_OFFLINE';
+  const pending = issuancePending(order);
+  const awaitingStripe = order.status === 'AWAITING_PAYMENT' && order.paymentStatus === 'AWAITING_PAYMENT' && order.paymentMethod === 'STRIPE';
+  const awaitingOffline = order.status === 'AWAITING_PAYMENT' && order.paymentStatus === 'AWAITING_PAYMENT' && order.paymentMethod === 'MANUAL_OFFLINE';
 
   return (
     <div className="giftcards-corporate-layout">
@@ -659,7 +669,7 @@ function OrderView({ orderId, isOwner }: { orderId: string; isOwner: boolean }) 
       <Card
         title={<>{order.reference} · {order.companyName} {order.testMode ? <Badge tone="warning">Test order</Badge> : null}</>}
         subtitle={`${order.quantity} × ${dollars(order.faceValueCents)} · face value ${dollars(order.faceValueTotalCents)} · discount ${dollars(order.discountCents)}${order.discountBps ? ` (${percent(order.discountBps)})` : ''} · due ${dollars(order.amountDueCents)}${order.serviceFeeCents ? ` + ${dollars(order.serviceFeeCents)} card fee` : ''}`}
-        action={<Badge tone={ORDER_STATUS_TONE[order.status]}>{ORDER_STATUS_LABEL[order.status]}</Badge>}
+        action={orderStatusBadge(order)}
       >
         <ActionFeedback message={message} tone={message && /could|not|fail|no /i.test(message) ? 'error' : 'success'} />
         <div className="giftcards-corporate-pool">
@@ -670,6 +680,19 @@ function OrderView({ orderId, isOwner }: { orderId: string; isOwner: boolean }) 
         </div>
         {order.defaultMessage ? <p className="subtle">Default message: “{order.defaultMessage}”</p> : null}
         {order.cancelReason ? <p className="error-text">Cancelled: {order.cancelReason}</p> : null}
+
+        {pending ? (
+          <div className="giftcards-form giftcards-invoice-subform">
+            <p className="giftcards-invoice-subhead">Payment recorded — cards not issued yet</p>
+            <p className="subtle">
+              The payment is on file but the card pool was not created (the server stopped part-way). Nothing is lost and nothing is charged twice:
+              issuing is retried every time this order is opened. This order cannot be cancelled while it is paid.
+            </p>
+            <div className="toolbar-right">
+              <Button type="button" disabled={busy} onClick={() => void run(async () => undefined, 'Checked the order again.')}>Retry issuing cards</Button>
+            </div>
+          </div>
+        ) : null}
 
         {awaitingStripe ? (
           <div className="giftcards-form giftcards-invoice-subform">
@@ -698,7 +721,7 @@ function OrderView({ orderId, isOwner }: { orderId: string; isOwner: boolean }) 
           <p className="subtle">Cards are issued once Tim records the payment as received. Nothing to do here until then.</p>
         )) : null}
 
-        {order.status === 'AWAITING_PAYMENT' && isOwner ? (
+        {order.status === 'AWAITING_PAYMENT' && order.paymentStatus === 'AWAITING_PAYMENT' && isOwner ? (
           <div className="toolbar-right">
             <Button type="button" variant="danger" disabled={busy} onClick={() => {
               const reason = window.prompt('Why is this order being cancelled?');
