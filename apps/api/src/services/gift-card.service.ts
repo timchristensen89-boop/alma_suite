@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
   DEFAULT_GIFT_CARD_SETTINGS,
+  GIFT_CARD_SERVICE_FEE_BPS,
   giftCardPromoCodeInputSchema,
   giftCardPromoCodeUpdateSchema,
   giftCardPromoQuoteInputSchema,
@@ -34,6 +35,7 @@ import QRCode from 'qrcode';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { buildGiftCardLedger } from '../lib/gift-card-ledger.js';
+import { giftCardEmailRecipients, isUnallocatedPoolCard } from '../lib/corporate-gift-cards.js';
 import {
   UNCONFIRMED_CHECKOUT_REFUND_NOTE,
   checkoutSessionDisposition,
@@ -84,6 +86,11 @@ function toGiftCardPayload(card: {
   expiresAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  // Corporate pool linkage. Optional in the type because older call sites
+  // build this shape by hand; every Prisma row carries them (NULL for a
+  // non-corporate card).
+  corporateOrderId?: string | null;
+  allocationStatus?: 'UNALLOCATED' | 'ALLOCATED' | null;
   redemptions: Array<{
     id: string;
     giftCardId: string;
@@ -226,17 +233,14 @@ function sessionAmountCents(session: Stripe.Checkout.Session) {
 }
 
 /**
- * Purchaser service fee, charged on top of the card value at Stripe checkout.
- * 350 bps = 3.5% — parity with what GiftUp charged purchasers (~3.5–4%), so
- * moving in-house is not a price rise. The fee never touches the card's
- * balance: a $100 card costs $103.50 and is still worth $100.
+ * Purchaser service fee (GIFT_CARD_SERVICE_FEE_BPS, shared): charged on top
+ * of the card value at Stripe checkout; a $100 card costs $103.50 and is
+ * still worth $100.
  *
  * The per-card fee is snapshotted into the Stripe session's metadata at
- * checkout, and the webhook verifies against that snapshot — so changing this
+ * checkout, and the webhook verifies against that snapshot — so changing the
  * rate never strands a checkout that was already in flight.
  */
-const GIFT_CARD_SERVICE_FEE_BPS = 350;
-
 function serviceFeeCents(baseCents: number) {
   return Math.round((baseCents * GIFT_CARD_SERVICE_FEE_BPS) / 10000);
 }
@@ -968,7 +972,9 @@ export const giftCardService = {
     // Status governs, not paidAt: a comped counter card and a donation
     // voucher are live with paidAt deliberately null, and both 404'd here
     // with a message blaming Stripe for a payment that never existed.
-    if (!['ACTIVE', 'REDEEMED'].includes(card.status)) {
+    // An unallocated corporate pool card is live liability but belongs to
+    // nobody yet; it is not printable until it is given to someone.
+    if (!['ACTIVE', 'REDEEMED'].includes(card.status) || isUnallocatedPoolCard(card)) {
       throw new HttpError(404, 'This gift card is not live yet.');
     }
     return publicGiftCard(toGiftCardPayload(card));
@@ -1196,6 +1202,8 @@ export const giftCardService = {
           ? { promoCodeSnapshot: 'PHYSICAL_COUNTER' }
           : source === 'COUNTER'
             ? { saleChannel: 'COUNTER', promoCodeSnapshot: { not: 'PHYSICAL_COUNTER' } }
+            : source === 'CORPORATE'
+              ? { saleChannel: 'CORPORATE' }
             : source === 'ONLINE'
               ? { saleChannel: 'ONLINE', testMode: false, NOT: { promoCodeSnapshot: 'GIFTUP_IMPORT' } }
               : source === 'TEST'
@@ -1240,7 +1248,7 @@ export const giftCardService = {
       : [];
     const staffName = new Map(staff.map((member) => [member.id, `${member.firstName} ${member.lastName}`.trim()]));
 
-    const sourceOf = (card: (typeof cards)[number]): 'ONLINE' | 'COUNTER' | 'GIFTUP' | 'PHYSICAL' | 'TEST' =>
+    const sourceOf = (card: (typeof cards)[number]): 'ONLINE' | 'COUNTER' | 'GIFTUP' | 'PHYSICAL' | 'CORPORATE' | 'TEST' =>
       card.testMode
         ? 'TEST'
         : card.promoCodeSnapshot === 'GIFTUP_IMPORT'
@@ -1249,7 +1257,9 @@ export const giftCardService = {
             ? 'PHYSICAL'
             : card.saleChannel === 'COUNTER'
               ? 'COUNTER'
-              : 'ONLINE';
+              : card.saleChannel === 'CORPORATE'
+                ? 'CORPORATE'
+                : 'ONLINE';
 
     const bySource = new Map<string, { cardCount: number; soldCents: number }>();
     for (const card of cards) {
@@ -1811,15 +1821,27 @@ export const giftCardService = {
     // Friendly pre-checks (non-authoritative — the atomic update below is the
     // real guard against concurrent redemptions).
     if (card.status !== 'ACTIVE') throw new HttpError(400, `Gift card is ${card.status.replace('_', ' ').toLowerCase()}`);
+    // A corporate pool card nobody has been given yet has no holder, so
+    // nobody can legitimately be presenting it at the till.
+    if (isUnallocatedPoolCard(card)) throw new HttpError(400, 'This corporate gift card has not been allocated to anyone yet.');
     if (card.expiresAt && card.expiresAt < new Date()) throw new HttpError(400, 'Gift card has expired');
     if (card.balanceCents < data.amountCents) throw new HttpError(400, 'Gift card balance is too low');
 
     const updated = await prisma.$transaction(async (tx) => {
       // Atomic, conditional decrement: only succeeds if the card is still ACTIVE
       // and the balance still covers the amount. Two concurrent redemptions can
-      // never drive the balance negative — the loser matches zero rows.
+      // never drive the balance negative — the loser matches zero rows. An
+      // UNALLOCATED pool card is excluded here too, not only in the pre-check.
+      // Spelled as "null or ALLOCATED" on purpose: a SQL `<> 'UNALLOCATED'`
+      // is NULL for every ordinary card (the column is NULL on them) and
+      // would exclude them all.
       const decrement = await tx.giftCard.updateMany({
-        where: { id: card.id, status: 'ACTIVE', balanceCents: { gte: data.amountCents } },
+        where: {
+          id: card.id,
+          status: 'ACTIVE',
+          balanceCents: { gte: data.amountCents },
+          OR: [{ allocationStatus: null }, { allocationStatus: 'ALLOCATED' }]
+        },
         data: { balanceCents: { decrement: data.amountCents } }
       });
       if (decrement.count === 0) {
@@ -2084,7 +2106,14 @@ export const giftCardService = {
       where: {
         status: 'ACTIVE',
         emailedAt: null,
-        scheduledDeliveryAt: { lte: new Date(), not: null }
+        scheduledDeliveryAt: { lte: new Date(), not: null },
+        // Never an unallocated corporate pool card: it has no recipient, and
+        // sendGiftCardEmail would refuse it anyway (giftCardEmailRecipients).
+        // Excluded here so it does not even count as eligible. Mirrors
+        // drainEligible in lib/corporate-gift-cards.ts. Written as "null or
+        // ALLOCATED", not `not: 'UNALLOCATED'`: in SQL `<>` is NULL for the
+        // NULL column every ordinary card has, which would exclude them all.
+        OR: [{ allocationStatus: null }, { allocationStatus: 'ALLOCATED' }]
       },
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } },
       take: 200
@@ -2119,7 +2148,15 @@ export const giftCardService = {
 
   async sendGiftCardEmail(card: Parameters<typeof toGiftCardPayload>[0], settings: GiftCardSettings) {
     if (card.emailedAt) return toGiftCardPayload(card);
-    const recipients = Array.from(new Set([card.purchaserEmail, card.recipientEmail].filter(Boolean)));
+    // Consumer card: purchaser + recipient. Corporate card: the recipient
+    // only once allocated, and nobody at all while it sits in the pool.
+    const recipients = giftCardEmailRecipients({
+      corporateOrderId: card.corporateOrderId ?? null,
+      allocationStatus: card.allocationStatus ?? null,
+      recipientEmail: card.recipientEmail,
+      purchaserEmail: card.purchaserEmail,
+      emailedAt: card.emailedAt
+    });
     if (recipients.length === 0) return toGiftCardPayload(card);
 
     // "Create your own" cards carry the customer's rendered artwork — the
@@ -2182,6 +2219,9 @@ export const giftCardService = {
     if (card.status !== 'ACTIVE') {
       throw new HttpError(400, 'Only an active gift card can have its voucher resent.');
     }
+    if (isUnallocatedPoolCard(card)) {
+      throw new HttpError(400, 'This corporate gift card has not been allocated to anyone yet, so there is nobody to send it to.');
+    }
     if (!card.purchaserEmail && !card.recipientEmail) {
       throw new HttpError(400, 'This card has no email address on file to send to.');
     }
@@ -2235,7 +2275,8 @@ export const giftCardService = {
   async qrCodeSvg(code: string) {
     const card = await findCardByCode(code.replace(/\.svg$/i, ''));
     // Status governs — donation and comped cards are live with paidAt null.
-    if (!['ACTIVE', 'REDEEMED'].includes(card.status)) {
+    // Unallocated pool cards have no holder yet and get no QR.
+    if (!['ACTIVE', 'REDEEMED'].includes(card.status) || isUnallocatedPoolCard(card)) {
       throw new HttpError(404, 'This gift card is not live yet.');
     }
     return QRCode.toString(redeemUrl(card.code), {

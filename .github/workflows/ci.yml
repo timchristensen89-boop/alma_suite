@@ -84,6 +84,65 @@ jobs:
       - name: Run tests
         run: pnpm --filter @alma/api --filter @alma/stock-api --filter @alma/stock-web --filter @alma/reports-web --filter @alma/ui --filter @alma/db test
 
+  # Corporate gift cards against a real Postgres: the pool-allocation
+  # conditional updates, the allocation-key uniqueness and the drain/redeem
+  # filters are things a mocked Prisma cannot prove. The suite self-skips
+  # without ALMA_TEST_DATABASE_URL, so the plain `test` job above stays
+  # database-free; here it runs the whole migration history on an empty
+  # postgres:16 first, which also proves the migrations apply cleanly.
+  db-integration:
+    name: Postgres integration (corporate gift cards)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: alma
+          POSTGRES_PASSWORD: alma
+          POSTGRES_DB: alma_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U alma"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://alma:alma@127.0.0.1:5432/alma_test
+      ALMA_TEST_DATABASE_URL: postgresql://alma:alma@127.0.0.1:5432/alma_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Build internal type declarations
+        run: pnpm --filter @alma/shared --filter @alma/db build
+
+      # Full history on an empty database: fails here if a migration does
+      # not apply in order on a clean Postgres.
+      - name: Apply the full migration history
+        run: pnpm --filter @alma/db migrate:deploy
+
+      - name: Run the corporate gift card integration suite
+        run: pnpm --filter @alma/api exec node --import tsx --test src/services/corporate-gift-card.integration.test.ts
+
   frontend-build:
     name: Frontend builds
     runs-on: ubuntu-latest

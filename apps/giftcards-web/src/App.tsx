@@ -4,10 +4,13 @@ import { CounterApp } from './CounterApp';
 import { DonationsPage } from './DonationsPage';
 import { GiftCardDocumentControls } from './GiftCardDocumentControls';
 import { InvoicesManagersOnly, InvoicesPage } from './InvoicesPage';
+import { CorporateManagersOnly, CorporatePage } from './CorporatePage';
 import { ScanSheet } from './ScanSheet';
 import { CustomCardDesigner, type CustomCardDesignerHandle } from './CustomCardDesigner';
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
 import {
+  CORPORATE_MAX_DISCOUNT_BPS,
+  CORPORATE_ORDER_MAX_QUANTITY,
   DEFAULT_GIFT_CARD_SETTINGS,
   GIFT_CARD_DESIGNS,
   GIFT_CARD_MIN_AMOUNT_CENTS,
@@ -60,6 +63,7 @@ import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import {
+  IconBriefcase,
   IconFileText,
   IconGift,
   IconKeyRound,
@@ -90,6 +94,15 @@ const GIFTCARD_NAV_ITEMS = [
     label: 'Orders',
     description: 'Recent cards and balances',
     icon: <IconReceipt />
+  },
+  {
+    href: '/corporate',
+    label: 'Corporate',
+    description: 'Bulk orders, pools and recipients',
+    icon: <IconBriefcase />,
+    // Managers run corporate accounts on the company's behalf; the API
+    // refuses staff and the venue iPads, so the door is hidden from them.
+    managerOnly: true
   },
   {
     href: '/reporting#report',
@@ -1523,6 +1536,7 @@ export function isGiftCardManager(user?: Pick<AuthUser, 'accountType' | 'role' |
 function giftCardSectionFromLocation() {
   const path = window.location.pathname;
   if (path.startsWith('/orders')) return '/orders#recent';
+  if (path.startsWith('/corporate')) return '/corporate';
   if (path.startsWith('/reporting')) return '/reporting#report';
   if (path.startsWith('/donations')) return '/donations#donations';
   if (path.startsWith('/admin')) return '/admin#settings';
@@ -1839,6 +1853,7 @@ const PURCHASE_SOURCES: Array<{ key: string; label: string }> = [
   { key: 'COUNTER', label: 'Counter (POS)' },
   { key: 'PHYSICAL', label: 'Physical card' },
   { key: 'GIFTUP', label: 'GiftUp import' },
+  { key: 'CORPORATE', label: 'Corporate orders' },
   { key: 'TEST', label: 'Test cards' }
 ];
 const SOURCE_LABEL: Record<string, string> = {
@@ -1846,6 +1861,7 @@ const SOURCE_LABEL: Record<string, string> = {
   COUNTER: 'Counter',
   PHYSICAL: 'Physical',
   GIFTUP: 'GiftUp',
+  CORPORATE: 'Corporate',
   TEST: 'Test'
 };
 
@@ -2316,6 +2332,94 @@ function GiftCardAdminSettings({ user }: { user: AuthUser }) {
         </form>
       </Card>
 
+      <Card title="Corporate pricing" subtitle="Bulk orders are priced per order from these tiers. Nothing is discounted until a tier is set here; a per-account override on the Corporate page replaces the tiers for that company.">
+        <form className="giftcards-form" onSubmit={(event) => void saveSettings(event)}>
+          {!canEdit ? <p className="subtle">Admin access is required to change corporate pricing.</p> : null}
+          <div className="form-grid two">
+            <Input
+              label="Minimum cards per corporate order"
+              type="number"
+              min={1}
+              max={CORPORATE_ORDER_MAX_QUANTITY}
+              value={settings.corporate.minimumQuantity}
+              onChange={(event) => {
+                const value = Number(event.currentTarget.value);
+                setSettings((current) => ({ ...current, corporate: { ...current.corporate, minimumQuantity: Number.isFinite(value) ? value : current.corporate.minimumQuantity } }));
+              }}
+              disabled={!canEdit}
+            />
+          </div>
+          <div className="giftcards-invoice-table-scroll">
+            <table className="giftcards-invoice-table giftcards-corporate-tiers">
+              <thead>
+                <tr>
+                  <th>Orders of at least</th>
+                  <th>Discount</th>
+                  <th aria-label="Remove" />
+                </tr>
+              </thead>
+              <tbody>
+                {settings.corporate.tiers.length === 0 ? (
+                  <tr><td colSpan={3} className="subtle">No tiers yet — corporate orders are charged full face value.</td></tr>
+                ) : null}
+                {settings.corporate.tiers.map((tier, index) => (
+                  <tr key={index}>
+                    <td>
+                      <Input
+                        aria-label="Minimum quantity"
+                        type="number"
+                        min={1}
+                        max={CORPORATE_ORDER_MAX_QUANTITY}
+                        value={tier.minQuantity}
+                        onChange={(event) => {
+                          const value = Number(event.currentTarget.value);
+                          setSettings((current) => ({ ...current, corporate: { ...current.corporate, tiers: current.corporate.tiers.map((row, i) => (i === index ? { ...row, minQuantity: value } : row)) } }));
+                        }}
+                        disabled={!canEdit}
+                      />
+                    </td>
+                    <td>
+                      <Input
+                        aria-label="Discount percent"
+                        type="number"
+                        min={0}
+                        max={CORPORATE_MAX_DISCOUNT_BPS / 100}
+                        step={0.5}
+                        value={tier.discountBps / 100}
+                        hint="% off face value"
+                        onChange={(event) => {
+                          const value = Math.round(Number(event.currentTarget.value) * 100);
+                          setSettings((current) => ({ ...current, corporate: { ...current.corporate, tiers: current.corporate.tiers.map((row, i) => (i === index ? { ...row, discountBps: Number.isFinite(value) ? value : row.discountBps } : row)) } }));
+                        }}
+                        disabled={!canEdit}
+                      />
+                    </td>
+                    <td>
+                      <Button type="button" variant="ghost" size="sm" disabled={!canEdit} onClick={() => setSettings((current) => ({ ...current, corporate: { ...current.corporate, tiers: current.corporate.tiers.filter((_, i) => i !== index) } }))}>Remove</Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="toolbar-right">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!canEdit || settings.corporate.tiers.length >= 12}
+              onClick={() => setSettings((current) => {
+                const last = current.corporate.tiers[current.corporate.tiers.length - 1];
+                return { ...current, corporate: { ...current.corporate, tiers: [...current.corporate.tiers, { minQuantity: last ? last.minQuantity * 2 : current.corporate.minimumQuantity, discountBps: last ? last.discountBps : 0 }] } };
+              })}
+            >
+              Add tier
+            </Button>
+            <ActionFeedback message={messageTarget === 'settings' ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+            <Button type="submit" disabled={saving || !canEdit}>{saving ? 'Saving...' : 'Save corporate pricing'}</Button>
+          </div>
+        </form>
+      </Card>
+
       <Card title="Promo codes" subtitle="Admin users can add or remove promo codes. Managers can see what is active.">
         {message && !messageTarget ? <p className={message.includes('Could') || message.includes('Only') ? 'error-text' : 'subtle'}>{message}</p> : null}
         <form className="giftcards-form" onSubmit={(event) => void createPromoCode(event)}>
@@ -2539,7 +2643,9 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
             ? 'activate'
             : currentPath.startsWith('/invoices')
               ? 'invoices'
-              : 'redeem';
+              : currentPath.startsWith('/corporate')
+                ? 'corporate'
+                : 'redeem';
   const pageCopy = {
     redeem: {
       eyebrow: 'Daily workflow',
@@ -2571,6 +2677,11 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       eyebrow: 'At the counter',
       title: 'Activate physical gift card',
       description: 'Sell a pre-printed card at the venue. Scan or type the printed code, enter the amount paid, and the card goes live immediately.'
+    },
+    corporate: {
+      eyebrow: 'Corporate',
+      title: 'Corporate gift cards',
+      description: 'Bulk orders for companies: price from the configured tiers, take payment, hold the cards in a pool, and send each one when the company says who it is for.'
     },
     invoices: {
       eyebrow: 'Accounts',
@@ -2704,6 +2815,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 CAMPAIGN_REWARD: 'campaign rewards',
                 ONLINE: 'sold online',
                 COUNTER: 'sold at the counter',
+                CORPORATE: 'corporate orders',
                 OTHER: 'other'
               };
               return (
@@ -2894,6 +3006,13 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                   <span>{formatCents(card.balanceCents)} remaining of {formatCents(card.initialValueCents)}</span>
                   <Badge tone={statusTone(card.status)}>{card.status.replace('_', ' ')}</Badge>
                   {card.testMode ? <Badge tone="warning">TEST MODE</Badge> : null}
+                  {card.allocationStatus === 'UNALLOCATED' ? <Badge tone="warning">CORPORATE POOL · NOT ALLOCATED</Badge> : null}
+                  {card.allocationStatus === 'UNALLOCATED' ? (
+                    <small>
+                      This card belongs to a corporate order and has not been allocated to anyone yet. It cannot be redeemed, printed or
+                      emailed until a manager allocates it from the Corporate page.
+                    </small>
+                  ) : null}
                   {card.emailedAt ? <small>Email sent {new Date(card.emailedAt).toLocaleString('en-AU')}</small> : null}
                   {card.emailError ? <small>Email issue: {card.emailError}</small> : null}
                   {card.cancelReason ? <small>Cancel note: {card.cancelReason}</small> : null}
@@ -2940,10 +3059,15 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                   const validAmount = amountCents > 0;
                   const overBalance = validAmount && card && amountCents > card.balanceCents;
                   const cardActive = Boolean(card && card.status === 'ACTIVE');
-                  const disableRedeem = !card || !cardActive || !validAmount || Boolean(overBalance);
-                  const buttonLabel = validAmount
-                    ? `Redeem ${formatCents(amountCents)}`
-                    : 'Enter amount to redeem';
+                  // A corporate pool card is ACTIVE liability but nobody's yet —
+                  // the API refuses the redeem, so the button says why up front.
+                  const unallocatedPool = Boolean(card && card.allocationStatus === 'UNALLOCATED');
+                  const disableRedeem = !card || !cardActive || unallocatedPool || !validAmount || Boolean(overBalance);
+                  const buttonLabel = unallocatedPool
+                    ? 'Not allocated — cannot redeem'
+                    : validAmount
+                      ? `Redeem ${formatCents(amountCents)}`
+                      : 'Enter amount to redeem';
                   return (
                     <>
                       {overBalance ? (
@@ -3018,6 +3142,9 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         ) : null}
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
         {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
+        {activeGiftCardPage === 'corporate' ? (
+          isGiftCardManager(user) ? <CorporatePage isOwner={isGiftCardOwner(user)} /> : <CorporateManagersOnly />
+        ) : null}
         {activeGiftCardPage === 'invoices' ? (
           // The nav item is hidden from everyone else; a typed URL gets the
           // explanation rather than a page whose every request will 403.
@@ -3168,6 +3295,7 @@ export function App() {
   const isReportingPath = window.location.pathname.startsWith('/reporting');
   const isDonationsPath = window.location.pathname.startsWith('/donations');
   const isInvoicesPath = window.location.pathname.startsWith('/invoices');
+  const isCorporatePath = window.location.pathname.startsWith('/corporate');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
   if (isArtPath) return <CardArtGallery />;
@@ -3179,7 +3307,8 @@ export function App() {
     !isActivatePath &&
     !isReportingPath &&
     !isDonationsPath &&
-    !isInvoicesPath
+    !isInvoicesPath &&
+    !isCorporatePath
   ) {
     return <PublicGiftCardShop />;
   }

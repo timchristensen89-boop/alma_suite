@@ -3,12 +3,18 @@ import type Stripe from 'stripe';
 import { requireManager } from '../lib/auth-middleware.js';
 import { HttpError } from '../lib/http.js';
 import { financialDocumentService } from '../services/financial-document.service.js';
+import { corporateGiftCardService } from '../services/corporate-gift-card.service.js';
 import {
   constructStripeWebhookEvent,
   giftCardService
 } from '../services/gift-card.service.js';
+import { corporateGiftCardsRouter } from './corporate-gift-cards.js';
 
 export const giftCardsRouter = Router();
+
+// Corporate bulk orders and pool cards: /api/gift-cards/corporate/...
+// Mounted first so nothing below can shadow it.
+giftCardsRouter.use('/corporate', corporateGiftCardsRouter);
 
 /**
  * Redeeming at the counter is a floor action, not a management one. The venue
@@ -382,6 +388,22 @@ giftCardsRouter.post('/cards/:code/cancel', requireManager, async (req, res, nex
 export async function stripeGiftCardWebhook(req: { body: Buffer; header(name: string): string | undefined }, res: { json(body: unknown): void }, next: (error?: unknown) => void) {
   try {
     const event = constructStripeWebhookEvent(req.body, req.header('stripe-signature'));
+    // A corporate order's checkout carries corporateOrderId in its metadata
+    // and no gift card id: it pays for an order, and the order issues the
+    // cards. Everything else is a single-card checkout as before.
+    const corporateOrderId =
+      event.type.startsWith('checkout.session.')
+        ? (event.data.object as Stripe.Checkout.Session).metadata?.corporateOrderId
+        : undefined;
+    if (corporateOrderId) {
+      if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+        await corporateGiftCardService.handleStripeSession(event.data.object as Stripe.Checkout.Session, 'completed');
+      } else if (event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
+        await corporateGiftCardService.handleStripeSession(event.data.object as Stripe.Checkout.Session, 'expired');
+      }
+      res.json({ received: true });
+      return;
+    }
     if (
       event.type === 'checkout.session.completed' ||
       event.type === 'checkout.session.async_payment_succeeded'

@@ -1,5 +1,11 @@
 import type { CostTargets } from './cost-targets.js';
 import { STOCKTAKE_SCOPES, type StocktakeScope } from './stocktake-scope.js';
+import {
+  DEFAULT_CORPORATE_GIFT_CARD_SETTINGS,
+  corporateGiftCardSettingsSchema,
+  normaliseCorporateGiftCardSettings,
+  type CorporateGiftCardSettings
+} from './corporate-gift-cards.js';
 export * from './price-window.js';
 export * from './roster-calendar.js';
 export * from './donations.js';
@@ -35,6 +41,7 @@ export * from './stock-units.js';
 export * from './stock-duplicates.js';
 export * from './clock-to-timesheet.js';
 export * from './financial-documents.js';
+export * from './corporate-gift-cards.js';
 import type { ParsedInvoiceLine } from './invoice-paste.js';
 import { IMPLAUSIBLE_COUNT_FLOOR_CENTS, IMPLAUSIBLE_COUNT_SHARE } from './count-scale.js';
 import { CHECKLIST_CADENCES, type ChecklistCadence } from './checklist-cadence.js';
@@ -1819,6 +1826,13 @@ export const giftCardDesignSchema = z.enum(GIFT_CARD_DESIGNS);
 // Minimum gift card amount in cents ($25). Keep this in lockstep with the
 // giftcards-web amount validation so a crafted request can't undercut the floor.
 export const GIFT_CARD_MIN_AMOUNT_CENTS = 2500;
+/**
+ * Purchaser service fee, charged on top of the card value at Stripe checkout.
+ * 350 bps = 3.5% — parity with what GiftUp charged purchasers, so moving
+ * in-house was not a price rise. The fee never touches a card's balance.
+ * Shared so the corporate order quote and the public shop charge one rate.
+ */
+export const GIFT_CARD_SERVICE_FEE_BPS = 350;
 export const GIFT_CARD_MAX_AMOUNT_CENTS = 200000;
 
 export const giftCardCheckoutInputSchema = z.object({
@@ -1909,7 +1923,11 @@ export const giftCardSettingsInputSchema = z.object({
   emailSubject: z.string().min(4).max(120).optional(),
   emailIntro: z.string().min(4).max(240).optional(),
   primaryColor: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
-  accentColor: z.string().regex(/^#[0-9a-f]{6}$/i).optional()
+  accentColor: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
+  // Corporate bulk pricing: minimum order quantity and per-order quantity
+  // tiers. Shape in corporate-gift-cards.ts. Owner-only on the API, like the
+  // rest of this object.
+  corporate: corporateGiftCardSettingsSchema.partial().optional()
 });
 
 export type GiftCardSettings = {
@@ -1922,6 +1940,7 @@ export type GiftCardSettings = {
   emailIntro: string;
   primaryColor: string;
   accentColor: string;
+  corporate: CorporateGiftCardSettings;
 };
 
 export type GiftCardPublicConfig = {
@@ -1949,17 +1968,20 @@ export const DEFAULT_GIFT_CARD_SETTINGS: GiftCardSettings = {
   emailSubject: 'Your ALMA gift card {{code}}',
   emailIntro: 'Your ALMA gift card is ready.',
   primaryColor: '#1f3524',
-  accentColor: '#b98216'
+  accentColor: '#b98216',
+  corporate: DEFAULT_CORPORATE_GIFT_CARD_SETTINGS
 };
 
 export function normaliseGiftCardSettings(input: unknown): GiftCardSettings {
   const parsed = giftCardSettingsInputSchema.partial().safeParse(input);
   const patch = parsed.success ? parsed.data : {};
+  const { corporate, ...flat } = patch;
   return {
     ...DEFAULT_GIFT_CARD_SETTINGS,
     ...Object.fromEntries(
-      Object.entries(patch).filter(([, value]) => value !== undefined && value !== '')
-    )
+      Object.entries(flat).filter(([, value]) => value !== undefined && value !== '')
+    ),
+    corporate: normaliseCorporateGiftCardSettings(corporate ?? DEFAULT_CORPORATE_GIFT_CARD_SETTINGS)
   };
 }
 
@@ -4676,6 +4698,15 @@ export type GiftCard = {
   createdAt: string;
   updatedAt: string;
   redemptions: GiftCardRedemption[];
+  /**
+   * Corporate pool linkage. Both are null (or absent) on every consumer,
+   * counter and imported card. A card issued on a corporate order carries
+   * the order id and `UNALLOCATED` until a manager hands it to a recipient,
+   * after which it is `ALLOCATED`; an unallocated card is live liability but
+   * cannot be redeemed, printed or emailed, and staff screens say so.
+   */
+  corporateOrderId?: string | null;
+  allocationStatus?: 'UNALLOCATED' | 'ALLOCATED' | null;
 };
 
 export type GiftCardPublic = Pick<
@@ -4716,7 +4747,7 @@ export type GiftCardCheckoutResult = {
   amountPaidCents?: number;
 };
 
-export type GiftCardLedgerOrigin = 'GIFTUP_IMPORT' | 'PHYSICAL_COUNTER' | 'DONATION' | 'CAMPAIGN_REWARD' | 'ONLINE' | 'COUNTER' | 'OTHER';
+export type GiftCardLedgerOrigin = 'GIFTUP_IMPORT' | 'PHYSICAL_COUNTER' | 'DONATION' | 'CAMPAIGN_REWARD' | 'ONLINE' | 'COUNTER' | 'CORPORATE' | 'OTHER';
 
 /**
  * Every-card, venue-month gift card accounting (apps/api lib/gift-card-ledger).
@@ -4829,7 +4860,7 @@ export type GiftCardPurchaseRow = {
   status: GiftCard['status'];
   purchasedAt: string;
   /** ONLINE (storefront), COUNTER (POS/physical), or GIFTUP (imported). */
-  source: 'ONLINE' | 'COUNTER' | 'GIFTUP' | 'PHYSICAL' | 'TEST';
+  source: 'ONLINE' | 'COUNTER' | 'GIFTUP' | 'PHYSICAL' | 'CORPORATE' | 'TEST';
   tender: string | null;
   soldByName: string | null;
   initialValueCents: number;

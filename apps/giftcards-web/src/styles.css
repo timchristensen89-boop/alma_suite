@@ -4575,3 +4575,56 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   padding-top: 16px;
   border-top: 1px solid var(--color-border);
 }
+
+/* ------------------------------------------------------------------ */
+/* Corporate gift cards                                               */
+/* ------------------------------------------------------------------ */
+
+.giftcards-corporate-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.giftcards-corporate-quote {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+  font-variant-numeric: tabular-nums;
+}
+.giftcards-corporate-quote .line {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.giftcards-corporate-quote .line.total {
+  font-weight: 700;
+  border-top: 1px solid var(--color-border);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+.giftcards-corporate-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-variant-numeric: tabular-nums;
+}
+.giftcards-corporate-pool strong { font-size: 1.15rem; }
+
+/* Tier editor: the Remove button sits on the input baseline, not the hint line. */
+.giftcards-corporate-tiers td { vertical-align: top; }
+.giftcards-corporate-tiers td:last-child { padding-top: 17px; }
+
+.giftcards-corporate-row { cursor: pointer; }
+.giftcards-corporate-row.is-open td { background: var(--color-surface-muted); }
+
+.giftcards-corporate-csv textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+
+.giftcards-corporate-errors {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+}
