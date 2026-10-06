@@ -40,35 +40,7 @@ export const STAFF_APPS: Array<{ id: AlmaAppId; label: string; role: string }> =
 // the salary-headroom band (contract → 45, already paid for), and real
 // overtime past 45 in dollars. Contract hours are editable inline — this
 // page is where they matter, so this page is where they're set.
-export type LabourWeekPayload = {
-  weekStart: string;
-  venues: string[];
-  days: Array<{
-    date: string;
-    byVenue: Array<{
-      venue: string;
-      salesCents: number | null;
-      rosteredHours: number;
-      estCostCents: number;
-      openHours: number;
-      labourPct: number | null;
-    }>;
-  }>;
-  people: Array<{
-    staffProfileId: string;
-    name: string;
-    employmentType: string;
-    contractedWeeklyHours: number | null;
-    rosteredHours: number;
-    headroomHours: number;
-    overtimeHours: number;
-    overAgreedHours: number;
-    overtimeCostCents: number;
-    estWeekCostCents: number;
-    rateKnown: boolean;
-  }>;
-  totals: { salesCents: number; estCostCents: number; overtimeCostCents: number };
-};
+export type { LabourWeekPayload } from '@alma/shared';
 
 // Monday of the VENUE's current week (Sydney), as YYYY-MM-DD. The labour
 // week is keyed by venue days server-side; asking the browser for its own

@@ -60,6 +60,25 @@ Conventions used throughout:
 | **Period** | `workDate` in `[start, end)` as day keys. Salaried cost is booked for the **elapsed** weeks of the period, counted in **whole venue days** (`@alma/shared elapsedPeriodWeeks` takes `now` as the start of its Sydney day), so a half-elapsed month carries half its salaries, as it carries half its sales (decision 1). The cents come from one function, `salariedPeriodCents`, which every report consumes; before that, the Recap and the Prime Cost report each rounded `weekly × (continuous elapsed weeks)` at their own `new Date()` seconds apart, and September 2026 Alma Avalon read $29,626.63 on one and $29,626.64 on the other. |
 | **Freshness** | Live from timesheets; Deputy imports arrive on their schedule. |
 
+## Labour vs takings (Staff › Labour, `GET /api/staff/labour-week`)
+
+The ROSTERED week priced against ACTUAL takings, per venue and for the
+group, split kitchen / FOH / management. Engine: `apps/api/src/lib/labour-week.ts`
+(pure, `labour-week.test.ts`); payload types in `@alma/shared labour-week.ts`;
+audit script `apps/api/scripts/labour-week-reconcile.ts` prints the raw
+takings rows, the per-shift table and the totals from the same engine.
+
+| | |
+|---|---|
+| **Sales** | The Sales definition above (ex GST, net of refunds, ex tips, one figure per venue-day = the largest across feeds), on Sydney service dates, Monday to Sunday. Sales venue labels go through `resolveVenueLabel` so "Avalon" meets Alma Avalon's shifts. Never forecast. `salesDays` says how many of the 7 days have a figure; a day with none is `null`, not zero. |
+| **Hours** | `RosterShift` PUBLISHED + COMPLETED, each on the Sydney day of its start. **Span** = start to end (what the roster board shows). **Paid** = span − `breakMinutes` (every break on a shift is treated as unpaid; the roster has no paid-break flag). Open shifts are `openHours`, not labour. Both figures are always shown; cost is on paid hours. |
+| **Venue** | `resolveLabourVenue(shift.venue, profile.venue)`: the shift's own label first (explicit), the person's profile venue only when the shift has none (reported as `profile`), an unrecognised label kept under itself and flagged (`invalid`, in the group, in no venue — the week is `incomplete`). A cross-venue shift is counted once, at the venue it was worked. |
+| **Department** | `classifyRosterDepartment`: the shift's `area`, then the shift's `roleTitle`, then the profile `roleTitle`; kitchen words beat management words ("Kitchen Manager" is kitchen), floor words beat management words. Nothing matching → `UNCLASSIFIED`, counted in the total, shown as such, never dumped into FOH. |
+| **Cost** | `staffCostingRate(profile, configuredSuperRate)` — the one rate resolver (award / agreed rate **incl. super at the configured rate**; cash flat). Hourly: paid hours × rate. Salaried (resolved weekly fixed cost > 0): the fixed weekly salary ÷ 45h incl. super **whatever the hours**, plus 1.5× past 45 paid hours; the week's cost is spread over the person's shifts by paid hours so Σ days = Σ venues = week to the cent. A missing rate costs **nothing and flags the week** (`incomplete.uncostedHours`, `uncostedPeople`); it is never $0 under a reassuring %. Salaried staff with no shift this week are listed (`unrosteredSalaried`) and excluded. |
+| **Not costed** | Saturday / Sunday / public-holiday penalties and casual loading as a multiplier are not in the suite's costing engine and are not applied here; the day carries `publicHoliday` so a flat figure is not read as holiday-aware. Timesheets (actual hours) are the Prime Cost report, not this. |
+| **Percentages** | Every % is that bucket's cost over the SAME sales shown beside it. Group % = group cents / group sales — never the mean of venue percentages. Target: `resolveCostTargets` (Settings › Venues); variance shown only when a target is configured. |
+| **Time** | Sydney days (`venueDayKey`); the client sends the Monday as YYYY-MM-DD and the server keys everything from it, so a device in Perth or Lisbon sees the same week. |
+
 ## Food cost
 
 Three figures. They are never substituted for one another silently.

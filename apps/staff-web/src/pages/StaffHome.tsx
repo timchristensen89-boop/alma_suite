@@ -151,13 +151,10 @@ export function StaffHome({
     };
   }, []);
   const todayKey = venueTodayKey();
-  const today = labour?.days.find((day) => day.date === todayKey) ?? null;
-  const todayHours = today ? today.byVenue.reduce((sum, venue) => sum + venue.rosteredHours + venue.openHours, 0) : null;
-  const todayCostCents = today ? today.byVenue.reduce((sum, venue) => sum + venue.estCostCents, 0) : null;
-  const weekLabourPct =
-    labour && labour.totals.salesCents > 0
-      ? Math.round((labour.totals.estCostCents / labour.totals.salesCents) * 1000) / 10
-      : null;
+  const today = labour?.group.byDay.find((day) => day.date === todayKey) ?? null;
+  const todayHours = today ? today.paidHours + today.openHours : null;
+  const todayCostCents = today ? today.costCents : null;
+  const weekLabourPct = labour?.group.labourPct ?? null;
 
   function openProfile(id: string, section = 'personal') {
     onSelect(id);
