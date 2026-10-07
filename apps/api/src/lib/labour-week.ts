@@ -284,7 +284,7 @@ export function buildLabourWeek(input: LabourWeekBuildInput): LabourWeekPayload 
       const otRate = rate.overtimeRateCents ?? Math.round(rate.ordinaryRateCents! * 1.5);
       overtimeCostCents = Math.round(overtimeHours * otRate);
       weekCostCents = fixed + overtimeCostCents;
-      basis = `weekly salary ${rate.source}${overtimeHours > 0 ? ` + ${round2(overtimeHours)}h OT` : ''}`;
+      basis = `weekly salary ${rate.source}${overtimeHours > 0 ? ` (${round2(person.paid)}h this week, ${round2(overtimeHours)}h of it OT)` : ''}`;
       totalOvertimeCents += overtimeCostCents;
     } else {
       weekCostCents = Math.round(person.paid * rate.ordinaryRateCents!);
