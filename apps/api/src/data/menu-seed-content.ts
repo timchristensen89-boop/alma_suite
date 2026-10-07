@@ -7,8 +7,7 @@
  * Dish keys are readable slugs here so the first version's keys are stable and
  * recognisable; dishes added in the editor get a slug plus a random suffix.
  */
-import type { MenuDocument, MenuItemDocument, MenuSectionDocument, MenuTagCode } from '@alma/shared';
-import type { MenuTemplateKey } from '@alma/shared';
+import { dishKeySlug, type MenuDocument, type MenuItemDocument, type MenuSectionDocument, type MenuTagCode, type MenuTemplateKey } from '@alma/shared';
 
 export type MenuSeed = {
   venueSlug: string;
@@ -17,16 +16,6 @@ export type MenuSeed = {
   templateKey: MenuTemplateKey;
   document: MenuDocument;
 };
-
-function slug(name: string) {
-  return name
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-}
 
 type DishSpec = {
   name: string;
@@ -39,7 +28,7 @@ type DishSpec = {
 
 function dish(prefix: string, spec: DishSpec): MenuItemDocument {
   return {
-    dishKey: `${prefix}-${slug(spec.name)}`,
+    dishKey: `${prefix}-${dishKeySlug(spec.name, 60)}`,
     name: spec.name,
     description: spec.description ?? null,
     priceCents: spec.price === undefined || spec.price === null ? null : spec.price * 100,

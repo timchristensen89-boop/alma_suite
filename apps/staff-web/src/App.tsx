@@ -235,7 +235,7 @@ const STAFF_PROFILE_PRESETS: Array<{
       RESERVE: { status: 'ENABLED', role: 'MANAGER', permissions: { reserveDiary: true, reserveManage: true, reserveSettings: true } },
       MARKETING: { status: 'ENABLED', role: 'USER', permissions: { marketingView: true, campaignsDraft: true } },
       GIFTCARDS: { status: 'ENABLED', role: 'MANAGER', permissions: { giftcardsSell: true, giftcardsRedeem: true, giftcardsVoid: true } },
-      MENUS: { status: 'ENABLED', role: 'MANAGER', permissions: { menusEdit: true, menusPublish: true } },
+      MENUS: { status: 'ENABLED', role: 'MANAGER', permissions: { menusPublish: true } },
       SETTINGS: { status: 'DISABLED', role: 'USER' }
     }
   },
@@ -249,7 +249,7 @@ const STAFF_PROFILE_PRESETS: Array<{
       STOCK: { status: 'ENABLED', role: 'MANAGER', permissions: { stockCount: true, stockItemsManage: true, suppliersManage: true, recipesManage: true, cogsView: true } },
       STAFF: { status: 'ENABLED', role: 'MANAGER', permissions: { rosterView: true, rosterAreaManage: true, academyAssign: true, chatTeam: true, chatDirect: true } },
       REPORTS: { status: 'ENABLED', role: 'USER', permissions: { reportsView: true, cogsView: true } },
-      MENUS: { status: 'ENABLED', role: 'MANAGER', permissions: { menusEdit: true, menusPublish: true } },
+      MENUS: { status: 'ENABLED', role: 'MANAGER', permissions: { menusPublish: true } },
       SETTINGS: { status: 'DISABLED', role: 'USER' }
     }
   },
@@ -333,8 +333,9 @@ const ACCESS_PERMISSION_GROUPS: Partial<Record<AlmaAppId, Array<{ key: string; l
     { key: 'giftcardsVoid', label: 'Void/refund note' }
   ],
   MENUS: [
-    { key: 'menusEdit', label: 'Edit menu drafts' },
-    { key: 'menusPublish', label: 'Publish menus (managers and head chef)' }
+    // Anyone with MENUS enabled can draft. This one grant lets a USER-role
+    // chef publish too; managers, admins and the head chef can regardless.
+    { key: 'menusPublish', label: 'Publish menus' }
   ],
   TRAINING: [
     { key: 'academyViewOwn', label: 'View own Academy' },

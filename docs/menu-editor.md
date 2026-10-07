@@ -37,10 +37,13 @@ draft ──save──► draft ──publish──► PUBLISHED (snapshot + PDF
   └──────── restore (new draft) ◄─────┘ (previous PUBLISHED → ARCHIVED)
 ```
 
-- One draft per menu at most. Saving replaces the draft's rows and writes a
-  `draft.saved` audit event with the diff summary. Saves carry the draft's
-  `updatedAt`; a stale save is refused (409) rather than overwriting someone
-  else's work.
+- One draft per menu at most, enforced inside the transaction that creates
+  one (the `Menu` row is locked by the version counter update first). Saving
+  replaces the draft's rows and writes a `draft.saved` audit event with the
+  diff summary; a save that changes nothing writes nothing. Saves carry the
+  draft's `updatedAt`, and the write itself is conditional on that value, so
+  a stale or racing save is refused (409) rather than overwriting someone
+  else's work. Publishing flips the draft under the same guard.
 - Publishing validates (block on errors, warnings must be acknowledged),
   renders the PDF in Chrome, measures the page, and in one transaction
   archives the live version, marks the draft PUBLISHED and stores
@@ -57,9 +60,11 @@ draft ──save──► draft ──publish──► PUBLISHED (snapshot + PDF
 - Access: `StaffAppAccess` app `MENUS` (or `COMPLIANCE`, the suite default).
   Grant it in Staff → app access; the Manager and Head Chef presets include it.
 - Draft, save, discard, restore, copy to the other venue: anyone with access.
-- Publish: managers, admins, anyone whose role title contains "head chef", or a
-  `MENUS` grant at MANAGER/ADMIN (`canPublishMenus` in shared; the editor hides
-  the button from everyone else and the API enforces it).
+- Publish: managers, admins, anyone whose role title contains "head chef", a
+  `MENUS` grant at MANAGER/ADMIN, or a `MENUS` grant with the "Publish menus"
+  toggle (`permissions.menusPublish`) ticked in Staff → app access
+  (`canPublishMenus` in shared; the editor hides the button from everyone else
+  and the API enforces it).
 - Shared venue iPads can read, never write (auth middleware).
 
 ## Validation
@@ -70,6 +75,7 @@ draft ──save──► draft ──publish──► PUBLISHED (snapshot + PDF
 | A and I both set | error |
 | Seafood with neither A nor I | error |
 | Set menu without a price · empty name · empty section title · duplicate dish key · nothing visible | error |
+| (Tag, name and price rules apply to printed items only: an 86'd dish or a hidden section never blocks publish. Duplicate dish keys always do; an untitled hidden section warns.) | |
 | Rendered page runs past one A4 page (measured in Chrome at publish; live meter in the editor) | error |
 | VG and V both set | warning |
 | Standard-section item with no price (visible items only) | warning |

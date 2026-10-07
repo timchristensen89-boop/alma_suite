@@ -12,6 +12,7 @@ import {
   newDishKey,
   overflowIssue,
   renderMenuHtml,
+  sortMenuTags,
   summariseMenuDiff,
   validateMenuDocument,
   type AuthUser,
@@ -132,7 +133,7 @@ function documentFromRows(version: VersionRow): MenuDocument {
             description: item.description,
             priceCents: item.priceCents,
             priceUnit: item.priceUnit,
-            tags: item.tags.filter((tag): tag is MenuDocument['sections'][number]['items'][number]['tags'][number] => true),
+            tags: sortMenuTags(item.tags),
             isSeafood: item.isSeafood,
             visible: item.visible,
             recipeId: item.recipeId
@@ -194,6 +195,15 @@ async function loadPublished(menuId: string): Promise<VersionRow | null> {
  */
 async function nextVersionNumber(menuId: string, tx: Prisma.TransactionClient): Promise<number> {
   const menu = await tx.menu.update({ where: { id: menuId }, data: { versionCounter: { increment: 1 } }, select: { versionCounter: true } });
+  // Self-heal if a version row is ever ahead of the counter (a menu created
+  // before the counter existed, or rows written by hand): never hand out a
+  // number that is already taken.
+  const highest = await tx.menuVersion.aggregate({ where: { menuId }, _max: { versionNumber: true } });
+  const taken = highest._max.versionNumber ?? 0;
+  if (menu.versionCounter <= taken) {
+    await tx.menu.update({ where: { id: menuId }, data: { versionCounter: taken + 1 } });
+    return taken + 1;
+  }
   return menu.versionCounter;
 }
 
@@ -300,9 +310,9 @@ async function draftPayload(menu: MenuRow, draft: VersionRow): Promise<MenuDraft
 
 export const menuService = {
   // ---------------------------------------------------------------- home
-  async list(): Promise<MenuSummary[]> {
+  async list(onlyMenuId?: string): Promise<MenuSummary[]> {
     const menus = await prisma.menu.findMany({
-      where: { status: 'ACTIVE' },
+      where: { status: 'ACTIVE', ...(onlyMenuId ? { id: onlyMenuId } : {}) },
       select: {
         ...MENU_SELECT,
         versions: { where: { state: { in: ['DRAFT', 'PUBLISHED'] } }, select: VERSION_SUMMARY_SELECT, orderBy: { versionNumber: 'desc' } }
@@ -327,8 +337,7 @@ export const menuService = {
   },
 
   async get(menuId: string): Promise<MenuSummary> {
-    const all = await this.list();
-    const found = all.find((menu) => menu.id === menuId);
+    const [found] = await this.list(menuId);
     if (!found) throw new HttpError(404, 'That menu does not exist.');
     return found;
   },
@@ -344,16 +353,19 @@ export const menuService = {
   async createDraft(menuId: string, user: AuthUser | undefined): Promise<MenuDraftPayload> {
     const menu = await loadMenu(menuId);
     const actor = menuActor(user);
-    const existing = await loadDraft(menuId);
-    if (existing) throw new HttpError(409, 'This menu already has a draft. Open it, or discard it to start again.');
     const published = await loadPublished(menuId);
     const source: MenuDocument = published ? stripIds(documentFor(published)) : { dietaryNote: '', surchargeLine: '', sections: [] };
 
-    const created = await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx) => {
+      // nextVersionNumber updates the Menu row, which serialises concurrent
+      // callers on this menu; the one-draft check after it cannot race.
+      const versionNumber = await nextVersionNumber(menuId, tx);
+      const existing = await tx.menuVersion.findFirst({ where: { menuId, state: 'DRAFT' }, select: { id: true } });
+      if (existing) throw new HttpError(409, 'This menu already has a draft. Open it, or discard it to start again.');
       const version = await tx.menuVersion.create({
         data: {
           menuId,
-          versionNumber: await nextVersionNumber(menuId, tx),
+          versionNumber,
           state: 'DRAFT',
           dietaryNote: source.dietaryNote,
           surchargeLine: source.surchargeLine,
@@ -371,11 +383,8 @@ export const menuService = {
         summary: published ? `Started draft v${version.versionNumber} from published v${published.versionNumber}.` : `Started draft v${version.versionNumber} from an empty menu.`,
         actor
       });
-      return version;
     });
-    const draft = requireDraft(await loadDraft(menuId));
-    void created;
-    return draftPayload(menu, draft);
+    return draftPayload(menu, requireDraft(await loadDraft(menuId)));
   },
 
   async saveDraft(menuId: string, input: unknown, user: AuthUser | undefined): Promise<MenuDraftPayload> {
@@ -399,15 +408,26 @@ export const menuService = {
       }))
     });
     const diff = diffMenuDocuments(before, next);
-    const changed = !menuDiffIsEmpty(diff);
+    const keysMinted = next.sections.some((section, sectionIndex) => section.items.some((item, itemIndex) => item.dishKey !== before.sections[sectionIndex]?.items[itemIndex]?.dishKey));
+    const changed = !menuDiffIsEmpty(diff) || keysMinted;
+    // A save that changes nothing is not a write: bumping updatedAt would hand
+    // every other editor of this draft a spurious stale-save conflict.
+    if (!changed) return draftPayload(menu, draft);
 
     await prisma.$transaction(async (tx) => {
-      await tx.menuVersion.update({
-        where: { id: draft.id },
+      // The optimistic lock, enforced where it counts: the row is only written
+      // if it still carries the updatedAt the editor saw (or the editor asked
+      // to force). Two saves racing through checkUpdatedAt above cannot both
+      // get past this.
+      const guarded = await tx.menuVersion.updateMany({
+        where: { id: draft.id, state: 'DRAFT', ...(data.expectedUpdatedAt ? { updatedAt: draft.updatedAt } : {}) },
         data: { dietaryNote: next.dietaryNote, surchargeLine: next.surchargeLine, updatedById: actor.id, updatedByName: actor.name }
       });
+      if (guarded.count !== 1) {
+        throw new HttpError(409, 'Someone else saved this draft a moment ago. Reload to see their changes before saving yours.', { code: 'STALE_DRAFT' });
+      }
       await writeDocumentRows(tx, draft.id, next);
-      if (changed) {
+      {
         await audit(tx, {
           menuId,
           menuVersionId: draft.id,
@@ -510,8 +530,8 @@ export const menuService = {
       if (published) {
         await tx.menuVersion.update({ where: { id: published.id }, data: { state: 'ARCHIVED' } });
       }
-      await tx.menuVersion.update({
-        where: { id: draft.id },
+      const flipped = await tx.menuVersion.updateMany({
+        where: { id: draft.id, state: 'DRAFT', updatedAt: draft.updatedAt },
         data: {
           state: 'PUBLISHED',
           snapshotJson: snapshot as unknown as Prisma.InputJsonValue,
@@ -523,6 +543,9 @@ export const menuService = {
           publishedByName: actor.name
         }
       });
+      if (flipped.count !== 1) {
+        throw new HttpError(409, 'The draft changed while it was being published. Reload, check the preview, and publish again.', { code: 'STALE_DRAFT' });
+      }
       await audit(tx, {
         menuId,
         menuVersionId: draft.id,
@@ -594,14 +617,19 @@ export const menuService = {
     }
     const doc = ensureDishKeys(stripIds(documentFor(source)));
     await prisma.$transaction(async (tx) => {
-      if (existing) {
-        await tx.menuVersion.delete({ where: { id: existing.id } });
-        await audit(tx, { menuId: source.menuId, menuVersionId: existing.id, action: 'draft.discarded', summary: `Discarded draft v${existing.versionNumber} to restore v${source.versionNumber}.`, actor });
+      const versionNumber = await nextVersionNumber(source.menuId, tx); // locks the Menu row
+      const current = await tx.menuVersion.findFirst({ where: { menuId: source.menuId, state: 'DRAFT' }, select: { id: true, versionNumber: true } });
+      if (current && !data.replaceDraft) {
+        throw new HttpError(409, `This menu has an unpublished draft (v${current.versionNumber}). Restoring replaces it — confirm to continue.`, { code: 'DRAFT_EXISTS' });
+      }
+      if (current) {
+        await tx.menuVersion.delete({ where: { id: current.id } });
+        await audit(tx, { menuId: source.menuId, menuVersionId: current.id, action: 'draft.discarded', summary: `Discarded draft v${current.versionNumber} to restore v${source.versionNumber}.`, actor });
       }
       const version = await tx.menuVersion.create({
         data: {
           menuId: source.menuId,
-          versionNumber: await nextVersionNumber(source.menuId, tx),
+          versionNumber,
           state: 'DRAFT',
           dietaryNote: doc.dietaryNote,
           surchargeLine: doc.surchargeLine,

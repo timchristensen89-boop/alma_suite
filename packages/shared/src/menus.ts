@@ -170,7 +170,7 @@ const optionalText = (max: number) =>
     })
     .pipe(z.string().max(max).nullable());
 
-export const menuTagCodeSchema = z.enum(['V', 'VG', 'GF', 'GFA', 'DF', 'N', 'A', 'I']);
+export const menuTagCodeSchema = z.enum(MENU_TAG_CODES as [MenuTagCode, ...MenuTagCode[]]);
 export const menuPlacementSchema = z.enum(MENU_PLACEMENTS);
 export const menuSectionTypeSchema = z.enum(MENU_SECTION_TYPES);
 
@@ -305,8 +305,14 @@ export function validateMenuDocument(doc: MenuDocument): MenuValidationResult {
       ...(dishKey ? { dishKey } : {})
     });
 
+    // A hidden section is off the print: its title can wait, but say so.
     if (!section.title.trim()) {
-      issues.push({ level: 'error', code: 'EMPTY_SECTION_TITLE', message: `Section ${sectionIndex + 1} has no title.`, ...at() });
+      issues.push({
+        level: section.visible ? 'error' : 'warning',
+        code: 'EMPTY_SECTION_TITLE',
+        message: section.visible ? `Section ${sectionIndex + 1} has no title.` : `Hidden section ${sectionIndex + 1} has no title yet.`,
+        ...at()
+      });
     }
 
     section.items.forEach((item, itemIndex) => {
@@ -314,6 +320,23 @@ export function validateMenuDocument(doc: MenuDocument): MenuValidationResult {
       const where = `${section.title.trim() || `section ${sectionIndex + 1}`} › ${label}`;
       const tags = new Set(sortMenuTags(item.tags));
       const place = at(itemIndex, item.dishKey);
+      const printed = section.visible && item.visible;
+
+      // Dish keys must be unique whether or not the dish prints — they are
+      // the identity the diff and Menu Costing hang off.
+      if (item.dishKey) {
+        const existing = seenKeys.get(item.dishKey);
+        if (existing) {
+          issues.push({ level: 'error', code: 'DUPLICATE_DISH_KEY', message: `${where}: shares its dish key with ${existing}. Duplicate the dish instead of reusing its key.`, ...place });
+        } else {
+          seenKeys.set(item.dishKey, where);
+        }
+      }
+
+      // Everything below is about what the guest reads. An 86'd dish or a
+      // dish in a hidden section prints nothing, so a half-built next-week
+      // special must not block tonight's price fix.
+      if (!printed) return;
 
       if (!item.name.trim()) {
         issues.push({ level: 'error', code: 'EMPTY_NAME', message: `${section.title.trim() || `Section ${sectionIndex + 1}`}: item ${itemIndex + 1} has no name.`, ...place });
@@ -333,18 +356,10 @@ export function validateMenuDocument(doc: MenuDocument): MenuValidationResult {
       if (section.sectionType === 'SET_MENUS' && item.priceCents === null) {
         issues.push({ level: 'error', code: 'SET_MENU_NO_PRICE', message: `${where}: a set menu needs a price.`, ...place });
       }
-      if (section.sectionType === 'STANDARD' && item.priceCents === null && section.visible && item.visible) {
+      if (section.sectionType === 'STANDARD' && item.priceCents === null) {
         issues.push({ level: 'warning', code: 'STANDARD_NO_PRICE', message: `${where}: no price. It will print without one.`, ...place });
       }
-      if (item.dishKey) {
-        const existing = seenKeys.get(item.dishKey);
-        if (existing) {
-          issues.push({ level: 'error', code: 'DUPLICATE_DISH_KEY', message: `${where}: shares its dish key with ${existing}. Duplicate the dish instead of reusing its key.`, ...place });
-        } else {
-          seenKeys.set(item.dishKey, where);
-        }
-      }
-      if (section.visible && item.visible) printable += 1;
+      printable += 1;
     });
   });
 
@@ -459,6 +474,8 @@ export function diffMenuDocuments(before: MenuDocument | null, after: MenuDocume
   };
   const prev = before ? flatten(before) : new Map<string, FlatItem>();
   const next = flatten(after);
+  // Resolved after sections are matched, so a dish in a renamed section is not "moved".
+  const pendingMoves: Array<{ ref: MenuDishRef; oldSection: MenuSectionDocument; newSection: MenuSectionDocument }> = [];
 
   for (const [key, item] of next) {
     const ref: MenuDishRef = { dishKey: key, name: item.name, section: item.section.title };
@@ -478,26 +495,46 @@ export function diffMenuDocuments(before: MenuDocument | null, after: MenuDocume
       diff.descriptionChanges.push({ ...ref, from: old.description ?? '—', to: item.description ?? '—' });
     }
     if (old.visible !== item.visible) diff.visibilityChanges.push({ ...ref, visible: item.visible });
-    if (old.section.title.trim().toLowerCase() !== item.section.title.trim().toLowerCase()) {
-      diff.moved.push({ ...ref, from: old.section.title, to: item.section.title });
-    }
+    pendingMoves.push({ ref, oldSection: old.section, newSection: item.section });
   }
   for (const [key, item] of prev) {
     if (!next.has(key)) diff.removed.push({ dishKey: key, name: item.name, section: item.section.title });
   }
 
-  // Sections: matched by id where both sides carry one, else by title.
+  // Sections: matched by id where both sides carry one, else by title, else
+  // by the dishes they share (a published snapshot carries no row ids, so a
+  // renamed section is still the same section if its dishes came along).
   const beforeSections = before?.sections ?? [];
   const byId = new Map(beforeSections.map((section, index) => [sectionKey(section, index), section]));
   const byTitle = new Map(beforeSections.map((section) => [section.title.trim().toLowerCase(), section]));
   const matched = new Set<MenuSectionDocument>();
+  const sectionRenames = new Map<MenuSectionDocument, MenuSectionDocument>();
+  const sharesDishes = (section: MenuSectionDocument): MenuSectionDocument | undefined => {
+    const keys = new Set(section.items.map((item) => item.dishKey).filter(Boolean));
+    if (keys.size === 0) return undefined;
+    let best: MenuSectionDocument | undefined;
+    let bestShared = 0;
+    for (const candidate of beforeSections) {
+      if (matched.has(candidate)) continue;
+      const shared = candidate.items.filter((item) => item.dishKey && keys.has(item.dishKey)).length;
+      if (shared > bestShared) {
+        bestShared = shared;
+        best = candidate;
+      }
+    }
+    return bestShared * 2 > keys.size ? best : undefined;
+  };
   after.sections.forEach((section, index) => {
-    const old = (section.id ? byId.get(sectionKey(section, index)) : undefined) ?? byTitle.get(section.title.trim().toLowerCase());
-    if (!old) {
+    const old =
+      (section.id ? byId.get(sectionKey(section, index)) : undefined) ??
+      byTitle.get(section.title.trim().toLowerCase()) ??
+      sharesDishes(section);
+    if (!old || matched.has(old)) {
       if (before) diff.sectionChanges.push(`Added section ${describeSection(section)}.`);
       return;
     }
     matched.add(old);
+    sectionRenames.set(old, section);
     if (old.title !== section.title) diff.sectionChanges.push(`Renamed section "${old.title}" to "${section.title}".`);
     if (old.placement !== section.placement) {
       diff.sectionChanges.push(`${section.title}: moved from ${MENU_PLACEMENT_LABELS[old.placement].toLowerCase()} to ${MENU_PLACEMENT_LABELS[section.placement].toLowerCase()}.`);
@@ -513,6 +550,12 @@ export function diffMenuDocuments(before: MenuDocument | null, after: MenuDocume
   });
   for (const old of beforeSections) {
     if (!matched.has(old)) diff.sectionChanges.push(`Removed section ${describeSection(old)}.`);
+  }
+  for (const move of pendingMoves) {
+    const stillSame = move.oldSection === move.newSection || sectionRenames.get(move.oldSection) === move.newSection;
+    if (!stillSame && move.oldSection.title.trim().toLowerCase() !== move.newSection.title.trim().toLowerCase()) {
+      diff.moved.push({ ...move.ref, from: move.oldSection.title, to: move.newSection.title });
+    }
   }
 
   if (before) {
@@ -567,14 +610,19 @@ export function summariseMenuDiff(diff: MenuDiff): string {
  * two "Churros" at two venues never collide and a key survives a rename. Pure
  * so the editor can mint one when it duplicates a dish offline.
  */
-export function newDishKey(name: string, random: () => number = Math.random): string {
-  const slug = name
+/** "Pico de piña, avocado mousse" → "pico-de-pina-avocado-mousse". Accents folded, punctuation collapsed. */
+export function dishKeySlug(name: string, max = 40): string {
+  return name
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
+    .slice(0, max);
+}
+
+export function newDishKey(name: string, random: () => number = Math.random): string {
+  const slug = dishKeySlug(name);
   const alphabet = 'abcdefghijkmnpqrstuvwxyz23456789';
   let suffix = '';
   for (let i = 0; i < 6; i += 1) suffix += alphabet[Math.floor(random() * alphabet.length)] ?? 'a';
@@ -665,12 +713,18 @@ export function canPublishMenus(user: {
   isAdmin?: boolean | null;
   roleTitle?: string | null;
   accountType?: string | null;
-  appAccess?: Array<{ appId: string; status: string; role: string }> | null;
+  appAccess?: Array<{ appId: string; status: string; role: string; permissions?: unknown }> | null;
 } | null | undefined): boolean {
   if (!user || user.accountType === 'VENUE_DEVICE') return false;
   if (user.isAdmin || user.role === 'ADMIN' || user.role === 'MANAGER') return true;
   if ((user.roleTitle ?? '').toLowerCase().includes('head chef')) return true;
   return Boolean(
-    user.appAccess?.some((access) => access.appId === 'MENUS' && access.status === 'ENABLED' && (access.role === 'MANAGER' || access.role === 'ADMIN'))
+    user.appAccess?.some((access) => {
+      if (access.appId !== 'MENUS' || access.status !== 'ENABLED') return false;
+      if (access.role === 'MANAGER' || access.role === 'ADMIN') return true;
+      // The one Staff-app toggle for this module: a USER-role grant with it ticked may publish.
+      const permissions = access.permissions;
+      return Boolean(permissions && typeof permissions === 'object' && (permissions as { menusPublish?: unknown }).menusPublish === true);
+    })
   );
 }

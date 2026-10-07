@@ -45,9 +45,17 @@ function playwrightChromium(): string | null {
   return null;
 }
 
+let resolvedChromePath: string | null | undefined;
+
+/** Where Chrome is, looked up once per process (the filesystem does not change under a running API). */
 export function resolveChromePath(): string | null {
-  if (env.menus.chromePath) return existsSync(env.menus.chromePath) ? env.menus.chromePath : null;
-  return CHROME_CANDIDATES.find((candidate) => existsSync(candidate)) ?? playwrightChromium();
+  if (resolvedChromePath !== undefined) return resolvedChromePath;
+  if (env.menus.chromePath) {
+    resolvedChromePath = existsSync(env.menus.chromePath) ? env.menus.chromePath : null;
+  } else {
+    resolvedChromePath = CHROME_CANDIDATES.find((candidate) => existsSync(candidate)) ?? playwrightChromium();
+  }
+  return resolvedChromePath;
 }
 
 export function chromeStatus(): { ok: boolean; path: string | null; message: string } {
@@ -74,14 +82,17 @@ async function browser(): Promise<Browser> {
   if (!executablePath) {
     throw new HttpError(503, `The menu PDF renderer is not available on this server. ${chromeStatus().message}`);
   }
-  browserPromise = puppeteer.launch({
+  const launching = puppeteer.launch({
     executablePath,
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--hide-scrollbars']
   });
-  const launched = await browserPromise;
+  browserPromise = launching;
+  const launched = await launching;
   launched.once('disconnected', () => {
-    browserPromise = null;
+    // Only forget THIS browser: a crashed instance's late disconnect must not
+    // discard the replacement launched after it, or the replacement leaks.
+    if (browserPromise === launching) browserPromise = null;
   });
   return launched;
 }

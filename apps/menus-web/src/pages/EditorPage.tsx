@@ -45,12 +45,62 @@ const AUTOSAVE_MS = 1500;
 
 type SaveState = { kind: 'idle' } | { kind: 'dirty' } | { kind: 'saving' } | { kind: 'saved'; at: string } | { kind: 'error'; message: string } | { kind: 'conflict'; message: string };
 
+/**
+ * Sections carry a client-only key. Every save rewrites the draft's rows, so
+ * the server's section ids change on each autosave; keying React on them would
+ * remount every section card mid-typing. The key never leaves the browser —
+ * the API's zod schema strips unknown fields.
+ */
+type EditorSection = MenuSectionDocument & { clientKey?: string };
+
+function clientKey() {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `k${Math.random().toString(36).slice(2)}`;
+}
+
+function withClientKeys(doc: MenuDocument): MenuDocument {
+  return { ...doc, sections: doc.sections.map((section: EditorSection) => (section.clientKey ? section : { ...section, clientKey: clientKey() })) };
+}
+
+/**
+ * Carry the server's row ids and freshly minted dish keys from a save
+ * response onto the editor's current document, matching sections by client
+ * key and items by dish key (or by object identity for items that had no key
+ * when they were sent). Positional matching would mislabel rows after an
+ * insert, delete or drag that happened while the save was in flight.
+ */
+function adoptSaved(current: MenuDocument, sent: MenuDocument, saved: MenuDocument): MenuDocument {
+  const sectionIdByClientKey = new Map<string, string | undefined>();
+  const savedItemBySentItem = new Map<MenuItemDocument, MenuItemDocument>();
+  sent.sections.forEach((section: EditorSection, index) => {
+    const savedSection = saved.sections[index];
+    if (section.clientKey) sectionIdByClientKey.set(section.clientKey, savedSection?.id);
+    section.items.forEach((item, itemIndex) => {
+      const savedItem = savedSection?.items[itemIndex];
+      if (savedItem) savedItemBySentItem.set(item, savedItem);
+    });
+  });
+  const savedItemByDishKey = new Map(saved.sections.flatMap((section) => section.items).map((item) => [item.dishKey, item] as const));
+  return {
+    ...current,
+    sections: current.sections.map((section: EditorSection) => ({
+      ...section,
+      id: (section.clientKey ? sectionIdByClientKey.get(section.clientKey) : undefined) ?? section.id,
+      items: section.items.map((item) => {
+        const viaSent = savedItemBySentItem.get(item);
+        const dishKey = item.dishKey ?? viaSent?.dishKey;
+        const match = (dishKey ? savedItemByDishKey.get(dishKey) : undefined) ?? viaSent;
+        return { ...item, dishKey, id: match?.id ?? item.id };
+      })
+    }))
+  };
+}
+
 function emptyItem(name = ''): MenuItemDocument {
   return { dishKey: newDishKey(name || 'dish'), name, description: null, priceCents: null, priceUnit: null, tags: [], isSeafood: false, visible: true, recipeId: null };
 }
 
-function emptySection(): MenuSectionDocument {
-  return { title: '', headerSuffix: null, subheading: null, sectionType: 'STANDARD', placement: 'LEFT', visible: true, items: [emptyItem()] };
+function emptySection(): EditorSection {
+  return { clientKey: clientKey(), title: '', headerSuffix: null, subheading: null, sectionType: 'STANDARD', placement: 'LEFT', visible: true, items: [emptyItem()] };
 }
 
 function itemDomId(sectionIndex: number, itemIndex: number) {
@@ -87,6 +137,13 @@ export function EditorPage({ user }: { user: AuthUser }) {
   const latestDoc = useRef<MenuDocument | null>(null);
   const savingRef = useRef(false);
   const queuedRef = useRef(false);
+  const inFlight = useRef<Promise<boolean> | null>(null);
+  const saveStateRef = useRef<SaveState>({ kind: 'idle' });
+  const saveNowRef = useRef<() => Promise<boolean>>(async () => true);
+  const setSave = useCallback((state: SaveState) => {
+    saveStateRef.current = state;
+    setSaveState(state);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,11 +154,12 @@ export function EditorPage({ user }: { user: AuthUser }) {
       setOtherMenus(all.menus.filter((other) => other.id !== menuId));
       if (menu.draft) {
         const payload = await menuApi.getDraft(menuId);
+        const keyed = withClientKeys(payload.document);
         setDraft(payload);
-        setDoc(payload.document);
-        latestDoc.current = payload.document;
+        setDoc(keyed);
+        latestDoc.current = keyed;
         expectedUpdatedAt.current = payload.version.updatedAt;
-        setSaveState({ kind: 'saved', at: payload.version.updatedAt });
+        setSave({ kind: 'saved', at: payload.version.updatedAt });
       } else {
         setDraft(null);
         setDoc(null);
@@ -111,65 +169,55 @@ export function EditorPage({ user }: { user: AuthUser }) {
     } finally {
       setLoading(false);
     }
-  }, [menuId]);
+  }, [menuId, setSave]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   // ------------------------------------------------------------ saving
-  const saveNow = useCallback(async (): Promise<boolean> => {
+  const saveNow = useCallback((): Promise<boolean> => {
     const current = latestDoc.current;
-    if (!current) return true;
-    if (savingRef.current) {
+    if (!current) return Promise.resolve(true);
+    if (savingRef.current && inFlight.current) {
+      // Another save is on the wire; run again when it lands so the newest edits go up.
       queuedRef.current = true;
-      return true;
+      return inFlight.current;
     }
     savingRef.current = true;
-    setSaveState({ kind: 'saving' });
-    try {
-      const payload = await menuApi.saveDraft(menuId, current, expectedUpdatedAt.current);
-      expectedUpdatedAt.current = payload.version.updatedAt;
-      setDraft(payload);
-      // Adopt the server's row ids and dish keys without clobbering edits typed meanwhile.
-      if (latestDoc.current === current) {
-        setDoc(payload.document);
-        latestDoc.current = payload.document;
-      } else {
-        const keyed = payload.document;
-        setDoc((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            sections: prev.sections.map((section, sectionIndex) => ({
-              ...section,
-              id: keyed.sections[sectionIndex]?.id ?? section.id,
-              items: section.items.map((item, itemIndex) => ({
-                ...item,
-                id: keyed.sections[sectionIndex]?.items[itemIndex]?.id ?? item.id,
-                dishKey: item.dishKey ?? keyed.sections[sectionIndex]?.items[itemIndex]?.dishKey
-              }))
-            }))
-          };
-        });
+    setSave({ kind: 'saving' });
+    const run = (async (): Promise<boolean> => {
+      try {
+        const payload = await menuApi.saveDraft(menuId, current, expectedUpdatedAt.current);
+        expectedUpdatedAt.current = payload.version.updatedAt;
+        setDraft(payload);
+        // Adopt the server's row ids and dish keys without clobbering edits typed meanwhile.
+        const base = latestDoc.current ?? current;
+        const adopted = adoptSaved(base, current, payload.document);
+        latestDoc.current = adopted;
+        setDoc(adopted);
+        setSave({ kind: 'saved', at: payload.version.updatedAt });
+        return true;
+      } catch (caught) {
+        if (caught instanceof ApiError && caught.status === 409) {
+          setSave({ kind: 'conflict', message: caught.message });
+        } else {
+          setSave({ kind: 'error', message: caught instanceof Error ? caught.message : 'Could not save.' });
+        }
+        return false;
+      } finally {
+        savingRef.current = false;
+        inFlight.current = null;
+        if (queuedRef.current) {
+          queuedRef.current = false;
+          void saveNowRef.current();
+        }
       }
-      setSaveState({ kind: 'saved', at: payload.version.updatedAt });
-      return true;
-    } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 409) {
-        setSaveState({ kind: 'conflict', message: caught.message });
-      } else {
-        setSaveState({ kind: 'error', message: caught instanceof Error ? caught.message : 'Could not save.' });
-      }
-      return false;
-    } finally {
-      savingRef.current = false;
-      if (queuedRef.current) {
-        queuedRef.current = false;
-        void saveNow();
-      }
-    }
-  }, [menuId]);
+    })();
+    inFlight.current = run;
+    return run;
+  }, [menuId, setSave]);
+  saveNowRef.current = saveNow;
 
   const update = useCallback(
     (mutate: (prev: MenuDocument) => MenuDocument) => {
@@ -179,19 +227,34 @@ export function EditorPage({ user }: { user: AuthUser }) {
         latestDoc.current = next;
         return next;
       });
-      setSaveState((state) => (state.kind === 'conflict' ? state : { kind: 'dirty' }));
+      if (saveStateRef.current.kind !== 'conflict') setSave({ kind: 'dirty' });
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => void saveNow(), AUTOSAVE_MS);
+      saveTimer.current = window.setTimeout(() => void saveNowRef.current(), AUTOSAVE_MS);
     },
-    [saveNow]
+    [setSave]
   );
 
-  useEffect(
-    () => () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    },
-    []
-  );
+  // Leaving the page (History, the task bar, the back link) flushes a pending
+  // autosave rather than dropping it; closing the tab asks first while edits
+  // are unsaved.
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      const kind = saveStateRef.current.kind;
+      if (kind === 'dirty' || kind === 'saving' || kind === 'error') {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      if (saveTimer.current) {
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        void saveNowRef.current();
+      }
+    };
+  }, []);
 
   // Flush a pending save when the tab is hidden (phone locked on the pass).
   useEffect(() => {
@@ -199,25 +262,29 @@ export function EditorPage({ user }: { user: AuthUser }) {
       if (document.visibilityState === 'hidden' && saveTimer.current) {
         window.clearTimeout(saveTimer.current);
         saveTimer.current = null;
-        void saveNow();
+        void saveNowRef.current();
       }
     };
     document.addEventListener('visibilitychange', flush);
     return () => document.removeEventListener('visibilitychange', flush);
-  }, [saveNow]);
+  }, []);
 
-  const flushSave = useCallback(async () => {
+  /** Make sure the server has what the editor shows: run or await the save, then report whether it stuck. */
+  const flushSave = useCallback(async (): Promise<boolean> => {
     if (saveTimer.current) {
       window.clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    if (saveState.kind === 'dirty' || saveState.kind === 'error') return saveNow();
-    if (savingRef.current) {
-      // wait for the in-flight save
-      await new Promise((resolve) => window.setTimeout(resolve, 400));
+    if (inFlight.current) {
+      const ok = await inFlight.current;
+      // Edits typed during that save were queued; wait for the follow-up too.
+      if (inFlight.current) return inFlight.current;
+      if (!ok) return false;
     }
-    return saveState.kind !== 'conflict';
-  }, [saveNow, saveState.kind]);
+    const kind = saveStateRef.current.kind;
+    if (kind === 'dirty' || kind === 'error') return saveNow();
+    return kind !== 'conflict';
+  }, [saveNow]);
 
   // ------------------------------------------------------------ validation
   const validation = useMemo(() => (doc ? validateMenuDocument(doc) : null), [doc]);
@@ -277,7 +344,8 @@ export function EditorPage({ user }: { user: AuthUser }) {
     const saved = await flushSave();
     if (!saved) {
       setPublishLoading(false);
-      setPublishError(saveState.kind === 'conflict' ? saveState.message : 'The draft could not be saved, so it cannot be published yet.');
+      const state = saveStateRef.current;
+      setPublishError(state.kind === 'conflict' || state.kind === 'error' ? state.message : 'The draft could not be saved, so it cannot be published yet.');
       return;
     }
     try {
@@ -510,7 +578,7 @@ function SectionsEditor({ doc, onChange, onCopy, canCopy }: { doc: MenuDocument;
     <div className="sections-editor">
       {doc.sections.map((section, sectionIndex) => (
         <SectionCard
-          key={section.id ?? `new-${sectionIndex}`}
+          key={(section as EditorSection).clientKey ?? section.id ?? `new-${sectionIndex}`}
           section={section}
           sectionIndex={sectionIndex}
           dragging={drag?.from === sectionIndex}

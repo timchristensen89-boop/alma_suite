@@ -25,8 +25,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 // runs from apps/api and from the repo root.
 const ASSET_DIR_CANDIDATES = [
   process.env.MENU_ASSETS_DIR ?? '',
+  // apps/api/src/lib → apps/api/assets/menus
   resolve(here, '../../assets/menus'),
-  resolve(here, '../../../../../apps/api/assets/menus'),
+  // apps/api/dist/apps/api/src/lib → apps/api/assets/menus (five levels up lands on apps/api)
+  resolve(here, '../../../../../assets/menus'),
   join(process.cwd(), 'apps/api/assets/menus'),
   join(process.cwd(), 'assets/menus')
 ].filter(Boolean);

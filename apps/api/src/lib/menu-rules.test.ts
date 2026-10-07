@@ -122,6 +122,20 @@ describe('validateMenuDocument — the publish gate', () => {
     assert.deepEqual(codes(validateMenuDocument(d).errors), ['DUPLICATE_DISH_KEY', 'EMPTY_NAME', 'EMPTY_SECTION_TITLE', 'SET_MENU_NO_PRICE']);
   });
 
+  it("leaves 86'd dishes and hidden sections out of the print rules, so a half-built section cannot block tonight's publish", () => {
+    const d = doc([
+      section({ title: 'Grill', items: [item({ name: 'Snapper', tags: ['A'], isSeafood: true, priceCents: 4000 }), item({ name: 'Oysters', tags: ['GF', 'GFA'], isSeafood: true, priceCents: null, visible: false })] }),
+      // Next week's specials: unnamed placeholder dish, no title yet, hidden.
+      section({ title: '', visible: false, items: [item({ name: '', dishKey: 'placeholder', priceCents: null })] })
+    ]);
+    const result = validateMenuDocument(d);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(codes(result.warnings), ['EMPTY_SECTION_TITLE']);
+    // ...but a duplicate dish key is an identity problem whether or not it prints.
+    const dupe = doc([section({ title: 'S', items: [item({ name: 'A', dishKey: 'same' }), item({ name: 'B', dishKey: 'same', visible: false })] })]);
+    assert.deepEqual(codes(validateMenuDocument(dupe).errors), ['DUPLICATE_DISH_KEY']);
+  });
+
   it('errors when nothing would print', () => {
     assert.deepEqual(codes(validateMenuDocument(doc([section({ title: 'S', items: [item({ name: 'x', visible: false })] })])).errors), ['NOTHING_TO_PRINT']);
     assert.deepEqual(codes(validateMenuDocument(doc([])).errors), ['NOTHING_TO_PRINT']);
@@ -202,6 +216,18 @@ describe('diffMenuDocuments — the publish summary', () => {
     assert.equal(diff.footerChanges.length, 1);
   });
 
+  it('recognises a renamed section by the dishes it keeps, even against an id-less published snapshot', () => {
+    const snapshot: MenuDocument = JSON.parse(JSON.stringify(before));
+    const after: MenuDocument = JSON.parse(JSON.stringify(before));
+    after.sections[0]!.title = 'Snacks'; // was "To start"
+    after.sections[0]!.id = 'fresh-row-id';
+    const diff = diffMenuDocuments(snapshot, after);
+    assert.deepEqual(diff.sectionChanges, ['Renamed section "To start" to "Snacks".']);
+    assert.deepEqual(diff.moved, []);
+    assert.deepEqual(diff.added, []);
+    assert.deepEqual(diff.removed, []);
+  });
+
   it('treats everything as added when there is no published version yet', () => {
     const diff = diffMenuDocuments(null, ALMA_AVALON_SEED.document);
     assert.equal(diff.added.length, 21);
@@ -225,17 +251,20 @@ describe('menuDraftSaveInputSchema', () => {
 });
 
 describe('canPublishMenus', () => {
-  const base = { role: 'STAFF', isAdmin: false, roleTitle: 'Chef de partie', accountType: 'HUMAN', appAccess: [] as Array<{ appId: string; status: string; role: string }> };
+  const base = { role: 'STAFF', isAdmin: false, roleTitle: 'Chef de partie', accountType: 'HUMAN', appAccess: [] as Array<{ appId: string; status: string; role: string; permissions?: unknown }> };
   it('lets managers, admins and the head chef publish', () => {
     assert.equal(canPublishMenus({ ...base, role: 'MANAGER' }), true);
     assert.equal(canPublishMenus({ ...base, role: 'ADMIN' }), true);
     assert.equal(canPublishMenus({ ...base, isAdmin: true }), true);
     assert.equal(canPublishMenus({ ...base, roleTitle: 'Head Chef (Kitchen)' }), true);
     assert.equal(canPublishMenus({ ...base, appAccess: [{ appId: 'MENUS', status: 'ENABLED', role: 'MANAGER' }] }), true);
+    assert.equal(canPublishMenus({ ...base, appAccess: [{ appId: 'MENUS', status: 'ENABLED', role: 'USER', permissions: { menusPublish: true } }] }), true);
   });
   it('refuses other staff, a MENUS user grant, shared iPads and nobody', () => {
     assert.equal(canPublishMenus(base), false);
     assert.equal(canPublishMenus({ ...base, appAccess: [{ appId: 'MENUS', status: 'ENABLED', role: 'USER' }] }), false);
+    assert.equal(canPublishMenus({ ...base, appAccess: [{ appId: 'MENUS', status: 'ENABLED', role: 'USER', permissions: { menusPublish: 'yes' } }] }), false);
+    assert.equal(canPublishMenus({ ...base, appAccess: [{ appId: 'MENUS', status: 'DISABLED', role: 'USER', permissions: { menusPublish: true } }] }), false);
     assert.equal(canPublishMenus({ ...base, role: 'MANAGER', accountType: 'VENUE_DEVICE' }), false);
     assert.equal(canPublishMenus(null), false);
   });

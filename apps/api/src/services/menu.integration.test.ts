@@ -131,12 +131,30 @@ describe('menu service (Postgres)', { skip: TEST_DB ? false : 'skipped: set ALMA
     assert.match(audit[0]!.summary, /1 dish added/);
   });
 
-  it('refuses a second draft and a stale save', async () => {
+  it('refuses a second draft and a stale save, and a no-op save does not move updatedAt', async () => {
     await assert.rejects(h.menus.createDraft(menuId, chef), (error: unknown) => error instanceof h.HttpError && error.statusCode === 409);
     await assert.rejects(
       h.menus.saveDraft(menuId, { ...DOC, expectedUpdatedAt: new Date(0).toISOString() }, chef),
       (error: unknown) => error instanceof h.HttpError && error.statusCode === 409
     );
+    const before = await h.menus.getDraft(menuId);
+    const same = await h.menus.saveDraft(menuId, { ...before.document, expectedUpdatedAt: before.version.updatedAt }, chef);
+    assert.equal(same.version.updatedAt, before.version.updatedAt);
+    // Two editors with the same updatedAt: the second write finds the row moved on and is refused.
+    const a = { ...before.document, dietaryNote: 'A was here', expectedUpdatedAt: before.version.updatedAt };
+    const b = { ...before.document, dietaryNote: 'B was here', expectedUpdatedAt: before.version.updatedAt };
+    const results = await Promise.allSettled([h.menus.saveDraft(menuId, a, chef), h.menus.saveDraft(menuId, b, chef)]);
+    const outcomes = results.map((result) => (result.status === 'fulfilled' ? 'ok' : result.reason instanceof h.HttpError ? result.reason.statusCode : 'error')).sort();
+    assert.deepEqual(outcomes, [409, 'ok']);
+    // Concurrent "start a draft" clicks on a menu without one produce exactly one draft.
+    const venue2 = await h.prisma.venue.create({ data: { name: 'ITEST Venue 2', slug: 'itest-venue-2' } });
+    const menu2 = await h.prisma.menu.create({ data: { venueId: venue2.id, name: 'ITEST Food 2', templateKey: 'avalon_alacarte' } });
+    const starts = await Promise.allSettled([h.menus.createDraft(menu2.id, chef), h.menus.createDraft(menu2.id, chef), h.menus.createDraft(menu2.id, chef)]);
+    assert.equal(starts.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal(await h.prisma.menuVersion.count({ where: { menuId: menu2.id, state: 'DRAFT' } }), 1);
+    // put the footer back for the rest of the run
+    const current = await h.menus.getDraft(menuId);
+    await h.menus.saveDraft(menuId, { ...current.document, dietaryNote: DOC.dietaryNote }, chef);
   });
 
   it('blocks publish on a validation error without touching the draft', async () => {
