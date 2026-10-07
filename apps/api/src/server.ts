@@ -30,6 +30,7 @@ import { issuesRouter } from './routes/issues.js';
 import { liquorRouter } from './routes/liquor.js';
 import { marketingRouter } from './routes/marketing.js';
 import { menuMappingsRouter } from './routes/menu-mappings.js';
+import { menusRouter } from './routes/menus.js';
 import { messagesRouter } from './routes/messages.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { reportsRouter } from './routes/reports.js';
@@ -152,6 +153,7 @@ app.get('/', (_req, res) => {
       'admin',
       'integrations',
       'menu-mappings',
+      'menus',
       'communications',
       'notifications',
       'search'
@@ -197,6 +199,7 @@ app.use('/api/liquor', liquorRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/integrations', integrationsRouter);
 app.use('/api/menu-mappings', menuMappingsRouter);
+app.use('/api/menus', menusRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/handbook-documents', handbookDocumentsRouter);
 app.use('/api/shift-task-rules', shiftTaskRulesRouter);

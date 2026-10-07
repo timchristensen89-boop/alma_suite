@@ -11,6 +11,7 @@ const SUITE_APP_ACCESS_MAP: Partial<Record<SuiteAppId, AlmaAppId>> = {
   reserve: 'RESERVE',
   marketing: 'MARKETING',
   giftcards: 'GIFTCARDS',
+  menus: 'MENUS',
   training: 'TRAINING',
   academy: 'TRAINING',
   learning: 'TRAINING',

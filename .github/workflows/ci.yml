@@ -183,7 +183,7 @@ jobs:
 
       # One line for the same reason as the test step above.
       - name: Build the frontends
-        run: pnpm --filter @alma/pos-web --filter @alma/staff-web --filter @alma/giftcards-web --filter @alma/reserve-web --filter @alma/stock-web build
+        run: pnpm --filter @alma/pos-web --filter @alma/staff-web --filter @alma/giftcards-web --filter @alma/menus-web --filter @alma/reserve-web --filter @alma/stock-web build
 
   domain-boundaries:
     name: Domain boundary guard (warn)

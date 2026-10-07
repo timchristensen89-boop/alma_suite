@@ -143,6 +143,7 @@ type AlmaApp =
   | 'marketing'
   | 'comms'
   | 'giftcards'
+  | 'menus'
   | 'admin';
 
 type AlmaHomeBubbleProps = {

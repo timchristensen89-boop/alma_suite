@@ -552,6 +552,7 @@ const APP_ACCESS_OPTIONS: Array<{ appId: AlmaAppId; label: string }> = [
   { appId: 'RESERVE', label: 'Reserve' },
   { appId: 'MARKETING', label: 'Marketing' },
   { appId: 'GIFTCARDS', label: 'Gift Cards' },
+  { appId: 'MENUS', label: 'Menus' },
   { appId: 'TRAINING', label: 'Academy' },
   { appId: 'SETTINGS', label: 'Settings' }
 ];

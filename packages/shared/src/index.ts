@@ -42,6 +42,8 @@ export * from './stock-duplicates.js';
 export * from './clock-to-timesheet.js';
 export * from './financial-documents.js';
 export * from './corporate-gift-cards.js';
+export * from './menus.js';
+export * from './menu-render.js';
 import type { ParsedInvoiceLine } from './invoice-paste.js';
 import { IMPLAUSIBLE_COUNT_FLOOR_CENTS, IMPLAUSIBLE_COUNT_SHARE } from './count-scale.js';
 import { CHECKLIST_CADENCES, type ChecklistCadence } from './checklist-cadence.js';
@@ -166,7 +168,7 @@ export const stockInvoiceTriageStatusSchema = z.enum([
   'NO_ITEM',
   'NEEDS_REVIEW'
 ]);
-export const almaAppIdSchema = z.enum(['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS']);
+export const almaAppIdSchema = z.enum(['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS', 'MENUS']);
 export const staffAppAccessStatusSchema = z.enum(['ENABLED', 'DISABLED', 'PENDING']);
 export const staffAccountTypeSchema = z.enum(['HUMAN', 'VENUE_DEVICE']);
 export const rosterShiftStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'COMPLETED', 'CANCELLED']);

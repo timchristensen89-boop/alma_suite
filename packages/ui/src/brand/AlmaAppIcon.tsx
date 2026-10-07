@@ -36,7 +36,8 @@ export type AlmaAppIconKey =
   | 'cap'
   | 'produce'
   | 'people'
-  | 'gear';
+  | 'gear'
+  | 'menu';
 
 export type AlmaAppDefinition = {
   id: string;
@@ -218,6 +219,8 @@ export function getAlmaAppIcon(iconKey: AlmaAppIconKey, size = 22) {
       return <ProduceIcon {...props} />;
     case 'people':
       return <PeopleIcon {...props} />;
+    case 'menu':
+      return <MenuIcon {...props} />;
     case 'gear':
       return <GearIcon {...props} />;
   }
@@ -226,6 +229,19 @@ export function getAlmaAppIcon(iconKey: AlmaAppIconKey, size = 22) {
 function sizedIcon(icon: ReactNode, size: number) {
   if (!isValidElement(icon)) return icon;
   return cloneElement(icon as ReactElement<IconProps>, { size });
+}
+
+/** A printed menu card: a sheet with a centred heading rule and two columns of lines. */
+export function MenuIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M6 3.5h12v17H6v-17Z" {...STROKE} />
+      <path d="M9 7h6" {...STROKE} />
+      <path d="M8.5 10.5h3M12.5 10.5h3" {...STROKE} />
+      <path d="M8.5 13.5h3M12.5 13.5h3" {...STROKE} />
+      <path d="M8.5 16.5h3M12.5 16.5h3" {...STROKE} />
+    </IconBase>
+  );
 }
 
 export const ALMA_APPS: AlmaAppDefinition[] = [
@@ -294,6 +310,14 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
     icon: <DocumentIcon />
   },
   {
+    id: 'menus',
+    label: 'MENUS',
+    from: '#684A4A',
+    to: '#253326',
+    iconKey: 'menu',
+    icon: <MenuIcon />
+  },
+  {
     id: 'settings',
     label: 'ADMIN',
     from: '#3F4044',
@@ -311,6 +335,7 @@ export const ALMA_APP_LOGO_SRC = {
   reserve: '/brand/alma-reserve-logo.svg',
   marketing: '/brand/alma-marketing-logo.svg',
   giftcards: '/brand/alma-giftcards-logo.svg',
+  menus: '/brand/alma-menus-logo.svg',
   audits: '/brand/alma-audits-logo.svg',
   training: '/brand/alma-training-logo.svg',
   settings: '/brand/alma-settings-logo.svg'

@@ -10,7 +10,9 @@
     "test": "node --import tsx --test $(find src -name \"*.test.ts\" | sort)",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed:forecast-module": "node --import tsx scripts/seed-forecast-module.ts",
-    "generate:import-templates": "node --import tsx scripts/generate-import-templates.ts"
+    "generate:import-templates": "node --import tsx scripts/generate-import-templates.ts",
+    "seed:menus": "node --import tsx scripts/seed-menus.ts",
+    "menus:compare": "node --import tsx scripts/menu-pdf-compare.ts"
   },
   "dependencies": {
     "@alma/db": "workspace:*",
@@ -29,6 +31,7 @@
     "nodemailer": "^8.0.6",
     "passkit-generator": "^3.5.7",
     "pdf-lib": "^1.17.1",
+    "puppeteer-core": "25.12.0",
     "qrcode": "^1.5.4",
     "stripe": "^22.1.0",
     "web-push": "3.6.7",
