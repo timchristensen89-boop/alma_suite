@@ -88,6 +88,14 @@ function isStaffWriteAllowed(req: Request) {
   if (req.path === '/api/device/pin-login' && req.method === 'POST') return true;
   if (req.path === '/api/device/pin-logout' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/pin' && req.method === 'POST') return true;
+  // Menu Editor: anyone let into /api/menus may draft — start, save, discard,
+  // restore, copy a dish across venues, and ask for the publish preview.
+  // Publishing itself is a POST too, but it is gated by requireMenuPublisher
+  // in the route (managers and the head chef), so a chef whose role title
+  // does not read as "manager" is not refused here before that gate can say
+  // yes.
+  if (/^\/api\/menus\/[^/]+\/draft(\/preview|\/publish|\/items\/copy-to)?$/.test(req.path)) return true;
+  if (/^\/api\/menus\/versions\/[^/]+\/restore$/.test(req.path) && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/leave' && req.method === 'POST') return true;
   // Availability is the staff member's own to state. The service still checks
   // ownership on every one of these — this allowlist only decides whether a
@@ -224,6 +232,10 @@ export async function authMiddleware(
       if (!hasAnyEnabledAppAccess(req.user, ['MARKETING', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Alma Marketing is currently in Preview and isn’t open to your role.'));
       }
+    } else if (req.path.startsWith('/api/menus')) {
+      if (!hasAnyEnabledAppAccess(req.user, ['MENUS', 'COMPLIANCE'])) {
+        return next(new HttpError(403, 'Alma Menus isn’t enabled on your account. Ask a manager.'));
+      }
     } else if (req.path.startsWith('/api/gift-cards') || req.path.startsWith('/api/invoices')) {
       // Invoices live in the Gift Cards app (they are only gift card sales
       // today), so the same grant opens them.
@@ -231,7 +243,7 @@ export async function authMiddleware(
         return next(new HttpError(403, 'Gift Cards isn’t enabled on your account. Ask a manager.'));
       }
     } else if (req.path.startsWith('/api/notifications') || req.path.startsWith('/api/messages') || req.path.startsWith('/api/communications')) {
-      if (!hasAnyEnabledAppAccess(req.user, ['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS'])) {
+      if (!hasAnyEnabledAppAccess(req.user, ['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS', 'MENUS'])) {
         return next(new HttpError(403, 'Your Alma Suite access is turned off. Ask an Alma admin.'));
       }
     } else if (!hasEnabledAppAccess(req.user, 'COMPLIANCE')) {

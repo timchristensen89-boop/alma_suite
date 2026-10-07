@@ -64,7 +64,7 @@ function isLocalHttpUrl(value: string) {
 const localCorsOrigins = parseCorsOrigins(
   // 5180 is admin-web's dev port (in prod it is same-origin via Firebase
   // rewrites, so only local dev needs it allowed); 5190 is home-web.
-  'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:5177,http://localhost:5178,http://localhost:5179,http://localhost:5180,http://localhost:5190,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,http://127.0.0.1:5176,http://127.0.0.1:5177,http://127.0.0.1:5178,http://127.0.0.1:5179,http://127.0.0.1:5180,http://127.0.0.1:5190'
+  'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:5177,http://localhost:5178,http://localhost:5179,http://localhost:5180,http://localhost:5181,http://localhost:5190,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,http://127.0.0.1:5176,http://127.0.0.1:5177,http://127.0.0.1:5178,http://127.0.0.1:5179,http://127.0.0.1:5180,http://127.0.0.1:5181,http://127.0.0.1:5190'
 );
 
 const configuredCorsOrigins = unique([
@@ -78,6 +78,7 @@ const configuredCorsOrigins = unique([
   ...parseCorsOrigins(process.env.MARKETING_WEB_URL),
   ...parseCorsOrigins(process.env.GIFTCARDS_WEB_URL),
   ...parseCorsOrigins(process.env.GIFT_CARDS_WEB_URL),
+  ...parseCorsOrigins(process.env.MENUS_WEB_URL),
   // Admin app (alma-suite-admin.web.app) — was missing from the CORS
   // allowlist, which meant the API never sent
   // Access-Control-Allow-Origin in response to admin-web. Most calls
@@ -152,6 +153,16 @@ export const env = {
     subject: process.env.VAPID_SUBJECT ?? 'mailto:tim@almagroup.com.au'
   },
   sessionMaxAgeMs: 30 * 24 * 60 * 60 * 1000,
+  menus: {
+    /**
+     * Headless Chrome for the menu PDFs. Empty = look in the usual places
+     * (/usr/bin/chromium, google-chrome, a Playwright browser dir). The API
+     * container installs the Debian `chromium` package; set this only to point
+     * at a different binary.
+     */
+    chromePath: process.env.MENU_CHROME_PATH ?? '',
+    webUrl: process.env.MENUS_WEB_URL ?? 'http://localhost:5181'
+  },
   websiteMenu: {
     githubToken: process.env.WEBSITE_MENU_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? '',
     repoOwner: process.env.WEBSITE_MENU_REPO_OWNER ?? 'timchristensen89-boop',

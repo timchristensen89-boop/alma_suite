@@ -8,6 +8,7 @@ import {
   CommsGlyph,
   DocumentIcon,
   GearIcon,
+  MenuIcon,
   PeopleIcon,
   ProduceIcon,
   SearchIcon,
@@ -35,6 +36,7 @@ export type SuiteAppId =
   | 'reserve'
   | 'marketing'
   | 'giftcards'
+  | 'menus'
   | 'learning'
   | 'reports'
   | 'pos'
@@ -93,6 +95,7 @@ const LIFECYCLE_BY_APP: Partial<Record<SuiteAppId, SuiteAppLifecycle>> = {
   giftcards: 'pilot',
   reserve: 'pilot',      // promoted from preview — booking confirmation emails working
   marketing: 'pilot',    // promoted from preview — live campaign send shipped with safety net
+  menus: 'pilot',        // printed menu editor — chefs and managers, both venues
   // Preview = visible, not operational — clicking is at your own risk
   training: 'preview',
   audits: 'preview'
@@ -108,7 +111,8 @@ const ICON_FACTORY: Record<AlmaAppIconKey, () => ReactNode> = {
   cap: () => <CapIcon />,
   produce: () => <ProduceIcon />,
   people: () => <PeopleIcon />,
-  gear: () => <GearIcon />
+  gear: () => <GearIcon />,
+  menu: () => <MenuIcon />
 };
 
 const LEGACY_APP_SEEDS: SuiteAppSeed[] = [];
@@ -125,6 +129,7 @@ const SUITE_APP_SEEDS: SuiteAppSeed[] = ALMA_APPS.map((app): SuiteAppSeed => ({
     app.id === 'reserve' ||
     app.id === 'marketing' ||
     app.id === 'giftcards' ||
+    app.id === 'menus' ||
     app.id === 'reports' ||
     app.id === 'pos' ||
     app.id === 'training' ||
@@ -152,6 +157,7 @@ const SUITE_APP_HOSTS: Partial<Record<SuiteAppId, string>> = {
   pos: 'https://alma-pos.web.app',
   marketing: 'https://alma-marketing.web.app',
   giftcards: 'https://alma-giftcards.web.app/redeem',
+  menus: 'https://alma-menus.web.app',
   settings: 'https://alma-suite-admin.web.app'
 };
 
@@ -203,6 +209,7 @@ const SUITE_AREA_BY_APP: Partial<Record<SuiteAppId, SuiteArea>> = {
   stock: 'operations',
   staff: 'operations',
   compliance: 'operations',
+  menus: 'operations',
   audits: 'operations',
   reports: 'operations',
   marketing: 'growth',
@@ -232,6 +239,7 @@ const SUITE_SHORT_LABEL: Partial<Record<SuiteAppId, string>> = {
   reports: 'Performance',
   marketing: 'Campaigns',
   giftcards: 'Issue & redeem',
+  menus: 'Printed menus',
   settings: 'Settings',
   training: 'Academy'
 };
@@ -256,6 +264,8 @@ function descriptionFor(id: string) {
       return 'Guest contacts, segments, campaign drafts, and send-ready lists.';
     case 'giftcards':
       return 'Gift card sales, balances, redemptions, and Stripe checkout.';
+    case 'menus':
+      return 'Edit the printed food menus, preview the A4 page, and publish the PDF.';
     case 'policies':
       return 'Policies now live inside Compliance.';
     case 'incidents':

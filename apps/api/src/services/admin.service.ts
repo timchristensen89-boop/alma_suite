@@ -34,7 +34,8 @@ const APP_LABELS: Record<AlmaAppId, string> = {
   MARKETING: 'Marketing',
   GIFTCARDS: 'Gift Cards',
   TRAINING: 'Training',
-  SETTINGS: 'Settings'
+  SETTINGS: 'Settings',
+  MENUS: 'Menus'
 };
 
 const APP_IDS = Object.keys(APP_LABELS) as AlmaAppId[];

@@ -30,6 +30,7 @@ export const STAFF_APPS: Array<{ id: AlmaAppId; label: string; role: string }> =
   { id: 'RESERVE', label: 'Reserve', role: 'USER' },
   { id: 'MARKETING', label: 'Marketing', role: 'USER' },
   { id: 'GIFTCARDS', label: 'Giftcards', role: 'USER' },
+  { id: 'MENUS', label: 'Menus', role: 'USER' },
   { id: 'TRAINING', label: 'Academy', role: 'USER' },
   { id: 'SETTINGS', label: 'Settings', role: 'ADMIN' }
 ];

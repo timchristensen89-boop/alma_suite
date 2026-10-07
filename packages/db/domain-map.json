@@ -56,6 +56,11 @@
       "label": "Financial documents (receipts, tax invoices, credit notes)",
       "home": "suite",
       "app": "api/giftcards-web"
+    },
+    "menus": {
+      "label": "Menus (printed menu editor)",
+      "home": "suite",
+      "app": "api/menus-web"
     }
   },
   "appOwnership": {
@@ -88,7 +93,8 @@
       "comms",
       "integrations",
       "shared",
-      "finance"
+      "finance",
+      "menus"
     ],
     "apps/web": [],
     "apps/reports-web": [],
@@ -223,7 +229,12 @@
     "LegalEntity": "finance",
     "FinancialDocument": "finance",
     "FinancialDocumentLine": "finance",
-    "FinancialDocumentSequence": "finance"
+    "FinancialDocumentSequence": "finance",
+    "Menu": "menus",
+    "MenuVersion": "menus",
+    "MenuSection": "menus",
+    "MenuItem": "menus",
+    "MenuAuditEvent": "menus"
   },
   "seams": [
     {

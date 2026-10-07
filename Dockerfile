@@ -1,7 +1,12 @@
 FROM node:24-slim
 
-# Prisma needs OpenSSL for its query engine binary at runtime
-RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+# Prisma needs OpenSSL for its query engine binary at runtime.
+# Chromium renders the printed menus to PDF (Menu Editor, apps/api/src/lib/menu-pdf.ts):
+# the current menus were made by Chrome, and only Chrome lays them out the same.
+# Debian's package lands at /usr/bin/chromium, which the renderer finds without
+# any env; MENU_CHROME_PATH overrides it. fonts-liberation is Chromium's own
+# runtime dependency — the menus embed their own fonts and never use it.
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl chromium fonts-liberation && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
 

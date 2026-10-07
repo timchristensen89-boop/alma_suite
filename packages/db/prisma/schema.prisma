@@ -179,6 +179,7 @@ enum AlmaAppId {
   GIFTCARDS
   TRAINING
   SETTINGS
+  MENUS
 }
 
 enum StaffAppAccessStatus {
@@ -4269,6 +4270,7 @@ model Venue {
   lga       String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  menus     Menu[]
 }
 
 enum CommsThreadCategory {
@@ -6259,4 +6261,184 @@ model PosPriceWindow {
   updatedAt  DateTime @updatedAt
 
   @@index([recipeId])
+}
+
+// ---------------------------------------------------------------------------
+// Menu Editor — the printed food menus as data.
+//
+// A Menu is one printed sheet for one venue ("Food" at St Alma). Its content
+// lives in MenuVersions: exactly one DRAFT at a time, one PUBLISHED, and the
+// rest ARCHIVED. Publishing freezes the whole document into snapshotJson and
+// stores the rendered A4 PDF beside it, so any past version can be viewed,
+// diffed or restored without the live tables having to agree with history.
+// Restoring never rewrites a version: it creates a new DRAFT from a snapshot.
+//
+// Layout is fixed per Menu by templateKey (packages/shared menu-render); the
+// editor only ever changes content, order, visibility and placement.
+// ---------------------------------------------------------------------------
+
+enum MenuVersionState {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// STANDARD: name · tags · price, description beneath.
+/// HEADER_PRICED: the price sits in the section heading ("TACOS / 9 EACH");
+/// items are names and tags only.
+/// SET_MENUS: the "Trust our chef" packages — name, price with a unit ("pp"),
+/// description; drawn as a band or a boxed panel depending on placement.
+enum MenuSectionType {
+  STANDARD
+  HEADER_PRICED
+  SET_MENUS
+}
+
+/// Which column of the sheet the section flows into. FULL spans the page.
+enum MenuPlacement {
+  LEFT
+  RIGHT
+  FULL
+}
+
+// @domain: menus | home: suite
+model Menu {
+  id          String           @id @default(cuid())
+  venueId     String
+  /// What the sheet is called on the module home: "Food", "À la carte".
+  name        String
+  /// Locked print layout, resolved by packages/shared menu-render.
+  templateKey String
+  status      String           @default("ACTIVE")
+  /// Highest version number ever handed out. Bumped inside the transaction
+  /// that creates a version, so a discarded draft's number is never reused and
+  /// the audit trail reads unambiguously ("Discarded draft v2", "Started v3").
+  versionCounter Int           @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  venue       Venue            @relation(fields: [venueId], references: [id], onDelete: Restrict)
+  versions    MenuVersion[]
+  auditEvents MenuAuditEvent[]
+
+  @@unique([venueId, name])
+  @@index([venueId])
+}
+
+// @domain: menus | home: suite
+model MenuVersion {
+  id                    String           @id @default(cuid())
+  menuId                String
+  versionNumber         Int
+  state                 MenuVersionState @default(DRAFT)
+  /// Footer, per version: the dietary note and the surcharge line. The tag
+  /// legend is generated from the tags in use, never typed.
+  dietaryNote           String           @default("")
+  surchargeLine         String           @default("")
+  /// The whole document, frozen at publish (MenuSnapshot in @alma/shared).
+  /// NULL while the version is a draft — the live sections/items are the truth.
+  snapshotJson          Json?
+  /// The A4 PDF rendered at publish. Bytes-in-Postgres per the house pattern
+  /// (HandbookDocument, GiftCardArtwork): one page, a few hundred KB.
+  pdfData               Bytes?
+  pdfByteSize           Int?
+  pdfGeneratedAt        DateTime?
+  publishedAt           DateTime?
+  publishedById         String?
+  publishedByName       String?
+  /// Set when this draft was created by restoring an older version.
+  restoredFromVersionId String?
+  createdById           String?
+  createdByName         String?
+  /// Who last saved the draft — the "last edited by" on the module home.
+  updatedById           String?
+  updatedByName         String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  menu                  Menu             @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  sections              MenuSection[]
+
+  @@unique([menuId, versionNumber])
+  @@index([menuId, state])
+}
+
+// @domain: menus | home: suite
+model MenuSection {
+  id            String          @id @default(cuid())
+  menuVersionId String
+  title         String
+  /// Rendered after a slash in a lighter weight: "TACOS / 9 EACH".
+  headerSuffix  String?
+  /// Italic line under the heading ("For the whole table.") — set menus.
+  subheading    String?
+  sectionType   MenuSectionType @default(STANDARD)
+  placement     MenuPlacement   @default(LEFT)
+  sortOrder     Int             @default(0)
+  /// Hidden sections stay in the data and drop off the print.
+  visible       Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  version       MenuVersion     @relation(fields: [menuVersionId], references: [id], onDelete: Cascade)
+  items         MenuItem[]
+
+  @@index([menuVersionId, sortOrder])
+}
+
+// @domain: menus | home: suite
+model MenuItem {
+  id          String      @id @default(cuid())
+  sectionId   String
+  /// Stable identity of the dish across versions. Copied whenever a version is
+  /// cloned or restored, so a dish can be diffed between versions and, in the
+  /// Menu Costing build, linked to a recipe and its cost without a migration
+  /// here. Unique within a version, not globally — the same dish key may exist
+  /// in every version of the menu.
+  dishKey     String
+  name        String
+  description String?
+  /// Whole dollars on the print, stored as cents like every other price in the
+  /// suite. NULL is allowed in the data (header-priced items never carry one);
+  /// the validator warns on a standard item without one.
+  priceCents  Int?
+  /// "pp" on set menus; NULL for a plain price.
+  priceUnit   String?
+  /// Dietary tag codes from MENU_TAGS in @alma/shared, in any order; the
+  /// renderer puts them in print order.
+  tags        String[]    @default([])
+  /// Seafood must carry an origin tag (A or I) — the validator enforces it.
+  isSeafood   Boolean     @default(false)
+  sortOrder   Int         @default(0)
+  /// false = 86'd. Stays in the data, drops off the print.
+  visible     Boolean     @default(true)
+  /// Soft reference to Recipe (stock domain) for Menu Costing. No FK on
+  /// purpose: menus stay in the suite when stock is served from its own API.
+  recipeId    String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  section     MenuSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId, sortOrder])
+  @@index([dishKey])
+  @@index([recipeId])
+}
+
+// @domain: menus | home: suite
+/// Who changed what and when. One row per save, publish, restore, discard and
+/// copy; `before`/`after` hold the diff summary rather than whole documents
+/// (the documents themselves are the version snapshots).
+model MenuAuditEvent {
+  id            String   @id @default(cuid())
+  menuId        String?
+  menuVersionId String?
+  action        String
+  summary       String
+  before        Json?
+  after         Json?
+  actorId       String?
+  actorName     String?
+  actorEmail    String?
+  createdAt     DateTime @default(now())
+  menu          Menu?    @relation(fields: [menuId], references: [id], onDelete: SetNull)
+
+  @@index([menuId, createdAt])
+  @@index([menuVersionId, createdAt])
 }

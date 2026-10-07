@@ -63,6 +63,7 @@ export {
   CommsGlyph,
   DocumentIcon,
   GearIcon,
+  MenuIcon,
   PeopleIcon,
   ProduceIcon,
   SearchIcon,
