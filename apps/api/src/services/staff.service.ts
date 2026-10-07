@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { prisma } from '@alma/db';
+import { prisma, prismaCogsReader } from '@alma/db';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
@@ -87,14 +87,14 @@ import type {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { reachesEveryVenue, staffProfileAccessDenial, staffProfileReach } from '../lib/staff-reach.js';
-import { bestVenueDaySales } from '../lib/sales-day-totals.js';
 import { resolveTimesheetWindow } from '../lib/timesheet-window.js';
 import { nextDayKey, venueDayBounds, venueDayKey, venueDayStart } from '@alma/shared';
 import { env } from '../env.js';
-import { FULL_TIME_ORDINARY_WEEKLY_HOURS, staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
+import { staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
 import { allocateTipsByVenue, posFirstCardEntries, applyTipAdjustments as applyTipAdjustmentsToRows } from '../lib/tips-allocation.js';
 import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
-import { configuredSuperRateFraction } from './settings.service.js';
+import { configuredSuperRateFraction, settingsService } from './settings.service.js';
+import { buildLabourWeek, weekDayKeys, type LabourWeekPayload } from '../lib/labour-week.js';
 import { authService } from './auth.service.js';
 import { communicationsService } from './communications.service.js';
 import { mailService } from './mail.service.js';
@@ -6722,51 +6722,46 @@ export const staffService = {
 
   // One week of roster against one week of actual takings.
   //
-  // Per person: rostered hours against contract, the salary-headroom band
-  // (contract → 45, already paid for on a salary), and real overtime past 45
-  // costed at the costing engine's OT rate. Per day/venue: rostered hours and
-  // estimated cost against the day's actual sales — the actuals the
-  // Lightspeed feed lands daily, where the roster board only knows the
-  // forecast. OT premiums live in the person table and week totals, not
-  // smeared across days.
-  async labourWeek(input: { weekStart?: string }, _actor: AuthUser) {
-    const sydneyDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' });
+  // The maths lives in lib/labour-week.ts (pure, tested); this reads the
+  // rows and hands them over. Days are Sydney days; the week is Monday to
+  // Sunday in Sydney whatever zone the server or browser is in.
+  async labourWeek(input: { weekStart?: string }, actor: AuthUser): Promise<LabourWeekPayload> {
     const startKey = input.weekStart && /^\d{4}-\d{2}-\d{2}$/.test(input.weekStart)
       ? input.weekStart
       : (() => {
           // Default: Monday of the current Sydney week.
-          const todayKey = sydneyDay.format(new Date());
-          const today = new Date(`${todayKey}T12:00:00Z`);
+          const today = new Date(`${venueDayKey(new Date())}T12:00:00Z`);
           today.setUTCDate(today.getUTCDate() - ((today.getUTCDay() + 6) % 7));
           return today.toISOString().slice(0, 10);
         })();
-    const dayKeys: string[] = Array.from({ length: 7 }, (_, i) =>
-      new Date(new Date(`${startKey}T12:00:00Z`).getTime() + i * 24 * 3_600_000).toISOString().slice(0, 10)
-    );
-    // Real Sydney midnights (daylight saving included — the old `+10:00`
-    // literal was an hour out for half the year), each shift then attributed
-    // to its Sydney-local calendar day.
+    const dayKeys = weekDayKeys(startKey);
     const windowStart = venueDayStart(startKey);
     const windowEnd = venueDayStart(nextDayKey(dayKeys[6]!) ?? startKey);
-    if (!windowStart || !windowEnd) throw new HttpError(400, 'weekStart is invalid');
+    if (!windowStart || !windowEnd || Number.isNaN(windowStart.getTime())) throw new HttpError(400, 'weekStart is invalid');
 
-    const [shifts, sales] = await Promise.all([
+    const [shifts, sales, superRate, configuredVenues, settings, activeStaff] = await Promise.all([
       prisma.rosterShift.findMany({
         where: {
           startsAt: { gte: windowStart, lt: windowEnd },
           status: { in: ['PUBLISHED', 'COMPLETED'] }
         },
         select: {
+          id: true,
           staffProfileId: true,
           venue: true,
+          area: true,
+          roleTitle: true,
           startsAt: true,
           endsAt: true,
           breakMinutes: true,
+          status: true,
           staffProfile: {
             select: {
               id: true,
               firstName: true,
               lastName: true,
+              venue: true,
+              roleTitle: true,
               contractedWeeklyHours: true,
               ...staffPayRateSelect
             }
@@ -6777,135 +6772,29 @@ export const staffService = {
         where: {
           serviceDate: { gte: new Date(`${startKey}T00:00:00Z`), lte: new Date(`${dayKeys[6]}T00:00:00Z`) }
         },
-        select: { venue: true, serviceDate: true, salesCents: true }
+        select: { id: true, venue: true, serviceDate: true, salesCents: true, source: true, notes: true }
+      }),
+      configuredSuperRateFraction(),
+      prismaCogsReader.configuredVenues(),
+      settingsService.get(),
+      prisma.staffProfile.findMany({
+        where: { accountType: 'HUMAN', mergedIntoStaffProfileId: null, employmentStatus: 'ACTIVE' },
+        select: { id: true, firstName: true, lastName: true, venue: true, ...staffPayRateSelect }
       })
     ]);
 
-    // A day's takings can arrive from more than one feed (POS close, emailed
-    // Lightspeed summary, manual entry). They describe the same money, so the
-    // best-known figure per venue-day is the MAX, never the sum — the shared
-    // rule every report now reads (lib/sales-day-totals).
-    const salesByVenueDay = bestVenueDaySales(sales);
-
-    type PersonAgg = {
-      staffProfileId: string;
-      name: string;
-      employmentType: string;
-      contractedWeeklyHours: number | null;
-      rosteredHours: number;
-      rateKnown: boolean;
-      ordinaryRateCents: number;
-      overtimeRateCents: number;
-    };
-    const people = new Map<string, PersonAgg>();
-    const dayVenue = new Map<string, { rosteredHours: number; estCostCents: number; openHours: number }>();
-    const normaliseType = (value: string | null | undefined) =>
-      (value ?? '').toUpperCase().replace(/[\s-]+/g, '_');
-
-    for (const shift of shifts) {
-      const hours = Math.max(
-        0,
-        (shift.endsAt.getTime() - shift.startsAt.getTime()) / 3_600_000 - shift.breakMinutes / 60
-      );
-      const dateKey = sydneyDay.format(shift.startsAt);
-      const venue = shift.venue ?? 'Unassigned venue';
-      const dvKey = `${dateKey}|${venue}`;
-      const agg = dayVenue.get(dvKey) ?? { rosteredHours: 0, estCostCents: 0, openHours: 0 };
-
-      if (!shift.staffProfile) {
-        agg.openHours += hours;
-        dayVenue.set(dvKey, agg);
-        continue;
-      }
-
-      const profile = shift.staffProfile;
-      let person = people.get(profile.id);
-      if (!person) {
-        const rate = staffCostingRate(profile);
-        const employmentType = normaliseType(profile.payProfile?.employmentType ?? profile.employmentType) || 'CASUAL';
-        person = {
-          staffProfileId: profile.id,
-          name: `${profile.firstName} ${profile.lastName}`.trim(),
-          employmentType,
-          contractedWeeklyHours:
-            profile.contractedWeeklyHours ?? (employmentType === 'FULL_TIME' ? 38 : null),
-          rosteredHours: 0,
-          rateKnown: rate.ordinaryRateCents !== null,
-          ordinaryRateCents: rate.ordinaryRateCents ?? 0,
-          overtimeRateCents: rate.overtimeRateCents ?? Math.round((rate.ordinaryRateCents ?? 0) * 1.5)
-        };
-        people.set(profile.id, person);
-      }
-      person.rosteredHours += hours;
-      agg.rosteredHours += hours;
-      agg.estCostCents += Math.round(hours * person.ordinaryRateCents);
-      dayVenue.set(dvKey, agg);
-    }
-
-    const round1 = (value: number) => Math.round(value * 10) / 10;
-    const peopleRows = [...people.values()]
-      .map((person) => {
-        const isFullTime = person.employmentType === 'FULL_TIME';
-        const contract = person.contractedWeeklyHours;
-        // Overtime past 45 applies to anyone; the salary-headroom band
-        // (contract → 45, already paid for) only makes sense for full-timers.
-        const overtimeHours = Math.max(0, person.rosteredHours - FULL_TIME_ORDINARY_WEEKLY_HOURS);
-        const headroomHours =
-          isFullTime && contract !== null
-            ? Math.max(0, Math.min(person.rosteredHours, FULL_TIME_ORDINARY_WEEKLY_HOURS) - contract)
-            : 0;
-        const overAgreedHours =
-          !isFullTime && contract !== null ? Math.max(0, person.rosteredHours - contract) : 0;
-        const overtimeCostCents = Math.round(
-          overtimeHours * Math.max(0, person.overtimeRateCents - person.ordinaryRateCents)
-        );
-        const estWeekCostCents = Math.round(
-          Math.min(person.rosteredHours, FULL_TIME_ORDINARY_WEEKLY_HOURS) * person.ordinaryRateCents +
-            overtimeHours * person.overtimeRateCents
-        );
-        return {
-          staffProfileId: person.staffProfileId,
-          name: person.name,
-          employmentType: person.employmentType,
-          contractedWeeklyHours: contract,
-          rosteredHours: round1(person.rosteredHours),
-          headroomHours: round1(headroomHours),
-          overtimeHours: round1(overtimeHours),
-          overAgreedHours: round1(overAgreedHours),
-          overtimeCostCents,
-          estWeekCostCents,
-          rateKnown: person.rateKnown
-        };
-      })
-      .sort((a, b) => b.overtimeHours - a.overtimeHours || b.rosteredHours - a.rosteredHours);
-
-    const venues = [...new Set([...dayVenue.keys()].map((key) => key.split('|')[1]!))].sort();
-    const days = dayKeys.map((date) => ({
-      date,
-      byVenue: venues.map((venue) => {
-        const agg = dayVenue.get(`${date}|${venue}`) ?? { rosteredHours: 0, estCostCents: 0, openHours: 0 };
-        const salesCents = salesByVenueDay.get(`${venue}|${date}`) ?? null;
-        return {
-          venue,
-          salesCents,
-          rosteredHours: round1(agg.rosteredHours),
-          estCostCents: agg.estCostCents,
-          openHours: round1(agg.openHours),
-          labourPct:
-            salesCents && salesCents > 0 ? Math.round((agg.estCostCents / salesCents) * 1000) / 10 : null
-        };
-      })
-    }));
-
-    const totals = {
-      salesCents: [...salesByVenueDay.entries()]
-        .filter(([key]) => dayKeys.includes(key.split('|')[1]!))
-        .reduce((sum, [, cents]) => sum + cents, 0),
-      estCostCents: peopleRows.reduce((sum, row) => sum + row.estWeekCostCents, 0),
-      overtimeCostCents: peopleRows.reduce((sum, row) => sum + row.overtimeCostCents, 0)
-    };
-
-    return { weekStart: startKey, days, people: peopleRows, totals, venues };
+    return buildLabourWeek({
+      weekStart: startKey,
+      shifts,
+      sales,
+      configuredVenues,
+      superRate,
+      venueTargets: settings.venues,
+      activeSalariedStaff: activeStaff,
+      // Per-shift rates and costs reveal what a person is paid; only an
+      // admin sees those rows priced. Managers get the hours and the totals.
+      includeRates: actor.isAdmin || actor.role === 'ADMIN'
+    });
   },
 
   async bulkDeleteTipEntries(input: unknown) {

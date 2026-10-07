@@ -29,6 +29,7 @@ export * from './stocktake-freshness.js';
 export * from './stocktake-scope.js';
 export * from './invoice-feed.js';
 export * from './cost-targets.js';
+export * from './labour-week.js';
 export * from './prime-cost.js';
 export * from './recipe-cost.js';
 export * from './venue-resolution.js';

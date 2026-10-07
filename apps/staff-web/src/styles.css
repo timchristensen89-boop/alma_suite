@@ -9363,3 +9363,24 @@ html[data-theme='dark'] .alma-taskbar-sheet { background: var(--color-elevated, 
 .app-crash-panel h1 { font-size: 20px; margin: 0; }
 .app-crash-panel p { margin: 0; color: #5a6069; line-height: 1.5; }
 .app-crash-panel button { min-height: 48px; border-radius: 12px; border: 0; background: #1f3524; color: #f3efe6; font-size: 15px; font-weight: 700; cursor: pointer; }
+
+/* Labour vs takings — venue table, drill-down and banners */
+.labour-banner { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border-radius: 10px; font-size: 13px; }
+.labour-banner.is-danger { background: rgba(179, 38, 46, 0.08); border: 1px solid rgba(179, 38, 46, 0.25); color: #7a1a21; }
+.labour-banner.is-info { background: rgba(20, 36, 26, 0.05); border: 1px solid rgba(20, 36, 26, 0.12); color: #3d4a3a; }
+.labour-deptcell { min-width: 96px; }
+.labour-deptcell strong { display: block; font-size: 13px; }
+.labour-deptcell span { display: block; font-size: 11px; color: #64705f; }
+.labour-deptcell em { font-style: normal; font-weight: 700; font-size: 12px; }
+.labour-pct.is-good strong { color: #2f6b3c; }
+.labour-pct.is-warning strong { color: #9a6b1f; }
+.labour-pct.is-danger strong { color: #b3262e; }
+.labour-total-row td { border-top: 2px solid rgba(20, 36, 26, 0.18); background: rgba(20, 36, 26, 0.03); }
+.labour-drilldown { background: rgba(20, 36, 26, 0.025); }
+.labour-drilldown-inner { display: flex; flex-direction: column; gap: 8px; padding: 6px 0; }
+.labour-drilldown-inner h4 { margin: 4px 0 0; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: #64705f; }
+.labour-table-compact { font-size: 12px; }
+.labour-table-compact td { padding: 5px 8px; }
+.labour-holiday { color: #9a6b1f !important; }
+.labour-method { margin: 0; padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+.labour-method ul { margin: 4px 0 0; padding-left: 18px; }
