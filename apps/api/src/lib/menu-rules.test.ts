@@ -24,7 +24,8 @@ import {
   type MenuDocument,
   type MenuItemDocument,
   type MenuRenderAssets,
-  type MenuSectionDocument
+  type MenuSectionDocument,
+  type MenuTagCode
 } from '@alma/shared';
 import { ALMA_AVALON_SEED, MENU_SEEDS, ST_ALMA_FRESHWATER_SEED } from '../data/menu-seed-content.js';
 
@@ -378,7 +379,7 @@ describe('menus per venue — templates, headings, names', () => {
 
   it('menuDocumentsEqual sees every stored field, not only what prints', () => {
     const base = doc([section({ title: 'S', items: [item({ name: 'Prawn', tags: ['I'], isSeafood: true })] })]);
-    const same = { ...base, sections: base.sections.map((s) => ({ ...s, id: 'row-1', items: s.items.map((i) => ({ ...i, id: 'row-2', tags: ['I'] })) })) };
+    const same = { ...base, sections: base.sections.map((s) => ({ ...s, id: 'row-1', items: s.items.map((i) => ({ ...i, id: 'row-2', tags: ['I'] as MenuTagCode[] })) })) };
     assert.equal(menuDocumentsEqual(base, same), true, 'row ids do not matter');
     const seafoodOff = { ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, isSeafood: false })) })) };
     assert.equal(menuDiffIsEmpty(diffMenuDocuments(base, seafoodOff)), true, 'the publish diff does not show it');
