@@ -166,9 +166,10 @@ the fixed order `V VG GF GFA DF N A I`.
 ## Running it
 
 ```bash
-pnpm db:migrate              # applies 20261007191211_menu_editor and 20261008093000_menu_heading
+pnpm db:migrate              # applies 20261007191211_menu_editor, 20261008093000_menu_heading, 20261009090000_menus_v2, 20261009120000_menus_v2_promotions
 pnpm db:seed:prod            # venues (st-alma, alma-avalon)
-pnpm db:seed:menus           # both menus, validated and published as v1 with PDFs
+pnpm db:seed:menus           # both food menus, validated and published as v1 with PDFs
+pnpm --filter @alma/api menus:import   # optional: the reference menus and What's On events as unpublished drafts (docs/menus-v2/import-inventory.md)
 pnpm dev:menus               # api (3018) + menus-web (5181)
 ```
 
@@ -187,18 +188,24 @@ pnpm --filter @alma/api test                      # rules, templates, route guar
 # skipping the publish cases when Chrome is missing. Manual CI runs the same.
 cd apps/api && ALMA_TEST_DATABASE_URL=postgresql://... ALMA_TEST_REQUIRE_CHROME=1 \
   node --import tsx --test --test-concurrency=1 \
-  src/services/menu.integration.test.ts src/services/menu-archive-race.integration.test.ts
+  src/services/menu.integration.test.ts src/services/menu-archive-race.integration.test.ts \
+  src/services/menu-v2.integration.test.ts src/services/promotion.integration.test.ts
 pnpm --filter @alma/api menus:compare -- --reference ../alma-web-platform/apps/web/public/menus
+pnpm --filter @alma/api menus:previews            # the A5 cards, a drinks book and the functions pack rendered to docs/menus-v2/previews/
 ```
 
 Browser regressions (`apps/menus-web/e2e`, puppeteer-core) drive the real
 editor against a running API and menus-web on a disposable database: the
 whole menu-management flow (`smoke`: New menu, heading and preview,
 publish, heading diff, name clash, rename, archive, unarchive, phone width,
-draft-only chef), a menu archived while another tab edits it, and applying
+draft-only chef), a menu archived while another tab edits it, applying
 recovered edits through a rejected save, a network failure, a reload and an
-older save still in flight. `apps/menus-web/e2e/helpers.mjs` lists what they need; without
-`MENUS_E2E_BASE_URL` they report as skipped. Not run by CI.
+older save still in flight, a promotion published together with its card
+(`promotions`), and a private-event menu kept off the public endpoints
+(`private-event`). `apps/menus-web/e2e/helpers.mjs` lists what they need; without
+`MENUS_E2E_BASE_URL` they report as skipped. Not run by CI. The accounts they
+sign in with come from `apps/api/scripts/seed-e2e-accounts.ts` (local databases
+only).
 
 ```bash
 pnpm --filter @alma/menus-web test        # unit: the kept-copy store (CI runs this)

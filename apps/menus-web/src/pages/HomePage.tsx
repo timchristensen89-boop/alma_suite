@@ -14,12 +14,13 @@ import {
   type MenuTemplate,
   type MenuVenueSummary
 } from '@alma/shared';
-import { AlmaHomeBubble, Badge, Button, Card, EmptyState, MenuIcon, Skeleton } from '@alma/ui';
+import { AlmaHomeBubble, Badge, Button, Card, EmptyState, Input, MenuIcon, Select, Skeleton } from '@alma/ui';
 import { ArchiveMenuDialog, MenuDetailsDialog, NewMenuDialog, menuKindGroupLabel } from '../components/MenuManageDialogs';
 import { ApiError } from '../lib/api';
 import { isMenuArchivedError, menuApi, openVersionPdf } from '../lib/menuApi';
 import { formatEventDate, formatWhen, pdfFilename, personName } from '../lib/format';
 import { IconPlus } from '../../../web/src/lib/icons';
+import '../promotions.css';
 
 /**
  * Module home: the venues, and under each one its menus grouped by kind —
@@ -31,6 +32,46 @@ import { IconPlus } from '../../../web/src/lib/icons';
 
 type VenueGroup = { venue: MenuVenueSummary; menus: MenuSummary[] };
 type KindGroup = { kind: MenuKind; menus: MenuSummary[] };
+
+/** What the home can be narrowed to: a search over names, headings and events, a kind, and where each menu is up to. */
+type StatusFilter = 'ALL' | 'LIVE' | 'DRAFT' | 'UNPUBLISHED' | 'UPCOMING' | 'PAST';
+const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
+  { value: 'ALL', label: 'Everything' },
+  { value: 'DRAFT', label: 'Draft in progress' },
+  { value: 'LIVE', label: 'Published' },
+  { value: 'UNPUBLISHED', label: 'Never published' },
+  { value: 'UPCOMING', label: 'Events coming up' },
+  { value: 'PAST', label: 'Past events' }
+];
+
+function matchesQuery(menu: MenuSummary, query: string): boolean {
+  if (!query) return true;
+  const haystack = [menu.name, menu.printedHeading, menu.event?.eventName ?? '', menu.event?.organiserRef ?? '', MENU_KIND_LABELS[menuKind(menu)], menu.venue.name, menu.templateKey.replace(/_/g, ' ')]
+    .join(' ')
+    .toLowerCase();
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => haystack.includes(word));
+}
+
+function matchesStatus(menu: MenuSummary, status: StatusFilter, today: string): boolean {
+  switch (status) {
+    case 'DRAFT':
+      return Boolean(menu.draft);
+    case 'LIVE':
+      return Boolean(menu.published);
+    case 'UNPUBLISHED':
+      return !menu.published;
+    case 'UPCOMING':
+      return menuKind(menu) === 'PRIVATE_EVENT' && Boolean(menu.event?.eventDate) && (menu.event?.eventDate ?? '').slice(0, 10) >= today;
+    case 'PAST':
+      return menuKind(menu) === 'PRIVATE_EVENT' && Boolean(menu.event?.eventDate) && (menu.event?.eventDate ?? '').slice(0, 10) < today;
+    default:
+      return true;
+  }
+}
 
 function menuKind(menu: MenuSummary): MenuKind {
   return menu.kind ?? 'FOOD';
@@ -65,7 +106,11 @@ export function HomePage({ user }: { user: AuthUser }) {
   const [newMenuFor, setNewMenuFor] = useState<{ venueId: string | null } | null>(null);
   const [editing, setEditing] = useState<MenuSummary | null>(null);
   const [archiving, setArchiving] = useState<MenuSummary | null>(null);
+  const [query, setQuery] = useState('');
+  const [kindFilter, setKindFilter] = useState<'ALL' | MenuKind>('ALL');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const canManage = canPublishMenus(user);
+  const filtering = query.trim() !== '' || kindFilter !== 'ALL' || statusFilter !== 'ALL';
 
   const load = useCallback(async () => {
     setError(null);
@@ -86,16 +131,22 @@ export function HomePage({ user }: { user: AuthUser }) {
   // One group per venue that has menus or could have one (a print template exists for it).
   const groups = useMemo<VenueGroup[]>(() => {
     if (!data) return [];
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const trimmed = query.trim();
     const byVenue = new Map<string, VenueGroup>();
     // `?? []` so a home built against an API that predates venues/archived still renders its menus.
     for (const venue of data.venues ?? []) byVenue.set(venue.id, { venue, menus: [] });
     for (const menu of data.menus ?? []) {
+      if (kindFilter !== 'ALL' && menuKind(menu) !== kindFilter) continue;
+      if (!matchesStatus(menu, statusFilter, today) || !matchesQuery(menu, trimmed)) continue;
       const group = byVenue.get(menu.venue.id) ?? { venue: { ...menu.venue, templates: [] }, menus: [] };
       group.menus.push(menu);
       byVenue.set(menu.venue.id, group);
     }
-    return [...byVenue.values()].filter((group) => group.menus.length > 0 || group.venue.templates.length > 0);
-  }, [data]);
+    // While narrowing, a venue with nothing matching is left out rather than shown empty.
+    return [...byVenue.values()].filter((group) => group.menus.length > 0 || (group.venue.templates.length > 0 && !filtering));
+  }, [data, query, kindFilter, statusFilter, filtering]);
+  const shown = groups.reduce((count, group) => count + group.menus.length, 0);
   const venueById = useMemo(() => new Map((data?.venues ?? []).map((venue) => [venue.id, venue])), [data]);
   const anyAddable = (data?.venues ?? []).some((venue) => venue.templates.length > 0);
 
@@ -264,6 +315,22 @@ export function HomePage({ user }: { user: AuthUser }) {
         </Card>
       ) : null}
 
+      {data && (data.menus ?? []).length > 3 ? (
+        <div className="menus-filters" role="search" aria-label="Find a menu">
+          <Input aria-label="Search menus" placeholder="Search by name, heading or event…" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
+          <Select aria-label="Kind" value={kindFilter} options={[{ value: 'ALL', label: 'Every kind' }, ...MENU_KINDS.map((kind) => ({ value: kind, label: menuKindGroupLabel(kind) }))]} onChange={(event) => setKindFilter(event.currentTarget.value as 'ALL' | MenuKind)} />
+          <Select aria-label="Status" value={statusFilter} options={STATUS_OPTIONS} onChange={(event) => setStatusFilter(event.currentTarget.value as StatusFilter)} />
+          {filtering ? (
+            <span className="subtle menus-filters-count">
+              {shown} of {(data.menus ?? []).length} ·{' '}
+              <button type="button" className="item-action" onClick={() => { setQuery(''); setKindFilter('ALL'); setStatusFilter('ALL'); }}>
+                Clear
+              </button>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       {data === null && loadFailed ? (
         <EmptyState title="Could not load the menus" description="Nothing has changed on the server. Check the connection and try again." action={<Button onClick={() => void load()}>Try again</Button>} />
       ) : data === null ? (
@@ -271,6 +338,8 @@ export function HomePage({ user }: { user: AuthUser }) {
           <Skeleton height="220px" />
           <Skeleton height="220px" />
         </div>
+      ) : groups.length === 0 && filtering ? (
+        <EmptyState title="Nothing matches" description="Try fewer words, or clear the kind and status filters." action={<Button variant="secondary" onClick={() => { setQuery(''); setKindFilter('ALL'); setStatusFilter('ALL'); }}>Clear filters</Button>} />
       ) : groups.length === 0 ? (
         <EmptyState
           title="No menus yet"

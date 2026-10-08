@@ -221,6 +221,8 @@ export function EditorPage({ user }: { user: AuthUser }) {
   const [mobileTab, setMobileTab] = useState<'edit' | 'preview'>('edit');
   const [focusDishKey, setFocusDishKey] = useState<string | null>(null);
   const [focusPage, setFocusPage] = useState<{ page: number; at: number } | null>(null);
+  // Which page's sections the form shows (null = every page). Long books are edited one page at a time.
+  const [pageFilter, setPageFilter] = useState<number | null>(null);
   const [otherMenus, setOtherMenus] = useState<MenuSummary[]>([]);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
@@ -875,8 +877,20 @@ export function EditorPage({ user }: { user: AuthUser }) {
         <div className="editor-form">
           <HeadingEditor doc={doc} template={template} shape={shape} promotion={draft.menu.promotion ?? null} onChange={update} />
           <ValidationPanel errors={errors} warnings={warnings} fill={fill} formatLabel={shape.formatLabel} onJump={jumpTo} />
-          {shape.multiPage ? <PagesStrip doc={doc} fill={fill} onChange={update} onShowPage={showPage} /> : null}
-          <SectionsEditor doc={doc} shape={shape} pageCount={pageCount} onChange={update} onCopy={(item) => setCopyTarget({ dishKey: item.dishKey ?? '', name: item.name })} canCopy={otherMenus.length > 0} />
+          {shape.multiPage ? (
+            <PagesStrip
+              doc={doc}
+              fill={fill}
+              onChange={update}
+              pageFilter={pageFilter}
+              onShowPage={(page) => {
+                showPage(page);
+                setPageFilter((current) => (current === page ? null : page));
+              }}
+              onShowAll={() => setPageFilter(null)}
+            />
+          ) : null}
+          <SectionsEditor doc={doc} shape={shape} pageCount={pageCount} pageFilter={pageFilter} onChange={update} onCopy={(item) => setCopyTarget({ dishKey: item.dishKey ?? '', name: item.name })} canCopy={otherMenus.length > 0} />
           <FooterEditor doc={doc} shape={shape} onChange={update} />
         </div>
         <aside className="editor-preview">
@@ -937,7 +951,7 @@ type Mutate = (mutate: (prev: MenuDocument) => MenuDocument) => void;
  * the last one (only while nothing visible prints on it). Clicking a chip
  * scrolls the preview to that sheet.
  */
-function PagesStrip({ doc, fill, onChange, onShowPage }: { doc: MenuDocument; fill: MenuFillReport | null; onChange: Mutate; onShowPage: (page: number) => void }) {
+function PagesStrip({ doc, fill, onChange, pageFilter, onShowPage, onShowAll }: { doc: MenuDocument; fill: MenuFillReport | null; onChange: Mutate; pageFilter: number | null; onShowPage: (page: number) => void; onShowAll: () => void }) {
   const pageCount = Math.max(1, doc.pageCount ?? 1);
   const pages = Array.from({ length: pageCount }, (_, index) => index + 1);
   const lastHasVisible = doc.sections.some((section) => section.visible && Math.min(Math.max(1, section.page ?? 1), pageCount) === pageCount);
@@ -949,7 +963,20 @@ function PagesStrip({ doc, fill, onChange, onShowPage }: { doc: MenuDocument; fi
     <section className="pages-strip" aria-label="Pages">
       <div className="pages-strip-head">
         <h3>Pages</h3>
-        <span className="subtle">{pageCount === 1 ? '1 sheet' : `${pageCount} sheets`} · each section names the page it prints on</span>
+        <span className="subtle">
+          {pageCount === 1 ? '1 sheet' : `${pageCount} sheets`} · each section names the page it prints on
+          {pageFilter ? (
+            <>
+              {' '}
+              · showing page {pageFilter}{' '}
+              <button type="button" className="item-action" onClick={onShowAll}>
+                Show every page
+              </button>
+            </>
+          ) : pageCount > 1 ? (
+            ' · press a page to edit it on its own'
+          ) : null}
+        </span>
       </div>
       <div className="pages-strip-chips" role="list">
         {pages.map((page) => {
@@ -957,7 +984,7 @@ function PagesStrip({ doc, fill, onChange, onShowPage }: { doc: MenuDocument; fi
           const tone = !measured ? 'idle' : measured.overflow ? 'over' : measured.fillRatio > 0.92 ? 'tight' : 'ok';
           const percent = measured ? `${Math.round(measured.fillRatio * 100)}%` : '…';
           return (
-            <button key={page} type="button" role="listitem" className={`page-chip is-${tone}`} title={measured ? `Page ${page}: ${percent} full` : `Page ${page}`} onClick={() => onShowPage(page)}>
+            <button key={page} type="button" role="listitem" className={`page-chip is-${tone}${pageFilter === page ? ' is-current' : ''}`} aria-pressed={pageFilter === page} title={measured ? `Page ${page}: ${percent} full` : `Page ${page}`} onClick={() => onShowPage(page)}>
               <span className="page-chip-number">{page}</span>
               <span className="page-chip-fill">{percent}</span>
             </button>
@@ -1000,14 +1027,24 @@ function PagesStrip({ doc, fill, onChange, onShowPage }: { doc: MenuDocument; fi
 // Sections and items
 // ---------------------------------------------------------------------------
 
-function SectionsEditor({ doc, shape, pageCount, onChange, onCopy, canCopy }: { doc: MenuDocument; shape: EditorShape; pageCount: number; onChange: Mutate; onCopy: (item: MenuItemDocument) => void; canCopy: boolean }) {
+function SectionsEditor({ doc, shape, pageCount, pageFilter, onChange, onCopy, canCopy }: { doc: MenuDocument; shape: EditorShape; pageCount: number; pageFilter: number | null; onChange: Mutate; onCopy: (item: MenuItemDocument) => void; canCopy: boolean }) {
   const moveSection = useCallback((from: number, to: number) => onChange((prev) => ({ ...prev, sections: moveItem(prev.sections, from, to) })), [onChange]);
   const { drag, register, handleProps } = useDragReorder(doc.sections.length, moveSection);
+  // A long book opens with its sections folded, so the page reads as a list of headings first.
+  const foldByDefault = doc.sections.length > 12;
+  const onPage = (section: MenuSectionDocument) => pageFilter === null || Math.min(Math.max(1, section.page ?? 1), Math.max(1, pageCount)) === pageFilter;
+  const hidden = doc.sections.filter((section) => !onPage(section)).length;
 
   return (
     <div className="sections-editor">
-      {doc.sections.map((section, sectionIndex) => (
+      {hidden > 0 ? (
+        <p className="subtle section-filter-note">
+          {hidden} section{hidden === 1 ? '' : 's'} on other pages {hidden === 1 ? 'is' : 'are'} not shown.
+        </p>
+      ) : null}
+      {doc.sections.map((section, sectionIndex) => onPage(section) && (
         <SectionCard
+          defaultCollapsed={foldByDefault}
           key={(section as EditorSection).clientKey ?? section.id ?? `new-${sectionIndex}`}
           section={section}
           sectionIndex={sectionIndex}
@@ -1035,7 +1072,7 @@ function SectionsEditor({ doc, shape, pageCount, onChange, onCopy, canCopy }: { 
           onChange((prev) => {
             // A new section goes where the last one is — the page being worked on.
             const last = prev.sections[prev.sections.length - 1];
-            const page = Math.min(Math.max(1, last?.page ?? 1), Math.max(1, prev.pageCount ?? 1));
+            const page = pageFilter ?? Math.min(Math.max(1, last?.page ?? 1), Math.max(1, prev.pageCount ?? 1));
             return { ...prev, sections: [...prev.sections, emptySection(page)] };
           })
         }
@@ -1047,6 +1084,8 @@ function SectionsEditor({ doc, shape, pageCount, onChange, onCopy, canCopy }: { 
 }
 
 type SectionCardProps = {
+  /** Start folded (long documents); the person unfolds what they work on. */
+  defaultCollapsed?: boolean;
   section: MenuSectionDocument;
   sectionIndex: number;
   shape: EditorShape;
@@ -1061,8 +1100,8 @@ type SectionCardProps = {
   onDelete: () => void;
 };
 
-function SectionCard({ section, sectionIndex, shape, pageCount, dragging, dropTarget, registerRow, handleProps, canCopy, onCopy, onChange, onDelete }: SectionCardProps) {
-  const [collapsed, setCollapsed] = useState(false);
+function SectionCard({ defaultCollapsed = false, section, sectionIndex, shape, pageCount, dragging, dropTarget, registerRow, handleProps, canCopy, onCopy, onChange, onDelete }: SectionCardProps) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   // "More" starts open when any of its fields already holds something, so nothing set is hidden by surprise.
   const [more, setMore] = useState(() => Boolean(section.headerSuffix || section.subheading || (section.lead && section.sectionType !== 'COURSE')));
   const moveRow = useCallback((from: number, to: number) => onChange((prev) => ({ ...prev, items: moveItem(prev.items, from, to) })), [onChange]);
