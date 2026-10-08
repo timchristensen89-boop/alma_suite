@@ -121,11 +121,38 @@ function adoptSaved(current: MenuDocument, sent: MenuDocument, saved: MenuDocume
 }
 
 function emptyItem(name = ''): MenuItemDocument {
-  return { dishKey: newDishKey(name || 'dish'), name, description: null, priceCents: null, priceUnit: null, tags: [], isSeafood: false, visible: true, recipeId: null };
+  return {
+    dishKey: newDishKey(name || 'dish'),
+    name,
+    description: null,
+    priceCents: null,
+    priceUnit: null,
+    prices: [],
+    meta: null,
+    note: null,
+    flags: [],
+    tags: [],
+    isSeafood: false,
+    visible: true,
+    recipeId: null
+  };
 }
 
-function emptySection(): EditorSection {
-  return { clientKey: clientKey(), title: '', headerSuffix: null, subheading: null, sectionType: 'STANDARD', placement: 'LEFT', visible: true, items: [emptyItem()] };
+function emptySection(page = 1): EditorSection {
+  return {
+    clientKey: clientKey(),
+    title: '',
+    headerSuffix: null,
+    subheading: null,
+    sectionType: 'STANDARD',
+    placement: 'LEFT',
+    page,
+    lead: null,
+    body: null,
+    priceColumns: [],
+    visible: true,
+    items: [emptyItem()]
+  };
 }
 
 function itemDomId(sectionIndex: number, itemIndex: number) {

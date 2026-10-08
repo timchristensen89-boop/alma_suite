@@ -6288,10 +6288,18 @@ enum MenuVersionState {
 /// items are names and tags only.
 /// SET_MENUS: the "Trust our chef" packages — name, price with a unit ("pp"),
 /// description; drawn as a band or a boxed panel depending on placement.
+/// TEXT: a prose block (intro, callout, conditions, essay) — the body, no items.
+/// LIST: names only, no prices — inclusions, "Select from", drinks included.
+/// TABLE: items with several price columns (wine 150 mL / 250 mL / bottle).
+/// COURSE: a private-event course — label, optional "choose one" lead, dishes.
 enum MenuSectionType {
   STANDARD
   HEADER_PRICED
   SET_MENUS
+  TEXT
+  LIST
+  TABLE
+  COURSE
 }
 
 /// Which column of the sheet the section flows into. FULL spans the page.
@@ -6310,6 +6318,21 @@ model Menu {
   /// Locked print layout, resolved by packages/shared menu-render.
   templateKey String
   status      String           @default("ACTIVE")
+  /// FOOD, DRINKS, FUNCTIONS, PROMOTION or PRIVATE_EVENT (MENU_KINDS in
+  /// @alma/shared). Decides which templates, rules and home group apply.
+  kind        String           @default("FOOD")
+  /// The public identifier: "food", "drinks", "happy-hour". Minted from the
+  /// name at creation and never changed, so website links and PDF URLs
+  /// survive a rename. Unique per venue.
+  slug        String
+  /// PUBLIC menus may be served by the public endpoints once published;
+  /// PRIVATE ones (event menus by default) never are.
+  visibility  String           @default("PUBLIC")
+  /// Private-event details. Internal: never printed, never served publicly.
+  eventName    String?
+  eventDate    DateTime?
+  organiserRef String?
+  guestCount   Int?
   /// Highest version number ever handed out. Bumped inside the transaction
   /// that creates a version, so a discarded draft's number is never reused and
   /// the audit trail reads unambiguously ("Discarded draft v2", "Started v3").
@@ -6321,7 +6344,10 @@ model Menu {
   auditEvents MenuAuditEvent[]
 
   @@unique([venueId, name])
+  @@unique([venueId, slug])
   @@index([venueId])
+  @@index([kind, status])
+  @@index([eventDate])
 }
 
 // @domain: menus | home: suite
@@ -6337,6 +6363,21 @@ model MenuVersion {
   /// legend is generated from the tags in use, never typed.
   dietaryNote           String           @default("")
   surchargeLine         String           @default("")
+  /// Card and package fields (Menus V2). Empty means "not printed", so the
+  /// à la carte sheets are unaffected.
+  /// Italic line under the title ("Lunch that runs long.").
+  subheading            String           @default("")
+  /// The schedule line on a card ("Wed–Thu · 5–6pm · Fri–Sun · 4–6pm").
+  whenLine              String           @default("")
+  /// The headline price ("99 pp") — cents and unit like an item's.
+  heroPriceCents        Int?
+  heroPriceUnit         String?
+  /// Multi-line conditions block (sitting time, whole table, surcharge).
+  conditions            String           @default("")
+  /// false hides every item price — guest-facing private-event menus.
+  showPrices            Boolean          @default(true)
+  /// Pages the document declares; the publish gate compares the PDF to it.
+  pageCount             Int              @default(1)
   /// The whole document, frozen at publish (MenuSnapshot in @alma/shared).
   /// NULL while the version is a draft — the live sections/items are the truth.
   snapshotJson          Json?
@@ -6375,6 +6416,14 @@ model MenuSection {
   subheading    String?
   sectionType   MenuSectionType @default(STANDARD)
   placement     MenuPlacement   @default(LEFT)
+  /// Which sheet of a multi-page document the section prints on (1-based).
+  page          Int             @default(1)
+  /// Short caps lead-in above the items ("Two per person", "Select from").
+  lead          String?
+  /// Prose for TEXT sections (intro, callout, conditions, essay).
+  body          String?
+  /// Column labels for TABLE sections ("150 mL", "250 mL", "Bottle").
+  priceColumns  String[]        @default([])
   sortOrder     Int             @default(0)
   /// Hidden sections stay in the data and drop off the print.
   visible       Boolean         @default(true)
@@ -6404,6 +6453,15 @@ model MenuItem {
   priceCents  Int?
   /// "pp" on set menus; NULL for a plain price.
   priceUnit   String?
+  /// Per-column prices in cents for TABLE sections, aligned with the
+  /// section's priceColumns; null = not offered in that size ("·").
+  prices      Json        @default("[]")
+  /// Small grey detail after the name: ABV, region, vintage, "serves three".
+  meta        String?
+  /// Serving note under the description (the 9px line on drinks).
+  note        String?
+  /// Non-dietary marks from MENU_ITEM_FLAGS: STAFF_PICK, LIMITED, ON_TAP, NEW.
+  flags       String[]    @default([])
   /// Dietary tag codes from MENU_TAGS in @alma/shared, in any order; the
   /// renderer puts them in print order.
   tags        String[]    @default([])

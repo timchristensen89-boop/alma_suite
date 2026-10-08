@@ -23,7 +23,7 @@
  */
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import type { MenuDocument } from '@alma/shared';
+import { MENU_DOCUMENT_DEFAULTS, type MenuDocument } from '@alma/shared';
 
 const TEST_DB = process.env.ALMA_TEST_DATABASE_URL;
 if (TEST_DB) process.env.DATABASE_URL = TEST_DB;
@@ -42,6 +42,7 @@ let venueId = '';
 const chef = { id: 'race-chef', firstName: 'Race', lastName: 'Chef', email: 'race-chef@almagroup.com.au', roleTitle: 'Head Chef', venue: 'RACE', accountType: 'HUMAN', isAdmin: false, trainingOnly: false, role: 'STAFF', appAccess: [] } as unknown as import('@alma/shared').AuthUser;
 
 const DOC: MenuDocument = {
+  ...MENU_DOCUMENT_DEFAULTS,
   heading: 'Race night',
   dietaryNote: 'Dietaries catered with notice.',
   surchargeLine: 'A surcharge of 10% applies on weekends.',
@@ -52,10 +53,14 @@ const DOC: MenuDocument = {
       subheading: null,
       sectionType: 'STANDARD',
       placement: 'LEFT',
+      page: 1,
+      lead: null,
+      body: null,
+      priceColumns: [],
       visible: true,
       items: [
-        { dishKey: 'race-guac', name: 'Guacamole', description: 'Tostadas', priceCents: 1700, priceUnit: null, tags: ['VG', 'GFA'], isSeafood: false, visible: true, recipeId: null },
-        { dishKey: 'race-prawn', name: 'Prawn tostada', description: 'Avocado', priceCents: 2300, priceUnit: null, tags: ['GFA', 'I'], isSeafood: true, visible: true, recipeId: null }
+        { dishKey: 'race-guac', name: 'Guacamole', description: 'Tostadas', priceCents: 1700, priceUnit: null, prices: [], meta: null, note: null, flags: [], tags: ['VG', 'GFA'], isSeafood: false, visible: true, recipeId: null },
+        { dishKey: 'race-prawn', name: 'Prawn tostada', description: 'Avocado', priceCents: 2300, priceUnit: null, prices: [], meta: null, note: null, flags: [], tags: ['GFA', 'I'], isSeafood: true, visible: true, recipeId: null }
       ]
     }
   ]
@@ -74,7 +79,7 @@ async function wipe() {
 let menuSeq = 0;
 async function newMenu(withDraft: boolean): Promise<string> {
   menuSeq += 1;
-  const menu = await h.prisma.menu.create({ data: { venueId, name: `RACE ${menuSeq}`, templateKey: 'freshwater_alacarte' } });
+  const menu = await h.prisma.menu.create({ data: { venueId, name: `RACE ${menuSeq}`, slug: `race-${menuSeq}`, templateKey: 'freshwater_alacarte' } });
   if (withDraft) {
     await h.menus.createDraft(menu.id, chef);
     await h.menus.saveDraft(menu.id, DOC, chef);

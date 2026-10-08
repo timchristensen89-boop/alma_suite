@@ -85,6 +85,7 @@ export function NewMenuDialog({ venues, menus, initialVenueId, onCreated, onClos
       const created = await menuApi.create({
         venueId: venue.id,
         name: name.trim(),
+        kind: template.kinds[0] ?? 'FOOD',
         templateKey: template.key,
         heading: heading.trim(),
         ...(copyFrom ? { copyFromMenuId: copyFrom } : {})

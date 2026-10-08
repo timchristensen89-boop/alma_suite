@@ -114,13 +114,17 @@ export type MenuRenderResult = {
 
 const RENDER_TIMEOUT_MS = 20_000;
 
-async function withPage<T>(html: string, fn: (page: Awaited<ReturnType<Browser['newPage']>>) => Promise<T>): Promise<T> {
+export type MenuPageSize = { widthMm: number; heightMm: number };
+const A4: MenuPageSize = { widthMm: 210, heightMm: 297 };
+const PX_PER_MM = 96 / 25.4;
+
+async function withPage<T>(html: string, size: MenuPageSize, fn: (page: Awaited<ReturnType<Browser['newPage']>>) => Promise<T>): Promise<T> {
   const instance = await browser();
   const page = await instance.newPage();
   try {
     page.setDefaultTimeout(RENDER_TIMEOUT_MS);
-    // A4 at 96dpi, so screen-media measurements match what print media lays out.
-    await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
+    // The sheet at 96dpi, so screen-media measurements match what print media lays out.
+    await page.setViewport({ width: Math.round(size.widthMm * PX_PER_MM), height: Math.round(size.heightMm * PX_PER_MM), deviceScaleFactor: 1 });
     await page.setContent(html, { waitUntil: 'load' });
     await page.evaluate(() => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready);
     await page.emulateMediaType('print');
@@ -130,15 +134,15 @@ async function withPage<T>(html: string, fn: (page: Awaited<ReturnType<Browser['
   }
 }
 
-/** How full the page is, measured in Chrome with print media — what the publish gate uses. */
-export async function measureMenuFill(html: string): Promise<MenuFillReport> {
-  return withPage(html, async (page) => (await page.evaluate(MENU_FILL_PROBE_SCRIPT)) as MenuFillReport);
+/** How full each sheet is, measured in Chrome with print media — what the publish gate uses. */
+export async function measureMenuFill(html: string, size: MenuPageSize = A4): Promise<MenuFillReport> {
+  return withPage(html, size, async (page) => (await page.evaluate(MENU_FILL_PROBE_SCRIPT)) as MenuFillReport);
 }
 
 /** The PDF plus the fill measurement and the page count of the result. */
-export async function renderMenuPdf(html: string, page: { widthMm: number; heightMm: number }): Promise<MenuRenderResult> {
+export async function renderMenuPdf(html: string, page: MenuPageSize): Promise<MenuRenderResult> {
   const started = Date.now();
-  return withPage(html, async (tab) => {
+  return withPage(html, page, async (tab) => {
     const fill = (await tab.evaluate(MENU_FILL_PROBE_SCRIPT)) as MenuFillReport;
     const bytes = await tab.pdf({
       width: `${page.widthMm}mm`,

@@ -31,6 +31,7 @@ import { liquorRouter } from './routes/liquor.js';
 import { marketingRouter } from './routes/marketing.js';
 import { menuMappingsRouter } from './routes/menu-mappings.js';
 import { menusRouter } from './routes/menus.js';
+import { publicMenusRouter } from './routes/public-menus.js';
 import { messagesRouter } from './routes/messages.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { reportsRouter } from './routes/reports.js';
@@ -180,6 +181,10 @@ app.get('/api/summary', async (_req, res, next) => {
 
 app.use('/health', healthRouter);
 app.use('/api/health', healthRouter);
+// Published menus for the website: read-only, cacheable, no session. Throttled
+// per IP like the other anonymous surfaces so a scraper cannot pull PDFs in a
+// loop; a venue's own pages fetch these server-side and cache them.
+app.use('/api/public/menus', limiter(5, 300), publicMenusRouter);
 app.use('/api/public', publicSnapshotRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/issues', issuesRouter);

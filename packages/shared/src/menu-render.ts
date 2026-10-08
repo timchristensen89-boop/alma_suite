@@ -1,53 +1,50 @@
 /**
- * The locked print templates: a MenuDocument in, one A4 HTML page out.
+ * The locked print templates: a MenuDocument in, printed sheets out.
  *
- * Ported from the website's print route (alma-web-platform
- * apps/web/app/print/_food/FoodSheet.tsx + food.css), which is what produced
- * the current menus in headless Chrome. Every mm, px and letter-spacing value
- * is kept; the only change is that content, placement and section type come
- * from data instead of from a hand-written TS file.
+ * The A4 à la carte sheet is ported from the website's print route
+ * (alma-web-platform apps/web/app/print/_food/FoodSheet.tsx + food.css), which
+ * is what produced the current menus in headless Chrome. Every mm, px and
+ * letter-spacing value is kept; the only change is that content, placement and
+ * section type come from data instead of from a hand-written TS file. The
+ * multi-page families (drinks books, the functions document, the A5 cards) are
+ * drawn by menu-render-pages.ts on the same tokens.
  *
  * The same function renders the editor's live preview (in an iframe) and the
  * published PDF (in headless Chrome), so what the chef sees is what prints.
  *
- * Adding a template: add a key to MENU_TEMPLATES with its venue class, logo
- * asset, tagline and title. Layout is driven by section placement, so a new
- * venue's à la carte needs no new CSS; a genuinely new layout (a drinks
- * binder, a specials card) gets its own CSS block keyed off `.venue-<class>`
- * or a new `sheetClass`.
+ * Adding a template: add a key to MENU_TEMPLATES with its venue, kinds, format
+ * and family. Layout is driven by the family and by section placement/type, so
+ * a new venue's à la carte or a second A5 card needs no new CSS; a genuinely
+ * new layout gets its own family module.
  */
+import { formatMenuPrice, formatMenuTags, menuTagLegend, type MenuDocument, type MenuItemDocument, type MenuKind, type MenuSectionDocument } from './menus.js';
 import {
-  formatMenuPrice,
-  formatMenuTags,
-  menuTagLegend,
-  type MenuDocument,
-  type MenuItemDocument,
-  type MenuSectionDocument
-} from './menus.js';
+  escapeHtml,
+  MENU_BASE_CSS,
+  MENU_FORMATS,
+  menuPrintedHeading,
+  visibleItems,
+  type MenuFormat,
+  type MenuRenderOptions,
+  type MenuTemplate
+} from './menu-render-core.js';
+import { MENU_PAGES_CSS, renderPagedSheets } from './menu-render-pages.js';
 
-export const MENU_TEMPLATE_KEYS = ['freshwater_alacarte', 'avalon_alacarte'] as const;
+export * from './menu-render-core.js';
+export * from './menu-render-pages.js';
+
+export const MENU_TEMPLATE_KEYS = ['freshwater_alacarte', 'avalon_alacarte', 'freshwater_drinks_binder', 'avalon_drinks_book', 'group_functions_a4'] as const;
 export type MenuTemplateKey = (typeof MENU_TEMPLATE_KEYS)[number];
 
-export type MenuLogoAssetKey = 'stalma-logo' | 'avalon-logo';
+const SURCHARGE_LINE = 'A surcharge of 10% applies on weekends and 15% on public holidays.';
 
-export type MenuTemplate = {
-  key: MenuTemplateKey;
-  label: string;
-  /** The venue (by slug, as `pnpm db:seed:prod` creates it) whose logo and tagline this sheet carries. */
-  venueSlug: string;
-  /** Scopes per-venue CSS tweaks (`.venue-avalon .mast .logo { height: 19mm }`). */
-  venueClass: 'stalma' | 'avalon';
-  logo: { asset: MenuLogoAssetKey; alt: string };
-  /** Letterspaced grey uppercase line under the logo. */
-  tagline: string;
-  /** Cormorant italic line under the hairline. */
-  title: string;
-  /** Page size, so a future A5 card is a template change, not a code change. */
-  page: { widthMm: number; heightMm: number };
-};
+function template(definition: Omit<MenuTemplate, 'page'> & { key: MenuTemplateKey }): MenuTemplate & { key: MenuTemplateKey } {
+  const format = MENU_FORMATS[definition.format];
+  return { ...definition, page: { widthMm: format.widthMm, heightMm: format.heightMm } };
+}
 
-export const MENU_TEMPLATES: Record<MenuTemplateKey, MenuTemplate> = {
-  freshwater_alacarte: {
+export const MENU_TEMPLATES: Record<MenuTemplateKey, MenuTemplate & { key: MenuTemplateKey }> = {
+  freshwater_alacarte: template({
     key: 'freshwater_alacarte',
     label: 'St Alma Freshwater · À la carte (A4)',
     venueSlug: 'st-alma',
@@ -55,9 +52,13 @@ export const MENU_TEMPLATES: Record<MenuTemplateKey, MenuTemplate> = {
     logo: { asset: 'stalma-logo', alt: 'st.alma' },
     tagline: 'Restaurant & Bar · Freshwater',
     title: 'À la carte',
-    page: { widthMm: 210, heightMm: 297 }
-  },
-  avalon_alacarte: {
+    kinds: ['FOOD'],
+    format: 'A4',
+    family: 'food-a4',
+    multiPage: false,
+    defaults: { dietaryNote: 'Dietaries catered with notice. Please advise your server of any allergies.', surchargeLine: SURCHARGE_LINE }
+  }),
+  avalon_alacarte: template({
     key: 'avalon_alacarte',
     label: 'Alma Avalon · À la carte (A4)',
     venueSlug: 'alma-avalon',
@@ -65,8 +66,57 @@ export const MENU_TEMPLATES: Record<MenuTemplateKey, MenuTemplate> = {
     logo: { asset: 'avalon-logo', alt: 'alma restaurant & bar' },
     tagline: 'Avalon Beach · Est 2017',
     title: 'À la carte',
-    page: { widthMm: 210, heightMm: 297 }
-  }
+    kinds: ['FOOD'],
+    format: 'A4',
+    family: 'food-a4',
+    multiPage: false,
+    defaults: {
+      dietaryNote: 'Dietaries catered with notice. Dishes may contain traces of allergens. Please advise your server of any allergies.',
+      surchargeLine: SURCHARGE_LINE
+    }
+  }),
+  freshwater_drinks_binder: template({
+    key: 'freshwater_drinks_binder',
+    label: 'St Alma Freshwater · Drinks binder (A5 landscape, pages)',
+    venueSlug: 'st-alma',
+    venueClass: 'stalma',
+    logo: { asset: 'stalma-logo', alt: 'st.alma' },
+    tagline: 'Restaurant & Bar · Freshwater',
+    title: 'Drinks',
+    kinds: ['DRINKS'],
+    format: 'A5L',
+    family: 'drinks-a5l',
+    multiPage: true,
+    defaults: { surchargeLine: `${SURCHARGE_LINE} Wine vintages may be subject to change.` }
+  }),
+  avalon_drinks_book: template({
+    key: 'avalon_drinks_book',
+    label: 'Alma Avalon · Drinks book (A5 portrait, pages)',
+    venueSlug: 'alma-avalon',
+    venueClass: 'avalon',
+    logo: { asset: 'avalon-logo', alt: 'alma restaurant & bar' },
+    tagline: 'Restaurant & Bar · Avalon Beach',
+    title: 'Drinks',
+    kinds: ['DRINKS'],
+    format: 'A5P',
+    family: 'drinks-a5p',
+    multiPage: true,
+    defaults: { surchargeLine: SURCHARGE_LINE }
+  }),
+  group_functions_a4: template({
+    key: 'group_functions_a4',
+    label: 'Alma Group · Functions & groups (A4, pages)',
+    venueSlug: null,
+    venueClass: 'group',
+    logo: { asset: 'group-logo', alt: 'alma group' },
+    tagline: 'St Alma, Freshwater · Alma Avalon',
+    title: 'Functions & groups',
+    kinds: ['FUNCTIONS'],
+    format: 'A4',
+    family: 'functions-a4',
+    multiPage: true,
+    defaults: { surchargeLine: 'A surcharge of 10% applies on Saturday and Sunday, 15% on public holidays.' }
+  })
 };
 
 export function isMenuTemplateKey(value: unknown): value is MenuTemplateKey {
@@ -78,15 +128,20 @@ export function getMenuTemplate(key: string): MenuTemplate {
   return MENU_TEMPLATES[key];
 }
 
-/** The print templates a venue's menus may use — its own logo and tagline, nobody else's. */
-export function menuTemplatesForVenue(venueSlug: string): MenuTemplate[] {
-  return Object.values(MENU_TEMPLATES).filter((template) => template.venueSlug === venueSlug);
+/**
+ * The print templates a venue's menus may use — its own logo and tagline, or a
+ * group-branded document any venue may own. Narrowed to a kind when given.
+ */
+export function menuTemplatesForVenue(venueSlug: string, kind?: MenuKind): MenuTemplate[] {
+  return Object.values(MENU_TEMPLATES).filter(
+    (template) => (template.venueSlug === null || template.venueSlug === venueSlug) && (kind === undefined || template.kinds.includes(kind))
+  );
 }
 
-/** The italic title line as printed: the document's own heading, else the template's. */
-export function menuPrintedHeading(doc: Pick<MenuDocument, 'heading'>, template: Pick<MenuTemplate, 'title'>): string {
-  const heading = (doc.heading ?? '').trim();
-  return heading || template.title;
+/** "A4", "A5 portrait · 3 pages" — the format line on a home card. */
+export function describeMenuFormat(format: MenuFormat, pageCount = 1): string {
+  const label = MENU_FORMATS[format].label;
+  return pageCount > 1 ? `${label} · ${pageCount} pages` : label;
 }
 
 /**
@@ -210,52 +265,34 @@ img{display:block;max-width:100%;height:auto;vertical-align:middle}
 .food-print-page .chef-item{ padding:0 6mm; }
 /* Footer: readable, quiet */
 .food-print-page .foot .surcharge{ color:color-mix(in srgb, #1d2916 58%, transparent); }
+
+/* ---- V2 section types on the A4 food sheet (text, list) ---- */
+.food-print-page .fsec .lead{ font-family:var(--sans); font-weight:700; font-size:8px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-46); margin:-1.5mm 0 2.5mm; text-align:center; }
+.food-print-page .fsec .para{ font-family:var(--serif); font-style:italic; font-size:13px; line-height:1.3; color:var(--ink-72); }
+.food-print-page .fsec .para + .para{ margin-top:1.5mm; }
+.food-print-page .dmeta{ font-family:var(--sans); font-weight:500; font-size:8.5px; letter-spacing:.02em; color:var(--ink-46); margin-left:1.2mm; }
+.food-print-page .dnote{ font-family:var(--sans); font-weight:400; font-size:9px; letter-spacing:.02em; color:color-mix(in srgb, #1d2916 52%, transparent); margin-top:.3mm; }
 `;
 
-/**
- * Where the fonts and logos come from. The API inlines everything as data
- * URIs (headless Chrome drops linked fonts when printing — see the website's
- * scripts/inline-print-fonts.py); the editor points at files on its own origin.
- */
-export type MenuRenderAssets = {
-  /** `@font-face` rules declaring "avenir-lt-pro" (400/500/700/900) and "cormorant-garamond" italic 400. */
-  fontFaceCss: string;
-  logoSrc: (asset: MenuLogoAssetKey) => string;
-};
+// ---------------------------------------------------------------------------
+// The A4 food sheet
+// ---------------------------------------------------------------------------
 
-export type MenuRenderOptions = {
-  assets: MenuRenderAssets;
-  /** Cream tints the sheet for screen proofs; the print is white. */
-  stock?: 'white' | 'cream';
-  /** <title> of the HTML document. */
-  title?: string;
-};
-
-export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function visibleItems(section: MenuSectionDocument): MenuItemDocument[] {
-  return section.items.filter((item) => item.visible);
-}
-
-function renderDish(item: MenuItemDocument, section: MenuSectionDocument): string {
-  const namesOnly = section.sectionType === 'HEADER_PRICED';
+function renderDish(item: MenuItemDocument, section: MenuSectionDocument, showPrices: boolean): string {
+  const namesOnly = section.sectionType === 'HEADER_PRICED' || section.sectionType === 'LIST';
   const description = namesOnly ? null : item.description;
   const tags = formatMenuTags(item.tags);
-  const price = namesOnly ? '' : formatMenuPrice(item.priceCents, item.priceUnit);
+  const price = namesOnly || !showPrices ? '' : formatMenuPrice(item.priceCents, item.priceUnit);
+  const meta = item.meta ? ` <span class="dmeta">${escapeHtml(item.meta)}</span>` : '';
+  const note = !namesOnly && item.note ? `<div class="dnote">${escapeHtml(item.note)}</div>` : '';
   return (
     `<div class="${description ? 'dish' : 'dish taco'}" data-dish-key="${escapeHtml(item.dishKey ?? '')}">` +
     `<div class="dish-top">` +
-    `<span class="dname">${escapeHtml(item.name)}${tags ? ` <span class="tags">${escapeHtml(tags)}</span>` : ''}</span>` +
+    `<span class="dname">${escapeHtml(item.name)}${meta}${tags ? ` <span class="tags">${escapeHtml(tags)}</span>` : ''}</span>` +
     (price ? `<span class="dprice">${escapeHtml(price)}</span>` : '') +
     `</div>` +
     (description ? `<div class="ddesc">${escapeHtml(description)}</div>` : '') +
+    note +
     `</div>`
   );
 }
@@ -265,26 +302,42 @@ function renderSectionHead(section: MenuSectionDocument): string {
   return `<div class="sec-head"><span class="sec-title">${escapeHtml(section.title)}${suffix}</span></div>`;
 }
 
-function renderColumnSection(section: MenuSectionDocument): string {
-  if (section.sectionType === 'SET_MENUS') return renderSetMenus(section, true);
-  return `<div class="fsec" data-section-id="${escapeHtml(section.id ?? '')}">${renderSectionHead(section)}${visibleItems(section)
-    .map((item) => renderDish(item, section))
+function renderLead(section: MenuSectionDocument): string {
+  return section.lead ? `<div class="lead">${escapeHtml(section.lead)}</div>` : '';
+}
+
+function renderTextBlock(section: MenuSectionDocument): string {
+  const paragraphs = (section.body ?? '')
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p class="para">${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`)
+    .join('');
+  return `<div class="fsec text" data-section-id="${escapeHtml(section.id ?? '')}">${section.title.trim() ? renderSectionHead(section) : ''}${renderLead(section)}${paragraphs}</div>`;
+}
+
+function renderColumnSection(section: MenuSectionDocument, showPrices: boolean): string {
+  if (section.sectionType === 'SET_MENUS') return renderSetMenus(section, true, showPrices);
+  if (section.sectionType === 'TEXT') return renderTextBlock(section);
+  return `<div class="fsec" data-section-id="${escapeHtml(section.id ?? '')}">${renderSectionHead(section)}${renderLead(section)}${visibleItems(section)
+    .map((item) => renderDish(item, section, showPrices))
     .join('')}</div>`;
 }
 
 /** A full-width standard section: heading spans the page, items flow into two columns. */
-function renderWideSection(section: MenuSectionDocument): string {
+function renderWideSection(section: MenuSectionDocument, showPrices: boolean): string {
+  if (section.sectionType === 'TEXT') return renderTextBlock(section);
   return (
-    `<div class="fsec wide" data-section-id="${escapeHtml(section.id ?? '')}">${renderSectionHead(section)}<div class="cols">` +
+    `<div class="fsec wide" data-section-id="${escapeHtml(section.id ?? '')}">${renderSectionHead(section)}${renderLead(section)}<div class="cols">` +
     visibleItems(section)
-      .map((item) => `<div class="col">${renderDish(item, section)}</div>`)
+      .map((item) => `<div class="col">${renderDish(item, section, showPrices)}</div>`)
       .join('') +
     `</div></div>`
   );
 }
 
 /** Trust our chef — a band (three columns with hairlines) or a boxed panel inside a column. */
-function renderSetMenus(section: MenuSectionDocument, boxed: boolean): string {
+function renderSetMenus(section: MenuSectionDocument, boxed: boolean, showPrices: boolean): string {
   return (
     `<div class="${boxed ? 'chef boxed' : 'chef'}" data-section-id="${escapeHtml(section.id ?? '')}">${renderSectionHead(section)}` +
     (section.subheading ? `<div class="chef-sub">${escapeHtml(section.subheading)}</div>` : '') +
@@ -294,7 +347,7 @@ function renderSetMenus(section: MenuSectionDocument, boxed: boolean): string {
         (item) =>
           `<div class="chef-item" data-dish-key="${escapeHtml(item.dishKey ?? '')}">` +
           `<div class="chef-name">${escapeHtml(item.name)}</div>` +
-          `<div class="chef-price">${escapeHtml(formatMenuPrice(item.priceCents, item.priceUnit))}</div>` +
+          (showPrices ? `<div class="chef-price">${escapeHtml(formatMenuPrice(item.priceCents, item.priceUnit))}</div>` : '') +
           (item.description ? `<div class="chef-note">${escapeHtml(item.description)}</div>` : '') +
           `</div>`
       )
@@ -303,9 +356,8 @@ function renderSetMenus(section: MenuSectionDocument, boxed: boolean): string {
   );
 }
 
-/** The sheet's <main>, without the document wrapper — what the preview and the PDF share. */
-export function renderMenuSheetHtml(doc: MenuDocument, templateKey: string, options: MenuRenderOptions): string {
-  const template = getMenuTemplate(templateKey);
+/** The A4 à la carte sheet: masthead, two columns, full-width sections, footer. */
+function renderFoodSheetHtml(doc: MenuDocument, template: MenuTemplate, options: MenuRenderOptions): string {
   const sections = doc.sections.filter((section) => section.visible);
   const left = sections.filter((section) => section.placement === 'LEFT');
   const right = sections.filter((section) => section.placement === 'RIGHT');
@@ -313,8 +365,9 @@ export function renderMenuSheetHtml(doc: MenuDocument, templateKey: string, opti
   const chefInColumn = [...left, ...right].some((section) => section.sectionType === 'SET_MENUS');
   const stock = options.stock ?? 'white';
   const legend = menuTagLegend(doc);
+  const showPrices = doc.showPrices ?? true;
 
-  const column = (list: MenuSectionDocument[]) => `<div class="col">${list.map(renderColumnSection).join('')}</div>`;
+  const column = (list: MenuSectionDocument[]) => `<div class="col">${list.map((section) => renderColumnSection(section, showPrices)).join('')}</div>`;
 
   return (
     `<main class="food-print-page stock-${stock} venue-${template.venueClass}${chefInColumn ? ' chef-in-column' : ''}">` +
@@ -326,7 +379,7 @@ export function renderMenuSheetHtml(doc: MenuDocument, templateKey: string, opti
     `<div class="title">${escapeHtml(menuPrintedHeading(doc, template))}</div>` +
     `</div>` +
     `<div class="cols">${column(left)}${column(right)}</div>` +
-    full.map((section) => (section.sectionType === 'SET_MENUS' ? renderSetMenus(section, false) : renderWideSection(section))).join('') +
+    full.map((section) => (section.sectionType === 'SET_MENUS' ? renderSetMenus(section, false, showPrices) : renderWideSection(section, showPrices))).join('') +
     `<div class="foot">` +
     `<div class="dietaries">${escapeHtml(doc.dietaryNote)}</div>` +
     `<div class="legend">${escapeHtml(legend)}</div>` +
@@ -336,75 +389,40 @@ export function renderMenuSheetHtml(doc: MenuDocument, templateKey: string, opti
   );
 }
 
-/** A complete, self-contained HTML document: fonts, print CSS, @page, the sheet. */
+// ---------------------------------------------------------------------------
+// Dispatch
+// ---------------------------------------------------------------------------
+
+/** The sheets' <main>, without the document wrapper — what the preview and the PDF share. */
+export function renderMenuSheetHtml(doc: MenuDocument, templateKey: string, options: MenuRenderOptions): string {
+  const template = getMenuTemplate(templateKey);
+  switch (template.family) {
+    case 'food-a4':
+      return renderFoodSheetHtml(doc, template, options);
+    case 'drinks-a5p':
+    case 'drinks-a5l':
+    case 'functions-a4':
+    case 'card-a5':
+      return renderPagedSheets(doc, template, options);
+    default: {
+      const never: never = template.family;
+      throw new Error(`No renderer for family ${String(never)}.`);
+    }
+  }
+}
+
+/** A complete, self-contained HTML document: fonts, print CSS, @page, the sheets. */
 export function renderMenuHtml(doc: MenuDocument, templateKey: string, options: MenuRenderOptions): string {
   const template = getMenuTemplate(templateKey);
   const title = options.title ?? `${template.label}`;
+  const css = template.family === 'food-a4' ? MENU_PRINT_CSS : `${MENU_BASE_CSS}\n${MENU_PAGES_CSS}`;
   return (
     `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width, initial-scale=1">` +
     `<title>${escapeHtml(title)}</title>` +
     `<style>${options.assets.fontFaceCss}</style>` +
-    `<style>${MENU_PRINT_CSS}</style>` +
+    `<style>${css}</style>` +
     `<style>@page { size: ${template.page.widthMm}mm ${template.page.heightMm}mm; margin: 0; }</style>` +
     `</head><body>${renderMenuSheetHtml(doc, templateKey, options)}</body></html>`
   );
 }
-
-/**
- * The @font-face block for a set of font URLs (data URIs or http paths). One
- * place so the API and the editor declare the same families and weights.
- */
-export function menuFontFaceCss(urls: {
-  /** The website's body face. Only the masthead's line box depends on it (the logo sits on a Manrope strut); everything else names its own family. */
-  manrope?: string;
-  avenirBook: string;
-  avenirRoman: string;
-  avenirHeavy: string;
-  avenirBlack: string;
-  cormorantItalic: string;
-  cormorantItalicLatinExt?: string;
-}): string {
-  const avenir = (url: string, weight: number) =>
-    `@font-face{font-family:"avenir-lt-pro";src:url(${url}) format("opentype");font-weight:${weight};font-style:normal;font-display:block;}`;
-  const cormorant = (url: string, unicodeRange?: string) =>
-    `@font-face{font-family:"cormorant-garamond";src:url(${url}) format("woff2");font-weight:400;font-style:italic;font-display:block;${
-      unicodeRange ? `unicode-range:${unicodeRange};` : ''
-    }}`;
-  return [
-    urls.manrope
-      ? `@font-face{font-family:"Manrope";src:url(${urls.manrope}) format("woff2");font-weight:400 800;font-style:normal;font-display:block;}`
-      : '',
-    avenir(urls.avenirBook, 400),
-    avenir(urls.avenirRoman, 500),
-    avenir(urls.avenirHeavy, 700),
-    avenir(urls.avenirBlack, 900),
-    urls.cormorantItalicLatinExt
-      ? cormorant(
-          urls.cormorantItalicLatinExt,
-          'U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF'
-        )
-      : '',
-    cormorant(
-      urls.cormorantItalic,
-      urls.cormorantItalicLatinExt
-        ? 'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD'
-        : undefined
-    )
-  ].join('\n');
-}
-
-export const MENU_FONT_FILES = {
-  manrope: 'Manrope.woff2',
-  avenirBook: 'AvenirLTStd-Book.otf',
-  avenirRoman: 'AvenirLTStd-Roman.otf',
-  avenirHeavy: 'AvenirLTStd-Heavy.otf',
-  avenirBlack: 'AvenirLTStd-Black.otf',
-  cormorantItalic: 'CormorantGaramond-Italic-latin.woff2',
-  cormorantItalicLatinExt: 'CormorantGaramond-Italic-latin-ext.woff2'
-} as const;
-
-export const MENU_LOGO_FILES: Record<MenuLogoAssetKey, string> = {
-  'stalma-logo': 'stalma-logo.png',
-  'avalon-logo': 'avalon-logo.png'
-};
