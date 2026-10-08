@@ -25,6 +25,7 @@ import {
   type AuthUser,
   type MenuDocument,
   type MenuDraftPayload,
+  type MenuPromotionLink,
   type MenuFillReport,
   type MenuItemDocument,
   type MenuItemFlag,
@@ -872,7 +873,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
 
       <div className={`editor-split is-${mobileTab}`}>
         <div className="editor-form">
-          <HeadingEditor doc={doc} template={template} shape={shape} onChange={update} />
+          <HeadingEditor doc={doc} template={template} shape={shape} promotion={draft.menu.promotion ?? null} onChange={update} />
           <ValidationPanel errors={errors} warnings={warnings} fill={fill} formatLabel={shape.formatLabel} onJump={jumpTo} />
           {shape.multiPage ? <PagesStrip doc={doc} fill={fill} onChange={update} onShowPage={showPage} /> : null}
           <SectionsEditor doc={doc} shape={shape} pageCount={pageCount} onChange={update} onCopy={(item) => setCopyTarget({ dishKey: item.dishKey ?? '', name: item.name })} canCopy={otherMenus.length > 0} />
@@ -1479,7 +1480,7 @@ function ItemRow({ item, sectionIndex, itemIndex, sectionType, priceColumns, sha
  * the when-line, the headline price and the conditions. The heading stays
  * the first field of the form.
  */
-function HeadingEditor({ doc, template, shape, onChange }: { doc: MenuDocument; template: MenuTemplate | null; shape: EditorShape; onChange: Mutate }) {
+function HeadingEditor({ doc, template, shape, promotion, onChange }: { doc: MenuDocument; template: MenuTemplate | null; shape: EditorShape; promotion: MenuPromotionLink | null; onChange: Mutate }) {
   const templateTitle = template?.title ?? 'À la carte';
   const heading = (
     <label className="field">
@@ -1500,6 +1501,40 @@ function HeadingEditor({ doc, template, shape, onChange }: { doc: MenuDocument; 
     return (
       <Card title="Heading" subtitle={`The italic line under the logo. Blank prints “${templateTitle}”.`}>
         {heading}
+      </Card>
+    );
+  }
+  if (promotion) {
+    // A promotion's card prints the promotion's when-line, price and
+    // conditions: they are edited on the promotion and shown here as they
+    // will print.
+    return (
+      <Card title="Title block" subtitle={`The cover or masthead. Blank heading prints “${templateTitle}”.`}>
+        {heading}
+        <label className="field">
+          <span className="field-label">Subheading</span>
+          <input className="field-control" value={doc.subheading ?? ''} maxLength={MENU_LIMITS.subheadingMax} placeholder="Lunch that runs long." onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, subheading: value })); }} />
+        </label>
+        <div className="field promotion-owned" data-testid="promotion-owned">
+          <span className="field-label">From the promotion “{promotion.name}”</span>
+          <dl className="menu-card-facts">
+            <div>
+              <dt>When</dt>
+              <dd>{doc.whenLine || '—'}</dd>
+            </div>
+            <div>
+              <dt>Price</dt>
+              <dd>{doc.heroPriceCents !== null && doc.heroPriceCents !== undefined ? formatMenuPrice(doc.heroPriceCents, doc.heroPriceUnit) : 'none'}</dd>
+            </div>
+            <div>
+              <dt>Conditions</dt>
+              <dd style={{ whiteSpace: 'pre-line' }}>{doc.conditions || '—'}</dd>
+            </div>
+          </dl>
+          <span className="field-hint">
+            Typed once on the promotion, so the website listing and this card never disagree. <Link to={`/whats-on/${promotion.id}`}>Edit the promotion</Link>.
+          </span>
+        </div>
       </Card>
     );
   }
