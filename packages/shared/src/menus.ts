@@ -1093,6 +1093,9 @@ export type MenuEventDetails = {
   guestCount: number | null;
 };
 
+/** The promotion a card belongs to. Its when-line, hero price and conditions are the promotion's. */
+export type MenuPromotionLink = { id: string; name: string; status: 'DRAFT' | 'PUBLISHED' | 'HIDDEN' | 'ENDED' };
+
 export type MenuSummary = {
   id: string;
   name: string;
@@ -1101,6 +1104,8 @@ export type MenuSummary = {
   kind: MenuKind;
   visibility: MenuVisibility;
   templateKey: string;
+  /** Set when this menu is a promotion's card: the editor shows the promotion-owned fields read-only. */
+  promotion: MenuPromotionLink | null;
   /** ARCHIVED menus are off the module home; their versions and PDFs stay. */
   status: MenuStatus;
   /** The italic title line as it prints: the live version's heading (the draft's when nothing is live), else the template's title. */
@@ -1129,7 +1134,7 @@ export type MenuListPayload = {
   renderer: { ok: boolean; message: string };
 };
 
-export type MenuHeader = Pick<MenuSummary, 'id' | 'name' | 'slug' | 'kind' | 'visibility' | 'templateKey' | 'venue'>;
+export type MenuHeader = Pick<MenuSummary, 'id' | 'name' | 'slug' | 'kind' | 'visibility' | 'templateKey' | 'venue' | 'promotion'>;
 
 export type MenuDraftPayload = {
   menu: MenuHeader;

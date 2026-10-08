@@ -11,11 +11,29 @@ import { menuService } from '../services/menu.service.js';
  *
  *   GET /api/public/menus/:venueSlug                 → { venue, menus[] }
  *   GET /api/public/menus/:venueSlug/:menuSlug.json  → PublicMenuDocument
- *   GET /api/public/menus/:venueSlug/:menuSlug.pdf   → application/pdf
+ *   GET /api/public/menus/:venueSlug/:menuSlug.pdf   → application/pdf (the live version)
+ *   GET /api/public/menus/version/:versionId.pdf     → application/pdf, immutable (one publish)
  */
 export const publicMenusRouter = Router();
 
 const CACHE = 'public, max-age=300, stale-while-revalidate=600';
+const IMMUTABLE = 'public, max-age=31536000, immutable';
+
+// Static segment before '/:venueSlug': a published version's PDF by id, the
+// link a What's On listing carries so it keeps pointing at what it listed.
+publicMenusRouter.get('/version/:versionId.pdf', async (req, res, next) => {
+  try {
+    const { filename, bytes, generatedAt } = await menuService.publicMenuVersionPdf(String(req.params.versionId));
+    res.setHeader('Content-Type', 'application/pdf');
+    const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+    res.setHeader('Content-Disposition', `${disposition}; filename="${filename.replace(/"/g, '')}"`);
+    res.setHeader('Cache-Control', IMMUTABLE);
+    if (generatedAt) res.setHeader('Last-Modified', generatedAt.toUTCString());
+    res.send(bytes);
+  } catch (error) {
+    next(error);
+  }
+});
 
 publicMenusRouter.get('/:venueSlug', async (req, res, next) => {
   try {

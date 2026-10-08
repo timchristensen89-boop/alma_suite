@@ -106,8 +106,12 @@ describe('menus v2 (Postgres)', { skip: TEST_DB ? false : 'skipped: set ALMA_TES
     const functions = await h.menus.createMenu({ venueId, name: 'ITESTV2 Functions', kind: 'FUNCTIONS' }, manager);
     assert.equal(functions.templateKey, 'group_functions_a4');
     await assert.rejects(h.menus.createMenu({ venueId, name: 'ITESTV2 Wrong', kind: 'FUNCTIONS', templateKey: 'freshwater_alacarte' }, manager), (error: unknown) => error instanceof h.HttpError && error.statusCode === 400);
-    // No card template exists yet, so a promotion cannot be created here (409, not a crash).
-    await assert.rejects(h.menus.createMenu({ venueId, name: 'ITESTV2 Promo', kind: 'PROMOTION' }, manager), (error: unknown) => error instanceof h.HttpError && error.statusCode === 409);
+    // Promotions and private events share the venue's A5 card; a kind no venue has a template for is refused (409, not a crash).
+    const promo = await h.menus.createMenu({ venueId, name: 'ITESTV2 Promo', kind: 'PROMOTION' }, manager);
+    assert.equal(promo.templateKey, 'freshwater_card_a5');
+    assert.equal(promo.promotion, null, 'a card is not a promotion until one links it');
+    await assert.rejects(h.menus.createMenu({ venueId: (await h.prisma.venue.create({ data: { name: 'ITESTV2 Manly', slug: 'itestv2-manly' } })).id, name: 'ITESTV2 Promo', kind: 'PROMOTION' }, manager), (error: unknown) => error instanceof h.HttpError && error.statusCode === 409);
+    await h.prisma.venue.deleteMany({ where: { slug: 'itestv2-manly' } });
 
     // Slugs are de-duplicated when two names slugify the same way, and never change on rename.
     const a = await h.menus.createMenu({ venueId, name: 'ITESTV2 Tuesday', kind: 'FOOD' }, manager);

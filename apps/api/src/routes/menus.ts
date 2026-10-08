@@ -2,6 +2,7 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { canPublishMenus } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { menuService } from '../services/menu.service.js';
+import { promotionsRouter } from './promotions.js';
 
 export const menusRouter = Router();
 
@@ -47,6 +48,9 @@ menusRouter.post('/', requireMenuPublisher, async (req, res, next) => {
 });
 
 // Static segments before '/:menuId'.
+// Promotions (What's On listings and their cards) share the module's access.
+menusRouter.use('/promotions', promotionsRouter);
+
 menusRouter.get('/versions/:versionId', async (req, res, next) => {
   try {
     res.json(await menuService.getVersion(String(req.params.versionId)));

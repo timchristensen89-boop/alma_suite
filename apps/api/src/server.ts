@@ -32,6 +32,7 @@ import { marketingRouter } from './routes/marketing.js';
 import { menuMappingsRouter } from './routes/menu-mappings.js';
 import { menusRouter } from './routes/menus.js';
 import { publicMenusRouter } from './routes/public-menus.js';
+import { publicPromotionImagesRouter, publicWhatsOnRouter } from './routes/public-whats-on.js';
 import { messagesRouter } from './routes/messages.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { reportsRouter } from './routes/reports.js';
@@ -185,6 +186,8 @@ app.use('/api/health', healthRouter);
 // per IP like the other anonymous surfaces so a scraper cannot pull PDFs in a
 // loop; a venue's own pages fetch these server-side and cache them.
 app.use('/api/public/menus', limiter(5, 300), publicMenusRouter);
+app.use('/api/public/whats-on', limiter(5, 300), publicWhatsOnRouter);
+app.use('/api/public/promotion-images', limiter(5, 300), publicPromotionImagesRouter);
 app.use('/api/public', publicSnapshotRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/issues', issuesRouter);

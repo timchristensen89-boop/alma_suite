@@ -62,6 +62,10 @@ const PUBLIC_PREFIXES = [
   // never a private-event menu — so there is nothing here a session would
   // protect.
   '/api/public/menus/',
+  // The What's On listing and its photos: latest publications only (never a
+  // draft or a hidden promotion), photos by an unguessable content hash.
+  '/api/public/whats-on',
+  '/api/public/promotion-images/',
   // The unsubscribe link in marketing emails — a guest holding the link must
   // be able to opt out with no account. The contact/guest cuid in the URL is
   // the secret, matching the gift card code trust model above.
