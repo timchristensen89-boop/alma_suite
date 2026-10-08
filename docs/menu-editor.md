@@ -5,6 +5,10 @@ Venue managers and chefs edit content in forms, see the A4 page as they type,
 and publish a PDF that matches the current menus. Layout is locked per venue;
 only content, order, visibility and section placement change.
 
+A venue has any number of menus — the à la carte, a Tuesday menu, an event
+menu — each with its own drafts, history and PDF, all printed on that venue's
+template. Publishers add, rename and archive menus from the module home.
+
 | Piece | Where |
 | --- | --- |
 | Frontend | `apps/menus-web` (Vite + React, port 5181, Firebase site `alma-menus`) |
@@ -12,7 +16,7 @@ only content, order, visibility and section placement change.
 | Rules (tags, validation, diff) | `packages/shared/src/menus.ts` |
 | Print templates + renderer | `packages/shared/src/menu-render.ts` |
 | PDF (headless Chrome) | `apps/api/src/lib/menu-pdf.ts`, assets in `apps/api/assets/menus` |
-| Schema | `Menu`, `MenuVersion`, `MenuSection`, `MenuItem`, `MenuAuditEvent` (migration `20261007191211_menu_editor`) |
+| Schema | `Menu`, `MenuVersion`, `MenuSection`, `MenuItem`, `MenuAuditEvent` (migrations `20261007191211_menu_editor`, `20261008093000_menu_heading`) |
 | Seed | `pnpm db:seed:menus` (`apps/api/scripts/seed-menus.ts`) |
 | Proof against the current PDFs | `apps/api/scripts/menu-pdf-compare.ts` → `docs/menu-editor/compare/` |
 
@@ -55,16 +59,62 @@ draft ──save──► draft ──publish──► PUBLISHED (snapshot + PDF
   links a dish to a recipe through the already-present nullable
   `MenuItem.recipeId` (soft reference, no migration needed).
 
+## Menus per venue
+
+- `Menu` rows are unique on `(venueId, name)`; the service also refuses a name
+  that differs only in case, and an archived menu keeps its name taken
+  (unarchive it instead of creating a lookalike).
+- **New menu** (`POST /api/menus`): venue, name, the venue's print template
+  (chosen only when the venue has more than one — `menuTemplatesForVenue` maps
+  templates to venue slugs), an optional printed heading, and optionally a menu
+  to copy. The first draft is created in the same transaction: empty, or the
+  source's live version (its draft when nothing is live yet) with dish keys
+  kept, so a dish shared between the à la carte and the Tuesday menu is the
+  same dish to Menu Costing. Recipe links are dropped when the source belongs
+  to another venue. Audit: `menu.created`, then `draft.created`.
+- **Rename** (`PATCH /api/menus/:menuId`): changes the home card, the editor
+  title and every PDF download filename (past versions included, since the
+  filename is built from the current name). Nothing printed on the page
+  changes; published snapshots keep the name they were published under.
+  Audit: `menu.renamed`.
+- **Archive / unarchive** (`POST /api/menus/:menuId/archive`, `…/unarchive`):
+  `Menu.status` flips between `ACTIVE` and `ARCHIVED`. An archived menu is off
+  the home grid (listed under "Archived menus"), read-only — drafting, saving,
+  discarding, publishing, restoring, renaming and copy-to answer 409 — and keeps
+  every version, PDF, draft and audit entry. Nothing is ever deleted. Writes
+  answer 409 with `code: MENU_ARCHIVED`, which the editor and History use to
+  flip a stale tab into the read-only view. Audit: `menu.archived`,
+  `menu.unarchived`.
+- **Printed heading** (`MenuVersion.heading`, part of `MenuDocument`): the
+  italic line under the logo. Empty prints the template's own title
+  ("À la carte"), which is what both seeded menus do; a Tuesday menu types
+  "Taco Tuesday". It is per version like the footer lines, so it diffs
+  (`MenuDiff.headingChange`) and travels through snapshot and restore.
+- `GET /api/menus` returns `{ menus, archived, venues, renderer }`; `venues`
+  carries each venue's templates so the New menu form knows what it may offer,
+  and each menu carries `printedHeading` (what its live page is headed) for the
+  home card.
+- Names are unique per venue regardless of case in the service. The database
+  index on `(venueId, name)` is case-sensitive, so it backs up exact-duplicate
+  races only; two publishers racing "Tuesday" against "tuesday" in the same
+  instant could both succeed, and a rename fixes it.
+- The seed (`pnpm db:seed:menus`) is for a venue with no menu on its template.
+  It skips a venue that already has one, whatever it is now called and whether
+  or not it is archived, so renaming "Food" never makes a re-run publish a
+  second copy of the seed content.
+
 ## Permissions
 
 - Access: `StaffAppAccess` app `MENUS` (or `COMPLIANCE`, the suite default).
   Grant it in Staff → app access; the Manager and Head Chef presets include it.
-- Draft, save, discard, restore, copy to the other venue: anyone with access.
-- Publish: managers, admins, anyone whose role title contains "head chef", a
-  `MENUS` grant at MANAGER/ADMIN, or a `MENUS` grant with the "Publish menus"
-  toggle (`permissions.menusPublish`) ticked in Staff → app access
-  (`canPublishMenus` in shared; the editor hides the button from everyone else
-  and the API enforces it).
+- Draft, save, discard, restore a version, copy a dish to another menu: anyone with access.
+- Publish, and add / rename / archive / unarchive a menu: managers, admins,
+  anyone whose role title contains "head chef", a `MENUS` grant at
+  MANAGER/ADMIN, or a `MENUS` grant with the "Publish menus" toggle
+  (`permissions.menusPublish`) ticked in Staff → app access (`canPublishMenus`
+  in shared; the home and editor hide those buttons from everyone else and the
+  API enforces it with `requireMenuPublisher`; the auth middleware's staff
+  write allow-list lets those requests reach that gate).
 - Shared venue iPads can read, never write (auth middleware).
 
 ## Validation
@@ -86,7 +136,7 @@ the fixed order `V VG GF GFA DF N A I`.
 ## Running it
 
 ```bash
-pnpm db:migrate              # applies 20261007191211_menu_editor
+pnpm db:migrate              # applies 20261007191211_menu_editor and 20261008093000_menu_heading
 pnpm db:seed:prod            # venues (st-alma, alma-avalon)
 pnpm db:seed:menus           # both menus, validated and published as v1 with PDFs
 pnpm dev:menus               # api (3018) + menus-web (5181)
@@ -109,7 +159,7 @@ pnpm --filter @alma/api menus:compare -- --reference ../alma-web-platform/apps/w
 ## Adding a template
 
 A template is a key in `MENU_TEMPLATES` (`packages/shared/src/menu-render.ts`):
-venue class, logo asset, tagline, title and page size. Layout is driven by
+venue slug, venue class, logo asset, tagline, title and page size. Layout is driven by
 section placement (`LEFT`, `RIGHT`, `FULL`) and type (`STANDARD`,
 `HEADER_PRICED`, `SET_MENUS`), so another venue's à la carte needs:
 
@@ -118,7 +168,9 @@ section placement (`LEFT`, `RIGHT`, `FULL`) and type (`STANDARD`,
    registered in `MENU_LOGO_FILES` (and the `MenuLogoAssetKey` union).
 3. Any venue-specific tweak as a `.food-print-page.venue-manly …` rule in
    `MENU_PRINT_CSS` (the Avalon logo height is the existing example).
-4. A `Menu` row with that `templateKey` (the seed script shows the shape).
+4. A `Menu` row with that `templateKey` — **New menu** on the module home
+   offers the template once `venueSlug` on the template matches the venue
+   (the seed script shows the same shape in code).
 
 A genuinely different layout (a drinks binder, an A5 specials card) gets its
 own CSS block and page size in the same file, and a renderer branch keyed off

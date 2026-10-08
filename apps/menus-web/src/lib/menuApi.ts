@@ -1,19 +1,26 @@
 import type {
   MenuAuditEntry,
+  MenuCreateInput,
   MenuDiff,
   MenuDocument,
   MenuDraftPayload,
+  MenuListPayload,
   MenuPublishPreview,
   MenuSummary,
   MenuVersionPayload,
   MenuVersionSummary
 } from '@alma/shared';
-import { api, apiBlob } from './api';
+import { ApiError, api, apiBlob } from './api';
 
 /** Typed wrappers over /api/menus. One place to look for every call the editor makes. */
 export const menuApi = {
-  list: () => api<{ menus: MenuSummary[]; renderer: { ok: boolean; message: string } }>('/api/menus'),
+  list: () => api<MenuListPayload>('/api/menus'),
   get: (menuId: string) => api<MenuSummary>(`/api/menus/${menuId}`),
+  /** A new menu for a venue, first draft included (empty or copied from another menu). Publishers only. */
+  create: (input: MenuCreateInput) => api<MenuSummary>('/api/menus', { method: 'POST', body: JSON.stringify(input) }),
+  rename: (menuId: string, name: string) => api<MenuSummary>(`/api/menus/${menuId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  archive: (menuId: string) => api<MenuSummary>(`/api/menus/${menuId}/archive`, { method: 'POST' }),
+  unarchive: (menuId: string) => api<MenuSummary>(`/api/menus/${menuId}/unarchive`, { method: 'POST' }),
   getDraft: (menuId: string) => api<MenuDraftPayload>(`/api/menus/${menuId}/draft`),
   createDraft: (menuId: string) => api<MenuDraftPayload>(`/api/menus/${menuId}/draft`, { method: 'POST' }),
   saveDraft: (menuId: string, document: MenuDocument, expectedUpdatedAt?: string) =>
@@ -35,6 +42,15 @@ export const menuApi = {
   pdfBlob: (versionId: string) => apiBlob(`/api/menus/versions/${versionId}/pdf`),
   listAudit: (menuId: string) => api<MenuAuditEntry[]>(`/api/menus/${menuId}/audit`)
 };
+
+/** The API's answer to any write on a menu that was archived while this page was open. */
+export function isMenuArchivedError(caught: unknown): boolean {
+  return (
+    caught instanceof ApiError &&
+    caught.status === 409 &&
+    Boolean(caught.details && typeof caught.details === 'object' && (caught.details as { code?: unknown }).code === 'MENU_ARCHIVED')
+  );
+}
 
 /**
  * Open a published version's PDF. The session is a bearer token, so a plain

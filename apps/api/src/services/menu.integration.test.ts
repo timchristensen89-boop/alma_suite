@@ -37,6 +37,7 @@ let menuId = '';
 const chef = { id: 'itest-chef', firstName: 'Itest', lastName: 'Chef', email: 'itest-chef@almagroup.com.au', roleTitle: 'Head Chef', venue: 'ITEST', accountType: 'HUMAN', isAdmin: false, trainingOnly: false, role: 'STAFF', appAccess: [] } as unknown as import('@alma/shared').AuthUser;
 
 const DOC: MenuDocument = {
+  heading: '',
   dietaryNote: 'Dietaries catered with notice.',
   surchargeLine: 'A surcharge of 10% applies on weekends.',
   sections: [
@@ -65,7 +66,9 @@ const DOC: MenuDocument = {
 };
 
 async function wipe() {
-  const venues = await h.prisma.venue.findMany({ where: { slug: { startsWith: 'itest-' } }, select: { id: true } });
+  // By slug and by name: the menu-management test lends the venue a real
+  // template slug for a moment, so a run that died there is still cleaned up.
+  const venues = await h.prisma.venue.findMany({ where: { OR: [{ slug: { startsWith: 'itest-' } }, { name: { startsWith: 'ITEST ' } }] }, select: { id: true } });
   await h.prisma.menuAuditEvent.deleteMany({ where: { menu: { venueId: { in: venues.map((v) => v.id) } } } });
   await h.prisma.menu.deleteMany({ where: { venueId: { in: venues.map((v) => v.id) } } });
   await h.prisma.venue.deleteMany({ where: { id: { in: venues.map((v) => v.id) } } });
@@ -235,5 +238,127 @@ describe('menu service (Postgres)', { skip: TEST_DB ? false : 'skipped: set ALMA
     assert.equal(audit[0]!.action, 'published');
     assert.match(audit[0]!.summary, /Published v3 \(replacing v1\): 1 price change/);
     assert.ok(audit.some((entry) => entry.action === 'restored'));
+  });
+
+  it('adds a second menu to a venue as a copy of the first, with its own heading and draft', async (t) => {
+    const venue = await h.prisma.venue.findUniqueOrThrow({ where: { id: venueId } });
+    // The venue has no template in code (its slug is not st-alma / alma-avalon): no menu can be added for it.
+    await assert.rejects(h.menus.createMenu({ venueId, name: 'Tuesday' }, chef), (error: unknown) => error instanceof h.HttpError && error.statusCode === 409);
+
+    // Templates are tied to venue slugs, so the test venue borrows St Alma's for the rest of this test —
+    // only on a database where the real venue is absent (a fresh CI database), never beside it.
+    if (await h.prisma.venue.findUnique({ where: { slug: 'st-alma' } })) {
+      t.skip('a real st-alma venue exists in this database');
+      return;
+    }
+    await h.prisma.venue.update({ where: { id: venueId }, data: { slug: 'st-alma' } });
+    try {
+      const source = await h.menus.get(menuId);
+      const tuesday = await h.menus.createMenu({ venueId, name: 'Tuesday', heading: 'Taco Tuesday', copyFromMenuId: menuId }, chef);
+      assert.equal(tuesday.name, 'Tuesday');
+      assert.equal(tuesday.status, 'ACTIVE');
+      assert.equal(tuesday.printedHeading, 'Taco Tuesday');
+      assert.equal(source.printedHeading, 'À la carte');
+      assert.equal(tuesday.templateKey, 'freshwater_alacarte');
+      assert.equal(tuesday.published, null);
+      assert.equal(tuesday.draft?.versionNumber, 1);
+
+      // The first draft is the source's live version (v3 if Chrome published, else its draft), keys kept, heading set.
+      const draft = await h.menus.getDraft(tuesday.id);
+      assert.equal(draft.document.heading, 'Taco Tuesday');
+      const sourceDoc = source.published ? (await h.menus.getVersion(source.published.id)).snapshot : (await h.menus.getDraft(menuId)).document;
+      assert.deepEqual(
+        draft.document.sections.map((section) => section.items.map((item) => item.dishKey)),
+        sourceDoc.sections.map((section) => section.items.map((item) => item.dishKey))
+      );
+      assert.deepEqual(draft.publishedDocument, null);
+
+      // Its own trail: created, then the copied draft.
+      const audit = await h.menus.listAudit(tuesday.id);
+      assert.deepEqual(audit.map((entry) => entry.action).sort(), ['draft.created', 'menu.created']);
+      assert.match(audit.find((entry) => entry.action === 'draft.created')!.summary, /as a copy of ITEST Venue · ITEST Food v\d+/);
+
+      // Names are unique per venue regardless of case; the other venue may reuse it.
+      await assert.rejects(h.menus.createMenu({ venueId, name: 'tuesday' }, chef), (error: unknown) => error instanceof h.HttpError && error.statusCode === 409);
+      await assert.rejects(h.menus.updateMenu(tuesday.id, { name: 'ITEST FOOD' }, chef), (error: unknown) => error instanceof h.HttpError && error.statusCode === 409);
+
+      // Both show on the home, the à la carte first.
+      const home = await h.menus.home();
+      const ours = home.menus.filter((menu) => menu.venue.id === venueId);
+      assert.deepEqual(ours.map((menu) => menu.name), ['ITEST Food', 'Tuesday']);
+      assert.ok(home.venues.some((entry) => entry.id === venueId && entry.templates.map((template) => template.key).includes('freshwater_alacarte')));
+
+      // Rename, archive, restore.
+      const renamed = await h.menus.updateMenu(tuesday.id, { name: 'Taco Tuesday' }, chef);
+      assert.equal(renamed.name, 'Taco Tuesday');
+      const archived = await h.menus.archiveMenu(tuesday.id, chef);
+      assert.equal(archived.status, 'ARCHIVED');
+      assert.ok(!(await h.menus.list()).some((menu) => menu.id === tuesday.id));
+      assert.ok((await h.menus.listArchived()).some((menu) => menu.id === tuesday.id));
+      // Archived: readable, not writable; the name stays taken.
+      assert.equal((await h.menus.get(tuesday.id)).draft?.versionNumber, 1);
+      await assert.rejects(h.menus.saveDraft(tuesday.id, draft.document, chef), (error: unknown) => error instanceof h.HttpError && error.statusCode === 409);
+      await assert.rejects(h.menus.discardDraft(tuesday.id, chef), (error: unknown) => error instanceof h.HttpError && error.statusCode === 409);
+      await assert.rejects(h.menus.updateMenu(tuesday.id, { name: 'Renamed while archived' }, chef), (error: unknown) => error instanceof h.HttpError && error.statusCode === 409);
+      await assert.rejects(h.menus.createDraft(tuesday.id, chef), (error: unknown) => error instanceof h.HttpError && error.statusCode === 409);
+      assert.equal((await h.menus.get(tuesday.id)).draft?.versionNumber, 1);
+      await assert.rejects(h.menus.createMenu({ venueId, name: 'taco tuesday' }, chef), (error: unknown) => {
+        assert.ok(error instanceof h.HttpError);
+        assert.equal(error.statusCode, 409);
+        assert.match(error.message, /archived/);
+        return true;
+      });
+      await assert.rejects(h.menus.archiveMenu(tuesday.id, chef), (error: unknown) => error instanceof h.HttpError && error.statusCode === 409);
+      const back = await h.menus.unarchiveMenu(tuesday.id, chef);
+      assert.equal(back.status, 'ACTIVE');
+      const saved = await h.menus.saveDraft(tuesday.id, { ...draft.document, heading: 'Tuesdays' }, chef);
+      assert.equal(saved.document.heading, 'Tuesdays');
+      const log = await h.menus.listAudit(tuesday.id);
+      assert.deepEqual(log.slice(0, 4).map((entry) => entry.action).sort(), ['draft.saved', 'menu.archived', 'menu.renamed', 'menu.unarchived']);
+      assert.match(log.find((entry) => entry.action === 'draft.saved')!.summary, /heading changed/);
+    } finally {
+      await h.prisma.venue.update({ where: { id: venueId }, data: { slug: venue.slug } });
+    }
+  });
+
+  it('starts an empty menu when nothing is copied, and the heading is kept through publish and restore', async (t) => {
+    if (await h.prisma.venue.findUnique({ where: { slug: 'alma-avalon' } })) {
+      t.skip('a real alma-avalon venue exists in this database');
+      return;
+    }
+    await h.prisma.venue.update({ where: { id: venueId }, data: { slug: 'alma-avalon' } });
+    try {
+      const nye = await h.menus.createMenu({ venueId, name: 'NYE', heading: "New Year's Eve" }, chef);
+      assert.equal(nye.templateKey, 'avalon_alacarte');
+      const draft = await h.menus.getDraft(nye.id);
+      assert.deepEqual(draft.document.sections, []);
+      assert.equal(draft.document.heading, "New Year's Eve");
+      await assert.rejects(h.menus.createMenu({ venueId, name: 'Copy of NYE', copyFromMenuId: 'nope' }, chef), (error: unknown) => error instanceof h.HttpError && error.statusCode === 404);
+
+      if (!h.chromeOk) {
+        t.diagnostic('headless Chrome not available: publish part skipped');
+        return;
+      }
+      await h.menus.saveDraft(nye.id, { ...draft.document, sections: DOC.sections }, chef);
+      const published = await h.menus.publish(nye.id, {}, chef);
+      assert.equal(published.snapshot.heading, "New Year's Eve");
+      // A snapshot written before headings existed reads back with '' (what it printed: the template title).
+      const legacy = await h.prisma.menuVersion.findUniqueOrThrow({ where: { id: published.version.id }, select: { snapshotJson: true } });
+      const { heading: _dropped, ...withoutHeading } = legacy.snapshotJson as Record<string, unknown>;
+      await h.prisma.menuVersion.update({ where: { id: published.version.id }, data: { snapshotJson: withoutHeading as never } });
+      assert.equal((await h.menus.getVersion(published.version.id)).snapshot.heading, '');
+      await h.prisma.menuVersion.update({ where: { id: published.version.id }, data: { snapshotJson: legacy.snapshotJson as never } });
+      const html = Buffer.from((await h.menus.getVersionPdf(published.version.id)).bytes).subarray(0, 5).toString();
+      assert.equal(html, '%PDF-');
+      const restored = await h.menus.restore(published.version.id, {}, chef);
+      assert.equal(restored.document.heading, "New Year's Eve");
+      // A copy of this menu (nothing live yet elsewhere) starts from the live version, heading replaced by the caller's.
+      const copy = await h.menus.createMenu({ venueId, name: 'NYE 2027', copyFromMenuId: nye.id }, chef);
+      const copyDraft = await h.menus.getDraft(copy.id);
+      assert.equal(copyDraft.document.heading, '');
+      assert.equal(copyDraft.document.sections.length, DOC.sections.length);
+    } finally {
+      await h.prisma.venue.update({ where: { id: venueId }, data: { slug: 'itest-venue' } });
+    }
   });
 });

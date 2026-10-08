@@ -5,9 +5,12 @@
  *   pnpm --filter @alma/api seed:menus              # seed, validate, publish v1
  *   pnpm --filter @alma/api seed:menus -- --dry-run  # validate and report only
  *
- * Idempotent and non-destructive: a menu that already has a version is left
- * alone and reported. Venues are matched by slug (st-alma, alma-avalon — the
- * ones `pnpm db:seed:prod` creates) and created if missing.
+ * Idempotent and non-destructive: a venue that already has any menu on the
+ * seed's print template is left alone and reported — whatever that menu is
+ * called now (managers rename menus and add Tuesday or event menus in the
+ * editor) and whether or not it is archived. A seed menu row that exists but
+ * has no version yet is published. Venues are matched by slug (st-alma,
+ * alma-avalon — the ones `pnpm db:seed:prod` creates) and created if missing.
  *
  * The validator's full report is printed. Nothing in the seed data is changed
  * to make it pass; if it flags something, that is the finding.
@@ -71,15 +74,25 @@ async function main() {
     const venue =
       (await prisma.venue.findUnique({ where: { slug: seed.venueSlug } })) ??
       (await prisma.venue.create({ data: { name: seed.venueName, slug: seed.venueSlug } }));
-    let menu = await prisma.menu.findUnique({ where: { venueId_name: { venueId: venue.id, name: seed.menuName } } });
-    if (!menu) {
-      menu = await prisma.menu.create({ data: { venueId: venue.id, name: seed.menuName, templateKey: seed.templateKey } });
-      console.log(`\n+ Created menu "${seed.menuName}" for ${venue.name} (${menu.id})`);
-    }
-    const existing = await prisma.menuVersion.count({ where: { menuId: menu.id } });
-    if (existing > 0) {
-      console.log(`\n= ${venue.name} · ${seed.menuName} already has ${existing} version${existing === 1 ? '' : 's'} — left as is.`);
+    // Seeded once already? Any menu at this venue on this template counts, by
+    // template and not by name, so renaming "Food" never makes the seed create
+    // and publish a second copy of the September content beside it.
+    const onTemplate = await prisma.menu.findMany({
+      where: { venueId: venue.id, templateKey: seed.templateKey },
+      select: { id: true, name: true, status: true, _count: { select: { versions: true } } },
+      orderBy: { createdAt: 'asc' }
+    });
+    const versioned = onTemplate.filter((candidate) => candidate._count.versions > 0);
+    if (versioned.length > 0) {
+      const names = versioned.map((candidate) => `"${candidate.name}"${candidate.status === 'ARCHIVED' ? ' (archived)' : ''}`).join(', ');
+      console.log(`\n= ${venue.name} already has ${versioned.length === 1 ? 'a menu' : `${versioned.length} menus`} on ${seed.templateKey} (${names}) — left as is.`);
       continue;
+    }
+    let menu = onTemplate.find((candidate) => candidate.name === seed.menuName) ?? null;
+    if (!menu) {
+      const created = await prisma.menu.create({ data: { venueId: venue.id, name: seed.menuName, templateKey: seed.templateKey } });
+      menu = { id: created.id, name: created.name, status: created.status, _count: { versions: 0 } };
+      console.log(`\n+ Created menu "${seed.menuName}" for ${venue.name} (${menu.id})`);
     }
     await menuService.createDraft(menu.id, seedActor as never);
     await menuService.saveDraft(menu.id, seed.document, seedActor as never);

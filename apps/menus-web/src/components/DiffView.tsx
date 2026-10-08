@@ -1,9 +1,14 @@
 import type { MenuDiff } from '@alma/shared';
 import { menuDiffIsEmpty } from '@alma/shared';
 
-/** A publish diff, grouped: what was added, removed, repriced, retagged, 86'd, moved, and section/footer edits. */
-export function DiffView({ diff, emptyText = 'No content changes.' }: { diff: MenuDiff; emptyText?: string }) {
+/**
+ * A publish diff, grouped: the heading, then what was added, removed,
+ * repriced, retagged, 86'd, moved, and section/footer edits.
+ * `templateTitle` is what a blank heading prints ("À la carte").
+ */
+export function DiffView({ diff, emptyText = 'No content changes.', templateTitle = 'the template title' }: { diff: MenuDiff; emptyText?: string; templateTitle?: string }) {
   if (menuDiffIsEmpty(diff)) return <p className="subtle">{emptyText}</p>;
+  const heading = (value: string) => value.trim() || templateTitle;
   const group = (title: string, rows: React.ReactNode[]) =>
     rows.length ? (
       <div className="diff-group" key={title}>
@@ -13,6 +18,16 @@ export function DiffView({ diff, emptyText = 'No content changes.' }: { diff: Me
     ) : null;
   return (
     <div className="diff-view">
+      {group(
+        'Heading',
+        diff.headingChange
+          ? [
+              <li key="heading">
+                <span className="diff-from">{heading(diff.headingChange.from)}</span> → <span className="diff-to">{heading(diff.headingChange.to)}</span>
+              </li>
+            ]
+          : []
+      )}
       {group(
         'Added',
         diff.added.map((row) => (

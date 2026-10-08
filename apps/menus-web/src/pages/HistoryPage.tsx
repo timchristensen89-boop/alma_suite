@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { AuthUser, MenuAuditEntry, MenuDiff, MenuSummary, MenuVersionSummary } from '@alma/shared';
+import { MENU_TEMPLATES, isMenuTemplateKey, type AuthUser, type MenuAuditEntry, type MenuDiff, type MenuSummary, type MenuVersionSummary } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Spinner } from '@alma/ui';
 import { DiffView } from '../components/DiffView';
 import { ApiError } from '../lib/api';
 import { formatBytes, formatDateTime, formatWhen, pdfFilename, personName } from '../lib/format';
-import { menuApi, openVersionPdf } from '../lib/menuApi';
+import { isMenuArchivedError, menuApi, openVersionPdf } from '../lib/menuApi';
 import { IconArrowLeft } from '../../../web/src/lib/icons';
 
 /**
@@ -77,7 +77,10 @@ export function HistoryPage({ user }: { user: AuthUser }) {
       await menuApi.restore(version.id, hasDraft);
       navigate(`/menus/${menuId}/edit`);
     } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 409 && window.confirm(`${caught.message}\n\nReplace the draft?`)) {
+      if (isMenuArchivedError(caught)) {
+        setError(caught instanceof Error ? caught.message : 'This menu is archived.');
+        await load();
+      } else if (caught instanceof ApiError && caught.status === 409 && window.confirm(`${caught.message}\n\nReplace the draft?`)) {
         try {
           await menuApi.restore(version.id, true);
           navigate(`/menus/${menuId}/edit`);
@@ -100,6 +103,7 @@ export function HistoryPage({ user }: { user: AuthUser }) {
       </div>
     );
   }
+  const archived = summary?.status === 'ARCHIVED';
 
   return (
     <>
@@ -110,11 +114,16 @@ export function HistoryPage({ user }: { user: AuthUser }) {
           </Link>
           <h1>
             {summary?.venue.name ?? 'Menu'} <em>{summary?.name ?? ''}</em> <span className="subtle">history</span>
+            {archived ? <Badge tone="muted">Archived</Badge> : null}
           </h1>
-          <p className="subtle">Every published version keeps its PDF and a frozen copy of its content. Restoring makes a new draft; it never rewrites a version.</p>
+          <p className="subtle">
+            {archived
+              ? 'This menu is archived: read-only until a publisher unarchives it from the Menus home. Its PDFs and versions are all still here.'
+              : 'Every published version keeps its PDF and a frozen copy of its content. Restoring makes a new draft; it never rewrites a version.'}
+          </p>
         </div>
         <div className="editor-head-actions">
-          <Link className="btn btn-secondary btn-md" to={`/menus/${menuId}/edit`}><span>{summary?.draft ? 'Open draft' : 'Editor'}</span></Link>
+          {archived ? null : <Link className="btn btn-secondary btn-md" to={`/menus/${menuId}/edit`}><span>{summary?.draft ? 'Open draft' : 'Editor'}</span></Link>}
         </div>
       </div>
       {error ? <p className="error-text">{error}</p> : null}
@@ -140,7 +149,11 @@ export function HistoryPage({ user }: { user: AuthUser }) {
                 </div>
                 <div className="version-row-actions">
                   {version.state === 'DRAFT' ? (
-                    <Link className="btn btn-primary btn-sm" to={`/menus/${menuId}/edit`}><span>Open in editor</span></Link>
+                    archived ? (
+                      <span className="subtle">Kept with the archived menu. Unarchive the menu to carry on with it.</span>
+                    ) : (
+                      <Link className="btn btn-primary btn-sm" to={`/menus/${menuId}/edit`}><span>Open in editor</span></Link>
+                    )
                   ) : (
                     <>
                       {version.hasPdf ? (
@@ -155,9 +168,11 @@ export function HistoryPage({ user }: { user: AuthUser }) {
                       <Button size="sm" variant="ghost" onClick={() => void showDiff(version)} disabled={busy === `diff-${version.id}`}>
                         Diff against {summary?.draft ? 'draft' : 'live'}
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => void restore(version)} disabled={busy === `restore-${version.id}`}>
-                        Restore as new draft
-                      </Button>
+                      {archived ? null : (
+                        <Button size="sm" variant="ghost" onClick={() => void restore(version)} disabled={busy === `restore-${version.id}`}>
+                          Restore as new draft
+                        </Button>
+                      )}
                     </>
                   )}
                 </div>
@@ -170,7 +185,7 @@ export function HistoryPage({ user }: { user: AuthUser }) {
                       <span className="subtle">{diff.summary}</span>
                       <button type="button" className="item-action" onClick={() => setDiff(null)}>Close</button>
                     </div>
-                    <DiffView diff={diff.diff} emptyText="Identical content." />
+                    <DiffView diff={diff.diff} emptyText="Identical content." templateTitle={summary && isMenuTemplateKey(summary.templateKey) ? MENU_TEMPLATES[summary.templateKey].title : undefined} />
                   </div>
                 ) : null}
               </li>

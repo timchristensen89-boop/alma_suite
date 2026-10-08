@@ -6330,6 +6330,9 @@ model MenuVersion {
   menuId                String
   versionNumber         Int
   state                 MenuVersionState @default(DRAFT)
+  /// The italic title line under the masthead ("À la carte", "Taco Tuesday").
+  /// Empty means the template's own title, so existing versions print as before.
+  heading               String           @default("")
   /// Footer, per version: the dietary note and the surcharge line. The tag
   /// legend is generated from the tags in use, never typed.
   dietaryNote           String           @default("")

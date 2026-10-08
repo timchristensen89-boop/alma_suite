@@ -11,12 +11,13 @@ export const menusRouter = Router();
  *   read, draft, save, discard, restore, copy   anyone the auth middleware lets
  *                                               into /api/menus (MENUS or
  *                                               COMPLIANCE access)
- *   publish                                     managers, admins, the head
+ *   publish, new menu, rename, archive          managers, admins, the head
  *                                               chef (role title), or a MENUS
- *                                               grant at MANAGER/ADMIN — the
+ *                                               grant at MANAGER/ADMIN or with
+ *                                               "Publish menus" ticked — the
  *                                               rule in canPublishMenus, which
- *                                               the editor uses to hide the
- *                                               button from everyone else
+ *                                               the home and editor use to hide
+ *                                               those buttons from everyone else
  *
  * Shared venue iPads can read and never write; the auth middleware enforces that
  * before any route here runs.
@@ -31,7 +32,15 @@ export function requireMenuPublisher(req: Request, _res: Response, next: NextFun
 
 menusRouter.get('/', async (_req, res, next) => {
   try {
-    res.json({ menus: await menuService.list(), renderer: menuService.rendererStatus() });
+    res.json(await menuService.home());
+  } catch (error) {
+    next(error);
+  }
+});
+
+menusRouter.post('/', requireMenuPublisher, async (req, res, next) => {
+  try {
+    res.status(201).json(await menuService.createMenu(req.body ?? {}, req.user));
   } catch (error) {
     next(error);
   }
@@ -79,6 +88,30 @@ menusRouter.post('/versions/:versionId/restore', async (req, res, next) => {
 menusRouter.get('/:menuId', async (req, res, next) => {
   try {
     res.json(await menuService.get(String(req.params.menuId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+menusRouter.patch('/:menuId', requireMenuPublisher, async (req, res, next) => {
+  try {
+    res.json(await menuService.updateMenu(String(req.params.menuId), req.body ?? {}, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+menusRouter.post('/:menuId/archive', requireMenuPublisher, async (req, res, next) => {
+  try {
+    res.json(await menuService.archiveMenu(String(req.params.menuId), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+menusRouter.post('/:menuId/unarchive', requireMenuPublisher, async (req, res, next) => {
+  try {
+    res.json(await menuService.unarchiveMenu(String(req.params.menuId), req.user));
   } catch (error) {
     next(error);
   }

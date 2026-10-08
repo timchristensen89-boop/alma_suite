@@ -126,6 +126,12 @@ export type MenuSectionDocument = {
 };
 
 export type MenuDocument = {
+  /**
+   * The italic line under the masthead rule ("À la carte", "Taco Tuesday").
+   * Empty means the template's own title, so the two menus printed today keep
+   * reading "À la carte" without anyone typing it.
+   */
+  heading: string;
   dietaryNote: string;
   surchargeLine: string;
   sections: MenuSectionDocument[];
@@ -153,6 +159,9 @@ export const MENU_LIMITS = {
   headerSuffixMax: 40,
   subheadingMax: 120,
   footerLineMax: 240,
+  headingMax: 60,
+  /** "Food", "Tuesday", "New Year's Eve" — the name on the module home and in the PDF filename. */
+  menuNameMax: 60,
   priceUnitMax: 8,
   /** $999,999 — anything bigger is a typo. */
   priceCentsMax: 99_999_900,
@@ -199,6 +208,7 @@ export const menuSectionDocumentSchema = z.object({
 });
 
 export const menuDocumentSchema = z.object({
+  heading: trimmed(MENU_LIMITS.headingMax).default(''),
   dietaryNote: trimmed(MENU_LIMITS.footerLineMax).default(''),
   surchargeLine: trimmed(MENU_LIMITS.footerLineMax).default(''),
   sections: z.array(menuSectionDocumentSchema).max(MENU_LIMITS.sectionsMax).default([])
@@ -238,6 +248,25 @@ export const menuCopyItemInputSchema = z.object({
   targetSectionId: z.string().min(1).optional()
 });
 export type MenuCopyItemInput = z.infer<typeof menuCopyItemInputSchema>;
+
+/** POST /api/menus — a new menu for a venue (a Tuesday menu, an event menu). */
+export const menuCreateInputSchema = z.object({
+  venueId: z.string().min(1),
+  name: trimmed(MENU_LIMITS.menuNameMax).min(1),
+  /** One of the venue's print templates (menuTemplatesForVenue). Omit when the venue has exactly one. */
+  templateKey: z.string().min(1).optional(),
+  /** Start the first draft from this menu's live version (its draft when nothing is live yet) instead of empty. */
+  copyFromMenuId: z.string().min(1).optional(),
+  /** The printed heading of the first draft; empty keeps the template's title. */
+  heading: trimmed(MENU_LIMITS.headingMax).default('')
+});
+export type MenuCreateInput = z.infer<typeof menuCreateInputSchema>;
+
+/** PATCH /api/menus/:menuId — rename. */
+export const menuUpdateInputSchema = z.object({
+  name: trimmed(MENU_LIMITS.menuNameMax).min(1)
+});
+export type MenuUpdateInput = z.infer<typeof menuUpdateInputSchema>;
 
 // ---------------------------------------------------------------------------
 // Prices
@@ -436,6 +465,8 @@ export type MenuDiff = {
   /** Section-level changes in words: added, removed, renamed, placement, type, hidden. */
   sectionChanges: string[];
   footerChanges: string[];
+  /** The printed heading, when it changed ("" means the template's title). */
+  headingChange: { from: string; to: string } | null;
 };
 
 type FlatItem = MenuItemDocument & { section: MenuSectionDocument; sectionIndex: number; itemIndex: number };
@@ -470,7 +501,8 @@ export function diffMenuDocuments(before: MenuDocument | null, after: MenuDocume
     visibilityChanges: [],
     moved: [],
     sectionChanges: [],
-    footerChanges: []
+    footerChanges: [],
+    headingChange: null
   };
   const prev = before ? flatten(before) : new Map<string, FlatItem>();
   const next = flatten(after);
@@ -559,6 +591,7 @@ export function diffMenuDocuments(before: MenuDocument | null, after: MenuDocume
   }
 
   if (before) {
+    if ((before.heading ?? '') !== (after.heading ?? '')) diff.headingChange = { from: before.heading ?? '', to: after.heading ?? '' };
     if (before.dietaryNote !== after.dietaryNote) diff.footerChanges.push(`Dietary note: "${before.dietaryNote}" → "${after.dietaryNote}".`);
     if (before.surchargeLine !== after.surchargeLine) diff.footerChanges.push(`Surcharge line: "${before.surchargeLine}" → "${after.surchargeLine}".`);
   }
@@ -577,7 +610,8 @@ export function menuDiffIsEmpty(diff: MenuDiff): boolean {
     diff.visibilityChanges.length === 0 &&
     diff.moved.length === 0 &&
     diff.sectionChanges.length === 0 &&
-    diff.footerChanges.length === 0
+    diff.footerChanges.length === 0 &&
+    diff.headingChange === null
   );
 }
 
@@ -598,6 +632,7 @@ export function summariseMenuDiff(diff: MenuDiff): string {
   count(diff.moved.length, 'dish moved', 'dishes moved');
   count(diff.sectionChanges.length, 'section change');
   count(diff.footerChanges.length, 'footer change');
+  if (diff.headingChange) parts.push('heading changed');
   return parts.length ? parts.join(', ') : 'No content changes';
 }
 
@@ -660,15 +695,38 @@ export type MenuVersionSummary = {
   pdfByteSize: number | null;
 };
 
+export const MENU_STATUSES = ['ACTIVE', 'ARCHIVED'] as const;
+export type MenuStatus = (typeof MENU_STATUSES)[number];
+
 export type MenuSummary = {
   id: string;
   name: string;
   templateKey: string;
+  /** ARCHIVED menus are off the module home; their versions and PDFs stay. */
+  status: MenuStatus;
+  /** The italic title line as it prints: the live version's heading (the draft's when nothing is live), else the template's title. */
+  printedHeading: string;
   venue: { id: string; name: string; slug: string };
   published: MenuVersionSummary | null;
   draft: MenuVersionSummary | null;
   /** The newest write of any kind — publish or draft save. */
   lastEdited: { at: string; by: MenuActor } | null;
+};
+
+/** A venue as the "New menu" form sees it: which print templates it can use. */
+export type MenuVenueSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  templates: Array<{ key: string; label: string; title: string }>;
+};
+
+/** GET /api/menus */
+export type MenuListPayload = {
+  menus: MenuSummary[];
+  archived: MenuSummary[];
+  venues: MenuVenueSummary[];
+  renderer: { ok: boolean; message: string };
 };
 
 export type MenuDraftPayload = {

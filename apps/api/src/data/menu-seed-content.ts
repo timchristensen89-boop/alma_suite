@@ -80,6 +80,7 @@ export const ST_ALMA_FRESHWATER_SEED: MenuSeed = {
   menuName: 'Food',
   templateKey: 'freshwater_alacarte',
   document: {
+    heading: '',
     dietaryNote: 'Dietaries catered with notice. Please advise your server of any allergies.',
     surchargeLine: SURCHARGE,
     sections: [
@@ -150,6 +151,7 @@ export const ALMA_AVALON_SEED: MenuSeed = {
   menuName: 'Food',
   templateKey: 'avalon_alacarte',
   document: {
+    heading: '',
     dietaryNote: 'Dietaries catered with notice. Dishes may contain traces of allergens. Please advise your server of any allergies.',
     surchargeLine: SURCHARGE,
     sections: [

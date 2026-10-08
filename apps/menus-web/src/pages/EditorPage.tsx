@@ -7,8 +7,10 @@ import {
   MENU_SECTION_TYPES,
   MENU_SECTION_TYPE_LABELS,
   MENU_TAGS,
+  MENU_TEMPLATES,
   canPublishMenus,
   formatMenuPrice,
+  isMenuTemplateKey,
   newDishKey,
   overflowIssue,
   parseMenuPriceInput,
@@ -30,7 +32,7 @@ import { PublishDialog } from '../components/PublishDialog';
 import { ValidationPanel } from '../components/ValidationPanel';
 import { ApiError } from '../lib/api';
 import { formatWhen, pdfFilename, personName } from '../lib/format';
-import { menuApi, openVersionPdf } from '../lib/menuApi';
+import { isMenuArchivedError, menuApi, openVersionPdf } from '../lib/menuApi';
 import { moveItem, useDragReorder } from '../lib/reorder';
 import { IconArrowLeft, IconPlus, IconTrash } from '../../../web/src/lib/icons';
 
@@ -332,6 +334,11 @@ export function EditorPage({ user }: { user: AuthUser }) {
       await menuApi.discardDraft(menuId);
       navigate('/');
     } catch (caught) {
+      // Archived by someone else since this page opened: show the read-only state rather than a dead toolbar.
+      if (isMenuArchivedError(caught)) {
+        await load();
+        return;
+      }
       setNotice({ tone: 'error', text: caught instanceof Error ? caught.message : 'Could not discard the draft.' });
     }
   }
@@ -386,12 +393,12 @@ export function EditorPage({ user }: { user: AuthUser }) {
     setCopyTarget(null);
     const saved = await flushSave();
     if (!saved) {
-      setNotice({ tone: 'error', text: 'Save the draft before copying a dish to another venue.' });
+      setNotice({ tone: 'error', text: 'Save the draft before copying a dish to another menu.' });
       return;
     }
     try {
       await menuApi.copyItemTo(menuId, { dishKey: copyTarget.dishKey, targetMenuId });
-      setNotice({ tone: 'success', text: `"${copyTarget.name}" copied to ${target?.venue.name ?? 'the other venue'}'s draft.` });
+      setNotice({ tone: 'success', text: `"${copyTarget.name}" copied to the ${target ? `${target.venue.name} · ${target.name}` : 'other menu'} draft.` });
     } catch (caught) {
       setNotice({ tone: 'error', text: caught instanceof Error ? caught.message : 'Could not copy the dish.' });
     }
@@ -453,6 +460,24 @@ export function EditorPage({ user }: { user: AuthUser }) {
             <Link className="btn btn-ghost btn-md" to="/"><span>Back to Menus</span></Link>
           </div>
         </Card>
+      </>
+    );
+  }
+
+  if (summary.status === 'ARCHIVED') {
+    return (
+      <>
+        {header}
+        <EmptyState
+          title="This menu is archived"
+          description="It is read-only until a publisher restores it from the Menus home. Its versions and PDFs are in History."
+          action={
+            <div className="menus-actions-row">
+              <Link className="btn btn-secondary btn-md" to={`/menus/${menuId}/history`}><span>History</span></Link>
+              <Link className="btn btn-ghost btn-md" to="/"><span>Back to Menus</span></Link>
+            </div>
+          }
+        />
       </>
     );
   }
@@ -520,6 +545,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
 
       <div className={`editor-split is-${mobileTab}`}>
         <div className="editor-form">
+          <HeadingEditor doc={doc} templateKey={summary.templateKey} onChange={update} />
           <ValidationPanel errors={errors} warnings={warnings} fill={fill} onJump={jumpTo} />
           <SectionsEditor doc={doc} onChange={update} onCopy={(item) => setCopyTarget({ dishKey: item.dishKey ?? '', name: item.name })} canCopy={otherMenus.length > 0} />
           <FooterEditor doc={doc} onChange={update} />
@@ -540,6 +566,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
         error={publishError}
         publishedVersion={draft.publishedVersion}
         draftVersionNumber={draft.version.versionNumber}
+        templateTitle={isMenuTemplateKey(summary.templateKey) ? MENU_TEMPLATES[summary.templateKey].title : undefined}
         onConfirm={() => void confirmPublish()}
         onClose={() => setPublishOpen(false)}
       />
@@ -547,8 +574,8 @@ export function EditorPage({ user }: { user: AuthUser }) {
       {copyTarget ? (
         <div className="menu-sheet-backdrop" role="dialog" aria-modal="true" aria-labelledby="copy-title" onClick={() => setCopyTarget(null)}>
           <div className="menu-sheet" onClick={(event) => event.stopPropagation()}>
-            <h3 id="copy-title">Copy “{copyTarget.name}” to another venue</h3>
-            <p className="subtle">The dish is added to that venue's draft (started from its live menu if there is none). The two copies are then edited separately.</p>
+            <h3 id="copy-title">Copy “{copyTarget.name}” to another menu</h3>
+            <p className="subtle">The dish is added to that menu's draft (started from its live version if there is none). The two copies are then edited separately.</p>
             <div className="menus-actions-row">
               {otherMenus.map((menu) => (
                 <Button key={menu.id} onClick={() => void copyItem(menu.id)}>
@@ -838,12 +865,34 @@ function ItemRow({ item, sectionIndex, itemIndex, sectionType, dragging, dropTar
             {item.visible ? '86' : "86'd — bring back"}
           </button>
           <button type="button" className="item-action" onClick={onDuplicate}>Duplicate</button>
-          {canCopy ? <button type="button" className="item-action" onClick={onCopy} disabled={!item.dishKey}>Copy to other venue</button> : null}
+          {canCopy ? <button type="button" className="item-action" onClick={onCopy} disabled={!item.dishKey}>Copy to another menu</button> : null}
           <button type="button" className="item-action is-danger" onClick={onDelete}>Delete</button>
           {!namesOnly && item.priceCents !== null ? <span className="item-print-price subtle">prints {formatMenuPrice(item.priceCents, item.priceUnit)}</span> : null}
         </div>
       </div>
     </li>
+  );
+}
+
+/** The italic title line under the logo. Blank prints the template's own title, so the two existing menus keep reading "À la carte". */
+function HeadingEditor({ doc, templateKey, onChange }: { doc: MenuDocument; templateKey: string; onChange: Mutate }) {
+  const templateTitle = isMenuTemplateKey(templateKey) ? MENU_TEMPLATES[templateKey].title : 'À la carte';
+  return (
+    <Card title="Heading" subtitle={`The italic line under the logo. Blank prints “${templateTitle}”.`}>
+      <label className="field">
+        <span className="field-label">Printed heading</span>
+        <input
+          className="field-control"
+          value={doc.heading}
+          maxLength={MENU_LIMITS.headingMax}
+          placeholder={templateTitle}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            onChange((prev) => ({ ...prev, heading: value }));
+          }}
+        />
+      </label>
+    </Card>
   );
 }
 
