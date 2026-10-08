@@ -10,7 +10,8 @@
  *
  * Publishing is exercised only when headless Chrome is available too (the
  * publish path renders the PDF); the draft/restore/audit invariants run
- * regardless.
+ * regardless. Without Chrome the publish cases report as skipped, never as a
+ * silent pass; ALMA_TEST_REQUIRE_CHROME=1 turns a missing Chrome into a failure.
  *
  * Every row these tests create hangs off a venue whose slug starts with
  * "itest-", and is deleted again in setup, so a run can be repeated.
@@ -21,6 +22,7 @@ import type { MenuDocument } from '@alma/shared';
 
 const TEST_DB = process.env.ALMA_TEST_DATABASE_URL;
 if (TEST_DB) process.env.DATABASE_URL = TEST_DB;
+const REQUIRE_CHROME = process.env.ALMA_TEST_REQUIRE_CHROME === '1';
 
 type Harness = {
   prisma: typeof import('@alma/db').prisma;
@@ -83,6 +85,7 @@ describe('menu service (Postgres)', { skip: TEST_DB ? false : 'skipped: set ALMA
       import('../lib/http.js')
     ]);
     h = { prisma, menus: menuService, chromeOk: pdf.chromeStatus().ok, closeBrowser: pdf.closeMenuBrowser, HttpError: http.HttpError };
+    if (REQUIRE_CHROME && !h.chromeOk) throw new Error(`ALMA_TEST_REQUIRE_CHROME=1 but Chrome is not available: ${pdf.chromeStatus().message}`);
     await wipe();
     const venue = await h.prisma.venue.create({ data: { name: 'ITEST Venue', slug: 'itest-venue' } });
     venueId = venue.id;
@@ -336,7 +339,8 @@ describe('menu service (Postgres)', { skip: TEST_DB ? false : 'skipped: set ALMA
       await assert.rejects(h.menus.createMenu({ venueId, name: 'Copy of NYE', copyFromMenuId: 'nope' }, chef), (error: unknown) => error instanceof h.HttpError && error.statusCode === 404);
 
       if (!h.chromeOk) {
-        t.diagnostic('headless Chrome not available: publish part skipped');
+        // The empty-menu half above ran; the publish half did not. Say so in the skip count.
+        t.skip('headless Chrome not available: publish, restore and copy-of-published part not run');
         return;
       }
       await h.menus.saveDraft(nye.id, { ...draft.document, sections: DOC.sections }, chef);

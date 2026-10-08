@@ -45,11 +45,19 @@ export const menuApi = {
 
 /** The API's answer to any write on a menu that was archived while this page was open. */
 export function isMenuArchivedError(caught: unknown): boolean {
-  return (
-    caught instanceof ApiError &&
-    caught.status === 409 &&
-    Boolean(caught.details && typeof caught.details === 'object' && (caught.details as { code?: unknown }).code === 'MENU_ARCHIVED')
-  );
+  return archivedMenuIdOf(caught) !== null;
+}
+
+/**
+ * Which menu the refusal is about. A copy touches two menus; the API names the
+ * archived one, so the editor can tell "this menu was archived" (go read-only)
+ * from "the menu you copied into was" (pick another).
+ */
+export function archivedMenuIdOf(caught: unknown): string | null {
+  if (!(caught instanceof ApiError) || caught.status !== 409) return null;
+  const details = caught.details as { code?: unknown; menuId?: unknown } | null;
+  if (!details || typeof details !== 'object' || details.code !== 'MENU_ARCHIVED') return null;
+  return typeof details.menuId === 'string' ? details.menuId : '';
 }
 
 /**

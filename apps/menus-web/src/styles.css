@@ -134,6 +134,9 @@
   gap: 8px;
 }
 
+.unsaved-card { border: 1px solid rgba(181, 119, 47, 0.45); }
+.unsaved-card .card-body { display: grid; gap: 10px; }
+
 .notice-text {
   margin: 0;
   padding: 10px 14px;

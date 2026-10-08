@@ -53,6 +53,12 @@ import { chromeStatus, renderMenuPdf, measureMenuFill } from '../lib/menu-pdf.js
  *   - a venue has any number of menus (the à la carte, a Tuesday menu, an
  *     event menu), each with its own drafts, history and PDF. Archiving one
  *     takes it off the module home and freezes it; nothing is deleted.
+ *   - an archived menu is never written. Every write locks the Menu row
+ *     (lockActiveMenu) and re-checks the status inside its own transaction;
+ *     archive and unarchive take the same lock. So an archive can never
+ *     commit between a write's check and its write: the write either lands
+ *     before the archive or is refused after it. Two menus are always locked
+ *     in id order.
  */
 
 type VersionRow = Prisma.MenuVersionGetPayload<{ include: { sections: { include: { items: true } } } }>;
@@ -186,10 +192,51 @@ async function loadMenu(menuId: string): Promise<MenuRow> {
   return menu;
 }
 
-/** Writes are for live menus. An archived menu can still be read, diffed and its PDFs opened. */
+/**
+ * The one answer to a write on an archived menu. `menuId` says which menu, so
+ * a client copying a dish can tell an archived target from an archived source.
+ */
+function archivedError(menu: Pick<MenuRow, 'id' | 'name' | 'venue'>): HttpError {
+  return new HttpError(409, `${menu.venue.name} · ${menu.name} is archived. Unarchive it from the Menus home before changing it.`, {
+    code: 'MENU_ARCHIVED',
+    menuId: menu.id
+  });
+}
+
+/**
+ * Fast refusal before any work (a PDF render, a diff) for a menu already
+ * archived. Not the guarantee: that is lockActiveMenu inside the transaction.
+ * An archived menu can still be read, diffed and its PDFs opened.
+ */
 function requireActive(menu: MenuRow): MenuRow {
-  if (menu.status === 'ARCHIVED') throw new HttpError(409, `${menu.venue.name} · ${menu.name} is archived. Unarchive it from the Menus home before changing it.`, { code: 'MENU_ARCHIVED' });
+  if (menu.status === 'ARCHIVED') throw archivedError(menu);
   return menu;
+}
+
+type LockedMenu = { id: string; name: string; status: string; venueId: string };
+
+/**
+ * Lock Menu rows for the rest of the transaction (SELECT … FOR UPDATE), one at
+ * a time in id order. Every path that locks more than one menu uses this, so
+ * two transactions touching the same pair (a copy A→B beside a copy B→A) queue
+ * instead of deadlocking.
+ */
+async function lockMenus(tx: Prisma.TransactionClient, menuIds: string[]): Promise<Map<string, LockedMenu>> {
+  const locked = new Map<string, LockedMenu>();
+  for (const id of [...new Set(menuIds)].sort()) {
+    const rows = await tx.$queryRaw<LockedMenu[]>`SELECT "id", "name", "status", "venueId" FROM "Menu" WHERE "id" = ${id} FOR UPDATE`;
+    const row = rows[0];
+    if (!row) throw new HttpError(404, 'That menu does not exist.');
+    locked.set(id, row);
+  }
+  return locked;
+}
+
+/** Lock one menu and confirm, inside the transaction, that it is still live. */
+async function lockActiveMenu(tx: Prisma.TransactionClient, menu: MenuRow): Promise<LockedMenu> {
+  const locked = (await lockMenus(tx, [menu.id])).get(menu.id)!;
+  if (locked.status === 'ARCHIVED') throw archivedError(menu);
+  return locked;
 }
 
 function emptyDocument(): MenuDocument {
@@ -204,8 +251,8 @@ function emptyDocument(): MenuDocument {
  * it is case-sensitive, so two publishers racing "Tuesday" against "tuesday"
  * in the same instant could both succeed — accepted, a rename fixes it.
  */
-async function requireNameFree(venueId: string, name: string, exceptMenuId: string | null) {
-  const clash = await prisma.menu.findFirst({
+async function requireNameFree(venueId: string, name: string, exceptMenuId: string | null, client: Prisma.TransactionClient | typeof prisma = prisma) {
+  const clash = await client.menu.findFirst({
     where: { venueId, name: { equals: name, mode: 'insensitive' }, ...(exceptMenuId ? { id: { not: exceptMenuId } } : {}) },
     select: { id: true, name: true, status: true }
   });
@@ -521,13 +568,16 @@ export const menuService = {
     await requireNameFree(menu.venue.id, data.name, menu.id);
     try {
       await prisma.$transaction(async (tx) => {
+        const locked = await lockActiveMenu(tx, menu);
+        if (locked.name === data.name) return;
+        await requireNameFree(menu.venue.id, data.name, menu.id, tx);
         await tx.menu.update({ where: { id: menuId }, data: { name: data.name } });
         await audit(tx, {
           menuId,
           menuVersionId: null,
           action: 'menu.renamed',
-          summary: `Renamed menu "${menu.name}" to "${data.name}".`,
-          before: { name: menu.name },
+          summary: `Renamed menu "${locked.name}" to "${data.name}".`,
+          before: { name: locked.name },
           after: { name: data.name },
           actor
         });
@@ -542,16 +592,22 @@ export const menuService = {
   /** Off the home grid. Versions, PDFs, the audit log and any draft are kept exactly as they are. */
   async archiveMenu(menuId: string, user: AuthUser | undefined): Promise<MenuSummary> {
     const menu = await loadMenu(menuId);
-    if (menu.status === 'ARCHIVED') throw new HttpError(409, `${menu.venue.name} · ${menu.name} is already archived.`);
+    const alreadyArchived = () => new HttpError(409, `${menu.venue.name} · ${menu.name} is already archived.`);
+    if (menu.status === 'ARCHIVED') throw alreadyArchived();
     const actor = menuActor(user);
-    const draft = await prisma.menuVersion.findFirst({ where: { menuId, state: 'DRAFT' }, select: { versionNumber: true } });
     await prisma.$transaction(async (tx) => {
+      // The same row lock every write takes: a write already in its
+      // transaction finishes first; one that has not started yet will find
+      // the menu archived when it does.
+      const locked = (await lockMenus(tx, [menuId])).get(menuId)!;
+      if (locked.status === 'ARCHIVED') throw alreadyArchived();
+      const draft = await tx.menuVersion.findFirst({ where: { menuId, state: 'DRAFT' }, select: { versionNumber: true } });
       await tx.menu.update({ where: { id: menuId }, data: { status: 'ARCHIVED' } });
       await audit(tx, {
         menuId,
         menuVersionId: null,
         action: 'menu.archived',
-        summary: `Archived menu "${menu.name}".${draft ? ` Its unpublished draft v${draft.versionNumber} is kept.` : ''}`,
+        summary: `Archived menu "${locked.name}".${draft ? ` Its unpublished draft v${draft.versionNumber} is kept.` : ''}`,
         before: { status: 'ACTIVE' },
         after: { status: 'ARCHIVED' },
         actor
@@ -562,15 +618,18 @@ export const menuService = {
 
   async unarchiveMenu(menuId: string, user: AuthUser | undefined): Promise<MenuSummary> {
     const menu = await loadMenu(menuId);
-    if (menu.status !== 'ARCHIVED') throw new HttpError(409, `${menu.venue.name} · ${menu.name} is not archived.`);
+    const notArchived = () => new HttpError(409, `${menu.venue.name} · ${menu.name} is not archived.`);
+    if (menu.status !== 'ARCHIVED') throw notArchived();
     const actor = menuActor(user);
     await prisma.$transaction(async (tx) => {
+      const locked = (await lockMenus(tx, [menuId])).get(menuId)!;
+      if (locked.status !== 'ARCHIVED') throw notArchived();
       await tx.menu.update({ where: { id: menuId }, data: { status: 'ACTIVE' } });
       await audit(tx, {
         menuId,
         menuVersionId: null,
         action: 'menu.unarchived',
-        summary: `Unarchived menu "${menu.name}"; it is back on the Menus home.`,
+        summary: `Unarchived menu "${locked.name}"; it is back on the Menus home.`,
         before: { status: 'ARCHIVED' },
         after: { status: 'ACTIVE' },
         actor
@@ -594,8 +653,9 @@ export const menuService = {
     const source: MenuDocument = published ? stripIds(documentFor(published)) : emptyDocument();
 
     await prisma.$transaction(async (tx) => {
-      // nextVersionNumber updates the Menu row, which serialises concurrent
-      // callers on this menu; the one-draft check after it cannot race.
+      // The Menu row lock serialises concurrent callers on this menu (and an
+      // archive): the one-draft check after it cannot race.
+      await lockActiveMenu(tx, menu);
       const versionNumber = await nextVersionNumber(menuId, tx);
       const existing = await tx.menuVersion.findFirst({ where: { menuId, state: 'DRAFT' }, select: { id: true } });
       if (existing) throw new HttpError(409, 'This menu already has a draft. Open it, or discard it to start again.');
@@ -654,6 +714,7 @@ export const menuService = {
     if (!changed) return draftPayload(menu, draft);
 
     await prisma.$transaction(async (tx) => {
+      await lockActiveMenu(tx, menu);
       // The optimistic lock, enforced where it counts: the row is only written
       // if it still carries the updatedAt the editor saw (or the editor asked
       // to force). Two saves racing through checkUpdatedAt above cannot both
@@ -681,11 +742,13 @@ export const menuService = {
   },
 
   async discardDraft(menuId: string, user: AuthUser | undefined): Promise<{ ok: true }> {
-    requireActive(await loadMenu(menuId));
+    const menu = requireActive(await loadMenu(menuId));
     const actor = menuActor(user);
     const draft = requireDraft(await loadDraft(menuId));
     await prisma.$transaction(async (tx) => {
-      await tx.menuVersion.delete({ where: { id: draft.id } });
+      await lockActiveMenu(tx, menu);
+      const deleted = await tx.menuVersion.deleteMany({ where: { id: draft.id, state: 'DRAFT' } });
+      if (deleted.count !== 1) throw new HttpError(409, 'This draft was published or discarded a moment ago. Reload to see the menu as it is now.', { code: 'STALE_DRAFT' });
       await audit(tx, {
         menuId,
         menuVersionId: draft.id,
@@ -700,7 +763,7 @@ export const menuService = {
   // ---------------------------------------------------------------- publishing
   /** Everything the publish dialog shows: validation, page fill, and the diff against the live menu. */
   async publishPreview(menuId: string): Promise<MenuPublishPreview> {
-    const menu = await loadMenu(menuId);
+    const menu = requireActive(await loadMenu(menuId));
     const draft = requireDraft(await loadDraft(menuId));
     const doc = documentFromRows(draft);
     const published = await loadPublished(menuId);
@@ -765,7 +828,15 @@ export const menuService = {
     const publishedAt = new Date();
     const snapshot = buildSnapshot(menu, draft, doc, publishedAt);
 
+    // The PDF is rendered above, outside any transaction, so a slow render
+    // never holds the lock. Archive could have landed meanwhile: the status is
+    // checked again under the lock, and nothing below is written if it did.
     await prisma.$transaction(async (tx) => {
+      await lockActiveMenu(tx, menu);
+      const liveNow = await tx.menuVersion.findFirst({ where: { menuId, state: 'PUBLISHED' }, select: { id: true } });
+      if ((liveNow?.id ?? null) !== (published?.id ?? null)) {
+        throw new HttpError(409, 'The live version changed while this one was being published. Reload, check the preview, and publish again.', { code: 'STALE_DRAFT' });
+      }
       if (published) {
         await tx.menuVersion.update({ where: { id: published.id }, data: { state: 'ARCHIVED' } });
       }
@@ -859,7 +930,8 @@ export const menuService = {
     }
     const doc = ensureDishKeys(stripIds(documentFor(source)));
     await prisma.$transaction(async (tx) => {
-      const versionNumber = await nextVersionNumber(source.menuId, tx); // locks the Menu row
+      await lockActiveMenu(tx, source.menu);
+      const versionNumber = await nextVersionNumber(source.menuId, tx);
       const current = await tx.menuVersion.findFirst({ where: { menuId: source.menuId, state: 'DRAFT' }, select: { id: true, versionNumber: true } });
       if (current && !data.replaceDraft) {
         throw new HttpError(409, `This menu has an unpublished draft (v${current.versionNumber}). Restoring replaces it — confirm to continue.`, { code: 'DRAFT_EXISTS' });
@@ -900,7 +972,7 @@ export const menuService = {
   // ---------------------------------------------------------------- cross-venue copy
   /** Copy one dish from this menu's draft into another menu's draft (created from its published version when needed). */
   async copyItemTo(menuId: string, input: unknown, user: AuthUser | undefined): Promise<{ target: MenuDraftPayload; dishKey: string }> {
-    requireActive(await loadMenu(menuId));
+    const sourceMenu = requireActive(await loadMenu(menuId));
     const actor = menuActor(user);
     const data = menuCopyItemInputSchema.parse(input);
     if (data.targetMenuId === menuId) throw new HttpError(400, 'Use Duplicate to copy a dish within the same menu.');
@@ -922,6 +994,13 @@ export const menuService = {
 
     const dishKey = newDishKey(sourceItem.item.name);
     await prisma.$transaction(async (tx) => {
+      // Both menus, in id order; each refused separately so the editor can
+      // tell "this menu was archived" from "the menu you copied into was".
+      const locked = await lockMenus(tx, [sourceMenu.id, targetMenu.id]);
+      if (locked.get(sourceMenu.id)!.status === 'ARCHIVED') throw archivedError(sourceMenu);
+      if (locked.get(targetMenu.id)!.status === 'ARCHIVED') throw archivedError(targetMenu);
+      const stillThere = await tx.menuSection.findFirst({ where: { id: targetSection.id, version: { id: targetDraft!.id, state: 'DRAFT' } }, select: { id: true } });
+      if (!stillThere) throw new HttpError(409, `${targetMenu.venue.name} · ${targetMenu.name}'s draft changed a moment ago. Try the copy again.`, { code: 'STALE_DRAFT' });
       const last = await tx.menuItem.aggregate({ where: { sectionId: targetSection.id }, _max: { sortOrder: true } });
       await tx.menuItem.create({
         data: {

@@ -82,9 +82,25 @@ draft ──save──► draft ──publish──► PUBLISHED (snapshot + PDF
   the home grid (listed under "Archived menus"), read-only — drafting, saving,
   discarding, publishing, restoring, renaming and copy-to answer 409 — and keeps
   every version, PDF, draft and audit entry. Nothing is ever deleted. Writes
-  answer 409 with `code: MENU_ARCHIVED`, which the editor and History use to
-  flip a stale tab into the read-only view. Audit: `menu.archived`,
+  answer 409 with `{ code: MENU_ARCHIVED, menuId }`. Audit: `menu.archived`,
   `menu.unarchived`.
+- **Archive versus writes in flight.** Every write (save, discard, rename,
+  start a draft, restore, copy, publish) locks its `Menu` row with
+  `SELECT … FOR UPDATE` and checks `status` again inside its own transaction
+  (`lockActiveMenu`); archive and unarchive take the same lock. An archive
+  therefore cannot commit between a write's check and its write: the write
+  lands before the archive, or is refused after it. Publish renders the PDF
+  outside any transaction, then locks and re-checks before it commits. A copy
+  locks both menus in id order (`lockMenus`), so copies in opposite directions
+  queue instead of deadlocking, and names whichever menu was archived.
+- **A stale editor.** When the API answers `MENU_ARCHIVED` for the open menu
+  (autosave, publish, discard, copy out of it, start a draft), the editor
+  cancels the pending autosave, sends nothing more and switches to the
+  read-only view. Anything typed since the last successful save is kept in
+  that browser (`localStorage`, `lib/recovery.ts`) and shown as a diff, with
+  Download and Forget; once the menu is unarchived, opening it offers Apply to
+  this draft. An archived copy target only takes that menu off the picker:
+  the source stays editable. History and the home handle the same answer.
 - **Printed heading** (`MenuVersion.heading`, part of `MenuDocument`): the
   italic line under the logo. Empty prints the template's own title
   ("À la carte"), which is what both seeded menus do; a Tuesday menu types
@@ -152,9 +168,21 @@ Tests:
 
 ```bash
 pnpm --filter @alma/api test                      # rules, templates, route guard; renderer test runs when Chrome is present
-ALMA_TEST_DATABASE_URL=postgresql://... node --import tsx --test apps/api/src/services/menu.integration.test.ts
+# Postgres + Chrome: drafts, publish, restore, several menus per venue, and
+# archiving racing every write. ALMA_TEST_REQUIRE_CHROME=1 fails instead of
+# skipping the publish cases when Chrome is missing. Manual CI runs the same.
+cd apps/api && ALMA_TEST_DATABASE_URL=postgresql://... ALMA_TEST_REQUIRE_CHROME=1 \
+  node --import tsx --test --test-concurrency=1 \
+  src/services/menu.integration.test.ts src/services/menu-archive-race.integration.test.ts
 pnpm --filter @alma/api menus:compare -- --reference ../alma-web-platform/apps/web/public/menus
 ```
+
+The race suite reproduces each window for real: an archive transaction locks
+the menu row and flips it to `ARCHIVED` without committing, the real service
+call runs (its pre-check still reads `ACTIVE`), and the archive commits once
+that call is waiting on the lock. Every case asserts the write waited, was
+refused with `MENU_ARCHIVED`, and left the draft, name, version counter and
+published version exactly as they were.
 
 ## Adding a template
 

@@ -4,7 +4,7 @@ import { canPublishMenus, type AuthUser, type MenuListPayload, type MenuSummary,
 import { AlmaHomeBubble, Badge, Button, Card, EmptyState, MenuIcon, Skeleton } from '@alma/ui';
 import { ArchiveMenuDialog, NewMenuDialog, RenameMenuDialog } from '../components/MenuManageDialogs';
 import { ApiError } from '../lib/api';
-import { menuApi, openVersionPdf } from '../lib/menuApi';
+import { isMenuArchivedError, menuApi, openVersionPdf } from '../lib/menuApi';
 import { formatWhen, pdfFilename, personName } from '../lib/format';
 import { IconPlus } from '../../../web/src/lib/icons';
 
@@ -76,6 +76,12 @@ export function HomePage({ user }: { user: AuthUser }) {
       await menuApi.createDraft(menu.id);
       navigate(`/menus/${menu.id}/edit`);
     } catch (caught) {
+      if (isMenuArchivedError(caught)) {
+        // Archived since this page loaded: say so and show the list as it is now.
+        setError(caught instanceof Error ? caught.message : 'That menu was archived.');
+        await load();
+        return;
+      }
       if (caught instanceof ApiError && caught.status === 409 && menu.status === 'ACTIVE') {
         navigate(`/menus/${menu.id}/edit`);
         return;
