@@ -33,7 +33,15 @@ import { MENU_PAGES_CSS, renderPagedSheets } from './menu-render-pages.js';
 export * from './menu-render-core.js';
 export * from './menu-render-pages.js';
 
-export const MENU_TEMPLATE_KEYS = ['freshwater_alacarte', 'avalon_alacarte', 'freshwater_drinks_binder', 'avalon_drinks_book', 'group_functions_a4'] as const;
+export const MENU_TEMPLATE_KEYS = [
+  'freshwater_alacarte',
+  'avalon_alacarte',
+  'freshwater_drinks_binder',
+  'avalon_drinks_book',
+  'group_functions_a4',
+  'freshwater_card_a5',
+  'avalon_card_a5'
+] as const;
 export type MenuTemplateKey = (typeof MENU_TEMPLATE_KEYS)[number];
 
 const SURCHARGE_LINE = 'A surcharge of 10% applies on weekends and 15% on public holidays.';
@@ -116,6 +124,39 @@ export const MENU_TEMPLATES: Record<MenuTemplateKey, MenuTemplate & { key: MenuT
     family: 'functions-a4',
     multiPage: true,
     defaults: { surchargeLine: 'A surcharge of 10% applies on Saturday and Sunday, 15% on public holidays.' }
+  }),
+  // The A5 table cards: happy hour, bottomless, specials and private-event set
+  // menus. One family, one card, front and back at most; the document's
+  // section types make the variants, the venue mark makes the venue.
+  freshwater_card_a5: template({
+    key: 'freshwater_card_a5',
+    label: 'St Alma Freshwater · Table card (A5)',
+    venueSlug: 'st-alma',
+    venueClass: 'stalma',
+    logo: { asset: 'stalma-logo', alt: 'st.alma' },
+    tagline: 'Restaurant & Bar · Freshwater',
+    title: 'Specials',
+    kinds: ['PROMOTION', 'PRIVATE_EVENT'],
+    format: 'A5P',
+    family: 'card-a5',
+    multiPage: true,
+    maxPages: 2,
+    defaults: { surchargeLine: SURCHARGE_LINE }
+  }),
+  avalon_card_a5: template({
+    key: 'avalon_card_a5',
+    label: 'Alma Avalon · Table card (A5)',
+    venueSlug: 'alma-avalon',
+    venueClass: 'avalon',
+    logo: { asset: 'avalon-logo', alt: 'alma restaurant & bar' },
+    tagline: 'Avalon Beach · Est 2017',
+    title: 'Specials',
+    kinds: ['PROMOTION', 'PRIVATE_EVENT'],
+    format: 'A5P',
+    family: 'card-a5',
+    multiPage: true,
+    maxPages: 2,
+    defaults: { surchargeLine: SURCHARGE_LINE }
   })
 };
 

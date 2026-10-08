@@ -112,9 +112,10 @@ export const MENU_PAGES_CSS = `
 .menu-print-page .wine-head span:first-child{ text-align:left; }
 .menu-print-page .wine{ display:grid; column-gap:3mm; align-items:baseline; margin-bottom:2.2mm; break-inside:avoid; }
 .menu-print-page .wname{ font-family:var(--sans); font-weight:500; font-size:11.5px; line-height:1.25; text-wrap:pretty; }
-.menu-print-page .wreg{ font-family:var(--serif); font-style:italic; font-size:12px; color:var(--ink-72); margin-left:1.5mm; }
+.menu-print-page .wreg{ font-family:var(--serif); font-style:italic; font-size:12px; color:var(--ink-72); margin-left:1.5mm; white-space:nowrap; }
 .menu-print-page .wp{ font-family:var(--sans); font-weight:500; font-size:11px; font-variant-numeric:tabular-nums; text-align:right; }
 .menu-print-page .wp.empty{ color:var(--ink-18); }
+.menu-print-page .wine + .ding{ margin:-1mm 0 2.8mm; }
 
 /* packages */
 .menu-print-page .pkg{ margin-bottom:4mm; break-inside:avoid; }
@@ -128,6 +129,66 @@ export const MENU_PAGES_CSS = `
 
 /* legend for marks and tags, generated */
 .menu-print-page .marks{ font-family:var(--sans); font-weight:500; font-size:8.5px; letter-spacing:.05em; color:var(--ink-46); margin-top:4mm; }
+
+/* =========================================================
+   The A5 table card family (happy hour, bottomless, specials, private
+   events). Same ink, faces, hairline heads and footer as the A4 sheet; the
+   masthead mark sits at 12 mm (Avalon lockup) / 9.5 mm (St Alma wordmark) so
+   the two venues' cards read as one family; one column; names-only lists and
+   private-event courses are centred, priced rows keep the name … price grammar.
+   Legibility floors at A5: names 12–12.5 px, italics 13 px, labels ≥ 8.5 px,
+   conditions 9 px at ≥ 58 % ink.
+   ========================================================= */
+.menu-print-page.family-card-a5 .card-mast{ text-align:center; margin-bottom:5mm; }
+.menu-print-page.family-card-a5 .card-mast .logo{ height:11mm; width:auto; display:inline-block; }
+.menu-print-page.family-card-a5.venue-stalma .card-mast .logo{ height:8.5mm; }
+.menu-print-page.family-card-a5 .card-mast .eyebrow{
+  font-family:var(--sans); font-weight:500; font-size:8.5px; letter-spacing:.32em; line-height:1.3;
+  text-transform:uppercase; color:var(--ink-46); margin-top:3mm;
+}
+.menu-print-page.family-card-a5 .card-mast .rule{ width:14mm; height:1px; background:var(--ink-24); margin:2.8mm auto 2.6mm; }
+.menu-print-page.family-card-a5 .card-title{ font-family:var(--serif); font-style:italic; font-size:28px; line-height:1.05; color:var(--ink); text-wrap:balance; }
+.menu-print-page.family-card-a5 .card-sub{ font-family:var(--serif); font-style:italic; font-size:13.5px; line-height:1.3; color:var(--ink-72); margin:1.6mm auto 0; max-width:104mm; text-wrap:balance; }
+.menu-print-page.family-card-a5 .card-when{
+  font-family:var(--sans); font-weight:700; font-size:8.5px; letter-spacing:.3em; line-height:1.4; text-transform:uppercase;
+  color:var(--ink-52); margin-top:2.8mm;
+}
+.menu-print-page.family-card-a5 .card-price{ font-family:var(--sans); font-weight:500; font-size:21px; line-height:1; font-variant-numeric:tabular-nums; margin-top:2.4mm; }
+.menu-print-page.family-card-a5 .card-price .unit{ font-size:9px; font-weight:700; letter-spacing:.2em; text-transform:uppercase; color:var(--ink-46); margin-left:1.5mm; vertical-align:baseline; }
+.menu-print-page.family-card-a5 .runhead{ margin-bottom:5mm; }
+.menu-print-page.family-card-a5 .psec{ margin-bottom:4.2mm; }
+.menu-print-page.family-card-a5 .sec-head{ gap:4mm; margin-bottom:2.8mm; }
+.menu-print-page.family-card-a5 .sec-head::before,
+.menu-print-page.family-card-a5 .sec-head::after{ background:var(--ink-24); }
+.menu-print-page.family-card-a5 .sec-title{ font-size:9.5px; }
+.menu-print-page.family-card-a5 .sec-title .qual{ letter-spacing:.2em; }
+.menu-print-page.family-card-a5 .lead{ text-align:center; margin:-.8mm 0 2.4mm; font-size:8.5px; line-height:1.4; }
+.menu-print-page.family-card-a5 .callout{ text-align:center; font-size:13px; margin:-1.2mm 0 2.8mm; }
+.menu-print-page.family-card-a5 .drink{ margin-bottom:2.4mm; }
+.menu-print-page.family-card-a5 .ding{ font-size:13px; }
+.menu-print-page.family-card-a5 .tags{ font-size:8.5px; }
+.menu-print-page.family-card-a5 .dprice{ font-size:12.5px; }
+/* names-only groups (inclusions, courses to choose from) are centred stacks … */
+.menu-print-page.family-card-a5 .type-list .list{ text-align:center; }
+.menu-print-page.family-card-a5 .list .pour{ display:block; padding:.6mm 0; line-height:1.3; }
+.menu-print-page.family-card-a5 .list .pname{ font-size:12.5px; font-weight:500; line-height:1.3; }
+/* … and a names-only group with no dietaries (happy hour "Margaritas / 12", the
+   drinks a bottomless sitting includes) runs on in one centred line */
+.menu-print-page.family-card-a5 .run-in{
+  font-family:var(--sans); font-weight:500; font-size:12.5px; line-height:1.55; text-align:center; text-wrap:balance;
+}
+.menu-print-page.family-card-a5 .run-in .pour{ display:inline; padding:0; white-space:nowrap; }
+.menu-print-page.family-card-a5 .run-in .pname{ font-size:12.5px; }
+.menu-print-page.family-card-a5 .run-in .sep{ color:var(--ink-40); margin-left:.6em; }
+.menu-print-page.family-card-a5 .type-course .drink{ text-align:center; margin-bottom:2.8mm; }
+.menu-print-page.family-card-a5 .type-course .drink-top{ display:block; }
+.menu-print-page.family-card-a5 .type-course .dname{ display:block; }
+.menu-print-page.family-card-a5 .type-course .dprice{ display:inline-block; margin-left:2mm; }
+.menu-print-page.family-card-a5 .type-text .para{ text-align:center; font-size:13px; }
+.menu-print-page.family-card-a5 .foot{ padding-top:3.5mm; }
+.menu-print-page.family-card-a5 .foot .conditions{ font-size:9px; line-height:1.4; }
+.menu-print-page.family-card-a5 .foot .legend{ font-size:8px; }
+.menu-print-page.family-card-a5 .foot .surcharge{ font-size:8.5px; }
 
 /* ---- footer ---- */
 .menu-print-page .foot{ text-align:center; margin-top:auto; padding-top:5mm; font-family:var(--sans); color:var(--ink-72); }
@@ -156,7 +217,10 @@ function rulesFor(template: MenuTemplate): FamilyRules {
       return { cover: true, coverLogo: template.logo.asset, folio: true };
     case 'functions-a4':
       return { cover: true, coverLogo: 'alma-wordmark', folio: true };
+    case 'card-a5':
     default:
+      // A table card has no cover and no page numbers: the front carries the
+      // masthead, the back (when there is one) a running head.
       return { cover: false, coverLogo: null, folio: false };
   }
 }
@@ -213,13 +277,20 @@ function renderRow(item: MenuItemDocument, section: MenuSectionDocument, showPri
   );
 }
 
+/** One name of a run-on line; the separator rides with the name before it so a wrapped line ends on "·" rather than opening with one. */
+function renderRunInName(item: MenuItemDocument, separated: boolean): string {
+  return `<span class="pour" data-dish-key="${escapeHtml(item.dishKey ?? '')}">${nameLine(item).replace('class="dname"', 'class="pname"')}${
+    separated ? '<span class="sep">·</span>' : ''
+  }</span>`;
+}
+
 function renderNameRow(item: MenuItemDocument): string {
   return `<div class="pour" data-dish-key="${escapeHtml(item.dishKey ?? '')}">${nameLine(item).replace('class="dname"', 'class="pname"')}</div>`;
 }
 
 function renderTable(section: MenuSectionDocument, showPrices: boolean): string {
   const columns = section.priceColumns;
-  const grid = `grid-template-columns:minmax(0,1fr) repeat(${columns.length},14mm)`;
+  const grid = `grid-template-columns:minmax(0,1fr) repeat(${columns.length},13mm)`;
   const head =
     columns.length > 0
       ? `<div class="wine-head" style="${grid}"><span></span>${columns.map((label) => `<span>${escapeHtml(label)}</span>`).join('')}</div>`
@@ -245,16 +316,25 @@ function renderTable(section: MenuSectionDocument, showPrices: boolean): string 
   return head + rows;
 }
 
-function renderSection(section: MenuSectionDocument, showPrices: boolean): string {
+function renderSection(section: MenuSectionDocument, showPrices: boolean, family: MenuTemplate['family']): string {
   const open = `<div class="psec type-${section.sectionType.toLowerCase()}" data-section-id="${escapeHtml(section.id ?? '')}">${sectionHead(section)}`;
   const sub = section.subheading ? `<div class="callout">${escapeHtml(section.subheading)}</div>` : '';
   const lead = section.lead ? `<div class="lead">${escapeHtml(section.lead)}</div>` : '';
   switch (section.sectionType) {
     case 'TEXT':
       return `${open}${lead}${escapeParagraphs(section.body ?? '')}</div>`;
-    case 'LIST':
     case 'HEADER_PRICED':
-      return `${open}${sub}${lead}<div class="list">${visibleItems(section).map(renderNameRow).join('')}</div></div>`;
+    case 'LIST': {
+      // On a table card a names-only group with nothing else to say per name
+      // (no dietaries, pours or marks) runs on in one centred line —
+      // "Classic · Jalapeño · Tommy's" — so a happy hour fits the front of
+      // one card; names that carry dietaries stack so the codes stay legible.
+      // The books always stack.
+      const items = visibleItems(section);
+      const runsOn = family === 'card-a5' && items.length > 0 && items.every((item) => item.tags.length === 0 && !item.meta && !item.description && !marksFor(item));
+      if (runsOn) return `${open}${sub}${lead}<div class="run-in">${items.map((item, index) => renderRunInName(item, index < items.length - 1)).join(' ')}</div></div>`;
+      return `${open}${sub}${lead}<div class="list">${items.map(renderNameRow).join('')}</div></div>`;
+    }
     case 'TABLE':
       return `${open}${sub}${lead}${renderTable(section, showPrices)}</div>`;
     case 'SET_MENUS':
@@ -320,22 +400,32 @@ function renderCover(doc: MenuDocument, template: MenuTemplate, options: MenuRen
   );
 }
 
+/**
+ * The card's masthead: the venue mark, its eyebrow and the short rule exactly
+ * as the A4 sheet carries them (so a card on the table reads as the same
+ * family as the menu), then the title block — the heading in Cormorant
+ * italic, an italic subheading, the when-line in letterspaced caps and the
+ * hero price with its unit set small.
+ */
+function renderCardMast(doc: MenuDocument, template: MenuTemplate, options: MenuRenderOptions): string {
+  const amount = doc.heroPriceCents === null ? '' : formatMenuPrice(doc.heroPriceCents);
+  const unit = (doc.heroPriceUnit ?? '').trim();
+  return (
+    `<div class="card-mast">` +
+    `<img class="logo" src="${escapeHtml(options.assets.logoSrc(template.logo.asset))}" alt="${escapeHtml(template.logo.alt)}">` +
+    `<div class="eyebrow">${escapeHtml(template.tagline)}</div>` +
+    `<div class="rule"></div>` +
+    `<div class="card-title">${escapeHtml(menuPrintedHeading(doc, template))}</div>` +
+    (doc.subheading ? `<div class="card-sub">${escapeHtml(doc.subheading)}</div>` : '') +
+    (doc.whenLine ? `<div class="card-when">${escapeHtml(doc.whenLine)}</div>` : '') +
+    (amount ? `<div class="card-price">${escapeHtml(amount)}${unit ? `<span class="unit">${escapeHtml(unit)}</span>` : ''}</div>` : '') +
+    `</div>`
+  );
+}
+
 function renderRunhead(doc: MenuDocument, template: MenuTemplate, options: MenuRenderOptions, pageNumber: number, rules: FamilyRules): string {
   // Without a cover the first page carries the full title block instead of a running head.
-  if (!rules.cover && pageNumber === 1) {
-    const price = formatMenuPrice(doc.heroPriceCents, doc.heroPriceUnit);
-    return (
-      `<div class="runhead mast">` +
-      `<img class="logo" src="${escapeHtml(options.assets.logoSrc(template.logo.asset))}" alt="${escapeHtml(template.logo.alt)}">` +
-      `<div class="eyebrow">${escapeHtml(template.tagline)}</div>` +
-      `<div class="rule"></div>` +
-      `<div class="page-title">${escapeHtml(menuPrintedHeading(doc, template))}</div>` +
-      (doc.subheading ? `<div class="callout">${escapeHtml(doc.subheading)}</div>` : '') +
-      (doc.whenLine ? `<div class="lead">${escapeHtml(doc.whenLine)}</div>` : '') +
-      (price ? `<div class="dprice t-price">${escapeHtml(price)}</div>` : '') +
-      `</div>`
-    );
-  }
+  if (!rules.cover && pageNumber === 1) return renderCardMast(doc, template, options);
   return (
     `<div class="runhead">` +
     `<img class="logo" src="${escapeHtml(options.assets.logoSrc(template.logo.asset))}" alt="${escapeHtml(template.logo.alt)}">` +
@@ -355,7 +445,7 @@ export function renderPagedSheets(doc: MenuDocument, template: MenuTemplate, opt
       const isCover = rules.cover && pageNumber === 1;
       const last = pageNumber === pages.length;
       const onecol = isCover || sections.length <= 1 ? ' onecol' : '';
-      const body = sections.map((section) => renderSection(section, showPrices)).join('');
+      const body = sections.map((section) => renderSection(section, showPrices, template.family)).join('');
       return (
         `<section class="sheet page-${pageNumber}${isCover ? ' is-cover' : ''}${onecol}" data-page="${pageNumber}">` +
         (isCover ? renderCover(doc, template, options, rules, pages) : renderRunhead(doc, template, options, pageNumber, rules)) +

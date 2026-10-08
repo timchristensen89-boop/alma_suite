@@ -53,6 +53,8 @@ export type MenuTemplate = {
   family: MenuSheetFamily;
   /** Whether the document may declare more than one page. */
   multiPage: boolean;
+  /** The most pages a multi-page template prints (a card is front and back at most); default MENU_LIMITS.pagesMax. */
+  maxPages?: number;
   /** Footer lines a new menu on this template starts with. */
   defaults?: { dietaryNote?: string; surchargeLine?: string };
 };

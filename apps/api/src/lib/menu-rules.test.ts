@@ -362,8 +362,11 @@ describe('menus per venue — templates, headings, names', () => {
     assert.deepEqual(menuTemplatesForVenue('alma-avalon', 'DRINKS').map((template) => template.key), ['avalon_drinks_book']);
     assert.deepEqual(menuTemplatesForVenue('st-alma', 'FUNCTIONS').map((template) => template.key), ['group_functions_a4']);
     assert.deepEqual(menuTemplatesForVenue('alma-avalon', 'FUNCTIONS').map((template) => template.key), ['group_functions_a4']);
+    // Promotions and private events share the venue's A5 card.
+    assert.deepEqual(menuTemplatesForVenue('st-alma', 'PROMOTION').map((template) => template.key), ['freshwater_card_a5']);
+    assert.deepEqual(menuTemplatesForVenue('alma-avalon', 'PRIVATE_EVENT').map((template) => template.key), ['avalon_card_a5']);
     // Unfiltered: the venue's own plus the group-branded documents, never another venue's.
-    assert.deepEqual(menuTemplatesForVenue('st-alma').map((template) => template.key), ['freshwater_alacarte', 'freshwater_drinks_binder', 'group_functions_a4']);
+    assert.deepEqual(menuTemplatesForVenue('st-alma').map((template) => template.key), ['freshwater_alacarte', 'freshwater_drinks_binder', 'group_functions_a4', 'freshwater_card_a5']);
     assert.deepEqual(menuTemplatesForVenue('manly').map((template) => template.key), ['group_functions_a4']);
     assert.deepEqual(menuTemplatesForVenue('manly', 'FOOD'), []);
   });

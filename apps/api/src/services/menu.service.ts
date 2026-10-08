@@ -508,7 +508,7 @@ function renderAssetsOrThrow() {
 /** The validator's options for a menu: rules by kind, pages by template. */
 function validationOptions(menu: MenuRow) {
   const template = isMenuTemplateKey(menu.templateKey) ? templateFor(menu) : null;
-  return { kind: kindOf(menu), maxPages: template?.multiPage ? MENU_LIMITS.pagesMax : 1 };
+  return { kind: kindOf(menu), maxPages: template?.multiPage ? template.maxPages ?? MENU_LIMITS.pagesMax : 1 };
 }
 
 function pageLabel(template: MenuTemplate): string {
