@@ -8,6 +8,7 @@ import {
   menuCopyItemInputSchema,
   menuCreateInputSchema,
   menuDiffIsEmpty,
+  menuDocumentsEqual,
   menuDraftSaveInputSchema,
   menuPrintedHeading,
   menuPublishInputSchema,
@@ -708,10 +709,13 @@ export const menuService = {
     });
     const diff = diffMenuDocuments(before, next);
     const keysMinted = next.sections.some((section, sectionIndex) => section.items.some((item, itemIndex) => item.dishKey !== before.sections[sectionIndex]?.items[itemIndex]?.dishKey));
-    const changed = !menuDiffIsEmpty(diff) || keysMinted;
+    // Everything stored counts, not only what the publish diff reports: a
+    // seafood flag or a recipe link does not print, but it must still save.
+    const changed = keysMinted || !menuDocumentsEqual(before, next);
     // A save that changes nothing is not a write: bumping updatedAt would hand
     // every other editor of this draft a spurious stale-save conflict.
     if (!changed) return draftPayload(menu, draft);
+    const summary = menuDiffIsEmpty(diff) ? 'dish settings changed (nothing printed differs)' : summariseMenuDiff(diff);
 
     await prisma.$transaction(async (tx) => {
       await lockActiveMenu(tx, menu);
@@ -732,7 +736,7 @@ export const menuService = {
           menuId,
           menuVersionId: draft.id,
           action: 'draft.saved',
-          summary: `Saved draft v${draft.versionNumber}: ${summariseMenuDiff(diff)}.`,
+          summary: `Saved draft v${draft.versionNumber}: ${summary}.`,
           after: diff,
           actor
         });

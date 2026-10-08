@@ -599,6 +599,42 @@ export function diffMenuDocuments(before: MenuDocument | null, after: MenuDocume
   return diff;
 }
 
+/**
+ * Whether two documents hold the same content, field by field. The publish
+ * diff above is for people and reports only what prints; this compares
+ * everything the editor stores, including the seafood flag, the recipe link,
+ * a price unit without a price and the order of empty sections. Row ids and
+ * key order are ignored.
+ */
+export function menuDocumentsEqual(a: MenuDocument, b: MenuDocument): boolean {
+  const canonical = (doc: MenuDocument) =>
+    JSON.stringify({
+      heading: doc.heading ?? '',
+      dietaryNote: doc.dietaryNote,
+      surchargeLine: doc.surchargeLine,
+      sections: doc.sections.map((section) => [
+        section.title,
+        section.headerSuffix ?? null,
+        section.subheading ?? null,
+        section.sectionType,
+        section.placement,
+        section.visible,
+        section.items.map((item) => [
+          item.dishKey ?? null,
+          item.name,
+          item.description ?? null,
+          item.priceCents ?? null,
+          item.priceUnit ?? null,
+          sortMenuTags(item.tags),
+          item.isSeafood,
+          item.visible,
+          item.recipeId ?? null
+        ])
+      ])
+    });
+  return canonical(a) === canonical(b);
+}
+
 export function menuDiffIsEmpty(diff: MenuDiff): boolean {
   return (
     diff.added.length === 0 &&

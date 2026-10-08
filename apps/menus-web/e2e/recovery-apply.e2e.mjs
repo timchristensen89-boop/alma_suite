@@ -109,13 +109,21 @@ describe('applying recovered edits', { skip: skipReason }, () => {
     const menu = await menuWithKeptEdit('Network');
     const page = chef.page;
     const isSave = (request) => request.method() === 'PUT' && request.url().endsWith(`/api/menus/${menu.id}/draft`);
-    const abortSaves = (request) => (isSave(request) ? void request.abort('failed') : void request.continue());
+    let aborted = 0;
+    const abortSaves = (request) => {
+      if (!isSave(request)) return void request.continue();
+      aborted += 1;
+      void request.abort('failed');
+    };
     await page.setRequestInterception(true);
     page.on('request', abortSaves);
     try {
       await clickByText(page, 'button', 'Apply to this draft');
-      await waitForText(page, 'Not saved');
+      // "Not saved yet" is the card's line for an applied copy whose save failed (the subtitle's "Not saved when…" is always there).
+      await waitForText(page, 'Not saved yet');
+      assert.ok(aborted >= 1, 'a save was actually attempted and refused');
       await assertRecoveryOffered(menu.id, 'after the failed save');
+      assert.ok((await text(page)).includes('Apply again'), 'the card offers to apply again');
     } finally {
       page.off('request', abortSaves);
       await page.setRequestInterception(false);
@@ -162,6 +170,105 @@ describe('applying recovered edits', { skip: skipReason }, () => {
     } finally {
       page.off('request', hold);
       for (const request of held.slice(2)) request.continue();
+      await page.setRequestInterception(false);
+    }
+  });
+
+  it('a newer kept copy written while an apply is still saving is not cleared by that save', async () => {
+    const menu = await menuWithKeptEdit('Newer copy');
+    const page = chef.page;
+    const isSave = (request) => request.method() === 'PUT' && request.url().endsWith(`/api/menus/${menu.id}/draft`);
+    const held = [];
+    const hold = (request) => (isSave(request) ? void held.push(request) : void request.continue());
+    await page.setRequestInterception(true);
+    page.on('request', hold);
+    try {
+      await clickByText(page, 'button', 'Apply to this draft');
+      for (let waited = 0; held.length < 1; waited += 50) {
+        if (waited > 10_000) throw new Error('the save carrying the applied edit never left');
+        await sleep(50);
+      }
+      // Another tab of this browser keeps a newer copy for the same menu while that save is on the wire.
+      const newerId = await page.evaluate((id) => {
+        const key = `alma.menus.unsaved.${id}`;
+        const stored = JSON.parse(localStorage.getItem(key));
+        const newer = { ...stored, id: `newer-${Date.now()}`, keptAt: new Date().toISOString(), document: { ...stored.document, heading: 'Kept by another tab' } };
+        localStorage.setItem(key, JSON.stringify(newer));
+        return newer.id;
+      }, menu.id);
+      const response = page.waitForResponse((candidate) => candidate.request() === held[0], { timeout: 15_000 });
+      held[0].continue();
+      assert.equal((await response).status(), 200);
+      await page.waitForFunction(() => document.body.textContent.includes('recovered changes are saved'), { timeout: 15_000 });
+      const kept = JSON.parse(await keptCopy(page, menu.id));
+      assert.equal(kept.id, newerId, 'the newer copy is still there');
+      assert.equal(kept.document.heading, 'Kept by another tab');
+      assert.equal(await serverHeading(admin.page, menu.id), RECOVERED_HEADING);
+    } finally {
+      page.off('request', hold);
+      for (const request of held.slice(1)) request.continue();
+      await page.setRequestInterception(false);
+    }
+  });
+
+  it('a copy kept in the old format (no id) is offered, applied, saved and cleared', async () => {
+    const menu = await newMenu(admin.page, 'Legacy');
+    const page = chef.page;
+    await page.goto(`${E2E.base}/menus/${menu.id}/edit`, { waitUntil: 'networkidle0' });
+    await page.waitForSelector('.editor-form');
+    const draft = (await api(admin.page, 'GET', `/api/menus/${menu.id}/draft`)).json;
+    await page.evaluate(
+      (id, label, document) => {
+        localStorage.setItem(`alma.menus.unsaved.${id}`, JSON.stringify({ menuId: id, menuLabel: label, draftVersionNumber: 1, keptAt: '2026-10-01T10:00:00.000Z', document }));
+      },
+      menu.id,
+      `St Alma · ${menu.name}`,
+      { ...draft.document, heading: 'From the old format' }
+    );
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForSelector('.editor-form');
+    await waitForText(page, 'Apply to this draft');
+    await clickByText(page, 'button', 'Apply to this draft');
+    await page.waitForFunction(() => !document.body.textContent.includes('Unsaved changes from'), { timeout: 15_000 });
+    assert.equal(await serverHeading(admin.page, menu.id), 'From the old format');
+    assert.equal(await keptCopy(page, menu.id), null);
+  });
+
+  it('publishing right after apply, while an older save is still on the wire, publishes the recovered edits', async () => {
+    const menu = await menuWithKeptEdit('Publish after apply');
+    // Publishing needs a publisher: the admin opens the same draft, with the same kept copy in its browser.
+    const page = admin.page;
+    const copy = await keptCopy(chef.page, menu.id);
+    await page.goto(`${E2E.base}/menus/${menu.id}/edit`, { waitUntil: 'networkidle0' });
+    await page.waitForSelector('.editor-form');
+    await page.evaluate((id, value) => localStorage.setItem(`alma.menus.unsaved.${id}`, value), menu.id, copy);
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForSelector('.editor-form');
+    await waitForText(page, 'Apply to this draft');
+    const isSave = (request) => request.method() === 'PUT' && request.url().endsWith(`/api/menus/${menu.id}/draft`);
+    const held = [];
+    const hold = (request) => (isSave(request) && held.length === 0 ? void held.push(request) : void request.continue());
+    await page.setRequestInterception(true);
+    page.on('request', hold);
+    try {
+      await replaceValue(page, await fieldByLabel(page, 'Dietary note'), 'Typed before the apply');
+      for (let waited = 0; held.length < 1; waited += 50) {
+        if (waited > 10_000) throw new Error('the first save never left');
+        await sleep(50);
+      }
+      await clickByText(page, 'button', 'Apply to this draft');
+      await clickByText(page, 'button', 'Publish…');
+      held[0].continue();
+      await page.waitForSelector('dialog[open] .menu-dialog-status', { timeout: 30_000 });
+      assert.equal(await serverHeading(admin.page, menu.id), RECOVERED_HEADING, 'the recovered edit reached the server before the publish preview');
+      // This menu has never been published, so the dialog is a first publish (no heading row to show); the server check above is the proof.
+      const dialog = await page.$eval('dialog[open]', (element) => element.textContent);
+      assert.ok(dialog.includes('first published version'), dialog.slice(0, 200));
+      await clickByText(page, 'dialog[open] button', 'Back to editing');
+      await page.waitForFunction(() => !document.body.textContent.includes('Unsaved changes from'), { timeout: 15_000 });
+      assert.equal(await keptCopy(page, menu.id), null);
+    } finally {
+      page.off('request', hold);
       await page.setRequestInterception(false);
     }
   });

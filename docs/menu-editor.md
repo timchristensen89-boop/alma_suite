@@ -44,7 +44,10 @@ draft ──save──► draft ──publish──► PUBLISHED (snapshot + PDF
 - One draft per menu at most, enforced inside the transaction that creates
   one (the `Menu` row is locked by the version counter update first). Saving
   replaces the draft's rows and writes a `draft.saved` audit event with the
-  diff summary; a save that changes nothing writes nothing. Saves carry the
+  diff summary; a save that changes nothing writes nothing. "Changes" means
+  any stored field (`menuDocumentsEqual`), not only what the publish diff
+  reports: a seafood flag or a recipe link does not print but still saves,
+  and its audit line reads "dish settings changed (nothing printed differs)". Saves carry the
   draft's `updatedAt`, and the write itself is conditional on that value, so
   a stale or racing save is refused (409) rather than overwriting someone
   else's work. Publishing flips the draft under the same guard.
@@ -104,7 +107,12 @@ draft ──save──► draft ──publish──► PUBLISHED (snapshot + PDF
   save remembers the number of the document it sent, so a save already on the
   wire before the apply never counts, and clearing checks the stored copy's id
   so it never removes a newer copy. A rejected save (someone else saved), a
-  network failure or a reload leaves the copy to apply again. An archived copy
+  network failure or a reload leaves the copy to apply again; applying again
+  over edits typed since asks first. The same numbers drive "Saved": a save
+  that lands while newer edits exist leaves the editor dirty and re-arms the
+  autosave, and Publish and Copy flush until the server holds the latest
+  number. Known limit: one kept copy per menu per browser, so two tabs of the
+  same browser archived mid-edit keep only the later one. An archived copy
   target only takes that menu off the picker: the source stays editable.
   History and the home handle the same answer.
 - **Printed heading** (`MenuVersion.heading`, part of `MenuDocument`): the

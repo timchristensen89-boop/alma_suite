@@ -8,6 +8,7 @@ import {
   formatMenuTags,
   menuCreateInputSchema,
   menuDiffIsEmpty,
+  menuDocumentsEqual,
   menuDraftSaveInputSchema,
   menuTagLegend,
   menuTemplatesForVenue,
@@ -373,6 +374,21 @@ describe('menus per venue — templates, headings, names', () => {
     assert.throws(() => menuCreateInputSchema.parse({ name: 'Tuesday' }));
     assert.equal(menuUpdateInputSchema.parse({ name: ' NYE ' }).name, 'NYE');
     assert.throws(() => menuUpdateInputSchema.parse({ name: '' }));
+  });
+
+  it('menuDocumentsEqual sees every stored field, not only what prints', () => {
+    const base = doc([section({ title: 'S', items: [item({ name: 'Prawn', tags: ['I'], isSeafood: true })] })]);
+    const same = { ...base, sections: base.sections.map((s) => ({ ...s, id: 'row-1', items: s.items.map((i) => ({ ...i, id: 'row-2', tags: ['I'] })) })) };
+    assert.equal(menuDocumentsEqual(base, same), true, 'row ids do not matter');
+    const seafoodOff = { ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, isSeafood: false })) })) };
+    assert.equal(menuDiffIsEmpty(diffMenuDocuments(base, seafoodOff)), true, 'the publish diff does not show it');
+    assert.equal(menuDocumentsEqual(base, seafoodOff), false, 'but it is a change');
+    const recipe = { ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, recipeId: 'r1' })) })) };
+    assert.equal(menuDocumentsEqual(base, recipe), false);
+    const unitOnly = { ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, priceCents: null, priceUnit: 'pp' })) })) };
+    const noUnit = { ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, priceCents: null, priceUnit: null })) })) };
+    assert.equal(menuDocumentsEqual(unitOnly, noUnit), false);
+    assert.equal(menuDocumentsEqual(doc([], { heading: 'A' }), doc([], { heading: 'B' })), false);
   });
 
   it('a draft saved by an editor that does not know about headings keeps the template title', () => {

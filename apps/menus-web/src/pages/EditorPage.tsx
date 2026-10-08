@@ -13,6 +13,7 @@ import {
   formatMenuPrice,
   isMenuTemplateKey,
   menuDiffIsEmpty,
+  menuDocumentsEqual,
   summariseMenuDiff,
   newDishKey,
   overflowIssue,
@@ -170,6 +171,8 @@ export function EditorPage({ user }: { user: AuthUser }) {
    */
   const editSeqRef = useRef(0);
   const latestSeqRef = useRef(0);
+  /** The number of the document the server last confirmed; "saved" means it equals latestSeqRef. */
+  const savedSeqRef = useRef(0);
   /** A kept copy applied to the editor and not yet confirmed saved: its backup stays until then. */
   const pendingApplyRef = useRef<PendingRecoveryApply | null>(null);
   const [applyPending, setApplyPending] = useState<string | null>(null);
@@ -188,6 +191,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+    setNotice(null);
     try {
       const [menu, all] = await Promise.all([menuApi.get(menuId), menuApi.list()]);
       setSummary(menu);
@@ -211,6 +215,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
         setDoc(keyed);
         latestDoc.current = keyed;
         latestSeqRef.current = editSeqRef.current;
+        savedSeqRef.current = editSeqRef.current;
         savedDocRef.current = payload.document;
         expectedUpdatedAt.current = payload.version.updatedAt;
         setSave({ kind: 'saved', at: payload.version.updatedAt });
@@ -247,13 +252,25 @@ export function EditorPage({ user }: { user: AuthUser }) {
         const payload = await menuApi.saveDraft(menuId, current, expectedUpdatedAt.current);
         expectedUpdatedAt.current = payload.version.updatedAt;
         savedDocRef.current = payload.document;
+        savedSeqRef.current = Math.max(savedSeqRef.current, sentSeq);
+        // The menu was archived while this save was on the wire (the server
+        // accepted it just before): the read-only view stands, nothing below
+        // may flip it back to an editor.
+        if (archivedRef.current) return true;
         setDraft(payload);
         // Adopt the server's row ids and dish keys without clobbering edits typed meanwhile.
         const base = latestDoc.current ?? current;
         const adopted = adoptSaved(base, current, payload.document);
         latestDoc.current = adopted;
         setDoc(adopted);
-        setSave({ kind: 'saved', at: payload.version.updatedAt });
+        if (latestSeqRef.current === sentSeq) {
+          setSave({ kind: 'saved', at: payload.version.updatedAt });
+        } else {
+          // Edits were typed while this save was out. They are not saved yet:
+          // say so, and make sure a save for them is coming.
+          setSave({ kind: 'dirty' });
+          if (!saveTimer.current && !queuedRef.current) saveTimer.current = window.setTimeout(() => void saveNowRef.current(), AUTOSAVE_MS);
+        }
         // The server now holds the applied copy only if this save carried it:
         // one sent before the apply (still in flight when it was applied)
         // does not count. Only then is the backup removed, and only if the
@@ -304,7 +321,10 @@ export function EditorPage({ user }: { user: AuthUser }) {
       });
       if (saveStateRef.current.kind !== 'conflict') setSave({ kind: 'dirty' });
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => void saveNowRef.current(), AUTOSAVE_MS);
+      saveTimer.current = window.setTimeout(() => {
+        saveTimer.current = null;
+        void saveNowRef.current();
+      }, AUTOSAVE_MS);
       return seq;
     },
     [setSave]
@@ -332,7 +352,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
       pendingApplyRef.current = null;
       setApplyPending(null);
       const saved = savedDocRef.current;
-      if (latest && saved && draft && summary && !menuDiffIsEmpty(diffMenuDocuments(saved, latest))) {
+      if (latest && saved && draft && summary && !menuDocumentsEqual(saved, latest)) {
         const changes: UnsavedMenuChanges = {
           id: newRecoveryId(),
           menuId,
@@ -402,8 +422,11 @@ export function EditorPage({ user }: { user: AuthUser }) {
       if (!ok) return false;
     }
     const kind = saveStateRef.current.kind;
-    if (kind === 'dirty' || kind === 'error') return saveNow();
-    return kind !== 'conflict';
+    if (kind === 'conflict') return false;
+    // Whatever the label says, the server has the latest edits only when
+    // their number is the one it last confirmed.
+    if (latestSeqRef.current !== savedSeqRef.current || kind === 'error') return saveNow();
+    return true;
   }, [saveNow]);
 
   // ------------------------------------------------------------ validation
@@ -620,11 +643,14 @@ export function EditorPage({ user }: { user: AuthUser }) {
       if (pendingApplyRef.current?.recoveryId === changes.id) pendingApplyRef.current = null;
       setApplyPending(null);
       setUnsaved(null);
+      setNotice(null);
     };
     // Applying only puts the copy into the editor. The copy and this card stay
     // until a save carrying it succeeds (see saveNow); a rejected or failed
     // save, or a reload, leaves it here to apply again.
     const apply = () => {
+      // Applying again replaces whatever was typed since the first apply.
+      if (applied && doc && !menuDocumentsEqual(doc, changes.document) && !window.confirm('Apply again? It replaces everything in the editor, including anything typed since you last applied, with the kept copy.')) return;
       const seq = update(() => withClientKeys(changes.document));
       if (seq === null) return;
       pendingApplyRef.current = { recoveryId: changes.id, editSeq: seq };
@@ -652,22 +678,21 @@ export function EditorPage({ user }: { user: AuthUser }) {
           <p className={saveState.kind === 'conflict' || saveState.kind === 'error' ? 'error-text' : 'subtle'} role="status">
             {appliedStatus}
           </p>
-        ) : (
+        ) : null}
+        {diff ? (
           <>
-            {diff ? (
-              <>
-                <p className="menu-dialog-summary">{summariseMenuDiff(diff)}</p>
-                <DiffView diff={diff} templateTitle={isMenuTemplateKey(summary.templateKey) ? MENU_TEMPLATES[summary.templateKey].title : undefined} emptyText="Same as the editor now." />
-              </>
-            ) : null}
-            <p className="subtle">
-              {where === 'archived'
-                ? 'When a publisher unarchives the menu, open it here and choose Apply to put them back into the draft.'
-                : where === 'draft'
-                  ? 'Apply replaces what the editor holds now with the version you were editing. This copy is kept until the draft has saved it.'
-                  : 'Start a draft, then apply them.'}
-            </p>
+            <p className="menu-dialog-summary">{summariseMenuDiff(diff)}</p>
+            <DiffView diff={diff} templateTitle={isMenuTemplateKey(summary.templateKey) ? MENU_TEMPLATES[summary.templateKey].title : undefined} emptyText={applied ? 'The editor holds this copy now.' : 'Same as the editor now.'} />
           </>
+        ) : null}
+        {appliedStatus ? null : (
+          <p className="subtle">
+            {where === 'archived'
+              ? 'When a publisher unarchives the menu, open it here and choose Apply to put them back into the draft.'
+              : where === 'draft'
+                ? 'Apply replaces what the editor holds now with the version you were editing. This copy is kept until the draft has saved it.'
+                : 'Start a draft, then apply them.'}
+          </p>
         )}
         <div className="menus-actions-row">
           {where === 'draft' ? <Button onClick={apply}>{applied ? 'Apply again' : 'Apply to this draft'}</Button> : null}

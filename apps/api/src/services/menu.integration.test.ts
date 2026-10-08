@@ -135,6 +135,14 @@ describe('menu service (Postgres)', { skip: TEST_DB ? false : 'skipped: set ALMA
     assert.deepEqual(audit.map((entry) => entry.action), ['draft.saved', 'draft.saved', 'draft.created']);
     assert.equal(audit[0]!.actor.name, 'Itest Chef');
     assert.match(audit[0]!.summary, /1 dish added/);
+
+    // A change that does not print (the seafood flag) is still a save.
+    const seafoodOff = { ...again.document, sections: again.document.sections.map((section) => ({ ...section, items: section.items.map((item) => (item.dishKey === 'it-prawn' ? { ...item, isSeafood: false } : item)) })) };
+    const flagged = await h.menus.saveDraft(menuId, seafoodOff, chef);
+    assert.equal(flagged.document.sections[0]!.items.find((item) => item.dishKey === 'it-prawn')!.isSeafood, false);
+    assert.notEqual(flagged.version.updatedAt, again.version.updatedAt, 'the draft row was written');
+    assert.match((await h.menus.listAudit(menuId))[0]!.summary, /dish settings changed/);
+    await h.menus.saveDraft(menuId, { ...flagged.document, sections: again.document.sections }, chef); // put it back
   });
 
   it('refuses a second draft and a stale save, and a no-op save does not move updatedAt', async () => {
