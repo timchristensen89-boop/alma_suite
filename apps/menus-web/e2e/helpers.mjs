@@ -12,11 +12,12 @@
  *   MENUS_E2E_API_URL=http://127.0.0.1:3018 \
  *   MENUS_E2E_ADMIN_EMAIL=… MENUS_E2E_CHEF_EMAIL=… MENUS_E2E_PASSWORD=… \
  *   MENUS_E2E_CHROME=/path/to/chrome \            # optional, see chromePath()
+ *   MENUS_E2E_SCREENSHOTS=/tmp/menus-e2e \        # optional: save screenshots there
  *     pnpm --filter @alma/menus-web test:e2e
  *
  * Without MENUS_E2E_BASE_URL every suite reports as skipped.
  */
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 
@@ -52,10 +53,10 @@ export async function launch() {
 }
 
 /** A signed-in tab in its own browser context (its own storage), with errors collected. 409/403 resource lines are expected answers, not errors. */
-export async function session(browser, email) {
+export async function session(browser, email, viewport = { width: 1360, height: 1000 }) {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
-  await page.setViewport({ width: 1360, height: 1000 });
+  await page.setViewport(viewport);
   const errors = [];
   page.on('pageerror', (error) => errors.push(String(error)));
   page.on('console', (message) => {
@@ -94,6 +95,28 @@ export async function api(page, method, path, body) {
     path,
     body
   );
+}
+
+/** Save a full-page screenshot when MENUS_E2E_SCREENSHOTS names a directory; otherwise nothing. */
+export async function screenshot(page, name) {
+  const dir = process.env.MENUS_E2E_SCREENSHOTS;
+  if (!dir) return;
+  mkdirSync(dir, { recursive: true });
+  await page.screenshot({ path: join(dir, `${name}.png`), fullPage: true });
+}
+
+/** The home's section for a venue, by its heading. */
+export async function venueSection(page, venueName) {
+  const handle = await page.evaluateHandle((name) => [...document.querySelectorAll('.menus-venue')].find((section) => section.querySelector('h2')?.textContent === name) ?? null, venueName);
+  const element = handle.asElement();
+  if (!element) throw new Error(`No "${venueName}" section on the home.`);
+  return element;
+}
+
+/** Names of the menu cards in a venue's section. */
+export async function cardNames(page, venueName) {
+  const section = await venueSection(page, venueName);
+  return section.evaluate((node) => [...node.querySelectorAll('.menu-card .card-title')].map((title) => title.textContent));
 }
 
 export const text = (page) => page.evaluate(() => document.body.textContent.replace(/\s+/g, ' '));

@@ -184,10 +184,12 @@ pnpm --filter @alma/api menus:compare -- --reference ../alma-web-platform/apps/w
 ```
 
 Browser regressions (`apps/menus-web/e2e`, puppeteer-core) drive the real
-editor against a running API and menus-web on a disposable database: a menu
-archived while another tab edits it, and applying recovered edits through a
-rejected save, a network failure, a reload and an older save still in
-flight. `apps/menus-web/e2e/helpers.mjs` lists what they need; without
+editor against a running API and menus-web on a disposable database: the
+whole menu-management flow (`smoke`: New menu, heading and preview,
+publish, heading diff, name clash, rename, archive, unarchive, phone width,
+draft-only chef), a menu archived while another tab edits it, and applying
+recovered edits through a rejected save, a network failure, a reload and an
+older save still in flight. `apps/menus-web/e2e/helpers.mjs` lists what they need; without
 `MENUS_E2E_BASE_URL` they report as skipped. Not run by CI.
 
 ```bash
