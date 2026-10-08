@@ -259,11 +259,11 @@ function NewPromotionDialog({ venues, unlinkedCards, initialVenueId, onCreated, 
   }
 
   return (
-    <dialog ref={ref} className="menu-dialog" onClose={onClose} aria-labelledby="new-promotion-title">
+    <dialog ref={ref} className="menu-dialog" onClose={onClose} aria-labelledby="new-promotion-heading">
       <form className="menu-dialog-body menu-form" onSubmit={submit}>
         <header>
           <span className="menu-dialog-eyebrow">What’s On</span>
-          <h2 id="new-promotion-title">New promotion</h2>
+          <h2 id="new-promotion-heading">New promotion</h2>
         </header>
         {venues.length > 1 ? (
           <Select
