@@ -1,28 +1,57 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { canPublishMenus, type AuthUser, type MenuListPayload, type MenuSummary, type MenuVenueSummary } from '@alma/shared';
+import {
+  MENU_KINDS,
+  MENU_KIND_LABELS,
+  canPublishMenus,
+  describeMenuFormat,
+  getMenuTemplate,
+  isMenuTemplateKey,
+  type AuthUser,
+  type MenuKind,
+  type MenuListPayload,
+  type MenuSummary,
+  type MenuTemplate,
+  type MenuVenueSummary
+} from '@alma/shared';
 import { AlmaHomeBubble, Badge, Button, Card, EmptyState, MenuIcon, Skeleton } from '@alma/ui';
-import { ArchiveMenuDialog, NewMenuDialog, RenameMenuDialog } from '../components/MenuManageDialogs';
+import { ArchiveMenuDialog, MenuDetailsDialog, NewMenuDialog, menuKindGroupLabel } from '../components/MenuManageDialogs';
 import { ApiError } from '../lib/api';
 import { isMenuArchivedError, menuApi, openVersionPdf } from '../lib/menuApi';
-import { formatWhen, pdfFilename, personName } from '../lib/format';
+import { formatEventDate, formatWhen, pdfFilename, personName } from '../lib/format';
 import { IconPlus } from '../../../web/src/lib/icons';
 
 /**
- * Module home: the venues, and under each one a card per menu — the à la
- * carte, a Tuesday menu, an event menu — with what is live, who last touched
- * it, and whether an unpublished draft is waiting. Publishers add, rename and
- * archive menus from here; archived menus sit in a list at the bottom and can
- * be unarchived.
+ * Module home: the venues, and under each one its menus grouped by kind —
+ * food, drinks, functions, promotions, private events — with what is live,
+ * who last touched it, and whether an unpublished draft is waiting.
+ * Publishers add menus, edit their details and archive them from here;
+ * archived menus sit in a list at the bottom and can be unarchived.
  */
 
 type VenueGroup = { venue: MenuVenueSummary; menus: MenuSummary[] };
+type KindGroup = { kind: MenuKind; menus: MenuSummary[] };
 
-/** Under the menu's name: what its page is headed, and the template only when the venue has more than one. */
+function menuKind(menu: MenuSummary): MenuKind {
+  return menu.kind ?? 'FOOD';
+}
+
+function templateOf(menu: MenuSummary): MenuTemplate | null {
+  return isMenuTemplateKey(menu.templateKey) ? getMenuTemplate(menu.templateKey) : null;
+}
+
+/** The venue's menus in MENU_KINDS order, kinds without a menu left out. */
+function byKind(menus: MenuSummary[]): KindGroup[] {
+  return MENU_KINDS.map((kind) => ({ kind, menus: menus.filter((menu) => menuKind(menu) === kind) })).filter((group) => group.menus.length > 0);
+}
+
+/** Under the menu's name: what its page is headed, and the template only when the venue has more than one for this kind. */
 function cardSubtitle(menu: MenuSummary, venue: MenuVenueSummary | undefined): string {
   const heading = `Headed “${menu.printedHeading}”`;
-  if (!venue || venue.templates.length < 2) return heading;
-  const label = venue.templates.find((template) => template.key === menu.templateKey)?.label ?? menu.templateKey.replace(/_/g, ' ');
+  const kind = menuKind(menu);
+  const forKind = (venue?.templates ?? []).filter((template) => (template.kinds?.length ? template.kinds : ['FOOD']).includes(kind));
+  if (forKind.length < 2) return heading;
+  const label = forKind.find((template) => template.key === menu.templateKey)?.label ?? menu.templateKey.replace(/_/g, ' ');
   return `${heading} · ${label}`;
 }
 
@@ -34,7 +63,7 @@ export function HomePage({ user }: { user: AuthUser }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [newMenuFor, setNewMenuFor] = useState<{ venueId: string | null } | null>(null);
-  const [renaming, setRenaming] = useState<MenuSummary | null>(null);
+  const [editing, setEditing] = useState<MenuSummary | null>(null);
   const [archiving, setArchiving] = useState<MenuSummary | null>(null);
   const canManage = canPublishMenus(user);
 
@@ -125,22 +154,43 @@ export function HomePage({ user }: { user: AuthUser }) {
 
   function card(menu: MenuSummary) {
     const venue = venueById.get(menu.venue.id);
+    const kind = menuKind(menu);
+    const template = templateOf(menu);
+    const pageCount = menu.published?.pageCount ?? menu.draft?.pageCount ?? 1;
+    const isPrivate = (menu.visibility ?? 'PUBLIC') === 'PRIVATE';
+    const event = menu.event ?? null;
+    const eventLine =
+      kind === 'PRIVATE_EVENT' && event
+        ? [event.eventName, formatEventDate(event.eventDate) || null, event.guestCount ? `${event.guestCount} guests` : null].filter(Boolean).join(' · ')
+        : '';
     return (
       <Card
         key={menu.id}
-        className="menu-card"
+        className={`menu-card is-kind-${kind.toLowerCase()}`}
         title={menu.name}
         subtitle={cardSubtitle(menu, venue)}
         action={
           canManage ? (
             <div className="menu-card-manage">
-              <button type="button" className="item-action" aria-label={`Rename ${menu.venue.name} · ${menu.name}`} onClick={() => { setNotice(null); setRenaming(menu); }}>Rename</button>
+              <button type="button" className="item-action" aria-label={`Rename ${menu.venue.name} · ${menu.name}`} onClick={() => { setNotice(null); setEditing(menu); }}>Rename</button>
               <button type="button" className="item-action" aria-label={`Archive ${menu.venue.name} · ${menu.name}`} onClick={() => { setNotice(null); setArchiving(menu); }}>Archive</button>
             </div>
           ) : undefined
         }
       >
+        <div className="menu-card-meta">
+          <Badge tone="neutral">{MENU_KIND_LABELS[kind]}</Badge>
+          {template ? <span className="subtle menu-card-format">{describeMenuFormat(template.format, pageCount)}</span> : null}
+          {isPrivate ? <Badge tone="muted">Private</Badge> : null}
+          {template && template.venueSlug === null ? <Badge tone="info">Both venues</Badge> : null}
+        </div>
         <dl className="menu-card-facts">
+          {kind === 'PRIVATE_EVENT' ? (
+            <div>
+              <dt>Event</dt>
+              <dd className={eventLine ? '' : 'subtle'}>{eventLine || 'No date yet — add it under Rename.'}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Live</dt>
             <dd>
@@ -200,7 +250,7 @@ export function HomePage({ user }: { user: AuthUser }) {
         appName="Menus"
         appIcon={<MenuIcon />}
         eyebrow="Printed menus"
-        description="Edit each venue's printed menus — the à la carte, a Tuesday menu, an event menu — see the A4 page as you type, and publish the PDF the venue prints. Layout is locked; content is yours."
+        description="Edit each venue's printed menus — the à la carte, the drinks book, functions packs, promotions and event menus — see every page as you type, and publish the PDF the venue prints. Layout is locked; content is yours."
         statusLabel={data === null ? 'Loading…' : drafts > 0 ? `${drafts} unpublished draft${drafts === 1 ? '' : 's'}` : 'Everything published'}
         statusHint={renderer ? (renderer.ok ? 'PDF renderer ready' : renderer.message) : undefined}
         statusDot={renderer && !renderer.ok ? 'amber' : drafts > 0 ? 'amber' : 'forest'}
@@ -246,7 +296,15 @@ export function HomePage({ user }: { user: AuthUser }) {
             {group.menus.length === 0 ? (
               <p className="subtle">No menus for {group.venue.name} yet.{canManage ? ' Add one above.' : ' A manager or the head chef can add one.'}</p>
             ) : (
-              <div className="menus-grid">{group.menus.map(card)}</div>
+              byKind(group.menus).map((kindGroup) => (
+                <div key={kindGroup.kind} className={`menus-kind is-${kindGroup.kind.toLowerCase()}`} aria-labelledby={`venue-${group.venue.id}-${kindGroup.kind}`}>
+                  <h3 id={`venue-${group.venue.id}-${kindGroup.kind}`} className="menus-kind-head">
+                    {menuKindGroupLabel(kindGroup.kind)}
+                    <span className="subtle menus-kind-count">{kindGroup.menus.length}</span>
+                  </h3>
+                  <div className="menus-grid">{kindGroup.menus.map(card)}</div>
+                </div>
+              ))
             )}
           </section>
         ))
@@ -261,7 +319,8 @@ export function HomePage({ user }: { user: AuthUser }) {
                   {menu.venue.name} · {menu.name}
                 </strong>
                 <span className="subtle">
-                  {menu.published ? `last live v${menu.published.versionNumber}` : 'never published'}
+                  {MENU_KIND_LABELS[menuKind(menu)].toLowerCase()}
+                  {menu.published ? ` · last live v${menu.published.versionNumber}` : ' · never published'}
                   {menu.draft ? ` · draft v${menu.draft.versionNumber} kept` : ''}
                 </span>
                 <div className="archived-row-actions">
@@ -296,15 +355,15 @@ export function HomePage({ user }: { user: AuthUser }) {
           onClose={() => setNewMenuFor(null)}
         />
       ) : null}
-      {renaming ? (
-        <RenameMenuDialog
-          menu={renaming}
-          onDone={(menu) => {
-            setRenaming(null);
-            setNotice(`Renamed to ${menu.venue.name} · ${menu.name}.`);
+      {editing ? (
+        <MenuDetailsDialog
+          menu={editing}
+          onDone={(menu, changed) => {
+            setEditing(null);
+            setNotice(changed.renamed ? `Renamed to ${menu.venue.name} · ${menu.name}.` : `${menu.venue.name} · ${menu.name} updated.`);
             void load();
           }}
-          onClose={() => setRenaming(null)}
+          onClose={() => setEditing(null)}
         />
       ) : null}
       {archiving ? (

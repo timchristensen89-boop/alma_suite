@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  MENU_ITEM_FLAGS,
   MENU_LIMITS,
   MENU_PLACEMENTS,
   MENU_PLACEMENT_LABELS,
@@ -9,8 +10,10 @@ import {
   MENU_TAGS,
   MENU_TEMPLATES,
   canPublishMenus,
+  describeMenuFormat,
   diffMenuDocuments,
   formatMenuPrice,
+  getMenuTemplate,
   isMenuTemplateKey,
   menuDiffIsEmpty,
   menuDocumentsEqual,
@@ -24,9 +27,13 @@ import {
   type MenuDraftPayload,
   type MenuFillReport,
   type MenuItemDocument,
+  type MenuItemFlag,
+  type MenuKind,
   type MenuPublishPreview,
   type MenuSectionDocument,
+  type MenuSheetFamily,
   type MenuSummary,
+  type MenuTemplate,
   type MenuValidationIssue,
   type MenuVersionPayload
 } from '@alma/shared';
@@ -52,10 +59,16 @@ import { moveItem, useDragReorder } from '../lib/reorder';
 import { IconArrowLeft, IconPlus, IconTrash } from '../../../web/src/lib/icons';
 
 /**
- * The editor. Split view on a desk (form left, live A4 preview right), two
- * tabs on a phone (Edit / Preview). Edits are kept locally and auto-saved a
- * moment after you stop typing; the server's updatedAt travels with every save
- * so two people on the pass cannot silently overwrite each other.
+ * The editor. Split view on a desk (form left, live preview right — one A4
+ * sheet or every page of a book), two tabs on a phone (Edit / Preview). Edits
+ * are kept locally and auto-saved a moment after you stop typing; the server's
+ * updatedAt travels with every save so two people on the pass cannot silently
+ * overwrite each other.
+ *
+ * What the form shows follows the print template's family: the A4 food sheet
+ * keeps its heading, placement columns and single page; the paged families
+ * (drinks books, functions document, A5 cards) add the title block fields,
+ * pages, price tables and item details.
  */
 
 const AUTOSAVE_MS = 1500;
@@ -163,6 +176,37 @@ function sectionDomId(sectionIndex: number) {
   return `menu-section-${sectionIndex}`;
 }
 
+/** The template behind a menu, or null when its key is unknown to this build (the preview would say so). */
+function templateFor(templateKey: string): MenuTemplate | null {
+  return isMenuTemplateKey(templateKey) ? getMenuTemplate(templateKey) : null;
+}
+
+/** What the editor exposes, by template family. */
+type EditorShape = {
+  family: MenuSheetFamily;
+  /** The A4 food sheet: heading only, placement columns, one page. */
+  food: boolean;
+  multiPage: boolean;
+  formatLabel: string;
+  kind: MenuKind;
+};
+
+function shapeFor(template: MenuTemplate | null, kind: MenuKind): EditorShape {
+  const family = template?.family ?? 'food-a4';
+  return {
+    family,
+    food: family === 'food-a4',
+    multiPage: template?.multiPage ?? false,
+    formatLabel: template ? describeMenuFormat(template.format) : 'A4 portrait',
+    kind
+  };
+}
+
+/** The dollars text for a price field: "12.50", "17", "" — cents only when there are any. */
+function priceInputText(cents: number | null | undefined): string {
+  return formatMenuPrice(cents ?? null);
+}
+
 export function EditorPage({ user }: { user: AuthUser }) {
   const { menuId = '' } = useParams();
   const navigate = useNavigate();
@@ -175,6 +219,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
   const [fill, setFill] = useState<MenuFillReport | null>(null);
   const [mobileTab, setMobileTab] = useState<'edit' | 'preview'>('edit');
   const [focusDishKey, setFocusDishKey] = useState<string | null>(null);
+  const [focusPage, setFocusPage] = useState<{ page: number; at: number } | null>(null);
   const [otherMenus, setOtherMenus] = useState<MenuSummary[]>([]);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
@@ -456,9 +501,14 @@ export function EditorPage({ user }: { user: AuthUser }) {
     return true;
   }, [saveNow]);
 
-  // ------------------------------------------------------------ validation
-  const validation = useMemo(() => (doc ? validateMenuDocument(doc) : null), [doc]);
-  const overflow = useMemo(() => (fill ? overflowIssue(fill) : null), [fill]);
+  // ------------------------------------------------------------ template, validation
+  const template = useMemo(() => (summary ? templateFor(summary.templateKey) : null), [summary]);
+  const shape = useMemo(() => shapeFor(template, summary?.kind ?? 'FOOD'), [template, summary]);
+  const validation = useMemo(
+    () => (doc ? validateMenuDocument(doc, { kind: shape.kind, maxPages: shape.multiPage ? MENU_LIMITS.pagesMax : 1 }) : null),
+    [doc, shape.kind, shape.multiPage]
+  );
+  const overflow = useMemo(() => (fill ? overflowIssue(fill, `one ${shape.formatLabel} page`) : null), [fill, shape.formatLabel]);
   const errors = useMemo(() => [...(validation?.errors ?? []), ...(overflow ? [overflow] : [])], [validation, overflow]);
   const warnings = validation?.warnings ?? [];
 
@@ -481,6 +531,12 @@ export function EditorPage({ user }: { user: AuthUser }) {
     },
     []
   );
+
+  /** A page chip: show that sheet in the preview (on a phone, that means the Preview tab). */
+  const showPage = useCallback((page: number) => {
+    if (window.matchMedia('(max-width: 900px)').matches) setMobileTab('preview');
+    setFocusPage({ page, at: Date.now() });
+  }, []);
 
   // ------------------------------------------------------------ draft lifecycle
   async function startDraft() {
@@ -632,6 +688,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
         </h1>
         <p className="subtle">
           {summary.published ? `Live: v${summary.published.versionNumber}, published ${formatWhen(summary.published.publishedAt)} by ${personName(summary.published.publishedBy)}.` : 'Nothing published yet.'}
+          {template ? ` ${template.label}.` : ''}
         </p>
       </div>
       <div className="editor-head-actions">
@@ -709,7 +766,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
         {diff ? (
           <>
             <p className="menu-dialog-summary">{summariseMenuDiff(diff)}</p>
-            <DiffView diff={diff} templateTitle={isMenuTemplateKey(summary.templateKey) ? MENU_TEMPLATES[summary.templateKey].title : undefined} emptyText={applied ? 'The editor holds this copy now.' : 'Same as the editor now.'} />
+            <DiffView diff={diff} templateTitle={template?.title} emptyText={applied ? 'The editor holds this copy now.' : 'Same as the editor now.'} />
           </>
         ) : null}
         {appliedStatus ? null : (
@@ -777,6 +834,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
             : saveState.kind === 'conflict'
               ? saveState.message
               : '';
+  const pageCount = shape.multiPage ? Math.max(1, doc.pageCount ?? 1) : 1;
 
   return (
     <>
@@ -814,15 +872,20 @@ export function EditorPage({ user }: { user: AuthUser }) {
 
       <div className={`editor-split is-${mobileTab}`}>
         <div className="editor-form">
-          <HeadingEditor doc={doc} templateKey={summary.templateKey} onChange={update} />
-          <ValidationPanel errors={errors} warnings={warnings} fill={fill} onJump={jumpTo} />
-          <SectionsEditor doc={doc} onChange={update} onCopy={(item) => setCopyTarget({ dishKey: item.dishKey ?? '', name: item.name })} canCopy={otherMenus.length > 0} />
-          <FooterEditor doc={doc} onChange={update} />
+          <HeadingEditor doc={doc} template={template} shape={shape} onChange={update} />
+          <ValidationPanel errors={errors} warnings={warnings} fill={fill} formatLabel={shape.formatLabel} onJump={jumpTo} />
+          {shape.multiPage ? <PagesStrip doc={doc} fill={fill} onChange={update} onShowPage={showPage} /> : null}
+          <SectionsEditor doc={doc} shape={shape} pageCount={pageCount} onChange={update} onCopy={(item) => setCopyTarget({ dishKey: item.dishKey ?? '', name: item.name })} canCopy={otherMenus.length > 0} />
+          <FooterEditor doc={doc} shape={shape} onChange={update} />
         </div>
         <aside className="editor-preview">
           <div className="editor-preview-sticky">
-            <MenuPreview document={doc} templateKey={summary.templateKey} onFill={handleFill} focusDishKey={focusDishKey} />
-            <p className="subtle editor-preview-note">Live preview, same template as the PDF. Hidden (86'd) items are left off.</p>
+            {template ? (
+              <MenuPreview document={doc} templateKey={summary.templateKey} onFill={handleFill} focusDishKey={focusDishKey} focusPage={focusPage} />
+            ) : (
+              <p className="error-text">This build does not know the template “{summary.templateKey}”, so there is no preview. The content can still be edited and saved.</p>
+            )}
+            <p className="subtle editor-preview-note">Live preview, same template as the PDF. Hidden (86'd) items are left off.{pageCount > 1 ? ' Click a page chip above the sections to jump to that page.' : ''}</p>
           </div>
         </aside>
       </div>
@@ -835,7 +898,8 @@ export function EditorPage({ user }: { user: AuthUser }) {
         error={publishError}
         publishedVersion={draft.publishedVersion}
         draftVersionNumber={draft.version.versionNumber}
-        templateTitle={isMenuTemplateKey(summary.templateKey) ? MENU_TEMPLATES[summary.templateKey].title : undefined}
+        pageCount={pageCount}
+        templateTitle={template?.title}
         onConfirm={() => void confirmPublish()}
         onClose={() => setPublishOpen(false)}
       />
@@ -861,12 +925,81 @@ export function EditorPage({ user }: { user: AuthUser }) {
 }
 
 // ---------------------------------------------------------------------------
-// Sections and items
+// Pages
 // ---------------------------------------------------------------------------
 
 type Mutate = (mutate: (prev: MenuDocument) => MenuDocument) => void;
 
-function SectionsEditor({ doc, onChange, onCopy, canCopy }: { doc: MenuDocument; onChange: Mutate; onCopy: (item: MenuItemDocument) => void; canCopy: boolean }) {
+/**
+ * The strip above the sections on a multi-page template: one chip per
+ * declared page with how full the preview measured it, add a page, remove
+ * the last one (only while nothing visible prints on it). Clicking a chip
+ * scrolls the preview to that sheet.
+ */
+function PagesStrip({ doc, fill, onChange, onShowPage }: { doc: MenuDocument; fill: MenuFillReport | null; onChange: Mutate; onShowPage: (page: number) => void }) {
+  const pageCount = Math.max(1, doc.pageCount ?? 1);
+  const pages = Array.from({ length: pageCount }, (_, index) => index + 1);
+  const lastHasVisible = doc.sections.some((section) => section.visible && Math.min(Math.max(1, section.page ?? 1), pageCount) === pageCount);
+  const canRemove = pageCount > 1 && !lastHasVisible;
+  const canAdd = pageCount < MENU_LIMITS.pagesMax;
+  const fillOf = (page: number) => fill?.pages?.find((entry) => entry.page === page) ?? null;
+
+  return (
+    <section className="pages-strip" aria-label="Pages">
+      <div className="pages-strip-head">
+        <h3>Pages</h3>
+        <span className="subtle">{pageCount === 1 ? '1 sheet' : `${pageCount} sheets`} · each section names the page it prints on</span>
+      </div>
+      <div className="pages-strip-chips" role="list">
+        {pages.map((page) => {
+          const measured = fillOf(page);
+          const tone = !measured ? 'idle' : measured.overflow ? 'over' : measured.fillRatio > 0.92 ? 'tight' : 'ok';
+          const percent = measured ? `${Math.round(measured.fillRatio * 100)}%` : '…';
+          return (
+            <button key={page} type="button" role="listitem" className={`page-chip is-${tone}`} title={measured ? `Page ${page}: ${percent} full` : `Page ${page}`} onClick={() => onShowPage(page)}>
+              <span className="page-chip-number">{page}</span>
+              <span className="page-chip-fill">{percent}</span>
+            </button>
+          );
+        })}
+        <Button
+          size="sm"
+          variant="secondary"
+          leftIcon={<IconPlus />}
+          disabled={!canAdd}
+          onClick={() => onChange((prev) => ({ ...prev, pageCount: Math.min(MENU_LIMITS.pagesMax, Math.max(1, prev.pageCount ?? 1) + 1) }))}
+        >
+          Add page
+        </Button>
+        {pageCount > 1 ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!canRemove}
+            title={canRemove ? undefined : `Page ${pageCount} still has a section on the print. Move or hide it first.`}
+            onClick={() =>
+              onChange((prev) => {
+                const count = Math.max(1, prev.pageCount ?? 1);
+                if (count <= 1) return prev;
+                const next = count - 1;
+                // Hidden sections left on the removed page come along, so un-hiding one later does not strand it.
+                return { ...prev, pageCount: next, sections: prev.sections.map((section) => ((section.page ?? 1) > next ? { ...section, page: next } : section)) };
+              })
+            }
+          >
+            Remove last page
+          </Button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sections and items
+// ---------------------------------------------------------------------------
+
+function SectionsEditor({ doc, shape, pageCount, onChange, onCopy, canCopy }: { doc: MenuDocument; shape: EditorShape; pageCount: number; onChange: Mutate; onCopy: (item: MenuItemDocument) => void; canCopy: boolean }) {
   const moveSection = useCallback((from: number, to: number) => onChange((prev) => ({ ...prev, sections: moveItem(prev.sections, from, to) })), [onChange]);
   const { drag, register, handleProps } = useDragReorder(doc.sections.length, moveSection);
 
@@ -877,6 +1010,8 @@ function SectionsEditor({ doc, onChange, onCopy, canCopy }: { doc: MenuDocument;
           key={(section as EditorSection).clientKey ?? section.id ?? `new-${sectionIndex}`}
           section={section}
           sectionIndex={sectionIndex}
+          shape={shape}
+          pageCount={pageCount}
           dragging={drag?.from === sectionIndex}
           dropTarget={drag !== null && drag.over === sectionIndex && drag.from !== sectionIndex}
           registerRow={register(sectionIndex)}
@@ -892,7 +1027,18 @@ function SectionsEditor({ doc, onChange, onCopy, canCopy }: { doc: MenuDocument;
           }}
         />
       ))}
-      <Button variant="secondary" leftIcon={<IconPlus />} onClick={() => onChange((prev) => ({ ...prev, sections: [...prev.sections, emptySection()] }))}>
+      <Button
+        variant="secondary"
+        leftIcon={<IconPlus />}
+        onClick={() =>
+          onChange((prev) => {
+            // A new section goes where the last one is — the page being worked on.
+            const last = prev.sections[prev.sections.length - 1];
+            const page = Math.min(Math.max(1, last?.page ?? 1), Math.max(1, prev.pageCount ?? 1));
+            return { ...prev, sections: [...prev.sections, emptySection(page)] };
+          })
+        }
+      >
         Add section
       </Button>
     </div>
@@ -902,6 +1048,8 @@ function SectionsEditor({ doc, onChange, onCopy, canCopy }: { doc: MenuDocument;
 type SectionCardProps = {
   section: MenuSectionDocument;
   sectionIndex: number;
+  shape: EditorShape;
+  pageCount: number;
   dragging: boolean;
   dropTarget: boolean;
   registerRow: (element: HTMLElement | null) => void;
@@ -912,18 +1060,42 @@ type SectionCardProps = {
   onDelete: () => void;
 };
 
-function SectionCard({ section, sectionIndex, dragging, dropTarget, registerRow, handleProps, canCopy, onCopy, onChange, onDelete }: SectionCardProps) {
+function SectionCard({ section, sectionIndex, shape, pageCount, dragging, dropTarget, registerRow, handleProps, canCopy, onCopy, onChange, onDelete }: SectionCardProps) {
   const [collapsed, setCollapsed] = useState(false);
+  // "More" starts open when any of its fields already holds something, so nothing set is hidden by surprise.
+  const [more, setMore] = useState(() => Boolean(section.headerSuffix || section.subheading || (section.lead && section.sectionType !== 'COURSE')));
   const moveRow = useCallback((from: number, to: number) => onChange((prev) => ({ ...prev, items: moveItem(prev.items, from, to) })), [onChange]);
   const items = useDragReorder(section.items.length, moveRow);
-  const isSet = section.sectionType === 'SET_MENUS';
-  const namesOnly = section.sectionType === 'HEADER_PRICED';
+  const type = section.sectionType;
+  const isSet = type === 'SET_MENUS';
+  const isText = type === 'TEXT';
+  const isTable = type === 'TABLE';
+  const isCourse = type === 'COURSE';
+  const namesOnly = type === 'HEADER_PRICED' || type === 'LIST';
+  const noun = isSet ? 'set menu' : isTable ? 'row' : shape.kind === 'DRINKS' ? 'drink' : isCourse || type === 'LIST' ? 'item' : 'dish';
+  const columns = section.priceColumns ?? [];
+
+  const setColumn = (index: number, label: string) =>
+    onChange((prev) => {
+      const next = [...(prev.priceColumns ?? [])];
+      next[index] = label;
+      return { ...prev, priceColumns: next };
+    });
+  const addColumn = () =>
+    onChange((prev) => ((prev.priceColumns ?? []).length >= MENU_LIMITS.priceColumnsMax ? prev : { ...prev, priceColumns: [...(prev.priceColumns ?? []), ''] }));
+  const removeColumn = (index: number) =>
+    onChange((prev) => ({
+      ...prev,
+      priceColumns: (prev.priceColumns ?? []).filter((_, i) => i !== index),
+      // Keep every row's prices aligned with the columns that remain.
+      items: prev.items.map((item) => ({ ...item, prices: (item.prices ?? []).filter((_, i) => i !== index) }))
+    }));
 
   return (
     <section
       ref={registerRow}
       id={sectionDomId(sectionIndex)}
-      className={`section-card${section.visible ? '' : ' is-hidden'}${dragging ? ' is-dragging' : ''}${dropTarget ? ' is-drop-target' : ''}`}
+      className={`section-card type-${type.toLowerCase()}${section.visible ? '' : ' is-hidden'}${dragging ? ' is-dragging' : ''}${dropTarget ? ' is-drop-target' : ''}`}
     >
       <header className="section-card-head">
         <button type="button" className="drag-handle" aria-label="Drag to reorder section (Alt+arrow keys to move)" title="Drag to reorder" {...handleProps}>
@@ -934,7 +1106,7 @@ function SectionCard({ section, sectionIndex, dragging, dropTarget, registerRow,
           data-field="name"
           value={section.title}
           maxLength={MENU_LIMITS.titleMax}
-          placeholder="Section title"
+          placeholder={isText ? 'Section title (optional for text)' : 'Section title'}
           onChange={(event) => {
             const value = event.currentTarget.value;
             onChange((prev) => ({ ...prev, title: value }));
@@ -945,7 +1117,7 @@ function SectionCard({ section, sectionIndex, dragging, dropTarget, registerRow,
           <span>{section.visible ? 'On the print' : 'Hidden'}</span>
         </label>
         <button type="button" className="section-collapse" onClick={() => setCollapsed((value) => !value)} aria-expanded={!collapsed}>
-          {collapsed ? `Show ${section.items.length}` : 'Collapse'}
+          {collapsed ? (isText ? 'Show text' : `Show ${section.items.length}`) : 'Collapse'}
         </button>
       </header>
       {collapsed ? null : (
@@ -953,66 +1125,140 @@ function SectionCard({ section, sectionIndex, dragging, dropTarget, registerRow,
           <div className="section-card-settings">
             <label className="field">
               <span className="field-label">Type</span>
-              <select className="field-control" value={section.sectionType} onChange={(event) => { const value = event.currentTarget.value as MenuSectionDocument['sectionType']; onChange((prev) => ({ ...prev, sectionType: value })); }}>
-                {MENU_SECTION_TYPES.map((type) => (
-                  <option key={type} value={type}>{MENU_SECTION_TYPE_LABELS[type]}</option>
+              <select className="field-control" value={type} onChange={(event) => { const value = event.currentTarget.value as MenuSectionDocument['sectionType']; onChange((prev) => ({ ...prev, sectionType: value })); }}>
+                {MENU_SECTION_TYPES.map((candidate) => (
+                  <option key={candidate} value={candidate}>{MENU_SECTION_TYPE_LABELS[candidate]}</option>
                 ))}
               </select>
             </label>
-            <label className="field">
-              <span className="field-label">Placement</span>
-              <select className="field-control" value={section.placement} onChange={(event) => { const value = event.currentTarget.value as MenuSectionDocument['placement']; onChange((prev) => ({ ...prev, placement: value })); }}>
-                {MENU_PLACEMENTS.map((placement) => (
-                  <option key={placement} value={placement}>{MENU_PLACEMENT_LABELS[placement]}</option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span className="field-label">Heading suffix</span>
-              <input className="field-control" value={section.headerSuffix ?? ''} maxLength={MENU_LIMITS.headerSuffixMax} placeholder={namesOnly ? '9 each' : 'optional'} onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, headerSuffix: value.trim() ? value : null })); }} />
-            </label>
-            {isSet ? (
+            {shape.food ? (
               <label className="field">
-                <span className="field-label">Subheading</span>
-                <input className="field-control" value={section.subheading ?? ''} maxLength={MENU_LIMITS.subheadingMax} placeholder="For the whole table." onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, subheading: value.trim() ? value : null })); }} />
+                <span className="field-label">Placement</span>
+                <select className="field-control" value={section.placement} onChange={(event) => { const value = event.currentTarget.value as MenuSectionDocument['placement']; onChange((prev) => ({ ...prev, placement: value })); }}>
+                  {MENU_PLACEMENTS.map((placement) => (
+                    <option key={placement} value={placement}>{MENU_PLACEMENT_LABELS[placement]}</option>
+                  ))}
+                </select>
               </label>
             ) : null}
+            {shape.multiPage ? (
+              <label className="field">
+                <span className="field-label">Page</span>
+                <select
+                  className="field-control"
+                  data-field="page"
+                  value={String(Math.min(Math.max(1, section.page ?? 1), pageCount))}
+                  onChange={(event) => { const value = Number(event.currentTarget.value); onChange((prev) => ({ ...prev, page: value })); }}
+                >
+                  {Array.from({ length: pageCount }, (_, index) => index + 1).map((page) => (
+                    <option key={page} value={String(page)}>Page {page}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {isCourse ? (
+              <label className="field">
+                <span className="field-label">Lead-in</span>
+                <input className="field-control" value={section.lead ?? ''} maxLength={MENU_LIMITS.leadMax} placeholder="Choose one" onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, lead: value.trim() ? value : null })); }} />
+              </label>
+            ) : null}
+            <button type="button" className="section-more" aria-expanded={more} onClick={() => setMore((value) => !value)}>
+              {more ? 'Less' : 'More'}
+            </button>
           </div>
+          {more ? (
+            <div className="section-card-settings is-more">
+              <label className="field">
+                <span className="field-label">Heading suffix</span>
+                <input className="field-control" value={section.headerSuffix ?? ''} maxLength={MENU_LIMITS.headerSuffixMax} placeholder={namesOnly ? '9 each' : 'optional'} onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, headerSuffix: value.trim() ? value : null })); }} />
+              </label>
+              <label className="field">
+                <span className="field-label">Subheading</span>
+                <input className="field-control" value={section.subheading ?? ''} maxLength={MENU_LIMITS.subheadingMax} placeholder={isSet ? 'For the whole table.' : 'Italic line under the heading'} onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, subheading: value.trim() ? value : null })); }} />
+              </label>
+              {isCourse ? null : (
+                <label className="field">
+                  <span className="field-label">Lead-in</span>
+                  <input className="field-control" value={section.lead ?? ''} maxLength={MENU_LIMITS.leadMax} placeholder="Two per person" onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, lead: value.trim() ? value : null })); }} />
+                </label>
+              )}
+              {shape.food && !isSet ? <p className="subtle section-card-hint">On the A4 sheet the subheading prints on set menus only.</p> : null}
+            </div>
+          ) : null}
 
-          <ol className="item-list">
-            {section.items.map((item, itemIndex) => (
-              <ItemRow
-                key={item.dishKey ?? item.id ?? itemIndex}
-                item={item}
-                sectionIndex={sectionIndex}
-                itemIndex={itemIndex}
-                sectionType={section.sectionType}
-                dragging={items.drag?.from === itemIndex}
-                dropTarget={items.drag !== null && items.drag.over === itemIndex && items.drag.from !== itemIndex}
-                registerRow={items.register(itemIndex)}
-                handleProps={items.handleProps(itemIndex)}
-                canCopy={canCopy}
-                onCopy={() => onCopy(item)}
-                onChange={(mutate) => onChange((prev) => ({ ...prev, items: prev.items.map((it, i) => (i === itemIndex ? mutate(it) : it)) }))}
-                onDuplicate={() =>
-                  onChange((prev) => {
-                    const copy: MenuItemDocument = { ...item, id: undefined, dishKey: newDishKey(item.name), name: item.name ? `${item.name} (copy)` : '' };
-                    const next = [...prev.items];
-                    next.splice(itemIndex + 1, 0, copy);
-                    return { ...prev, items: next };
-                  })
-                }
-                onDelete={() => {
-                  if (!window.confirm(`Delete "${item.name || 'this dish'}" from ${section.title || 'this section'}? Use 86 to take it off the print but keep it.`)) return;
-                  onChange((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== itemIndex) }));
-                }}
+          {isTable ? (
+            <div className="price-columns" role="group" aria-label="Price columns">
+              <span className="field-label">Price columns</span>
+              <div className="price-columns-list">
+                {columns.map((label, index) => (
+                  <span key={index} className="price-column">
+                    <input className="price-column-input" value={label} maxLength={MENU_LIMITS.priceColumnLabelMax} placeholder={['150 mL', '250 mL', 'Bottle', 'Magnum'][index] ?? 'Label'} aria-label={`Price column ${index + 1} label`} onChange={(event) => setColumn(index, event.currentTarget.value)} />
+                    <button type="button" className="price-column-remove" aria-label={`Remove price column ${index + 1}`} onClick={() => removeColumn(index)}>×</button>
+                  </span>
+                ))}
+                {columns.length < MENU_LIMITS.priceColumnsMax ? (
+                  <button type="button" className="item-action" onClick={addColumn}>Add column</button>
+                ) : null}
+              </div>
+              <span className="field-hint">Up to {MENU_LIMITS.priceColumnsMax} columns, e.g. 150 mL / 250 mL / Bottle. A blank price prints “·”.</span>
+            </div>
+          ) : null}
+
+          {isText ? (
+            <label className="field section-body">
+              <span className="field-label">Text</span>
+              <textarea
+                className="field-control field-textarea"
+                rows={5}
+                value={section.body ?? ''}
+                maxLength={MENU_LIMITS.bodyMax}
+                placeholder="Prose, in italic. A blank line starts a new paragraph."
+                onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, body: value.trim() ? value : null })); }}
               />
-            ))}
-          </ol>
+              <span className="field-hint">{(section.body ?? '').length} / {MENU_LIMITS.bodyMax}. Items on a text block never print.</span>
+            </label>
+          ) : (
+            <ol className="item-list">
+              {section.items.map((item, itemIndex) => (
+                <ItemRow
+                  key={item.dishKey ?? item.id ?? itemIndex}
+                  item={item}
+                  sectionIndex={sectionIndex}
+                  itemIndex={itemIndex}
+                  sectionType={type}
+                  priceColumns={columns}
+                  shape={shape}
+                  dragging={items.drag?.from === itemIndex}
+                  dropTarget={items.drag !== null && items.drag.over === itemIndex && items.drag.from !== itemIndex}
+                  registerRow={items.register(itemIndex)}
+                  handleProps={items.handleProps(itemIndex)}
+                  canCopy={canCopy}
+                  onCopy={() => onCopy(item)}
+                  onChange={(mutate) => onChange((prev) => ({ ...prev, items: prev.items.map((it, i) => (i === itemIndex ? mutate(it) : it)) }))}
+                  onDuplicate={() =>
+                    onChange((prev) => {
+                      const copy: MenuItemDocument = { ...item, id: undefined, dishKey: newDishKey(item.name), name: item.name ? `${item.name} (copy)` : '' };
+                      const next = [...prev.items];
+                      next.splice(itemIndex + 1, 0, copy);
+                      return { ...prev, items: next };
+                    })
+                  }
+                  onDelete={() => {
+                    if (!window.confirm(`Delete "${item.name || `this ${noun}`}" from ${section.title || 'this section'}? Use 86 to take it off the print but keep it.`)) return;
+                    onChange((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== itemIndex) }));
+                  }}
+                />
+              ))}
+            </ol>
+          )}
           <div className="section-card-foot">
-            <Button size="sm" variant="secondary" leftIcon={<IconPlus />} onClick={() => onChange((prev) => ({ ...prev, items: [...prev.items, { ...emptyItem(), priceUnit: isSet ? 'pp' : null }] }))}>
-              Add {isSet ? 'set menu' : 'dish'}
-            </Button>
+            {isText ? (
+              <span />
+            ) : (
+              <Button size="sm" variant="secondary" leftIcon={<IconPlus />} onClick={() => onChange((prev) => ({ ...prev, items: [...prev.items, { ...emptyItem(), priceUnit: isSet ? 'pp' : null }] }))}>
+                Add {noun}
+              </Button>
+            )}
             <Button size="sm" variant="ghost" leftIcon={<IconTrash />} onClick={onDelete}>
               Delete section
             </Button>
@@ -1028,6 +1274,8 @@ type ItemRowProps = {
   sectionIndex: number;
   itemIndex: number;
   sectionType: MenuSectionDocument['sectionType'];
+  priceColumns: string[];
+  shape: EditorShape;
   dragging: boolean;
   dropTarget: boolean;
   registerRow: (element: HTMLElement | null) => void;
@@ -1039,14 +1287,75 @@ type ItemRowProps = {
   onDelete: () => void;
 };
 
-function ItemRow({ item, sectionIndex, itemIndex, sectionType, dragging, dropTarget, registerRow, handleProps, canCopy, onCopy, onChange, onDuplicate, onDelete }: ItemRowProps) {
-  const namesOnly = sectionType === 'HEADER_PRICED';
-  const isSet = sectionType === 'SET_MENUS';
-  const [priceText, setPriceText] = useState(item.priceCents === null ? '' : String(Math.round(item.priceCents / 100)));
-  const [priceInvalid, setPriceInvalid] = useState(false);
+/**
+ * A dollars field that accepts cents ("12.50") and only commits a parseable
+ * value; while the text is not a price it is marked and the stored price is
+ * left alone, and blur puts the stored price back.
+ */
+function PriceInput({ cents, onCommit, ariaLabel, placeholder = '—', className }: { cents: number | null; onCommit: (cents: number | null) => void; ariaLabel: string; placeholder?: string; className?: string }) {
+  const [text, setText] = useState(priceInputText(cents));
+  const [invalid, setInvalid] = useState(false);
+  const textRef = useRef(text);
+  textRef.current = text;
+  // Follow the stored price when it changes under the field (a recovered copy
+  // applied, a save adopted) — but not while the text already means that
+  // price: "12.5" must not be rewritten to "12.50" under the caret mid-typing.
   useEffect(() => {
-    setPriceText(item.priceCents === null ? '' : String(Math.round(item.priceCents / 100)));
-  }, [item.priceCents]);
+    if (parseMenuPriceInput(textRef.current) === cents) return;
+    setText(priceInputText(cents));
+    setInvalid(false);
+  }, [cents]);
+  return (
+    <input
+      className={className}
+      inputMode="decimal"
+      value={text}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      aria-invalid={invalid || undefined}
+      onChange={(event) => {
+        const next = event.currentTarget.value;
+        setText(next);
+        const parsed = parseMenuPriceInput(next);
+        if (parsed === undefined) {
+          setInvalid(true);
+          return;
+        }
+        setInvalid(false);
+        if (parsed !== cents) onCommit(parsed);
+      }}
+      onBlur={() => {
+        if (invalid) {
+          setText(priceInputText(cents));
+          setInvalid(false);
+        }
+      }}
+    />
+  );
+}
+
+function ItemRow({ item, sectionIndex, itemIndex, sectionType, priceColumns, shape, dragging, dropTarget, registerRow, handleProps, canCopy, onCopy, onChange, onDuplicate, onDelete }: ItemRowProps) {
+  const namesOnly = sectionType === 'HEADER_PRICED' || sectionType === 'LIST';
+  const isSet = sectionType === 'SET_MENUS';
+  const isTable = sectionType === 'TABLE';
+  const drinks = shape.kind === 'DRINKS';
+  const flags = item.flags ?? [];
+  const [more, setMore] = useState(() => Boolean(item.meta || item.note || flags.length));
+  const noun = isSet ? 'Set menu name' : drinks ? 'Drink name' : namesOnly || sectionType === 'COURSE' ? 'Item name' : 'Dish name';
+  const toggleFlag = (code: MenuItemFlag) =>
+    onChange((prev) => {
+      const current = prev.flags ?? [];
+      return { ...prev, flags: current.includes(code) ? current.filter((flag) => flag !== code) : [...current, code] };
+    });
+  const setColumnPrice = (index: number, cents: number | null) =>
+    onChange((prev) => {
+      const next = Array.from({ length: Math.max(priceColumns.length, (prev.prices ?? []).length) }, (_, i) => prev.prices?.[i] ?? null);
+      next[index] = cents;
+      return { ...prev, prices: next.slice(0, MENU_LIMITS.priceColumnsMax) };
+    });
+  const printed = isTable
+    ? priceColumns.map((_, index) => (item.prices?.[index] === null || item.prices?.[index] === undefined ? '·' : formatMenuPrice(item.prices[index]))).join(' · ')
+    : formatMenuPrice(item.priceCents, item.priceUnit);
 
   return (
     <li ref={registerRow} id={itemDomId(sectionIndex, itemIndex)} className={`item-row${item.visible ? '' : ' is-86'}${dragging ? ' is-dragging' : ''}${dropTarget ? ' is-drop-target' : ''}`}>
@@ -1060,36 +1369,23 @@ function ItemRow({ item, sectionIndex, itemIndex, sectionType, dragging, dropTar
             data-field="name"
             value={item.name}
             maxLength={MENU_LIMITS.nameMax}
-            placeholder={isSet ? 'Set menu name' : 'Dish name'}
+            placeholder={noun}
             onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, name: value })); }}
           />
-          {namesOnly ? null : (
-            <label className={`item-price${priceInvalid ? ' is-invalid' : ''}`}>
+          {namesOnly ? null : isTable ? (
+            <div className="item-prices" role="group" aria-label="Prices by column">
+              {priceColumns.length === 0 ? <span className="subtle">Add a price column above.</span> : null}
+              {priceColumns.map((label, index) => (
+                <label key={index} className="item-price item-price-column" title={label || `Column ${index + 1}`}>
+                  <span className="item-price-column-label">{label || `#${index + 1}`}</span>
+                  <PriceInput cents={item.prices?.[index] ?? null} onCommit={(cents) => setColumnPrice(index, cents)} ariaLabel={`Price for ${label || `column ${index + 1}`} in dollars`} placeholder="·" />
+                </label>
+              ))}
+            </div>
+          ) : (
+            <label className="item-price">
               <span aria-hidden="true">$</span>
-              <input
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={priceText}
-                placeholder="—"
-                aria-label="Price in whole dollars"
-                onChange={(event) => {
-                  const text = event.currentTarget.value;
-                  setPriceText(text);
-                  const parsed = parseMenuPriceInput(text);
-                  if (parsed === undefined) {
-                    setPriceInvalid(true);
-                    return;
-                  }
-                  setPriceInvalid(false);
-                  onChange((prev) => ({ ...prev, priceCents: parsed }));
-                }}
-                onBlur={() => {
-                  if (priceInvalid) {
-                    setPriceText(item.priceCents === null ? '' : String(Math.round(item.priceCents / 100)));
-                    setPriceInvalid(false);
-                  }
-                }}
-              />
+              <PriceInput cents={item.priceCents} onCommit={(cents) => onChange((prev) => ({ ...prev, priceCents: cents }))} ariaLabel="Price in dollars" />
               {isSet ? (
                 <input className="item-price-unit" value={item.priceUnit ?? ''} maxLength={MENU_LIMITS.priceUnitMax} placeholder="pp" aria-label="Price unit" onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, priceUnit: value.trim() ? value.trim() : null })); }} />
               ) : null}
@@ -1123,49 +1419,135 @@ function ItemRow({ item, sectionIndex, itemIndex, sectionType, dragging, dropTar
                 </button>
               );
             })}
-            <label className="tag-chip tag-chip-check" title="Seafood must carry A or I">
-              <input type="checkbox" checked={item.isSeafood} onChange={(event) => { const checked = event.currentTarget.checked; onChange((prev) => ({ ...prev, isSeafood: checked })); }} />
-              <span>Seafood</span>
-            </label>
+            {drinks ? null : (
+              <label className="tag-chip tag-chip-check" title="Seafood must carry A or I">
+                <input type="checkbox" checked={item.isSeafood} onChange={(event) => { const checked = event.currentTarget.checked; onChange((prev) => ({ ...prev, isSeafood: checked })); }} />
+                <span>Seafood</span>
+              </label>
+            )}
           </div>
         )}
+        {more ? (
+          <div className="item-more">
+            <label className="field">
+              <span className="field-label">Detail</span>
+              <input className="field-control" value={item.meta ?? ''} maxLength={MENU_LIMITS.metaMax} placeholder={drinks ? 'ABV, region, vintage' : 'serves three'} onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, meta: value.trim() ? value : null })); }} />
+            </label>
+            {namesOnly ? null : (
+              <label className="field">
+                <span className="field-label">Note</span>
+                <input className="field-control" value={item.note ?? ''} maxLength={MENU_LIMITS.noteMax} placeholder="Serving note under the description" onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, note: value.trim() ? value : null })); }} />
+              </label>
+            )}
+            <div className="item-flags" role="group" aria-label="Marks">
+              {MENU_ITEM_FLAGS.map((flag) => {
+                const on = flags.includes(flag.code);
+                return (
+                  <button key={flag.code} type="button" className={`tag-chip tag-chip-flag${on ? ' is-on' : ''}`} aria-pressed={on} title={flag.mark ? `${flag.label} (prints ${flag.mark})` : flag.label} onClick={() => toggleFlag(flag.code)}>
+                    {flag.mark ? `${flag.mark} ` : ''}{flag.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         <div className="item-row-actions">
           <button type="button" className={`item-86${item.visible ? '' : ' is-on'}`} aria-pressed={!item.visible} onClick={() => onChange((prev) => ({ ...prev, visible: !prev.visible }))}>
             {item.visible ? '86' : "86'd — bring back"}
           </button>
+          <button type="button" className={`item-action${more ? ' is-on' : ''}`} aria-expanded={more} onClick={() => setMore((value) => !value)}>
+            {more ? 'Less' : 'More'}
+          </button>
           <button type="button" className="item-action" onClick={onDuplicate}>Duplicate</button>
           {canCopy ? <button type="button" className="item-action" onClick={onCopy} disabled={!item.dishKey}>Copy to another menu</button> : null}
           <button type="button" className="item-action is-danger" onClick={onDelete}>Delete</button>
-          {!namesOnly && item.priceCents !== null ? <span className="item-print-price subtle">prints {formatMenuPrice(item.priceCents, item.priceUnit)}</span> : null}
+          {!namesOnly && printed ? <span className="item-print-price subtle">prints {printed}</span> : null}
         </div>
       </div>
     </li>
   );
 }
 
-/** The italic title line under the logo. Blank prints the template's own title, so the two existing menus keep reading "À la carte". */
-function HeadingEditor({ doc, templateKey, onChange }: { doc: MenuDocument; templateKey: string; onChange: Mutate }) {
-  const templateTitle = isMenuTemplateKey(templateKey) ? MENU_TEMPLATES[templateKey].title : 'À la carte';
+// ---------------------------------------------------------------------------
+// Title block and footer
+// ---------------------------------------------------------------------------
+
+/**
+ * The title block. On the A4 food sheet only the italic heading under the
+ * logo is typed (blank prints the template's own title, so the two existing
+ * menus keep reading "À la carte"). The paged families add the subheading,
+ * the when-line, the headline price and the conditions. The heading stays
+ * the first field of the form.
+ */
+function HeadingEditor({ doc, template, shape, onChange }: { doc: MenuDocument; template: MenuTemplate | null; shape: EditorShape; onChange: Mutate }) {
+  const templateTitle = template?.title ?? 'À la carte';
+  const heading = (
+    <label className="field">
+      <span className="field-label">Printed heading</span>
+      <input
+        className="field-control"
+        value={doc.heading}
+        maxLength={MENU_LIMITS.headingMax}
+        placeholder={templateTitle}
+        onChange={(event) => {
+          const value = event.currentTarget.value;
+          onChange((prev) => ({ ...prev, heading: value }));
+        }}
+      />
+    </label>
+  );
+  if (shape.food) {
+    return (
+      <Card title="Heading" subtitle={`The italic line under the logo. Blank prints “${templateTitle}”.`}>
+        {heading}
+      </Card>
+    );
+  }
   return (
-    <Card title="Heading" subtitle={`The italic line under the logo. Blank prints “${templateTitle}”.`}>
+    <Card title="Title block" subtitle={`The cover or masthead. Blank heading prints “${templateTitle}”; the other lines print only when filled in.`}>
+      {heading}
       <label className="field">
-        <span className="field-label">Printed heading</span>
-        <input
-          className="field-control"
-          value={doc.heading}
-          maxLength={MENU_LIMITS.headingMax}
-          placeholder={templateTitle}
-          onChange={(event) => {
-            const value = event.currentTarget.value;
-            onChange((prev) => ({ ...prev, heading: value }));
-          }}
+        <span className="field-label">Subheading</span>
+        <input className="field-control" value={doc.subheading ?? ''} maxLength={MENU_LIMITS.subheadingMax} placeholder="Lunch that runs long." onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, subheading: value })); }} />
+      </label>
+      <label className="field">
+        <span className="field-label">When</span>
+        <input className="field-control" value={doc.whenLine ?? ''} maxLength={MENU_LIMITS.whenLineMax} placeholder="Wed–Thu · 5–6pm · Fri–Sun · 4–6pm" onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, whenLine: value })); }} />
+        <span className="field-hint">The schedule line on cards and covers.</span>
+      </label>
+      <div className="field">
+        <span className="field-label">Price</span>
+        <div className="hero-price">
+          <label className="item-price">
+            <span aria-hidden="true">$</span>
+            <PriceInput
+              cents={doc.heroPriceCents ?? null}
+              ariaLabel="Headline price in dollars"
+              onCommit={(cents) => onChange((prev) => ({ ...prev, heroPriceCents: cents, heroPriceUnit: cents !== null && !prev.heroPriceUnit ? 'pp' : prev.heroPriceUnit }))}
+            />
+            <input className="item-price-unit" value={doc.heroPriceUnit ?? ''} maxLength={MENU_LIMITS.priceUnitMax} placeholder="pp" aria-label="Headline price unit" onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, heroPriceUnit: value.trim() ? value.trim() : null })); }} />
+          </label>
+          <span className="field-hint">{doc.heroPriceCents !== null && doc.heroPriceCents !== undefined ? `Prints “${formatMenuPrice(doc.heroPriceCents, doc.heroPriceUnit)}”.` : 'The headline price (“99 pp”); blank prints none.'}</span>
+        </div>
+      </div>
+      <label className="field">
+        <span className="field-label">Conditions</span>
+        <textarea
+          className="field-control field-textarea"
+          rows={3}
+          value={doc.conditions ?? ''}
+          maxLength={MENU_LIMITS.conditionsMax}
+          placeholder={'Two-hour sitting.\nWhole table only.'}
+          onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, conditions: value })); }}
         />
+        <span className="field-hint">One condition per line, printed small at the foot of the last page.</span>
       </label>
     </Card>
   );
 }
 
-function FooterEditor({ doc, onChange }: { doc: MenuDocument; onChange: Mutate }) {
+function FooterEditor({ doc, shape, onChange }: { doc: MenuDocument; shape: EditorShape; onChange: Mutate }) {
+  const showPrices = doc.showPrices ?? true;
   return (
     <Card title="Footer" subtitle="The tag legend is generated from the tags in use; only these two lines are typed.">
       <label className="field">
@@ -1175,6 +1557,14 @@ function FooterEditor({ doc, onChange }: { doc: MenuDocument; onChange: Mutate }
       <label className="field">
         <span className="field-label">Surcharge line</span>
         <input className="field-control" value={doc.surchargeLine} maxLength={MENU_LIMITS.footerLineMax} onChange={(event) => { const value = event.currentTarget.value; onChange((prev) => ({ ...prev, surchargeLine: value })); }} />
+      </label>
+      <label className="field field-switch">
+        <span className="field-label">Show prices</span>
+        <span className="switch-row">
+          <input type="checkbox" role="switch" checked={showPrices} aria-checked={showPrices} onChange={(event) => { const checked = event.currentTarget.checked; onChange((prev) => ({ ...prev, showPrices: checked })); }} />
+          <span>{showPrices ? 'Prices print' : 'No prices on the print'}</span>
+        </span>
+        <span className="field-hint">{shape.kind === 'PRIVATE_EVENT' ? 'Guest-facing event menus usually hide prices.' : 'Off hides every item price; the price checks are skipped too.'}</span>
       </label>
     </Card>
   );

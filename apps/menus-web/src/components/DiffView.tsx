@@ -2,8 +2,9 @@ import type { MenuDiff } from '@alma/shared';
 import { menuDiffIsEmpty } from '@alma/shared';
 
 /**
- * A publish diff, grouped: the heading, then what was added, removed,
- * repriced, retagged, 86'd, moved, and section/footer edits.
+ * A publish diff, grouped: the heading and the rest of the title block, then
+ * what was added, removed, repriced, retagged, 86'd, renamed, re-described,
+ * re-detailed (meta, note, marks), moved, and the section/footer edits.
  * `templateTitle` is what a blank heading prints ("À la carte").
  */
 export function DiffView({ diff, emptyText = 'No content changes.', templateTitle = 'the template title' }: { diff: MenuDiff; emptyText?: string; templateTitle?: string }) {
@@ -27,6 +28,10 @@ export function DiffView({ diff, emptyText = 'No content changes.', templateTitl
               </li>
             ]
           : []
+      )}
+      {group(
+        'Title block',
+        (diff.headerChanges ?? []).map((line, index) => <li key={index}>{line}</li>)
       )}
       {group(
         'Added',
@@ -79,6 +84,17 @@ export function DiffView({ diff, emptyText = 'No content changes.', templateTitl
       {group(
         'Description changes',
         diff.descriptionChanges.map((row) => (
+          <li key={row.dishKey}>
+            <strong>{row.name}</strong>
+            <div className="subtle">
+              <span className="diff-from">{row.from}</span> → <span className="diff-to">{row.to}</span>
+            </div>
+          </li>
+        ))
+      )}
+      {group(
+        'Details',
+        (diff.detailChanges ?? []).map((row) => (
           <li key={row.dishKey}>
             <strong>{row.name}</strong>
             <div className="subtle">

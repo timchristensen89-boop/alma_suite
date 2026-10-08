@@ -25,6 +25,22 @@ export function formatDateTime(iso: string | null | undefined): string {
   return new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Australia/Sydney' }).format(new Date(iso));
 }
 
+/** "14 Nov 2026" — an event date, by the venues' calendar. */
+export function formatEventDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Australia/Sydney' }).format(date);
+}
+
+/** The value a `<input type="date">` wants for a stored event date: "2026-11-14" in Sydney, or "" when none. */
+export function eventDateInputValue(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+
 export function pdfFilename(menu: { venue: { slug: string }; name: string }, versionNumber: number): string {
   return `${menu.venue.slug}-${menu.name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-') + `-v${versionNumber}.pdf`;
 }
