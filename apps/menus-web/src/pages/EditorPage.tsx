@@ -37,7 +37,16 @@ import { ValidationPanel } from '../components/ValidationPanel';
 import { ApiError } from '../lib/api';
 import { formatWhen, pdfFilename, personName } from '../lib/format';
 import { archivedMenuIdOf, isMenuArchivedError, menuApi, openVersionPdf } from '../lib/menuApi';
-import { downloadUnsavedChanges, forgetUnsavedChanges, keepUnsavedChanges, readUnsavedChanges, type UnsavedMenuChanges } from '../lib/recovery';
+import {
+  downloadUnsavedChanges,
+  forgetUnsavedChanges,
+  keepUnsavedChanges,
+  newRecoveryId,
+  readUnsavedChanges,
+  saveConfirmsApply,
+  type PendingRecoveryApply,
+  type UnsavedMenuChanges
+} from '../lib/recovery';
 import { moveItem, useDragReorder } from '../lib/reorder';
 import { IconArrowLeft, IconPlus, IconTrash } from '../../../web/src/lib/icons';
 
@@ -154,6 +163,16 @@ export function EditorPage({ user }: { user: AuthUser }) {
   const archivedRef = useRef(false);
   /** The document as the server last stored it, to tell what is unsaved. */
   const savedDocRef = useRef<MenuDocument | null>(null);
+  /**
+   * Every edit gets the next number; latestSeqRef is the number of the
+   * document in latestDoc. A save remembers the number of what it sent, so a
+   * response can tell whether it carried a given edit.
+   */
+  const editSeqRef = useRef(0);
+  const latestSeqRef = useRef(0);
+  /** A kept copy applied to the editor and not yet confirmed saved: its backup stays until then. */
+  const pendingApplyRef = useRef<PendingRecoveryApply | null>(null);
+  const [applyPending, setApplyPending] = useState<string | null>(null);
   const saveTimer = useRef<number | null>(null);
   const latestDoc = useRef<MenuDocument | null>(null);
   const savingRef = useRef(false);
@@ -174,6 +193,11 @@ export function EditorPage({ user }: { user: AuthUser }) {
       setSummary(menu);
       setOtherMenus(all.menus.filter((other) => other.id !== menuId));
       archivedRef.current = menu.status === 'ARCHIVED';
+      // A reload replaces the editor's content with the server's: any apply
+      // not yet saved is undone, and the kept copy (still in storage) is
+      // offered again.
+      pendingApplyRef.current = null;
+      setApplyPending(null);
       const kept = readUnsavedChanges(menuId);
       setUnsaved(kept ? { changes: kept, kept: true } : null);
       if (menu.status === 'ARCHIVED') {
@@ -186,6 +210,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
         setDraft(payload);
         setDoc(keyed);
         latestDoc.current = keyed;
+        latestSeqRef.current = editSeqRef.current;
         savedDocRef.current = payload.document;
         expectedUpdatedAt.current = payload.version.updatedAt;
         setSave({ kind: 'saved', at: payload.version.updatedAt });
@@ -207,6 +232,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
   // ------------------------------------------------------------ saving
   const saveNow = useCallback((): Promise<boolean> => {
     const current = latestDoc.current;
+    const sentSeq = latestSeqRef.current;
     if (archivedRef.current) return Promise.resolve(false);
     if (!current) return Promise.resolve(true);
     if (savingRef.current && inFlight.current) {
@@ -228,6 +254,18 @@ export function EditorPage({ user }: { user: AuthUser }) {
         latestDoc.current = adopted;
         setDoc(adopted);
         setSave({ kind: 'saved', at: payload.version.updatedAt });
+        // The server now holds the applied copy only if this save carried it:
+        // one sent before the apply (still in flight when it was applied)
+        // does not count. Only then is the backup removed, and only if the
+        // stored copy is still the one that was applied.
+        const pending = pendingApplyRef.current;
+        if (saveConfirmsApply(pending, sentSeq)) {
+          pendingApplyRef.current = null;
+          forgetUnsavedChanges(menuId, pending.recoveryId);
+          setUnsaved((prev) => (prev && prev.changes.id === pending.recoveryId ? null : prev));
+          setApplyPending((prev) => (prev === pending.recoveryId ? null : prev));
+          setNotice({ tone: 'success', text: 'Your recovered changes are saved to the draft.' });
+        }
         return true;
       } catch (caught) {
         if (isMenuArchivedError(caught)) {
@@ -252,18 +290,22 @@ export function EditorPage({ user }: { user: AuthUser }) {
   }, [menuId, setSave]);
   saveNowRef.current = saveNow;
 
+  /** Apply an edit and schedule the autosave. Returns the edit's number (none once archived). */
   const update = useCallback(
-    (mutate: (prev: MenuDocument) => MenuDocument) => {
-      if (archivedRef.current) return;
+    (mutate: (prev: MenuDocument) => MenuDocument): number | null => {
+      if (archivedRef.current) return null;
+      const seq = ++editSeqRef.current;
       setDoc((prev) => {
         if (!prev) return prev;
         const next = mutate(prev);
         latestDoc.current = next;
+        latestSeqRef.current = seq;
         return next;
       });
       if (saveStateRef.current.kind !== 'conflict') setSave({ kind: 'dirty' });
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
       saveTimer.current = window.setTimeout(() => void saveNowRef.current(), AUTOSAVE_MS);
+      return seq;
     },
     [setSave]
   );
@@ -286,9 +328,13 @@ export function EditorPage({ user }: { user: AuthUser }) {
       setPublishOpen(false);
       setCopyTarget(null);
       setSave({ kind: 'archived' });
+      // An applied copy not yet saved is part of `latest`, so it is kept again below.
+      pendingApplyRef.current = null;
+      setApplyPending(null);
       const saved = savedDocRef.current;
       if (latest && saved && draft && summary && !menuDiffIsEmpty(diffMenuDocuments(saved, latest))) {
         const changes: UnsavedMenuChanges = {
+          id: newRecoveryId(),
           menuId,
           menuLabel: `${summary.venue.name} · ${summary.name}`,
           draftVersionNumber: draft.version.versionNumber,
@@ -565,19 +611,31 @@ export function EditorPage({ user }: { user: AuthUser }) {
   const unsavedCard = (where: 'archived' | 'draft' | 'no-draft') => {
     if (!unsaved) return null;
     const { changes, kept } = unsaved;
+    const applied = where === 'draft' && applyPending === changes.id;
     const against = where === 'draft' && doc ? doc : savedDocRef.current;
     const diff = against ? diffMenuDocuments(against, changes.document) : null;
     const forget = () => {
       if (!window.confirm('Forget these unsaved changes? They are not on the server, so this cannot be undone.')) return;
-      forgetUnsavedChanges(menuId);
+      forgetUnsavedChanges(menuId, changes.id);
+      if (pendingApplyRef.current?.recoveryId === changes.id) pendingApplyRef.current = null;
+      setApplyPending(null);
       setUnsaved(null);
     };
+    // Applying only puts the copy into the editor. The copy and this card stay
+    // until a save carrying it succeeds (see saveNow); a rejected or failed
+    // save, or a reload, leaves it here to apply again.
     const apply = () => {
-      update(() => withClientKeys(changes.document));
-      forgetUnsavedChanges(menuId);
-      setUnsaved(null);
-      setNotice({ tone: 'info', text: 'Your unsaved changes are back in the draft and saving now.' });
+      const seq = update(() => withClientKeys(changes.document));
+      if (seq === null) return;
+      pendingApplyRef.current = { recoveryId: changes.id, editSeq: seq };
+      setApplyPending(changes.id);
+      setNotice({ tone: 'info', text: 'Your recovered changes are in the editor. The kept copy stays until the draft has saved them.' });
     };
+    const appliedStatus = !applied
+      ? null
+      : saveState.kind === 'conflict' || saveState.kind === 'error'
+        ? `Not saved yet: ${saveState.message} The kept copy is still here; reload or retry, then apply again if needed.`
+        : 'Applied to the editor. The kept copy stays until the draft has saved it.';
     return (
       <Card
         className="unsaved-card"
@@ -590,21 +648,29 @@ export function EditorPage({ user }: { user: AuthUser }) {
             : `Not saved when this menu was archived (draft v${changes.draftVersionNumber}). Kept in this browser.`
         }
       >
-        {diff ? (
+        {appliedStatus ? (
+          <p className={saveState.kind === 'conflict' || saveState.kind === 'error' ? 'error-text' : 'subtle'} role="status">
+            {appliedStatus}
+          </p>
+        ) : (
           <>
-            <p className="menu-dialog-summary">{summariseMenuDiff(diff)}</p>
-            <DiffView diff={diff} templateTitle={isMenuTemplateKey(summary.templateKey) ? MENU_TEMPLATES[summary.templateKey].title : undefined} emptyText="Same as the draft now." />
+            {diff ? (
+              <>
+                <p className="menu-dialog-summary">{summariseMenuDiff(diff)}</p>
+                <DiffView diff={diff} templateTitle={isMenuTemplateKey(summary.templateKey) ? MENU_TEMPLATES[summary.templateKey].title : undefined} emptyText="Same as the editor now." />
+              </>
+            ) : null}
+            <p className="subtle">
+              {where === 'archived'
+                ? 'When a publisher unarchives the menu, open it here and choose Apply to put them back into the draft.'
+                : where === 'draft'
+                  ? 'Apply replaces what the editor holds now with the version you were editing. This copy is kept until the draft has saved it.'
+                  : 'Start a draft, then apply them.'}
+            </p>
           </>
-        ) : null}
-        <p className="subtle">
-          {where === 'archived'
-            ? 'When a publisher unarchives the menu, open it here and choose Apply to put them back into the draft.'
-            : where === 'draft'
-              ? 'Apply replaces what the draft holds now with the version you were editing.'
-              : 'Start a draft, then apply them.'}
-        </p>
+        )}
         <div className="menus-actions-row">
-          {where === 'draft' ? <Button onClick={apply}>Apply to this draft</Button> : null}
+          {where === 'draft' ? <Button onClick={apply}>{applied ? 'Apply again' : 'Apply to this draft'}</Button> : null}
           <Button variant="secondary" onClick={() => downloadUnsavedChanges(changes)}>Download a copy</Button>
           <Button variant="ghost" onClick={forget}>Forget them</Button>
         </div>

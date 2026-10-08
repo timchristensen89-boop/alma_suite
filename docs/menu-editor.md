@@ -99,8 +99,14 @@ draft ──save──► draft ──publish──► PUBLISHED (snapshot + PDF
   read-only view. Anything typed since the last successful save is kept in
   that browser (`localStorage`, `lib/recovery.ts`) and shown as a diff, with
   Download and Forget; once the menu is unarchived, opening it offers Apply to
-  this draft. An archived copy target only takes that menu off the picker:
-  the source stays editable. History and the home handle the same answer.
+  this draft. Apply only puts the copy into the editor: the copy and its card
+  stay until a save that carries it succeeds. Every edit is numbered and each
+  save remembers the number of the document it sent, so a save already on the
+  wire before the apply never counts, and clearing checks the stored copy's id
+  so it never removes a newer copy. A rejected save (someone else saved), a
+  network failure or a reload leaves the copy to apply again. An archived copy
+  target only takes that menu off the picker: the source stays editable.
+  History and the home handle the same answer.
 - **Printed heading** (`MenuVersion.heading`, part of `MenuDocument`): the
   italic line under the logo. Empty prints the template's own title
   ("À la carte"), which is what both seeded menus do; a Tuesday menu types
@@ -175,6 +181,20 @@ cd apps/api && ALMA_TEST_DATABASE_URL=postgresql://... ALMA_TEST_REQUIRE_CHROME=
   node --import tsx --test --test-concurrency=1 \
   src/services/menu.integration.test.ts src/services/menu-archive-race.integration.test.ts
 pnpm --filter @alma/api menus:compare -- --reference ../alma-web-platform/apps/web/public/menus
+```
+
+Browser regressions (`apps/menus-web/e2e`, puppeteer-core) drive the real
+editor against a running API and menus-web on a disposable database: a menu
+archived while another tab edits it, and applying recovered edits through a
+rejected save, a network failure, a reload and an older save still in
+flight. `apps/menus-web/e2e/helpers.mjs` lists what they need; without
+`MENUS_E2E_BASE_URL` they report as skipped. Not run by CI.
+
+```bash
+pnpm --filter @alma/menus-web test        # unit: the kept-copy store (CI runs this)
+MENUS_E2E_BASE_URL=http://127.0.0.1:5181 MENUS_E2E_API_URL=http://127.0.0.1:3018 \
+MENUS_E2E_ADMIN_EMAIL=… MENUS_E2E_CHEF_EMAIL=… MENUS_E2E_PASSWORD=… \
+  pnpm --filter @alma/menus-web test:e2e
 ```
 
 The race suite reproduces each window for real: an archive transaction locks
