@@ -172,6 +172,8 @@ pnpm db:seed:menus           # both menus, validated and published as v1 with PD
 pnpm dev:menus               # api (3018) + menus-web (5181)
 ```
 
+Those commands are for a local database; production (the API on the VPS and the Firebase `alma-menus` site) is rolled out and rolled back with [docs/menu-editor/production-runbook-multi-menu.md](menu-editor/production-runbook-multi-menu.md).
+
 The API needs a Chrome/Chromium binary. The Docker image installs Debian's
 `chromium`; locally it also finds `google-chrome` or a Playwright browser
 directory (`PLAYWRIGHT_BROWSERS_PATH`). `MENU_CHROME_PATH` overrides. Without it
