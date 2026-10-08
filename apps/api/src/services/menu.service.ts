@@ -869,7 +869,14 @@ export const menuService = {
     let menuId: string;
     try {
       menuId = await prisma.$transaction(async (tx) => {
-        const slug = await freeSlug(venue.id, data.name, tx);
+        let slug: string;
+        if (data.slug) {
+          const taken = await tx.menu.findUnique({ where: { venueId_slug: { venueId: venue.id, slug: data.slug } }, select: { id: true, name: true } });
+          if (taken) throw new HttpError(409, `This venue already uses the link name "${data.slug}" (menu "${taken.name}").`, { code: 'SLUG_TAKEN', menuId: taken.id });
+          slug = data.slug;
+        } else {
+          slug = await freeSlug(venue.id, data.name, tx);
+        }
         const menu = await tx.menu.create({
           data: {
             venueId: venue.id,

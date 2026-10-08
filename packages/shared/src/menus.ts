@@ -305,7 +305,8 @@ export const MENU_LIMITS = {
   priceUnitMax: 8,
   /** $999,999 — anything bigger is a typo. */
   priceCentsMax: 99_999_900,
-  sectionsMax: 60,
+  /** A 23-page drinks binder has a section per producer group and wine style: well over the A4 sheet's dozen. */
+  sectionsMax: 160,
   itemsPerSectionMax: 60,
   /** V2 fields. */
   whenLineMax: 120,
@@ -443,6 +444,8 @@ export const menuCreateInputSchema = z.object({
   venueId: z.string().min(1),
   name: trimmed(MENU_LIMITS.menuNameMax).min(1),
   kind: menuKindSchema.default('FOOD'),
+  /** The public identifier, when it must be a particular one (an import keeping the website's link); minted from the name otherwise. Never changes afterwards. */
+  slug: z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Lower-case letters, digits and hyphens only.').max(60).optional(),
   /** One of the venue's print templates for this kind (menuTemplatesForVenue). Omit when there is exactly one. */
   templateKey: z.string().min(1).optional(),
   /** Start the first draft from this menu's live version (its draft when nothing is live yet) instead of empty. */
