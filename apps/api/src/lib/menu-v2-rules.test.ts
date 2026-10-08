@@ -229,6 +229,28 @@ describe('V2 paged families', () => {
     assert.doesNotMatch(html, /<span class="wp">/);
   });
 
+  it('a drinks row whose qualifier is a strength is a one-line pour; a tagged cocktail keeps its layout', () => {
+    const agave = doc(
+      [
+        section({ title: 'El Pandillo', page: 2, lead: 'Hand built tahona.', items: [item({ name: 'G4 Blanco', meta: '40%', priceCents: 1800, description: 'Jesús María' }), item({ name: 'G4 Añejo', meta: '40%', priceCents: 3300 })] }),
+        section({ title: 'Cocktails', page: 3, items: [item({ name: 'Coconut margarita', meta: 'Signature', priceCents: 2300, description: 'Tequila blanco, coconut, lime' })] })
+      ],
+      { pageCount: 3 }
+    );
+    const book = renderMenuSheetHtml(agave, 'avalon_drinks_book', { assets });
+    // A pour: the village rides the name line, the group carries the quiet head, and a page of pours flows in two columns.
+    assert.match(book, /<div class="psec type-standard pour-group" data-section-id="">/);
+    assert.match(book, /<div class="drink pour-row" data-dish-key="g4-blanco"><div class="drink-top"><span class="dname">G4 Blanco<span class="dmeta">40%<\/span><span class="dvil">Jesús María<\/span><\/span><span class="dprice">18<\/span><\/div><\/div>/);
+    assert.match(book, /<div class="drink pour-row" data-dish-key="g4-añejo"><div class="drink-top"><span class="dname">G4 Añejo<span class="dmeta">40%<\/span><\/span><span class="dprice">33<\/span><\/div><\/div>/);
+    assert.equal((book.match(/<div class="page-body cols">/g) ?? []).length, 1);
+    // The cocktail keeps its name line and ingredients beneath; its page is single-column.
+    assert.match(book, /<div class="drink" data-dish-key="coconut-margarita"><div class="drink-top"><span class="dname">Coconut margarita<span class="dmeta">Signature<\/span><\/span><span class="dprice">23<\/span><\/div><div class="ding">Tequila blanco, coconut, lime<\/div><\/div>/);
+    // The binder sets the same pours; the A4 food sheet never does.
+    assert.match(renderMenuSheetHtml(agave, 'freshwater_drinks_binder', { assets }), /<div class="drink pour-row" data-dish-key="g4-blanco">/);
+    const sheet = renderMenuSheetHtml({ ...agave, pageCount: 1, sections: agave.sections.map((s) => ({ ...s, page: 1 })) }, 'freshwater_alacarte', { assets });
+    assert.doesNotMatch(sheet, /pour-row/);
+  });
+
   it('the functions document is group-branded and usable by either venue', () => {
     const template = getMenuTemplate('group_functions_a4');
     assert.equal(template.venueSlug, null);

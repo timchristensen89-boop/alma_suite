@@ -701,6 +701,29 @@ export const MENU_FILL_PROBE_SCRIPT = `(() => {
   if (sheets.length === 0) return { fillRatio: 0, contentHeightPx: 0, sheetHeightPx: 0, overflow: false, pages: [] };
   const pages = sheets.map((sheet, index) => {
     const fixed = sheet.getBoundingClientRect().height;
+    const body = sheet.querySelector('.page-body');
+    const columns = body ? parseInt(getComputedStyle(body).columnCount, 10) || 1 : 1;
+    if (body && columns > 1) {
+      // A column sheet (the A5 landscape binder) fills its fixed height column
+      // by column; what does not fit spills sideways into a column the page
+      // clips, so the truth is the body's scroll width. The ratio is the
+      // content stacked in one column over the room the columns offer.
+      const bodyHeight = body.getBoundingClientRect().height;
+      const spilled = body.scrollWidth > body.clientWidth + 1;
+      const prevCount = body.style.columnCount;
+      const prevHeight = sheet.style.height;
+      const prevOverflow = sheet.style.overflow;
+      body.style.columnCount = '1';
+      sheet.style.height = 'auto';
+      sheet.style.overflow = 'visible';
+      const stacked = body.getBoundingClientRect().height;
+      body.style.columnCount = prevCount;
+      sheet.style.height = prevHeight;
+      sheet.style.overflow = prevOverflow;
+      const room = columns * bodyHeight;
+      const ratio = room > 0 ? Math.max(stacked / room, spilled ? 1.01 : 0) : 0;
+      return { page: index + 1, fillRatio: ratio, contentHeightPx: stacked / columns, sheetHeightPx: bodyHeight, overflow: spilled };
+    }
     const prevHeight = sheet.style.height;
     const prevOverflow = sheet.style.overflow;
     sheet.style.height = 'auto';

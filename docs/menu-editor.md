@@ -192,6 +192,10 @@ cd apps/api && ALMA_TEST_DATABASE_URL=postgresql://... ALMA_TEST_REQUIRE_CHROME=
   src/services/menu-v2.integration.test.ts src/services/promotion.integration.test.ts
 pnpm --filter @alma/api menus:compare -- --reference ../alma-web-platform/apps/web/public/menus
 pnpm --filter @alma/api menus:previews            # the A5 cards, a drinks book and the functions pack rendered to docs/menus-v2/previews/
+cd apps/api && DATABASE_URL=postgresql://... node --import tsx scripts/menu-fill-report.ts
+                                                  # would every draft publish? page fill per menu, against the publish gate
+cd apps/api && DATABASE_URL=postgresql://... node --import tsx scripts/menu-draft-pdf.ts st-alma/drinks --out /tmp/look --pages 20-22
+                                                  # one draft as PDF and PNG pages, through the publish renderer, for a look
 ```
 
 Browser regressions (`apps/menus-web/e2e`, puppeteer-core) drive the real

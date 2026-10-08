@@ -61,7 +61,9 @@ export const MENU_PAGES_CSS = `
   width:52mm; height:21mm; margin-top:auto; margin-bottom:12mm;
   border:1px solid var(--ink-18); border-bottom:0; border-radius:26mm 26mm 0 0;
 }
-.menu-print-page.family-drinks-a5l .cover .t-arch{ width:54mm; height:22mm; }
+.menu-print-page.family-drinks-a5l .cover .t-arch{ width:54mm; height:18mm; margin-bottom:8mm; }
+.menu-print-page.family-drinks-a5l .cover .t-nav{ margin-top:8mm; max-width:150mm; }
+.menu-print-page.family-drinks-a5l .cover .biglogo{ margin-top:12mm; }
 .menu-print-page.family-functions-a4 .cover .t-arch{ width:64mm; height:26mm; }
 
 /* ---- columns (A5 landscape binder) ---- */
@@ -156,7 +158,7 @@ export const MENU_PAGES_CSS = `
 .menu-print-page.family-card-a5 .card-price{ font-family:var(--sans); font-weight:500; font-size:21px; line-height:1; font-variant-numeric:tabular-nums; margin-top:2.4mm; }
 .menu-print-page.family-card-a5 .card-price .unit{ font-size:9px; font-weight:700; letter-spacing:.2em; text-transform:uppercase; color:var(--ink-46); margin-left:1.5mm; vertical-align:baseline; }
 .menu-print-page.family-card-a5 .runhead{ margin-bottom:5mm; }
-.menu-print-page.family-card-a5 .psec{ margin-bottom:4.2mm; }
+.menu-print-page.family-card-a5 .psec{ margin-bottom:3.7mm; }
 .menu-print-page.family-card-a5 .sec-head{ gap:4mm; margin-bottom:2.8mm; }
 .menu-print-page.family-card-a5 .sec-head::before,
 .menu-print-page.family-card-a5 .sec-head::after{ background:var(--ink-24); }
@@ -164,13 +166,13 @@ export const MENU_PAGES_CSS = `
 .menu-print-page.family-card-a5 .sec-title .qual{ letter-spacing:.2em; }
 .menu-print-page.family-card-a5 .lead{ text-align:center; margin:-.8mm 0 2.4mm; font-size:8.5px; line-height:1.4; }
 .menu-print-page.family-card-a5 .callout{ text-align:center; font-size:13px; margin:-1.2mm 0 2.8mm; }
-.menu-print-page.family-card-a5 .drink{ margin-bottom:2.4mm; }
+.menu-print-page.family-card-a5 .drink{ margin-bottom:2.2mm; }
 .menu-print-page.family-card-a5 .ding{ font-size:13px; }
 .menu-print-page.family-card-a5 .tags{ font-size:8.5px; }
 .menu-print-page.family-card-a5 .dprice{ font-size:12.5px; }
 /* names-only groups (inclusions, courses to choose from) are centred stacks … */
 .menu-print-page.family-card-a5 .type-list .list{ text-align:center; }
-.menu-print-page.family-card-a5 .list .pour{ display:block; padding:.6mm 0; line-height:1.3; }
+.menu-print-page.family-card-a5 .list .pour{ display:block; padding:.45mm 0; line-height:1.3; }
 .menu-print-page.family-card-a5 .list .pname{ font-size:12.5px; font-weight:500; line-height:1.3; }
 /* … and a names-only group with no dietaries (happy hour "Margaritas / 12", the
    drinks a bottomless sitting includes) runs on in one centred line */
@@ -185,10 +187,96 @@ export const MENU_PAGES_CSS = `
 .menu-print-page.family-card-a5 .type-course .dname{ display:block; }
 .menu-print-page.family-card-a5 .type-course .dprice{ display:inline-block; margin-left:2mm; }
 .menu-print-page.family-card-a5 .type-text .para{ text-align:center; font-size:13px; }
-.menu-print-page.family-card-a5 .foot{ padding-top:3.5mm; }
+.menu-print-page.family-card-a5 .foot{ padding-top:2.6mm; }
 .menu-print-page.family-card-a5 .foot .conditions{ font-size:9px; line-height:1.4; }
 .menu-print-page.family-card-a5 .foot .legend{ font-size:8px; }
 .menu-print-page.family-card-a5 .foot .surcharge{ font-size:8.5px; }
+
+/* =========================================================
+   The drinks books, at the density of the hand-set sheets they replace
+   (binder.css / avalon.css): a 23-page binder and a 15-page book carry
+   250-odd priced rows, so rows sit closer, names drop the letterspaced
+   caps when a row is a pour (name · ABV · village … price), and the
+   binder's two columns flow a long section across both rather than
+   jumping it whole to the next column.
+   ========================================================= */
+.menu-print-page.family-drinks-a5l .runhead,
+.menu-print-page.family-drinks-a5p .runhead{ margin-bottom:4.5mm; }
+.menu-print-page.family-drinks-a5l .psec,
+.menu-print-page.family-drinks-a5p .psec{ margin-bottom:5mm; }
+.menu-print-page.family-drinks-a5l .sec-head,
+.menu-print-page.family-drinks-a5p .sec-head{ margin-bottom:2.8mm; }
+.menu-print-page.family-drinks-a5l .sec-title,
+.menu-print-page.family-drinks-a5p .sec-title{ font-size:10px; }
+.menu-print-page.family-drinks-a5l .callout,
+.menu-print-page.family-drinks-a5p .callout{ font-size:12px; margin:-1mm 0 2.8mm; }
+.menu-print-page.family-drinks-a5l .lead,
+.menu-print-page.family-drinks-a5p .lead{ margin:-1mm 0 2.2mm; }
+.menu-print-page.family-drinks-a5l .drink,
+.menu-print-page.family-drinks-a5p .drink{ margin-bottom:2.3mm; }
+.menu-print-page.family-drinks-a5l .dname,
+.menu-print-page.family-drinks-a5p .dname{ font-size:10.5px; letter-spacing:.1em; }
+.menu-print-page.family-drinks-a5l .ding,
+.menu-print-page.family-drinks-a5p .ding{ font-size:12px; line-height:1.2; margin-top:.3mm; }
+.menu-print-page.family-drinks-a5l .dnote,
+.menu-print-page.family-drinks-a5p .dnote{ font-size:8.5px; margin-top:.4mm; }
+.menu-print-page.family-drinks-a5l .dprice,
+.menu-print-page.family-drinks-a5p .dprice{ font-size:11px; }
+.menu-print-page.family-drinks-a5l .pour,
+.menu-print-page.family-drinks-a5p .pour{ padding:.8mm 0; }
+.menu-print-page.family-drinks-a5l .pname,
+.menu-print-page.family-drinks-a5p .pname{ font-size:11.5px; }
+.menu-print-page.family-drinks-a5l .wine,
+.menu-print-page.family-drinks-a5p .wine{ margin-bottom:1.5mm; }
+.menu-print-page.family-drinks-a5l .wine-head,
+.menu-print-page.family-drinks-a5p .wine-head{ padding-bottom:1.4mm; margin-bottom:1.6mm; }
+.menu-print-page.family-drinks-a5l .wine-head span,
+.menu-print-page.family-drinks-a5p .wine-head span{ font-size:7.5px; }
+.menu-print-page.family-drinks-a5l .wname,
+.menu-print-page.family-drinks-a5p .wname{ font-size:10.5px; line-height:1.2; }
+.menu-print-page.family-drinks-a5l .wreg,
+.menu-print-page.family-drinks-a5p .wreg{ font-size:11px; }
+.menu-print-page.family-drinks-a5l .wp,
+.menu-print-page.family-drinks-a5p .wp{ font-size:10.5px; }
+.menu-print-page.family-drinks-a5l .wine + .ding,
+.menu-print-page.family-drinks-a5p .wine + .ding{ margin:-.6mm 0 2mm; font-size:11.5px; }
+.menu-print-page.family-drinks-a5l .para,
+.menu-print-page.family-drinks-a5p .para{ font-size:12.5px; line-height:1.3; }
+.menu-print-page.family-drinks-a5l .pkg,
+.menu-print-page.family-drinks-a5p .pkg{ margin-bottom:3mm; }
+/* a pour: name · ABV · village … price, one line, as the back-bar pages set it */
+.menu-print-page .drink.pour-row{ margin-bottom:1.1mm; }
+.menu-print-page .drink.pour-row .dname{ font-weight:500; font-size:11px; letter-spacing:0; text-transform:none; line-height:1.25; }
+.menu-print-page .drink.pour-row .dmeta{ font-size:8.5px; }
+.menu-print-page .drink.pour-row .dvil{ font-family:var(--serif); font-style:italic; font-size:10.5px; color:var(--ink-58); margin-left:1.5mm; text-transform:none; letter-spacing:0; }
+.menu-print-page .drink.pour-row .dprice{ font-size:10.5px; }
+/* a group of pours (one producer, one style) carries a small left-set title, not the hairline head */
+.menu-print-page .psec.pour-group{ margin-bottom:3mm; }
+.menu-print-page .psec.pour-group .sec-head{ justify-content:flex-start; margin-bottom:1.3mm; }
+.menu-print-page .psec.pour-group .sec-head::before,
+.menu-print-page .psec.pour-group .sec-head::after{ display:none; }
+.menu-print-page .psec.pour-group .sec-title{ font-size:8.5px; letter-spacing:.2em; color:var(--ink-58); white-space:normal; }
+.menu-print-page .psec.pour-group .callout{ font-size:11px; line-height:1.3; margin:-.4mm 0 1.4mm; }
+.menu-print-page .psec.pour-group .lead{ margin:-.4mm 0 1.2mm; }
+/* a page that is nothing but pours (the book's tequila and mezcal pages) flows in two columns */
+.menu-print-page.family-drinks-a5p .page-body.cols{ column-count:2; column-gap:8mm; column-fill:auto; }
+.menu-print-page.family-drinks-a5p .page-body.cols .type-text{ column-span:all; }
+.menu-print-page.family-drinks-a5p .page-body.cols .psec{ break-inside:auto; }
+.menu-print-page.family-drinks-a5p .page-body.cols .sec-head{ break-after:avoid; break-inside:avoid; }
+.menu-print-page.family-drinks-a5p .page-body.cols .lead,
+.menu-print-page.family-drinks-a5p .page-body.cols .callout{ break-after:avoid; break-inside:avoid; }
+.menu-print-page.family-drinks-a5p .page-body.cols .drink{ break-inside:avoid; }
+.menu-print-page.family-drinks-a5p .psec{ margin-bottom:4.2mm; }
+.menu-print-page.family-drinks-a5p .para{ font-size:12px; }
+/* the binder's two columns: a long section flows across both, rows and heads stay whole */
+.menu-print-page.family-drinks-a5l .psec{ break-inside:auto; }
+.menu-print-page.family-drinks-a5l .sec-head{ break-after:avoid; break-inside:avoid; }
+.menu-print-page.family-drinks-a5l .lead,
+.menu-print-page.family-drinks-a5l .callout{ break-after:avoid; break-inside:avoid; }
+.menu-print-page.family-drinks-a5l .drink,
+.menu-print-page.family-drinks-a5l .wine,
+.menu-print-page.family-drinks-a5l .pour,
+.menu-print-page.family-drinks-a5l .wine-head{ break-inside:avoid; }
 
 /* ---- footer ---- */
 .menu-print-page .foot{ text-align:center; margin-top:auto; padding-top:5mm; font-family:var(--sans); color:var(--ink-72); }
@@ -264,8 +352,31 @@ function nameLine(item: MenuItemDocument): string {
   );
 }
 
-function renderRow(item: MenuItemDocument, section: MenuSectionDocument, showPrices: boolean): string {
+const STRENGTH = /^\d+(?:\.\d+)?\s*%$/;
+
+/**
+ * In the drinks books a row whose qualifier is a strength (40%) and that
+ * carries at most a short description (a village) is a pour — one line, as
+ * the back-bar pages set it — not a cocktail with its ingredients beneath.
+ * A cocktail tagged "Signature" or "on tap" keeps the cocktail layout.
+ */
+function isPourRow(item: MenuItemDocument, section: MenuSectionDocument, family: MenuTemplate['family']): boolean {
+  if (family !== 'drinks-a5l' && family !== 'drinks-a5p') return false;
+  if (section.sectionType !== 'STANDARD') return false;
+  if (!item.meta || !STRENGTH.test(item.meta.trim()) || item.note) return false;
+  return !item.description || item.description.length <= 48;
+}
+
+function renderRow(item: MenuItemDocument, section: MenuSectionDocument, showPrices: boolean, family: MenuTemplate['family']): string {
   const price = showPrices ? formatMenuPrice(item.priceCents, item.priceUnit) : '';
+  if (isPourRow(item, section, family)) {
+    const village = item.description ? `<span class="dvil">${escapeHtml(item.description)}</span>` : '';
+    return (
+      `<div class="drink pour-row" data-dish-key="${escapeHtml(item.dishKey ?? '')}"><div class="drink-top">${nameLine(item).replace(/<\/span>$/, `${village}</span>`)}${
+        price ? `<span class="dprice">${escapeHtml(price)}</span>` : ''
+      }</div></div>`
+    );
+  }
   const cls = section.sectionType === 'SET_MENUS' ? 'drink pkg' : 'drink';
   return (
     `<div class="${cls}" data-dish-key="${escapeHtml(item.dishKey ?? '')}"><div class="drink-top">${nameLine(item)}${
@@ -317,7 +428,9 @@ function renderTable(section: MenuSectionDocument, showPrices: boolean): string 
 }
 
 function renderSection(section: MenuSectionDocument, showPrices: boolean, family: MenuTemplate['family']): string {
-  const open = `<div class="psec type-${section.sectionType.toLowerCase()}" data-section-id="${escapeHtml(section.id ?? '')}">${sectionHead(section)}`;
+  const items = visibleItems(section);
+  const pourGroup = items.length > 0 && items.every((item) => isPourRow(item, section, family));
+  const open = `<div class="psec type-${section.sectionType.toLowerCase()}${pourGroup ? ' pour-group' : ''}" data-section-id="${escapeHtml(section.id ?? '')}">${sectionHead(section)}`;
   const sub = section.subheading ? `<div class="callout">${escapeHtml(section.subheading)}</div>` : '';
   const lead = section.lead ? `<div class="lead">${escapeHtml(section.lead)}</div>` : '';
   switch (section.sectionType) {
@@ -342,7 +455,7 @@ function renderSection(section: MenuSectionDocument, showPrices: boolean, family
     case 'STANDARD':
     default:
       return `${open}${sub}${lead}${visibleItems(section)
-        .map((item) => renderRow(item, section, showPrices))
+        .map((item) => renderRow(item, section, showPrices, family))
         .join('')}</div>`;
   }
 }
@@ -368,14 +481,19 @@ function renderFoot(doc: MenuDocument, options: { withDietaries: boolean; withCo
 }
 
 /** "COCKTAILS 2 · WINE 9 · TEQUILA 11" — the first titled section of each inner page, whatever its type (an essay page is listed by its title). */
-function contentsLine(pages: MenuSectionDocument[][]): string {
+/**
+ * The cover's contents line: the first titled section of each page, each
+ * title once, capped so a long book's cover stays a cover (the binder's 23
+ * pages would otherwise print three lines of contents into the ornament).
+ */
+function contentsLine(pages: MenuSectionDocument[][], max: number): string {
   const entries: string[] = [];
   pages.forEach((sections, index) => {
-    if (index === 0) return;
+    if (index === 0 || entries.length >= max) return;
     const first = sections.find((section) => section.title.trim());
     if (!first) return;
     const title = first.title.trim().toUpperCase();
-    if (entries.some((entry) => entry.startsWith(`${title}<`))) return;
+    if (entries.some((entry) => entry.startsWith(`${escapeHtml(title)}<`))) return;
     entries.push(`${escapeHtml(title)}<span class="num">${index + 1}</span>`);
   });
   return entries.join(' · ');
@@ -384,7 +502,7 @@ function contentsLine(pages: MenuSectionDocument[][]): string {
 function renderCover(doc: MenuDocument, template: MenuTemplate, options: MenuRenderOptions, rules: FamilyRules, pages: MenuSectionDocument[][]): string {
   const logoAsset = rules.coverLogo ?? template.logo.asset;
   const price = formatMenuPrice(doc.heroPriceCents, doc.heroPriceUnit);
-  const nav = pages.length > 1 ? contentsLine(pages) : '';
+  const nav = pages.length > 1 ? contentsLine(pages, template.family === 'drinks-a5l' ? 9 : 12) : '';
   return (
     `<div class="cover">` +
     `<img class="biglogo" src="${escapeHtml(options.assets.logoSrc(logoAsset))}" alt="${escapeHtml(template.logo.alt)}">` +
@@ -445,11 +563,15 @@ export function renderPagedSheets(doc: MenuDocument, template: MenuTemplate, opt
       const isCover = rules.cover && pageNumber === 1;
       const last = pageNumber === pages.length;
       const onecol = isCover || sections.length <= 1 ? ' onecol' : '';
+      const pourPage =
+        template.family === 'drinks-a5p' &&
+        sections.some((section) => section.sectionType !== 'TEXT') &&
+        sections.every((section) => section.sectionType === 'TEXT' || (visibleItems(section).length > 0 && visibleItems(section).every((item) => isPourRow(item, section, template.family))));
       const body = sections.map((section) => renderSection(section, showPrices, template.family)).join('');
       return (
         `<section class="sheet page-${pageNumber}${isCover ? ' is-cover' : ''}${onecol}" data-page="${pageNumber}">` +
         (isCover ? renderCover(doc, template, options, rules, pages) : renderRunhead(doc, template, options, pageNumber, rules)) +
-        (body ? `<div class="page-body">${body}</div>` : '') +
+        (body ? `<div class="page-body${pourPage ? ' cols' : ''}">${body}</div>` : '') +
         (last && !isCover ? renderFoot(doc, { withDietaries: true, withConditions: true }) : '') +
         (last && isCover && pages.length === 1 ? renderFoot(doc, { withDietaries: true, withConditions: true }) : '') +
         (rules.folio && !isCover ? `<div class="folio">${pageNumber}</div>` : '') +
