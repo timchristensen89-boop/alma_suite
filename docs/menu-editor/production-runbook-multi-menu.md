@@ -26,6 +26,17 @@ Checked against PR head `6721375` (verified 8 Oct 2026; the two commits after `b
 
 ## 1. API on the VPS
 
+**One operator, one lock.** On 9 Oct 2026 two sessions ran this runbook 23 s apart (two dumps, two `migrate deploy`, two `up -d`); nothing broke, but only because every step happened to be idempotent. Before step 1, take the release lock on the VPS and keep that shell open for the whole release:
+
+```bash
+ssh <vps>
+exec 9>/opt/alma/deploy/.release.lock && flock -n 9 || { echo "ANOTHER RELEASE IS IN PROGRESS: $(cat /opt/alma/deploy/.release.who 2>/dev/null)"; exit 1; }
+echo "$(date '+%F %T %Z') $USER@$(hostname) <your name / session>" > /opt/alma/deploy/.release.who
+docker events --since 15m --filter type=container --format '{{.Time}} {{.Action}} {{.Actor.Attributes.name}}' | grep -vE 'exec_' | tail -5
+```
+Expect: no "ANOTHER RELEASE" line, and no `create`/`start` of a `deploy-suite-api-run-*` or `deploy-suite-api-1` container in the last 15 minutes that you did not cause. The lock is released when that shell exits; every other VPS command in this runbook runs from the same shell. A second operator who runs the block sees the name in `.release.who` and stops.
+
+
 ```bash
 ssh <vps>
 cd /opt/alma/deploy && date '+%H:%M %Z' && docker compose ps && df -h / | sed 1d
@@ -37,9 +48,9 @@ Expect: `%Z` prints `AEDT` and the time is outside 02:25–03:15; all five servi
 The repository's only compose file defines a local `postgres`; the production compose at `/opt/alma/deploy` is not in the repo. The five-service count, the `deploy-suite-api` image name and the `b07e2d8c1a4b` running id come from the Menu Editor runbook, so this check (plus 1a's id check) is the only confirmation of them. Record the output with the preflight evidence.
 
 ```bash
-cd /opt/alma/deploy && docker compose config --services && docker compose config | sed -n '/^  suite-api:/,/^  [a-z]/p'
+cd /opt/alma/deploy && docker compose config --services && docker compose config --no-interpolate | sed -n '/^  suite-api:/,/^  [a-z]/p' | grep -vE '^      [A-Z_]+:'
 ```
-Expect: exactly five services listed (`caddy`, `compliance-api`, `postgres`, `stock-api`, `suite-api`); under `suite-api`: `build.context` is `/opt/alma/alma-suite` with `dockerfile: Dockerfile` (the repo root Dockerfile), NO `image:` key (so the built image is `deploy-suite-api:latest`), NO `entrypoint:` and NO `command:` other than the Dockerfile default (the image's CMD is `node apps/api/dist/apps/api/src/server.js`; nothing migrates on start), NO `volumes:` bind-mount over `/workspace` (a source mount would defeat the retag rollback in section 4), and `env_file: env/suite-api.env`. Stop if the service name, image name, build context or an entrypoint/command/volume override differs — 1a, 1c–1f and the section 4 rollback all assume this shape, and `docker compose run` in 1e replaces `command:` but still runs through any `entrypoint:`. (stock-api is built from the same Dockerfile; `docker compose build suite-api` leaves its image on the old build. That is fine for this release: the PR changes nothing under `apps/stock-api`, and stock-api never touches the Menu tables.)
+**`docker compose config` resolves `env_file` and prints every value in it — the production secrets — so the `grep -v` above drops the `environment:` lines; never run it bare and never paste its raw output into a chat, a ticket or a runbook (the 9 Oct 2026 deploy did, and the rotation in `docs/menus-v2/post-deploy-audit-2026-10-09.md` followed).** Expect: exactly five services listed (`caddy`, `compliance-api`, `postgres`, `stock-api`, `suite-api`); under `suite-api`: `build.context` is `/opt/alma/alma-suite` with `dockerfile: Dockerfile` (the repo root Dockerfile), NO `image:` key (so the built image is `deploy-suite-api:latest`), NO `entrypoint:` and NO `command:` other than the Dockerfile default (the image's CMD is `node apps/api/dist/apps/api/src/server.js`; nothing migrates on start), NO `volumes:` bind-mount over `/workspace` (a source mount would defeat the retag rollback in section 4), and `env_file: env/suite-api.env`. Stop if the service name, image name, build context or an entrypoint/command/volume override differs — 1a, 1c–1f and the section 4 rollback all assume this shape, and `docker compose run` in 1e replaces `command:` but still runs through any `entrypoint:`. (stock-api is built from the same Dockerfile; `docker compose build suite-api` leaves its image on the old build. That is fine for this release: the PR changes nothing under `apps/stock-api`, and stock-api never touches the Menu tables.)
 
 ```bash
 grep -n 'alma-menus.web.app' /opt/alma/deploy/env/suite-api.env
