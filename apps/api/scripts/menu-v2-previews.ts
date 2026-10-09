@@ -252,7 +252,15 @@ async function main() {
     const rendered = await renderMenuPdf(html, template.page);
     const pdfPath = join(OUT, `${sample.name}.pdf`);
     writeFileSync(pdfPath, rendered.pdf);
-    execFileSync('pdftoppm', ['-r', '110', '-png', pdfPath, join(OUT, sample.name)]);
+    // Rasterising needs poppler's pdftoppm (`brew install poppler`). Without it
+    // the PDFs are still written and worth reviewing, so warn and carry on
+    // rather than failing after the first sample (found 9 Oct 2026).
+    try {
+      execFileSync('pdftoppm', ['-r', '110', '-png', pdfPath, join(OUT, sample.name)]);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      console.warn(`${sample.name}: pdftoppm not found — PDF written, PNG skipped (brew install poppler)`);
+    }
     const fill = rendered.fill.pages?.map((page) => `p${page.page} ${Math.round(page.fillRatio * 100)}%${page.overflow ? ' OVERFLOW' : ''}`).join(', ') ?? `${Math.round(rendered.fill.fillRatio * 100)}%`;
     console.log(`${sample.name}: ${rendered.pageCount} page(s), fill ${fill}, ${rendered.renderMs} ms`);
     index.push(`## ${sample.title}`, '', `Template \`${sample.templateKey}\` (${template.format}), ${rendered.pageCount} page(s); fill ${fill}. PDF: \`${sample.name}.pdf\`.`, '');

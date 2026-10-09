@@ -30,8 +30,11 @@ use `--clean --if-exists`, so a restore fully replaces current contents.
    ```
    0 3 * * *  BACKUP_GCS_BUCKET="gs://alma-db-backups" /opt/alma/alma-suite/scripts/backup-db.sh >> /var/log/alma-backup.log 2>&1
    ```
-   3am UTC is ~1–2pm Sydney — outside both venues' service. Move it if that
-   ever overlaps a lunch trade.
+   The VPS clock is Australia/Sydney (AEDT/AEST), not UTC, so `0 3 * * *` runs
+   at 3am local — the quiet hours, not lunch. The box also runs a second,
+   older dump at 02:30 local (`/opt/alma/deploy/backup.sh`, not in this
+   repo, offsite via rclone to `gcs:alma-suite-backups`), so avoid deploys and
+   migrations between 02:25 and 03:15 local.
 
 4. **Confirm the first run** by hand before trusting the cron:
    ```
@@ -52,6 +55,17 @@ docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" alma_restore_t
 ```
 
 If those counts look right, the backup is real.
+
+## Hand-made dumps before a release
+
+Release runbooks take a `pre-<release>-<stamp>.sql.gz` with
+`pg_dump --clean --if-exists` into the same directory. Those names are
+**outside** both nightly prunes (`backup-db.sh` deletes only
+`alma-<db>-*.sql.gz`, `backup.sh` only `alma-suite-*.sql.gz`) and are never
+copied offsite, so they accumulate at ~90 MB each until someone removes them.
+Once a release is confirmed, delete its dump by hand (`ls -lh
+/opt/alma/backups/pre-*` first) — the nightly offsite copies are the long-term
+record.
 
 ## Recovery objective
 
