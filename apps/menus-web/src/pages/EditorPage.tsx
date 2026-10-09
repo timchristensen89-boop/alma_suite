@@ -824,7 +824,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
     );
   }
 
-  const publisher = canPublishMenus(user);
+  const publisher = canPublishMenus(user, summary?.venue.slug ?? null);
   const saveLabel =
     saveState.kind === 'saving'
       ? 'Saving…'

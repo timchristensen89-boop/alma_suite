@@ -333,9 +333,14 @@ const ACCESS_PERMISSION_GROUPS: Partial<Record<AlmaAppId, Array<{ key: string; l
     { key: 'giftcardsVoid', label: 'Void/refund note' }
   ],
   MENUS: [
-    // Anyone with MENUS enabled can draft. This one grant lets a USER-role
-    // chef publish too; managers, admins and the head chef can regardless.
-    { key: 'menusPublish', label: 'Publish menus' }
+    // Anyone with MENUS enabled can draft. "Publish menus" lets a USER-level
+    // grant publish, add, rename and archive; a MANAGER-level grant publishes
+    // regardless. Role titles no longer imply either — only admins publish
+    // without a tick. The "Limit to" ticks confine the whole grant (reading,
+    // drafting and publishing) to those venues; none ticked = every venue.
+    { key: 'menusPublish', label: 'Publish menus' },
+    { key: 'menusVenueStAlma', label: 'Limit to St Alma' },
+    { key: 'menusVenueAlmaAvalon', label: 'Limit to Alma Avalon' }
   ],
   TRAINING: [
     { key: 'academyViewOwn', label: 'View own Academy' },

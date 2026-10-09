@@ -53,8 +53,8 @@ function sameFields(a: PromotionFields, b: PromotionFields): boolean {
 
 export function PromotionPage({ user }: { user: AuthUser }) {
   const { promotionId = '' } = useParams();
-  const canManage = canPublishMenus(user);
   const [detail, setDetail] = useState<PromotionDetail | null>(null);
+  const canManage = canPublishMenus(user, detail?.venue.slug ?? null);
   const [fields, setFields] = useState<PromotionFields | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
