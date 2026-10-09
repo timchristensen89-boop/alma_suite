@@ -38,6 +38,7 @@ export function PromotionsPage({ user }: { user: AuthUser }) {
   const [creating, setCreating] = useState<{ venueId: string | null } | null>(null);
   const [venues, setVenues] = useState<Array<{ id: string; name: string; slug: string }>>([]);
   const canManage = canPublishMenus(user);
+  const canManageVenue = (slug: string) => canPublishMenus(user, slug);
 
   const load = useCallback(async () => {
     setError(null);
@@ -98,13 +99,13 @@ export function PromotionsPage({ user }: { user: AuthUser }) {
         />
       ) : (
         groups
-          .filter((group) => group.promotions.length > 0 || canManage)
+          .filter((group) => group.promotions.length > 0 || canManageVenue(group.venue.slug))
           .map((group) => (
             <section key={group.venue.id} className="menus-venue">
               <div className="menus-venue-head">
                 <h2>{group.venue.name}</h2>
                 <span className="menus-venue-count subtle">{group.promotions.length} promotion{group.promotions.length === 1 ? '' : 's'}</span>
-                {canManage ? (
+                {canManageVenue(group.venue.slug) ? (
                   <Button type="button" variant="secondary" className="menus-venue-add" onClick={() => setCreating({ venueId: group.venue.id })}>
                     <IconPlus /> New promotion
                   </Button>
@@ -148,7 +149,7 @@ export function PromotionsPage({ user }: { user: AuthUser }) {
       ) : null}
 
       <p className="menus-footnote subtle">
-        {canManage ? 'Managers and the head chef publish, hide and end promotions.' : 'You can edit a promotion’s listing; a manager or the head chef publishes it.'}
+        {canManage ? 'Publishers for the venue publish, hide and end promotions.' : 'You can edit a promotion’s listing; a publisher for the venue publishes it.'}
       </p>
 
       {creating ? (

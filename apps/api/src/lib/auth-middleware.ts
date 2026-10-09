@@ -90,21 +90,19 @@ function isStaffWriteAllowed(req: Request) {
   if (req.path === '/api/staff/me/pin' && req.method === 'POST') return true;
   // Menu Editor: anyone let into /api/menus may draft — start, save, discard,
   // restore, copy a dish across venues, and ask for the publish preview.
-  // Publishing itself is a POST too, but it is gated by requireMenuPublisher
-  // in the route (managers and the head chef), so a chef whose role title
-  // does not read as "manager" is not refused here before that gate can say
-  // yes.
+  // Publishing itself is a POST too, but it is gated per venue in the route
+  // (requireMenuPublisherFor), so a chef whose role title does not read as
+  // "manager" is not refused here before that gate can say yes.
   if (/^\/api\/menus\/[^/]+\/draft(\/preview|\/publish|\/items\/copy-to)?$/.test(req.path)) return true;
   if (/^\/api\/menus\/versions\/[^/]+\/restore$/.test(req.path) && req.method === 'POST') return true;
-  // Adding, renaming and archiving a menu are gated by requireMenuPublisher in
-  // the route, for the same reason: the head chef is STAFF here and a
-  // publisher there.
+  // Adding, renaming and archiving a menu are gated per venue in the route,
+  // for the same reason: a ticked publisher is STAFF here and a publisher there.
   if (req.path === '/api/menus' && req.method === 'POST') return true;
   if (/^\/api\/menus\/[^/]+$/.test(req.path) && req.method === 'PATCH') return true;
   if (/^\/api\/menus\/[^/]+\/(archive|unarchive)$/.test(req.path) && req.method === 'POST') return true;
   // Promotions: anyone let into Menus may edit the working copy and its photo
   // and ask for the publish preview; creating, publishing, hiding and ending
-  // are gated by requireMenuPublisher in the route, as above.
+  // are gated per venue in the route, as above.
   if (/^\/api\/menus\/promotions(\/[^/]+(\/(image|preview|publish|hide|show|end))?)?$/.test(req.path)) return true;
   if (req.path === '/api/staff/me/leave' && req.method === 'POST') return true;
   // Availability is the staff member's own to state. The service still checks
@@ -243,7 +241,9 @@ export async function authMiddleware(
         return next(new HttpError(403, 'Alma Marketing is currently in Preview and isn’t open to your role.'));
       }
     } else if (req.path.startsWith('/api/menus')) {
-      if (!hasAnyEnabledAppAccess(req.user, ['MENUS', 'COMPLIANCE'])) {
+      // The Menus grant alone: it carries the publish tick and the venue
+      // limits, so letting Compliance access in here would skip both.
+      if (!hasEnabledAppAccess(req.user, 'MENUS')) {
         return next(new HttpError(403, 'Alma Menus isn’t enabled on your account. Ask a manager.'));
       }
     } else if (req.path.startsWith('/api/gift-cards') || req.path.startsWith('/api/invoices')) {

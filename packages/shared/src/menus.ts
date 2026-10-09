@@ -1222,24 +1222,87 @@ export type PublicMenuDocument = PublicMenuSummary & {
   document: MenuDocument;
 };
 
-/** Who may publish: managers, admins and the head chef. Mirrors the API's rule. */
-export function canPublishMenus(user: {
+/**
+ * Menus access is granted per person in the Staff app (App access → Menus).
+ * Two things live on that grant and nowhere else:
+ *
+ *   - whether the person may PUBLISH (and add, rename, archive menus; create,
+ *     publish, hide and end promotions): the grant's level is MANAGER/ADMIN, or
+ *     the "Publish menus" tick on a USER-level grant;
+ *   - which VENUES the person works on: the "Limit to <venue>" ticks. None
+ *     ticked means every venue. A limited grant hides the other venue's menus
+ *     and refuses every read and write on them, publisher or not.
+ *
+ * Admins (`isAdmin`, or the ADMIN session role) are never limited. Nothing
+ * else is implied any more: a "Venue Manager" or "Head Chef" role title, or
+ * the MANAGER session role those titles produce, no longer publish on their
+ * own — that let every venue manager publish the other venue's menu. The
+ * API's requireMenuPublisher / requireMenuVenueAccess enforce exactly this;
+ * the Menus home and editor use the same functions to hide what would be
+ * refused.
+ */
+export const MENU_VENUE_PERMISSION_KEYS: Readonly<Record<string, string>> = {
+  'st-alma': 'menusVenueStAlma',
+  'alma-avalon': 'menusVenueAlmaAvalon'
+};
+
+/** The subset of AuthUser these rules read; `null`/`undefined` is "nobody". */
+export type MenuRuleUser = {
   role?: string | null;
   isAdmin?: boolean | null;
   roleTitle?: string | null;
   accountType?: string | null;
   appAccess?: Array<{ appId: string; status: string; role: string; permissions?: unknown }> | null;
-} | null | undefined): boolean {
+} | null | undefined;
+
+function menusGrant(user: MenuRuleUser) {
+  return user?.appAccess?.find((access) => access.appId === 'MENUS' && access.status === 'ENABLED') ?? null;
+}
+
+function permissionsOf(access: { permissions?: unknown } | null): Record<string, unknown> {
+  const permissions = access?.permissions;
+  return permissions && typeof permissions === 'object' && !Array.isArray(permissions) ? (permissions as Record<string, unknown>) : {};
+}
+
+function isMenuAdmin(user: MenuRuleUser): boolean {
   if (!user || user.accountType === 'VENUE_DEVICE') return false;
-  if (user.isAdmin || user.role === 'ADMIN' || user.role === 'MANAGER') return true;
-  if ((user.roleTitle ?? '').toLowerCase().includes('head chef')) return true;
-  return Boolean(
-    user.appAccess?.some((access) => {
-      if (access.appId !== 'MENUS' || access.status !== 'ENABLED') return false;
-      if (access.role === 'MANAGER' || access.role === 'ADMIN') return true;
-      // The one Staff-app toggle for this module: a USER-role grant with it ticked may publish.
-      const permissions = access.permissions;
-      return Boolean(permissions && typeof permissions === 'object' && (permissions as { menusPublish?: unknown }).menusPublish === true);
-    })
-  );
+  return Boolean(user.isAdmin) || user.role === 'ADMIN';
+}
+
+/**
+ * The venue slugs this person may see and work on, or `null` for every venue
+ * (admins, and grants with no "Limit to" tick). An empty set means the grant
+ * limits them to venues this build does not know — nothing is shown.
+ */
+export function menuVenueScope(user: MenuRuleUser): ReadonlySet<string> | null {
+  if (!user || user.accountType === 'VENUE_DEVICE') return null;
+  if (isMenuAdmin(user)) return null;
+  const permissions = permissionsOf(menusGrant(user));
+  const limited = Object.entries(MENU_VENUE_PERMISSION_KEYS)
+    .filter(([, key]) => permissions[key] === true)
+    .map(([slug]) => slug);
+  return limited.length ? new Set(limited) : null;
+}
+
+/** May this person open, read and draft on a menu of this venue? */
+export function canAccessMenuVenue(user: MenuRuleUser, venueSlug: string | null | undefined): boolean {
+  if (!user) return false;
+  const scope = menuVenueScope(user);
+  if (scope === null) return true;
+  return Boolean(venueSlug) && scope.has(String(venueSlug));
+}
+
+/**
+ * Who may publish (and manage the list of menus and promotions). With a
+ * `venueSlug`, only for that venue; without one, anywhere at all — the Menus
+ * home uses that form to decide whether to show the page-level "New menu".
+ */
+export function canPublishMenus(user: MenuRuleUser, venueSlug?: string | null): boolean {
+  if (!user || user.accountType === 'VENUE_DEVICE') return false;
+  if (isMenuAdmin(user)) return true;
+  const grant = menusGrant(user);
+  if (!grant) return false;
+  const publisher = grant.role === 'MANAGER' || grant.role === 'ADMIN' || permissionsOf(grant).menusPublish === true;
+  if (!publisher) return false;
+  return venueSlug === undefined || venueSlug === null ? true : canAccessMenuVenue(user, venueSlug);
 }

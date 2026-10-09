@@ -109,7 +109,9 @@ export function HomePage({ user }: { user: AuthUser }) {
   const [query, setQuery] = useState('');
   const [kindFilter, setKindFilter] = useState<'ALL' | MenuKind>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+  // Anywhere at all (the page-level New menu); per venue below.
   const canManage = canPublishMenus(user);
+  const canManageVenue = (slug: string) => canPublishMenus(user, slug);
   const filtering = query.trim() !== '' || kindFilter !== 'ALL' || statusFilter !== 'ALL';
 
   const load = useCallback(async () => {
@@ -221,7 +223,7 @@ export function HomePage({ user }: { user: AuthUser }) {
         title={menu.name}
         subtitle={cardSubtitle(menu, venue)}
         action={
-          canManage ? (
+          canManageVenue(menu.venue.slug) ? (
             <div className="menu-card-manage">
               <button type="button" className="item-action" aria-label={`Rename ${menu.venue.name} · ${menu.name}`} onClick={() => { setNotice(null); setEditing(menu); }}>Rename</button>
               <button type="button" className="item-action" aria-label={`Archive ${menu.venue.name} · ${menu.name}`} onClick={() => { setNotice(null); setArchiving(menu); }}>Archive</button>
@@ -356,14 +358,14 @@ export function HomePage({ user }: { user: AuthUser }) {
             <header className="menus-venue-head">
               <h2 id={`venue-${group.venue.id}`}>{group.venue.name}</h2>
               <span className="subtle menus-venue-count">{group.menus.length === 1 ? '1 menu' : `${group.menus.length} menus`}</span>
-              {canManage && group.venue.templates.length > 0 ? (
+              {canManageVenue(group.venue.slug) && group.venue.templates.length > 0 ? (
                 <Button size="sm" variant="secondary" className="menus-venue-add" leftIcon={<IconPlus />} onClick={() => { setNotice(null); setNewMenuFor({ venueId: group.venue.id }); }}>
                   New menu
                 </Button>
               ) : null}
             </header>
             {group.menus.length === 0 ? (
-              <p className="subtle">No menus for {group.venue.name} yet.{canManage ? ' Add one above.' : ' A manager or the head chef can add one.'}</p>
+              <p className="subtle">No menus for {group.venue.name} yet.{canManageVenue(group.venue.slug) ? ' Add one above.' : ' A publisher for this venue can add one.'}</p>
             ) : (
               byKind(group.menus).map((kindGroup) => (
                 <div key={kindGroup.kind} className={`menus-kind is-${kindGroup.kind.toLowerCase()}`} aria-labelledby={`venue-${group.venue.id}-${kindGroup.kind}`}>
@@ -396,7 +398,7 @@ export function HomePage({ user }: { user: AuthUser }) {
                   <Link className="btn btn-secondary btn-sm" to={`/menus/${menu.id}/history`}>
                     <span>History</span>
                   </Link>
-                  {canManage ? (
+                  {canManageVenue(menu.venue.slug) ? (
                     <Button size="sm" variant="ghost" onClick={() => void unarchive(menu)} disabled={busy === `unarchive-${menu.id}`}>
                       {busy === `unarchive-${menu.id}` ? 'Unarchiving…' : 'Unarchive'}
                     </Button>
@@ -409,7 +411,7 @@ export function HomePage({ user }: { user: AuthUser }) {
       ) : null}
 
       <p className="subtle menus-footnote">
-        Signed in as {user.firstName} {user.lastName}. {canManage ? 'You can draft, publish, and add or archive menus.' : 'You can draft; a manager or the head chef publishes and manages the list of menus.'}
+        Signed in as {user.firstName} {user.lastName}. {canManage ? 'You can draft, publish, and add or archive menus on your venues.' : 'You can draft; a publisher for the venue publishes and manages the list of menus.'}
       </p>
 
       {newMenuFor ? (

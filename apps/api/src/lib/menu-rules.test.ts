@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  canAccessMenuVenue,
   canPublishMenus,
+  MENU_VENUE_PERMISSION_KEYS,
+  menuVenueScope,
   diffMenuDocuments,
   ensureDishKeys,
   formatMenuPrice,
@@ -276,23 +279,80 @@ describe('menuDraftSaveInputSchema', () => {
   });
 });
 
-describe('canPublishMenus', () => {
+describe('canPublishMenus — explicit grants, per venue', () => {
   const base = { role: 'STAFF', isAdmin: false, roleTitle: 'Chef de partie', accountType: 'HUMAN', appAccess: [] as Array<{ appId: string; status: string; role: string; permissions?: unknown }> };
-  it('lets managers, admins and the head chef publish', () => {
-    assert.equal(canPublishMenus({ ...base, role: 'MANAGER' }), true);
-    assert.equal(canPublishMenus({ ...base, role: 'ADMIN' }), true);
+  const grant = (role: string, permissions?: Record<string, unknown>) => [{ appId: 'MENUS', status: 'ENABLED', role, permissions }];
+
+  it('lets admins publish anywhere', () => {
     assert.equal(canPublishMenus({ ...base, isAdmin: true }), true);
-    assert.equal(canPublishMenus({ ...base, roleTitle: 'Head Chef (Kitchen)' }), true);
-    assert.equal(canPublishMenus({ ...base, appAccess: [{ appId: 'MENUS', status: 'ENABLED', role: 'MANAGER' }] }), true);
-    assert.equal(canPublishMenus({ ...base, appAccess: [{ appId: 'MENUS', status: 'ENABLED', role: 'USER', permissions: { menusPublish: true } }] }), true);
+    assert.equal(canPublishMenus({ ...base, isAdmin: true }, 'st-alma'), true);
+    assert.equal(canPublishMenus({ ...base, role: 'ADMIN' }, 'alma-avalon'), true);
   });
-  it('refuses other staff, a MENUS user grant, shared iPads and nobody', () => {
+
+  it('lets a MANAGER-level grant or a ticked USER grant publish', () => {
+    assert.equal(canPublishMenus({ ...base, appAccess: grant('MANAGER') }), true);
+    assert.equal(canPublishMenus({ ...base, appAccess: grant('ADMIN') }, 'st-alma'), true);
+    assert.equal(canPublishMenus({ ...base, appAccess: grant('USER', { menusPublish: true }) }, 'st-alma'), true);
+  });
+
+  it('no longer lets a role title or the MANAGER session role publish on its own', () => {
+    // A "Venue Manager" title gives the MANAGER session role; a "Head Chef" title used to publish by name.
+    assert.equal(canPublishMenus({ ...base, role: 'MANAGER', roleTitle: 'Venue Manager' }), false);
+    assert.equal(canPublishMenus({ ...base, roleTitle: 'Head Chef (Kitchen)' }), false);
+    assert.equal(canPublishMenus({ ...base, role: 'MANAGER', appAccess: grant('USER') }), false);
+  });
+
+  it('limits a publisher to the ticked venues', () => {
+    const stAlmaManager = { ...base, role: 'MANAGER', appAccess: grant('USER', { menusPublish: true, menusVenueStAlma: true }) };
+    assert.equal(canPublishMenus(stAlmaManager, 'st-alma'), true);
+    assert.equal(canPublishMenus(stAlmaManager, 'alma-avalon'), false);
+    assert.equal(canPublishMenus(stAlmaManager), true, 'somewhere: the page-level New menu');
+    const avalonManager = { ...base, appAccess: grant('MANAGER', { menusVenueAlmaAvalon: true }) };
+    assert.equal(canPublishMenus(avalonManager, 'alma-avalon'), true);
+    assert.equal(canPublishMenus(avalonManager, 'st-alma'), false);
+  });
+
+  it('refuses other staff, an unticked USER grant, bad ticks, disabled grants, shared iPads and nobody', () => {
     assert.equal(canPublishMenus(base), false);
-    assert.equal(canPublishMenus({ ...base, appAccess: [{ appId: 'MENUS', status: 'ENABLED', role: 'USER' }] }), false);
-    assert.equal(canPublishMenus({ ...base, appAccess: [{ appId: 'MENUS', status: 'ENABLED', role: 'USER', permissions: { menusPublish: 'yes' } }] }), false);
+    assert.equal(canPublishMenus({ ...base, appAccess: grant('USER') }), false);
+    assert.equal(canPublishMenus({ ...base, appAccess: grant('USER', { menusPublish: 'yes' }) }), false);
     assert.equal(canPublishMenus({ ...base, appAccess: [{ appId: 'MENUS', status: 'DISABLED', role: 'USER', permissions: { menusPublish: true } }] }), false);
-    assert.equal(canPublishMenus({ ...base, role: 'MANAGER', accountType: 'VENUE_DEVICE' }), false);
+    assert.equal(canPublishMenus({ ...base, isAdmin: true, accountType: 'VENUE_DEVICE' }), false);
     assert.equal(canPublishMenus(null), false);
+  });
+});
+
+describe('menuVenueScope / canAccessMenuVenue — what a limited grant can see', () => {
+  const base = { role: 'STAFF', isAdmin: false, roleTitle: 'Head Chef', accountType: 'HUMAN', appAccess: [] as Array<{ appId: string; status: string; role: string; permissions?: unknown }> };
+  const grant = (permissions?: Record<string, unknown>) => [{ appId: 'MENUS', status: 'ENABLED', role: 'USER', permissions }];
+
+  it('is every venue for admins and for grants with no limit', () => {
+    assert.equal(menuVenueScope({ ...base, isAdmin: true }), null);
+    assert.equal(menuVenueScope({ ...base, appAccess: grant() }), null);
+    assert.equal(menuVenueScope({ ...base, appAccess: grant({ menusPublish: true }) }), null);
+    assert.equal(canAccessMenuVenue({ ...base, appAccess: grant() }, 'st-alma'), true);
+    assert.equal(canAccessMenuVenue({ ...base, appAccess: grant() }, 'alma-avalon'), true);
+  });
+
+  it('is the ticked venues only, and both ticks mean both', () => {
+    const stAlma = { ...base, appAccess: grant({ menusVenueStAlma: true }) };
+    assert.deepEqual([...(menuVenueScope(stAlma) ?? [])], ['st-alma']);
+    assert.equal(canAccessMenuVenue(stAlma, 'st-alma'), true);
+    assert.equal(canAccessMenuVenue(stAlma, 'alma-avalon'), false);
+    assert.equal(canAccessMenuVenue(stAlma, null), false);
+    const both = { ...base, appAccess: grant({ menusVenueStAlma: true, menusVenueAlmaAvalon: true }) };
+    assert.equal(canAccessMenuVenue(both, 'st-alma'), true);
+    assert.equal(canAccessMenuVenue(both, 'alma-avalon'), true);
+  });
+
+  it('ignores limits that are not exactly true, and admins ignore limits', () => {
+    assert.equal(menuVenueScope({ ...base, appAccess: grant({ menusVenueStAlma: 'yes' }) }), null);
+    assert.equal(canAccessMenuVenue({ ...base, isAdmin: true, appAccess: grant({ menusVenueStAlma: true }) }, 'alma-avalon'), true);
+    assert.equal(canAccessMenuVenue(null, 'st-alma'), false);
+  });
+
+  it('lists the venue tick keys the Staff app shows', () => {
+    assert.deepEqual(MENU_VENUE_PERMISSION_KEYS, { 'st-alma': 'menusVenueStAlma', 'alma-avalon': 'menusVenueAlmaAvalon' });
   });
 });
 
