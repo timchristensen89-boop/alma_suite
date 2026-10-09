@@ -1,5 +1,7 @@
 # Menus V2 — production rollout and rollback
 
+> **Released 9 Oct 2026 ~14:02 AEDT** at `cfaa8eaf` (#313 and #315 together — #313 was never shipped on its own, so one deploy applied all three migrations `20261008093000_menu_heading`, `20261009090000_menus_v2`, `20261009120000_menus_v2_promotions`; `_prisma_migrations` 191 → 194). Section 3 (imports) and section 4 (website switch) have **not** been run. What was checked afterwards, who can publish, and what still needs the owner's call: `post-deploy-audit-2026-10-09.md`.
+
 Scope: Alma Suite PR #315 (`claude/menus-v2-zqxw48`, stacked on #313) and the website PR timchristensen89-boop/alma-web-platform#20. This runbook assumes #313 has been released with its own runbook (`docs/menu-editor/production-runbook-multi-menu.md`), which fixes the shape of the stack: the VPS compose at `/opt/alma/deploy`, the `suite-api` image built from `/opt/alma/alma-suite`, the in-container `prisma migrate deploy`, the Firebase site `alma-menus` deployed from a Mac with `scripts/deploy-frontends.sh menus-web`, the editing pause and the tab refresh. Every command below that touches the VPS or Firebase is the same command as in that runbook; only the expectations change.
 
 Nothing in this PR publishes anything by itself. After the deploy the website still serves its committed menus and events until two things happen in order: staff publish the menus and promotions in Alma Menus, and the website is rebuilt with `MENUS_FROM_API=1`.
