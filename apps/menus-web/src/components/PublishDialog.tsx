@@ -11,6 +11,8 @@ type Props = {
   error: string | null;
   publishedVersion: MenuVersionSummary | null;
   draftVersionNumber: number;
+  /** What a blank heading prints, for the diff. */
+  templateTitle?: string;
   onConfirm: () => void;
   onClose: () => void;
 };
@@ -19,7 +21,7 @@ type Props = {
  * Publish confirmation: the server's view of the draft — validation, page
  * fill, and what changed since the version the venue is printing now.
  */
-export function PublishDialog({ open, preview, loading, publishing, error, publishedVersion, draftVersionNumber, onConfirm, onClose }: Props) {
+export function PublishDialog({ open, preview, loading, publishing, error, publishedVersion, draftVersionNumber, templateTitle, onConfirm, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
@@ -78,7 +80,7 @@ export function PublishDialog({ open, preview, loading, publishing, error, publi
             ) : null}
             <h3>What changes</h3>
             <p className="menu-dialog-summary">{preview.summary}</p>
-            <DiffView diff={preview.diff} emptyText="No content changes since the live menu. Publishing regenerates the PDF." />
+            <DiffView diff={preview.diff} templateTitle={templateTitle} emptyText="No content changes since the live menu. Publishing regenerates the PDF." />
           </>
         )}
 

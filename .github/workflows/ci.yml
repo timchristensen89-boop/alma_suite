@@ -82,7 +82,7 @@ jobs:
       # than the first are kept literal, so the step ran `pnpm --filter X`
       # with no command and died with "Unknown option: 'recursive'".
       - name: Run tests
-        run: pnpm --filter @alma/api --filter @alma/stock-api --filter @alma/stock-web --filter @alma/reports-web --filter @alma/ui --filter @alma/db test
+        run: pnpm --filter @alma/api --filter @alma/stock-api --filter @alma/stock-web --filter @alma/reports-web --filter @alma/menus-web --filter @alma/ui --filter @alma/db test
 
   # Corporate gift cards against a real Postgres: the pool-allocation
   # conditional updates, the allocation-key uniqueness and the drain/redeem
@@ -91,9 +91,9 @@ jobs:
   # database-free; here it runs the whole migration history on an empty
   # postgres:16 first, which also proves the migrations apply cleanly.
   db-integration:
-    name: Postgres integration (corporate gift cards)
+    name: Postgres integration (corporate gift cards, menus)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -142,6 +142,16 @@ jobs:
 
       - name: Run the corporate gift card integration suite
         run: pnpm --filter @alma/api exec node --import tsx --test src/services/corporate-gift-card.integration.test.ts
+
+      # Menu Editor: drafts, publish (real PDF in headless Chrome), restore,
+      # several menus per venue, and archiving racing every write. The runner
+      # image ships google-chrome, which menu-pdf.ts finds on its own;
+      # ALMA_TEST_REQUIRE_CHROME=1 makes a missing Chrome fail the run rather
+      # than skip the publish cases. One file at a time: both use this database.
+      - name: Run the menu integration suites
+        env:
+          ALMA_TEST_REQUIRE_CHROME: '1'
+        run: pnpm --filter @alma/api exec node --import tsx --test --test-concurrency=1 src/services/menu.integration.test.ts src/services/menu-archive-race.integration.test.ts
 
   frontend-build:
     name: Frontend builds

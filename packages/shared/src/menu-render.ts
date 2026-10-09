@@ -33,6 +33,8 @@ export type MenuLogoAssetKey = 'stalma-logo' | 'avalon-logo';
 export type MenuTemplate = {
   key: MenuTemplateKey;
   label: string;
+  /** The venue (by slug, as `pnpm db:seed:prod` creates it) whose logo and tagline this sheet carries. */
+  venueSlug: string;
   /** Scopes per-venue CSS tweaks (`.venue-avalon .mast .logo { height: 19mm }`). */
   venueClass: 'stalma' | 'avalon';
   logo: { asset: MenuLogoAssetKey; alt: string };
@@ -48,6 +50,7 @@ export const MENU_TEMPLATES: Record<MenuTemplateKey, MenuTemplate> = {
   freshwater_alacarte: {
     key: 'freshwater_alacarte',
     label: 'St Alma Freshwater · À la carte (A4)',
+    venueSlug: 'st-alma',
     venueClass: 'stalma',
     logo: { asset: 'stalma-logo', alt: 'st.alma' },
     tagline: 'Restaurant & Bar · Freshwater',
@@ -57,6 +60,7 @@ export const MENU_TEMPLATES: Record<MenuTemplateKey, MenuTemplate> = {
   avalon_alacarte: {
     key: 'avalon_alacarte',
     label: 'Alma Avalon · À la carte (A4)',
+    venueSlug: 'alma-avalon',
     venueClass: 'avalon',
     logo: { asset: 'avalon-logo', alt: 'alma restaurant & bar' },
     tagline: 'Avalon Beach · Est 2017',
@@ -72,6 +76,17 @@ export function isMenuTemplateKey(value: unknown): value is MenuTemplateKey {
 export function getMenuTemplate(key: string): MenuTemplate {
   if (!isMenuTemplateKey(key)) throw new Error(`Unknown menu template "${key}".`);
   return MENU_TEMPLATES[key];
+}
+
+/** The print templates a venue's menus may use — its own logo and tagline, nobody else's. */
+export function menuTemplatesForVenue(venueSlug: string): MenuTemplate[] {
+  return Object.values(MENU_TEMPLATES).filter((template) => template.venueSlug === venueSlug);
+}
+
+/** The italic title line as printed: the document's own heading, else the template's. */
+export function menuPrintedHeading(doc: Pick<MenuDocument, 'heading'>, template: Pick<MenuTemplate, 'title'>): string {
+  const heading = (doc.heading ?? '').trim();
+  return heading || template.title;
 }
 
 /**
@@ -308,7 +323,7 @@ export function renderMenuSheetHtml(doc: MenuDocument, templateKey: string, opti
     `<img class="logo" src="${escapeHtml(options.assets.logoSrc(template.logo.asset))}" alt="${escapeHtml(template.logo.alt)}">` +
     `<div class="eyebrow">${escapeHtml(template.tagline)}</div>` +
     `<div class="rule"></div>` +
-    `<div class="title">${escapeHtml(template.title)}</div>` +
+    `<div class="title">${escapeHtml(menuPrintedHeading(doc, template))}</div>` +
     `</div>` +
     `<div class="cols">${column(left)}${column(right)}</div>` +
     full.map((section) => (section.sectionType === 'SET_MENUS' ? renderSetMenus(section, false) : renderWideSection(section))).join('') +

@@ -1,19 +1,26 @@
 import type {
   MenuAuditEntry,
+  MenuCreateInput,
   MenuDiff,
   MenuDocument,
   MenuDraftPayload,
+  MenuListPayload,
   MenuPublishPreview,
   MenuSummary,
   MenuVersionPayload,
   MenuVersionSummary
 } from '@alma/shared';
-import { api, apiBlob } from './api';
+import { ApiError, api, apiBlob } from './api';
 
 /** Typed wrappers over /api/menus. One place to look for every call the editor makes. */
 export const menuApi = {
-  list: () => api<{ menus: MenuSummary[]; renderer: { ok: boolean; message: string } }>('/api/menus'),
+  list: () => api<MenuListPayload>('/api/menus'),
   get: (menuId: string) => api<MenuSummary>(`/api/menus/${menuId}`),
+  /** A new menu for a venue, first draft included (empty or copied from another menu). Publishers only. */
+  create: (input: MenuCreateInput) => api<MenuSummary>('/api/menus', { method: 'POST', body: JSON.stringify(input) }),
+  rename: (menuId: string, name: string) => api<MenuSummary>(`/api/menus/${menuId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  archive: (menuId: string) => api<MenuSummary>(`/api/menus/${menuId}/archive`, { method: 'POST' }),
+  unarchive: (menuId: string) => api<MenuSummary>(`/api/menus/${menuId}/unarchive`, { method: 'POST' }),
   getDraft: (menuId: string) => api<MenuDraftPayload>(`/api/menus/${menuId}/draft`),
   createDraft: (menuId: string) => api<MenuDraftPayload>(`/api/menus/${menuId}/draft`, { method: 'POST' }),
   saveDraft: (menuId: string, document: MenuDocument, expectedUpdatedAt?: string) =>
@@ -35,6 +42,23 @@ export const menuApi = {
   pdfBlob: (versionId: string) => apiBlob(`/api/menus/versions/${versionId}/pdf`),
   listAudit: (menuId: string) => api<MenuAuditEntry[]>(`/api/menus/${menuId}/audit`)
 };
+
+/** The API's answer to any write on a menu that was archived while this page was open. */
+export function isMenuArchivedError(caught: unknown): boolean {
+  return archivedMenuIdOf(caught) !== null;
+}
+
+/**
+ * Which menu the refusal is about. A copy touches two menus; the API names the
+ * archived one, so the editor can tell "this menu was archived" (go read-only)
+ * from "the menu you copied into was" (pick another).
+ */
+export function archivedMenuIdOf(caught: unknown): string | null {
+  if (!(caught instanceof ApiError) || caught.status !== 409) return null;
+  const details = caught.details as { code?: unknown; menuId?: unknown } | null;
+  if (!details || typeof details !== 'object' || details.code !== 'MENU_ARCHIVED') return null;
+  return typeof details.menuId === 'string' ? details.menuId : '';
+}
 
 /**
  * Open a published version's PDF. The session is a bearer token, so a plain

@@ -96,6 +96,12 @@ function isStaffWriteAllowed(req: Request) {
   // yes.
   if (/^\/api\/menus\/[^/]+\/draft(\/preview|\/publish|\/items\/copy-to)?$/.test(req.path)) return true;
   if (/^\/api\/menus\/versions\/[^/]+\/restore$/.test(req.path) && req.method === 'POST') return true;
+  // Adding, renaming and archiving a menu are gated by requireMenuPublisher in
+  // the route, for the same reason: the head chef is STAFF here and a
+  // publisher there.
+  if (req.path === '/api/menus' && req.method === 'POST') return true;
+  if (/^\/api\/menus\/[^/]+$/.test(req.path) && req.method === 'PATCH') return true;
+  if (/^\/api\/menus\/[^/]+\/(archive|unarchive)$/.test(req.path) && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/leave' && req.method === 'POST') return true;
   // Availability is the staff member's own to state. The service still checks
   // ownership on every one of these — this allowlist only decides whether a

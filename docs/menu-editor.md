@@ -5,6 +5,10 @@ Venue managers and chefs edit content in forms, see the A4 page as they type,
 and publish a PDF that matches the current menus. Layout is locked per venue;
 only content, order, visibility and section placement change.
 
+A venue has any number of menus — the à la carte, a Tuesday menu, an event
+menu — each with its own drafts, history and PDF, all printed on that venue's
+template. Publishers add, rename and archive menus from the module home.
+
 | Piece | Where |
 | --- | --- |
 | Frontend | `apps/menus-web` (Vite + React, port 5181, Firebase site `alma-menus`) |
@@ -12,7 +16,7 @@ only content, order, visibility and section placement change.
 | Rules (tags, validation, diff) | `packages/shared/src/menus.ts` |
 | Print templates + renderer | `packages/shared/src/menu-render.ts` |
 | PDF (headless Chrome) | `apps/api/src/lib/menu-pdf.ts`, assets in `apps/api/assets/menus` |
-| Schema | `Menu`, `MenuVersion`, `MenuSection`, `MenuItem`, `MenuAuditEvent` (migration `20261007191211_menu_editor`) |
+| Schema | `Menu`, `MenuVersion`, `MenuSection`, `MenuItem`, `MenuAuditEvent` (migrations `20261007191211_menu_editor`, `20261008093000_menu_heading`) |
 | Seed | `pnpm db:seed:menus` (`apps/api/scripts/seed-menus.ts`) |
 | Proof against the current PDFs | `apps/api/scripts/menu-pdf-compare.ts` → `docs/menu-editor/compare/` |
 
@@ -40,7 +44,10 @@ draft ──save──► draft ──publish──► PUBLISHED (snapshot + PDF
 - One draft per menu at most, enforced inside the transaction that creates
   one (the `Menu` row is locked by the version counter update first). Saving
   replaces the draft's rows and writes a `draft.saved` audit event with the
-  diff summary; a save that changes nothing writes nothing. Saves carry the
+  diff summary; a save that changes nothing writes nothing. "Changes" means
+  any stored field (`menuDocumentsEqual`), not only what the publish diff
+  reports: a seafood flag or a recipe link does not print but still saves,
+  and its audit line reads "dish settings changed (nothing printed differs)". Saves carry the
   draft's `updatedAt`, and the write itself is conditional on that value, so
   a stale or racing save is refused (409) rather than overwriting someone
   else's work. Publishing flips the draft under the same guard.
@@ -55,16 +62,89 @@ draft ──save──► draft ──publish──► PUBLISHED (snapshot + PDF
   links a dish to a recipe through the already-present nullable
   `MenuItem.recipeId` (soft reference, no migration needed).
 
+## Menus per venue
+
+- `Menu` rows are unique on `(venueId, name)`; the service also refuses a name
+  that differs only in case, and an archived menu keeps its name taken
+  (unarchive it instead of creating a lookalike).
+- **New menu** (`POST /api/menus`): venue, name, the venue's print template
+  (chosen only when the venue has more than one — `menuTemplatesForVenue` maps
+  templates to venue slugs), an optional printed heading, and optionally a menu
+  to copy. The first draft is created in the same transaction: empty, or the
+  source's live version (its draft when nothing is live yet) with dish keys
+  kept, so a dish shared between the à la carte and the Tuesday menu is the
+  same dish to Menu Costing. Recipe links are dropped when the source belongs
+  to another venue. Audit: `menu.created`, then `draft.created`.
+- **Rename** (`PATCH /api/menus/:menuId`): changes the home card, the editor
+  title and every PDF download filename (past versions included, since the
+  filename is built from the current name). Nothing printed on the page
+  changes; published snapshots keep the name they were published under.
+  Audit: `menu.renamed`.
+- **Archive / unarchive** (`POST /api/menus/:menuId/archive`, `…/unarchive`):
+  `Menu.status` flips between `ACTIVE` and `ARCHIVED`. An archived menu is off
+  the home grid (listed under "Archived menus"), read-only — drafting, saving,
+  discarding, publishing, restoring, renaming and copy-to answer 409 — and keeps
+  every version, PDF, draft and audit entry. Nothing is ever deleted. Writes
+  answer 409 with `{ code: MENU_ARCHIVED, menuId }`. Audit: `menu.archived`,
+  `menu.unarchived`.
+- **Archive versus writes in flight.** Every write (save, discard, rename,
+  start a draft, restore, copy, publish) locks its `Menu` row with
+  `SELECT … FOR UPDATE` and checks `status` again inside its own transaction
+  (`lockActiveMenu`); archive and unarchive take the same lock. An archive
+  therefore cannot commit between a write's check and its write: the write
+  lands before the archive, or is refused after it. Publish renders the PDF
+  outside any transaction, then locks and re-checks before it commits. A copy
+  locks both menus in id order (`lockMenus`), so copies in opposite directions
+  queue instead of deadlocking, and names whichever menu was archived.
+- **A stale editor.** When the API answers `MENU_ARCHIVED` for the open menu
+  (autosave, publish, discard, copy out of it, start a draft), the editor
+  cancels the pending autosave, sends nothing more and switches to the
+  read-only view. Anything typed since the last successful save is kept in
+  that browser (`localStorage`, `lib/recovery.ts`) and shown as a diff, with
+  Download and Forget; once the menu is unarchived, opening it offers Apply to
+  this draft. Apply only puts the copy into the editor: the copy and its card
+  stay until a save that carries it succeeds. Every edit is numbered and each
+  save remembers the number of the document it sent, so a save already on the
+  wire before the apply never counts, and clearing checks the stored copy's id
+  so it never removes a newer copy. A rejected save (someone else saved), a
+  network failure or a reload leaves the copy to apply again; applying again
+  over edits typed since asks first. The same numbers drive "Saved": a save
+  that lands while newer edits exist leaves the editor dirty and re-arms the
+  autosave, and Publish and Copy flush until the server holds the latest
+  number. Known limit: one kept copy per menu per browser, so two tabs of the
+  same browser archived mid-edit keep only the later one. An archived copy
+  target only takes that menu off the picker: the source stays editable.
+  History and the home handle the same answer.
+- **Printed heading** (`MenuVersion.heading`, part of `MenuDocument`): the
+  italic line under the logo. Empty prints the template's own title
+  ("À la carte"), which is what both seeded menus do; a Tuesday menu types
+  "Taco Tuesday". It is per version like the footer lines, so it diffs
+  (`MenuDiff.headingChange`) and travels through snapshot and restore.
+- `GET /api/menus` returns `{ menus, archived, venues, renderer }`; `venues`
+  carries each venue's templates so the New menu form knows what it may offer,
+  and each menu carries `printedHeading` (what its live page is headed) for the
+  home card.
+- Names are unique per venue regardless of case in the service. The database
+  index on `(venueId, name)` is case-sensitive, so it backs up exact-duplicate
+  races only; two publishers racing "Tuesday" against "tuesday" in the same
+  instant could both succeed, and a rename fixes it.
+- The seed (`pnpm db:seed:menus`) is for a venue with no menu on its template.
+  It skips a venue that already has one, whatever it is now called and whether
+  or not it is archived, so renaming "Food" never makes a re-run publish a
+  second copy of the seed content.
+
 ## Permissions
 
 - Access: `StaffAppAccess` app `MENUS` (or `COMPLIANCE`, the suite default).
   Grant it in Staff → app access; the Manager and Head Chef presets include it.
-- Draft, save, discard, restore, copy to the other venue: anyone with access.
-- Publish: managers, admins, anyone whose role title contains "head chef", a
-  `MENUS` grant at MANAGER/ADMIN, or a `MENUS` grant with the "Publish menus"
-  toggle (`permissions.menusPublish`) ticked in Staff → app access
-  (`canPublishMenus` in shared; the editor hides the button from everyone else
-  and the API enforces it).
+- Draft, save, discard, restore a version, copy a dish to another menu: anyone with access.
+- Publish, and add / rename / archive / unarchive a menu: managers, admins,
+  anyone whose role title contains "head chef", a `MENUS` grant at
+  MANAGER/ADMIN, or a `MENUS` grant with the "Publish menus" toggle
+  (`permissions.menusPublish`) ticked in Staff → app access (`canPublishMenus`
+  in shared; the home and editor hide those buttons from everyone else and the
+  API enforces it with `requireMenuPublisher`; the auth middleware's staff
+  write allow-list lets those requests reach that gate).
 - Shared venue iPads can read, never write (auth middleware).
 
 ## Validation
@@ -86,11 +166,13 @@ the fixed order `V VG GF GFA DF N A I`.
 ## Running it
 
 ```bash
-pnpm db:migrate              # applies 20261007191211_menu_editor
+pnpm db:migrate              # applies 20261007191211_menu_editor and 20261008093000_menu_heading
 pnpm db:seed:prod            # venues (st-alma, alma-avalon)
 pnpm db:seed:menus           # both menus, validated and published as v1 with PDFs
 pnpm dev:menus               # api (3018) + menus-web (5181)
 ```
+
+Those commands are for a local database; production (the API on the VPS and the Firebase `alma-menus` site) is rolled out and rolled back with [docs/menu-editor/production-runbook-multi-menu.md](menu-editor/production-runbook-multi-menu.md).
 
 The API needs a Chrome/Chromium binary. The Docker image installs Debian's
 `chromium`; locally it also finds `google-chrome` or a Playwright browser
@@ -102,14 +184,42 @@ Tests:
 
 ```bash
 pnpm --filter @alma/api test                      # rules, templates, route guard; renderer test runs when Chrome is present
-ALMA_TEST_DATABASE_URL=postgresql://... node --import tsx --test apps/api/src/services/menu.integration.test.ts
+# Postgres + Chrome: drafts, publish, restore, several menus per venue, and
+# archiving racing every write. ALMA_TEST_REQUIRE_CHROME=1 fails instead of
+# skipping the publish cases when Chrome is missing. Manual CI runs the same.
+cd apps/api && ALMA_TEST_DATABASE_URL=postgresql://... ALMA_TEST_REQUIRE_CHROME=1 \
+  node --import tsx --test --test-concurrency=1 \
+  src/services/menu.integration.test.ts src/services/menu-archive-race.integration.test.ts
 pnpm --filter @alma/api menus:compare -- --reference ../alma-web-platform/apps/web/public/menus
 ```
+
+Browser regressions (`apps/menus-web/e2e`, puppeteer-core) drive the real
+editor against a running API and menus-web on a disposable database: the
+whole menu-management flow (`smoke`: New menu, heading and preview,
+publish, heading diff, name clash, rename, archive, unarchive, phone width,
+draft-only chef), a menu archived while another tab edits it, and applying
+recovered edits through a rejected save, a network failure, a reload and an
+older save still in flight. `apps/menus-web/e2e/helpers.mjs` lists what they need; without
+`MENUS_E2E_BASE_URL` they report as skipped. Not run by CI.
+
+```bash
+pnpm --filter @alma/menus-web test        # unit: the kept-copy store (CI runs this)
+MENUS_E2E_BASE_URL=http://127.0.0.1:5181 MENUS_E2E_API_URL=http://127.0.0.1:3018 \
+MENUS_E2E_ADMIN_EMAIL=… MENUS_E2E_CHEF_EMAIL=… MENUS_E2E_PASSWORD=… \
+  pnpm --filter @alma/menus-web test:e2e
+```
+
+The race suite reproduces each window for real: an archive transaction locks
+the menu row and flips it to `ARCHIVED` without committing, the real service
+call runs (its pre-check still reads `ACTIVE`), and the archive commits once
+that call is waiting on the lock. Every case asserts the write waited, was
+refused with `MENU_ARCHIVED`, and left the draft, name, version counter and
+published version exactly as they were.
 
 ## Adding a template
 
 A template is a key in `MENU_TEMPLATES` (`packages/shared/src/menu-render.ts`):
-venue class, logo asset, tagline, title and page size. Layout is driven by
+venue slug, venue class, logo asset, tagline, title and page size. Layout is driven by
 section placement (`LEFT`, `RIGHT`, `FULL`) and type (`STANDARD`,
 `HEADER_PRICED`, `SET_MENUS`), so another venue's à la carte needs:
 
@@ -118,7 +228,9 @@ section placement (`LEFT`, `RIGHT`, `FULL`) and type (`STANDARD`,
    registered in `MENU_LOGO_FILES` (and the `MenuLogoAssetKey` union).
 3. Any venue-specific tweak as a `.food-print-page.venue-manly …` rule in
    `MENU_PRINT_CSS` (the Avalon logo height is the existing example).
-4. A `Menu` row with that `templateKey` (the seed script shows the shape).
+4. A `Menu` row with that `templateKey` — **New menu** on the module home
+   offers the template once `venueSlug` on the template matches the venue
+   (the seed script shows the same shape in code).
 
 A genuinely different layout (a drinks binder, an A5 specials card) gets its
 own CSS block and page size in the same file, and a renderer branch keyed off

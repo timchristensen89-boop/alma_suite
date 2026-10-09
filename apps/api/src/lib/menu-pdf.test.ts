@@ -23,8 +23,15 @@ describe('menu PDF renderer', { skip: canRun ? false : `skipped: ${chrome.ok ? `
     await closeMenuBrowser();
   });
 
-  it('renders each seeded menu to exactly one A4 page, under the fifteen-second publish budget', async () => {
+  it('renders each seeded menu to exactly one A4 page, under the fifteen-second publish budget', async (t) => {
     const renderAssets = loadMenuRenderAssets();
+    // The budget is for a render, which renderMs measures from before the
+    // shared browser is fetched: the first call therefore also pays Chrome's
+    // launch, and on a cold CI runner that alone has taken over fifteen
+    // seconds. Launch it once here, untimed, and report how long it took.
+    const coldStart = Date.now();
+    await measureMenuFill(renderMenuHtml(ST_ALMA_FRESHWATER_SEED.document, ST_ALMA_FRESHWATER_SEED.templateKey, { assets: renderAssets }));
+    t.diagnostic(`Chrome launch and first layout: ${Date.now() - coldStart} ms`);
     for (const seed of MENU_SEEDS) {
       const html = renderMenuHtml(seed.document, seed.templateKey, { assets: renderAssets });
       const result = await renderMenuPdf(html, { widthMm: 210, heightMm: 297 });

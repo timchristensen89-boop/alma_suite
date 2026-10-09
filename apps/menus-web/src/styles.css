@@ -82,6 +82,69 @@
   gap: 10px;
 }
 
+.menus-venue {
+  display: grid;
+  gap: 14px;
+}
+
+.menus-venue-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.menus-venue-head h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 24px;
+  line-height: 1.1;
+  color: var(--menus-ink);
+}
+
+.menus-venue-count { font-size: 12px; }
+.menus-venue-add { margin-left: auto; }
+
+.menu-card-manage {
+  display: flex;
+  gap: 2px;
+}
+
+.menu-form .field { margin: 0; }
+
+.archived-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.archived-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.archived-row-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.unsaved-card { border: 1px solid rgba(181, 119, 47, 0.45); }
+.unsaved-card .card-body { display: grid; gap: 10px; }
+
+.notice-text {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(37, 51, 38, 0.08);
+  font-size: 14px;
+}
+
 /* ---- editor head and toolbar ---- */
 .editor-head {
   display: flex;

@@ -7,8 +7,14 @@ import {
   MENU_SECTION_TYPES,
   MENU_SECTION_TYPE_LABELS,
   MENU_TAGS,
+  MENU_TEMPLATES,
   canPublishMenus,
+  diffMenuDocuments,
   formatMenuPrice,
+  isMenuTemplateKey,
+  menuDiffIsEmpty,
+  menuDocumentsEqual,
+  summariseMenuDiff,
   newDishKey,
   overflowIssue,
   parseMenuPriceInput,
@@ -25,12 +31,23 @@ import {
   type MenuVersionPayload
 } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Spinner } from '@alma/ui';
+import { DiffView } from '../components/DiffView';
 import { MenuPreview } from '../components/MenuPreview';
 import { PublishDialog } from '../components/PublishDialog';
 import { ValidationPanel } from '../components/ValidationPanel';
 import { ApiError } from '../lib/api';
 import { formatWhen, pdfFilename, personName } from '../lib/format';
-import { menuApi, openVersionPdf } from '../lib/menuApi';
+import { archivedMenuIdOf, isMenuArchivedError, menuApi, openVersionPdf } from '../lib/menuApi';
+import {
+  downloadUnsavedChanges,
+  forgetUnsavedChanges,
+  keepUnsavedChanges,
+  newRecoveryId,
+  readUnsavedChanges,
+  saveConfirmsApply,
+  type PendingRecoveryApply,
+  type UnsavedMenuChanges
+} from '../lib/recovery';
 import { moveItem, useDragReorder } from '../lib/reorder';
 import { IconArrowLeft, IconPlus, IconTrash } from '../../../web/src/lib/icons';
 
@@ -43,7 +60,15 @@ import { IconArrowLeft, IconPlus, IconTrash } from '../../../web/src/lib/icons';
 
 const AUTOSAVE_MS = 1500;
 
-type SaveState = { kind: 'idle' } | { kind: 'dirty' } | { kind: 'saving' } | { kind: 'saved'; at: string } | { kind: 'error'; message: string } | { kind: 'conflict'; message: string };
+type SaveState =
+  | { kind: 'idle' }
+  | { kind: 'dirty' }
+  | { kind: 'saving' }
+  | { kind: 'saved'; at: string }
+  | { kind: 'error'; message: string }
+  | { kind: 'conflict'; message: string }
+  /** The menu was archived under this editor: nothing more is sent. */
+  | { kind: 'archived' };
 
 /**
  * Sections carry a client-only key. Every save rewrites the draft's rows, so
@@ -132,7 +157,25 @@ export function EditorPage({ user }: { user: AuthUser }) {
   const [publishError, setPublishError] = useState<string | null>(null);
   const [justPublished, setJustPublished] = useState<MenuVersionPayload | null>(null);
   const [copyTarget, setCopyTarget] = useState<{ dishKey: string; name: string } | null>(null);
+  /** Edits the server never got because the menu was archived mid-edit (see lib/recovery). */
+  const [unsaved, setUnsaved] = useState<{ changes: UnsavedMenuChanges; kept: boolean } | null>(null);
   const expectedUpdatedAt = useRef<string | undefined>(undefined);
+  /** Set once the API says this menu is archived: no save is scheduled or sent after that. */
+  const archivedRef = useRef(false);
+  /** The document as the server last stored it, to tell what is unsaved. */
+  const savedDocRef = useRef<MenuDocument | null>(null);
+  /**
+   * Every edit gets the next number; latestSeqRef is the number of the
+   * document in latestDoc. A save remembers the number of what it sent, so a
+   * response can tell whether it carried a given edit.
+   */
+  const editSeqRef = useRef(0);
+  const latestSeqRef = useRef(0);
+  /** The number of the document the server last confirmed; "saved" means it equals latestSeqRef. */
+  const savedSeqRef = useRef(0);
+  /** A kept copy applied to the editor and not yet confirmed saved: its backup stays until then. */
+  const pendingApplyRef = useRef<PendingRecoveryApply | null>(null);
+  const [applyPending, setApplyPending] = useState<string | null>(null);
   const saveTimer = useRef<number | null>(null);
   const latestDoc = useRef<MenuDocument | null>(null);
   const savingRef = useRef(false);
@@ -148,16 +191,32 @@ export function EditorPage({ user }: { user: AuthUser }) {
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+    setNotice(null);
     try {
       const [menu, all] = await Promise.all([menuApi.get(menuId), menuApi.list()]);
       setSummary(menu);
       setOtherMenus(all.menus.filter((other) => other.id !== menuId));
-      if (menu.draft) {
+      archivedRef.current = menu.status === 'ARCHIVED';
+      // A reload replaces the editor's content with the server's: any apply
+      // not yet saved is undone, and the kept copy (still in storage) is
+      // offered again.
+      pendingApplyRef.current = null;
+      setApplyPending(null);
+      const kept = readUnsavedChanges(menuId);
+      setUnsaved(kept ? { changes: kept, kept: true } : null);
+      if (menu.status === 'ARCHIVED') {
+        // Read-only, but the kept edits are still shown against the draft as it was archived.
+        savedDocRef.current = kept && menu.draft ? (await menuApi.getDraft(menuId).catch(() => null))?.document ?? null : null;
+      }
+      if (menu.draft && menu.status !== 'ARCHIVED') {
         const payload = await menuApi.getDraft(menuId);
         const keyed = withClientKeys(payload.document);
         setDraft(payload);
         setDoc(keyed);
         latestDoc.current = keyed;
+        latestSeqRef.current = editSeqRef.current;
+        savedSeqRef.current = editSeqRef.current;
+        savedDocRef.current = payload.document;
         expectedUpdatedAt.current = payload.version.updatedAt;
         setSave({ kind: 'saved', at: payload.version.updatedAt });
       } else {
@@ -178,6 +237,8 @@ export function EditorPage({ user }: { user: AuthUser }) {
   // ------------------------------------------------------------ saving
   const saveNow = useCallback((): Promise<boolean> => {
     const current = latestDoc.current;
+    const sentSeq = latestSeqRef.current;
+    if (archivedRef.current) return Promise.resolve(false);
     if (!current) return Promise.resolve(true);
     if (savingRef.current && inFlight.current) {
       // Another save is on the wire; run again when it lands so the newest edits go up.
@@ -190,16 +251,43 @@ export function EditorPage({ user }: { user: AuthUser }) {
       try {
         const payload = await menuApi.saveDraft(menuId, current, expectedUpdatedAt.current);
         expectedUpdatedAt.current = payload.version.updatedAt;
+        savedDocRef.current = payload.document;
+        savedSeqRef.current = Math.max(savedSeqRef.current, sentSeq);
+        // The menu was archived while this save was on the wire (the server
+        // accepted it just before): the read-only view stands, nothing below
+        // may flip it back to an editor.
+        if (archivedRef.current) return true;
         setDraft(payload);
         // Adopt the server's row ids and dish keys without clobbering edits typed meanwhile.
         const base = latestDoc.current ?? current;
         const adopted = adoptSaved(base, current, payload.document);
         latestDoc.current = adopted;
         setDoc(adopted);
-        setSave({ kind: 'saved', at: payload.version.updatedAt });
+        if (latestSeqRef.current === sentSeq) {
+          setSave({ kind: 'saved', at: payload.version.updatedAt });
+        } else {
+          // Edits were typed while this save was out. They are not saved yet:
+          // say so, and make sure a save for them is coming.
+          setSave({ kind: 'dirty' });
+          if (!saveTimer.current && !queuedRef.current) saveTimer.current = window.setTimeout(() => void saveNowRef.current(), AUTOSAVE_MS);
+        }
+        // The server now holds the applied copy only if this save carried it:
+        // one sent before the apply (still in flight when it was applied)
+        // does not count. Only then is the backup removed, and only if the
+        // stored copy is still the one that was applied.
+        const pending = pendingApplyRef.current;
+        if (saveConfirmsApply(pending, sentSeq)) {
+          pendingApplyRef.current = null;
+          forgetUnsavedChanges(menuId, pending.recoveryId);
+          setUnsaved((prev) => (prev && prev.changes.id === pending.recoveryId ? null : prev));
+          setApplyPending((prev) => (prev === pending.recoveryId ? null : prev));
+          setNotice({ tone: 'success', text: 'Your recovered changes are saved to the draft.' });
+        }
         return true;
       } catch (caught) {
-        if (caught instanceof ApiError && caught.status === 409) {
+        if (isMenuArchivedError(caught)) {
+          enterArchivedRef.current(latestDoc.current ?? current);
+        } else if (caught instanceof ApiError && caught.status === 409) {
           setSave({ kind: 'conflict', message: caught.message });
         } else {
           setSave({ kind: 'error', message: caught instanceof Error ? caught.message : 'Could not save.' });
@@ -208,7 +296,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
       } finally {
         savingRef.current = false;
         inFlight.current = null;
-        if (queuedRef.current) {
+        if (queuedRef.current && !archivedRef.current) {
           queuedRef.current = false;
           void saveNowRef.current();
         }
@@ -219,20 +307,71 @@ export function EditorPage({ user }: { user: AuthUser }) {
   }, [menuId, setSave]);
   saveNowRef.current = saveNow;
 
+  /** Apply an edit and schedule the autosave. Returns the edit's number (none once archived). */
   const update = useCallback(
-    (mutate: (prev: MenuDocument) => MenuDocument) => {
+    (mutate: (prev: MenuDocument) => MenuDocument): number | null => {
+      if (archivedRef.current) return null;
+      const seq = ++editSeqRef.current;
       setDoc((prev) => {
         if (!prev) return prev;
         const next = mutate(prev);
         latestDoc.current = next;
+        latestSeqRef.current = seq;
         return next;
       });
       if (saveStateRef.current.kind !== 'conflict') setSave({ kind: 'dirty' });
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => void saveNowRef.current(), AUTOSAVE_MS);
+      saveTimer.current = window.setTimeout(() => {
+        saveTimer.current = null;
+        void saveNowRef.current();
+      }, AUTOSAVE_MS);
+      return seq;
     },
     [setSave]
   );
+
+  /**
+   * The API said this menu is archived (a save, publish, copy or discard was
+   * refused). Stop: cancel the pending autosave, never send another, close
+   * any open dialog, and show the read-only view. Anything typed since the
+   * last successful save is kept in this browser so it can be applied once
+   * the menu is unarchived — the server's draft stays as it was archived.
+   */
+  const enterArchived = useCallback(
+    (latest: MenuDocument | null) => {
+      archivedRef.current = true;
+      queuedRef.current = false;
+      if (saveTimer.current) {
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      setPublishOpen(false);
+      setCopyTarget(null);
+      setSave({ kind: 'archived' });
+      // An applied copy not yet saved is part of `latest`, so it is kept again below.
+      pendingApplyRef.current = null;
+      setApplyPending(null);
+      const saved = savedDocRef.current;
+      if (latest && saved && draft && summary && !menuDocumentsEqual(saved, latest)) {
+        const changes: UnsavedMenuChanges = {
+          id: newRecoveryId(),
+          menuId,
+          menuLabel: `${summary.venue.name} · ${summary.name}`,
+          draftVersionNumber: draft.version.versionNumber,
+          keptAt: new Date().toISOString(),
+          document: latest
+        };
+        setUnsaved({ changes, kept: keepUnsavedChanges(changes) });
+      }
+      setSummary((prev) => (prev ? { ...prev, status: 'ARCHIVED' } : prev));
+    },
+    [draft, menuId, setSave, summary]
+  );
+  const enterArchivedRef = useRef(enterArchived);
+  enterArchivedRef.current = enterArchived;
+  /** Unsaved edits exist and this browser could not keep them: leaving the page loses them. */
+  const unsavedNotKeptRef = useRef(false);
+  unsavedNotKeptRef.current = Boolean(unsaved && !unsaved.kept);
 
   // Leaving the page (History, the task bar, the back link) flushes a pending
   // autosave rather than dropping it; closing the tab asks first while edits
@@ -240,7 +379,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       const kind = saveStateRef.current.kind;
-      if (kind === 'dirty' || kind === 'saving' || kind === 'error') {
+      if (kind === 'dirty' || kind === 'saving' || kind === 'error' || (kind === 'archived' && unsavedNotKeptRef.current)) {
         event.preventDefault();
         event.returnValue = '';
       }
@@ -271,6 +410,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
 
   /** Make sure the server has what the editor shows: run or await the save, then report whether it stuck. */
   const flushSave = useCallback(async (): Promise<boolean> => {
+    if (archivedRef.current) return false;
     if (saveTimer.current) {
       window.clearTimeout(saveTimer.current);
       saveTimer.current = null;
@@ -282,8 +422,11 @@ export function EditorPage({ user }: { user: AuthUser }) {
       if (!ok) return false;
     }
     const kind = saveStateRef.current.kind;
-    if (kind === 'dirty' || kind === 'error') return saveNow();
-    return kind !== 'conflict';
+    if (kind === 'conflict') return false;
+    // Whatever the label says, the server has the latest edits only when
+    // their number is the one it last confirmed.
+    if (latestSeqRef.current !== savedSeqRef.current || kind === 'error') return saveNow();
+    return true;
   }, [saveNow]);
 
   // ------------------------------------------------------------ validation
@@ -319,6 +462,10 @@ export function EditorPage({ user }: { user: AuthUser }) {
       await menuApi.createDraft(menuId);
       await load();
     } catch (caught) {
+      if (isMenuArchivedError(caught)) {
+        enterArchived(null);
+        return;
+      }
       setNotice({ tone: 'error', text: caught instanceof Error ? caught.message : 'Could not start a draft.' });
     }
   }
@@ -332,6 +479,11 @@ export function EditorPage({ user }: { user: AuthUser }) {
       await menuApi.discardDraft(menuId);
       navigate('/');
     } catch (caught) {
+      // Archived by someone else since this page opened: show the read-only state rather than a dead toolbar.
+      if (isMenuArchivedError(caught)) {
+        enterArchived(latestDoc.current);
+        return;
+      }
       setNotice({ tone: 'error', text: caught instanceof Error ? caught.message : 'Could not discard the draft.' });
     }
   }
@@ -344,6 +496,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
     const saved = await flushSave();
     if (!saved) {
       setPublishLoading(false);
+      if (archivedRef.current) return; // the save found the menu archived; the read-only view says so
       const state = saveStateRef.current;
       setPublishError(state.kind === 'conflict' || state.kind === 'error' ? state.message : 'The draft could not be saved, so it cannot be published yet.');
       return;
@@ -351,6 +504,10 @@ export function EditorPage({ user }: { user: AuthUser }) {
     try {
       setPublishPreview(await menuApi.publishPreview(menuId));
     } catch (caught) {
+      if (isMenuArchivedError(caught)) {
+        enterArchived(latestDoc.current);
+        return;
+      }
       setPublishError(caught instanceof Error ? caught.message : 'Could not check the draft.');
     } finally {
       setPublishLoading(false);
@@ -370,6 +527,10 @@ export function EditorPage({ user }: { user: AuthUser }) {
       latestDoc.current = null;
       setSummary(await menuApi.get(menuId));
     } catch (caught) {
+      if (isMenuArchivedError(caught)) {
+        enterArchived(latestDoc.current);
+        return;
+      }
       if (caught instanceof ApiError && caught.details && typeof caught.details === 'object' && 'validation' in caught.details) {
         const details = caught.details as { validation: MenuPublishPreview['validation'] };
         setPublishPreview((prev) => (prev ? { ...prev, validation: details.validation, canPublish: false } : prev));
@@ -386,13 +547,26 @@ export function EditorPage({ user }: { user: AuthUser }) {
     setCopyTarget(null);
     const saved = await flushSave();
     if (!saved) {
-      setNotice({ tone: 'error', text: 'Save the draft before copying a dish to another venue.' });
+      if (archivedRef.current) return; // this menu was archived; the read-only view says so
+      setNotice({ tone: 'error', text: 'Save the draft before copying a dish to another menu.' });
       return;
     }
+    const targetLabel = target ? `${target.venue.name} · ${target.name}` : 'the other menu';
     try {
       await menuApi.copyItemTo(menuId, { dishKey: copyTarget.dishKey, targetMenuId });
-      setNotice({ tone: 'success', text: `"${copyTarget.name}" copied to ${target?.venue.name ?? 'the other venue'}'s draft.` });
+      setNotice({ tone: 'success', text: `"${copyTarget.name}" copied to the ${targetLabel} draft.` });
     } catch (caught) {
+      const archivedId = archivedMenuIdOf(caught);
+      if (archivedId === targetMenuId) {
+        // The menu copied into was archived; this one is fine and stays editable.
+        setOtherMenus((prev) => prev.filter((menu) => menu.id !== targetMenuId));
+        setNotice({ tone: 'error', text: `${targetLabel} was archived, so "${copyTarget.name}" was not copied. Pick another menu.` });
+        return;
+      }
+      if (archivedId !== null) {
+        enterArchived(latestDoc.current);
+        return;
+      }
       setNotice({ tone: 'error', text: caught instanceof Error ? caught.message : 'Could not copy the dish.' });
     }
   }
@@ -457,6 +631,97 @@ export function EditorPage({ user }: { user: AuthUser }) {
     );
   }
 
+  const unsavedCard = (where: 'archived' | 'draft' | 'no-draft') => {
+    if (!unsaved) return null;
+    const { changes, kept } = unsaved;
+    const applied = where === 'draft' && applyPending === changes.id;
+    const against = where === 'draft' && doc ? doc : savedDocRef.current;
+    const diff = against ? diffMenuDocuments(against, changes.document) : null;
+    const forget = () => {
+      if (!window.confirm('Forget these unsaved changes? They are not on the server, so this cannot be undone.')) return;
+      forgetUnsavedChanges(menuId, changes.id);
+      if (pendingApplyRef.current?.recoveryId === changes.id) pendingApplyRef.current = null;
+      setApplyPending(null);
+      setUnsaved(null);
+      setNotice(null);
+    };
+    // Applying only puts the copy into the editor. The copy and this card stay
+    // until a save carrying it succeeds (see saveNow); a rejected or failed
+    // save, or a reload, leaves it here to apply again.
+    const apply = () => {
+      // Applying again replaces whatever was typed since the first apply.
+      if (applied && doc && !menuDocumentsEqual(doc, changes.document) && !window.confirm('Apply again? It replaces everything in the editor, including anything typed since you last applied, with the kept copy.')) return;
+      const seq = update(() => withClientKeys(changes.document));
+      if (seq === null) return;
+      pendingApplyRef.current = { recoveryId: changes.id, editSeq: seq };
+      setApplyPending(changes.id);
+      setNotice({ tone: 'info', text: 'Your recovered changes are in the editor. The kept copy stays until the draft has saved them.' });
+    };
+    const appliedStatus = !applied
+      ? null
+      : saveState.kind === 'conflict' || saveState.kind === 'error'
+        ? `Not saved yet: ${saveState.message} The kept copy is still here; reload or retry, then apply again if needed.`
+        : 'Applied to the editor. The kept copy stays until the draft has saved it.';
+    return (
+      <Card
+        className="unsaved-card"
+        title={where === 'archived' ? 'Your unsaved changes' : `Unsaved changes from ${formatWhen(changes.keptAt)}`}
+        subtitle={
+          where === 'archived'
+            ? kept
+              ? 'Not saved: this menu was archived while you were editing. They are kept in this browser.'
+              : 'Not saved: this menu was archived while you were editing. This browser could not keep them, so download them before leaving this page.'
+            : `Not saved when this menu was archived (draft v${changes.draftVersionNumber}). Kept in this browser.`
+        }
+      >
+        {appliedStatus ? (
+          <p className={saveState.kind === 'conflict' || saveState.kind === 'error' ? 'error-text' : 'subtle'} role="status">
+            {appliedStatus}
+          </p>
+        ) : null}
+        {diff ? (
+          <>
+            <p className="menu-dialog-summary">{summariseMenuDiff(diff)}</p>
+            <DiffView diff={diff} templateTitle={isMenuTemplateKey(summary.templateKey) ? MENU_TEMPLATES[summary.templateKey].title : undefined} emptyText={applied ? 'The editor holds this copy now.' : 'Same as the editor now.'} />
+          </>
+        ) : null}
+        {appliedStatus ? null : (
+          <p className="subtle">
+            {where === 'archived'
+              ? 'When a publisher unarchives the menu, open it here and choose Apply to put them back into the draft.'
+              : where === 'draft'
+                ? 'Apply replaces what the editor holds now with the version you were editing. This copy is kept until the draft has saved it.'
+                : 'Start a draft, then apply them.'}
+          </p>
+        )}
+        <div className="menus-actions-row">
+          {where === 'draft' ? <Button onClick={apply}>{applied ? 'Apply again' : 'Apply to this draft'}</Button> : null}
+          <Button variant="secondary" onClick={() => downloadUnsavedChanges(changes)}>Download a copy</Button>
+          <Button variant="ghost" onClick={forget}>Forget them</Button>
+        </div>
+      </Card>
+    );
+  };
+
+  if (summary.status === 'ARCHIVED') {
+    return (
+      <>
+        {header}
+        <EmptyState
+          title="This menu is archived"
+          description="It is read-only until a publisher unarchives it from the Menus home. Its versions and PDFs are in History; its draft is kept as it was when it was archived."
+          action={
+            <div className="menus-actions-row">
+              <Link className="btn btn-secondary btn-md" to={`/menus/${menuId}/history`}><span>History</span></Link>
+              <Link className="btn btn-ghost btn-md" to="/"><span>Back to Menus</span></Link>
+            </div>
+          }
+        />
+        {unsavedCard('archived')}
+      </>
+    );
+  }
+
   if (!draft || !doc) {
     return (
       <>
@@ -467,6 +732,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
           description={summary.published ? `Start a draft from the live v${summary.published.versionNumber}. Nothing changes for the venue until you publish.` : 'Start the first draft of this menu.'}
           action={<Button onClick={() => void startDraft()}>{summary.published ? 'Start a draft' : 'Start the first draft'}</Button>}
         />
+        {unsavedCard('no-draft')}
       </>
     );
   }
@@ -507,7 +773,8 @@ export function EditorPage({ user }: { user: AuthUser }) {
           )}
         </div>
       </div>
-      {notice ? <p className={notice.tone === 'error' ? 'error-text' : 'editor-notice'}>{notice.text}</p> : null}
+      {notice ? <p className={notice.tone === 'error' ? 'error-text' : 'editor-notice'} role="status">{notice.text}</p> : null}
+      {unsavedCard('draft')}
 
       <div className="editor-tabs" role="tablist" aria-label="Editor view">
         <button type="button" role="tab" aria-selected={mobileTab === 'edit'} className={mobileTab === 'edit' ? 'active' : ''} onClick={() => setMobileTab('edit')}>
@@ -520,6 +787,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
 
       <div className={`editor-split is-${mobileTab}`}>
         <div className="editor-form">
+          <HeadingEditor doc={doc} templateKey={summary.templateKey} onChange={update} />
           <ValidationPanel errors={errors} warnings={warnings} fill={fill} onJump={jumpTo} />
           <SectionsEditor doc={doc} onChange={update} onCopy={(item) => setCopyTarget({ dishKey: item.dishKey ?? '', name: item.name })} canCopy={otherMenus.length > 0} />
           <FooterEditor doc={doc} onChange={update} />
@@ -540,6 +808,7 @@ export function EditorPage({ user }: { user: AuthUser }) {
         error={publishError}
         publishedVersion={draft.publishedVersion}
         draftVersionNumber={draft.version.versionNumber}
+        templateTitle={isMenuTemplateKey(summary.templateKey) ? MENU_TEMPLATES[summary.templateKey].title : undefined}
         onConfirm={() => void confirmPublish()}
         onClose={() => setPublishOpen(false)}
       />
@@ -547,8 +816,8 @@ export function EditorPage({ user }: { user: AuthUser }) {
       {copyTarget ? (
         <div className="menu-sheet-backdrop" role="dialog" aria-modal="true" aria-labelledby="copy-title" onClick={() => setCopyTarget(null)}>
           <div className="menu-sheet" onClick={(event) => event.stopPropagation()}>
-            <h3 id="copy-title">Copy “{copyTarget.name}” to another venue</h3>
-            <p className="subtle">The dish is added to that venue's draft (started from its live menu if there is none). The two copies are then edited separately.</p>
+            <h3 id="copy-title">Copy “{copyTarget.name}” to another menu</h3>
+            <p className="subtle">The dish is added to that menu's draft (started from its live version if there is none). The two copies are then edited separately.</p>
             <div className="menus-actions-row">
               {otherMenus.map((menu) => (
                 <Button key={menu.id} onClick={() => void copyItem(menu.id)}>
@@ -838,12 +1107,34 @@ function ItemRow({ item, sectionIndex, itemIndex, sectionType, dragging, dropTar
             {item.visible ? '86' : "86'd — bring back"}
           </button>
           <button type="button" className="item-action" onClick={onDuplicate}>Duplicate</button>
-          {canCopy ? <button type="button" className="item-action" onClick={onCopy} disabled={!item.dishKey}>Copy to other venue</button> : null}
+          {canCopy ? <button type="button" className="item-action" onClick={onCopy} disabled={!item.dishKey}>Copy to another menu</button> : null}
           <button type="button" className="item-action is-danger" onClick={onDelete}>Delete</button>
           {!namesOnly && item.priceCents !== null ? <span className="item-print-price subtle">prints {formatMenuPrice(item.priceCents, item.priceUnit)}</span> : null}
         </div>
       </div>
     </li>
+  );
+}
+
+/** The italic title line under the logo. Blank prints the template's own title, so the two existing menus keep reading "À la carte". */
+function HeadingEditor({ doc, templateKey, onChange }: { doc: MenuDocument; templateKey: string; onChange: Mutate }) {
+  const templateTitle = isMenuTemplateKey(templateKey) ? MENU_TEMPLATES[templateKey].title : 'À la carte';
+  return (
+    <Card title="Heading" subtitle={`The italic line under the logo. Blank prints “${templateTitle}”.`}>
+      <label className="field">
+        <span className="field-label">Printed heading</span>
+        <input
+          className="field-control"
+          value={doc.heading}
+          maxLength={MENU_LIMITS.headingMax}
+          placeholder={templateTitle}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            onChange((prev) => ({ ...prev, heading: value }));
+          }}
+        />
+      </label>
+    </Card>
   );
 }
 

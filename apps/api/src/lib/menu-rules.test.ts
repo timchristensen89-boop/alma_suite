@@ -6,9 +6,13 @@ import {
   ensureDishKeys,
   formatMenuPrice,
   formatMenuTags,
+  menuCreateInputSchema,
   menuDiffIsEmpty,
+  menuDocumentsEqual,
   menuDraftSaveInputSchema,
   menuTagLegend,
+  menuTemplatesForVenue,
+  menuUpdateInputSchema,
   newDishKey,
   overflowIssue,
   parseMenuPriceInput,
@@ -20,7 +24,8 @@ import {
   type MenuDocument,
   type MenuItemDocument,
   type MenuRenderAssets,
-  type MenuSectionDocument
+  type MenuSectionDocument,
+  type MenuTagCode
 } from '@alma/shared';
 import { ALMA_AVALON_SEED, MENU_SEEDS, ST_ALMA_FRESHWATER_SEED } from '../data/menu-seed-content.js';
 
@@ -38,8 +43,8 @@ function section(over: Partial<MenuSectionDocument> & { title: string; items: Me
   return { headerSuffix: null, subheading: null, sectionType: 'STANDARD', placement: 'LEFT', visible: true, ...over };
 }
 
-function doc(sections: MenuSectionDocument[], footer: Partial<Pick<MenuDocument, 'dietaryNote' | 'surchargeLine'>> = {}): MenuDocument {
-  return { dietaryNote: footer.dietaryNote ?? 'Dietaries catered with notice.', surchargeLine: footer.surchargeLine ?? 'Surcharge.', sections };
+function doc(sections: MenuSectionDocument[], footer: Partial<Pick<MenuDocument, 'heading' | 'dietaryNote' | 'surchargeLine'>> = {}): MenuDocument {
+  return { heading: footer.heading ?? '', dietaryNote: footer.dietaryNote ?? 'Dietaries catered with notice.', surchargeLine: footer.surchargeLine ?? 'Surcharge.', sections };
 }
 
 const codes = (issues: Array<{ code: string }>) => issues.map((issue) => issue.code).sort();
@@ -323,5 +328,73 @@ describe('print templates', () => {
 
   it('refuses an unknown template key', () => {
     assert.throws(() => renderMenuSheetHtml(doc([]), 'drinks_binder', { assets }), /Unknown menu template/);
+  });
+});
+
+describe('menus per venue — templates, headings, names', () => {
+  const assets: MenuRenderAssets = { fontFaceCss: '/*fonts*/', logoSrc: (asset) => `/images/${asset}.png` };
+
+  it('each print template belongs to one venue, by slug', () => {
+    assert.deepEqual(menuTemplatesForVenue('st-alma').map((template) => template.key), ['freshwater_alacarte']);
+    assert.deepEqual(menuTemplatesForVenue('alma-avalon').map((template) => template.key), ['avalon_alacarte']);
+    assert.deepEqual(menuTemplatesForVenue('manly'), []);
+  });
+
+  it("prints the document's heading, else the template title — and the seeded menus still read À la carte", () => {
+    assert.match(renderMenuSheetHtml(doc([]), 'freshwater_alacarte', { assets }), /<div class="title">À la carte<\/div>/);
+    assert.match(renderMenuSheetHtml(doc([], { heading: '   ' }), 'avalon_alacarte', { assets }), /<div class="title">À la carte<\/div>/);
+    assert.match(renderMenuSheetHtml(doc([], { heading: 'Taco <Tuesday>' }), 'freshwater_alacarte', { assets }), /<div class="title">Taco &lt;Tuesday&gt;<\/div>/);
+    for (const seed of MENU_SEEDS) {
+      assert.equal(seed.document.heading, '');
+      assert.match(renderMenuSheetHtml(seed.document, seed.templateKey, { assets }), /<div class="title">À la carte<\/div>/);
+    }
+  });
+
+  it('a heading change is its own line in the diff and the summary', () => {
+    const before = doc([section({ title: 'S', items: [item({ name: 'A' })] })]);
+    const after = doc([section({ title: 'S', items: [item({ name: 'A' })] })], { heading: 'Tuesday' });
+    const diff = diffMenuDocuments(before, after);
+    assert.deepEqual(diff.headingChange, { from: '', to: 'Tuesday' });
+    assert.equal(menuDiffIsEmpty(diff), false);
+    assert.equal(summariseMenuDiff(diff), 'heading changed');
+    assert.equal(diffMenuDocuments(after, after).headingChange, null);
+    assert.equal(menuDiffIsEmpty(diffMenuDocuments(after, after)), true);
+    // A first version has nothing to differ from.
+    assert.equal(diffMenuDocuments(null, after).headingChange, null);
+  });
+
+  it('new-menu and rename inputs: trimmed names within the limit, heading optional', () => {
+    const created = menuCreateInputSchema.parse({ venueId: 'v1', name: '  Tuesday ' });
+    assert.equal(created.name, 'Tuesday');
+    assert.equal(created.heading, '');
+    assert.equal(created.templateKey, undefined);
+    assert.equal(created.copyFromMenuId, undefined);
+    assert.equal(menuCreateInputSchema.parse({ venueId: 'v1', name: 'NYE', heading: ' New Year ', copyFromMenuId: 'm1' }).heading, 'New Year');
+    assert.throws(() => menuCreateInputSchema.parse({ venueId: 'v1', name: '   ' }));
+    assert.throws(() => menuCreateInputSchema.parse({ venueId: 'v1', name: 'x'.repeat(61) }));
+    assert.throws(() => menuCreateInputSchema.parse({ name: 'Tuesday' }));
+    assert.equal(menuUpdateInputSchema.parse({ name: ' NYE ' }).name, 'NYE');
+    assert.throws(() => menuUpdateInputSchema.parse({ name: '' }));
+  });
+
+  it('menuDocumentsEqual sees every stored field, not only what prints', () => {
+    const base = doc([section({ title: 'S', items: [item({ name: 'Prawn', tags: ['I'], isSeafood: true })] })]);
+    const same = { ...base, sections: base.sections.map((s) => ({ ...s, id: 'row-1', items: s.items.map((i) => ({ ...i, id: 'row-2', tags: ['I'] as MenuTagCode[] })) })) };
+    assert.equal(menuDocumentsEqual(base, same), true, 'row ids do not matter');
+    const seafoodOff = { ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, isSeafood: false })) })) };
+    assert.equal(menuDiffIsEmpty(diffMenuDocuments(base, seafoodOff)), true, 'the publish diff does not show it');
+    assert.equal(menuDocumentsEqual(base, seafoodOff), false, 'but it is a change');
+    const recipe = { ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, recipeId: 'r1' })) })) };
+    assert.equal(menuDocumentsEqual(base, recipe), false);
+    const unitOnly = { ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, priceCents: null, priceUnit: 'pp' })) })) };
+    const noUnit = { ...base, sections: base.sections.map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, priceCents: null, priceUnit: null })) })) };
+    assert.equal(menuDocumentsEqual(unitOnly, noUnit), false);
+    assert.equal(menuDocumentsEqual(doc([], { heading: 'A' }), doc([], { heading: 'B' })), false);
+  });
+
+  it('a draft saved by an editor that does not know about headings keeps the template title', () => {
+    const parsed = menuDraftSaveInputSchema.parse({ dietaryNote: '', surchargeLine: '', sections: [] });
+    assert.equal(parsed.heading, '');
+    assert.equal(menuDraftSaveInputSchema.parse({ heading: ' Tuesday ', sections: [] }).heading, 'Tuesday');
   });
 });
