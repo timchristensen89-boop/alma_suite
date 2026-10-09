@@ -106,12 +106,96 @@
 .menus-venue-count { font-size: 12px; }
 .menus-venue-add { margin-left: auto; }
 
+/* kind groups inside a venue: Food, Drinks, Functions & groups, Promotions, Private events */
+.menus-kind {
+  display: grid;
+  gap: 10px;
+}
+
+.menus-kind-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.menus-kind-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border, rgba(37, 51, 38, 0.12));
+}
+
+.menus-kind-count { font-size: 11px; font-weight: 600; letter-spacing: 0; }
+
+.menu-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.menu-card-format { font-size: 12px; }
+
 .menu-card-manage {
   display: flex;
   gap: 2px;
 }
 
 .menu-form .field { margin: 0; }
+
+.menu-form-event {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--menus-cream);
+  color: var(--menus-ink);
+}
+
+.menu-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.menu-form-note {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+/* Public / Private */
+.menu-segmented {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(37, 51, 38, 0.08);
+  width: fit-content;
+}
+
+.menu-segmented button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 16px;
+  border-radius: 999px;
+  color: inherit;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.menu-segmented button.is-on {
+  background: var(--menus-ink);
+  color: var(--menus-cream);
+}
 
 .archived-list {
   list-style: none;
@@ -270,6 +354,7 @@
 }
 
 .menu-preview {
+  position: relative;
   width: 100%;
   min-width: 0;
   background: var(--menus-paper);
@@ -280,12 +365,26 @@
   justify-content: center;
 }
 
+/* A stacked book scrolls inside its own box on a desk, so the pages stay
+   beside the form; the chips above the sections scroll it to a page. */
+.menu-preview.is-stacked {
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
+  align-items: flex-start;
+}
+
 .menu-preview-sheet {
   position: relative;
   max-width: 100%;
   overflow: hidden;
   box-shadow: 0 2px 18px rgba(0, 0, 0, 0.18);
   background: #fff;
+  flex: none;
+}
+
+.menu-preview.is-stacked .menu-preview-sheet {
+  box-shadow: none;
+  background: transparent;
 }
 
 .menu-preview-frame {
@@ -297,6 +396,8 @@
   background: #fff;
   pointer-events: none;
 }
+
+.menu-preview.is-stacked .menu-preview-frame { background: transparent; }
 
 /* ---- validation ---- */
 .validation-panel {
@@ -399,6 +500,65 @@
 
 .overflow-meter.is-over .overflow-meter-note { color: #9a3a2e; font-weight: 600; }
 
+.overflow-meters {
+  display: grid;
+  gap: 8px;
+}
+
+.overflow-meters .overflow-meter-note { grid-column: 1 / -1; }
+.overflow-meters.is-over > .overflow-meter-note { color: #9a3a2e; font-weight: 600; }
+
+/* ---- pages ---- */
+.pages-strip {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--color-elevated, #fff);
+  border: 1px solid var(--color-border, rgba(37, 51, 38, 0.1));
+}
+
+.pages-strip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pages-strip-head h3 { margin: 0; font-size: 15px; }
+.pages-strip-head .subtle { font-size: 12px; }
+
+.pages-strip-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-chip {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 6px;
+  border: 1px solid var(--color-border, rgba(37, 51, 38, 0.14));
+  background: var(--color-elevated, #fff);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  min-height: 32px;
+  font-variant-numeric: tabular-nums;
+}
+
+.page-chip:hover { border-color: var(--menus-terracotta); }
+.page-chip-number { font-weight: 800; font-size: 13px; }
+.page-chip-fill { color: var(--color-text-muted, #6b7280); }
+.page-chip.is-tight .page-chip-fill { color: #b5772f; font-weight: 700; }
+.page-chip.is-over { border-color: #9a3a2e; }
+.page-chip.is-over .page-chip-fill { color: #9a3a2e; font-weight: 700; }
+
 /* ---- sections ---- */
 .sections-editor {
   display: grid;
@@ -490,6 +650,77 @@
 }
 
 .section-card-settings .field { margin: 0; }
+.section-card-settings.is-more { padding-top: 0; }
+.section-card-hint { margin: 0; font-size: 12px; grid-column: 1 / -1; }
+
+.section-more {
+  align-self: end;
+  justify-self: start;
+  border: 1px solid var(--color-border, rgba(37, 51, 38, 0.14));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  min-height: 38px;
+}
+
+.section-more:hover { border-color: var(--menus-terracotta); }
+
+.section-body { margin: 0; padding: 8px 12px 4px; }
+.section-body .field-textarea { font-family: var(--font-serif); font-style: italic; font-size: 16px; }
+
+/* TABLE sections: the column labels */
+.price-columns {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px 4px;
+}
+
+.price-columns-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.price-column {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border, rgba(37, 51, 38, 0.14));
+  border-radius: 10px;
+  background: var(--color-elevated, #fff);
+  padding-right: 2px;
+}
+
+.price-column-input {
+  width: 9ch;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 8px;
+  color: inherit;
+}
+
+.price-column-input:focus { outline: none; }
+
+.price-column-remove {
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted, #6b7280);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.price-column-remove:hover { color: #9a3a2e; }
 
 .section-card-foot {
   display: flex;
@@ -602,7 +833,7 @@
 }
 
 .item-price input {
-  width: 4.5ch;
+  width: 6ch;
   border: 0;
   background: transparent;
   font: inherit;
@@ -614,8 +845,79 @@
 }
 
 .item-price input:focus { outline: none; }
-.item-price.is-invalid { border-color: #9a3a2e; }
+.item-price.is-invalid,
+.item-price:has(input[aria-invalid="true"]) { border-color: #9a3a2e; }
 .item-price-unit { width: 3.5ch !important; text-align: left !important; font-weight: 500 !important; }
+
+/* TABLE rows: one price per column */
+.item-prices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.item-price-column {
+  display: inline-grid;
+  grid-template-columns: auto;
+  gap: 0;
+  padding: 0 6px;
+}
+
+.item-price-column-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #6b7280);
+  text-align: right;
+  margin-top: 4px;
+  line-height: 1;
+}
+
+.item-price-column input { padding: 4px 2px 6px; font-size: 15px; }
+
+/* the headline price in the title block */
+.hero-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Detail, note and marks, under "More" */
+.item-more {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  padding: 6px 10px 8px;
+  border-radius: 12px;
+  background: rgba(37, 51, 38, 0.04);
+}
+
+.item-more .field { margin: 0; }
+.item-more .field-control { min-height: 34px; padding: 6px 10px; }
+
+.item-flags {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-chip-flag { letter-spacing: 0; font-weight: 600; }
+.item-action.is-on { border-color: var(--menus-terracotta); color: var(--menus-terracotta); }
+
+/* Show prices */
+.field-switch .switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.field-switch input { width: 16px; height: 16px; margin: 0; accent-color: var(--menus-terracotta); }
 
 .item-tags {
   display: flex;
@@ -817,7 +1119,11 @@
   .section-card-head .section-collapse { grid-column: 2; justify-self: start; }
   .item-row-top { grid-template-columns: 1fr; }
   .item-price { justify-self: start; }
+  .item-prices { justify-content: flex-start; }
   .audit-list li { grid-template-columns: 1fr; gap: 2px; }
   .editor-toolbar { position: static; }
   .menus-page { padding-bottom: 84px; }
+  /* On a phone the Preview tab is the page: every sheet scrolls with it. */
+  .menu-preview.is-stacked { max-height: none; overflow: visible; }
+  .menu-form-row { grid-template-columns: 1fr; }
 }

@@ -1,0 +1,133 @@
+/* What's On — promotions: the listing beside the card. Tokens from styles.css. */
+
+.promo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+.promo-card .card-title { margin-bottom: 4px; }
+.promo-card-photo {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 12px;
+  background: var(--menus-cream);
+  display: block;
+  margin-bottom: 12px;
+}
+.promo-card-photo.is-empty {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted, #6b7280);
+  font-size: 13px;
+}
+.promo-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.promo-card-line { margin: 0 0 6px; color: var(--color-text-muted, #6b7280); font-size: 14px; }
+.promo-card-line strong { color: inherit; font-weight: 700; }
+.promo-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* editor */
+.promo-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 40%);
+  gap: 24px;
+  align-items: start;
+}
+.promo-form { display: grid; gap: 18px; }
+.promo-form .field { margin: 0; }
+.promo-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.promo-form-row.is-three { grid-template-columns: 1fr 1fr 1fr; }
+.promo-weekdays { display: flex; flex-wrap: wrap; gap: 6px; }
+.promo-weekday {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border, rgba(37, 51, 38, 0.15));
+  background: var(--color-elevated, #fff);
+  font-size: 13px;
+  cursor: pointer;
+}
+.promo-weekday input { margin: 0; }
+.promo-weekday.is-on { background: var(--menus-ink); color: var(--menus-cream); border-color: var(--menus-ink); }
+.promo-photo { display: grid; gap: 10px; }
+.promo-photo img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 12px; }
+.promo-photo-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.promo-card-link { display: grid; gap: 8px; }
+.promo-card-link-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.promo-sticky { position: sticky; top: 72px; }
+
+/* the listing as the website shows it */
+.promo-listing {
+  border: 1px solid var(--color-border, rgba(37, 51, 38, 0.12));
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--menus-cream);
+  color: var(--menus-ink);
+}
+.promo-listing-photo { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: var(--menus-paper); }
+.promo-listing-photo.is-empty { display: grid; place-items: center; font-size: 13px; color: rgba(37, 51, 38, 0.55); }
+.promo-listing-body { padding: 18px 20px 20px; display: grid; gap: 8px; }
+.promo-listing-day { display: flex; align-items: baseline; gap: 8px; }
+.promo-listing-day strong { font-size: 28px; line-height: 1; letter-spacing: -0.01em; }
+.promo-listing-day em { font-size: 13px; opacity: 0.7; }
+.promo-listing-time { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.75; }
+.promo-listing-title { font-size: 22px; line-height: 1.15; margin: 2px 0 0; font-weight: 600; }
+.promo-listing-text { margin: 0; font-size: 14px; line-height: 1.5; }
+.promo-listing-price { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.8; }
+.promo-listing-conditions { margin: 0; font-size: 12px; line-height: 1.45; opacity: 0.7; white-space: pre-line; }
+.promo-listing-foot { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 6px; }
+.promo-listing-button {
+  display: inline-block;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--menus-ink);
+  color: var(--menus-cream);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.promo-listing-pdf { font-size: 13px; text-decoration: underline; }
+.promo-listing-note { font-size: 12px; color: var(--color-text-muted, #6b7280); margin: 8px 0 0; }
+
+/* publish dialog */
+.promo-changes { margin: 0; padding-left: 18px; }
+.promo-changes li { margin: 2px 0; }
+.promo-card-action { margin: 0; }
+
+@media (max-width: 900px) {
+  .promo-split { grid-template-columns: 1fr; }
+  .promo-form-row, .promo-form-row.is-three { grid-template-columns: 1fr; }
+  .promo-sticky { position: static; }
+}
+
+/* home: find a menu */
+.menus-filters {
+  display: grid;
+  grid-template-columns: minmax(200px, 2fr) minmax(160px, 1fr) minmax(160px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin: 0 0 8px;
+}
+.menus-filters .field { margin: 0; }
+.menus-filters-count { white-space: nowrap; padding-bottom: 10px; }
+@media (max-width: 900px) {
+  .menus-filters { grid-template-columns: 1fr 1fr; }
+  .menus-filters .field:first-child { grid-column: 1 / -1; }
+}
+
+/* editor: one page at a time */
+.page-chip.is-current { background: var(--menus-ink); color: var(--menus-cream); border-color: var(--menus-ink); }
+.page-chip.is-current .page-chip-fill { color: inherit; opacity: 0.8; }
+.section-filter-note { margin: 0 0 8px; }

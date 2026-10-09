@@ -18,7 +18,7 @@
  */
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import type { MenuDocument } from '@alma/shared';
+import { MENU_DOCUMENT_DEFAULTS, type MenuDocument } from '@alma/shared';
 
 const TEST_DB = process.env.ALMA_TEST_DATABASE_URL;
 if (TEST_DB) process.env.DATABASE_URL = TEST_DB;
@@ -39,6 +39,7 @@ let menuId = '';
 const chef = { id: 'itest-chef', firstName: 'Itest', lastName: 'Chef', email: 'itest-chef@almagroup.com.au', roleTitle: 'Head Chef', venue: 'ITEST', accountType: 'HUMAN', isAdmin: false, trainingOnly: false, role: 'STAFF', appAccess: [] } as unknown as import('@alma/shared').AuthUser;
 
 const DOC: MenuDocument = {
+  ...MENU_DOCUMENT_DEFAULTS,
   heading: '',
   dietaryNote: 'Dietaries catered with notice.',
   surchargeLine: 'A surcharge of 10% applies on weekends.',
@@ -49,10 +50,14 @@ const DOC: MenuDocument = {
       subheading: null,
       sectionType: 'STANDARD',
       placement: 'LEFT',
+      page: 1,
+      lead: null,
+      body: null,
+      priceColumns: [],
       visible: true,
       items: [
-        { dishKey: 'it-guac', name: 'Guacamole', description: 'Tostadas', priceCents: 1700, priceUnit: null, tags: ['VG', 'GFA'], isSeafood: false, visible: true, recipeId: null },
-        { dishKey: 'it-prawn', name: 'Prawn tostada', description: 'Avocado', priceCents: 2300, priceUnit: null, tags: ['GFA', 'I'], isSeafood: true, visible: true, recipeId: null }
+        { dishKey: 'it-guac', name: 'Guacamole', description: 'Tostadas', priceCents: 1700, priceUnit: null, prices: [], meta: null, note: null, flags: [], tags: ['VG', 'GFA'], isSeafood: false, visible: true, recipeId: null },
+        { dishKey: 'it-prawn', name: 'Prawn tostada', description: 'Avocado', priceCents: 2300, priceUnit: null, prices: [], meta: null, note: null, flags: [], tags: ['GFA', 'I'], isSeafood: true, visible: true, recipeId: null }
       ]
     },
     {
@@ -61,8 +66,12 @@ const DOC: MenuDocument = {
       subheading: 'For the whole table.',
       sectionType: 'SET_MENUS',
       placement: 'FULL',
+      page: 1,
+      lead: null,
+      body: null,
+      priceColumns: [],
       visible: true,
-      items: [{ dishKey: 'it-grazing', name: 'Grazing', description: 'A lighter spread.', priceCents: 4900, priceUnit: 'pp', tags: [], isSeafood: false, visible: true, recipeId: null }]
+      items: [{ dishKey: 'it-grazing', name: 'Grazing', description: 'A lighter spread.', priceCents: 4900, priceUnit: 'pp', prices: [], meta: null, note: null, flags: [], tags: [], isSeafood: false, visible: true, recipeId: null }]
     }
   ]
 };
@@ -89,7 +98,7 @@ describe('menu service (Postgres)', { skip: TEST_DB ? false : 'skipped: set ALMA
     await wipe();
     const venue = await h.prisma.venue.create({ data: { name: 'ITEST Venue', slug: 'itest-venue' } });
     venueId = venue.id;
-    const menu = await h.prisma.menu.create({ data: { venueId, name: 'ITEST Food', templateKey: 'freshwater_alacarte' } });
+    const menu = await h.prisma.menu.create({ data: { venueId, name: 'ITEST Food', slug: 'itest-food', templateKey: 'freshwater_alacarte' } });
     menuId = menu.id;
   });
 
@@ -162,7 +171,7 @@ describe('menu service (Postgres)', { skip: TEST_DB ? false : 'skipped: set ALMA
     assert.deepEqual(outcomes, [409, 'ok']);
     // Concurrent "start a draft" clicks on a menu without one produce exactly one draft.
     const venue2 = await h.prisma.venue.create({ data: { name: 'ITEST Venue 2', slug: 'itest-venue-2' } });
-    const menu2 = await h.prisma.menu.create({ data: { venueId: venue2.id, name: 'ITEST Food 2', templateKey: 'avalon_alacarte' } });
+    const menu2 = await h.prisma.menu.create({ data: { venueId: venue2.id, name: 'ITEST Food 2', slug: 'itest-food-2', templateKey: 'avalon_alacarte' } });
     const starts = await Promise.allSettled([h.menus.createDraft(menu2.id, chef), h.menus.createDraft(menu2.id, chef), h.menus.createDraft(menu2.id, chef)]);
     assert.equal(starts.filter((result) => result.status === 'fulfilled').length, 1);
     assert.equal(await h.prisma.menuVersion.count({ where: { menuId: menu2.id, state: 'DRAFT' } }), 1);

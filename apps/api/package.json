@@ -12,7 +12,10 @@
     "seed:forecast-module": "node --import tsx scripts/seed-forecast-module.ts",
     "generate:import-templates": "node --import tsx scripts/generate-import-templates.ts",
     "seed:menus": "node --import tsx scripts/seed-menus.ts",
-    "menus:compare": "node --import tsx scripts/menu-pdf-compare.ts"
+    "menus:compare": "node --import tsx scripts/menu-pdf-compare.ts",
+    "menus:previews": "node --import tsx scripts/menu-v2-previews.ts",
+    "menus:import": "node --import tsx scripts/import-menus-v2.ts",
+    "menus:import-inventory": "node --import tsx scripts/menu-import-inventory.ts"
   },
   "dependencies": {
     "@alma/db": "workspace:*",

@@ -4271,6 +4271,7 @@ model Venue {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   menus     Menu[]
+  promotions Promotion[]
 }
 
 enum CommsThreadCategory {
@@ -6288,10 +6289,18 @@ enum MenuVersionState {
 /// items are names and tags only.
 /// SET_MENUS: the "Trust our chef" packages — name, price with a unit ("pp"),
 /// description; drawn as a band or a boxed panel depending on placement.
+/// TEXT: a prose block (intro, callout, conditions, essay) — the body, no items.
+/// LIST: names only, no prices — inclusions, "Select from", drinks included.
+/// TABLE: items with several price columns (wine 150 mL / 250 mL / bottle).
+/// COURSE: a private-event course — label, optional "choose one" lead, dishes.
 enum MenuSectionType {
   STANDARD
   HEADER_PRICED
   SET_MENUS
+  TEXT
+  LIST
+  TABLE
+  COURSE
 }
 
 /// Which column of the sheet the section flows into. FULL spans the page.
@@ -6310,6 +6319,21 @@ model Menu {
   /// Locked print layout, resolved by packages/shared menu-render.
   templateKey String
   status      String           @default("ACTIVE")
+  /// FOOD, DRINKS, FUNCTIONS, PROMOTION or PRIVATE_EVENT (MENU_KINDS in
+  /// @alma/shared). Decides which templates, rules and home group apply.
+  kind        String           @default("FOOD")
+  /// The public identifier: "food", "drinks", "happy-hour". Minted from the
+  /// name at creation and never changed, so website links and PDF URLs
+  /// survive a rename. Unique per venue.
+  slug        String
+  /// PUBLIC menus may be served by the public endpoints once published;
+  /// PRIVATE ones (event menus by default) never are.
+  visibility  String           @default("PUBLIC")
+  /// Private-event details. Internal: never printed, never served publicly.
+  eventName    String?
+  eventDate    DateTime?
+  organiserRef String?
+  guestCount   Int?
   /// Highest version number ever handed out. Bumped inside the transaction
   /// that creates a version, so a discarded draft's number is never reused and
   /// the audit trail reads unambiguously ("Discarded draft v2", "Started v3").
@@ -6319,9 +6343,14 @@ model Menu {
   venue       Venue            @relation(fields: [venueId], references: [id], onDelete: Restrict)
   versions    MenuVersion[]
   auditEvents MenuAuditEvent[]
+  /// The promotion this card belongs to, if any (Promotion.menuId is the link).
+  promotion   Promotion?
 
   @@unique([venueId, name])
+  @@unique([venueId, slug])
   @@index([venueId])
+  @@index([kind, status])
+  @@index([eventDate])
 }
 
 // @domain: menus | home: suite
@@ -6337,6 +6366,21 @@ model MenuVersion {
   /// legend is generated from the tags in use, never typed.
   dietaryNote           String           @default("")
   surchargeLine         String           @default("")
+  /// Card and package fields (Menus V2). Empty means "not printed", so the
+  /// à la carte sheets are unaffected.
+  /// Italic line under the title ("Lunch that runs long.").
+  subheading            String           @default("")
+  /// The schedule line on a card ("Wed–Thu · 5–6pm · Fri–Sun · 4–6pm").
+  whenLine              String           @default("")
+  /// The headline price ("99 pp") — cents and unit like an item's.
+  heroPriceCents        Int?
+  heroPriceUnit         String?
+  /// Multi-line conditions block (sitting time, whole table, surcharge).
+  conditions            String           @default("")
+  /// false hides every item price — guest-facing private-event menus.
+  showPrices            Boolean          @default(true)
+  /// Pages the document declares; the publish gate compares the PDF to it.
+  pageCount             Int              @default(1)
   /// The whole document, frozen at publish (MenuSnapshot in @alma/shared).
   /// NULL while the version is a draft — the live sections/items are the truth.
   snapshotJson          Json?
@@ -6359,6 +6403,7 @@ model MenuVersion {
   updatedAt             DateTime         @updatedAt
   menu                  Menu             @relation(fields: [menuId], references: [id], onDelete: Cascade)
   sections              MenuSection[]
+  promotionPublications PromotionPublication[]
 
   @@unique([menuId, versionNumber])
   @@index([menuId, state])
@@ -6375,6 +6420,14 @@ model MenuSection {
   subheading    String?
   sectionType   MenuSectionType @default(STANDARD)
   placement     MenuPlacement   @default(LEFT)
+  /// Which sheet of a multi-page document the section prints on (1-based).
+  page          Int             @default(1)
+  /// Short caps lead-in above the items ("Two per person", "Select from").
+  lead          String?
+  /// Prose for TEXT sections (intro, callout, conditions, essay).
+  body          String?
+  /// Column labels for TABLE sections ("150 mL", "250 mL", "Bottle").
+  priceColumns  String[]        @default([])
   sortOrder     Int             @default(0)
   /// Hidden sections stay in the data and drop off the print.
   visible       Boolean         @default(true)
@@ -6404,6 +6457,15 @@ model MenuItem {
   priceCents  Int?
   /// "pp" on set menus; NULL for a plain price.
   priceUnit   String?
+  /// Per-column prices in cents for TABLE sections, aligned with the
+  /// section's priceColumns; null = not offered in that size ("·").
+  prices      Json        @default("[]")
+  /// Small grey detail after the name: ABV, region, vintage, "serves three".
+  meta        String?
+  /// Serving note under the description (the 9px line on drinks).
+  note        String?
+  /// Non-dietary marks from MENU_ITEM_FLAGS: STAFF_PICK, LIMITED, ON_TAP, NEW.
+  flags       String[]    @default([])
   /// Dietary tag codes from MENU_TAGS in @alma/shared, in any order; the
   /// renderer puts them in print order.
   tags        String[]    @default([])
@@ -6432,6 +6494,8 @@ model MenuAuditEvent {
   id            String   @id @default(cuid())
   menuId        String?
   menuVersionId String?
+  /// Set on promotion events (created, saved, image, published, hidden, ended).
+  promotionId   String?
   action        String
   summary       String
   before        Json?
@@ -6441,7 +6505,130 @@ model MenuAuditEvent {
   actorEmail    String?
   createdAt     DateTime @default(now())
   menu          Menu?    @relation(fields: [menuId], references: [id], onDelete: SetNull)
+  promotion     Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
 
   @@index([menuId, createdAt])
   @@index([menuVersionId, createdAt])
+  @@index([promotionId, createdAt])
+}
+
+/// A promotion: the one record behind a What's On listing and (when linked)
+/// its printed A5 card. Happy hour, bottomless lunch, Taco Tuesday. The
+/// listing fields here are the working copy; the public website only ever
+/// sees the latest PromotionPublication's snapshot. When a card is linked,
+/// the card's when-line, hero price and conditions are read from here, so
+/// the price is typed once and prints and lists the same.
+///
+/// @domain: menus | home: menus
+model Promotion {
+  id              String   @id @default(cuid())
+  venueId         String
+  /// Public identifier, minted once from the name ("happy-hour") and never
+  /// changed: the website keys its listing and anchors on venue + slug.
+  slug            String
+  /// Internal name on the Menus home ("Happy hour", "Bottomless — summer").
+  name            String
+  /// The listing's headline; empty prints the name.
+  publicTitle     String   @default("")
+  /// The listing's body text.
+  summary         String   @default("")
+  /// "Wed–Sun" — the listing's large day label.
+  dayLabel        String   @default("")
+  /// "Weekly" — the small italic suffix beside the day label.
+  cadenceLabel    String   @default("")
+  /// "Wed–Thu · 5–6pm · Fri–Sun · 4–6pm" — the listing's time block and the card's when-line.
+  timeLabel       String   @default("")
+  /// Weekdays it runs (0 = Sunday … 6 = Saturday), for the booking deep link.
+  validDays       Int[]    @default([])
+  /// Start time to pre-fill on OpenTable, 24-hour "HH:MM".
+  startTime       String?
+  /// Null = already running / open-ended. The public listing drops an ended promotion by itself.
+  startsOn        DateTime?
+  endsOn          DateTime?
+  /// The headline price, cents and unit like an item's ("99 pp"); null = no price.
+  heroPriceCents  Int?
+  heroPriceUnit   String?
+  /// Listing price label override ("Walk-in", "$5 tacos"); empty derives it from the hero price.
+  priceLabel      String   @default("")
+  /// Multi-line conditions block (sitting time, whole table, surcharge) — printed on the card and listed.
+  conditions      String   @default("")
+  /// Booking button: OPENTABLE (the venue's deep link), URL (bookUrl) or NONE.
+  bookDestination String   @default("OPENTABLE")
+  bookLabel       String   @default("")
+  bookUrl         String?
+  /// The current listing photo; older rows are kept so earlier publications still resolve.
+  imageId         String?
+  /// The printed card, if this promotion has one. A card belongs to one promotion at most.
+  menuId          String?  @unique
+  /// DRAFT (never published) · PUBLISHED · HIDDEN (taken off the listing, publication kept) · ENDED.
+  status          String   @default("DRAFT")
+  sortOrder       Int      @default(0)
+  createdById     String?
+  createdByName   String?
+  updatedById     String?
+  updatedByName   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  venue           Venue    @relation(fields: [venueId], references: [id], onDelete: Restrict)
+  menu            Menu?    @relation(fields: [menuId], references: [id], onDelete: SetNull)
+  image           PromotionImage? @relation("PromotionCurrentImage", fields: [imageId], references: [id], onDelete: SetNull)
+  images          PromotionImage[] @relation("PromotionImages")
+  publications    PromotionPublication[]
+  auditEvents     MenuAuditEvent[]
+
+  @@unique([venueId, slug])
+  @@unique([venueId, name])
+  @@index([status, sortOrder])
+}
+
+/// A listing photo, bytes-in-Postgres like HandbookDocument. Immutable once
+/// written: replacing a promotion's photo adds a row and repoints
+/// Promotion.imageId, so a publication that named the old fingerprint keeps
+/// resolving. Served publicly at /api/public/promotion-images/:fingerprint.
+///
+/// @domain: menus | home: menus
+model PromotionImage {
+  id             String    @id @default(cuid())
+  promotionId    String
+  fileName       String
+  mimeType       String
+  sizeBytes      Int
+  width          Int?
+  height         Int?
+  /// sha256 of the bytes; the public URL's immutable key.
+  fingerprint    String    @unique
+  alt            String    @default("")
+  data           Bytes
+  uploadedById   String?
+  uploadedByName String?
+  createdAt      DateTime  @default(now())
+  promotion      Promotion @relation("PromotionImages", fields: [promotionId], references: [id], onDelete: Cascade)
+  currentOf      Promotion[] @relation("PromotionCurrentImage")
+
+  @@index([promotionId, createdAt])
+}
+
+/// One row per publish of a promotion: the public What's On item exactly as
+/// served (snapshotJson, a PublicPromotion in @alma/shared) and the card
+/// version that was live at that moment. The public endpoint serves the
+/// latest row of a PUBLISHED promotion and nothing else; earlier rows are
+/// history. Written in the same transaction as the linked card's publish, so
+/// the listing and the PDF never disagree.
+///
+/// @domain: menus | home: menus
+model PromotionPublication {
+  id              String      @id @default(cuid())
+  promotionId     String
+  publicationNumber Int
+  snapshotJson    Json
+  /// The card version this publication lists (its PDF), null when no card is linked.
+  menuVersionId   String?
+  publishedAt     DateTime    @default(now())
+  publishedById   String?
+  publishedByName String?
+  promotion       Promotion   @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  menuVersion     MenuVersion? @relation(fields: [menuVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([promotionId, publicationNumber])
+  @@index([promotionId, publishedAt])
 }

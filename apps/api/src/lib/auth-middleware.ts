@@ -102,6 +102,10 @@ function isStaffWriteAllowed(req: Request) {
   if (req.path === '/api/menus' && req.method === 'POST') return true;
   if (/^\/api\/menus\/[^/]+$/.test(req.path) && req.method === 'PATCH') return true;
   if (/^\/api\/menus\/[^/]+\/(archive|unarchive)$/.test(req.path) && req.method === 'POST') return true;
+  // Promotions: anyone let into Menus may edit the working copy and its photo
+  // and ask for the publish preview; creating, publishing, hiding and ending
+  // are gated by requireMenuPublisher in the route, as above.
+  if (/^\/api\/menus\/promotions(\/[^/]+(\/(image|preview|publish|hide|show|end))?)?$/.test(req.path)) return true;
   if (req.path === '/api/staff/me/leave' && req.method === 'POST') return true;
   // Availability is the staff member's own to state. The service still checks
   // ownership on every one of these — this allowlist only decides whether a

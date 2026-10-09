@@ -20,7 +20,7 @@
  * before writing anything.
  */
 import { prisma } from '@alma/db';
-import { validateMenuDocument } from '@alma/shared';
+import { validateMenuDocument, menuSlug } from '@alma/shared';
 import { MENU_SEEDS } from '../src/data/menu-seed-content.js';
 import { menuAssetsStatus } from '../src/lib/menu-assets.js';
 import { chromeStatus, closeMenuBrowser } from '../src/lib/menu-pdf.js';
@@ -90,7 +90,7 @@ async function main() {
     }
     let menu = onTemplate.find((candidate) => candidate.name === seed.menuName) ?? null;
     if (!menu) {
-      const created = await prisma.menu.create({ data: { venueId: venue.id, name: seed.menuName, templateKey: seed.templateKey } });
+      const created = await prisma.menu.create({ data: { venueId: venue.id, name: seed.menuName, slug: menuSlug(seed.menuName), kind: 'FOOD', templateKey: seed.templateKey } });
       menu = { id: created.id, name: created.name, status: created.status, _count: { versions: 0 } };
       console.log(`\n+ Created menu "${seed.menuName}" for ${venue.name} (${menu.id})`);
     }

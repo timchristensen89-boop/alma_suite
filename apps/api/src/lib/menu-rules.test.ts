@@ -6,6 +6,7 @@ import {
   ensureDishKeys,
   formatMenuPrice,
   formatMenuTags,
+  MENU_DOCUMENT_DEFAULTS,
   menuCreateInputSchema,
   menuDiffIsEmpty,
   menuDocumentsEqual,
@@ -36,15 +37,29 @@ import { ALMA_AVALON_SEED, MENU_SEEDS, ST_ALMA_FRESHWATER_SEED } from '../data/m
  */
 
 function item(over: Partial<MenuItemDocument> & { name: string }): MenuItemDocument {
-  return { dishKey: over.dishKey ?? over.name.toLowerCase(), description: null, priceCents: 1700, priceUnit: null, tags: [], isSeafood: false, visible: true, recipeId: null, ...over };
+  return {
+    dishKey: over.dishKey ?? over.name.toLowerCase(),
+    description: null,
+    priceCents: 1700,
+    priceUnit: null,
+    prices: [],
+    meta: null,
+    note: null,
+    flags: [],
+    tags: [],
+    isSeafood: false,
+    visible: true,
+    recipeId: null,
+    ...over
+  };
 }
 
 function section(over: Partial<MenuSectionDocument> & { title: string; items: MenuItemDocument[] }): MenuSectionDocument {
-  return { headerSuffix: null, subheading: null, sectionType: 'STANDARD', placement: 'LEFT', visible: true, ...over };
+  return { headerSuffix: null, subheading: null, sectionType: 'STANDARD', placement: 'LEFT', page: 1, lead: null, body: null, priceColumns: [], visible: true, ...over };
 }
 
-function doc(sections: MenuSectionDocument[], footer: Partial<Pick<MenuDocument, 'heading' | 'dietaryNote' | 'surchargeLine'>> = {}): MenuDocument {
-  return { heading: footer.heading ?? '', dietaryNote: footer.dietaryNote ?? 'Dietaries catered with notice.', surchargeLine: footer.surchargeLine ?? 'Surcharge.', sections };
+function doc(sections: MenuSectionDocument[], footer: Partial<Omit<MenuDocument, 'sections'>> = {}): MenuDocument {
+  return { ...MENU_DOCUMENT_DEFAULTS, dietaryNote: 'Dietaries catered with notice.', surchargeLine: 'Surcharge.', ...footer, sections };
 }
 
 const codes = (issues: Array<{ code: string }>) => issues.map((issue) => issue.code).sort();
@@ -162,12 +177,18 @@ describe('prices', () => {
     assert.equal(formatMenuPrice(null), '');
   });
 
-  it('parse the editor field as whole dollars only', () => {
+  it('parse the editor field as dollars, with at most two decimals', () => {
     assert.equal(parseMenuPriceInput('17'), 1700);
     assert.equal(parseMenuPriceInput('$49'), 4900);
     assert.equal(parseMenuPriceInput(''), null);
-    assert.equal(parseMenuPriceInput('17.50'), undefined);
+    assert.equal(parseMenuPriceInput('17.50'), 1750);
+    assert.equal(parseMenuPriceInput('12.5'), 1250);
+    assert.equal(parseMenuPriceInput('17.505'), undefined);
     assert.equal(parseMenuPriceInput('abc'), undefined);
+    // Cents print only when there are any; whole dollars stay the house style.
+    assert.equal(formatMenuPrice(1750), '17.50');
+    assert.equal(formatMenuPrice(1700), '17');
+    assert.equal(formatMenuPrice(1250, 'pp'), '12.50 pp');
   });
 });
 
@@ -334,10 +355,20 @@ describe('print templates', () => {
 describe('menus per venue — templates, headings, names', () => {
   const assets: MenuRenderAssets = { fontFaceCss: '/*fonts*/', logoSrc: (asset) => `/images/${asset}.png` };
 
-  it('each print template belongs to one venue, by slug', () => {
-    assert.deepEqual(menuTemplatesForVenue('st-alma').map((template) => template.key), ['freshwater_alacarte']);
-    assert.deepEqual(menuTemplatesForVenue('alma-avalon').map((template) => template.key), ['avalon_alacarte']);
-    assert.deepEqual(menuTemplatesForVenue('manly'), []);
+  it('each venue template belongs to one venue, by slug; group documents belong to every venue', () => {
+    assert.deepEqual(menuTemplatesForVenue('st-alma', 'FOOD').map((template) => template.key), ['freshwater_alacarte']);
+    assert.deepEqual(menuTemplatesForVenue('alma-avalon', 'FOOD').map((template) => template.key), ['avalon_alacarte']);
+    assert.deepEqual(menuTemplatesForVenue('st-alma', 'DRINKS').map((template) => template.key), ['freshwater_drinks_binder']);
+    assert.deepEqual(menuTemplatesForVenue('alma-avalon', 'DRINKS').map((template) => template.key), ['avalon_drinks_book']);
+    assert.deepEqual(menuTemplatesForVenue('st-alma', 'FUNCTIONS').map((template) => template.key), ['group_functions_a4']);
+    assert.deepEqual(menuTemplatesForVenue('alma-avalon', 'FUNCTIONS').map((template) => template.key), ['group_functions_a4']);
+    // Promotions and private events share the venue's A5 card.
+    assert.deepEqual(menuTemplatesForVenue('st-alma', 'PROMOTION').map((template) => template.key), ['freshwater_card_a5']);
+    assert.deepEqual(menuTemplatesForVenue('alma-avalon', 'PRIVATE_EVENT').map((template) => template.key), ['avalon_card_a5']);
+    // Unfiltered: the venue's own plus the group-branded documents, never another venue's.
+    assert.deepEqual(menuTemplatesForVenue('st-alma').map((template) => template.key), ['freshwater_alacarte', 'freshwater_drinks_binder', 'group_functions_a4', 'freshwater_card_a5']);
+    assert.deepEqual(menuTemplatesForVenue('manly').map((template) => template.key), ['group_functions_a4']);
+    assert.deepEqual(menuTemplatesForVenue('manly', 'FOOD'), []);
   });
 
   it("prints the document's heading, else the template title — and the seeded menus still read À la carte", () => {

@@ -4,7 +4,11 @@ import {
   diffMenuDocuments,
   ensureDishKeys,
   getMenuTemplate,
+  isMenuKind,
   isMenuTemplateKey,
+  MENU_FORMATS,
+  MENU_KINDS,
+  MENU_LIMITS,
   menuCopyItemInputSchema,
   menuCreateInputSchema,
   menuDiffIsEmpty,
@@ -13,11 +17,15 @@ import {
   menuPrintedHeading,
   menuPublishInputSchema,
   menuRestoreInputSchema,
+  menuSlug,
   menuTemplatesForVenue,
   menuUpdateInputSchema,
   newDishKey,
+  normaliseMenuDocument,
   overflowIssue,
+  promotionCardOverlay,
   renderMenuHtml,
+  sortMenuItemFlags,
   sortMenuTags,
   summariseMenuDiff,
   validateMenuDocument,
@@ -27,22 +35,32 @@ import {
   type MenuDiff,
   type MenuDocument,
   type MenuDraftPayload,
+  type MenuEventDetails,
+  type MenuHeader,
+  type MenuKind,
   type MenuListPayload,
+  type MenuPromotionLink,
   type MenuPublishPreview,
   type MenuSnapshot,
   type MenuStatus,
   type MenuSummary,
+  type MenuTemplate,
   type MenuVenueSummary,
   type MenuValidationResult,
   type MenuVersionPayload,
-  type MenuVersionSummary
+  type MenuVersionSummary,
+  type MenuVisibility,
+  type PublicMenuDocument,
+  type PublicMenuSummary
 } from '@alma/shared';
+import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { loadMenuRenderAssets, MenuAssetError } from '../lib/menu-assets.js';
 import { chromeStatus, renderMenuPdf, measureMenuFill } from '../lib/menu-pdf.js';
 
 /**
- * Menu Editor — drafts, publishing, history and the audit trail.
+ * Alma Menus — drafts, publishing, history, the audit trail and the public
+ * read surface the website uses.
  *
  * Invariants this service keeps:
  *   - one DRAFT per menu at most; one PUBLISHED at most; the rest ARCHIVED.
@@ -51,9 +69,14 @@ import { chromeStatus, renderMenuPdf, measureMenuFill } from '../lib/menu-pdf.js
  *   - restoring creates a new draft from a snapshot; it never rewrites history.
  *   - every change writes a MenuAuditEvent with who, what and a diff summary.
  *   - a dish keeps its dishKey through saves, clones and restores.
- *   - a venue has any number of menus (the à la carte, a Tuesday menu, an
- *     event menu), each with its own drafts, history and PDF. Archiving one
- *     takes it off the module home and freezes it; nothing is deleted.
+ *   - a venue has any number of menus of any kind (the à la carte, the drinks
+ *     book, a Tuesday menu, a happy-hour card, an event menu), each with its
+ *     own drafts, history and PDF. Archiving one takes it off the module home
+ *     and freezes it; nothing is deleted.
+ *   - a menu's slug is minted once, at creation, and never changes: it is what
+ *     the website links. Renaming changes only the name.
+ *   - the public endpoints serve PUBLISHED snapshots of PUBLIC, ACTIVE menus
+ *     and nothing else — never a draft, never a private-event menu.
  *   - an archived menu is never written. Every write locks the Menu row
  *     (lockActiveMenu) and re-checks the status inside its own transaction;
  *     archive and unarchive take the same lock. So an archive can never
@@ -79,15 +102,25 @@ const VERSION_SUMMARY_SELECT = {
   updatedByName: true,
   restoredFromVersionId: true,
   pdfByteSize: true,
-  pdfGeneratedAt: true
+  pdfGeneratedAt: true,
+  pageCount: true
 } as const;
 
 const MENU_SELECT = {
   id: true,
   name: true,
+  slug: true,
+  kind: true,
+  visibility: true,
   templateKey: true,
   status: true,
-  venue: { select: { id: true, name: true, slug: true } }
+  eventName: true,
+  eventDate: true,
+  organiserRef: true,
+  guestCount: true,
+  venue: { select: { id: true, name: true, slug: true } },
+  // The promotion this card belongs to, when it is one: the fields it owns ride along.
+  promotion: { select: { id: true, name: true, status: true, timeLabel: true, heroPriceCents: true, heroPriceUnit: true, conditions: true } }
 } as const;
 
 type MenuRow = Prisma.MenuGetPayload<{ select: typeof MENU_SELECT }>;
@@ -108,6 +141,18 @@ function iso(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
 }
 
+function kindOf(menu: Pick<MenuRow, 'kind'>): MenuKind {
+  return isMenuKind(menu.kind) ? menu.kind : 'FOOD';
+}
+
+function visibilityOf(menu: Pick<MenuRow, 'visibility'>): MenuVisibility {
+  return menu.visibility === 'PRIVATE' ? 'PRIVATE' : 'PUBLIC';
+}
+
+function eventOf(menu: MenuRow): MenuEventDetails {
+  return { eventName: menu.eventName, eventDate: iso(menu.eventDate), organiserRef: menu.organiserRef, guestCount: menu.guestCount };
+}
+
 function versionSummary(version: VersionMeta): MenuVersionSummary {
   return {
     id: version.id,
@@ -120,18 +165,36 @@ function versionSummary(version: VersionMeta): MenuVersionSummary {
     updatedBy: asMenuActor(version.updatedById, version.updatedByName),
     restoredFromVersionId: version.restoredFromVersionId,
     hasPdf: version.pdfByteSize !== null && version.pdfByteSize > 0,
-    pdfByteSize: version.pdfByteSize
+    pdfByteSize: version.pdfByteSize,
+    pageCount: version.pageCount
   };
 }
 
-function menuHeader(menu: MenuRow): Pick<MenuSummary, 'id' | 'name' | 'templateKey' | 'venue'> {
-  return { id: menu.id, name: menu.name, templateKey: menu.templateKey, venue: menu.venue };
+function promotionLink(menu: MenuRow): MenuPromotionLink | null {
+  if (!menu.promotion) return null;
+  const status = menu.promotion.status;
+  return { id: menu.promotion.id, name: menu.promotion.name, status: status === 'PUBLISHED' || status === 'HIDDEN' || status === 'ENDED' ? status : 'DRAFT' };
+}
+
+function menuHeader(menu: MenuRow): MenuHeader {
+  return { id: menu.id, name: menu.name, slug: menu.slug, kind: kindOf(menu), visibility: visibilityOf(menu), templateKey: menu.templateKey, venue: menu.venue, promotion: promotionLink(menu) };
+}
+
+function pricesFromJson(value: Prisma.JsonValue): Array<number | null> {
+  return Array.isArray(value) ? value.map((price) => (typeof price === 'number' ? price : null)) : [];
 }
 
 /** The editable document from live draft rows (ids and dish keys included). */
 function documentFromRows(version: VersionRow): MenuDocument {
   return {
     heading: version.heading,
+    subheading: version.subheading,
+    whenLine: version.whenLine,
+    heroPriceCents: version.heroPriceCents,
+    heroPriceUnit: version.heroPriceUnit,
+    conditions: version.conditions,
+    showPrices: version.showPrices,
+    pageCount: version.pageCount,
     dietaryNote: version.dietaryNote,
     surchargeLine: version.surchargeLine,
     sections: [...version.sections]
@@ -143,6 +206,10 @@ function documentFromRows(version: VersionRow): MenuDocument {
         subheading: section.subheading,
         sectionType: section.sectionType,
         placement: section.placement,
+        page: section.page,
+        lead: section.lead,
+        body: section.body,
+        priceColumns: section.priceColumns,
         visible: section.visible,
         items: [...section.items]
           .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -153,6 +220,10 @@ function documentFromRows(version: VersionRow): MenuDocument {
             description: item.description,
             priceCents: item.priceCents,
             priceUnit: item.priceUnit,
+            prices: pricesFromJson(item.prices),
+            meta: item.meta,
+            note: item.note,
+            flags: sortMenuItemFlags(item.flags),
             tags: sortMenuTags(item.tags),
             isSeafood: item.isSeafood,
             visible: item.visible,
@@ -165,9 +236,7 @@ function documentFromRows(version: VersionRow): MenuDocument {
 /** Row ids stripped: a snapshot outlives the rows it was taken from. */
 function stripIds(doc: MenuDocument): MenuDocument {
   return {
-    heading: doc.heading,
-    dietaryNote: doc.dietaryNote,
-    surchargeLine: doc.surchargeLine,
+    ...doc,
     sections: doc.sections.map(({ id: _sectionId, ...section }) => ({
       ...section,
       items: section.items.map(({ id: _itemId, ...item }) => item)
@@ -178,7 +247,8 @@ function stripIds(doc: MenuDocument): MenuDocument {
 function snapshotDocument(version: { snapshotJson: Prisma.JsonValue | null }): MenuDocument | null {
   const snapshot = version.snapshotJson as unknown as MenuSnapshot | null;
   if (!snapshot || typeof snapshot !== 'object' || !Array.isArray(snapshot.sections)) return null;
-  return { heading: snapshot.heading ?? '', dietaryNote: snapshot.dietaryNote ?? '', surchargeLine: snapshot.surchargeLine ?? '', sections: snapshot.sections };
+  // Versions published before V2 carry neither the card fields nor pages; they read as their defaults.
+  return normaliseMenuDocument(snapshot);
 }
 
 /** A version's document, from the live rows for a draft and from the snapshot otherwise. */
@@ -187,10 +257,26 @@ function documentFor(version: VersionRow): MenuDocument {
   return snapshotDocument(version) ?? documentFromRows(version);
 }
 
+/**
+ * A promotion's card prints the promotion's when-line, hero price and
+ * conditions: typed once on the promotion, never on the card. Applied to the
+ * working document before it is shown, saved, previewed or published, so the
+ * stored draft, the preview and the PDF agree; a published snapshot already
+ * carries what it printed.
+ */
+function withPromotion(menu: MenuRow, doc: MenuDocument): MenuDocument {
+  if (!menu.promotion) return doc;
+  return { ...doc, ...promotionCardOverlay(menu.promotion) };
+}
+
 async function loadMenu(menuId: string): Promise<MenuRow> {
   const menu = await prisma.menu.findUnique({ where: { id: menuId }, select: MENU_SELECT });
   if (!menu) throw new HttpError(404, 'That menu does not exist.');
   return menu;
+}
+
+function templateFor(menu: Pick<MenuRow, 'templateKey'>): MenuTemplate {
+  return getMenuTemplate(menu.templateKey);
 }
 
 /**
@@ -240,8 +326,13 @@ async function lockActiveMenu(tx: Prisma.TransactionClient, menu: MenuRow): Prom
   return locked;
 }
 
-function emptyDocument(): MenuDocument {
-  return { heading: '', dietaryNote: '', surchargeLine: '', sections: [] };
+/** An empty document on a template: the template's footer defaults, nothing else. */
+function emptyDocument(template?: MenuTemplate): MenuDocument {
+  return normaliseMenuDocument({
+    dietaryNote: template?.defaults?.dietaryNote ?? '',
+    surchargeLine: template?.defaults?.surchargeLine ?? '',
+    sections: []
+  });
 }
 
 /**
@@ -265,6 +356,22 @@ async function requireNameFree(venueId: string, name: string, exceptMenuId: stri
       : `This venue already has a menu called "${clash.name}". Pick another name.`,
     { code: 'NAME_TAKEN', menuId: clash.id, status: clash.status }
   );
+}
+
+/**
+ * The public identifier, from the name, de-duplicated per venue ("tuesday",
+ * "tuesday-2"). Archived menus keep theirs, so a slug is never reused for a
+ * different menu while the old one exists.
+ */
+async function freeSlug(venueId: string, name: string, client: Prisma.TransactionClient | typeof prisma = prisma): Promise<string> {
+  const base = menuSlug(name);
+  const taken = new Set((await client.menu.findMany({ where: { venueId, slug: { startsWith: base } }, select: { slug: true } })).map((row) => row.slug));
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 1000; n += 1) {
+    const candidate = `${base}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  throw new HttpError(409, 'Too many menus share this name at the venue. Pick a more specific one.');
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -306,6 +413,22 @@ async function nextVersionNumber(menuId: string, tx: Prisma.TransactionClient): 
   return menu.versionCounter;
 }
 
+/** The version-level fields of a document, as the MenuVersion row stores them. */
+function versionFields(doc: MenuDocument) {
+  return {
+    heading: doc.heading,
+    subheading: doc.subheading,
+    whenLine: doc.whenLine,
+    heroPriceCents: doc.heroPriceCents,
+    heroPriceUnit: doc.heroPriceUnit,
+    conditions: doc.conditions,
+    showPrices: doc.showPrices,
+    pageCount: doc.pageCount,
+    dietaryNote: doc.dietaryNote,
+    surchargeLine: doc.surchargeLine
+  };
+}
+
 /** Write the rows of a document under a version. Dish keys must already be set. */
 async function writeDocumentRows(tx: Prisma.TransactionClient, versionId: string, doc: MenuDocument) {
   await tx.menuSection.deleteMany({ where: { menuVersionId: versionId } });
@@ -318,6 +441,10 @@ async function writeDocumentRows(tx: Prisma.TransactionClient, versionId: string
         subheading: section.subheading,
         sectionType: section.sectionType,
         placement: section.placement,
+        page: section.page,
+        lead: section.lead,
+        body: section.body,
+        priceColumns: section.priceColumns,
         sortOrder: sectionIndex,
         visible: section.visible,
         items: {
@@ -327,6 +454,10 @@ async function writeDocumentRows(tx: Prisma.TransactionClient, versionId: string
             description: item.description,
             priceCents: item.priceCents,
             priceUnit: item.priceUnit,
+            prices: item.prices as Prisma.InputJsonValue,
+            meta: item.meta,
+            note: item.note,
+            flags: item.flags,
             tags: item.tags,
             isSeafood: item.isSeafood,
             sortOrder: itemIndex,
@@ -376,7 +507,7 @@ function checkUpdatedAt(version: VersionRow, expected: string | undefined) {
 
 function buildSnapshot(menu: MenuRow, version: { versionNumber: number }, doc: MenuDocument, publishedAt: Date | null): MenuSnapshot {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     menuId: menu.id,
     menuName: menu.name,
     templateKey: menu.templateKey,
@@ -396,28 +527,202 @@ function renderAssetsOrThrow() {
   }
 }
 
+/** The validator's options for a menu: rules by kind, pages by template. */
+function validationOptions(menu: MenuRow) {
+  const template = isMenuTemplateKey(menu.templateKey) ? templateFor(menu) : null;
+  return { kind: kindOf(menu), maxPages: template?.multiPage ? template.maxPages ?? MENU_LIMITS.pagesMax : 1 };
+}
+
+function pageLabel(template: MenuTemplate): string {
+  return `one ${MENU_FORMATS[template.format].label} page`;
+}
+
 async function draftPayload(menu: MenuRow, draft: VersionRow): Promise<MenuDraftPayload> {
   const published = await loadPublished(menu.id);
   return {
     menu: menuHeader(menu),
     version: versionSummary(draft),
-    document: documentFromRows(draft),
+    document: withPromotion(menu, documentFromRows(draft)),
     publishedDocument: published ? documentFor(published) : null,
     publishedVersion: published ? versionSummary(published) : null
   };
 }
 
-async function summaries(where: Prisma.MenuWhereInput): Promise<MenuSummary[]> {
-    const menus = await prisma.menu.findMany({
-      where,
-      select: {
-        ...MENU_SELECT,
-        versions: { where: { state: { in: ['DRAFT', 'PUBLISHED'] } }, select: { ...VERSION_SUMMARY_SELECT, heading: true }, orderBy: { versionNumber: 'desc' } }
-      },
-      // The venue's first menu (its à la carte) stays first; later menus follow in the order they were added.
-      orderBy: [{ venue: { name: 'asc' } }, { createdAt: 'asc' }, { name: 'asc' }]
+/**
+ * The rows of a new draft under `menu`, inside the caller's transaction (the
+ * caller holds the Menu lock). One draft at most: refused with 409 when one
+ * exists. The summary callback receives the version number the draft got.
+ */
+async function createDraftRows(
+  tx: Prisma.TransactionClient,
+  menu: MenuRow,
+  actor: Actor,
+  source: MenuDocument,
+  summary: (versionNumber: number) => string
+): Promise<{ id: string; versionNumber: number; updatedAt: Date }> {
+  const versionNumber = await nextVersionNumber(menu.id, tx);
+  const existing = await tx.menuVersion.findFirst({ where: { menuId: menu.id, state: 'DRAFT' }, select: { id: true } });
+  if (existing) throw new HttpError(409, 'This menu already has a draft. Open it, or discard it to start again.');
+  const version = await tx.menuVersion.create({
+    data: {
+      menuId: menu.id,
+      versionNumber,
+      state: 'DRAFT',
+      ...versionFields(source),
+      createdById: actor.id,
+      createdByName: actor.name,
+      updatedById: actor.id,
+      updatedByName: actor.name
+    },
+    select: { id: true, versionNumber: true, updatedAt: true }
+  });
+  await writeDocumentRows(tx, version.id, ensureDishKeys(source));
+  await audit(tx, { menuId: menu.id, menuVersionId: version.id, action: 'draft.created', summary: summary(version.versionNumber), actor });
+  return version;
+}
+
+type PreparedPublish = {
+  doc: MenuDocument;
+  validation: MenuValidationResult;
+  rendered: Awaited<ReturnType<typeof renderMenuPdf>>;
+  /** The version that is live as the render starts; commitPublish checks it still is. */
+  published: VersionRow | null;
+  diff: MenuDiff;
+};
+
+/**
+ * Everything publishing needs that can happen outside a transaction: the
+ * rules, the warnings gate, the PDF, the per-page fill check, and the diff
+ * against the live version. Throws the 422/409 the publish dialog expects.
+ */
+async function preparePublish(menu: MenuRow, doc: MenuDocument, acknowledgeWarnings: boolean): Promise<PreparedPublish> {
+  const validation: MenuValidationResult = validateMenuDocument(doc, validationOptions(menu));
+  if (validation.errors.length > 0) {
+    throw new HttpError(422, `The menu has ${validation.errors.length} error${validation.errors.length === 1 ? '' : 's'} to fix before it can be published.`, {
+      code: 'VALIDATION',
+      validation
     });
-    return menus.map((menu) => {
+  }
+  if (validation.warnings.length > 0 && !acknowledgeWarnings) {
+    throw new HttpError(409, `The menu has ${validation.warnings.length} warning${validation.warnings.length === 1 ? '' : 's'}. Review them, then publish again to confirm.`, {
+      code: 'WARNINGS',
+      validation
+    });
+  }
+
+  const template = templateFor(menu);
+  const assets = renderAssetsOrThrow();
+  const html = renderMenuHtml(doc, menu.templateKey, { assets, title: `${menu.venue.name} ${menu.name.toLowerCase()} menu | Alma Group` });
+  const rendered = await renderMenuPdf(html, template.page);
+  const overflow = overflowIssue(rendered.fill, pageLabel(template));
+  if (overflow || rendered.pageCount !== doc.pageCount) {
+    const issue = overflow ?? {
+      level: 'error' as const,
+      code: 'OVERFLOW' as const,
+      message:
+        doc.pageCount === 1
+          ? `The menu rendered to ${rendered.pageCount} pages. It must fit on ${pageLabel(template)}.`
+          : `The menu rendered to ${rendered.pageCount} pages but declares ${doc.pageCount}. Check each page in the preview before publishing.`
+    };
+    throw new HttpError(422, issue.message, { code: 'VALIDATION', validation: { errors: [issue], warnings: validation.warnings, ok: false }, fill: rendered.fill });
+  }
+
+  const published = await loadPublished(menu.id);
+  const diff = diffMenuDocuments(published ? documentFor(published) : null, doc);
+  return { doc, validation, rendered, published, diff };
+}
+
+/**
+ * Flip `draft` to PUBLISHED with the prepared snapshot and PDF, archiving the
+ * version that was live. Inside the caller's transaction, which holds the
+ * Menu lock. Refuses (409) if the live version or the draft changed since
+ * the render — nothing is then written.
+ */
+async function commitPublish(
+  tx: Prisma.TransactionClient,
+  menu: MenuRow,
+  draft: { id: string; versionNumber: number; updatedAt: Date },
+  prepared: PreparedPublish,
+  actor: Actor
+): Promise<{ versionId: string; versionNumber: number; publishedAt: Date }> {
+  const { published, rendered, validation, diff, doc } = prepared;
+  const publishedAt = new Date();
+  const snapshot = buildSnapshot(menu, draft, doc, publishedAt);
+  const liveNow = await tx.menuVersion.findFirst({ where: { menuId: menu.id, state: 'PUBLISHED' }, select: { id: true } });
+  if ((liveNow?.id ?? null) !== (published?.id ?? null)) {
+    throw new HttpError(409, 'The live version changed while this one was being published. Reload, check the preview, and publish again.', { code: 'STALE_DRAFT' });
+  }
+  if (published) {
+    await tx.menuVersion.update({ where: { id: published.id }, data: { state: 'ARCHIVED' } });
+  }
+  const flipped = await tx.menuVersion.updateMany({
+    where: { id: draft.id, state: 'DRAFT', updatedAt: draft.updatedAt },
+    data: {
+      state: 'PUBLISHED',
+      snapshotJson: snapshot as unknown as Prisma.InputJsonValue,
+      pdfData: new Uint8Array(rendered.pdf),
+      pdfByteSize: rendered.pdf.length,
+      pdfGeneratedAt: publishedAt,
+      publishedAt,
+      publishedById: actor.id,
+      publishedByName: actor.name
+    }
+  });
+  if (flipped.count !== 1) {
+    throw new HttpError(409, 'The draft changed while it was being published. Reload, check the preview, and publish again.', { code: 'STALE_DRAFT' });
+  }
+  await audit(tx, {
+    menuId: menu.id,
+    menuVersionId: draft.id,
+    action: 'published',
+    summary: `Published v${draft.versionNumber}${published ? ` (replacing v${published.versionNumber})` : ''}: ${summariseMenuDiff(diff)}.${
+      validation.warnings.length ? ` ${validation.warnings.length} warning${validation.warnings.length === 1 ? '' : 's'} acknowledged.` : ''
+    }`,
+    before: published ? { versionNumber: published.versionNumber } : null,
+    after: { versionNumber: draft.versionNumber, diff, fillRatio: rendered.fill.fillRatio, pageCount: rendered.pageCount, renderMs: rendered.renderMs, warnings: validation.warnings },
+    actor
+  });
+  return { versionId: draft.id, versionNumber: draft.versionNumber, publishedAt };
+}
+
+/** The publish dialog's view of `doc` as `menu`'s next version: rules, page fill, and the diff against `published`. */
+async function previewDocument(menu: MenuRow, doc: MenuDocument, published: VersionRow | null): Promise<MenuPublishPreview> {
+  const validation = validateMenuDocument(doc, validationOptions(menu));
+  const renderer = chromeStatus();
+  let fill: MenuPublishPreview['fill'] = null;
+  if (renderer.ok) {
+    const assets = renderAssetsOrThrow();
+    const template = templateFor(menu);
+    fill = await measureMenuFill(renderMenuHtml(doc, menu.templateKey, { assets }), template.page);
+    const overflow = overflowIssue(fill, pageLabel(template));
+    if (overflow) validation.errors.push(overflow);
+  }
+  const diff = diffMenuDocuments(published ? documentFor(published) : null, doc);
+  return {
+    validation: { ...validation, ok: validation.errors.length === 0 },
+    fill,
+    renderer: { ok: renderer.ok, message: renderer.ok ? 'Ready' : renderer.message },
+    diff,
+    summary: summariseMenuDiff(diff),
+    canPublish: renderer.ok && validation.errors.length === 0
+  };
+}
+
+const KIND_ORDER = new Map<string, number>(MENU_KINDS.map((kind, index) => [kind, index]));
+
+async function summaries(where: Prisma.MenuWhereInput): Promise<MenuSummary[]> {
+  const menus = await prisma.menu.findMany({
+    where,
+    select: {
+      ...MENU_SELECT,
+      createdAt: true,
+      versions: { where: { state: { in: ['DRAFT', 'PUBLISHED'] } }, select: { ...VERSION_SUMMARY_SELECT, heading: true }, orderBy: { versionNumber: 'desc' } }
+    },
+    // The venue's first menu of a kind (its à la carte) stays first; later menus follow in the order they were added.
+    orderBy: [{ venue: { name: 'asc' } }, { createdAt: 'asc' }, { name: 'asc' }]
+  });
+  return menus
+    .map((menu) => {
       const published = menu.versions.find((version) => version.state === 'PUBLISHED') ?? null;
       const draft = menu.versions.find((version) => version.state === 'DRAFT') ?? null;
       const candidates: Array<{ at: Date; by: MenuActor }> = [];
@@ -431,11 +736,49 @@ async function summaries(where: Prisma.MenuWhereInput): Promise<MenuSummary[]> {
         printedHeading: isMenuTemplateKey(menu.templateKey)
           ? menuPrintedHeading({ heading: (published ?? draft)?.heading ?? '' }, getMenuTemplate(menu.templateKey))
           : ((published ?? draft)?.heading ?? ''),
+        event: eventOf(menu),
         published: published ? versionSummary(published) : null,
         draft: draft ? versionSummary(draft) : null,
-        lastEdited: last ? { at: last.at.toISOString(), by: last.by } : null
+        lastEdited: last ? { at: last.at.toISOString(), by: last.by } : null,
+        _createdAt: menu.createdAt
       };
-    });
+    })
+    .sort((a, b) => {
+      if (a.venue.name !== b.venue.name) return a.venue.name.localeCompare(b.venue.name);
+      const kindGap = (KIND_ORDER.get(a.kind) ?? 99) - (KIND_ORDER.get(b.kind) ?? 99);
+      if (kindGap !== 0) return kindGap;
+      return a._createdAt.getTime() - b._createdAt.getTime();
+    })
+    .map(({ _createdAt: _ignored, ...summary }) => summary);
+}
+
+/** A public URL on the API host, as the website links it. */
+function publicUrl(path: string): string {
+  return `${env.publicApiUrl.replace(/\/$/, '')}${path}`;
+}
+
+function publicSummary(menu: MenuRow, version: VersionMeta & { heading: string }): PublicMenuSummary {
+  const template = templateFor(menu);
+  return {
+    slug: menu.slug,
+    kind: kindOf(menu),
+    name: menu.name,
+    heading: menuPrintedHeading({ heading: version.heading }, template),
+    format: template.format,
+    pageCount: version.pageCount,
+    publishedAt: version.publishedAt?.toISOString() ?? version.updatedAt.toISOString(),
+    versionId: version.id,
+    pdfUrl: publicUrl(`/api/public/menus/${menu.venue.slug}/${menu.slug}.pdf?v=${version.id}`),
+    jsonUrl: publicUrl(`/api/public/menus/${menu.venue.slug}/${menu.slug}.json?v=${version.id}`)
+  };
+}
+
+/** The menu the public endpoints may serve: active, public, with a published version. 404 otherwise, never a hint. */
+async function loadPublicMenu(venueSlug: string, slug: string): Promise<{ menu: MenuRow; version: VersionRow }> {
+  const menu = await prisma.menu.findFirst({ where: { slug, status: 'ACTIVE', visibility: 'PUBLIC', venue: { slug: venueSlug } }, select: MENU_SELECT });
+  const version = menu ? await loadPublished(menu.id) : null;
+  if (!menu || !version || !isMenuTemplateKey(menu.templateKey)) throw new HttpError(404, 'No published menu by that name.');
+  return { menu, version };
 }
 
 export const menuService = {
@@ -455,7 +798,14 @@ export const menuService = {
     const venues = await prisma.venue.findMany({ select: { id: true, name: true, slug: true }, orderBy: { name: 'asc' } });
     return venues.map((venue) => ({
       ...venue,
-      templates: menuTemplatesForVenue(venue.slug).map((template) => ({ key: template.key, label: template.label, title: template.title }))
+      templates: menuTemplatesForVenue(venue.slug).map((template) => ({
+        key: template.key,
+        label: template.label,
+        title: template.title,
+        kinds: template.kinds,
+        format: template.format,
+        multiPage: template.multiPage
+      }))
     }));
   },
 
@@ -477,7 +827,8 @@ export const menuService = {
    * another menu's live version (its draft when nothing is live yet). The copy
    * keeps dish keys, so a dish shared between the à la carte and the Tuesday
    * menu reads as the same dish to Menu Costing; recipe links are dropped when
-   * the source belongs to another venue.
+   * the source belongs to another venue. The slug is minted here and never
+   * changes.
    */
   async createMenu(input: unknown, user: AuthUser | undefined): Promise<MenuSummary> {
     const data = menuCreateInputSchema.parse(input);
@@ -485,16 +836,17 @@ export const menuService = {
     const venue = await prisma.venue.findUnique({ where: { id: data.venueId }, select: { id: true, name: true, slug: true } });
     if (!venue) throw new HttpError(404, 'That venue does not exist.');
 
-    const templates = menuTemplatesForVenue(venue.slug);
+    const templates = menuTemplatesForVenue(venue.slug, data.kind);
     if (templates.length === 0) {
-      throw new HttpError(409, `${venue.name} has no print template yet, so a menu cannot be added for it. Templates are code (packages/shared/src/menu-render.ts).`);
+      throw new HttpError(409, `${venue.name} has no print template for a ${data.kind.toLowerCase().replace('_', ' ')} menu yet. Templates are code (packages/shared/src/menu-render.ts).`);
     }
     const templateKey = data.templateKey ?? (templates.length === 1 ? templates[0]!.key : null);
     if (!templateKey) throw new HttpError(400, `Choose which of ${venue.name}'s print templates this menu uses.`);
     const template = templates.find((candidate) => candidate.key === templateKey);
-    if (!template) throw new HttpError(400, `That print template is not one of ${venue.name}'s.`);
+    if (!template) throw new HttpError(400, `That print template is not one of ${venue.name}'s for this kind of menu.`);
 
     await requireNameFree(venue.id, data.name, null);
+    const visibility: MenuVisibility = data.visibility ?? (data.kind === 'PRIVATE_EVENT' ? 'PRIVATE' : 'PUBLIC');
 
     let source: { menu: MenuRow; version: VersionRow } | null = null;
     if (data.copyFromMenuId) {
@@ -503,8 +855,12 @@ export const menuService = {
       if (!sourceVersion) throw new HttpError(409, `${sourceMenu.venue.name} · ${sourceMenu.name} has nothing to copy yet.`);
       source = { menu: sourceMenu, version: sourceVersion };
     }
-    let doc: MenuDocument = source ? stripIds(documentFor(source.version)) : emptyDocument();
+    let doc: MenuDocument = source ? stripIds(documentFor(source.version)) : emptyDocument(template);
     doc = { ...doc, heading: data.heading };
+    // A single-sheet template cannot carry a multi-page copy: fold everything onto page 1.
+    if (!template.multiPage && doc.pageCount > 1) {
+      doc = { ...doc, pageCount: 1, sections: doc.sections.map((section) => ({ ...section, page: 1 })) };
+    }
     if (source && source.menu.venue.id !== venue.id) {
       doc = { ...doc, sections: doc.sections.map((section) => ({ ...section, items: section.items.map((item) => ({ ...item, recipeId: null })) })) };
     }
@@ -513,13 +869,35 @@ export const menuService = {
     let menuId: string;
     try {
       menuId = await prisma.$transaction(async (tx) => {
-        const menu = await tx.menu.create({ data: { venueId: venue.id, name: data.name, templateKey }, select: { id: true } });
+        let slug: string;
+        if (data.slug) {
+          const taken = await tx.menu.findUnique({ where: { venueId_slug: { venueId: venue.id, slug: data.slug } }, select: { id: true, name: true } });
+          if (taken) throw new HttpError(409, `This venue already uses the link name "${data.slug}" (menu "${taken.name}").`, { code: 'SLUG_TAKEN', menuId: taken.id });
+          slug = data.slug;
+        } else {
+          slug = await freeSlug(venue.id, data.name, tx);
+        }
+        const menu = await tx.menu.create({
+          data: {
+            venueId: venue.id,
+            name: data.name,
+            slug,
+            kind: data.kind,
+            visibility,
+            templateKey,
+            eventName: data.eventName ?? null,
+            eventDate: data.eventDate ? new Date(data.eventDate) : null,
+            organiserRef: data.organiserRef ?? null,
+            guestCount: data.guestCount ?? null
+          },
+          select: { id: true }
+        });
         await audit(tx, {
           menuId: menu.id,
           menuVersionId: null,
           action: 'menu.created',
-          summary: `Created menu "${data.name}" for ${venue.name} (${template.label}).`,
-          after: { name: data.name, templateKey, copiedFromMenuId: source?.menu.id ?? null, copiedFromVersion: source?.version.versionNumber ?? null },
+          summary: `Created ${data.kind.toLowerCase().replace('_', ' ')} menu "${data.name}" for ${venue.name} (${template.label}).`,
+          after: { name: data.name, slug, kind: data.kind, visibility, templateKey, copiedFromMenuId: source?.menu.id ?? null, copiedFromVersion: source?.version.versionNumber ?? null },
           actor
         });
         const versionNumber = await nextVersionNumber(menu.id, tx);
@@ -528,9 +906,7 @@ export const menuService = {
             menuId: menu.id,
             versionNumber,
             state: 'DRAFT',
-            heading: doc.heading,
-            dietaryNote: doc.dietaryNote,
-            surchargeLine: doc.surchargeLine,
+            ...versionFields(doc),
             createdById: actor.id,
             createdByName: actor.name,
             updatedById: actor.id,
@@ -557,29 +933,63 @@ export const menuService = {
   },
 
   /**
-   * Rename. The name is what the home card, the editor title and every PDF
-   * download filename show (past versions included). The printed page does not
-   * carry the name; the heading on it is edited in the editor.
+   * Rename, change visibility, or edit the private-event details. The name is
+   * what the home card, the editor title and every PDF download filename show
+   * (past versions included); the slug and the printed page do not change —
+   * the heading on the page is edited in the editor.
    */
   async updateMenu(menuId: string, input: unknown, user: AuthUser | undefined): Promise<MenuSummary> {
     const menu = requireActive(await loadMenu(menuId));
     const actor = menuActor(user);
     const data = menuUpdateInputSchema.parse(input);
-    if (data.name === menu.name) return this.get(menuId);
-    await requireNameFree(menu.venue.id, data.name, menu.id);
+    const changes: Prisma.MenuUpdateInput = {};
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
+    const lines: string[] = [];
+    if (data.name !== undefined && data.name !== menu.name) {
+      await requireNameFree(menu.venue.id, data.name, menu.id);
+      changes.name = data.name;
+      before.name = menu.name;
+      after.name = data.name;
+      lines.push(`renamed "${menu.name}" to "${data.name}"`);
+    }
+    if (data.visibility !== undefined && data.visibility !== visibilityOf(menu)) {
+      changes.visibility = data.visibility;
+      before.visibility = visibilityOf(menu);
+      after.visibility = data.visibility;
+      lines.push(data.visibility === 'PUBLIC' ? 'made public (published versions may be served to the website)' : 'made private (never served publicly)');
+    }
+    const eventFields: Array<['eventName' | 'organiserRef' | 'guestCount', string | number | null | undefined]> = [
+      ['eventName', data.eventName],
+      ['organiserRef', data.organiserRef],
+      ['guestCount', data.guestCount]
+    ];
+    for (const [field, value] of eventFields) {
+      if (value === undefined || value === menu[field]) continue;
+      (changes as Record<string, unknown>)[field] = value;
+      before[field] = menu[field];
+      after[field] = value;
+      lines.push(`${field === 'eventName' ? 'event name' : field === 'organiserRef' ? 'organiser reference' : 'guest count'} set to ${value === null ? '—' : `"${value}"`}`);
+    }
+    if (data.eventDate !== undefined && (data.eventDate ?? null) !== iso(menu.eventDate)) {
+      changes.eventDate = data.eventDate ? new Date(data.eventDate) : null;
+      before.eventDate = iso(menu.eventDate);
+      after.eventDate = data.eventDate ?? null;
+      lines.push(`event date set to ${data.eventDate ? data.eventDate.slice(0, 10) : '—'}`);
+    }
+    if (lines.length === 0) return this.get(menuId);
     try {
       await prisma.$transaction(async (tx) => {
-        const locked = await lockActiveMenu(tx, menu);
-        if (locked.name === data.name) return;
-        await requireNameFree(menu.venue.id, data.name, menu.id, tx);
-        await tx.menu.update({ where: { id: menuId }, data: { name: data.name } });
+        await lockActiveMenu(tx, menu);
+        if (changes.name) await requireNameFree(menu.venue.id, String(changes.name), menu.id, tx);
+        await tx.menu.update({ where: { id: menuId }, data: changes });
         await audit(tx, {
           menuId,
           menuVersionId: null,
-          action: 'menu.renamed',
-          summary: `Renamed menu "${locked.name}" to "${data.name}".`,
-          before: { name: locked.name },
-          after: { name: data.name },
+          action: changes.name && lines.length === 1 ? 'menu.renamed' : 'menu.updated',
+          summary: `Menu ${lines.join('; ')}.`,
+          before,
+          after,
           actor
         });
       });
@@ -651,37 +1061,15 @@ export const menuService = {
     const menu = requireActive(await loadMenu(menuId));
     const actor = menuActor(user);
     const published = await loadPublished(menuId);
-    const source: MenuDocument = published ? stripIds(documentFor(published)) : emptyDocument();
+    const source: MenuDocument = withPromotion(menu, published ? stripIds(documentFor(published)) : emptyDocument(isMenuTemplateKey(menu.templateKey) ? templateFor(menu) : undefined));
 
     await prisma.$transaction(async (tx) => {
       // The Menu row lock serialises concurrent callers on this menu (and an
       // archive): the one-draft check after it cannot race.
       await lockActiveMenu(tx, menu);
-      const versionNumber = await nextVersionNumber(menuId, tx);
-      const existing = await tx.menuVersion.findFirst({ where: { menuId, state: 'DRAFT' }, select: { id: true } });
-      if (existing) throw new HttpError(409, 'This menu already has a draft. Open it, or discard it to start again.');
-      const version = await tx.menuVersion.create({
-        data: {
-          menuId,
-          versionNumber,
-          state: 'DRAFT',
-          heading: source.heading,
-          dietaryNote: source.dietaryNote,
-          surchargeLine: source.surchargeLine,
-          createdById: actor.id,
-          createdByName: actor.name,
-          updatedById: actor.id,
-          updatedByName: actor.name
-        }
-      });
-      await writeDocumentRows(tx, version.id, ensureDishKeys(source));
-      await audit(tx, {
-        menuId,
-        menuVersionId: version.id,
-        action: 'draft.created',
-        summary: published ? `Started draft v${version.versionNumber} from published v${published.versionNumber}.` : `Started draft v${version.versionNumber} from an empty menu.`,
-        actor
-      });
+      await createDraftRows(tx, menu, actor, source, (versionNumber) =>
+        published ? `Started draft v${versionNumber} from published v${published.versionNumber}.` : `Started draft v${versionNumber} from an empty menu.`
+      );
     });
     return draftPayload(menu, requireDraft(await loadDraft(menuId)));
   },
@@ -698,15 +1086,19 @@ export const menuService = {
     const keyById = new Map<string, string>();
     for (const section of draft.sections) for (const item of section.items) keyById.set(item.id, item.dishKey);
     const before = documentFromRows(draft);
-    const next = ensureDishKeys({
-      heading: data.heading,
-      dietaryNote: data.dietaryNote,
-      surchargeLine: data.surchargeLine,
-      sections: data.sections.map((section) => ({
-        ...section,
-        items: section.items.map((item) => ({ ...item, dishKey: item.dishKey ?? (item.id ? keyById.get(item.id) : undefined) }))
-      }))
-    });
+    const { expectedUpdatedAt: _expected, ...incoming } = data;
+    const next = withPromotion(
+      menu,
+      ensureDishKeys(
+        normaliseMenuDocument({
+          ...incoming,
+          sections: incoming.sections.map((section) => ({
+            ...section,
+            items: section.items.map((item) => ({ ...item, dishKey: item.dishKey ?? (item.id ? keyById.get(item.id) : undefined) }))
+          }))
+        })
+      )
+    );
     const diff = diffMenuDocuments(before, next);
     const keysMinted = next.sections.some((section, sectionIndex) => section.items.some((item, itemIndex) => item.dishKey !== before.sections[sectionIndex]?.items[itemIndex]?.dishKey));
     // Everything stored counts, not only what the publish diff reports: a
@@ -725,22 +1117,20 @@ export const menuService = {
       // get past this.
       const guarded = await tx.menuVersion.updateMany({
         where: { id: draft.id, state: 'DRAFT', ...(data.expectedUpdatedAt ? { updatedAt: draft.updatedAt } : {}) },
-        data: { heading: next.heading, dietaryNote: next.dietaryNote, surchargeLine: next.surchargeLine, updatedById: actor.id, updatedByName: actor.name }
+        data: { ...versionFields(next), updatedById: actor.id, updatedByName: actor.name }
       });
       if (guarded.count !== 1) {
         throw new HttpError(409, 'Someone else saved this draft a moment ago. Reload to see their changes before saving yours.', { code: 'STALE_DRAFT' });
       }
       await writeDocumentRows(tx, draft.id, next);
-      {
-        await audit(tx, {
-          menuId,
-          menuVersionId: draft.id,
-          action: 'draft.saved',
-          summary: `Saved draft v${draft.versionNumber}: ${summary}.`,
-          after: diff,
-          actor
-        });
-      }
+      await audit(tx, {
+        menuId,
+        menuVersionId: draft.id,
+        action: 'draft.saved',
+        summary: `Saved draft v${draft.versionNumber}: ${summary}.`,
+        after: diff,
+        actor
+      });
     });
     return draftPayload(menu, requireDraft(await loadDraft(menuId)));
   },
@@ -769,26 +1159,9 @@ export const menuService = {
   async publishPreview(menuId: string): Promise<MenuPublishPreview> {
     const menu = requireActive(await loadMenu(menuId));
     const draft = requireDraft(await loadDraft(menuId));
-    const doc = documentFromRows(draft);
+    const doc = withPromotion(menu, documentFromRows(draft));
     const published = await loadPublished(menuId);
-    const validation = validateMenuDocument(doc);
-    const renderer = chromeStatus();
-    let fill: MenuPublishPreview['fill'] = null;
-    if (renderer.ok) {
-      const assets = renderAssetsOrThrow();
-      fill = await measureMenuFill(renderMenuHtml(doc, menu.templateKey, { assets }));
-      const overflow = overflowIssue(fill);
-      if (overflow) validation.errors.push(overflow);
-    }
-    const diff = diffMenuDocuments(published ? documentFor(published) : null, doc);
-    return {
-      validation: { ...validation, ok: validation.errors.length === 0 },
-      fill,
-      renderer: { ok: renderer.ok, message: renderer.ok ? 'Ready' : renderer.message },
-      diff,
-      summary: summariseMenuDiff(diff),
-      canPublish: renderer.ok && validation.errors.length === 0
-    };
+    return previewDocument(menu, doc, published);
   },
 
   async publish(menuId: string, input: unknown, user: AuthUser | undefined): Promise<MenuVersionPayload> {
@@ -797,80 +1170,14 @@ export const menuService = {
     const data = menuPublishInputSchema.parse(input);
     const draft = requireDraft(await loadDraft(menuId));
     checkUpdatedAt(draft, data.expectedUpdatedAt);
-    const doc = documentFromRows(draft);
 
-    const validation: MenuValidationResult = validateMenuDocument(doc);
-    if (validation.errors.length > 0) {
-      throw new HttpError(422, `The menu has ${validation.errors.length} error${validation.errors.length === 1 ? '' : 's'} to fix before it can be published.`, {
-        code: 'VALIDATION',
-        validation
-      });
-    }
-    if (validation.warnings.length > 0 && !data.acknowledgeWarnings) {
-      throw new HttpError(409, `The menu has ${validation.warnings.length} warning${validation.warnings.length === 1 ? '' : 's'}. Review them, then publish again to confirm.`, {
-        code: 'WARNINGS',
-        validation
-      });
-    }
-
-    const template = getMenuTemplate(menu.templateKey);
-    const assets = renderAssetsOrThrow();
-    const html = renderMenuHtml(doc, menu.templateKey, { assets, title: `${menu.venue.name} ${menu.name.toLowerCase()} menu | Alma Group` });
-    const rendered = await renderMenuPdf(html, template.page);
-    const overflow = overflowIssue(rendered.fill);
-    if (overflow || rendered.pageCount !== 1) {
-      const issue = overflow ?? {
-        level: 'error' as const,
-        code: 'OVERFLOW' as const,
-        message: `The menu rendered to ${rendered.pageCount} pages. It must fit on one A4 page.`
-      };
-      throw new HttpError(422, issue.message, { code: 'VALIDATION', validation: { errors: [issue], warnings: validation.warnings, ok: false }, fill: rendered.fill });
-    }
-
-    const published = await loadPublished(menuId);
-    const diff = diffMenuDocuments(published ? documentFor(published) : null, doc);
-    const publishedAt = new Date();
-    const snapshot = buildSnapshot(menu, draft, doc, publishedAt);
-
-    // The PDF is rendered above, outside any transaction, so a slow render
-    // never holds the lock. Archive could have landed meanwhile: the status is
-    // checked again under the lock, and nothing below is written if it did.
+    // Validated and rendered outside any transaction, so a slow render never
+    // holds the lock. Archive could land meanwhile: the status is checked
+    // again under the lock, and nothing is written if it did.
+    const prepared = await preparePublish(menu, withPromotion(menu, documentFromRows(draft)), data.acknowledgeWarnings);
     await prisma.$transaction(async (tx) => {
       await lockActiveMenu(tx, menu);
-      const liveNow = await tx.menuVersion.findFirst({ where: { menuId, state: 'PUBLISHED' }, select: { id: true } });
-      if ((liveNow?.id ?? null) !== (published?.id ?? null)) {
-        throw new HttpError(409, 'The live version changed while this one was being published. Reload, check the preview, and publish again.', { code: 'STALE_DRAFT' });
-      }
-      if (published) {
-        await tx.menuVersion.update({ where: { id: published.id }, data: { state: 'ARCHIVED' } });
-      }
-      const flipped = await tx.menuVersion.updateMany({
-        where: { id: draft.id, state: 'DRAFT', updatedAt: draft.updatedAt },
-        data: {
-          state: 'PUBLISHED',
-          snapshotJson: snapshot as unknown as Prisma.InputJsonValue,
-          pdfData: new Uint8Array(rendered.pdf),
-          pdfByteSize: rendered.pdf.length,
-          pdfGeneratedAt: publishedAt,
-          publishedAt,
-          publishedById: actor.id,
-          publishedByName: actor.name
-        }
-      });
-      if (flipped.count !== 1) {
-        throw new HttpError(409, 'The draft changed while it was being published. Reload, check the preview, and publish again.', { code: 'STALE_DRAFT' });
-      }
-      await audit(tx, {
-        menuId,
-        menuVersionId: draft.id,
-        action: 'published',
-        summary: `Published v${draft.versionNumber}${published ? ` (replacing v${published.versionNumber})` : ''}: ${summariseMenuDiff(diff)}.${
-          validation.warnings.length ? ` ${validation.warnings.length} warning${validation.warnings.length === 1 ? '' : 's'} acknowledged.` : ''
-        }`,
-        before: published ? { versionNumber: published.versionNumber } : null,
-        after: { versionNumber: draft.versionNumber, diff, fillRatio: rendered.fill.fillRatio, renderMs: rendered.renderMs, warnings: validation.warnings },
-        actor
-      });
+      await commitPublish(tx, menu, draft, prepared, actor);
     });
 
     return this.getVersion(draft.id);
@@ -888,8 +1195,10 @@ export const menuService = {
     if (!version) throw new HttpError(404, 'That menu version does not exist.');
     const doc = documentFor(version);
     const stored = version.snapshotJson as unknown as MenuSnapshot | null;
-    // Versions published before headings existed have no `heading` key; '' is what they printed (the template title).
-    const snapshot = stored ? { ...stored, heading: stored.heading ?? '' } : buildSnapshot(version.menu, version, doc, version.publishedAt);
+    // Versions published before V2 lack the card fields and pages; they read as their defaults.
+    const snapshot: MenuSnapshot = stored
+      ? { ...stored, ...normaliseMenuDocument(stored), schemaVersion: stored.schemaVersion ?? 1 }
+      : buildSnapshot(version.menu, version, doc, version.publishedAt);
     return { menu: menuHeader(version.menu), version: versionSummary(version), snapshot };
   },
 
@@ -900,8 +1209,7 @@ export const menuService = {
     });
     if (!version) throw new HttpError(404, 'That menu version does not exist.');
     if (!version.pdfData) throw new HttpError(404, version.state === 'DRAFT' ? 'A draft has no PDF yet. Publish it to generate one.' : 'No PDF is stored for this version.');
-    const slug = `${version.menu.venue.slug}-${version.menu.name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    return { filename: `${slug}-v${version.versionNumber}.pdf`, bytes: Buffer.from(version.pdfData), generatedAt: version.pdfGeneratedAt };
+    return { filename: `${version.menu.venue.slug}-${version.menu.slug}-v${version.versionNumber}.pdf`, bytes: Buffer.from(version.pdfData), generatedAt: version.pdfGeneratedAt };
   },
 
   /** A version's content against the draft, the published version, or another version. */
@@ -949,9 +1257,7 @@ export const menuService = {
           menuId: source.menuId,
           versionNumber,
           state: 'DRAFT',
-          heading: doc.heading,
-          dietaryNote: doc.dietaryNote,
-          surchargeLine: doc.surchargeLine,
+          ...versionFields(doc),
           restoredFromVersionId: source.id,
           createdById: actor.id,
           createdByName: actor.name,
@@ -1014,6 +1320,10 @@ export const menuService = {
           description: sourceItem.item.description,
           priceCents: sourceItem.item.priceCents,
           priceUnit: sourceItem.item.priceUnit,
+          prices: sourceItem.item.prices as Prisma.InputJsonValue,
+          meta: sourceItem.item.meta,
+          note: sourceItem.item.note,
+          flags: sourceItem.item.flags,
           tags: sourceItem.item.tags,
           isSeafood: sourceItem.item.isSeafood,
           sortOrder: (last._max.sortOrder ?? -1) + 1,
@@ -1050,6 +1360,53 @@ export const menuService = {
     }));
   },
 
+  // ---------------------------------------------------------------- public (website)
+  /** The published, public menus of a venue — what the website lists and links. */
+  async publicMenus(venueSlug: string): Promise<{ venue: { name: string; slug: string }; menus: PublicMenuSummary[] }> {
+    const venue = await prisma.venue.findUnique({ where: { slug: venueSlug }, select: { name: true, slug: true } });
+    if (!venue) throw new HttpError(404, 'No such venue.');
+    const menus = await prisma.menu.findMany({
+      where: { venue: { slug: venueSlug }, status: 'ACTIVE', visibility: 'PUBLIC', versions: { some: { state: 'PUBLISHED' } } },
+      select: { ...MENU_SELECT, versions: { where: { state: 'PUBLISHED' }, select: { ...VERSION_SUMMARY_SELECT, heading: true }, orderBy: { versionNumber: 'desc' }, take: 1 } },
+      orderBy: [{ createdAt: 'asc' }]
+    });
+    const out: PublicMenuSummary[] = [];
+    for (const menu of menus) {
+      const version = menu.versions[0];
+      if (!version || !isMenuTemplateKey(menu.templateKey)) continue;
+      out.push(publicSummary(menu, version));
+    }
+    out.sort((a, b) => (KIND_ORDER.get(a.kind) ?? 99) - (KIND_ORDER.get(b.kind) ?? 99));
+    return { venue, menus: out };
+  },
+
+  /** One published menu's snapshot, for in-page rendering on the website. */
+  async publicMenu(venueSlug: string, slug: string): Promise<PublicMenuDocument> {
+    const { menu, version } = await loadPublicMenu(venueSlug, slug);
+    return { ...publicSummary(menu, version), venue: { name: menu.venue.name, slug: menu.venue.slug }, document: documentFor(version) };
+  },
+
+  /** The live PDF of a published menu. */
+  async publicMenuPdf(venueSlug: string, slug: string): Promise<{ filename: string; bytes: Buffer; versionId: string; generatedAt: Date | null }> {
+    const { menu, version } = await loadPublicMenu(venueSlug, slug);
+    if (!version.pdfData) throw new HttpError(404, 'No PDF is stored for this menu.');
+    return { filename: `${menu.venue.slug}-${menu.slug}.pdf`, bytes: Buffer.from(version.pdfData), versionId: version.id, generatedAt: version.pdfGeneratedAt };
+  },
+
+  /**
+   * One published (or since-archived) version's PDF of a public, active menu,
+   * by version id: the immutable link a What's On publication carries, so a
+   * listing and its PDF never disagree however often the card is republished.
+   */
+  async publicMenuVersionPdf(versionId: string): Promise<{ filename: string; bytes: Buffer; generatedAt: Date | null }> {
+    const version = await prisma.menuVersion.findFirst({
+      where: { id: versionId, state: { in: ['PUBLISHED', 'ARCHIVED'] }, menu: { status: 'ACTIVE', visibility: 'PUBLIC' } },
+      select: { pdfData: true, pdfGeneratedAt: true, versionNumber: true, menu: { select: { slug: true, venue: { select: { slug: true } } } } }
+    });
+    if (!version?.pdfData) throw new HttpError(404, 'No published menu by that name.');
+    return { filename: `${version.menu.venue.slug}-${version.menu.slug}-v${version.versionNumber}.pdf`, bytes: Buffer.from(version.pdfData), generatedAt: version.pdfGeneratedAt };
+  },
+
   /** Renderer and asset readiness, for the module home's status line. */
   rendererStatus(): { ok: boolean; message: string } {
     const chrome = chromeStatus();
@@ -1062,3 +1419,35 @@ export const menuService = {
     return { ok: true, message: 'PDF renderer ready' };
   }
 };
+
+/**
+ * What the promotion service composes a publish-together from: the same
+ * loaders, overlay, render and commit the menu publish uses, so a promotion's
+ * card is published by exactly the rules a menu is — inside the promotion's
+ * own transaction.
+ */
+export const menuPublishing = {
+  loadMenu,
+  loadDraft,
+  loadPublished,
+  documentFor,
+  documentFromRows,
+  stripIds,
+  withPromotion,
+  versionSummary,
+  requireActive,
+  lockActiveMenu,
+  createDraftRows,
+  preparePublish,
+  commitPublish,
+  previewDocument,
+  summaries,
+  publicUrl,
+  menuPrintedHeadingFor(menu: MenuRow, heading: string): string {
+    return isMenuTemplateKey(menu.templateKey) ? menuPrintedHeading({ heading }, getMenuTemplate(menu.templateKey)) : heading;
+  },
+  MENU_SELECT,
+  VERSION_SUMMARY_SELECT
+};
+
+export type { MenuRow, VersionRow, Actor };

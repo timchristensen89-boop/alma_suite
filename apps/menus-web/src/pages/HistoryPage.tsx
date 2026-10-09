@@ -146,6 +146,7 @@ export function HistoryPage({ user }: { user: AuthUser }) {
                   {version.state === 'DRAFT'
                     ? `Edited ${formatWhen(version.updatedAt)} by ${personName(version.updatedBy)}`
                     : `Published ${formatDateTime(version.publishedAt)} by ${personName(version.publishedBy)}${version.pdfByteSize ? ` · PDF ${formatBytes(version.pdfByteSize)}` : ''}`}
+                  {(version.pageCount ?? 1) > 1 ? ` · ${version.pageCount} pages` : ''}
                 </div>
                 <div className="version-row-actions">
                   {version.state === 'DRAFT' ? (

@@ -57,6 +57,15 @@ const PUBLIC_PREFIXES = [
   // the two known settings image fields, never an arbitrary key.
   '/api/gift-cards/assets/',
   '/api/public/venue-snapshot',
+  // Published menus and their PDFs for the public website. The service only
+  // ever serves PUBLISHED snapshots of PUBLIC, ACTIVE menus — never a draft,
+  // never a private-event menu — so there is nothing here a session would
+  // protect.
+  '/api/public/menus/',
+  // The What's On listing and its photos: latest publications only (never a
+  // draft or a hidden promotion), photos by an unguessable content hash.
+  '/api/public/whats-on',
+  '/api/public/promotion-images/',
   // The unsubscribe link in marketing emails — a guest holding the link must
   // be able to opt out with no account. The contact/guest cuid in the URL is
   // the secret, matching the gift card code trust model above.

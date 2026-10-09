@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
-import type { MenuDocument } from '@alma/shared';
+import { MENU_DOCUMENT_DEFAULTS, type MenuDocument } from '@alma/shared';
 
 /**
  * The kept-copy store behind "Apply to this draft". Runs in Node with an
@@ -28,7 +28,7 @@ const storage = new MemoryStorage();
 
 const { forgetUnsavedChanges, keepUnsavedChanges, newRecoveryId, readUnsavedChanges, saveConfirmsApply } = await import('./recovery.js');
 
-const doc = (heading: string): MenuDocument => ({ heading, dietaryNote: '', surchargeLine: '', sections: [] });
+const doc = (heading: string): MenuDocument => ({ ...MENU_DOCUMENT_DEFAULTS, heading, sections: [] });
 const copy = (id: string, heading: string) => ({ id, menuId: 'm1', menuLabel: 'St Alma · Tuesday', draftVersionNumber: 2, keptAt: '2026-10-08T12:00:00.000Z', document: doc(heading) });
 
 describe('kept copies of unsaved edits', () => {

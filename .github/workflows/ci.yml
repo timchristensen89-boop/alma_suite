@@ -151,7 +151,7 @@ jobs:
       - name: Run the menu integration suites
         env:
           ALMA_TEST_REQUIRE_CHROME: '1'
-        run: pnpm --filter @alma/api exec node --import tsx --test --test-concurrency=1 src/services/menu.integration.test.ts src/services/menu-archive-race.integration.test.ts
+        run: pnpm --filter @alma/api exec node --import tsx --test --test-concurrency=1 src/services/menu.integration.test.ts src/services/menu-archive-race.integration.test.ts src/services/menu-v2.integration.test.ts src/services/promotion.integration.test.ts
 
   frontend-build:
     name: Frontend builds

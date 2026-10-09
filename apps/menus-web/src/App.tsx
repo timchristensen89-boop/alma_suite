@@ -27,7 +27,9 @@ import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, 
 import { EditorPage } from './pages/EditorPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { HomePage } from './pages/HomePage';
-import { IconClock, IconDashboard } from '../../web/src/lib/icons';
+import { PromotionPage } from './pages/PromotionPage';
+import { PromotionsPage } from './pages/PromotionsPage';
+import { IconClock, IconDashboard, IconBell } from '../../web/src/lib/icons';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 
@@ -38,6 +40,8 @@ const suiteApps = withSuiteAppLinks(SUITE_APPS);
  *   /                          module home: one card per venue menu
  *   /menus/:menuId/edit        the editor (split view on desktop, tabs on a phone)
  *   /menus/:menuId/history     published versions, PDFs, diffs, restore, audit log
+ *   /whats-on                  the promotions (What's On listings and their cards)
+ *   /whats-on/:promotionId     one promotion: listing, photo, card link, publish
  *
  * Every screen carries the module home in its nav and Alma Suite Home in the
  * app switcher, so there is always a way back.
@@ -130,12 +134,14 @@ function LoginPage({ onLogin }: { onLogin: (email: string, password: string) => 
 }
 
 const NAV_ITEMS = [
-  { href: '/', label: 'Menus', description: 'Both venues, drafts and what is live', icon: <IconDashboard /> }
+  { href: '/', key: 'home', label: 'Menus', description: 'Both venues, drafts and what is live', icon: <IconDashboard /> },
+  { href: '/whats-on', key: 'whats-on', label: 'What’s On', description: 'Promotions: the website listing and the printed card', icon: <IconBell /> }
 ];
 
 function sectionFromPath(pathname: string) {
   if (/^\/menus\/[^/]+\/history/.test(pathname)) return 'history';
   if (/^\/menus\/[^/]+\/edit/.test(pathname)) return 'edit';
+  if (/^\/whats-on/.test(pathname)) return 'whats-on';
   return 'home';
 }
 
@@ -148,7 +154,7 @@ function SidebarNav({ menuId }: { menuId: string | null }) {
   const section = sectionFromPath(location.pathname);
 
   const items = useMemo(() => {
-    const list = NAV_ITEMS.map((item) => ({ ...item, key: 'home', active: section === 'home' }));
+    const list = NAV_ITEMS.map((item) => ({ ...item, active: section === item.key }));
     if (menuId) {
       list.push({ href: `/menus/${menuId}/edit`, key: 'edit', label: 'Edit', description: 'Draft, preview, publish', icon: <MenuIcon size={18} />, active: section === 'edit' });
       list.push({ href: `/menus/${menuId}/history`, key: 'history', label: 'History', description: 'Versions, PDFs and the audit log', icon: <IconClock />, active: section === 'history' });
@@ -190,7 +196,10 @@ function SidebarNav({ menuId }: { menuId: string | null }) {
 function MenusTaskBar({ menuId }: { menuId: string | null }) {
   const location = useLocation();
   const section = sectionFromPath(location.pathname);
-  const items: TaskBarItem[] = [{ key: 'home', label: 'Menus', href: '/', icon: <IconDashboard />, active: section === 'home', primary: true }];
+  const items: TaskBarItem[] = [
+    { key: 'home', label: 'Menus', href: '/', icon: <IconDashboard />, active: section === 'home', primary: true },
+    { key: 'whats-on', label: 'What’s On', href: '/whats-on', icon: <IconBell />, active: section === 'whats-on', primary: true }
+  ];
   if (menuId) {
     items.push({ key: 'edit', label: 'Edit', href: `/menus/${menuId}/edit`, icon: <MenuIcon size={18} />, active: section === 'edit', primary: true });
     items.push({ key: 'history', label: 'History', href: `/menus/${menuId}/history`, icon: <IconClock />, active: section === 'history', primary: true });
@@ -251,6 +260,8 @@ export function App() {
             <Route path="/" element={<HomePage user={user} />} />
             <Route path="/menus/:menuId/edit" element={<EditorPage user={user} />} />
             <Route path="/menus/:menuId/history" element={<HistoryPage user={user} />} />
+            <Route path="/whats-on" element={<PromotionsPage user={user} />} />
+            <Route path="/whats-on/:promotionId" element={<PromotionPage user={user} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>

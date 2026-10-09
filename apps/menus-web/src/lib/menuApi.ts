@@ -7,17 +7,30 @@ import type {
   MenuListPayload,
   MenuPublishPreview,
   MenuSummary,
+  MenuUpdateInput,
   MenuVersionPayload,
   MenuVersionSummary
 } from '@alma/shared';
 import { ApiError, api, apiBlob } from './api';
+
+/**
+ * What POST /api/menus accepts — menuCreateInputSchema's *input* shape: `kind`
+ * and `heading` have server defaults, so the editor may leave them out. (The
+ * exported MenuCreateInput is the parsed output, where both are required.)
+ */
+export type MenuCreateRequest = Omit<MenuCreateInput, 'kind' | 'heading'> & Partial<Pick<MenuCreateInput, 'kind' | 'heading'>>;
+
+/** What PATCH /api/menus/:id accepts: any subset of name, visibility and the private-event details. */
+export type MenuUpdateRequest = MenuUpdateInput;
 
 /** Typed wrappers over /api/menus. One place to look for every call the editor makes. */
 export const menuApi = {
   list: () => api<MenuListPayload>('/api/menus'),
   get: (menuId: string) => api<MenuSummary>(`/api/menus/${menuId}`),
   /** A new menu for a venue, first draft included (empty or copied from another menu). Publishers only. */
-  create: (input: MenuCreateInput) => api<MenuSummary>('/api/menus', { method: 'POST', body: JSON.stringify(input) }),
+  create: (input: MenuCreateRequest) => api<MenuSummary>('/api/menus', { method: 'POST', body: JSON.stringify(input) }),
+  /** Name, visibility and event details — send only what changed. Publishers only. */
+  update: (menuId: string, input: MenuUpdateRequest) => api<MenuSummary>(`/api/menus/${menuId}`, { method: 'PATCH', body: JSON.stringify(input) }),
   rename: (menuId: string, name: string) => api<MenuSummary>(`/api/menus/${menuId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   archive: (menuId: string) => api<MenuSummary>(`/api/menus/${menuId}/archive`, { method: 'POST' }),
   unarchive: (menuId: string) => api<MenuSummary>(`/api/menus/${menuId}/unarchive`, { method: 'POST' }),

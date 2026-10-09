@@ -7,7 +7,7 @@
  * Dish keys are readable slugs here so the first version's keys are stable and
  * recognisable; dishes added in the editor get a slug plus a random suffix.
  */
-import { dishKeySlug, type MenuDocument, type MenuItemDocument, type MenuSectionDocument, type MenuTagCode, type MenuTemplateKey } from '@alma/shared';
+import { dishKeySlug, MENU_DOCUMENT_DEFAULTS, type MenuDocument, type MenuItemDocument, type MenuSectionDocument, type MenuTagCode, type MenuTemplateKey } from '@alma/shared';
 
 export type MenuSeed = {
   venueSlug: string;
@@ -33,6 +33,10 @@ function dish(prefix: string, spec: DishSpec): MenuItemDocument {
     description: spec.description ?? null,
     priceCents: spec.price === undefined || spec.price === null ? null : spec.price * 100,
     priceUnit: spec.unit ?? null,
+    prices: [],
+    meta: null,
+    note: null,
+    flags: [],
     tags: spec.tags,
     isSeafood: Boolean(spec.seafood),
     visible: true,
@@ -42,7 +46,7 @@ function dish(prefix: string, spec: DishSpec): MenuItemDocument {
 
 function section(
   prefix: string,
-  spec: Omit<MenuSectionDocument, 'items' | 'visible' | 'headerSuffix' | 'subheading'> & {
+  spec: Pick<MenuSectionDocument, 'title' | 'sectionType' | 'placement'> & {
     headerSuffix?: string;
     subheading?: string;
     items: DishSpec[];
@@ -54,6 +58,10 @@ function section(
     subheading: spec.subheading ?? null,
     sectionType: spec.sectionType,
     placement: spec.placement,
+    page: 1,
+    lead: null,
+    body: null,
+    priceColumns: [],
     visible: true,
     items: spec.items.map((item) => dish(prefix, item))
   };
@@ -80,6 +88,7 @@ export const ST_ALMA_FRESHWATER_SEED: MenuSeed = {
   menuName: 'Food',
   templateKey: 'freshwater_alacarte',
   document: {
+    ...MENU_DOCUMENT_DEFAULTS,
     heading: '',
     dietaryNote: 'Dietaries catered with notice. Please advise your server of any allergies.',
     surchargeLine: SURCHARGE,
@@ -151,6 +160,7 @@ export const ALMA_AVALON_SEED: MenuSeed = {
   menuName: 'Food',
   templateKey: 'avalon_alacarte',
   document: {
+    ...MENU_DOCUMENT_DEFAULTS,
     heading: '',
     dietaryNote: 'Dietaries catered with notice. Dishes may contain traces of allergens. Please advise your server of any allergies.',
     surchargeLine: SURCHARGE,

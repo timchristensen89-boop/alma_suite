@@ -11,6 +11,8 @@ type Props = {
   error: string | null;
   publishedVersion: MenuVersionSummary | null;
   draftVersionNumber: number;
+  /** Pages the draft declares; shown when more than one. */
+  pageCount?: number;
   /** What a blank heading prints, for the diff. */
   templateTitle?: string;
   onConfirm: () => void;
@@ -21,7 +23,7 @@ type Props = {
  * Publish confirmation: the server's view of the draft — validation, page
  * fill, and what changed since the version the venue is printing now.
  */
-export function PublishDialog({ open, preview, loading, publishing, error, publishedVersion, draftVersionNumber, templateTitle, onConfirm, onClose }: Props) {
+export function PublishDialog({ open, preview, loading, publishing, error, publishedVersion, draftVersionNumber, pageCount = 1, templateTitle, onConfirm, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
@@ -33,6 +35,8 @@ export function PublishDialog({ open, preview, loading, publishing, error, publi
   const errors = preview?.validation.errors ?? [];
   const warnings = preview?.validation.warnings ?? [];
   const canPublish = Boolean(preview?.canPublish) && !publishing;
+  const measuredPages = preview?.fill?.pages?.length ?? 0;
+  const multiPage = pageCount > 1 || measuredPages > 1;
 
   return (
     <dialog ref={ref} className="menu-dialog" onClose={onClose} aria-labelledby="publish-title">
@@ -48,15 +52,18 @@ export function PublishDialog({ open, preview, loading, publishing, error, publi
         {loading || !preview ? (
           <div className="menu-dialog-loading">
             <Spinner label="Checking the draft" />
-            <span className="subtle">Checking tags, measuring the page, comparing with the live menu…</span>
+            <span className="subtle">Checking tags, measuring {multiPage ? 'the pages' : 'the page'}, comparing with the live menu…</span>
           </div>
         ) : (
           <>
             <div className="menu-dialog-status">
               {errors.length ? <Badge tone="danger" dot>{errors.length} error{errors.length === 1 ? '' : 's'}</Badge> : <Badge tone="positive" dot>No errors</Badge>}
               {warnings.length ? <Badge tone="warning" dot>{warnings.length} warning{warnings.length === 1 ? '' : 's'}</Badge> : null}
+              {multiPage ? <Badge tone="neutral">{Math.max(pageCount, measuredPages)} pages</Badge> : null}
               {preview.fill ? (
-                <Badge tone={preview.fill.overflow ? 'danger' : 'neutral'}>Page {Math.round(preview.fill.fillRatio * 100)}% full</Badge>
+                <Badge tone={preview.fill.overflow ? 'danger' : 'neutral'}>
+                  {multiPage ? `Fullest page ${Math.round(preview.fill.fillRatio * 100)}%` : `Page ${Math.round(preview.fill.fillRatio * 100)}% full`}
+                </Badge>
               ) : (
                 <Badge tone="danger">{preview.renderer.message}</Badge>
               )}
