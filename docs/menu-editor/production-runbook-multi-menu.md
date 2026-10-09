@@ -26,6 +26,17 @@ Checked against PR head `6721375` (verified 8 Oct 2026; the two commits after `b
 
 ## 1. API on the VPS
 
+**One operator, one lock.** On 9 Oct 2026 two sessions ran this runbook 23 s apart (two dumps, two `migrate deploy`, two `up -d`); nothing broke, but only because every step happened to be idempotent. Before step 1, take the release lock on the VPS and keep that shell open for the whole release:
+
+```bash
+ssh <vps>
+exec 9>/opt/alma/deploy/.release.lock && flock -n 9 || { echo "ANOTHER RELEASE IS IN PROGRESS: $(cat /opt/alma/deploy/.release.who 2>/dev/null)"; exit 1; }
+echo "$(date '+%F %T %Z') $USER@$(hostname) <your name / session>" > /opt/alma/deploy/.release.who
+docker events --since 15m --filter type=container --format '{{.Time}} {{.Action}} {{.Actor.Attributes.name}}' | grep -vE 'exec_' | tail -5
+```
+Expect: no "ANOTHER RELEASE" line, and no `create`/`start` of a `deploy-suite-api-run-*` or `deploy-suite-api-1` container in the last 15 minutes that you did not cause. The lock is released when that shell exits; every other VPS command in this runbook runs from the same shell. A second operator who runs the block sees the name in `.release.who` and stops.
+
+
 ```bash
 ssh <vps>
 cd /opt/alma/deploy && date '+%H:%M %Z' && docker compose ps && df -h / | sed 1d

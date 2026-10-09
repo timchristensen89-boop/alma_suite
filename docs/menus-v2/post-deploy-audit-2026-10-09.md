@@ -111,25 +111,26 @@ Recommended (not done, per instruction): once the release is signed off, delete 
 
 ## 5. Who can publish menus
 
-The rule (`canPublishMenus` in `packages/shared/src/menus.ts`): admins (`isAdmin`), session role `ADMIN`/`MANAGER`, anyone whose role title contains "head chef", or a Menus grant with role MANAGER/ADMIN or the `menusPublish` toggle. But to **open** Menus at all a non-admin needs an `ENABLED` `StaffAppAccess` row for `MENUS` (`hasEnabledAppAccess` in `apps/api/src/lib/auth-middleware.ts`).
+**Corrected 9 Oct 2026, 15:10 AEDT (the first version of this section was wrong).** The API admits anyone with an ENABLED `MENUS` *or* `COMPLIANCE` grant into `/api/menus` (`auth-middleware.ts`), and the publish rule (`canPublishMenus`) says yes to admins, to the `MANAGER` session role — which `auth.service.ts` derives from a role title matching *manager / supervisor / lead / owner / admin* — and to anyone whose title contains "head chef", before it even looks at a Menus grant.
 
-Production today: **zero `StaffAppAccess` rows for `MENUS`.** So:
+Production today: zero `StaffAppAccess` rows for `MENUS`, but every person below has `COMPLIANCE` enabled. So at the API:
 
-| Person | Role title | Can open Menus | Can publish |
+| Person | Role title | Can reach the Menus API | Can publish, any venue |
 |---|---|---|---|
-| Tim Christensen | Admin (isAdmin) | yes | yes |
-| Hamilton Murphy | Venue Manager (isAdmin) | yes | yes |
-| Caio Dias, Citlally Ramos, Rodrigo Golcalves Silva | Head Chef | **no** (no grant) | would be yes once granted |
-| Dirk Wright, Trystan Ziemer | Venue Manager | **no** (no grant) | yes only if the grant is role MANAGER or their session role is MANAGER |
+| Tim Christensen, Hamilton Murphy | Admin / Venue Manager (isAdmin) | yes | yes |
+| Dirk Wright, Trystan Ziemer | Venue Manager (session role MANAGER by title) | **yes** | **yes — both venues** |
+| Caio Dias, Citlally Ramos, Rodrigo Golcalves Silva | Head Chef (title rule) | **yes** | **yes — both venues** |
 
-Every menu action so far (seed, 3 publishes, 4 drafts) was by Tim or the seed. Grant access in Staff → People → Profiles → `App access` → Menus → Enable (role USER + `Publish menus` for chefs who should publish; MANAGER for venue managers). The `v5 in progress` draft on Alma Avalon Food was created by Tim at 12:43 AEDT on 9 Oct and is still open.
+The Menus web app's own gate (`AppAccessGate appId="MENUS"`) hides the UI from them until a Menus grant exists, so nobody has published by accident — every action so far is Tim's or the seed's — but the server-side rule is wider than the business wants (chefs draft only; venue managers publish their own venue only), and the model has **no venue scope at all**. Granting the Menus app under the current rule would hand all five of them publish rights on both venues.
+
+Fix: PR "Menus: venue-scoped, explicit publishing" (branch `feat/menus-venue-scoped-publishing`) — publishing becomes an explicit Menus grant (level MANAGER/ADMIN or the "Publish menus" tick; admins excepted), role titles and the MANAGER session role no longer imply it, two "Limit to <venue>" ticks confine a grant to a venue for reading, drafting and publishing, every `/api/menus` route resolves the venue and refuses out-of-scope requests (404 on reads, 403 on publishes), and `/api/menus` requires the Menus grant itself rather than Compliance. The grants for the five people are prepared in that PR's description and must not be applied until it is deployed.
 
 ## 6. Imported drafts and source documents
 
 `scripts/import-menus-v2.ts` has **not** been run: `Menu` holds only the two `food` menus, `Promotion` is empty. So there are no imported drafts to review yet — what follows is the review of what the import *would* create, from `import-inventory.md` checked against Dropbox on 9 Oct:
 
 - Dropbox has **no PDF newer than the inventory's sources** for Happy hour, Lunch special or Bottomless (every file in `/Family Room/Indesign` carries the 8 Aug 2026 sync stamp; the design dates in the filenames match the inventory). The two `.indd` files edited after their last export (`ALMA_MENU HAPPY HOUR.indd` May 2026, `ALMA_MENU A5 LUNCH SPECIAL.indd` Feb 2026) still have no newer PDF, so the importer's text is the latest exported state.
-- The St Alma drinks binder transcribes to 75 sections; `MENU_LIMITS.sectionsMax` is 60, so that draft **fails validation until the limit is raised** (code change, small PR). Avalon drinks (55) fits.
+- The St Alma drinks binder transcribes to 75 sections. `MENU_LIMITS.sectionsMax` is already **160** at the released commit (the 60 figure in the inventory's review note was stale; `st-alma-drinks.test.ts` asserts the binder fits, and the production dry-run on 9 Oct listed it as creatable). No code change needed; the note is corrected in this PR.
 - Both drinks books lose the hand-set cover contents line and page eyebrows (template has no slot) — a renderer feature, not a content fix.
 - Taco Tuesday has no card; Taco Wednesday has no card and no menu.
 
@@ -159,7 +160,6 @@ Before anything is published:
 
 - [ ] Owner answers §7 items 1–10 (or accepts the defaults in `plan.md` §5).
 - [ ] Menus access granted to the head chef and venue manager (§5); each signs in once and reloads any old tab.
-- [ ] `MENU_LIMITS.sectionsMax` raised (code PR) if the St Alma drinks binder is to be imported.
 - [ ] Run the import as drafts: `docker compose run --rm -T --no-deps suite-api sh -c 'cd /workspace/apps/api && node --import tsx scripts/import-menus-v2.ts --dry-run'`, read the summary, then without `--dry-run`. Expect nine menus + five promotions `created`, nothing published. Photos come from the website repo's `apps/web/public` via `--photos` or the What's On "Choose photo" button.
 
 **St Alma**
@@ -189,7 +189,7 @@ Before anything is published:
 
 1. Apply the env-file fix (§2) at a quiet moment — 12 s API restart.
 2. Rotate rows 1–8 of §3 this week (no sign-out, no push loss); schedule 9–15 for a closing-time window with the next frontend deploy.
-3. Grant Menus access to the three head chefs and two venue managers (§5).
+3. Deploy the venue-scoped publishing PR, then grant Menus access to the three head chefs and two venue managers (§5) — not before.
 4. Owner decisions §7; then run the import as drafts and work the checklist (§9).
 5. Housekeeping after sign-off: delete the ten older `pre-*` dumps and the twin, remove seven stale image tags (§4), shred the `.bak-*` env copies once rotation is done.
 6. Process: one operator per production rollout — check `docker events --since 15m` on the VPS before starting, and never run a bare `docker compose config` (runbook fixed in this PR).
