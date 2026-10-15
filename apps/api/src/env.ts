@@ -260,6 +260,28 @@ export const env = {
       oauthBase: process.env.LIGHTSPEED_OAUTH_BASE ?? 'https://api.kounta.com/v1',
       apiBase: process.env.LIGHTSPEED_API_BASE ?? 'https://api.kounta.com/v1'
     },
+    // OpenTable free partner APIs (Menus Partner + Restaurant Content Partner).
+    // Every outbound call is off until OPENTABLE_API_ENABLED=true AND the
+    // capability flag is on; neither API exists in OpenTable's sandbox, so a
+    // production approval is the only thing that turns these on. Hosts follow
+    // docs.opentable.com (Authorization + Menus API, read 16 Oct 2026).
+    opentable: {
+      enabled: process.env.OPENTABLE_API_ENABLED === 'true',
+      environment: (process.env.OPENTABLE_ENV === 'production' ? 'production' : 'preprod') as 'production' | 'preprod',
+      clientId: process.env.OPENTABLE_CLIENT_ID ?? '',
+      clientSecret: process.env.OPENTABLE_CLIENT_SECRET ?? '',
+      partnerName: process.env.OPENTABLE_PARTNER_NAME ?? '',
+      menusWriteEnabled: process.env.OPENTABLE_MENUS_WRITE_ENABLED === 'true',
+      menusReadEnabled: process.env.OPENTABLE_MENUS_READ_ENABLED === 'true',
+      profileWriteEnabled: process.env.OPENTABLE_PROFILE_WRITE_ENABLED === 'true',
+      apiBase:
+        process.env.OPENTABLE_API_BASE ??
+        (process.env.OPENTABLE_ENV === 'production' ? 'https://platform.opentable.com' : 'https://platform.otqa.com'),
+      oauthBase:
+        process.env.OPENTABLE_OAUTH_BASE ??
+        (process.env.OPENTABLE_ENV === 'production' ? 'https://oauth.opentable.com' : 'https://oauth-pp.opentable.com'),
+      timeoutMs: Number(process.env.OPENTABLE_TIMEOUT_MS ?? 15000)
+    },
     meta: {
       appId: process.env.META_APP_ID ?? '',
       appSecret: process.env.META_APP_SECRET ?? '',
