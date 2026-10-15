@@ -146,7 +146,7 @@ OPENTABLE_CLIENT_ID=dev OPENTABLE_CLIENT_SECRET=dev OPENTABLE_PARTNER_NAME=alma 
 pnpm --filter @alma/admin-web dev                       # http://localhost:5180/integrations/opentable
 ```
 
-Screenshots taken this way on 16 Oct 2026 are in `docs/opentable/screenshots/` (01 not configured → 02 connected → 03 menus synced → 04 compare → 05/06 profile pending/synced → 07 activity detail → 08/09 mobile → 10 awaiting approval with flags off → 11 error with OpenTable unreachable).
+Screenshots taken this way on 16 Oct 2026 are in `docs/opentable/screenshots/` (01 not configured → 02 ready to submit with the first-submission acknowledgement → 03 accepted by API, publication not verified → 04 read-back comparison showing price differences → 05/06 profile pending / accepted → 07 activity detail → 08/09 mobile → 10 awaiting approval with flags off → 11 error with OpenTable unreachable). 05–07 and 10–11 were taken before the badge wording changed from “Synced” to “Accepted by API · publication not verified”; the layout is otherwise identical.
 
 ## 11. Open questions for OpenTable (needed before production)
 
