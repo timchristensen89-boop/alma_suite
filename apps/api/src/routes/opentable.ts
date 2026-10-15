@@ -5,30 +5,28 @@ import {
   openTableProfilePublishInputSchema,
   openTableVenueSettingsInputSchema
 } from '@alma/shared';
-import { requireSettingsAdmin } from '../lib/auth-middleware.js';
+import { requireAdmin } from '../lib/auth-middleware.js';
 import { HttpError } from '../lib/http.js';
 import { assertMenuPublisher, assertMenuVenueAccess } from '../lib/menu-access.js';
 import { openTableService } from '../services/opentable.service.js';
 
 /**
  * /api/integrations/opentable — the free OpenTable APIs (Menus Partner,
- * Restaurant Content Partner). Settings admins only, and every venue route
- * also applies the Menus venue scope:
+ * Restaurant Content Partner).
  *
- *   read status / preview / activity   settings admin + venue in the user's
- *                                      Menus scope (out of scope reads as 404)
- *   publish menus                      ... and canPublishMenus(user, venue):
- *                                      the same rule as publishing in Alma
- *                                      Menus, so an Avalon manager cannot push
- *                                      Freshwater's menus through this page
- *   settings / profile / profile push  settings admin + venue in scope
+ * Alma admins only (`requireAdmin`: the isAdmin flag, not a settings grant).
+ * Venue managers keep their existing venue-scoped publishing in Alma Menus
+ * and get nothing here. On top of that, every venue route applies the Menus
+ * venue scope and the menu push applies canPublishMenus(user, venue), so an
+ * admin whose Menus grant is limited to one venue cannot push the other's
+ * menus (out of scope reads as 404, not a publisher reads as 403).
  *
  * Nothing here calls OpenTable unless the server flags allow it; the service
  * records a SKIPPED run otherwise.
  */
 export const openTableRouter = Router();
 
-openTableRouter.use(requireSettingsAdmin);
+openTableRouter.use(requireAdmin);
 
 const VENUE_NOT_FOUND = 'That venue does not exist.';
 

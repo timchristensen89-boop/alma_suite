@@ -14,7 +14,9 @@ import {
   type MenuSectionDocument,
   type MenuSnapshot,
   type OpenTableMenuSource,
-  type OpenTableRemoteMenus
+  type OpenTableMenusPayload,
+  type OpenTableRemoteMenus,
+  validateOpenTableMenusPayload
 } from '@alma/shared';
 
 /**
@@ -325,5 +327,23 @@ describe('profile mapping', () => {
     assert.equal(byKey.description!.state, 'never_sent');
     assert.equal(byKey.dressCode!.state, 'unmanaged');
     assert.equal(byKey.openingTimes!.alma, 'TUE 17:00–22:00; FRI 12:00–22:00');
+  });
+});
+
+describe('validateOpenTableMenusPayload', () => {
+  it('passes a built payload and catches dangling relations, empty menus and bad prices', () => {
+    const good = buildOpenTableMenusPayload([stAlmaFood(), stAlmaDrinks()]).payload;
+    assert.deepEqual(validateOpenTableMenusPayload(good), []);
+
+    const broken: OpenTableMenusPayload = JSON.parse(JSON.stringify(good));
+    const element = broken.menus[0]!;
+    delete element.items['alma-item-food-dk-guacamole'];
+    (element.items['alma-item-food-dk-kingfish-ceviche']!.priceMetadata as { minPrice: number }).minPrice = -1;
+    element['alma-menu-drinks']!.groups = [];
+    const errors = validateOpenTableMenusPayload(broken);
+    assert.ok(errors.some((error) => /alma-item-food-dk-guacamole is referenced but not defined/.test(error)), errors.join('\n'));
+    assert.ok(errors.some((error) => /Kingfish ceviche: price -1/.test(error)), errors.join('\n'));
+    assert.ok(errors.some((error) => /Drinks: menu has no groups/.test(error)), errors.join('\n'));
+    assert.deepEqual(validateOpenTableMenusPayload({ menus: [] } as unknown as OpenTableMenusPayload), ['The payload holds no menus.']);
   });
 });

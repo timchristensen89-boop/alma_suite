@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { classifyWriteResponse, deriveCapabilityState, deriveConnectionState, requestKeyFor } from './opentable.service.js';
+import { classifyWriteResponse, deriveCapabilityState, deriveConnectionState, requestKeyFor, shrinkOf } from './opentable.service.js';
+import { buildOpenTableMenusPayload, type OpenTableMenusPayload } from '@alma/shared';
 
 /** The dashboard vocabulary, derived from facts — never from "credentials exist". */
 
@@ -51,9 +52,18 @@ describe('deriveCapabilityState', () => {
     assert.equal(deriveCapabilityState({ ...base, connection: 'ERROR' }).state, 'ERROR');
   });
 
-  it('tells never-sent, synced, out of date and failed apart by hash and last run', () => {
-    assert.equal(deriveCapabilityState(base).state, 'CONNECTED');
-    assert.equal(deriveCapabilityState({ ...base, lastAcceptedHash: 'aaa' }).state, 'SYNCED');
+  it('tells never-sent, submitted, accepted, out of date and failed apart by hash and last run', () => {
+    const ready = deriveCapabilityState(base);
+    assert.equal(ready.state, 'CONNECTED');
+    assert.match(ready.detail, /Ready to submit/);
+    assert.equal(deriveCapabilityState({ ...base, lastRun: { status: 'SUBMITTED', error: null } }).state, 'SUBMITTED');
+    const accepted = deriveCapabilityState({ ...base, lastAcceptedHash: 'aaa' });
+    assert.equal(accepted.state, 'SYNCED');
+    assert.match(accepted.detail, /not verified/i, 'acceptance by the API is not publication');
+    assert.doesNotMatch(accepted.detail, /live|successfully synced/i);
+    const verified = deriveCapabilityState({ ...base, lastAcceptedHash: 'aaa', verified: true });
+    assert.equal(verified.state, 'SYNCED');
+    assert.match(verified.detail, /verified: a read-back/i);
     assert.equal(deriveCapabilityState({ ...base, lastAcceptedHash: 'bbb' }).state, 'OUT_OF_DATE');
     assert.equal(deriveCapabilityState({ ...base, lastAcceptedHash: 'aaa', lastRun: { status: 'FAILED', error: 'HTTP 500' } }).state, 'ERROR');
     assert.equal(deriveCapabilityState({ ...base, lastAcceptedHash: 'aaa', lastRun: { status: 'PARTIAL', error: null } }).state, 'ERROR');
@@ -89,5 +99,19 @@ describe('requestKeyFor', () => {
     assert.equal(requestKeyFor('st-alma', 'menus', hash), requestKeyFor('st-alma', 'menus', hash));
     assert.notEqual(requestKeyFor('alma-avalon', 'menus', hash), requestKeyFor('st-alma', 'menus', hash));
     assert.notEqual(requestKeyFor('st-alma', 'profile', hash), requestKeyFor('st-alma', 'menus', hash));
+  });
+});
+
+describe('shrinkOf', () => {
+  const big = buildOpenTableMenusPayload([
+    { slug: 'food', kind: 'FOOD', name: 'Food', status: 'ACTIVE', visibility: 'PUBLIC', snapshot: { schemaVersion: 2, menuId: 'm', menuName: 'Food', templateKey: 't', venue: { id: 'v', name: 'V', slug: 'v' }, versionNumber: 1, publishedAt: null, heading: '', subheading: '', whenLine: '', heroPriceCents: null, heroPriceUnit: null, conditions: '', showPrices: true, pageCount: 1, dietaryNote: '', surchargeLine: '', sections: [{ title: 'A', headerSuffix: null, subheading: null, sectionType: 'STANDARD', placement: 'LEFT', page: 1, lead: null, body: null, priceColumns: [], visible: true, items: ['a', 'b', 'c', 'd', 'e', 'f'].map((name) => ({ dishKey: name, name, description: null, priceCents: 1000, priceUnit: null, prices: [], meta: null, note: null, flags: [], tags: [], isSeafood: false, visible: true, recipeId: null })) }] } }
+  ]).payload;
+  const small: OpenTableMenusPayload = JSON.parse(JSON.stringify(big));
+  for (const key of Object.keys(small.menus[0]!.items).slice(2)) delete small.menus[0]!.items[key];
+
+  it('flags a payload with under half the previously accepted items, and nothing on a first submission', () => {
+    assert.deepEqual(shrinkOf(big, small), { previousItems: 6, nextItems: 2 });
+    assert.equal(shrinkOf(big, big), null);
+    assert.equal(shrinkOf(null, small), null);
   });
 });

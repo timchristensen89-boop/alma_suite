@@ -26,8 +26,9 @@ function routes(): Route[] {
 }
 
 describe('every OpenTable venue route names its guard', () => {
-  it('registers the settings-admin gate for the whole router', () => {
-    assert.match(source, /openTableRouter\.use\(requireSettingsAdmin\)/);
+  it('registers the admin-only gate for the whole router (isAdmin, not a settings grant)', () => {
+    assert.match(source, /openTableRouter\.use\(requireAdmin\)/);
+    assert.doesNotMatch(source, /requireSettingsAdmin|requireManager/);
   });
 
   it('scopes every /venues/:venueId route to the user’s Menus venues', () => {

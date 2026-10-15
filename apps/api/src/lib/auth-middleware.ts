@@ -240,11 +240,9 @@ export async function authMiddleware(
       if (!hasAnyEnabledAppAccess(req.user, ['MARKETING', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Alma Marketing is currently in Preview and isn’t open to your role.'));
       }
-    } else if (req.path.startsWith('/api/menus') || req.path.startsWith('/api/integrations/opentable')) {
+    } else if (req.path.startsWith('/api/menus')) {
       // The Menus grant alone: it carries the publish tick and the venue
-      // limits, so letting Compliance access in here would skip both. The
-      // OpenTable integration pushes those same menus, so it sits behind the
-      // same grant (its router adds requireSettingsAdmin on top).
+      // limits, so letting Compliance access in here would skip both.
       if (!hasEnabledAppAccess(req.user, 'MENUS')) {
         return next(new HttpError(403, 'Alma Menus isn’t enabled on your account. Ask a manager.'));
       }

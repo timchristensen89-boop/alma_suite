@@ -20,7 +20,9 @@ import {
   canPublishMenus,
   compareOpenTableProfile,
   compareWithRemote,
+  countOpenTableItems,
   diffOpenTableMenus,
+  validateOpenTableMenusPayload,
   type AlmaVenueProfile,
   type AuthUser,
   type MenuKind,
@@ -104,6 +106,8 @@ export type CapabilityStateInput = {
   currentHash: string;
   lastAcceptedHash: string | null;
   lastRun: { status: OpenTableSyncStatus; error: string | null } | null;
+  /** A read-back from OpenTable after the last accepted submission matched Alma. */
+  verified?: boolean;
 };
 
 export function deriveCapabilityState(input: CapabilityStateInput): { state: OpenTableCapabilityState; detail: string } {
@@ -112,12 +116,26 @@ export function deriveCapabilityState(input: CapabilityStateInput): { state: Ope
   if (!input.flagOn) return { state: 'AWAITING_APPROVAL', detail: `${input.flagName} is off. Previews and comparisons work; nothing is sent until OpenTable approves and the flag is turned on.` };
   if (input.connection === 'AWAITING_APPROVAL') return { state: 'AWAITING_APPROVAL', detail: input.connectionDetail };
   if (input.connection === 'ERROR') return { state: 'ERROR', detail: input.connectionDetail };
+  if (input.lastRun?.status === 'SUBMITTED') return { state: 'SUBMITTED', detail: 'Submitted to OpenTable; waiting for the API’s response.' };
   if (input.lastRun && (input.lastRun.status === 'FAILED' || input.lastRun.status === 'PARTIAL')) {
     return { state: 'ERROR', detail: input.lastRun.error ?? `The last submission ended ${input.lastRun.status}.` };
   }
-  if (!input.lastAcceptedHash) return { state: 'CONNECTED', detail: `Connected. ${input.capabilityLabel} has never been sent from Alma.` };
-  if (input.lastAcceptedHash === input.currentHash) return { state: 'SYNCED', detail: 'What OpenTable last accepted matches Alma.' };
-  return { state: 'OUT_OF_DATE', detail: 'Alma has changed since OpenTable last accepted a submission.' };
+  if (!input.lastAcceptedHash) return { state: 'CONNECTED', detail: `Ready to submit. ${input.capabilityLabel} has never been sent from Alma.` };
+  if (input.lastAcceptedHash === input.currentHash) {
+    return input.verified
+      ? { state: 'SYNCED', detail: 'Accepted by the API and verified: a read-back from OpenTable matches Alma.' }
+      : { state: 'SYNCED', detail: 'Accepted by the API. Publication not verified: OpenTable processes submissions asynchronously and has no status endpoint — check OpenTable for Restaurants.' };
+  }
+  return { state: 'OUT_OF_DATE', detail: 'Ready to submit: Alma has changed since the API last accepted a submission.' };
+}
+
+/** A payload carrying under half of the previously accepted items is a likely mapping accident, not an edit. */
+export function shrinkOf(previous: OpenTableMenusPayload | null | undefined, next: OpenTableMenusPayload): { previousItems: number; nextItems: number } | null {
+  if (!previous) return null;
+  const previousItems = countOpenTableItems(previous);
+  const nextItems = countOpenTableItems(next);
+  if (previousItems >= 4 && nextItems * 2 < previousItems) return { previousItems, nextItems };
+  return null;
 }
 
 /** Request key: stable per venue + kind + payload, so a retry is the same request to OpenTable. */
@@ -366,7 +384,7 @@ export const openTableService = {
       prisma.openTableSyncRun.findMany({ where: { venueId }, orderBy: { createdAt: 'desc' }, take: 40 }),
       websiteHints(setting.venue)
     ]);
-    const menusState = deriveCapabilityState({
+    const menusStateInput: CapabilityStateInput = {
       connection: connection.state,
       connectionDetail: connection.detail,
       flagOn: cfg.menusWriteEnabled,
@@ -375,8 +393,10 @@ export const openTableService = {
       capabilityLabel: 'Menu',
       currentHash: menusPreview.hash,
       lastAcceptedHash: setting.lastMenusAcceptedHash,
-      lastRun: lastMenusRun ? { status: lastMenusRun.status as OpenTableSyncStatus, error: lastMenusRun.error } : null
-    });
+      lastRun: lastMenusRun ? { status: lastMenusRun.status as OpenTableSyncStatus, error: lastMenusRun.error } : null,
+      verified: false
+    };
+    const menusState = deriveCapabilityState(menusStateInput);
     const profileState = deriveCapabilityState({
       connection: connection.state,
       connectionDetail: connection.detail,
@@ -389,9 +409,13 @@ export const openTableService = {
       lastRun: lastProfileRun ? { status: lastProfileRun.status as OpenTableSyncStatus, error: lastProfileRun.error } : null
     });
     const lastSentProfile = await lastAcceptedPayload(venueId, 'PROFILE');
+    const lastMenus = await lastAcceptedPayload(venueId, 'MENUS');
     const remote = setting.lastRemoteMenusJson && setting.lastRemoteMenusAt
       ? { readAt: setting.lastRemoteMenusAt.toISOString(), comparison: compareWithRemote(menusPreview.payload, setting.lastRemoteMenusJson as unknown as OpenTableRemoteMenus) }
       : null;
+    // "Verified" only when OpenTable was read back after the last accepted submission and matched.
+    const verified = Boolean(remote && remote.comparison.inSync && setting.lastMenusAcceptedAt && setting.lastRemoteMenusAt && setting.lastRemoteMenusAt >= setting.lastMenusAcceptedAt);
+    const shrink = shrinkOf(lastMenus?.payload as OpenTableMenusPayload | null, menusPreview.payload);
     return {
       venue: { id: setting.venue.id, name: setting.venue.name, slug: setting.venue.slug },
       rid: setting.rid,
@@ -400,7 +424,11 @@ export const openTableService = {
       profileEnabled: setting.profileEnabled,
       connection,
       menus: {
-        ...menusState,
+        ...(verified ? deriveCapabilityState({ ...menusStateInput, verified: true }) : menusState),
+        validation: validateOpenTableMenusPayload(menusPreview.payload),
+        firstSubmission: !setting.lastMenusAcceptedHash,
+        shrink,
+        verified,
         currentHash: menusPreview.hash,
         lastAcceptedHash: setting.lastMenusAcceptedHash,
         lastAcceptedAt: setting.lastMenusAcceptedAt?.toISOString() ?? null,
@@ -483,9 +511,19 @@ export const openTableService = {
     if (!setting.enabled || !setting.menusEnabled) throw new HttpError(400, 'Menu publishing to OpenTable is switched off for this venue.');
     const preview = await buildMenusPreview(venueId);
     if (preview.hash !== input.hash) throw new HttpError(409, 'The menus changed since you previewed them. Reload the preview and check the differences again.');
-    if (!preview.included.length) throw new HttpError(400, 'There is nothing to send: no published, public menu for this venue.');
+    if (!preview.included.length) throw new HttpError(400, 'There is nothing to send: no published, public menu for this venue. A full-menu submission with nothing in it would wipe OpenTable’s menus, so it is refused.');
+    const validation = validateOpenTableMenusPayload(preview.payload);
+    if (validation.length) throw new HttpError(422, `The payload is not safe to send: ${validation[0]}${validation.length > 1 ? ` (+${validation.length - 1} more)` : ''}`, { validation });
     const unconfirmed = preview.removals.filter((name) => !input.confirmRemovals.includes(name));
     if (unconfirmed.length) throw new HttpError(409, `This submission would remove ${unconfirmed.join(', ')} from OpenTable. Confirm the removals to continue.`, { removals: unconfirmed });
+    const previous = await lastAcceptedPayload(venueId, 'MENUS');
+    if (!previous && !input.acknowledgeReplace) {
+      throw new HttpError(409, 'First submission: this replaces every menu OpenTable currently holds for the restaurant, including any entered by hand in OpenTable for Restaurants. Tick the acknowledgement to continue.', { acknowledgeReplace: true });
+    }
+    const shrink = shrinkOf(previous?.payload as OpenTableMenusPayload | null, preview.payload);
+    if (shrink && !input.acknowledgeReplace) {
+      throw new HttpError(409, `This submission carries ${shrink.nextItems} items where OpenTable last accepted ${shrink.previousItems}. Tick the acknowledgement if that is intended.`, { shrink });
+    }
     if (!input.force && setting.lastMenusAcceptedHash === preview.hash) throw new HttpError(409, 'OpenTable already accepted exactly this payload. Use Resend if you need to push it again.');
     const inFlight = await prisma.openTableSyncRun.findFirst({ where: { venueId, kind: 'MENUS', status: 'SUBMITTED', createdAt: { gt: new Date(Date.now() - IN_FLIGHT_MS) } }, select: { id: true } });
     if (inFlight) throw new HttpError(409, 'A submission for this venue is still in flight. Wait a moment and reload.');

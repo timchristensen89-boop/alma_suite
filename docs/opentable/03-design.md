@@ -26,7 +26,7 @@ packages/db: OpenTableVenueSetting, OpenTableSyncRun, IntegrationProvider.OPENTA
 - `venueId`, `kind` (MENUS | PROFILE | CONNECTION | READ), `status` (PREPARED | SKIPPED | SUBMITTED | ACCEPTED | PARTIAL | FAILED), `payloadHash`, `payload` JSON (what was or would have been sent), `requestKey` (the `X-Request-Id`), `requestId` (OpenTable's), `response` JSON, `error`, `attempts`, `httpStatus`, `triggeredById/Name`, `createdAt`, `completedAt`
 - Index `[venueId, kind, createdAt]`; the latest ACCEPTED run per kind is what "last successful sync" and "pending changes" are computed from.
 
-Migration: additive (two tables, one enum value). No existing table changes.
+Migration: additive (two tables, one enum value). No existing table or row changes. Rollback: `docs/opentable/rollback-20261016090000.sql` (drops the two tables; the enum value is left, Postgres cannot drop one).
 
 ## 3. Environment and the off-switches
 
@@ -43,7 +43,7 @@ OPENTABLE_TIMEOUT_MS=15000
 ```
 Activation after approval = set the four values and flip the flags; no code change. The dashboard's CONNECTION state is computed from these plus a real token request (`POST …/oauth/token`), never from "credentials exist".
 
-Status vocabulary (per venue, per capability): `NOT_CONFIGURED` (missing credentials, partner name or rid) → `AWAITING_APPROVAL` (configured, flag off) → `CONNECTED` (flag on, token request succeeded) → `SYNCED` / `OUT_OF_DATE` (last accepted hash equals / differs from the current published payload hash) → `ERROR` (last run failed or token request failed).
+Status vocabulary (per venue, per capability): `NOT_CONFIGURED` (missing credentials, partner name or rid) → `AWAITING_APPROVAL` (configured, flag off) → `CONNECTED` ("Ready to submit": flag on, token request succeeded, nothing sent yet) / `OUT_OF_DATE` ("Ready to submit, changes pending": last accepted hash differs from the current payload hash) → `SUBMITTED` (sent, waiting for the HTTP response) → `SYNCED` ("Accepted by the API": the current payload hash is what OpenTable last accepted; shown as **publication not verified** unless a read-back from OpenTable after that acceptance matched Alma) → `ERROR` ("Failed": last run FAILED or PARTIAL, or the token request failed). The dashboard never says "live on OpenTable" or "successfully synced": the write APIs are asynchronous and have no status endpoint.
 
 ## 4. Menu mapping (shared, pure)
 
@@ -81,13 +81,13 @@ Comparison: Alma profile vs the last ACCEPTED payload (what OpenTable last recei
 1. Publisher publishes a menu in Alma Menus as today.
 2. Dashboard (per venue) computes the current payload and compares its hash with `lastMenusAcceptedHash` → "Pending changes" with the diff.
 3. Preview shows the exact JSON that will be sent, the included/excluded menus, and any removals.
-4. Publish button → `POST /venues/:venueId/menus/publish { hash, confirmRemovals[] }`. The server rebuilds the payload, refuses on hash mismatch (someone published meanwhile) or unconfirmed removals, refuses if the same hash was already ACCEPTED (duplicate) unless `force`, refuses if a run for the venue is SUBMITTED and younger than 2 minutes (in flight).
+4. Publish button → `POST /venues/:venueId/menus/publish { hash, confirmRemovals[], acknowledgeReplace }`. The server rebuilds the payload and refuses, in order: nothing to send (an empty full-menu POST would wipe OpenTable), structural validation errors (`validateOpenTableMenusPayload`: dangling relations, empty menus/groups, bad prices → 422), hash mismatch (someone published meanwhile), unconfirmed removals, a first submission or a payload with under half the previously accepted items without `acknowledgeReplace` (the POST replaces everything OpenTable holds), a duplicate of the last ACCEPTED hash unless `force`, a run for the venue SUBMITTED and younger than 2 minutes (in flight).
 5. Client POSTs with `X-Request-Id = alma-<venueSlug>-menus-<hash12>`; retries only on 429/5xx/network with backoff, never on 4xx; 15 s timeout per attempt.
 6. Run recorded: SUBMITTED → ACCEPTED (200 with `totalProcessedItems == totalItems`), PARTIAL (200 otherwise), FAILED (non-2xx / exception), SKIPPED (flags off: the payload is stored so the preview is still useful, nothing is sent).
 7. The dashboard shows "Accepted by OpenTable (request 132658925) — processing is asynchronous; visibility is controlled in OpenTable for Restaurants → Menus" and never "live on OpenTable".
 8. Optional later: a scheduler-secret job that re-runs step 4 for venues with `autoPublish = true`. Not built as a setting yet; the service exposes the function.
 
-Permissions: routes require settings admin (`requireSettingsAdmin`). Menu publish/preview additionally require `canPublishMenus(user, venueSlug)` and `assertMenuVenueAccess`, so a St Alma-limited manager cannot push Avalon even if they reach the admin app. Profile publish requires settings admin plus venue access.
+Permissions: the whole router is Alma-admin only (`requireAdmin`, the `isAdmin` flag — not a settings grant and not a manager role), so venue managers keep their existing venue-scoped publishing in Alma Menus and gain nothing here. Within that, every venue route applies `assertMenuVenueAccess` and the menu push applies `canPublishMenus(user, venueSlug)`, so an admin whose Menus grant is limited to one venue cannot push the other's. No shared middleware was changed: admins already pass the per-app gates in `auth-middleware.ts`.
 
 ## 7. Safety list (mapped to the brief)
 
@@ -97,7 +97,7 @@ Permissions: routes require settings admin (`requireSettingsAdmin`). Menu publis
 | Duplicate submissions | hash equality with last ACCEPTED → 409; in-flight run → 409; `X-Request-Id` on the wire |
 | Publishing drafts | the builder reads only `MenuVersion.state = PUBLISHED` snapshots; drafts are invisible to it |
 | Invalid prices | zod on the payload (non-negative finite, ≤ 2 decimals), `showPrices=false` omits prices, TABLE null columns omitted |
-| Destructive sync | removals must be confirmed; never derive deletions from a partial GET; profile sends only managed fields |
+| Destructive sync | empty payload refused; structural validation before the wire; removals must be confirmed by name; first submission and >50% item shrink need an explicit acknowledgement; never derive deletions from a partial GET; profile sends only managed fields |
 | Silent overwrite | profile fields outside `profileManagedFields` are never sent |
 | Partial failure shown as success | 200 with `totalProcessedItems < totalItems` → PARTIAL, red |
 | Secrets in the browser | status payload carries booleans and masked ids only |

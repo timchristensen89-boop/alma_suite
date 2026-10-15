@@ -367,6 +367,76 @@ export function buildOpenTableMenusPayload(sources: OpenTableMenuSource[], optio
 // ---------------------------------------------------------------------------
 
 /** Deterministic JSON: object keys sorted recursively, arrays kept in order. */
+/**
+ * Structural check of a built payload before it is allowed near the wire. A
+ * full-menu POST replaces everything OpenTable holds, so an envelope with a
+ * dangling relation, an empty menu or a bad price must never be sent: the
+ * publish refuses with these messages instead.
+ */
+export function validateOpenTableMenusPayload(payload: OpenTableMenusPayload): string[] {
+  const errors: string[] = [];
+  const element = payload.menus[0];
+  if (!payload.menus.length || !element) return ['The payload holds no menus.'];
+  if (payload.menus.length !== 1) errors.push(`Expected one envelope element, found ${payload.menus.length}.`);
+  const menuIds = Object.keys(element).filter((key) => !RESERVED_ENVELOPE_KEYS.has(key));
+  if (!menuIds.length) errors.push('The payload holds no menus.');
+  const priceOk = (price: OpenTablePriceMetadata | undefined, where: string) => {
+    if (!price) return;
+    if (price.priceType === 'PRICE') {
+      for (const value of [price.minPrice, price.maxPrice]) {
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || Math.round(value * 100) !== value * 100) errors.push(`${where}: price ${String(value)} is not a non-negative amount with at most two decimals.`);
+      }
+      if (price.minPrice > price.maxPrice) errors.push(`${where}: minPrice is above maxPrice.`);
+    } else if (price.priceType === 'CUSTOM_PRICE_TEXT' && !price.customPriceText) {
+      errors.push(`${where}: custom price text is empty.`);
+    }
+  };
+  for (const menuId of menuIds) {
+    const menu = element[menuId] as OpenTableMenuObject | undefined;
+    if (!menu || typeof menu !== 'object') {
+      errors.push(`${menuId}: not a menu object.`);
+      continue;
+    }
+    if (menu.id !== menuId) errors.push(`${menuId}: id does not match its key.`);
+    if (!menu.name?.trim()) errors.push(`${menuId}: menu has no name.`);
+    if (!menu.groups?.length) errors.push(`${menu.name || menuId}: menu has no groups.`);
+    for (const ref of menu.groups ?? []) {
+      const group = element.groups[ref.id];
+      if (!group) {
+        errors.push(`${menu.name || menuId}: group ${ref.id} is referenced but not defined.`);
+        continue;
+      }
+      if (!group.name?.trim()) errors.push(`${menu.name}: a group has no name.`);
+      if (!group.items?.length) errors.push(`${menu.name} › ${group.name}: group has no items.`);
+      for (const itemRef of group.items ?? []) {
+        const item = element.items[itemRef.id];
+        if (!item) {
+          errors.push(`${menu.name} › ${group.name}: item ${itemRef.id} is referenced but not defined.`);
+          continue;
+        }
+        const where = `${menu.name} › ${group.name} › ${item.name || itemRef.id}`;
+        if (!item.name?.trim()) errors.push(`${menu.name} › ${group.name}: an item has no name.`);
+        if (!Array.isArray(item.modifierGroups)) errors.push(`${where}: modifierGroups must be present (an empty list is fine).`);
+        priceOk(item.priceMetadata, where);
+        if (item.priceMetadata?.priceType === 'SIZE_PRICE' && !item.sizes?.length) errors.push(`${where}: SIZE_PRICE without sizes.`);
+        for (const sizeRef of item.sizes ?? []) {
+          const size = element.itemSizes[sizeRef.id];
+          if (!size) errors.push(`${where}: size ${sizeRef.id} is referenced but not defined.`);
+          else priceOk(size.priceMetadata, `${where} (${size.name})`);
+        }
+      }
+    }
+  }
+  return errors;
+}
+
+const RESERVED_ENVELOPE_KEYS = new Set(['groups', 'items', 'itemSizes', 'modifierGroups', 'modifiers', 'preModifierGroups', 'preModifiers']);
+
+/** How many items a payload carries — the shrink guard compares this with the last accepted payload. */
+export function countOpenTableItems(payload: OpenTableMenusPayload | null | undefined): number {
+  return Object.keys(payload?.menus?.[0]?.items ?? {}).length;
+}
+
 export function canonicalJson(value: unknown): string {
   return JSON.stringify(sortKeys(value));
 }
@@ -810,7 +880,17 @@ function renderValue(value: unknown): string {
 // Dashboard vocabulary
 // ---------------------------------------------------------------------------
 
-export const OPENTABLE_CAPABILITY_STATES = ['NOT_CONFIGURED', 'AWAITING_APPROVAL', 'CONNECTED', 'SYNCED', 'OUT_OF_DATE', 'ERROR'] as const;
+/**
+ * Per-venue, per-capability state. The write APIs are asynchronous and have
+ * no status endpoint, so the vocabulary says what is actually known:
+ *   CONNECTED       ready to submit, nothing sent yet
+ *   OUT_OF_DATE     ready to submit, Alma changed since the last accepted submission
+ *   SUBMITTED       sent, waiting for OpenTable's HTTP response
+ *   SYNCED          OpenTable's API accepted the current payload; publication is
+ *                   NOT verified unless a read-back matched (see `verified`)
+ *   ERROR           the last submission failed or was only partly accepted
+ */
+export const OPENTABLE_CAPABILITY_STATES = ['NOT_CONFIGURED', 'AWAITING_APPROVAL', 'CONNECTED', 'OUT_OF_DATE', 'SUBMITTED', 'SYNCED', 'ERROR'] as const;
 export type OpenTableCapabilityState = (typeof OPENTABLE_CAPABILITY_STATES)[number];
 
 export const OPENTABLE_SYNC_KINDS = ['MENUS', 'PROFILE', 'CONNECTION', 'READ'] as const;
@@ -841,6 +921,12 @@ export const openTableMenusPublishInputSchema = z.object({
   hash: z.string().trim().min(8),
   /** Menu display names the user has acknowledged will disappear from OpenTable. */
   confirmRemovals: z.array(z.string()).default([]),
+  /**
+   * Required for the first submission (it replaces whatever OpenTable holds
+   * for the restaurant today, including menus typed in by hand) and for a
+   * submission that drops more than half of the previously accepted items.
+   */
+  acknowledgeReplace: z.boolean().default(false),
   force: z.boolean().default(false)
 });
 
@@ -897,6 +983,14 @@ export type OpenTableMenusStatus = {
   remote: { readAt: string; comparison: OpenTableRemoteComparison } | null;
   /** The signed-in user may push this venue's menus (canPublishMenus for the venue). */
   canPublish: boolean;
+  /** Structural problems that block publishing (validateOpenTableMenusPayload). */
+  validation: string[];
+  /** True until OpenTable has accepted a submission from Alma: the first POST replaces whatever is there now. */
+  firstSubmission: boolean;
+  /** Set when this payload carries far fewer items than the last accepted one. */
+  shrink: { previousItems: number; nextItems: number } | null;
+  /** True only when a read-back from OpenTable after the last accepted submission matched Alma. */
+  verified: boolean;
 };
 
 export type OpenTableProfileStatus = {
