@@ -28,7 +28,8 @@ Companion documents: `01-audit.md` (what existed before), `02-api-capability-mat
 4. **Pending changes** shows the diff against the last submission OpenTable accepted: menus added / changed / removed, and item-level changes with the fields that moved.
 5. **Preview JSON** shows the exact envelope.
 6. **Publish to OpenTable** sends it. The server rebuilds the payload and refuses if the content changed since the preview, if a menu would disappear and its removal was not ticked, if the same payload was already accepted (use **Resend** to force), or if another submission for the venue is still in flight.
-7. The run is recorded SUBMITTED → ACCEPTED (every item processed), PARTIAL (short count or rejected items), FAILED (non-2xx / network) or SKIPPED (flags off: the payload is stored so the preview is still honest). The dashboard never says "live on OpenTable": processing is asynchronous and visibility is chosen in OpenTable for Restaurants → Menus.
+7. The run is recorded SUBMITTED → ACCEPTED (every item processed), PARTIAL (short count or rejected items), FAILED (non-2xx / network) or SKIPPED (flags off: the payload is stored so the preview is still honest). The panel then reads **Accepted by API · publication not verified**: processing is asynchronous, there is no status endpoint, and visibility is chosen in OpenTable for Restaurants → Menus. It only reads **verified by read-back** after step 8 matches.
+   Before sending, the server refuses an empty payload, a payload that fails structural validation, unconfirmed removals, and (without the on-screen acknowledgement) a first submission or one that drops more than half of the previously accepted items — a full-menu POST replaces everything OpenTable holds.
 8. **Read from OpenTable** (once read access exists) fetches what OpenTable holds and reports items missing on OpenTable, items only on OpenTable (never removed automatically), price and description differences, and whether OpenTable is serving a hosted menu link instead.
 
 The booking widget, PDF/binder generation and the public website are not involved.
@@ -60,16 +61,17 @@ Ids are slugs and dish keys, not database ids, so they survive a restore from ba
 
 ## 4. Dashboard states
 
-| State | Meaning |
-|---|---|
-| NOT_CONFIGURED | no rid, the venue switch is off, or the server is missing `OPENTABLE_CLIENT_ID` / `OPENTABLE_CLIENT_SECRET` / `OPENTABLE_PARTNER_NAME` (named, never shown) |
-| AWAITING_APPROVAL | configured, but `OPENTABLE_API_ENABLED` or the capability flag is off, or switched on but never checked |
-| CONNECTED | a real token request succeeded (re-run automatically when older than 10 minutes, or on **Check connection**); for Menus/Profile: connected and never sent |
-| SYNCED | the last ACCEPTED payload hash equals the current one |
-| OUT_OF_DATE | Alma has changed since the last accepted submission |
-| ERROR | token request failed, or the last run ended FAILED or PARTIAL |
+| State | Shown as | Meaning |
+|---|---|---|
+| NOT_CONFIGURED | Not configured | no rid, the venue switch is off, or the server is missing `OPENTABLE_CLIENT_ID` / `OPENTABLE_CLIENT_SECRET` / `OPENTABLE_PARTNER_NAME` (named, never shown) |
+| AWAITING_APPROVAL | Awaiting approval | configured, but `OPENTABLE_API_ENABLED` or the capability flag is off, or switched on but never checked |
+| CONNECTED | Connection: Connected · Menus/Profile: Ready to submit | a real token request succeeded (re-run automatically when older than 10 minutes, or on **Check connection**); nothing sent yet |
+| OUT_OF_DATE | Ready to submit · changes pending | Alma has changed since the API last accepted a submission |
+| SUBMITTED | Submitted to OpenTable | sent, waiting for the HTTP response |
+| SYNCED | Accepted by API · publication not verified | the API accepted the current payload (request id kept). OpenTable processes it asynchronously and has no status endpoint, so publication is **not** claimed — unless a read-back from OpenTable after the acceptance matched Alma, in which case the badge reads **verified by read-back** |
+| ERROR | Failed | token request failed, or the last run ended FAILED or PARTIAL |
 
-"Connected" is never shown merely because credentials exist.
+"Connected" is never shown merely because credentials exist, and nothing on the page says "live on OpenTable" or "successfully synced".
 
 ## 5. Enabling after approval (no code change)
 
@@ -104,9 +106,9 @@ Secrets never reach the browser: the status payload carries booleans ("client id
 
 ## 7. Permissions
 
-- Every route under `/api/integrations/opentable` requires a settings admin (`requireSettingsAdmin`).
-- Every venue route also applies the Menus venue scope (`assertMenuVenueAccess`): a venue outside the user's scope reads as 404.
-- **Publishing menus to OpenTable requires `canPublishMenus(user, venueSlug)`**, the same rule as publishing in Alma Menus. An Avalon-limited manager cannot push Freshwater's menus through this page; the button is disabled in the UI and the API refuses with 403. `apps/api/src/routes/opentable-guards.test.ts` fails the build if a route is added without its guard.
+- Every route under `/api/integrations/opentable` is **Alma-admin only** (`requireAdmin`: the `isAdmin` flag). Venue managers keep their existing venue-scoped publishing in Alma Menus and have no access to integration settings or this page. No shared middleware was changed.
+- Every venue route also applies the Menus venue scope (`assertMenuVenueAccess`): a venue outside the admin's Menus scope reads as 404.
+- **Publishing menus to OpenTable additionally requires `canPublishMenus(user, venueSlug)`**, the same rule as publishing in Alma Menus, so an admin whose Menus grant is limited to one venue cannot push the other's; the button is disabled in the UI and the API refuses with 403. `apps/api/src/routes/opentable-guards.test.ts` fails the build if a route is added without its guard or if the router stops being admin-only.
 
 ## 8. Safety
 
@@ -115,10 +117,12 @@ Secrets never reach the browser: the status payload carries booleans ("client id
 | Publishing drafts | the builder reads only `MenuVersion.state = PUBLISHED` snapshots |
 | Cross-venue publish | rid comes from the venue's own row; route resolves the venue by id and checks scope; request key includes the venue slug |
 | Duplicates | same hash as last ACCEPTED → 409 unless forced; SUBMITTED run younger than 2 min → 409; `X-Request-Id = alma-<venue>-<kind>-<hash12>` on the wire, identical across retries |
-| Destructive sync | menu removals must be confirmed; nothing is deleted from a partial GET; profile sends only managed fields |
+| Destructive sync | an empty payload is refused (it would wipe OpenTable's menus); structural validation before the wire (dangling relations, empty menus or groups, bad prices → 422); menu removals must be confirmed by name; the first submission and any payload with under half the previously accepted items need an explicit acknowledgement that it replaces what OpenTable holds; nothing is deleted from a partial GET; profile sends only managed fields |
 | Partial failure shown as success | 200 with `totalProcessedItems < totalItems` or a rejected item status → PARTIAL, shown red |
 | Timeouts / retries / rate limits | AbortSignal per attempt (15 s), retry on 429/5xx/network with jittered backoff honouring `Retry-After`, max 4 attempts, never on other 4xx; one token refresh on 401 |
 | Audit | every attempt has actor, payload, hash, request key, OpenTable request id, HTTP status, attempts, response, error |
+| Database | migration `20261016090000_opentable_integration` is additive (two new tables, one enum value, no existing table or row touched; applied cleanly on a fresh database). Rollback: `docs/opentable/rollback-20261016090000.sql` |
+| Configuration | every `OPENTABLE_*` value defaults to empty / `false`; the API boots and runs exactly as before without any of them; there is no scheduled or automatic push |
 
 ## 9. Tests
 

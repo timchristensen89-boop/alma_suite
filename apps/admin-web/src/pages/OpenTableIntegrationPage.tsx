@@ -39,19 +39,29 @@ const STATE_TONE: Record<OpenTableCapabilityState, Tone> = {
   NOT_CONFIGURED: 'muted',
   AWAITING_APPROVAL: 'warning',
   CONNECTED: 'info',
-  SYNCED: 'positive',
   OUT_OF_DATE: 'warning',
+  SUBMITTED: 'info',
+  SYNCED: 'positive',
   ERROR: 'danger'
 };
 
+/**
+ * Labels say what is known. The write APIs are asynchronous with no status
+ * endpoint, so "Accepted by API" is as far as a submission can be taken
+ * unless a read-back verified it; nothing here says "live" or "synced".
+ */
 const STATE_LABEL: Record<OpenTableCapabilityState, string> = {
   NOT_CONFIGURED: 'Not configured',
   AWAITING_APPROVAL: 'Awaiting approval',
-  CONNECTED: 'Connected',
-  SYNCED: 'Synced',
-  OUT_OF_DATE: 'Out of date',
-  ERROR: 'Error'
+  CONNECTED: 'Ready to submit',
+  OUT_OF_DATE: 'Ready to submit · changes pending',
+  SUBMITTED: 'Submitted to OpenTable',
+  SYNCED: 'Accepted by API',
+  ERROR: 'Failed'
 };
+
+/** The Connection panel is the one place "Connected" means exactly that: a token was issued. */
+const CONNECTION_LABEL: Partial<Record<OpenTableCapabilityState, string>> = { CONNECTED: 'Connected' };
 
 const RUN_TONE: Record<OpenTableRunSummary['status'], Tone> = {
   PREPARED: 'muted',
@@ -73,10 +83,12 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-function StateBadge({ state }: { state: OpenTableCapabilityState }) {
+function StateBadge({ state, verified, connection }: { state: OpenTableCapabilityState; verified?: boolean; connection?: boolean }) {
+  const label = connection ? CONNECTION_LABEL[state] ?? STATE_LABEL[state] : STATE_LABEL[state];
   return (
     <Badge tone={STATE_TONE[state]} dot>
-      {STATE_LABEL[state]}
+      {label}
+      {state === 'SYNCED' && !connection ? (verified ? ' · verified by read-back' : ' · publication not verified') : ''}
     </Badge>
   );
 }
@@ -248,7 +260,7 @@ function ConnectionPanel({ status, busy, onRun }: PanelProps) {
     <Card
       title={
         <span className="ot-title">
-          Connection <StateBadge state={c.state} />
+          Connection <StateBadge state={c.state} connection />
         </span>
       }
       subtitle={c.detail}
@@ -344,13 +356,17 @@ function MenusPanel({ status, busy, onRun }: PanelProps) {
   const m = status.menus;
   const [preview, setPreview] = useState<OpenTableMenusPreview | null>(null);
   const [confirmed, setConfirmed] = useState<string[]>([]);
+  const [acknowledged, setAcknowledged] = useState(false);
   useEffect(() => {
     setPreview(null);
     setConfirmed([]);
+    setAcknowledged(false);
   }, [status.venue.id, m.currentHash]);
 
   const removalsOutstanding = m.removals.filter((name) => !confirmed.includes(name));
-  const publishBlocked = m.state === 'NOT_CONFIGURED' || !m.canPublish || m.included.length === 0 || removalsOutstanding.length > 0;
+  const needsAcknowledgement = m.firstSubmission || m.shrink !== null;
+  const publishBlocked =
+    m.state === 'NOT_CONFIGURED' || m.state === 'SUBMITTED' || !m.canPublish || m.included.length === 0 || m.validation.length > 0 || removalsOutstanding.length > 0 || (needsAcknowledgement && !acknowledged);
   const alreadyAccepted = m.lastAcceptedHash === m.currentHash;
   const remote = m.remote?.comparison ?? null;
 
@@ -358,7 +374,7 @@ function MenusPanel({ status, busy, onRun }: PanelProps) {
     onRun(force ? 'resend' : 'publish', async () => {
       const result = await api<OpenTablePublishResult>(`/api/integrations/opentable/venues/${status.venue.id}/menus/publish`, {
         method: 'POST',
-        body: JSON.stringify({ hash: m.currentHash, confirmRemovals: confirmed, force })
+        body: JSON.stringify({ hash: m.currentHash, confirmRemovals: confirmed, acknowledgeReplace: acknowledged, force })
       });
       return result.message;
     });
@@ -367,7 +383,7 @@ function MenusPanel({ status, busy, onRun }: PanelProps) {
     <Card
       title={
         <span className="ot-title">
-          Menus <StateBadge state={m.state} />
+          Menus <StateBadge state={m.state} verified={m.verified} />
         </span>
       }
       subtitle={m.detail}
@@ -420,11 +436,15 @@ function MenusPanel({ status, busy, onRun }: PanelProps) {
 
       <div className="detail-list ot-detail-row">
         <div>
-          <span>Last accepted</span>
+          <span>Last accepted by API</span>
           <strong>
             {when(m.lastAcceptedAt)}
             {m.lastRequestId ? ` · request ${m.lastRequestId}` : ''}
           </strong>
+        </div>
+        <div>
+          <span>Publication</span>
+          <strong>{m.verified ? `Verified by read-back ${when(m.remote?.readAt)}` : m.lastAcceptedAt ? 'Not verified — check OpenTable for Restaurants or read back' : '—'}</strong>
         </div>
         <div>
           <span>Current payload</span>
@@ -477,6 +497,29 @@ function MenusPanel({ status, busy, onRun }: PanelProps) {
             <li key={warning}>{warning}</li>
           ))}
         </ul>
+      ) : null}
+      {m.validation.length ? (
+        <div className="integration-health-error">
+          <strong>Not safe to send.</strong> A full-menu submission replaces everything on OpenTable, so a broken payload is refused:
+          <ul>
+            {m.validation.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {needsAcknowledgement && m.included.length > 0 ? (
+        <div className="integration-health-paused">
+          <p>
+            <strong>{m.firstSubmission ? 'First submission.' : 'This submission is much smaller than the last one OpenTable accepted.'}</strong>{' '}
+            {m.firstSubmission
+              ? 'Sending replaces every menu OpenTable currently holds for this restaurant, including anything entered by hand in OpenTable for Restaurants. Check the list above and the JSON preview first.'
+              : `It carries ${m.shrink?.nextItems} items where OpenTable last accepted ${m.shrink?.previousItems}. Anything not in this payload is removed.`}
+          </p>
+          <label className="field-checkbox">
+            <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /> I understand this replaces the menus OpenTable holds today
+          </label>
+        </div>
       ) : null}
 
       <h4 className="ot-h4">Pending changes since the last accepted submission</h4>
