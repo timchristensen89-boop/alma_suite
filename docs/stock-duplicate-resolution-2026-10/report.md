@@ -6196,6 +6196,6 @@ Run against `alma_stock_rehearsal` (a pristine restore of the 16 Oct 11:41 AEDT 
 
 The other 151 clusters (challenged, critic-flagged, shelf checks, keep-separate) are **not** in `decisions.json`. Each one is listed above with the decision, both verifier views and the critic's correction, for your call. `critic-corrections.json` holds the 226 machine-readable corrections. Before any of them can run, the script needs the extra decision fields the critic lists in §8 of `critic.md`.
 
-## ⚠ Act on this before applying the Alma Avalon "Stocktake 10/1/2026"
+## ⚠ Act on this before applying either 1 October sheet
 
-`applyStocktake` writes `countedQty` straight into on-hand and does **no unit conversion**. That sheet is SUBMITTED but not applied, and it has 22 lines counted in g/kg/mL/L on items that count in each or bottle (for example 970 g pistachio, 800 mL cream, 800 g mesclun). Applied as it stands, it would book about **$144,063** of phantom stock. The lines are listed in `critic.md` §5. Restate them, then apply. This applies whether or not any merge runs.
+`applyStocktake` writes `countedQty` straight into on-hand with **no unit conversion**. The two submitted, unapplied 1 Oct sheets have 53 lines counted in mL/g/L/kg on items counted by the bottle or pack. Applied as they stand, they would book **$1.93M** (St Alma) and **$164k** (Alma Avalon) of phantom stock. Nine holdings already carry the same fault ($3.14M). The reviewed fix, the dry-run script, the rehearsal and the guard that stops it recurring are in **`unit-fixes.md`**. This applies whether or not any merge runs.

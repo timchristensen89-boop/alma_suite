@@ -1,0 +1,1402 @@
+{
+ "generatedFrom": "alma_stock_orig — restore of the 16 Oct 2026 11:41 AEDT production dump",
+ "sheets": {
+  "Alma Avalon": "cmupcujav03c0pd01796c5bpm",
+  "St Alma": "cmup72ay90000pd01tfoyqda1"
+ },
+ "measures": [
+  {
+   "itemId": "cmptowawj00rgs601q0qie3ec",
+   "item": "Nut Pistachio Kernel",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "Costed per kilo ($44.68): Loaded counted it in Kilo (0.47, 1 Kilo)."
+  },
+  {
+   "itemId": "cmptowb9b00tss6018qwk7nnl",
+   "item": "Wakame",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 500,
+    "measureUnit": "g"
+   },
+   "reason": "Loaded costed it as a 500 g pack: \"0.2 500 Grams = $4.50\" ($22.50 per pack)."
+  },
+  {
+   "itemId": "cmptowc4w00z4s601oluv35mi",
+   "item": "Mesculin Greens Mix",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "Loaded cost \"1.2 kg = $14.00\" ($11.67/kg); invoice price 1759 is also per kg."
+  },
+  {
+   "itemId": "cmptowb1f00sds60107gsotjy",
+   "item": "Pepita Seeds",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "Costed per kilo ($12.07); Loaded counted it in Kilo (2.98, 4.72, 1.69 Kilo)."
+  },
+  {
+   "itemId": "cmptowand00pps601bmioxrei",
+   "item": "Cream Thickened",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "ml"
+   },
+   "reason": "Loaded cost \"2.71 Litre = $20.16\" ($7.44/L); counted in Litre."
+  },
+  {
+   "itemId": "cmptowbf000uss6015b29ykiv",
+   "item": "Allspice",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 350,
+    "measureUnit": "g"
+   },
+   "reason": "Loaded counted it as 350 g packs (\"0.43 350 Grams\"); $14.00 per pack."
+  },
+  {
+   "itemId": "cmptowbdl00ujs601rftq9996",
+   "item": "Pears Nashi",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "Loaded cost \"1.2 Kilo = $9.00\" ($7.50/kg)."
+  },
+  {
+   "itemId": "cmptowaqp00qds6019uh8qktj",
+   "item": "Breadcrumbs Panko",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "Costed per kilo ($6.24); Loaded counted it in Kilo (0.96, 0.79 Kilo)."
+  },
+  {
+   "itemId": "cmptowavm00ras601cxfynwme",
+   "item": "Mustard Dijon",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 170,
+    "measureUnit": "g"
+   },
+   "reason": "Invoices: \"MUSTARD DIJON 170GM (Masterfoods) EA\" at $4.50 = avg cost."
+  },
+  {
+   "itemId": "cmptowc7c00zis601hpou3t4s",
+   "item": "Tomatoes",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "Loaded cost \"10.55 Kilo = $420.11\"; counted in Kilo."
+  },
+  {
+   "itemId": "cmptowb9o00tvs601jv2xy0xl",
+   "item": "Chips Shoestring Fries",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "Costed per kilo ($4.47); Loaded counted it in Kilo (15, 17, 22 Kilo)."
+  },
+  {
+   "itemId": "cmptowb7v00tjs601pnmvxbc8",
+   "item": "Vinegar Apple Cider",
+   "from": {
+    "measurePerCountUnit": 2000,
+    "measureUnit": "ml"
+   },
+   "to": {
+    "measurePerCountUnit": 5000,
+    "measureUnit": "ml"
+   },
+   "reason": "Invoices: \"VINEGAR APPLE CIDER 5LT (PGF) EA\" at $21.00; Loaded \"0.81 5 L = $16.91\"."
+  },
+  {
+   "itemId": "cmptowc5p00z7s6012errl49s",
+   "item": "Onions Brown",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "Loaded cost \"15.39 Kilo = $21.89\" ($1.42/kg)."
+  },
+  {
+   "itemId": "cmoqfbnlu008u9ky27xeoi31h",
+   "item": "Corn Sweet Box",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "Loaded cost \"1 kg = $3.18\"; counted in kg (11, 15, 20 kg)."
+  },
+  {
+   "itemId": "cmptowaxv00rps6010886cel8",
+   "item": "Oil Grapeseed",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "ml"
+   },
+   "reason": "Invoices: \"OIL GRAPESEED 1LT (Chefs Choice) EA\" at $12.00 = avg cost."
+  },
+  {
+   "itemId": "cmptowav600r7s601h67jhrcs",
+   "item": "Mayonnaise Whole Egg",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "Loaded cost \"6.11 Kilo = $51.47\" ($8.42/kg)."
+  },
+  {
+   "itemId": "cmoqfbu9u00o29ky2ubrdkwxq",
+   "item": "Zucchini Medium",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "Invoice \"Zuchinni Medium Kg\"; item note \"Pack: 1 kg\"."
+  },
+  {
+   "itemId": "cmptowb3800sps601994a7sjm",
+   "item": "Salt Flakes",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 2000,
+    "measureUnit": "g"
+   },
+   "reason": "Invoices: \"SEA SALT FLAKES 2KG (Pyramid) EA\" at $25.00. Item has no cost yet."
+  },
+  {
+   "itemId": "cmptowb2f00sjs601qlkwclqb",
+   "item": "Peppercorns Black Whole",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 500,
+    "measureUnit": "g"
+   },
+   "reason": "Loaded counted it as 500 g packs (\"1 500 Grams\"). Item cost is 0 — needs a price."
+  },
+  {
+   "itemId": "cmptovv23003cs6013b0couwj",
+   "item": "First Press Black Cold Drip Coffee Mixer",
+   "from": {
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 750,
+    "measureUnit": "ml"
+   },
+   "reason": "Loaded cost \"4 750 mL = $75.76\" ($18.94 per 750 mL bottle)."
+  },
+  {
+   "itemId": "cmptovuxi002fs601ncx5ye8f",
+   "item": "Massenez Creme de Peche",
+   "from": {
+    "measurePerCountUnit": 750,
+    "measureUnit": "ml"
+   },
+   "to": {
+    "measurePerCountUnit": 5000,
+    "measureUnit": "ml"
+   },
+   "reason": "Loaded counted \"1 x 5 L\" and costed \"1 Bottle = $220.91\" — the cost is a 5 L pack price. SHELF CHECK the pack size."
+  },
+  {
+   "itemId": "cmptovuy9002ls601d8i19i99",
+   "item": "Massenez Pomme Verte",
+   "from": {
+    "measurePerCountUnit": 750,
+    "measureUnit": "ml"
+   },
+   "to": {
+    "measurePerCountUnit": 5000,
+    "measureUnit": "ml"
+   },
+   "reason": "Same Massenez 5 L pack format as Creme de Peche ($208.20 per \"bottle\"). SHELF CHECK the pack size."
+  },
+  {
+   "itemId": "cmsdf10jz004fmiioy6e21lmz",
+   "item": "Lime Juice",
+   "from": {
+    "measurePerCountUnit": 5000,
+    "measureUnit": "ml"
+   },
+   "to": {
+    "measurePerCountUnit": 2000,
+    "measureUnit": "ml"
+   },
+   "reason": "Cost $15.20 = 2 L at $7.60/L (17 Jun 2026 invoice for the 2 L lime juice, cluster #105). Measure said 5 L. SHELF CHECK."
+  }
+ ],
+ "lines": [
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Mustard Dijon",
+   "itemId": "cmptowavm00ras601cxfynwme",
+   "lineId": "cmupcujbq03r3pd01mlo7zfuo",
+   "from": {
+    "countedQty": 170,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "170 g = one 170 g jar."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Nut Pistachio Kernel",
+   "itemId": "cmptowawj00rgs601q0qie3ec",
+   "lineId": "cmupcujbr03repd01gtfjonqp",
+   "from": {
+    "countedQty": 970,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.97,
+    "unit": "each"
+   },
+   "reason": "970 g at 1 kg per count unit."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Allspice",
+   "itemId": "cmptowbf000uss6015b29ykiv",
+   "lineId": "cmupcujb603dgpd01acfdm5wk",
+   "from": {
+    "countedQty": 350,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "350 g = one 350 g pack."
+  },
+  {
+   "action": "restate",
+   "confidence": "medium",
+   "venue": "Alma Avalon",
+   "item": "Avocadoes Hass",
+   "itemId": "cmsdf12vj002omij9vsz913bw",
+   "lineId": "cmupcujb703edpd01ay6k0yrp",
+   "from": {
+    "countedQty": 1.473,
+    "unit": "kg"
+   },
+   "to": {
+    "countedQty": 0.2946,
+    "unit": "each"
+   },
+   "reason": "1.473 kg of a 5 kg tray (item measure 5000 g; no invoice)."
+  },
+  {
+   "action": "recount",
+   "confidence": "low",
+   "venue": "Alma Avalon",
+   "item": "Bay Leaves Bunch",
+   "itemId": "cmoqfbly300529ky2zhbuedjg",
+   "lineId": "cmupcujb703eupd015mxnhh0g",
+   "from": {
+    "countedQty": 170,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": null,
+    "unit": "each"
+   },
+   "reason": "170 g on an item counted in bunches at $2.14 — no way to tell how many bunches. Cleared for a recount; the original stays in the line note."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Breadcrumbs Panko",
+   "itemId": "cmptowaqp00qds6019uh8qktj",
+   "lineId": "cmupcujb803fdpd0190j2modm",
+   "from": {
+    "countedQty": 561,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.561,
+    "unit": "each"
+   },
+   "reason": "561 g at 1 kg per count unit."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Broccolinni Box",
+   "itemId": "cmoqfbm9p005s9ky2vffqhsxk",
+   "lineId": "cmupcujb803fgpd01xnpm11ll",
+   "from": {
+    "countedQty": 0.5,
+    "unit": "box"
+   },
+   "to": {
+    "countedQty": 6,
+    "unit": "bunch"
+   },
+   "reason": "Half a box of 12 bunches = 6 bunches (item conversion 12 per box)."
+  },
+  {
+   "action": "relabel",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "CAPI GRAPEFRUIT SODA - (CASE OF 12)",
+   "itemId": "cmoqfbmjb006e9ky2wvkd0v3z",
+   "lineId": "cmupcujb803g7pd01ihgvouv2",
+   "from": {
+    "countedQty": 10,
+    "unit": "bottle"
+   },
+   "to": {
+    "countedQty": 10,
+    "unit": "each"
+   },
+   "reason": "\"bottle\" on an item counted in \"each\" (one 250 mL bottle). Same objects — only the label changes."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Chips Shoestring Fries",
+   "itemId": "cmptowb9o00tvs601jv2xy0xl",
+   "lineId": "cmupcujb903hrpd01svwfyarw",
+   "from": {
+    "countedQty": 17,
+    "unit": "kg"
+   },
+   "to": {
+    "countedQty": 17,
+    "unit": "each"
+   },
+   "reason": "17 kg at 1 kg per count unit."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Cinnamon Ground",
+   "itemId": "cmsdf12w90036mij9al2tktjx",
+   "lineId": "cmupcujb903hupd014v3ch1my",
+   "from": {
+    "countedQty": 300,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.75,
+    "unit": "each"
+   },
+   "reason": "300 g of a 400 g pack."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Cinnamon Quill",
+   "itemId": "cmsdf12wi003cmij97rny82q8",
+   "lineId": "cmupcujb903hwpd01qmq1xjy1",
+   "from": {
+    "countedQty": 400,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 2,
+    "unit": "each"
+   },
+   "reason": "400 g of 200 g packs."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "CLOVES WHOLE 350GM (Galaxy) EA",
+   "itemId": "cmoqfbnbx00889ky2k5ph6qfp",
+   "lineId": "cmupcujba03i0pd01r33wi7ne",
+   "from": {
+    "countedQty": 800,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 2.2857,
+    "unit": "each"
+   },
+   "reason": "800 g of 350 g packs."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "CORIANDER SEED 250GM (Galaxy) EA",
+   "itemId": "cmoqfbnk3008q9ky24ufnnfk1",
+   "lineId": "cmupcujba03ifpd01t5ouypcx",
+   "from": {
+    "countedQty": 0.3,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.3,
+    "unit": "each"
+   },
+   "reason": "\"0.3 g\" is a count of 0.3 of a pack against a gram label."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Corn Sweet Box",
+   "itemId": "cmoqfbnlu008u9ky27xeoi31h",
+   "lineId": "cmupcujba03ihpd01kncug13e",
+   "from": {
+    "countedQty": 4,
+    "unit": "kg"
+   },
+   "to": {
+    "countedQty": 4,
+    "unit": "each"
+   },
+   "reason": "4 kg at 1 kg per count unit."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Cream Thickened",
+   "itemId": "cmptowand00pps601bmioxrei",
+   "lineId": "cmupcujba03inpd0152tr4r7c",
+   "from": {
+    "countedQty": 800,
+    "unit": "mL"
+   },
+   "to": {
+    "countedQty": 0.8,
+    "unit": "each"
+   },
+   "reason": "800 mL at 1 L per count unit (cost is per litre)."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Cumin Ground",
+   "itemId": "cmsdf12wr003imij9gljfn2p8",
+   "lineId": "cmupcujba03itpd018l61bg84",
+   "from": {
+    "countedQty": 100,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.2222,
+    "unit": "each"
+   },
+   "reason": "100 g of a 450 g pack."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "CUMIN SEEDS 450GM (Windsor Farm) EA",
+   "itemId": "cmoqfbntl009c9ky2jen0yylc",
+   "lineId": "cmupcujba03ivpd01g9hibk2a",
+   "from": {
+    "countedQty": 0.4,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.4,
+    "unit": "each"
+   },
+   "reason": "\"0.4 g\" is a count of 0.4 of a pack against a gram label."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "FENNEL SEED 450GM (Galaxy) EA",
+   "itemId": "cmoqfbok300b09ky244dg0m6l",
+   "lineId": "cmupcujbc03kzpd015yimb8vg",
+   "from": {
+    "countedQty": 0.5,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.5,
+    "unit": "each"
+   },
+   "reason": "\"0.5 g\" is a count of half a pack against a gram label (historical lines read 0.89 g / 0.2 g the same way)."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "First Press Black Cold Drip Coffee Mixer",
+   "itemId": "cmptovv23003cs6013b0couwj",
+   "lineId": "cmupcujbc03l4pd017g233y7u",
+   "from": {
+    "countedQty": 0.3,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 0.4,
+    "unit": "each"
+   },
+   "reason": "0.3 L of a 750 mL bottle."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Garlic Powder",
+   "itemId": "cmsdf12sy0010mij9lyo56458",
+   "lineId": "cmupcujbe03m4pd01f3k95o52",
+   "from": {
+    "countedQty": 540,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "540 g = one 540 g tub. NB the twin GARLIC POWDER 540GM line on this sheet is the same tub (cluster #136)."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "GARLIC POWDER 540GM (Windsor Farm) EA",
+   "itemId": "cmoqfboyr00by9ky2jfukvth7",
+   "lineId": "cmupcujbe03m5pd01t2nc71zw",
+   "from": {
+    "countedQty": 1,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "\"1 g\" is a count of 1 typed against a gram label (same pattern as this item's historical lines 1 g / 0.7 g). NB same tub as Garlic Powder 540 g (cluster #136)."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Lemon Juice",
+   "itemId": "cmsdf10jq0049miio0nxdhu8w",
+   "lineId": "cmupcujbl03ozpd01dfrlcuww",
+   "from": {
+    "countedQty": 2,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "2 L of a 2 L bottle (invoice \"Lemon Juice 2 Litre Bottle\")."
+  },
+  {
+   "action": "restate",
+   "confidence": "medium",
+   "venue": "Alma Avalon",
+   "item": "Lime Juice",
+   "itemId": "cmsdf10jz004fmiioy6e21lmz",
+   "lineId": "cmupcujbm03p8pd01dx1qsfyk",
+   "from": {
+    "countedQty": 25.1,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 12.55,
+    "unit": "each"
+   },
+   "reason": "25.1 L of 2 L bottles (see measure note). Shelf check."
+  },
+  {
+   "action": "restate",
+   "confidence": "medium",
+   "venue": "Alma Avalon",
+   "item": "Manly Spirits Bulk 20Ltr Australian Dry Gin 1 x 20ltr Drum",
+   "itemId": "cmoqfbqah00f09ky2lwzzszmq",
+   "lineId": "cmupcujbn03pspd01b5wu3sc3",
+   "from": {
+    "countedQty": 18.1,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 18100,
+    "unit": "gram"
+   },
+   "reason": "18.1 L of the 20 L drum. The item counts in \"gram\" (a mislabel for mL: cost 0.066/mL, conversion 20000 per drum), so 18.1 L = 18100. Fix the item to count in mL or drums; it also duplicates Manly Spirits Dry Gin."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Manly Spirits Triple Sec",
+   "itemId": "cmptovwge00dus601f7xn8avx",
+   "lineId": "cmupcujbn03pypd01acruh86x",
+   "from": {
+    "countedQty": 2,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 2.6667,
+    "unit": "bottle"
+   },
+   "reason": "L entered on a bottle item; 2 L ÷ 750 mL."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Manly Spirits Triple Sec No Sugar",
+   "itemId": "cmptovwgv00dxs601pi20zgpp",
+   "lineId": "cmupcujbn03pzpd01z3nqsxef",
+   "from": {
+    "countedQty": 11,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 14.6667,
+    "unit": "bottle"
+   },
+   "reason": "L entered on a bottle item; 11 L ÷ 750 mL."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Manly Spirits Vodka",
+   "itemId": "cmptovwhb00e0s601nys0gi1x",
+   "lineId": "cmupcujbo03q0pd01nmcni94y",
+   "from": {
+    "countedQty": 5.1,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 6.8,
+    "unit": "bottle"
+   },
+   "reason": "L entered on a bottle item; 5.1 L ÷ 750 mL."
+  },
+  {
+   "action": "restate",
+   "confidence": "medium",
+   "venue": "Alma Avalon",
+   "item": "Massenez Creme de Peche",
+   "itemId": "cmptovuxi002fs601ncx5ye8f",
+   "lineId": "cmupcujbo03q6pd01lmk1hios",
+   "from": {
+    "countedQty": 4.9,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 0.98,
+    "unit": "bottle"
+   },
+   "reason": "4.9 L of a 5 L pack (see measure note). Shelf check."
+  },
+  {
+   "action": "restate",
+   "confidence": "medium",
+   "venue": "Alma Avalon",
+   "item": "Massenez Pomme Verte",
+   "itemId": "cmptovuy9002ls601d8i19i99",
+   "lineId": "cmupcujbo03q8pd010menu5h1",
+   "from": {
+    "countedQty": 3,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 0.6,
+    "unit": "bottle"
+   },
+   "reason": "3 L of a 5 L pack (see measure note). Shelf check."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Mayonnaise Whole Egg",
+   "itemId": "cmptowav600r7s601h67jhrcs",
+   "lineId": "cmupcujbo03q9pd01zg67arnm",
+   "from": {
+    "countedQty": 1,
+    "unit": "kg"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "1 kg at 1 kg per count unit."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Mesculin Greens Mix",
+   "itemId": "cmptowc4w00z4s601oluv35mi",
+   "lineId": "cmupcujbp03qgpd01wxjrwlv5",
+   "from": {
+    "countedQty": 800,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.8,
+    "unit": "each"
+   },
+   "reason": "800 g at 1 kg per count unit (cost is per kg)."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Oil Grapeseed",
+   "itemId": "cmptowaxv00rps6010886cel8",
+   "lineId": "cmupcujbr03rrpd01n842hsna",
+   "from": {
+    "countedQty": 1,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "1 L = one 1 L bottle."
+  },
+  {
+   "action": "restate",
+   "confidence": "medium",
+   "venue": "Alma Avalon",
+   "item": "Onion Powder",
+   "itemId": "cmsdf12th001cmij97z2i2rgw",
+   "lineId": "cmupcujbs03s3pd01k0erxglr",
+   "from": {
+    "countedQty": 500,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "500 g = one 500 g tub; the twin ONION POWDER line says 0.5 (cluster #137) — shelf check."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Onions Brown",
+   "itemId": "cmptowc5p00z7s6012errl49s",
+   "lineId": "cmupcujbs03s5pd01q9td9u3f",
+   "from": {
+    "countedQty": 11,
+    "unit": "kg"
+   },
+   "to": {
+    "countedQty": 11,
+    "unit": "each"
+   },
+   "reason": "11 kg at 1 kg per count unit."
+  },
+  {
+   "action": "restate",
+   "confidence": "medium",
+   "venue": "Alma Avalon",
+   "item": "Paprika Smoked",
+   "itemId": "cmsdf12tr001imij9wegfg9q4",
+   "lineId": "cmupcujbt03slpd01t4u3hr1j",
+   "from": {
+    "countedQty": 1.2,
+    "unit": "kg"
+   },
+   "to": {
+    "countedQty": 1.2,
+    "unit": "each"
+   },
+   "reason": "The twin PAPRIKA SMOKED 500GM line next to it reads 1.2 each: the same number typed on both rows, the kg is the slip (critic, cluster #138)."
+  },
+  {
+   "action": "recount",
+   "confidence": "low",
+   "venue": "Alma Avalon",
+   "item": "Parrot Fish Fillets",
+   "itemId": "cmptowbrt00wrs6017gd850kf",
+   "lineId": "cmupcujbt03sopd01hp39r0gh",
+   "from": {
+    "countedQty": 9.2,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": null,
+    "unit": "kg"
+   },
+   "reason": "9.2 g on an item counted in kg — 9.2 g, 0.92 kg and 9.2 kg are all possible. Cleared for a recount."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Pears Nashi",
+   "itemId": "cmptowbdl00ujs601rftq9996",
+   "lineId": "cmupcujbu03szpd01kmxcqiqk",
+   "from": {
+    "countedQty": 475,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.475,
+    "unit": "each"
+   },
+   "reason": "475 g at 1 kg per count unit."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Pepita Seeds",
+   "itemId": "cmptowb1f00sds60107gsotjy",
+   "lineId": "cmupcujbu03t1pd01pm0dmgnc",
+   "from": {
+    "countedQty": 757,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.757,
+    "unit": "each"
+   },
+   "reason": "757 g at 1 kg per count unit."
+  },
+  {
+   "action": "restate",
+   "confidence": "medium",
+   "venue": "Alma Avalon",
+   "item": "Peppercorns Black Whole",
+   "itemId": "cmptowb2f00sjs601qlkwclqb",
+   "lineId": "cmupcujbu03t5pd01pg0ocxhn",
+   "from": {
+    "countedQty": 237,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.474,
+    "unit": "each"
+   },
+   "reason": "237 g of a 500 g pack. Item cost is 0."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Salt Flakes",
+   "itemId": "cmptowb3800sps601994a7sjm",
+   "lineId": "cmupcujbx03uhpd01eo7746hd",
+   "from": {
+    "countedQty": 500,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.25,
+    "unit": "each"
+   },
+   "reason": "500 g of a 2 kg tub. Item has no cost, so it still values at $0."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Sesame Seed White",
+   "itemId": "cmsdf12us0026mij9kalklh8m",
+   "lineId": "cmupcujbx03uxpd01fdb2c2oe",
+   "from": {
+    "countedQty": 969,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.969,
+    "unit": "each"
+   },
+   "reason": "969 g of a 1 kg pack."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Tomatoes",
+   "itemId": "cmptowc7c00zis601hpou3t4s",
+   "lineId": "cmupcujbz03wdpd01sos79ddi",
+   "from": {
+    "countedQty": 2.211,
+    "unit": "kg"
+   },
+   "to": {
+    "countedQty": 2.211,
+    "unit": "each"
+   },
+   "reason": "2.211 kg at 1 kg per count unit."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Vinegar Apple Cider",
+   "itemId": "cmptowb7v00tjs601pnmvxbc8",
+   "lineId": "cmupcujc003x4pd01uaor0g8m",
+   "from": {
+    "countedQty": 2.5,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 0.5,
+    "unit": "each"
+   },
+   "reason": "2.5 L of a 5 L drum."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Wakame",
+   "itemId": "cmptowb9b00tss6018qwk7nnl",
+   "lineId": "cmupcujc103xlpd01zilo78d6",
+   "from": {
+    "countedQty": 500,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "500 g = one 500 g pack."
+  },
+  {
+   "action": "restate",
+   "confidence": "medium",
+   "venue": "Alma Avalon",
+   "item": "Watermelon Juice",
+   "itemId": "cmsdf10l00053miioyzpx19ey",
+   "lineId": "cmupcujc103xnpd01mdd64avl",
+   "from": {
+    "countedQty": 16.6,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 3.32,
+    "unit": "each"
+   },
+   "reason": "16.6 L of 5 L packs (item measure 5000 mL; no invoice to confirm)."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Whole dried Ancho Chilli 1kg",
+   "itemId": "cmoqfbu1300ni9ky274viq7qt",
+   "lineId": "cmupcujc203xupd015d75keq0",
+   "from": {
+    "countedQty": 298,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.298,
+    "unit": "each"
+   },
+   "reason": "298 g of a 1 kg pack."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Whole dried Guajillo (Mirasol) Chilli 1kg",
+   "itemId": "cmoqfbu4l00nq9ky2hmc9vwwh",
+   "lineId": "cmupcujc203xxpd01rkmkpxfc",
+   "from": {
+    "countedQty": 157,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.157,
+    "unit": "each"
+   },
+   "reason": "157 g of a 1 kg pack."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Zucchini Medium",
+   "itemId": "cmoqfbu9u00o29ky2ubrdkwxq",
+   "lineId": "cmupcujc203y7pd01c97so9yq",
+   "from": {
+    "countedQty": 1,
+    "unit": "kg"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "1 kg at 1 kg per count unit."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "St Alma",
+   "item": "Manly Spirits Dry Gin",
+   "itemId": "cmptovwfz00drs601ep9r8o8y",
+   "lineId": "cmup72ayq009ppd01t0ohb8cn",
+   "from": {
+    "countedQty": 8300,
+    "unit": "ml"
+   },
+   "to": {
+    "countedQty": 11.0667,
+    "unit": "bottle"
+   },
+   "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "St Alma",
+   "item": "Manly Spirits Triple Sec No Sugar",
+   "itemId": "cmptovwgv00dxs601pi20zgpp",
+   "lineId": "cmup72ayq009spd01ut90gxd1",
+   "from": {
+    "countedQty": 21000,
+    "unit": "ml"
+   },
+   "to": {
+    "countedQty": 28,
+    "unit": "bottle"
+   },
+   "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "St Alma",
+   "item": "Manly Spirits Vodka",
+   "itemId": "cmptovwhb00e0s601nys0gi1x",
+   "lineId": "cmup72ayq009tpd01v7qb8wt7",
+   "from": {
+    "countedQty": 17500,
+    "unit": "ml"
+   },
+   "to": {
+    "countedQty": 23.3333,
+    "unit": "bottle"
+   },
+   "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "St Alma",
+   "item": "Manly Spirits Triple Sec",
+   "itemId": "cmptovwge00dus601f7xn8avx",
+   "lineId": "cmup72ayq009rpd01o9z1957q",
+   "from": {
+    "countedQty": 10800,
+    "unit": "ml"
+   },
+   "to": {
+    "countedQty": 14.4,
+    "unit": "bottle"
+   },
+   "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "St Alma",
+   "item": "Lemon Juice",
+   "itemId": "cmsdf10jq0049miio0nxdhu8w",
+   "lineId": "cmup72ayp0091pd01kde1r80n",
+   "from": {
+    "countedQty": 2,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "2 L of a 2 L bottle (invoice \"Lemon Juice 2 Litre Bottle\")."
+  }
+ ],
+ "holdings": [
+  {
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "SALT TABLE 14KG (Olssons) CTN",
+   "itemId": "cmoqfbscr00jo9ky2pmb89fp0",
+   "holdingId": "cmq2d07zw01tqs60166lvkanj",
+   "from": {
+    "onHand": 5.77
+   },
+   "to": {
+    "onHand": 0.4121
+   },
+   "sourceStocktakeId": "cmq2c9uw800kos6018ha03zy1",
+   "sourceStocktakeLineId": "cmq2d0uct020zs6013oyrhxmr",
+   "sourceMovementId": "cmq2dbwxw0053s601ue2hxsiq",
+   "sourceLine": {
+    "countedQty": 5.77,
+    "unit": "Kilo"
+   },
+   "reason": "5.77 kg of a 14 kg carton entered as cartons (Loaded \"Kilo\" line; item note \"Pack: 14 kg\")."
+  },
+  {
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Manly Spirits Dry Gin",
+   "itemId": "cmptovwfz00drs601ep9r8o8y",
+   "holdingId": "cmq2ce9g200f4s601en3ufwdh",
+   "from": {
+    "onHand": 19400
+   },
+   "to": {
+    "onHand": 25.8667
+   },
+   "sourceStocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "sourceStocktakeLineId": "cmti4209w0409oa01w8mybno8",
+   "sourceMovementId": "cmurfz2ho0a8ypd01ct6sqpt9",
+   "sourceLine": {
+    "countedQty": 19400,
+    "unit": "mL"
+   },
+   "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
+  },
+  {
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Manly Spirits Triple Sec",
+   "itemId": "cmptovwge00dus601f7xn8avx",
+   "holdingId": "cmq2ce9h700fcs6011bvq1fbp",
+   "from": {
+    "onHand": 9350
+   },
+   "to": {
+    "onHand": 12.4667
+   },
+   "sourceStocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "sourceStocktakeLineId": "cmti4209w040boa01jf66pv7o",
+   "sourceMovementId": "cmurfz2i20a96pd019agzrj21",
+   "sourceLine": {
+    "countedQty": 9350,
+    "unit": "mL"
+   },
+   "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
+  },
+  {
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Manly Spirits Triple Sec No Sugar",
+   "itemId": "cmptovwgv00dxs601pi20zgpp",
+   "holdingId": "cmq2ce9hq00fgs601ag8vnaq5",
+   "from": {
+    "onHand": 16500
+   },
+   "to": {
+    "onHand": 22
+   },
+   "sourceStocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "sourceStocktakeLineId": "cmti4209w040coa01e6zlqt4x",
+   "sourceMovementId": "cmurfz2i90a9apd018v7cunp1",
+   "sourceLine": {
+    "countedQty": 16500,
+    "unit": "mL"
+   },
+   "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
+  },
+  {
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Manly Spirits Vodka",
+   "itemId": "cmptovwhb00e0s601nys0gi1x",
+   "holdingId": "cmq2ce9i000fis6013psas9xo",
+   "from": {
+    "onHand": 7500
+   },
+   "to": {
+    "onHand": 10
+   },
+   "sourceStocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "sourceStocktakeLineId": "cmti4209w040doa01ogluazgc",
+   "sourceMovementId": "cmurfz2ig0a9epd01vw3t30zs",
+   "sourceLine": {
+    "countedQty": 7500,
+    "unit": "mL"
+   },
+   "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
+  },
+  {
+   "confidence": "medium",
+   "venue": "Alma Avalon",
+   "item": "Massenez Creme de Peche",
+   "itemId": "cmptovuxi002fs601ncx5ye8f",
+   "holdingId": "cmq2ce8hj007ys601j6ow2tk1",
+   "from": {
+    "onHand": 4800
+   },
+   "to": {
+    "onHand": 0.96
+   },
+   "sourceStocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "sourceStocktakeLineId": "cmti4209w040goa0164tql9fh",
+   "sourceMovementId": "cmurfz2j00a9qpd01vakfa2t6",
+   "sourceLine": {
+    "countedQty": 4800,
+    "unit": "mL"
+   },
+   "reason": "4800 mL of a 5 L pack entered as bottles (see measure note). Shelf check."
+  },
+  {
+   "confidence": "high",
+   "venue": "St Alma",
+   "item": "Manly Spirits Triple Sec",
+   "itemId": "cmptovwge00dus601f7xn8avx",
+   "holdingId": "cmptovwgj00dws601wuaqi83a",
+   "from": {
+    "onHand": 3400
+   },
+   "to": {
+    "onHand": 4.5333
+   },
+   "sourceStocktakeId": "cmtgs6a1a06faoe01qwx3ci3y",
+   "sourceStocktakeLineId": "cmtim0y9d04y7oa01bqhtvq39",
+   "sourceMovementId": "cmurfyr2k09gipd01o2lyq47x",
+   "sourceLine": {
+    "countedQty": 3400,
+    "unit": "mL"
+   },
+   "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
+  },
+  {
+   "confidence": "high",
+   "venue": "St Alma",
+   "item": "Manly Spirits Triple Sec No Sugar",
+   "itemId": "cmptovwgv00dxs601pi20zgpp",
+   "holdingId": "cmptovwgy00dzs60187mlbga2",
+   "from": {
+    "onHand": 3000
+   },
+   "to": {
+    "onHand": 4
+   },
+   "sourceStocktakeId": "cmtgs6a1a06faoe01qwx3ci3y",
+   "sourceStocktakeLineId": "cmtim0y9d04y8oa019fzlubhe",
+   "sourceMovementId": "cmurfyr2q09gmpd0198s4vtsg",
+   "sourceLine": {
+    "countedQty": 3000,
+    "unit": "mL"
+   },
+   "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
+  },
+  {
+   "confidence": "medium",
+   "venue": "St Alma",
+   "item": "Lime Juice",
+   "itemId": "cmsdf10jz004fmiioy6e21lmz",
+   "holdingId": "cmsdf10k3004hmiiom0n9sebv",
+   "from": {
+    "onHand": 8
+   },
+   "to": {
+    "onHand": 4
+   },
+   "sourceStocktakeId": "cmtgs6a1a06faoe01qwx3ci3y",
+   "sourceStocktakeLineId": "cmtim0y9c04xpoa015kt9lioh",
+   "sourceMovementId": "cmurfyqzc09eipd01b7f5vfsr",
+   "sourceLine": {
+    "countedQty": 8,
+    "unit": "L"
+   },
+   "reason": "8 L of 2 L bottles entered as \"each\" (see measure note). Shelf check."
+  }
+ ]
+}
