@@ -1,0 +1,391 @@
+[
+ {
+  "verdict": "confirmed",
+  "name": "LYRES WHITE CANE SPIRIT 700ML BOTTLE",
+  "id": "cmoqfbq7w00eu9ky2gcs0n6ja",
+  "cat": "Spirits — Other",
+  "countUnit": "bottle",
+  "purchaseUnit": "bottle",
+  "packSize": "case of 6 (inferred)",
+  "avg": 20442,
+  "expected": 3407,
+  "onHand": {
+   "Alma Avalon": 6,
+   "St Alma": 4.371703
+  },
+  "impact": {
+   "Alma Avalon": 102210,
+   "St Alma": 74472
+  },
+  "evidence": "$204.42 = 6 × $34.07; Lyre's 700 mL spirits cost $29–35 a bottle (Lyre's Triple Sec 700 mL $35.19, Lyres White Cane $29.26)",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "confirmed",
+  "name": "LYRES AGAVE BLANCO 700ML BOTTLE",
+  "id": "cmoqfbq6600eq9ky2qgnr8ejx",
+  "cat": "Non-Alcoholic & Mixers",
+  "countUnit": "bottle",
+  "purchaseUnit": "bottle",
+  "packSize": "case of 6 (inferred)",
+  "avg": 21114,
+  "expected": 3519,
+  "onHand": {
+   "Alma Avalon": 0.985776,
+   "St Alma": 6
+  },
+  "impact": {
+   "Alma Avalon": 17345,
+   "St Alma": 105570
+  },
+  "evidence": "$211.14 = 6 × $35.19, exactly Lyre's Triple Sec 700 mL; twin Lyres Agave Blanco $29.25",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "confirmed",
+  "name": "SAMMY PIQUANT JETSETTER 700ML BOTTLE",
+  "id": "cmoqfbsdo00jq9ky2k3aq5jkd",
+  "cat": "Non-Alcoholic & Mixers",
+  "countUnit": "bottle",
+  "purchaseUnit": "bottle",
+  "packSize": "case of 6 (inferred)",
+  "avg": 17970,
+  "expected": 2995,
+  "onHand": {
+   "Alma Avalon": 10.7,
+   "St Alma": 1.95
+  },
+  "impact": {
+   "Alma Avalon": 160232,
+   "St Alma": 29201
+  },
+  "evidence": "$179.70 = 6 × $29.95, exactly the twin's latest invoice price",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "confirmed",
+  "name": "HERRADURA AGAVE NECTAR 473ML - (CASE OF 12)",
+  "id": "cmoqfbpi700d69ky2f8gje5og",
+  "cat": "Oils & Condiments",
+  "countUnit": "each",
+  "purchaseUnit": "case",
+  "packSize": "case of 12 (purchase unit \"case\", 12 per case)",
+  "avg": 13488,
+  "expected": 1124,
+  "onHand": {
+   "Alma Avalon": 15
+  },
+  "impact": {
+   "Alma Avalon": 185460
+  },
+  "evidence": "$134.88 = 12 × $11.24; twin Herradura Agave Nectar $12.28",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "confirmed",
+  "name": "SUPASAWA 700ML - (CASE OF 6)",
+  "id": "cmoqfbswy00ky9ky2n2nczql9",
+  "cat": "Non-Alcoholic & Mixers",
+  "countUnit": "bottle",
+  "purchaseUnit": "case",
+  "packSize": "case of 6 (purchase unit \"case\", 6 per case)",
+  "avg": 14826,
+  "expected": 2471,
+  "onHand": {
+   "Alma Avalon": 1.4,
+   "St Alma": 3.3
+  },
+  "impact": {
+   "Alma Avalon": 17297,
+   "St Alma": 40772
+  },
+  "evidence": "$148.26 = 6 × $24.71; twin Supasawa $27.60",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "confirmed",
+  "name": "GIFFARD ROSE SYRUP 1L BOTTLE",
+  "id": "cmoqfbp7g00ci9ky2fenupt1l",
+  "cat": "Non-Alcoholic & Mixers",
+  "countUnit": "bottle",
+  "purchaseUnit": "bottle",
+  "packSize": "case of 6 (inferred)",
+  "avg": 14235,
+  "expected": 2373,
+  "onHand": {
+   "Alma Avalon": 0.725,
+   "St Alma": 4.5
+  },
+  "impact": {
+   "Alma Avalon": 8600,
+   "St Alma": 53379
+  },
+  "evidence": "$142.35 = 6 × $23.73, exactly the twin Giffard Rose Syrup",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "confirmed",
+  "name": "GIFFARD COCONUT SYRUP 1000ML BOTTLE",
+  "id": "cmoqfbp2600c69ky24p8ikf3e",
+  "cat": "Non-Alcoholic & Mixers",
+  "countUnit": "bottle",
+  "purchaseUnit": "bottle",
+  "packSize": "case of 6 (inferred)",
+  "avg": 12840,
+  "expected": 2140,
+  "onHand": {
+   "Alma Avalon": 0.525686,
+   "St Alma": 2.6
+  },
+  "impact": {
+   "Alma Avalon": 5625,
+   "St Alma": 27820
+  },
+  "evidence": "$128.40 = 6 × $21.40, exactly the other Giffard 1 L syrups; twin $26.10",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "confirmed",
+  "name": "DON JULIO BLANCO 750ML BOTTLE",
+  "id": "cmoqfbo0n009s9ky23tatpkjn",
+  "cat": "Spirits — Tequila & Mezcal",
+  "countUnit": "bottle",
+  "purchaseUnit": "bottle",
+  "packSize": "case of 6 (inferred)",
+  "avg": 50010,
+  "expected": 8335,
+  "onHand": {
+   "Alma Avalon": 0.2,
+   "St Alma": 0.05
+  },
+  "impact": {
+   "Alma Avalon": 8335,
+   "St Alma": 2084
+  },
+  "evidence": "$500.10 = 6 × $83.35; twin Don Julio Blanco $83.40",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "confirmed",
+  "name": "TSEC 20L (NoSugar) - 20L - 20% ABV",
+  "id": "cmoqfbtik00mc9ky2871h92mv",
+  "cat": "Liqueurs & Aperitifs",
+  "countUnit": "L",
+  "purchaseUnit": "L",
+  "packSize": "20 L drum, counted in litres",
+  "avg": 68000,
+  "expected": 3400,
+  "onHand": {
+   "Alma Avalon": 1.05,
+   "St Alma": 0.015
+  },
+  "impact": {
+   "Alma Avalon": 67830,
+   "St Alma": 969
+  },
+  "evidence": "$680 is the drum price on a litre unit; twin Triple Sec 20 L is $30/L ($600 a drum)",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "confirmed",
+  "name": "Watermelon Juice (1 x 5L)",
+  "id": "cmoqfbtwm00n89ky2nzqu27ne",
+  "cat": "Non-Alcoholic & Mixers",
+  "countUnit": "L",
+  "purchaseUnit": "L",
+  "packSize": "5 L container, counted in litres",
+  "avg": 3000,
+  "expected": 600,
+  "onHand": {
+   "Alma Avalon": 11.3,
+   "St Alma": 2.2
+  },
+  "impact": {
+   "Alma Avalon": 27120,
+   "St Alma": 5280
+  },
+  "evidence": "$30 is the 5 L price on a litre unit; twin Watermelon Juice is $34.80 per 5 L ($6.96/L)",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "confirmed",
+  "name": "YG BEEF CHUCK ROLL",
+  "id": "cmoqfbu8y00o09ky2md6lkxv9",
+  "cat": "Meat & Poultry",
+  "countUnit": "kg",
+  "purchaseUnit": "kg",
+  "packSize": "case price per kg (inferred)",
+  "avg": 12400,
+  "expected": 2067,
+  "onHand": {
+   "St Alma": 2.756846
+  },
+  "impact": {
+   "St Alma": 28486
+  },
+  "evidence": "$124/kg = 6 × $20.67; twin Beef Chuck Roll $20.50/kg",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "suspected",
+  "name": "Massenez Creme de Peche",
+  "id": "cmptovuxi002fs601ncx5ye8f",
+  "cat": "Liqueurs & Aperitifs",
+  "countUnit": "bottle",
+  "purchaseUnit": "bottle",
+  "packSize": "6-pack? (no invoice)",
+  "avg": 22091,
+  "expected": 3682,
+  "onHand": {
+   "Alma Avalon": 1,
+   "St Alma": 1
+  },
+  "impact": {
+   "Alma Avalon": 18409,
+   "St Alma": 18409
+  },
+  "evidence": "$220.91 a bottle is ~6× a normal Massenez liqueur; Loaded recorded '1 Bottle = $220.91'. Tim counted 1 bottle",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "suspected",
+  "name": "Massenez Pomme Verte",
+  "id": "cmptovuy9002ls601d8i19i99",
+  "cat": "Liqueurs & Aperitifs",
+  "countUnit": "bottle",
+  "purchaseUnit": "bottle",
+  "packSize": "6-pack? (no invoice)",
+  "avg": 20820,
+  "expected": 3470,
+  "onHand": {
+   "Alma Avalon": 6,
+   "St Alma": 0.5
+  },
+  "impact": {
+   "Alma Avalon": 104100,
+   "St Alma": 8675
+  },
+  "evidence": "$208.20 for a 500 mL bottle (Tim confirmed the size) is ~6× normal",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "suspected",
+  "name": "Limes",
+  "id": "cmsdf12vr002umij9z3kq63op",
+  "cat": "Produce",
+  "countUnit": "kg",
+  "purchaseUnit": "kg",
+  "packSize": "5 kg box price on a kg unit?",
+  "avg": 4557,
+  "expected": 911,
+  "onHand": {
+   "Alma Avalon": 5.8,
+   "St Alma": 1.49
+  },
+  "impact": {
+   "Alma Avalon": 21147,
+   "St Alma": 5433
+  },
+  "evidence": "$45.57/kg; the merged 'Limes 5kg Box' record suggests $45.57 is the box",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "suspected",
+  "name": "Lime Juice (1 x 5L)",
+  "id": "cmoqfbq3n00ek9ky2f7n9793j",
+  "cat": "Non-Alcoholic & Mixers",
+  "countUnit": "L",
+  "purchaseUnit": "L",
+  "packSize": "litre price unclear",
+  "avg": 7000,
+  "expected": 760,
+  "onHand": {
+   "Alma Avalon": 3.5,
+   "St Alma": 3.8
+  },
+  "impact": {
+   "Alma Avalon": 21840,
+   "St Alma": 23712
+  },
+  "evidence": "$70/L; the only invoice is a 2 L bottle at $15.20 ($7.60/L). You confirmed lime juice comes in 5 L packs, so the true per-litre price needs an invoice",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "suspected",
+  "name": "Cascahuin Reposado (4x375mL)",
+  "id": "cmsdf10qp008xmiiossa0j9qq",
+  "cat": "Spirits — Other",
+  "countUnit": "bottle",
+  "purchaseUnit": "bottle",
+  "packSize": "pack of 4 × 375 mL",
+  "avg": 29177,
+  "expected": 7294,
+  "onHand": {
+   "St Alma": 0.75
+  },
+  "impact": {
+   "St Alma": 16412
+  },
+  "evidence": "$291.77 per pack; correct as is if staff count packs, $72.94 if they count 375 mL bottles",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "suspected",
+  "name": "Lettuce Baby Gem 20s Box",
+  "id": "cmoqfbq1200ee9ky2042yw00x",
+  "cat": "Produce",
+  "countUnit": "each",
+  "purchaseUnit": "each",
+  "packSize": "box of 20 heads",
+  "avg": 3800,
+  "expected": 190,
+  "onHand": {
+   "Alma Avalon": 6,
+   "St Alma": 0.3
+  },
+  "impact": {
+   "Alma Avalon": 21660,
+   "St Alma": 1083
+  },
+  "evidence": "$38 per box is right if staff count boxes; wrong if they count heads",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "suspected",
+  "name": "PARMESAN GRANA WEDGE 14 X 200GM (Zanetti) CTN",
+  "id": "cmoqfbrd000hg9ky27o1tt8g3",
+  "cat": "Dairy & Eggs",
+  "countUnit": "each",
+  "purchaseUnit": "case",
+  "packSize": "carton of 14 wedges",
+  "avg": 11600,
+  "expected": 829,
+  "onHand": {
+   "St Alma": 0.58
+  },
+  "impact": {
+   "St Alma": 6247
+  },
+  "evidence": "$116 per carton is right if staff count cartons; $8.29 if they count wedges",
+  "impactIsWholeValue": false
+ },
+ {
+  "verdict": "suspected",
+  "name": "Rum",
+  "id": "cmoqfbs7900jc9ky2ubm4bauh",
+  "cat": "Spirits — Other",
+  "countUnit": "bottle",
+  "purchaseUnit": "bottle",
+  "packSize": "unknown product",
+  "avg": 40482,
+  "expected": null,
+  "onHand": {
+   "St Alma": 2.7
+  },
+  "impact": {
+   "St Alma": 109301
+  },
+  "evidence": "No product named; $404.82 a bottle from a March 2026 sheet. Identify it or archive it",
+  "impactIsWholeValue": true
+ }
+]
