@@ -1,0 +1,27 @@
+database: alma_suite_v18 — PRODUCTION
+Unit fixes from docs/stock-duplicate-resolution-2026-10/unit-fixes-2026-10-16-shelf-check.json — APPLYING
+
+== Item measures (0) — what one count unit holds
+
+== Stocktake 10/1/2026 (Alma Avalon, not yet applied) — 5 line(s)
+  [high] Manly Spirits Bulk 20Ltr Australian Dry Gin 1 x 20ltr Drum: 18.1 L → 18100 gram   line value $0.00 → $1267.00; applied as it stands it would book $1.27
+      Shelf check 16 Oct 2026 (Tim): the counted amount is right. 18.1 L of the 20 L drum; the item counts in "gram", a mislabel for mL (20000 per drum, cost per mL), so 18.1 L = 18100.
+  [high] Onion Powder: 500 g → 1 each   line value $0.00 → $9.00; applied as it stands it would book $4500.00
+      Shelf check 16 Oct 2026 (Tim): the counted amount is right. 500 g = one 500 g tub.
+  [high] Paprika Smoked: 1.2 kg → 2.4 each   line value $0.00 → $28.85; applied as it stands it would book $14.42
+      Shelf check 16 Oct 2026 (Tim): the counted amount is right. 1.2 kg is correct, so 1.2 kg of 500 g tubs = 2.4 (earlier draft assumed the kg was a slip and had 1.2).
+  [high] Parrot Fish Fillets: 9.2 g → 0.0092 kg   line value $0.26 → $0.26; applied as it stands it would book $256.59
+      Shelf check 16 Oct 2026 (Tim): the counted amount is right. 9.2 g on an item counted in kg = 0.0092 kg.
+  [high] Peppercorns Black Whole: 237 g → 0.474 each   line value $0.00 → $0.00; applied as it stands it would book $0.00
+      Shelf check 16 Oct 2026 (Tim): the counted amount is right. 237 g of a 500 g pack (Loaded "1 500 Grams"). Item has no cost yet, so it values at $0.
+  → applying this sheet as it stands would book $4772.28 for these lines; after the restatement $1305.11.
+
+== Holdings already written from such a line (0) — corrected with a STOCKTAKE_CORRECTION movement
+  → holdings $0.00 → $0.00 ($0.00).
+
+Applied run prod-unitfix-20261016-shelfcheck: 0 measure(s), 5 line(s), 0 holding(s) with 0 correction movement(s).
+Rollback: --rollback prod-unitfix-20261016-shelfcheck
+verify: St Alma — Bar & FOH 01/10/2026 (St Alma, not applied): 0 counted line(s) still in a unit apply would not convert
+verify: Stocktake 10/1/2026 (Alma Avalon, not applied): 5 counted line(s) still in a unit apply would not convert — Avocadoes Hass 1.473 kg; Bay Leaves Bunch 170 g; Lime Juice 25.1 L; Massenez Pomme Verte 3 L; Watermelon Juice 16.6 L
+  Alma Avalon: active stock value $52274.51
+  St Alma: active stock value $79227.53

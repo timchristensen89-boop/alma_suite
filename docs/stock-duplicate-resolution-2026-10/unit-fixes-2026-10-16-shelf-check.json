@@ -1,0 +1,95 @@
+{
+ "sheets": {
+  "Alma Avalon": "cmupcujav03c0pd01796c5bpm",
+  "St Alma": "cmup72ay90000pd01tfoyqda1"
+ },
+ "measures": [],
+ "lines": [
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Manly Spirits Bulk 20Ltr Australian Dry Gin 1 x 20ltr Drum",
+   "itemId": "cmoqfbqah00f09ky2lwzzszmq",
+   "lineId": "cmupcujbn03pspd01b5wu3sc3",
+   "from": {
+    "countedQty": 18.1,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 18100,
+    "unit": "gram"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): the counted amount is right. 18.1 L of the 20 L drum; the item counts in \"gram\", a mislabel for mL (20000 per drum, cost per mL), so 18.1 L = 18100."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Onion Powder",
+   "itemId": "cmsdf12th001cmij97z2i2rgw",
+   "lineId": "cmupcujbs03s3pd01k0erxglr",
+   "from": {
+    "countedQty": 500,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): the counted amount is right. 500 g = one 500 g tub."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Paprika Smoked",
+   "itemId": "cmsdf12tr001imij9wegfg9q4",
+   "lineId": "cmupcujbt03slpd01t4u3hr1j",
+   "from": {
+    "countedQty": 1.2,
+    "unit": "kg"
+   },
+   "to": {
+    "countedQty": 2.4,
+    "unit": "each"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): the counted amount is right. 1.2 kg is correct, so 1.2 kg of 500 g tubs = 2.4 (earlier draft assumed the kg was a slip and had 1.2)."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Parrot Fish Fillets",
+   "itemId": "cmptowbrt00wrs6017gd850kf",
+   "lineId": "cmupcujbt03sopd01hp39r0gh",
+   "from": {
+    "countedQty": 9.2,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.0092,
+    "unit": "kg"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): the counted amount is right. 9.2 g on an item counted in kg = 0.0092 kg."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Peppercorns Black Whole",
+   "itemId": "cmptowb2f00sjs601qlkwclqb",
+   "lineId": "cmupcujbu03t5pd01pg0ocxhn",
+   "from": {
+    "countedQty": 237,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 0.474,
+    "unit": "each"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): the counted amount is right. 237 g of a 500 g pack (Loaded \"1 500 Grams\"). Item has no cost yet, so it values at $0."
+  }
+ ],
+ "holdings": []
+}
