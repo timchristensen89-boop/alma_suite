@@ -398,8 +398,8 @@
    "reason": "Shelf check 16 Oct 2026 (Tim): avocados are counted by the ~5 kg tray; 1.473 kg = 0.2946 of a tray."
   },
   {
-   "action": "recount",
-   "confidence": "low",
+   "action": "restate",
+   "confidence": "high",
    "venue": "Alma Avalon",
    "item": "Bay Leaves Bunch",
    "itemId": "cmoqfbly300529ky2zhbuedjg",
@@ -409,10 +409,10 @@
     "unit": "g"
    },
    "to": {
-    "countedQty": null,
+    "countedQty": 1,
     "unit": "each"
    },
-   "reason": "170 g on an item counted in bunches at $2.14 — no way to tell how many bunches. Cleared for a recount; the original stays in the line note."
+   "reason": "Tim, 16 Oct 2026: record the 170 g of bay leaves as 1 bunch."
   },
   {
    "action": "restate",
