@@ -1,6 +1,8 @@
 /**
  * Restate quantities that were typed in the wrong unit (mL on bottle items,
- * g/kg on items counted by the pack) — October 2026.
+ * g/kg on items counted by the pack) — October 2026. The same reviewed-file
+ * format also carries `costs`: per-unit costs that hold a case or drum price
+ * (docs/stock-case-price-fix-2026-10/case-price-fixes.json).
  *
  * Reads the reviewed list docs/stock-duplicate-resolution-2026-10/unit-fixes.json:
  * item measures, lines on the two unapplied 1 October sheets, and holdings
@@ -58,7 +60,7 @@ async function main() {
   console.log(`database: ${db}${production ? ' — PRODUCTION' : ''}`);
   const file = option('--fixes') ?? resolve(process.cwd(), 'docs/stock-duplicate-resolution-2026-10/unit-fixes.json');
   const fixes = JSON.parse(readFileSync(file, 'utf8')) as UnitFixFile;
-  const sheetIds = Object.values(fixes.sheets);
+  const sheetIds = Object.values(fixes.sheets ?? {});
 
   if (flag('--list-runs')) {
     await ensureUnitFixBackupTable();
@@ -94,7 +96,7 @@ async function main() {
   await ensureUnitFixBackupTable();
   const runId = option('--run-id') ?? new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
   const result = await applyUnitFix(runId, plan);
-  console.log(`\nApplied run ${runId}: ${plan.measures.length} measure(s), ${plan.lines.length} line(s), ${plan.holdings.length} holding(s) with ${result.movementIds.length} correction movement(s).`);
+  console.log(`\nApplied run ${runId}: ${plan.costs.length} cost(s), ${plan.measures.length} measure(s), ${plan.lines.length} line(s), ${plan.holdings.length} holding(s) with ${result.movementIds.length} correction movement(s).`);
   console.log(`Rollback: --rollback ${runId}`);
   await verifyUnitFix(sheetIds);
 }

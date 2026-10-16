@@ -1,0 +1,52 @@
+database: alma_suite_v18 — PRODUCTION
+Unit fixes from docs/stock-case-price-fix-2026-10/case-price-fixes.json — dry run
+
+== Costs (11) — case or drum price stored as a unit cost
+  [high] LYRES WHITE CANE SPIRIT 700ML BOTTLE: $204.42 → $34.07
+      Alma Avalon: 6 on hand, $1226.52 → $204.42
+      St Alma: 4.371703 on hand, $893.66 → $148.94
+      case of 6 (inferred): $204.42 = 6 × $34.07; Lyre's 700 mL spirits cost $29–35 a bottle (Lyre's Triple Sec 700 mL $35.19, Lyres White Cane $29.26) Count unit: bottle.
+  [high] LYRES AGAVE BLANCO 700ML BOTTLE: $211.14 → $35.19
+      Alma Avalon: 6.785776 on hand, $1432.75 → $238.79
+      St Alma: 6 on hand, $1266.84 → $211.14
+      case of 6 (inferred): $211.14 = 6 × $35.19, exactly Lyre's Triple Sec 700 mL; twin Lyres Agave Blanco $29.25 Count unit: bottle.
+  [high] SAMMY PIQUANT JETSETTER 700ML BOTTLE: $179.70 → $29.95
+      Alma Avalon: 10.7 on hand, $1922.79 → $320.46
+      St Alma: 1.95 on hand, $350.42 → $58.40
+      case of 6 (inferred): $179.70 = 6 × $29.95, exactly the twin's latest invoice price Count unit: bottle.
+  [high] HERRADURA AGAVE NECTAR 473ML - (CASE OF 12): $134.88 → $11.24
+      Alma Avalon: 15 on hand, $2023.20 → $168.60
+      case of 12 (purchase unit "case", 12 per case): $134.88 = 12 × $11.24; twin Herradura Agave Nectar $12.28 Count unit: each.
+  [high] SUPASAWA 700ML - (CASE OF 6): $148.26 → $24.71
+      Alma Avalon: 2.4 on hand, $355.82 → $59.30
+      St Alma: 5.3 on hand, $785.78 → $130.96
+      case of 6 (purchase unit "case", 6 per case): $148.26 = 6 × $24.71; twin Supasawa $27.60 Count unit: bottle.
+  [high] GIFFARD ROSE SYRUP 1L BOTTLE: $142.35 → $23.73
+      St Alma: 8.57 on hand, $1219.94 → $203.37
+      Alma Avalon: 1.825 on hand, $259.79 → $43.31
+      case of 6 (inferred): $142.35 = 6 × $23.73, exactly the twin Giffard Rose Syrup Count unit: bottle.
+  [high] GIFFARD COCONUT SYRUP 1000ML BOTTLE: $128.40 → $21.40
+      St Alma: 5.4 on hand, $693.36 → $115.56
+      Alma Avalon: 3.025686 on hand, $388.50 → $64.75
+      case of 6 (inferred): $128.40 = 6 × $21.40, exactly the other Giffard 1 L syrups; twin $26.10 Count unit: bottle.
+  [high] DON JULIO BLANCO 750ML BOTTLE: $500.10 → $83.35
+      Alma Avalon: 0.2 on hand, $100.02 → $16.67
+      St Alma: 0.05 on hand, $25.01 → $4.17
+      case of 6 (inferred): $500.10 = 6 × $83.35; twin Don Julio Blanco $83.40 Count unit: bottle.
+  [high] TSEC 20L (NoSugar) - 20L - 20% ABV: $680.00 → $34.00
+      Alma Avalon: 1.05 on hand, $714.00 → $35.70
+      St Alma: 0.015 on hand, $10.20 → $0.51
+      20 L drum, counted in litres: $680 is the drum price on a litre unit; twin Triple Sec 20 L is $30/L ($600 a drum) Count unit: L.
+  [high] Watermelon Juice (1 x 5L): $30.00 → $6.00
+      St Alma: 3.1 on hand, $93.00 → $18.60
+      Alma Avalon: 14.62 on hand, $438.60 → $87.72
+      5 L container, counted in litres: $30 is the 5 L price on a litre unit; twin Watermelon Juice is $34.80 per 5 L ($6.96/L) Count unit: L.
+  [high] YG BEEF CHUCK ROLL: $124.00 → $20.67
+      St Alma: 2.756846 on hand, $341.85 → $56.98
+      case price per kg (inferred): $124/kg = 6 × $20.67; twin Beef Chuck Roll $20.50/kg Count unit: kg.
+  → Alma Avalon: stock value $-7622.27
+  → St Alma: stock value $-4731.43
+
+Dry run — nothing written. Re-run with --apply (a snapshot is taken first; --rollback <runId> restores it).
+  Alma Avalon: active stock value $39322.32
+  St Alma: active stock value $64566.68

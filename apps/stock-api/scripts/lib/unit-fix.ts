@@ -61,13 +61,30 @@ export type HoldingFix = {
   sourceLine: { countedQty: number; unit: string | null };
   reason: string;
 };
+/**
+ * A per-count-unit cost that holds a case or drum price (a 6-bottle case
+ * price on a bottle item, a 20 L drum price on a litre item). Only the
+ * average cost changes: the latest purchase price, every stocktake line's
+ * stored value and every movement stay as they were, so history reads as it
+ * was recorded and only today's valuation is corrected.
+ */
+export type CostFix = {
+  confidence?: Confidence;
+  itemId: string;
+  item: string;
+  from: { avgCostCents: number };
+  to: { avgCostCents: number };
+  reason: string;
+};
 export type UnitFixFile = {
-  sheets: Record<string, string>;
-  measures: MeasureFix[];
-  lines: LineFix[];
-  holdings: HoldingFix[];
+  sheets?: Record<string, string>;
+  measures?: MeasureFix[];
+  lines?: LineFix[];
+  holdings?: HoldingFix[];
+  costs?: CostFix[];
 };
 
+const REAL_VENUES = ['Alma Avalon', 'St Alma'];
 export const UNIT_FIX_BACKUP_TABLE = '_stock_unit_fix_backup';
 const EPSILON = 1e-6;
 const same = (a: number | null | undefined, b: number | null | undefined) =>
@@ -107,7 +124,9 @@ async function backup(tx: Tx, runId: string, step: string, tableName: string, ro
 export type PlannedLine = LineFix & { sheetName: string; valueBeforeCents: number | null; valueAfterCents: number | null; rawApplyCents: number };
 export type PlannedHolding = HoldingFix & { valueBeforeCents: number; valueAfterCents: number; recipeLines?: number };
 export type PlannedMeasure = MeasureFix & { metricRecipeLines: number };
+export type PlannedCost = CostFix & { holdings: Array<{ venue: string; onHand: number; beforeCents: number; afterCents: number }> };
 export type UnitFixPlan = {
+  costs: PlannedCost[];
   measures: PlannedMeasure[];
   lines: PlannedLine[];
   holdings: PlannedHolding[];
@@ -126,8 +145,29 @@ export async function planUnitFix(file: UnitFixFile, options: { confidence?: Con
   const measures: PlannedMeasure[] = [];
   const lines: PlannedLine[] = [];
   const holdings: PlannedHolding[] = [];
+  const costs: PlannedCost[] = [];
 
-  for (const fix of file.measures) {
+  for (const fix of file.costs ?? []) {
+    if (!allowed.has(fix.confidence ?? 'high')) continue;
+    const item = await prisma.stockItem.findUnique({ where: { id: fix.itemId }, include: { venueStock: true } });
+    if (!item) { refusals.push(`cost ${fix.item}: item ${fix.itemId} not found`); continue; }
+    if (item.avgCostCents !== fix.from.avgCostCents) {
+      refusals.push(`cost ${fix.item}: now ${dollars(item.avgCostCents)}, reviewed as ${dollars(fix.from.avgCostCents)}`);
+      continue;
+    }
+    if (!(fix.to.avgCostCents > 0) || fix.to.avgCostCents >= fix.from.avgCostCents) {
+      refusals.push(`cost ${fix.item}: a case-price correction must lower the cost (${dollars(fix.from.avgCostCents)} → ${dollars(fix.to.avgCostCents)})`);
+      continue;
+    }
+    costs.push({
+      ...fix,
+      holdings: item.venueStock
+        .filter((v) => REAL_VENUES.includes(v.venue) && v.onHand)
+        .map((v) => ({ venue: v.venue, onHand: v.onHand!, beforeCents: Math.round(v.onHand! * fix.from.avgCostCents), afterCents: Math.round(v.onHand! * fix.to.avgCostCents) }))
+    });
+  }
+
+  for (const fix of file.measures ?? []) {
     if (!allowed.has(fix.confidence ?? 'high')) continue;
     const item = await prisma.stockItem.findUnique({ where: { id: fix.itemId }, select: { id: true, name: true, measurePerCountUnit: true, measureUnit: true } });
     if (!item) { refusals.push(`measure ${fix.item}: item ${fix.itemId} not found`); continue; }
@@ -140,8 +180,8 @@ export async function planUnitFix(file: UnitFixFile, options: { confidence?: Con
     measures.push({ ...fix, metricRecipeLines });
   }
 
-  const sheetIds = new Set(Object.values(file.sheets));
-  for (const fix of file.lines) {
+  const sheetIds = new Set(Object.values(file.sheets ?? {}));
+  for (const fix of file.lines ?? []) {
     if (!allowed.has(fix.confidence)) continue;
     const line = await prisma.stocktakeLine.findUnique({
       where: { id: fix.lineId },
@@ -149,7 +189,7 @@ export async function planUnitFix(file: UnitFixFile, options: { confidence?: Con
     });
     const label = `line ${fix.venue} · ${fix.item}`;
     if (!line || !line.item) { refusals.push(`${label}: line ${fix.lineId} not found or has no item`); continue; }
-    if (!sheetIds.has(line.stocktakeId) || file.sheets[fix.venue] !== line.stocktakeId) { refusals.push(`${label}: line is on ${line.stocktake.name}, not the reviewed ${fix.venue} sheet`); continue; }
+    if (!sheetIds.has(line.stocktakeId) || file.sheets?.[fix.venue] !== line.stocktakeId) { refusals.push(`${label}: line is on ${line.stocktake.name}, not the reviewed ${fix.venue} sheet`); continue; }
     if (line.stocktake.appliedAt) { refusals.push(`${label}: ${line.stocktake.name} has been applied — correct the holding instead`); continue; }
     if (line.itemId !== fix.itemId) { refusals.push(`${label}: line now points at another item`); continue; }
     if (!same(line.countedQty, fix.from.countedQty) || (line.unit ?? null) !== (fix.from.unit ?? null)) {
@@ -168,7 +208,7 @@ export async function planUnitFix(file: UnitFixFile, options: { confidence?: Con
     });
   }
 
-  for (const fix of file.holdings) {
+  for (const fix of file.holdings ?? []) {
     if (!allowed.has(fix.confidence)) continue;
     const label = `holding ${fix.venue} · ${fix.item}`;
     const holding = await prisma.venueStockItem.findUnique({ where: { id: fix.holdingId }, include: { stockItem: true } });
@@ -191,10 +231,27 @@ export async function planUnitFix(file: UnitFixFile, options: { confidence?: Con
     holdings.push({ ...fix, valueBeforeCents: Math.round(fix.from.onHand * avg), valueAfterCents: Math.round(fix.to.onHand * avg) });
   }
 
-  return { measures, lines, holdings, refusals };
+  return { costs, measures, lines, holdings, refusals };
 }
 
 export function printUnitFixPlan(plan: UnitFixPlan) {
+  if (plan.costs.length) {
+    console.log(`\n== Costs (${plan.costs.length}) — case or drum price stored as a unit cost`);
+    const totals = new Map<string, number>();
+    for (const c of plan.costs) {
+      console.log(`  [${c.confidence ?? 'high'}] ${c.item}: ${dollars(c.from.avgCostCents)} → ${dollars(c.to.avgCostCents)}`);
+      for (const h of c.holdings) {
+        console.log(`      ${h.venue}: ${h.onHand} on hand, ${dollars(h.beforeCents)} → ${dollars(h.afterCents)}`);
+        totals.set(h.venue, (totals.get(h.venue) ?? 0) + h.afterCents - h.beforeCents);
+      }
+      console.log(`      ${c.reason}`);
+    }
+    for (const [venue, delta] of totals) console.log(`  → ${venue}: stock value ${dollars(delta)}`);
+  }
+  if (!plan.measures.length && !plan.lines.length && !plan.holdings.length) {
+    for (const refusal of plan.refusals) console.log(`REFUSED: ${refusal}`);
+    return;
+  }
   console.log(`\n== Item measures (${plan.measures.length}) — what one count unit holds`);
   for (const m of plan.measures) {
     console.log(`  [${m.confidence ?? 'high'}] ${m.item}: ${m.from.measurePerCountUnit ?? '—'} ${m.from.measureUnit ?? ''} → ${m.to.measurePerCountUnit} ${m.to.measureUnit}${m.metricRecipeLines ? `  (${m.metricRecipeLines} recipe line(s) in g/mL re-cost)` : ''}`);
@@ -229,7 +286,7 @@ function noteWith(existing: string | null, addition: string) {
 
 export async function applyUnitFix(runId: string, plan: UnitFixPlan): Promise<{ movementIds: string[] }> {
   if (plan.refusals.length) throw new Error('plan has refusals — nothing applied');
-  const itemIds = [...new Set([...plan.measures.map((m) => m.itemId), ...plan.holdings.map((h) => h.itemId)])];
+  const itemIds = [...new Set([...plan.costs.map((c) => c.itemId), ...plan.measures.map((m) => m.itemId), ...plan.holdings.map((h) => h.itemId)])];
   const holdingIds = plan.holdings.map((h) => h.holdingId);
   const lineIds = plan.lines.map((l) => l.lineId);
   const stamp = new Date().toISOString().slice(0, 10);
@@ -244,7 +301,7 @@ export async function applyUnitFix(runId: string, plan: UnitFixPlan): Promise<{ 
     const items = await tx.stockItem.findMany({ where: { id: { in: itemIds } } });
     const venueRows = await tx.venueStockItem.findMany({ where: { stockItemId: { in: plan.holdings.map((h) => h.itemId) } } });
     const lineRows = await tx.stocktakeLine.findMany({ where: { id: { in: lineIds } } });
-    await backup(tx, runId, 'pre', 'run', [{ id: runId, plan: { measures: plan.measures.length, lines: plan.lines.length, holdings: plan.holdings.length } }]);
+    await backup(tx, runId, 'pre', 'run', [{ id: runId, plan: { costs: plan.costs.length, measures: plan.measures.length, lines: plan.lines.length, holdings: plan.holdings.length } }]);
     await backup(tx, runId, 'pre', 'StockItem', items as unknown as Array<Record<string, unknown>>);
     await backup(tx, runId, 'pre', 'VenueStockItem', venueRows as unknown as Array<Record<string, unknown>>);
     await backup(tx, runId, 'pre', 'StocktakeLine', lineRows as unknown as Array<Record<string, unknown>>);
@@ -259,6 +316,12 @@ export async function applyUnitFix(runId: string, plan: UnitFixPlan): Promise<{ 
     for (const h of plan.holdings) {
       const row = venueRows.find((r) => r.id === h.holdingId)!;
       if (!same(row.onHand, h.from.onHand)) throw new Error(`holding ${h.venue} · ${h.item} changed while planning`);
+    }
+
+    for (const c of plan.costs) {
+      const row = items.find((i) => i.id === c.itemId)!;
+      if (row.avgCostCents !== c.from.avgCostCents) throw new Error(`cost ${c.item} changed while planning`);
+      await tx.stockItem.update({ where: { id: c.itemId }, data: { avgCostCents: c.to.avgCostCents } });
     }
 
     for (const m of plan.measures) {
