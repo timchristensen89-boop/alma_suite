@@ -424,6 +424,239 @@ async function assertKnownVenue(venue: string, actor?: AuthUser | null) {
   }
 }
 
+/**
+ * The merge itself, on a caller-supplied transaction.
+ *
+ * Split out of mergeItems so a bulk script can snapshot the rows it is about
+ * to change, zero a stale holding and merge in ONE transaction — a merge that
+ * commits without its backup, or a backup without its merge, is how a rollback
+ * stops being one. `foldExcludeStocktakeIds` names sheets whose lines are
+ * repointed but never folded: a sheet that lists every item (the stray
+ * venue-less count, the phantom "Avalon" count) has a line for parent and
+ * duplicate alike, and folding there would add two counts of the same shelf.
+ */
+export async function mergeItemsWithin(
+  tx: Prisma.TransactionClient,
+  options: { parentId: string; duplicateIds: string[]; actorName?: string; foldExcludeStocktakeIds?: string[] }
+): Promise<StockItemMergeResult> {
+  const parentId = options.parentId;
+  const dupIds = Array.from(new Set(options.duplicateIds)).filter((id) => id !== parentId);
+  if (dupIds.length === 0) throw new HttpError(400, 'Pick at least one different item to merge into the parent.');
+  const actorName = options.actorName?.trim() || 'system';
+  const foldExclude = new Set(options.foldExcludeStocktakeIds ?? []);
+    const itemInclude = { venueStock: true, aliases: true, priceListItems: true } as const;
+    const parent = await tx.stockItem.findUnique({ where: { id: parentId }, include: itemInclude });
+    if (!parent) throw new HttpError(404, 'Parent item not found.');
+    const dups = await tx.stockItem.findMany({ where: { id: { in: dupIds } }, include: itemInclude });
+    if (dups.length !== dupIds.length) throw new HttpError(404, 'One or more items to merge could not be found.');
+
+    const venuesAdded = new Set<string>();
+    const moved: StockItemMergeResult['moved'] = {
+      recipeLines: 0,
+      stocktakeLines: 0,
+      invoiceLines: 0,
+      movements: 0,
+      aliases: 0,
+      priceListItems: 0,
+      purchaseOrderLines: 0
+    };
+
+    // 1. Stocktake lines. Where a count already has a line for the parent
+    //    AND one for a duplicate, fold them into the parent's line rather
+    //    than leaving two lines for one item: apply and the variance report
+    //    both keep "the last line for an item", so a second line would
+    //    silently drop the first count. Units that disagree stay separate.
+    const dupLines = await tx.stocktakeLine.findMany({
+      where: { itemId: { in: dupIds } },
+      select: { id: true, stocktakeId: true, countedQty: true, stockValueCents: true, notes: true, unit: true }
+    });
+    const stocktakeIds = Array.from(new Set(dupLines.map((line) => line.stocktakeId)));
+    const parentLines = stocktakeIds.length
+      ? await tx.stocktakeLine.findMany({
+          where: { itemId: parentId, stocktakeId: { in: stocktakeIds } },
+          select: { id: true, stocktakeId: true, countedQty: true, stockValueCents: true, notes: true, unit: true },
+          orderBy: { position: 'asc' }
+        })
+      : [];
+    const parentLineByStocktake = new Map<string, (typeof parentLines)[number]>();
+    for (const line of parentLines) {
+      if (!parentLineByStocktake.has(line.stocktakeId)) parentLineByStocktake.set(line.stocktakeId, line);
+    }
+    for (const line of dupLines) {
+      const target = foldExclude.has(line.stocktakeId) ? undefined : parentLineByStocktake.get(line.stocktakeId);
+      const sameUnit =
+        !target || !line.unit || !target.unit || line.unit.trim().toLowerCase() === target.unit.trim().toLowerCase();
+      if (!target || !sameUnit) {
+        await tx.stocktakeLine.update({ where: { id: line.id }, data: { itemId: parentId } });
+        moved.stocktakeLines += 1;
+        continue;
+      }
+      const countedQty =
+        target.countedQty === null && line.countedQty === null
+          ? null
+          : (target.countedQty ?? 0) + (line.countedQty ?? 0);
+      const stockValueCents =
+        target.stockValueCents === null && line.stockValueCents === null
+          ? null
+          : (target.stockValueCents ?? 0) + (line.stockValueCents ?? 0);
+      const notes = [target.notes, line.notes].filter((note) => note && note.trim()).join(' · ') || null;
+      await tx.inventoryMovement.updateMany({
+        where: { sourceStocktakeLineId: line.id },
+        data: { sourceStocktakeLineId: target.id }
+      });
+      await tx.stocktakeLine.update({ where: { id: target.id }, data: { countedQty, stockValueCents, notes } });
+      await tx.stocktakeLine.delete({ where: { id: line.id } });
+      target.countedQty = countedQty;
+      target.stockValueCents = stockValueCents;
+      target.notes = notes;
+      moved.stocktakeLines += 1;
+    }
+
+    // 2. Repoint every other history/reference relation onto the parent.
+    moved.recipeLines = (await tx.recipeLine.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } })).count;
+    moved.movements = (await tx.inventoryMovement.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } })).count;
+    moved.invoiceLines = (await tx.supplierInvoiceLine.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } })).count;
+    await tx.stockTransfer.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+    await tx.stockWastageRecord.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+    await tx.stockDeliveryCheckItem.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+    await tx.stockReorderNotice.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+    await tx.squareMenuRecipeMapping.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+    moved.purchaseOrderLines = (await tx.purchaseOrderLine.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } })).count;
+
+    // 3. Supplier aliases — "this wording on an invoice means this item".
+    //    Unique on (aliasKey, supplierId). Left pointing at the archived
+    //    duplicate, every future invoice line would auto-match onto the
+    //    archived row and quietly rebuild the duplicate's history.
+    const parentAliasKeys = new Set(parent.aliases.map((alias) => `${alias.aliasKey}|${alias.supplierId ?? ''}`));
+    for (const dup of dups) {
+      for (const alias of dup.aliases) {
+        const key = `${alias.aliasKey}|${alias.supplierId ?? ''}`;
+        if (parentAliasKeys.has(key)) {
+          await tx.stockItemAlias.delete({ where: { id: alias.id } });
+        } else {
+          await tx.stockItemAlias.update({ where: { id: alias.id }, data: { stockItemId: parentId } });
+          parentAliasKeys.add(key);
+        }
+        moved.aliases += 1;
+      }
+    }
+
+    // 4. Supplier price lists — unique on (supplierId, stockItemId). The
+    //    parent keeps its own price for a supplier it already has; a
+    //    supplier only the duplicate had moves across.
+    const parentPriceSuppliers = new Set(parent.priceListItems.map((row) => row.supplierId));
+    for (const dup of dups) {
+      for (const row of dup.priceListItems) {
+        if (parentPriceSuppliers.has(row.supplierId)) {
+          await tx.supplierPriceListItem.delete({ where: { id: row.id } });
+        } else {
+          await tx.supplierPriceListItem.update({ where: { id: row.id }, data: { stockItemId: parentId } });
+          parentPriceSuppliers.add(row.supplierId);
+        }
+        moved.priceListItems += 1;
+      }
+    }
+
+    // 5. Venue stock — sum where the parent already has the venue, else move it
+    //    onto the parent (unioning venue availability). A running map keeps
+    //    multi-duplicate merges onto the same new venue from colliding.
+    const parentVenues = new Map(parent.venueStock.map((row) => [row.venue, { id: row.id, onHand: row.onHand ?? 0, active: row.active }]));
+    for (const dup of dups) {
+      for (const vs of dup.venueStock) {
+        const existing = parentVenues.get(vs.venue);
+        if (existing) {
+          existing.onHand += vs.onHand ?? 0;
+          existing.active = existing.active || vs.active;
+          await tx.venueStockItem.update({ where: { id: existing.id }, data: { onHand: existing.onHand, active: existing.active } });
+          await tx.venueStockItem.delete({ where: { id: vs.id } });
+        } else {
+          await tx.venueStockItem.update({ where: { id: vs.id }, data: { stockItemId: parentId } });
+          parentVenues.set(vs.venue, { id: vs.id, onHand: vs.onHand ?? 0, active: vs.active });
+          venuesAdded.add(vs.venue);
+        }
+      }
+    }
+
+    // 6. Backfill what the parent is missing from the duplicates, first
+    //    value wins. A fully configured duplicate merged into a bare parent
+    //    used to lose its category, count unit and cost on the way.
+    const backfill: Prisma.StockItemUpdateInput = {};
+    const firstDupWith = <K extends keyof (typeof dups)[number]>(key: K) =>
+      dups.find((dup) => dup[key] !== null && dup[key] !== undefined && dup[key] !== '');
+    if (!parent.sku) {
+      const source = firstDupWith('sku');
+      if (source?.sku) {
+        // sku is unique — free it on the duplicate before the parent takes it.
+        await tx.stockItem.update({ where: { id: source.id }, data: { sku: null } });
+        backfill.sku = source.sku;
+      }
+    }
+    if (!parent.categoryId) {
+      const source = firstDupWith('categoryId');
+      if (source?.categoryId) backfill.category = { connect: { id: source.categoryId } };
+    }
+    if (!parent.countUnit) {
+      const source = firstDupWith('countUnit');
+      if (source?.countUnit) {
+        backfill.countUnit = source.countUnit;
+        // The factor only means anything with the count unit it was set for.
+        if ((parent.conversionFactor ?? 1) === 1 && source.conversionFactor > 0) {
+          backfill.conversionFactor = source.conversionFactor;
+        }
+      }
+    }
+    if (!parent.countArea) {
+      const source = firstDupWith('countArea');
+      if (source?.countArea) backfill.countArea = source.countArea;
+    }
+    if (parent.measurePerCountUnit === null) {
+      const source = firstDupWith('measurePerCountUnit');
+      if (source?.measurePerCountUnit) {
+        backfill.measurePerCountUnit = source.measurePerCountUnit;
+        backfill.measureUnit = source.measureUnit;
+      }
+    }
+    if (parent.latestCostCents === null) {
+      const source = firstDupWith('latestCostCents');
+      if (source?.latestCostCents !== null && source?.latestCostCents !== undefined) {
+        backfill.latestCostCents = source.latestCostCents;
+        backfill.latestCostAt = source.latestCostAt;
+      }
+    }
+    if (parent.avgCostCents === null) {
+      const source = firstDupWith('avgCostCents');
+      if (source?.avgCostCents !== null && source?.avgCostCents !== undefined) backfill.avgCostCents = source.avgCostCents;
+    }
+    if (parent.reorderPoint === null) {
+      const source = firstDupWith('reorderPoint');
+      if (source?.reorderPoint !== null && source?.reorderPoint !== undefined) backfill.reorderPoint = source.reorderPoint;
+    }
+    if (!parent.parLevel) {
+      const source = dups.find((dup) => dup.parLevel > 0);
+      if (source) backfill.parLevel = source.parLevel;
+    }
+
+    // 7. Recompute the parent's rolled-up on-hand from its venue rows.
+    const rows = await tx.venueStockItem.findMany({ where: { stockItemId: parentId }, select: { onHand: true } });
+    await tx.stockItem.update({
+      where: { id: parentId },
+      data: { ...backfill, onHand: rows.reduce((sum, row) => sum + (row.onHand ?? 0), 0) }
+    });
+
+    // 8. Archive the now-empty duplicates, keeping whatever note they had.
+    const stamp = new Date().toISOString().slice(0, 10);
+    for (const dup of dups) {
+      const mergeNote = `Merged into "${parent.name}" (${parentId}) on ${stamp} by ${actorName}.`;
+      const notes = dup.notes?.trim() ? `${dup.notes.trim()}\n\n${mergeNote}` : mergeNote;
+      await tx.stockItem.update({
+        where: { id: dup.id },
+        data: { status: 'ARCHIVED', onHand: 0, notes }
+      });
+    }
+
+  return { parentId, mergedCount: dups.length, venuesAdded: Array.from(venuesAdded), moved };
+}
+
 export const itemsService = {
   async list(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockItemsPayload> {
     const venue = actorVenueScope(actor, requestedVenue);
@@ -1386,223 +1619,8 @@ export const itemsService = {
     if (actor && !isVenueUnscopedActor(actor)) {
       throw new HttpError(403, 'Merging items changes the shared catalogue for every venue. Admin or group-wide manager access is required.');
     }
-    const dupIds = Array.from(new Set(duplicateIds)).filter((id) => id !== parentId);
-    if (dupIds.length === 0) throw new HttpError(400, 'Pick at least one different item to merge into the parent.');
-
-    const itemInclude = { venueStock: true, aliases: true, priceListItems: true } as const;
-    const parent = await prisma.stockItem.findUnique({ where: { id: parentId }, include: itemInclude });
-    if (!parent) throw new HttpError(404, 'Parent item not found.');
-    const dups = await prisma.stockItem.findMany({ where: { id: { in: dupIds } }, include: itemInclude });
-    if (dups.length !== dupIds.length) throw new HttpError(404, 'One or more items to merge could not be found.');
-
-    const venuesAdded = new Set<string>();
-    const moved: StockItemMergeResult['moved'] = {
-      recipeLines: 0,
-      stocktakeLines: 0,
-      invoiceLines: 0,
-      movements: 0,
-      aliases: 0,
-      priceListItems: 0,
-      purchaseOrderLines: 0
-    };
-
-    await prisma.$transaction(async (tx) => {
-      // 1. Stocktake lines. Where a count already has a line for the parent
-      //    AND one for a duplicate, fold them into the parent's line rather
-      //    than leaving two lines for one item: apply and the variance report
-      //    both keep "the last line for an item", so a second line would
-      //    silently drop the first count. Units that disagree stay separate.
-      const dupLines = await tx.stocktakeLine.findMany({
-        where: { itemId: { in: dupIds } },
-        select: { id: true, stocktakeId: true, countedQty: true, stockValueCents: true, notes: true, unit: true }
-      });
-      const stocktakeIds = Array.from(new Set(dupLines.map((line) => line.stocktakeId)));
-      const parentLines = stocktakeIds.length
-        ? await tx.stocktakeLine.findMany({
-            where: { itemId: parentId, stocktakeId: { in: stocktakeIds } },
-            select: { id: true, stocktakeId: true, countedQty: true, stockValueCents: true, notes: true, unit: true },
-            orderBy: { position: 'asc' }
-          })
-        : [];
-      const parentLineByStocktake = new Map<string, (typeof parentLines)[number]>();
-      for (const line of parentLines) {
-        if (!parentLineByStocktake.has(line.stocktakeId)) parentLineByStocktake.set(line.stocktakeId, line);
-      }
-      for (const line of dupLines) {
-        const target = parentLineByStocktake.get(line.stocktakeId);
-        const sameUnit =
-          !target || !line.unit || !target.unit || line.unit.trim().toLowerCase() === target.unit.trim().toLowerCase();
-        if (!target || !sameUnit) {
-          await tx.stocktakeLine.update({ where: { id: line.id }, data: { itemId: parentId } });
-          moved.stocktakeLines += 1;
-          continue;
-        }
-        const countedQty =
-          target.countedQty === null && line.countedQty === null
-            ? null
-            : (target.countedQty ?? 0) + (line.countedQty ?? 0);
-        const stockValueCents =
-          target.stockValueCents === null && line.stockValueCents === null
-            ? null
-            : (target.stockValueCents ?? 0) + (line.stockValueCents ?? 0);
-        const notes = [target.notes, line.notes].filter((note) => note && note.trim()).join(' · ') || null;
-        await tx.inventoryMovement.updateMany({
-          where: { sourceStocktakeLineId: line.id },
-          data: { sourceStocktakeLineId: target.id }
-        });
-        await tx.stocktakeLine.update({ where: { id: target.id }, data: { countedQty, stockValueCents, notes } });
-        await tx.stocktakeLine.delete({ where: { id: line.id } });
-        target.countedQty = countedQty;
-        target.stockValueCents = stockValueCents;
-        target.notes = notes;
-        moved.stocktakeLines += 1;
-      }
-
-      // 2. Repoint every other history/reference relation onto the parent.
-      moved.recipeLines = (await tx.recipeLine.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } })).count;
-      moved.movements = (await tx.inventoryMovement.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } })).count;
-      moved.invoiceLines = (await tx.supplierInvoiceLine.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } })).count;
-      await tx.stockTransfer.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
-      await tx.stockWastageRecord.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
-      await tx.stockDeliveryCheckItem.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
-      await tx.stockReorderNotice.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
-      await tx.squareMenuRecipeMapping.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
-      moved.purchaseOrderLines = (await tx.purchaseOrderLine.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } })).count;
-
-      // 3. Supplier aliases — "this wording on an invoice means this item".
-      //    Unique on (aliasKey, supplierId). Left pointing at the archived
-      //    duplicate, every future invoice line would auto-match onto the
-      //    archived row and quietly rebuild the duplicate's history.
-      const parentAliasKeys = new Set(parent.aliases.map((alias) => `${alias.aliasKey}|${alias.supplierId ?? ''}`));
-      for (const dup of dups) {
-        for (const alias of dup.aliases) {
-          const key = `${alias.aliasKey}|${alias.supplierId ?? ''}`;
-          if (parentAliasKeys.has(key)) {
-            await tx.stockItemAlias.delete({ where: { id: alias.id } });
-          } else {
-            await tx.stockItemAlias.update({ where: { id: alias.id }, data: { stockItemId: parentId } });
-            parentAliasKeys.add(key);
-          }
-          moved.aliases += 1;
-        }
-      }
-
-      // 4. Supplier price lists — unique on (supplierId, stockItemId). The
-      //    parent keeps its own price for a supplier it already has; a
-      //    supplier only the duplicate had moves across.
-      const parentPriceSuppliers = new Set(parent.priceListItems.map((row) => row.supplierId));
-      for (const dup of dups) {
-        for (const row of dup.priceListItems) {
-          if (parentPriceSuppliers.has(row.supplierId)) {
-            await tx.supplierPriceListItem.delete({ where: { id: row.id } });
-          } else {
-            await tx.supplierPriceListItem.update({ where: { id: row.id }, data: { stockItemId: parentId } });
-            parentPriceSuppliers.add(row.supplierId);
-          }
-          moved.priceListItems += 1;
-        }
-      }
-
-      // 5. Venue stock — sum where the parent already has the venue, else move it
-      //    onto the parent (unioning venue availability). A running map keeps
-      //    multi-duplicate merges onto the same new venue from colliding.
-      const parentVenues = new Map(parent.venueStock.map((row) => [row.venue, { id: row.id, onHand: row.onHand ?? 0, active: row.active }]));
-      for (const dup of dups) {
-        for (const vs of dup.venueStock) {
-          const existing = parentVenues.get(vs.venue);
-          if (existing) {
-            existing.onHand += vs.onHand ?? 0;
-            existing.active = existing.active || vs.active;
-            await tx.venueStockItem.update({ where: { id: existing.id }, data: { onHand: existing.onHand, active: existing.active } });
-            await tx.venueStockItem.delete({ where: { id: vs.id } });
-          } else {
-            await tx.venueStockItem.update({ where: { id: vs.id }, data: { stockItemId: parentId } });
-            parentVenues.set(vs.venue, { id: vs.id, onHand: vs.onHand ?? 0, active: vs.active });
-            venuesAdded.add(vs.venue);
-          }
-        }
-      }
-
-      // 6. Backfill what the parent is missing from the duplicates, first
-      //    value wins. A fully configured duplicate merged into a bare parent
-      //    used to lose its category, count unit and cost on the way.
-      const backfill: Prisma.StockItemUpdateInput = {};
-      const firstDupWith = <K extends keyof (typeof dups)[number]>(key: K) =>
-        dups.find((dup) => dup[key] !== null && dup[key] !== undefined && dup[key] !== '');
-      if (!parent.sku) {
-        const source = firstDupWith('sku');
-        if (source?.sku) {
-          // sku is unique — free it on the duplicate before the parent takes it.
-          await tx.stockItem.update({ where: { id: source.id }, data: { sku: null } });
-          backfill.sku = source.sku;
-        }
-      }
-      if (!parent.categoryId) {
-        const source = firstDupWith('categoryId');
-        if (source?.categoryId) backfill.category = { connect: { id: source.categoryId } };
-      }
-      if (!parent.countUnit) {
-        const source = firstDupWith('countUnit');
-        if (source?.countUnit) {
-          backfill.countUnit = source.countUnit;
-          // The factor only means anything with the count unit it was set for.
-          if ((parent.conversionFactor ?? 1) === 1 && source.conversionFactor > 0) {
-            backfill.conversionFactor = source.conversionFactor;
-          }
-        }
-      }
-      if (!parent.countArea) {
-        const source = firstDupWith('countArea');
-        if (source?.countArea) backfill.countArea = source.countArea;
-      }
-      if (parent.measurePerCountUnit === null) {
-        const source = firstDupWith('measurePerCountUnit');
-        if (source?.measurePerCountUnit) {
-          backfill.measurePerCountUnit = source.measurePerCountUnit;
-          backfill.measureUnit = source.measureUnit;
-        }
-      }
-      if (parent.latestCostCents === null) {
-        const source = firstDupWith('latestCostCents');
-        if (source?.latestCostCents !== null && source?.latestCostCents !== undefined) {
-          backfill.latestCostCents = source.latestCostCents;
-          backfill.latestCostAt = source.latestCostAt;
-        }
-      }
-      if (parent.avgCostCents === null) {
-        const source = firstDupWith('avgCostCents');
-        if (source?.avgCostCents !== null && source?.avgCostCents !== undefined) backfill.avgCostCents = source.avgCostCents;
-      }
-      if (parent.reorderPoint === null) {
-        const source = firstDupWith('reorderPoint');
-        if (source?.reorderPoint !== null && source?.reorderPoint !== undefined) backfill.reorderPoint = source.reorderPoint;
-      }
-      if (!parent.parLevel) {
-        const source = dups.find((dup) => dup.parLevel > 0);
-        if (source) backfill.parLevel = source.parLevel;
-      }
-
-      // 7. Recompute the parent's rolled-up on-hand from its venue rows.
-      const rows = await tx.venueStockItem.findMany({ where: { stockItemId: parentId }, select: { onHand: true } });
-      await tx.stockItem.update({
-        where: { id: parentId },
-        data: { ...backfill, onHand: rows.reduce((sum, row) => sum + (row.onHand ?? 0), 0) }
-      });
-
-      // 8. Archive the now-empty duplicates, keeping whatever note they had.
-      const actorName = actor ? `${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() || actor.email || actor.id : 'system';
-      const stamp = new Date().toISOString().slice(0, 10);
-      for (const dup of dups) {
-        const mergeNote = `Merged into "${parent.name}" (${parentId}) on ${stamp} by ${actorName}.`;
-        const notes = dup.notes?.trim() ? `${dup.notes.trim()}\n\n${mergeNote}` : mergeNote;
-        await tx.stockItem.update({
-          where: { id: dup.id },
-          data: { status: 'ARCHIVED', onHand: 0, notes }
-        });
-      }
-    }, { maxWait: 15_000, timeout: 60_000 });
-
-    return { parentId, mergedCount: dups.length, venuesAdded: Array.from(venuesAdded), moved };
+    const actorName = actor ? `${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() || actor.email || actor.id : 'system';
+    return prisma.$transaction((tx) => mergeItemsWithin(tx, { parentId, duplicateIds, actorName }), { maxWait: 15_000, timeout: 60_000 });
   },
 
   // Data quality report for the Loaded replacement catalogue check

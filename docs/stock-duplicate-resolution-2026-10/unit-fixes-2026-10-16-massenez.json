@@ -1,0 +1,49 @@
+{
+ "sheets": {
+  "Alma Avalon": "cmupcujav03c0pd01796c5bpm",
+  "St Alma": "cmup72ay90000pd01tfoyqda1"
+ },
+ "measures": [],
+ "lines": [
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Massenez Creme de Peche",
+   "itemId": "cmptovuxi002fs601ncx5ye8f",
+   "lineId": "cmupcujbo03q6pd01lmk1hios",
+   "from": {
+    "countedQty": 4.9,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "bottle"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): Alma Avalon has 1 bottle. Was 4.9 L, which cannot be one bottle; restated to the shelf count."
+  }
+ ],
+ "holdings": [
+  {
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Massenez Creme de Peche",
+   "itemId": "cmptovuxi002fs601ncx5ye8f",
+   "holdingId": "cmq2ce8hj007ys601j6ow2tk1",
+   "from": {
+    "onHand": 4800
+   },
+   "to": {
+    "onHand": 1
+   },
+   "sourceStocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "sourceStocktakeLineId": "cmti4209w040goa0164tql9fh",
+   "sourceMovementId": "cmurfz2j00a9qpd01vakfa2t6",
+   "sourceLine": {
+    "countedQty": 4800,
+    "unit": "mL"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): Alma Avalon has 1 bottle. 4800 mL had been stored as 4800 bottles."
+  }
+ ]
+}

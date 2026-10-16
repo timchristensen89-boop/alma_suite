@@ -1,0 +1,115 @@
+{
+ "sheets": {
+  "Alma Avalon": "cmupcujav03c0pd01796c5bpm",
+  "St Alma": "cmup72ay90000pd01tfoyqda1"
+ },
+ "measures": [
+  {
+   "confidence": "high",
+   "itemId": "cmptovuy9002ls601d8i19i99",
+   "item": "Massenez Pomme Verte",
+   "from": {
+    "measurePerCountUnit": 750,
+    "measureUnit": "ml"
+   },
+   "to": {
+    "measurePerCountUnit": 500,
+    "measureUnit": "ml"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): Massenez Pomme Verte is a 500 mL bottle. The $208.20 per-bottle cost still looks wrong for a 500 mL bottle — check against an invoice."
+  }
+ ],
+ "lines": [
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Avocadoes Hass",
+   "itemId": "cmsdf12vj002omij9vsz913bw",
+   "lineId": "cmupcujb703edpd01ay6k0yrp",
+   "from": {
+    "countedQty": 1.473,
+    "unit": "kg"
+   },
+   "to": {
+    "countedQty": 0.2946,
+    "unit": "each"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): avocados are counted by the ~5 kg tray; 1.473 kg = 0.2946 of a tray."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Lime Juice",
+   "itemId": "cmsdf10jz004fmiioy6e21lmz",
+   "lineId": "cmupcujbm03p8pd01dx1qsfyk",
+   "from": {
+    "countedQty": 25.1,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 5.02,
+    "unit": "each"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): lime juice comes in 5 L packs; 25.1 L = 5.02 packs."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Massenez Pomme Verte",
+   "itemId": "cmptovuy9002ls601d8i19i99",
+   "lineId": "cmupcujbo03q8pd010menu5h1",
+   "from": {
+    "countedQty": 3,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 6,
+    "unit": "bottle"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): Pomme Verte is a 500 mL bottle; 3 L = 6 bottles."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Watermelon Juice",
+   "itemId": "cmsdf10l00053miioyzpx19ey",
+   "lineId": "cmupcujc103xnpd01mdd64avl",
+   "from": {
+    "countedQty": 16.6,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 3.32,
+    "unit": "each"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): watermelon juice is counted in 5 L containers; 16.6 L = 3.32."
+  }
+ ],
+ "holdings": [
+  {
+   "confidence": "high",
+   "venue": "St Alma",
+   "item": "Lime Juice",
+   "itemId": "cmsdf10jz004fmiioy6e21lmz",
+   "holdingId": "cmsdf10k3004hmiiom0n9sebv",
+   "from": {
+    "onHand": 8
+   },
+   "to": {
+    "onHand": 1.6
+   },
+   "sourceStocktakeId": "cmtgs6a1a06faoe01qwx3ci3y",
+   "sourceStocktakeLineId": "cmtim0y9c04xpoa015kt9lioh",
+   "sourceMovementId": "cmurfyqzc09eipd01b7f5vfsr",
+   "sourceLine": {
+    "countedQty": 8,
+    "unit": "L"
+   },
+   "reason": "Shelf check 16 Oct 2026 (Tim): 5 L packs; 8 L had been stored as 8 packs = 1.6 packs."
+  }
+ ]
+}

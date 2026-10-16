@@ -1,0 +1,84 @@
+item,category,count_unit,measure,measure_unit,avg_cost,recipe_lines
+Tortilla Corn,Bakery,each,100,g,0.17,2
+Tortilla Flour 12inch,Bakery,each,100,g,0.48,0
+Freshwater Brewing Keg,Beer & Cider,keg,100,ml,302.50,3
+CHEESE BLUE 100GM (Castello) EA (10),Dairy & Eggs,each,100,g,49.62,1
+Cheese Goat,Dairy & Eggs,each,100,g,27.57,0
+Cheese Halloumi,Dairy & Eggs,each,100,g,17.00,0
+Cheese Ricotta Salata,Dairy & Eggs,each,100,g,17.00,0
+Milk,Dairy & Eggs,each,100,g,,0
+Milk Condensed,Dairy & Eggs,each,100,g,3.66,0
+Sour Cream Light,Dairy & Eggs,each,100,g,,0
+Ascorbic Acid,Dry / Pantry,each,100,g,53.54,0
+Beans Butter,Dry / Pantry,each,100,g,,1
+Chilli Guajillo Dried,Dry / Pantry,each,100,g,4.82,0
+Coconut Flakes,Dry / Pantry,each,100,g,5.51,1
+Nut Hazelnut Roasted,Dry / Pantry,each,100,g,28.46,0
+Nut Walnut,Dry / Pantry,each,100,g,19.77,0
+Onion Fried,Dry / Pantry,each,100,g,,0
+Peanuts Roasted,Dry / Pantry,each,100,g,,0
+Salt Rock Coarse,Dry / Pantry,each,100,g,9.50,2
+Sugar Brown,Dry / Pantry,each,100,g,4.06,0
+Thyme Dried,Dry / Pantry,each,100,g,40.00,0
+Whole Dried Arbol Chilli 75GRS,Dry / Pantry,each,100,g,4.12,2
+Mixed Berries Frozen,Frozen,each,100,g,9.51,0
+Bay Leaves Bunch,Herbs & Spices,each,100,g,2.14,6
+Pepper Black Cracked,Herbs & Spices,each,100,g,13.69,0
+Vanilla Bean Paste,Herbs & Spices,each,100,g,30.13,0
+Capi Ginger Beer,Non-Alcoholic & Mixers,each,100,g,1.97,0
+Capi Sparkling Grapefruit,Non-Alcoholic & Mixers,each,100,g,1.97,0
+Fee Brothers Grapefruit Bitters,Non-Alcoholic & Mixers,each,100,g,22.18,0
+Lyres Orange Sec,Non-Alcoholic & Mixers,each,100,g,29.76,0
+Midnight Mixers Classic Dry Tonic,Non-Alcoholic & Mixers,each,100,g,1.63,0
+Midnight Mixers Soda Water,Non-Alcoholic & Mixers,each,100,g,1.63,0
+Sammy Piquant The Jetsetter,Non-Alcoholic & Mixers,each,100,g,34.06,0
+STRANGELOVE DOUBLE GINGER BEER - (CASE OF 24),Non-Alcoholic & Mixers,each,100,g,2.60,3
+STRANGELOVE VERY MANDARIN - (CASE OF 24),Non-Alcoholic & Mixers,each,100,g,2.40,2
+STRANGELOVE YUZU SODA - (CASE OF 24),Non-Alcoholic & Mixers,each,100,g,2.40,1
+Agave Syrup,Oils & Condiments,each,100,g,56.73,0
+Chilli Choptle in Adobo,Oils & Condiments,each,100,g,18.46,0
+Honey,Oils & Condiments,each,100,g,6.78,0
+Oil Canola Spray,Oils & Condiments,each,100,g,4.50,0
+Oil Olive Extra Virgin,Oils & Condiments,each,100,g,12.27,0
+Vinegar White,Oils & Condiments,each,100,g,1.08,0
+Artichokes Jerusalem Box,Produce,each,100,g,,0
+Broccolinni Box,Produce,bunch,100,g,2.65,2
+Carrots Dutch Box,Produce,each,100,g,58.00,2
+Carrots Medium,Produce,each,100,g,2.64,2
+Cauliflower,Produce,each,100,g,6.41,0
+Celeriac,Produce,each,100,g,,0
+Chilli Habenero,Produce,each,100,g,,0
+Chilli Jalapeno,Produce,each,100,g,9.05,0
+Chilli Large Red,Produce,each,100,g,23.75,0
+Chilli Morita,Produce,each,100,g,50.00,3
+Chilli Poblano,Produce,each,100,g,,0
+Coriander Dozen,Produce,dozen,100,g,0.20,18
+Coriander Ground,Produce,each,100,g,,0
+Cucumber Quks,Produce,each,100,g,3.50,0
+Cucumber Telegraph,Produce,each,100,g,2.38,1
+Dill,Produce,each,100,g,2.00,0
+Eggplant Box,Produce,each,100,g,22.80,1
+Fennel Each,Produce,each,100,g,0.00,1
+Flower Edible Elder,Produce,each,100,g,,0
+Flower Edible Marigold,Produce,each,100,g,9.89,0
+Flower Edible Viola,Produce,each,100,g,,0
+Flowers Edible Phlox,Produce,each,100,g,,0
+Forage Fresh Mix (100 gram),Produce,each,100,g,9.50,7
+Fresh Mix Forage,Produce,each,100,g,,0
+Fresh Mix Forage 100g,Produce,each,100,g,,0
+Grapefruit Ruby,Produce,each,100,g,,0
+Large Red Capsicum,Produce,each,100,g,7.15,0
+Medley Tomatoes,Produce,each,100,g,,0
+Onions Spanish,Produce,each,100,g,28.02,0
+Onions Spanish Large Bag,Produce,each,100,g,32.00,14
+Oranges Large,Produce,each,100,g,4.74,0
+Petite Bouche Bulls Blood,Produce,each,100,g,,0
+Petite Bouche Chervil,Produce,each,100,g,,0
+Petite Bouche Red Elk,Produce,each,100,g,,0
+Petite Bouche Upperland Cress,Produce,each,100,g,,0
+Petite Bouche Watercress,Produce,each,100,g,,0
+Shallots Golden Peeled,Produce,each,100,g,,1
+TOMATILLOS A10 GREEN TOMATO (Faro) EA (6),Produce,each,100,g,13.50,8
+Tomatillos Green Can,Produce,each,100,g,13.50,0
+Tomatoes Cherry,Produce,each,100,g,3.00,0
+Tomatoes Large Box,Produce,each,100,g,35.50,12

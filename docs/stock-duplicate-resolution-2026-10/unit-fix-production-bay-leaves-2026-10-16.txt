@@ -1,0 +1,19 @@
+database: alma_suite_v18 — PRODUCTION
+Unit fixes from docs/stock-duplicate-resolution-2026-10/unit-fixes-2026-10-16-bay-leaves.json — APPLYING
+
+== Item measures (0) — what one count unit holds
+
+== Stocktake 10/1/2026 (Alma Avalon, not yet applied) — 1 line(s)
+  [high] Bay Leaves Bunch: 170 g → 1 each   line value $0.00 → $2.14; applied as it stands it would book $363.80
+      Tim, 16 Oct 2026: record the 170 g of bay leaves as 1 bunch.
+  → applying this sheet as it stands would book $363.80 for these lines; after the restatement $2.14.
+
+== Holdings already written from such a line (0) — corrected with a STOCKTAKE_CORRECTION movement
+  → holdings $0.00 → $0.00 ($0.00).
+
+Applied run prod-unitfix-20261016-bayleaves: 0 measure(s), 1 line(s), 0 holding(s) with 0 correction movement(s).
+Rollback: --rollback prod-unitfix-20261016-bayleaves
+verify: St Alma — Bar & FOH 01/10/2026 (St Alma, not applied): 0 counted line(s) still in a unit apply would not convert
+verify: Stocktake 10/1/2026 (Alma Avalon, not applied): 0 counted line(s) still in a unit apply would not convert
+  Alma Avalon: active stock value $52274.51
+  St Alma: active stock value $79130.25

@@ -1,0 +1,27 @@
+{
+ "sheets": {
+  "Alma Avalon": "cmupcujav03c0pd01796c5bpm",
+  "St Alma": "cmup72ay90000pd01tfoyqda1"
+ },
+ "measures": [],
+ "lines": [
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Bay Leaves Bunch",
+   "itemId": "cmoqfbly300529ky2zhbuedjg",
+   "lineId": "cmupcujb703eupd015mxnhh0g",
+   "from": {
+    "countedQty": 170,
+    "unit": "g"
+   },
+   "to": {
+    "countedQty": 1,
+    "unit": "each"
+   },
+   "reason": "Tim, 16 Oct 2026: record the 170 g of bay leaves as 1 bunch."
+  }
+ ],
+ "holdings": []
+}

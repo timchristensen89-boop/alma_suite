@@ -34,6 +34,7 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { buildCountSheetSections } from '../lib/count-sheet.js';
+import { inCountUnit } from '../lib/apply-unit-guard.js';
 import { assertMayEnterCounts, isStockManager } from '../lib/stock-permissions.js';
 import {
   explodePrepCount,
@@ -77,6 +78,35 @@ function stocktakeLineValueCents(
     return null;
   }
   return Math.round(item.avgCostCents * quantity);
+}
+
+// Store every counted line in its item's count unit, converting on the way in
+// when the conversion is reliable (see inCountUnit). `changed` limits this to
+// lines being entered or edited now: a line already on the sheet keeps exactly
+// what it holds, so editing a count never rewrites its history. A quantity
+// that can't be converted reliably is refused, naming the line.
+function linesInCountUnits<T extends { itemId?: string | null; recipeId?: string | null; countedQty: number | null; unit?: string | null; label: string }>(
+  lines: T[],
+  items: Map<string, LineCostItem>,
+  changed: (line: T) => boolean = () => true
+): T[] {
+  const refused: string[] = [];
+  const out = lines.map((line) => {
+    const itemId = normaliseOptionalText(line.itemId ?? undefined);
+    if (!itemId || normaliseOptionalText(line.recipeId ?? undefined) || !changed(line)) return line;
+    const item = items.get(itemId);
+    if (!item) return line;
+    const result = inCountUnit(line.countedQty, line.unit, item, { label: line.label.trim() });
+    if (!result.ok) {
+      refused.push(result.message);
+      return line;
+    }
+    return { ...line, countedQty: result.countedQty, unit: result.unit };
+  });
+  if (refused.length) {
+    throw new HttpError(400, `${refused.slice(0, 8).join(' ')}${refused.length > 8 ? ` …and ${refused.length - 8} more.` : ''}`);
+  }
+  return out;
 }
 
 async function loadLineCostItems(
@@ -1030,6 +1060,7 @@ export const stocktakesService = {
 
     const row = await prisma.$transaction(async (tx) => {
       const costById = await loadLineCostItems(tx, data.lines);
+      if (data.lines) data.lines = linesInCountUnits(data.lines, costById);
       // A prepped-item line has no stock item to cost against; its value is
       // the raw material the tub holds.
       const prepByIndex = await explodePrepLines(tx, data.lines);
@@ -1140,6 +1171,15 @@ export const stocktakesService = {
 
     const row = await prisma.$transaction(async (tx) => {
       const costById = await loadLineCostItems(tx, data.lines);
+      if (data.lines !== undefined) {
+        const stored = new Map(
+          (await tx.stocktakeLine.findMany({ where: { stocktakeId: id }, select: { id: true, countedQty: true, unit: true } })).map((line) => [line.id, line])
+        );
+        data.lines = linesInCountUnits(data.lines, costById, (line) => {
+          const before = line.id ? stored.get(line.id) : undefined;
+          return !before || before.countedQty !== line.countedQty || (before.unit ?? null) !== (normaliseOptionalText(line.unit) ?? null);
+        });
+      }
       const prepByIndex = await explodePrepLines(tx, data.lines);
 
       if (data.lines !== undefined) {
@@ -1251,9 +1291,14 @@ export const stocktakesService = {
       for (const [lineId, patch] of merged) {
         const line = byId.get(lineId);
         if (!line) continue;
-        const countedQty = patch.countedQty !== undefined ? patch.countedQty : line.countedQty;
-        const unit = patch.unit !== undefined ? normaliseOptionalText(patch.unit) ?? null : line.unit;
+        let countedQty = patch.countedQty !== undefined ? patch.countedQty : line.countedQty;
+        let unit = patch.unit !== undefined ? normaliseOptionalText(patch.unit) ?? null : line.unit;
         const label = patch.label !== undefined ? patch.label.trim() || line.label : line.label;
+        if (line.itemId && (patch.countedQty !== undefined || patch.unit !== undefined)) {
+          const [inUnits] = linesInCountUnits([{ itemId: line.itemId, countedQty, unit, label }], costById);
+          countedQty = inUnits!.countedQty;
+          unit = inUnits!.unit ?? null;
+        }
         const notes = patch.notes !== undefined ? normaliseOptionalText(patch.notes) ?? null : line.notes;
         let stockValueCents: number | null;
         if (line.recipeId) {
@@ -1396,6 +1441,41 @@ export const stocktakesService = {
         throw new HttpError(400, 'Only submitted stocktakes can be applied');
       }
 
+      // Every holding is stored in the item's count unit. A line in another
+      // unit is converted here when the conversion is exact (cases → bottles
+      // by pack size, g → kg); one that would depend on the item's measure
+      // ("970 g" of a bag, "22 ml" on a bottle) is refused and named before
+      // anything is written — the number has to be restated by someone who
+      // knows what was counted.
+      const countedItemIds = [
+        ...new Set(stocktake.lines.filter((line) => line.itemId && line.countedQty != null).map((line) => line.itemId as string))
+      ];
+      const unitItems = new Map(
+        (
+          await tx.stockItem.findMany({
+            where: { id: { in: countedItemIds } },
+            select: { id: true, unit: true, countUnit: true, conversionFactor: true, measurePerCountUnit: true, measureUnit: true }
+          })
+        ).map((item) => [item.id, item])
+      );
+      const inCountUnits = new Map<string, { countedQty: number; unit: string; converted: boolean }>();
+      const refused: string[] = [];
+      for (const line of stocktake.lines) {
+        if (!line.itemId || line.countedQty == null) continue;
+        const item = unitItems.get(line.itemId);
+        if (!item) continue;
+        const result = inCountUnit(line.countedQty, line.unit, item, { label: line.label, allowMeasure: false });
+        if (!result.ok) refused.push(result.message);
+        else inCountUnits.set(line.id, { countedQty: result.countedQty as number, unit: result.unit, converted: result.converted });
+      }
+      if (refused.length) {
+        const shown = refused.slice(0, 8).join(' ');
+        throw new HttpError(
+          409,
+          `${refused.length} line${refused.length === 1 ? '' : 's'} can't be applied yet. ${shown}${refused.length > 8 ? ` …and ${refused.length - 8} more.` : ''}`
+        );
+      }
+
       // Applying is the review, so it has to move the status as well as stamp
       // reviewedAt. Without that the count stays SUBMITTED for ever: applied,
       // reviewed, its stock long since written, and still sitting in the
@@ -1448,9 +1528,10 @@ export const stocktakesService = {
         const contribution =
           lastCountedLineForItem.get(line.itemId) === line.id ? prepByItem.get(line.itemId) : undefined;
         const quantityBefore = balanceTarget.quantityBefore;
+        const counted = inCountUnits.get(line.id) ?? { countedQty: line.countedQty, unit: line.unit ?? balanceTarget.item.unit, converted: false };
         const quantityAfter = contribution
-          ? Math.round((line.countedQty + contribution.quantity) * 1e6) / 1e6
-          : line.countedQty;
+          ? Math.round((counted.countedQty + contribution.quantity) * 1e6) / 1e6
+          : counted.countedQty;
         const quantityDelta = quantityAfter - quantityBefore;
 
         const movement = await tx.inventoryMovement.create({
@@ -1460,18 +1541,19 @@ export const stocktakesService = {
             quantityDelta,
             quantityBefore,
             quantityAfter,
-            unit: line.unit ?? balanceTarget.item.unit,
+            unit: counted.unit,
             sourceStocktakeId: stocktake.id,
             sourceStocktakeLineId: line.id,
             notes: notesWithContext([
               `Applied stocktake: ${stocktake.name}`,
+              counted.converted ? `Counted ${line.countedQty} ${line.unit ?? ''} = ${counted.countedQty} ${counted.unit}` : null,
               stocktake.venue ? `Venue: ${stocktake.venue}` : null,
               line.location ? `Location: ${line.location}` : null,
               // Spelled out on the movement itself so the arithmetic is
               // legible a year later, without re-deriving it from recipes
               // that may since have changed.
               contribution
-                ? `Counted ${line.countedQty} loose + ${contribution.quantity} ${contribution.unit} held in ${contribution.fromPrep.join(', ')}`
+                ? `Counted ${counted.countedQty} loose + ${contribution.quantity} ${contribution.unit} held in ${contribution.fromPrep.join(', ')}`
                 : null,
               reviewedBy ? `Reviewed by: ${reviewedBy}` : null
             ])

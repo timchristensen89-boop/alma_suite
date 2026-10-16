@@ -1,0 +1,29 @@
+database: alma_suite_v18 — PRODUCTION
+Unit fixes from docs/stock-duplicate-resolution-2026-10/unit-fixes-2026-10-16-pack-sizes.json — APPLYING
+
+== Item measures (1) — what one count unit holds
+  [high] Massenez Pomme Verte: 750 ml → 500 ml
+      Shelf check 16 Oct 2026 (Tim): Massenez Pomme Verte is a 500 mL bottle. The $208.20 per-bottle cost still looks wrong for a 500 mL bottle — check against an invoice.
+
+== Stocktake 10/1/2026 (Alma Avalon, not yet applied) — 4 line(s)
+  [high] Avocadoes Hass: 1.473 kg → 0.2946 each   line value $0.00 → $9.42; applied as it stands it would book $47.09
+      Shelf check 16 Oct 2026 (Tim): avocados are counted by the ~5 kg tray; 1.473 kg = 0.2946 of a tray.
+  [high] Lime Juice: 25.1 L → 5.02 each   line value $0.00 → $76.30; applied as it stands it would book $381.52
+      Shelf check 16 Oct 2026 (Tim): lime juice comes in 5 L packs; 25.1 L = 5.02 packs.
+  [high] Massenez Pomme Verte: 3 L → 6 bottle   line value $0.00 → $1249.20; applied as it stands it would book $624.60
+      Shelf check 16 Oct 2026 (Tim): Pomme Verte is a 500 mL bottle; 3 L = 6 bottles.
+  [high] Watermelon Juice: 16.6 L → 3.32 each   line value $0.00 → $115.54; applied as it stands it would book $577.68
+      Shelf check 16 Oct 2026 (Tim): watermelon juice is counted in 5 L containers; 16.6 L = 3.32.
+  → applying this sheet as it stands would book $1630.89 for these lines; after the restatement $1450.46.
+
+== Holdings already written from such a line (1) — corrected with a STOCKTAKE_CORRECTION movement
+  [high] St Alma · Lime Juice: 8 → 1.6   $121.60 → $24.32   (from line 8 L)
+      Shelf check 16 Oct 2026 (Tim): 5 L packs; 8 L had been stored as 8 packs = 1.6 packs.
+  → holdings $121.60 → $24.32 ($-97.28).
+
+Applied run prod-unitfix-20261016-packsizes: 1 measure(s), 4 line(s), 1 holding(s) with 1 correction movement(s).
+Rollback: --rollback prod-unitfix-20261016-packsizes
+verify: St Alma — Bar & FOH 01/10/2026 (St Alma, not applied): 0 counted line(s) still in a unit apply would not convert
+verify: Stocktake 10/1/2026 (Alma Avalon, not applied): 1 counted line(s) still in a unit apply would not convert — Bay Leaves Bunch 170 g
+  Alma Avalon: active stock value $52274.51
+  St Alma: active stock value $79130.25

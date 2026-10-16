@@ -1,0 +1,158 @@
+database: alma_suite_v18 — PRODUCTION
+Unit fixes from /Users/timothychristensen/alma-stock-dupes/docs/stock-duplicate-resolution-2026-10/unit-fixes.json (confidence: high) — APPLYING
+
+== Item measures (20) — what one count unit holds
+  [high] Nut Pistachio Kernel: 100 g → 1000 g
+      Costed per kilo ($44.68): Loaded counted it in Kilo (0.47, 1 Kilo).
+  [high] Wakame: 100 g → 500 g
+      Loaded costed it as a 500 g pack: "0.2 500 Grams = $4.50" ($22.50 per pack).
+  [high] Mesculin Greens Mix: 100 g → 1000 g
+      Loaded cost "1.2 kg = $14.00" ($11.67/kg); invoice price 1759 is also per kg.
+  [high] Pepita Seeds: 100 g → 1000 g
+      Costed per kilo ($12.07); Loaded counted it in Kilo (2.98, 4.72, 1.69 Kilo).
+  [high] Cream Thickened: 100 g → 1000 ml
+      Loaded cost "2.71 Litre = $20.16" ($7.44/L); counted in Litre.
+  [high] Allspice: 100 g → 350 g
+      Loaded counted it as 350 g packs ("0.43 350 Grams"); $14.00 per pack.
+  [high] Pears Nashi: 100 g → 1000 g
+      Loaded cost "1.2 Kilo = $9.00" ($7.50/kg).
+  [high] Breadcrumbs Panko: 100 g → 1000 g
+      Costed per kilo ($6.24); Loaded counted it in Kilo (0.96, 0.79 Kilo).
+  [high] Mustard Dijon: 100 g → 170 g  (1 recipe line(s) in g/mL re-cost)
+      Invoices: "MUSTARD DIJON 170GM (Masterfoods) EA" at $4.50 = avg cost.
+  [high] Tomatoes: 100 g → 1000 g
+      Loaded cost "10.55 Kilo = $420.11"; counted in Kilo.
+  [high] Chips Shoestring Fries: 100 g → 1000 g
+      Costed per kilo ($4.47); Loaded counted it in Kilo (15, 17, 22 Kilo).
+  [high] Vinegar Apple Cider: 2000 ml → 5000 ml  (3 recipe line(s) in g/mL re-cost)
+      Invoices: "VINEGAR APPLE CIDER 5LT (PGF) EA" at $21.00; Loaded "0.81 5 L = $16.91".
+  [high] Onions Brown: 100 g → 1000 g
+      Loaded cost "15.39 Kilo = $21.89" ($1.42/kg).
+  [high] Corn Sweet Box: 100 g → 1000 g
+      Loaded cost "1 kg = $3.18"; counted in kg (11, 15, 20 kg).
+  [high] Oil Grapeseed: 100 g → 1000 ml
+      Invoices: "OIL GRAPESEED 1LT (Chefs Choice) EA" at $12.00 = avg cost.
+  [high] Mayonnaise Whole Egg: 100 g → 1000 g
+      Loaded cost "6.11 Kilo = $51.47" ($8.42/kg).
+  [high] Zucchini Medium: 100 g → 1000 g
+      Invoice "Zuchinni Medium Kg"; item note "Pack: 1 kg".
+  [high] Salt Flakes: 100 g → 2000 g
+      Invoices: "SEA SALT FLAKES 2KG (Pyramid) EA" at $25.00. Item has no cost yet.
+  [high] Peppercorns Black Whole: 100 g → 500 g
+      Loaded counted it as 500 g packs ("1 500 Grams"). Item cost is 0 — needs a price.
+  [high] First Press Black Cold Drip Coffee Mixer: 100 g → 750 ml
+      Loaded cost "4 750 mL = $75.76" ($18.94 per 750 mL bottle).
+
+== Stocktake 10/1/2026 (Alma Avalon, not yet applied) — 37 line(s)
+  [high] Mustard Dijon: 170 g → 1 each   line value $0.00 → $4.50; applied as it stands it would book $765.00
+      170 g = one 170 g jar.
+  [high] Nut Pistachio Kernel: 970 g → 0.97 each   line value $0.00 → $43.34; applied as it stands it would book $43339.60
+      970 g at 1 kg per count unit.
+  [high] Allspice: 350 g → 1 each   line value $0.00 → $14.00; applied as it stands it would book $4900.00
+      350 g = one 350 g pack.
+  [high] Breadcrumbs Panko: 561 g → 0.561 each   line value $0.00 → $3.50; applied as it stands it would book $3500.64
+      561 g at 1 kg per count unit.
+  [high] Broccolinni Box: 0.5 box → 6 bunch   line value $15.90 → $15.90; applied as it stands it would book $1.33
+      Half a box of 12 bunches = 6 bunches (item conversion 12 per box).
+  [high] CAPI GRAPEFRUIT SODA - (CASE OF 12): 10 bottle → 10 each   line value $0.00 → $37.50; applied as it stands it would book $37.50
+      "bottle" on an item counted in "each" (one 250 mL bottle). Same objects — only the label changes.
+  [high] Chips Shoestring Fries: 17 kg → 17 each   line value $0.00 → $75.99; applied as it stands it would book $75.99
+      17 kg at 1 kg per count unit.
+  [high] Cinnamon Ground: 300 g → 0.75 each   line value $0.00 → $8.42; applied as it stands it would book $3369.00
+      300 g of a 400 g pack.
+  [high] Cinnamon Quill: 400 g → 2 each   line value $0.00 → $20.00; applied as it stands it would book $4000.00
+      400 g of 200 g packs.
+  [high] CLOVES WHOLE 350GM (Galaxy) EA: 800 g → 2.2857 each   line value $0.00 → $57.14; applied as it stands it would book $20000.00
+      800 g of 350 g packs.
+  [high] CORIANDER SEED 250GM (Galaxy) EA: 0.3 g → 0.3 each   line value $0.00 → $2.40; applied as it stands it would book $2.40
+      "0.3 g" is a count of 0.3 of a pack against a gram label.
+  [high] Corn Sweet Box: 4 kg → 4 each   line value $0.00 → $12.72; applied as it stands it would book $12.72
+      4 kg at 1 kg per count unit.
+  [high] Cream Thickened: 800 mL → 0.8 each   line value $0.00 → $5.95; applied as it stands it would book $5952.00
+      800 mL at 1 L per count unit (cost is per litre).
+  [high] Cumin Ground: 100 g → 0.2222 each   line value $0.00 → $2.44; applied as it stands it would book $1100.00
+      100 g of a 450 g pack.
+  [high] CUMIN SEEDS 450GM (Windsor Farm) EA: 0.4 g → 0.4 each   line value $0.00 → $4.40; applied as it stands it would book $4.40
+      "0.4 g" is a count of 0.4 of a pack against a gram label.
+  [high] FENNEL SEED 450GM (Galaxy) EA: 0.5 g → 0.5 each   line value $0.00 → $4.50; applied as it stands it would book $4.50
+      "0.5 g" is a count of half a pack against a gram label (historical lines read 0.89 g / 0.2 g the same way).
+  [high] First Press Black Cold Drip Coffee Mixer: 0.3 L → 0.4 each   line value $0.00 → $7.58; applied as it stands it would book $5.68
+      0.3 L of a 750 mL bottle.
+  [high] Garlic Powder: 540 g → 1 each   line value $0.00 → $9.05; applied as it stands it would book $4887.00
+      540 g = one 540 g tub. NB the twin GARLIC POWDER 540GM line on this sheet is the same tub (cluster #136).
+  [high] GARLIC POWDER 540GM (Windsor Farm) EA: 1 g → 1 each   line value $0.00 → $9.00; applied as it stands it would book $9.00
+      "1 g" is a count of 1 typed against a gram label (same pattern as this item's historical lines 1 g / 0.7 g). NB same tub as Garlic Powder 540 g (cluster #136).
+  [high] Lemon Juice: 2 L → 1 each   line value $0.00 → $8.80; applied as it stands it would book $17.60
+      2 L of a 2 L bottle (invoice "Lemon Juice 2 Litre Bottle").
+  [high] Manly Spirits Triple Sec: 2 L → 2.6667 bottle   line value $0.00 → $77.52; applied as it stands it would book $58.14
+      L entered on a bottle item; 2 L ÷ 750 mL.
+  [high] Manly Spirits Triple Sec No Sugar: 11 L → 14.6667 bottle   line value $0.00 → $426.36; applied as it stands it would book $319.77
+      L entered on a bottle item; 11 L ÷ 750 mL.
+  [high] Manly Spirits Vodka: 5.1 L → 6.8 bottle   line value $0.00 → $244.80; applied as it stands it would book $183.60
+      L entered on a bottle item; 5.1 L ÷ 750 mL.
+  [high] Mayonnaise Whole Egg: 1 kg → 1 each   line value $0.00 → $8.42; applied as it stands it would book $8.42
+      1 kg at 1 kg per count unit.
+  [high] Mesculin Greens Mix: 800 g → 0.8 each   line value $0.00 → $9.34; applied as it stands it would book $9336.00
+      800 g at 1 kg per count unit (cost is per kg).
+  [high] Oil Grapeseed: 1 L → 1 each   line value $0.00 → $12.01; applied as it stands it would book $12.01
+      1 L = one 1 L bottle.
+  [high] Onions Brown: 11 kg → 11 each   line value $0.00 → $15.62; applied as it stands it would book $15.62
+      11 kg at 1 kg per count unit.
+  [high] Pears Nashi: 475 g → 0.475 each   line value $0.00 → $3.56; applied as it stands it would book $3562.50
+      475 g at 1 kg per count unit.
+  [high] Pepita Seeds: 757 g → 0.757 each   line value $0.00 → $9.14; applied as it stands it would book $9136.99
+      757 g at 1 kg per count unit.
+  [high] Salt Flakes: 500 g → 0.25 each   line value $0.00 → $0.00; applied as it stands it would book $0.00
+      500 g of a 2 kg tub. Item has no cost, so it still values at $0.
+  [high] Sesame Seed White: 969 g → 0.969 each   line value $0.00 → $8.72; applied as it stands it would book $8721.00
+      969 g of a 1 kg pack.
+  [high] Tomatoes: 2.211 kg → 2.211 each   line value $0.00 → $88.04; applied as it stands it would book $88.04
+      2.211 kg at 1 kg per count unit.
+  [high] Vinegar Apple Cider: 2.5 L → 0.5 each   line value $0.00 → $10.44; applied as it stands it would book $52.20
+      2.5 L of a 5 L drum.
+  [high] Wakame: 500 g → 1 each   line value $0.00 → $22.50; applied as it stands it would book $11250.00
+      500 g = one 500 g pack.
+  [high] Whole dried Ancho Chilli 1kg: 298 g → 0.298 each   line value $0.00 → $13.41; applied as it stands it would book $13410.00
+      298 g of a 1 kg pack.
+  [high] Whole dried Guajillo (Mirasol) Chilli 1kg: 157 g → 0.157 each   line value $0.00 → $7.56; applied as it stands it would book $7559.55
+      157 g of a 1 kg pack.
+  [high] Zucchini Medium: 1 kg → 1 each   line value $0.00 → $3.61; applied as it stands it would book $3.61
+      1 kg at 1 kg per count unit.
+  → applying this sheet as it stands would book $155701.81 for these lines; after the restatement $1308.18.
+
+== St Alma — Bar & FOH 01/10/2026 (St Alma, not yet applied) — 5 line(s)
+  [high] Manly Spirits Dry Gin: 8300 ml → 11.0667 bottle   line value $0.00 → $498.11; applied as it stands it would book $373583.00
+      mL entered on a bottle item; Manly items are costed per 750 mL ("Cost taken from the Loaded count: … mL = $…"), so bottles = mL ÷ 750.
+  [high] Manly Spirits Triple Sec No Sugar: 21000 ml → 28 bottle   line value $0.00 → $813.96; applied as it stands it would book $610470.00
+      mL entered on a bottle item; Manly items are costed per 750 mL ("Cost taken from the Loaded count: … mL = $…"), so bottles = mL ÷ 750.
+  [high] Manly Spirits Vodka: 17500 ml → 23.3333 bottle   line value $0.00 → $840.00; applied as it stands it would book $630000.00
+      mL entered on a bottle item; Manly items are costed per 750 mL ("Cost taken from the Loaded count: … mL = $…"), so bottles = mL ÷ 750.
+  [high] Manly Spirits Triple Sec: 10800 ml → 14.4 bottle   line value $0.00 → $418.61; applied as it stands it would book $313956.00
+      mL entered on a bottle item; Manly items are costed per 750 mL ("Cost taken from the Loaded count: … mL = $…"), so bottles = mL ÷ 750.
+  [high] Lemon Juice: 2 L → 1 each   line value $0.00 → $8.80; applied as it stands it would book $17.60
+      2 L of a 2 L bottle (invoice "Lemon Juice 2 Litre Bottle").
+  → applying this sheet as it stands would book $1928026.60 for these lines; after the restatement $2579.48.
+
+== Holdings already written from such a line (7) — corrected with a STOCKTAKE_CORRECTION movement
+  [high] Alma Avalon · SALT TABLE 14KG (Olssons) CTN: 5.77 → 0.4121   $80.78 → $5.77   (from line 5.77 Kilo)
+      5.77 kg of a 14 kg carton entered as cartons (Loaded "Kilo" line; item note "Pack: 14 kg").
+  [high] Alma Avalon · Manly Spirits Dry Gin: 19400 → 25.8667   $873194.00 → $1164.26   (from line 19400 mL)
+      mL entered on a bottle item; Manly items are costed per 750 mL ("Cost taken from the Loaded count: … mL = $…"), so bottles = mL ÷ 750.
+  [high] Alma Avalon · Manly Spirits Triple Sec: 9350 → 12.4667   $271804.50 → $362.41   (from line 9350 mL)
+      mL entered on a bottle item; Manly items are costed per 750 mL ("Cost taken from the Loaded count: … mL = $…"), so bottles = mL ÷ 750.
+  [high] Alma Avalon · Manly Spirits Triple Sec No Sugar: 16500 → 22   $479655.00 → $639.54   (from line 16500 mL)
+      mL entered on a bottle item; Manly items are costed per 750 mL ("Cost taken from the Loaded count: … mL = $…"), so bottles = mL ÷ 750.
+  [high] Alma Avalon · Manly Spirits Vodka: 7500 → 10   $270000.00 → $360.00   (from line 7500 mL)
+      mL entered on a bottle item; Manly items are costed per 750 mL ("Cost taken from the Loaded count: … mL = $…"), so bottles = mL ÷ 750.
+  [high] St Alma · Manly Spirits Triple Sec: 3400 → 4.5333   $98838.00 → $131.78   (from line 3400 mL)
+      mL entered on a bottle item; Manly items are costed per 750 mL ("Cost taken from the Loaded count: … mL = $…"), so bottles = mL ÷ 750.
+  [high] St Alma · Manly Spirits Triple Sec No Sugar: 3000 → 4   $87210.00 → $116.28   (from line 3000 mL)
+      mL entered on a bottle item; Manly items are costed per 750 mL ("Cost taken from the Loaded count: … mL = $…"), so bottles = mL ÷ 750.
+  → holdings $2080782.28 → $2780.04 ($-2078002.24).
+
+Applied run prod-unitfix-20261016-high: 20 measure(s), 42 line(s), 7 holding(s) with 7 correction movement(s).
+Rollback: --rollback prod-unitfix-20261016-high
+verify: St Alma — Bar & FOH 01/10/2026 (St Alma, not applied): 0 counted line(s) still in a unit apply would not convert
+verify: Stocktake 10/1/2026 (Alma Avalon, not applied): 11 counted line(s) still in a unit apply would not convert — Avocadoes Hass 1.473 kg; Bay Leaves Bunch 170 g; Lime Juice 25.1 L; Manly Spirits Bulk 20Ltr Australian Dry Gin 1 x 20ltr Drum 18.1 L; Massenez Creme de Peche 4.9 L; Massenez Pomme Verte 3 L; Onion Powder 500 g; Paprika Smoked 1.2 kg
+  Alma Avalon: active stock value $1112421.60
+  St Alma: active stock value $79227.53
