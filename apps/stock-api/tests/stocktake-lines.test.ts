@@ -194,3 +194,73 @@ test('a locked count is closed to everyone, a missing line is reported not fatal
     await cleanup({ stocktakeIds: [count.id], itemIds: [item.id] });
   }
 });
+
+test('quantities entered in another unit are stored in the count unit, and history is left alone', NO_DB, async () => {
+  const tag = `units-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const gin = await prisma.stockItem.create({ data: { name: `Gin ${tag}`, unit: 'case', countUnit: 'bottle', conversionFactor: 6, measurePerCountUnit: 700, measureUnit: 'ml', avgCostCents: 4500, onHand: 0, parLevel: 0, status: 'ACTIVE' } });
+  const nuts = await prisma.stockItem.create({ data: { name: `Pistachio ${tag}`, unit: 'each', countUnit: 'each', conversionFactor: 1, measurePerCountUnit: 1000, measureUnit: 'g', avgCostCents: 4468, onHand: 0, parLevel: 0, status: 'ACTIVE' } });
+  const herbs = await prisma.stockItem.create({ data: { name: `Herbs ${tag}`, unit: 'each', countUnit: 'each', conversionFactor: 1, measurePerCountUnit: 100, measureUnit: 'g', avgCostCents: 300, onHand: 0, parLevel: 0, status: 'ACTIVE' } });
+  const stocktakeIds: string[] = [];
+  try {
+    // Created with a weight on a 1 kg bag item: stored as bags.
+    const sheet = await stocktakesService.createStocktake(
+      { name: `Units ${tag}`, venue: 'St Alma', countedAt: new Date().toISOString(), lines: [
+        { itemId: gin.id, label: gin.name, unit: 'bottle' },
+        { itemId: nuts.id, label: nuts.name, unit: 'g', countedQty: 970 },
+        { itemId: herbs.id, label: herbs.name, unit: 'each' }
+      ] },
+      MANAGER
+    );
+    stocktakeIds.push(sheet.id);
+    const line = (itemId: string) => sheet.lines.find((l) => l.itemId === itemId)!;
+    assert.deepEqual([line(nuts.id).countedQty, line(nuts.id).unit, line(nuts.id).stockValueCents], [0.97, 'each', 4334]);
+
+    // Two cases typed on the count screen: stored as 12 bottles.
+    const patched = await stocktakesService.updateLines(sheet.id, { lines: [{ id: line(gin.id).id, countedQty: 2, unit: 'case' }] }, COUNTER);
+    assert.deepEqual([patched.lines[0]!.countedQty, patched.lines[0]!.unit, patched.lines[0]!.stockValueCents], [12, 'bottle', 54000]);
+
+    // A weight on an item whose measure is the placeholder is refused, and nothing is written.
+    await assert.rejects(
+      stocktakesService.updateLines(sheet.id, { lines: [{ id: line(herbs.id).id, countedQty: 170, unit: 'g' }] }, COUNTER),
+      (error: { statusCode?: number; message: string }) => error.statusCode === 400 && /doesn't yet say how much one each holds/.test(error.message)
+    );
+    const herbsAfter = (await stocktakesService.get(sheet.id, MANAGER)).lines.find((l) => l.itemId === herbs.id)!;
+    assert.equal(herbsAfter.countedQty, null);
+
+    // Applying converts an exact line written straight to the table (an import), and records how.
+    await prisma.stocktakeLine.update({ where: { id: line(gin.id).id }, data: { countedQty: 3, unit: 'case' } });
+    await stocktakesService.updateStocktake(sheet.id, { status: 'SUBMITTED' }, MANAGER);
+    const applied = await stocktakesService.applyStocktake(sheet.id, MANAGER);
+    const ginMove = applied.movements.find((m) => m.itemId === gin.id)!;
+    assert.equal(ginMove.quantityAfter, 18);
+    assert.equal(ginMove.unit, 'bottle');
+    const holding = await prisma.venueStockItem.findFirstOrThrow({ where: { stockItemId: gin.id, venue: 'St Alma' } });
+    assert.equal(holding.onHand, 18);
+    // The line itself still says what was counted.
+    const ginLine = await prisma.stocktakeLine.findUniqueOrThrow({ where: { id: line(gin.id).id } });
+    assert.deepEqual([ginLine.countedQty, ginLine.unit], [3, 'case']);
+
+    // An imported sheet with a measure that rests on the item's measure is refused at apply.
+    const imported = await prisma.stocktake.create({ data: { name: `Import ${tag}`, venue: 'St Alma', countedAt: new Date(), status: 'SUBMITTED', lines: { create: [{ position: 1, label: gin.name, itemId: gin.id, countedQty: 19400, unit: 'mL' }] } } });
+    stocktakeIds.push(imported.id);
+    await assert.rejects(stocktakesService.applyStocktake(imported.id, MANAGER), (error: { statusCode?: number; message: string }) =>
+      error.statusCode === 409 && /1 line can't be applied yet/.test(error.message) && /has to be entered as a count/.test(error.message));
+
+    // Editing an old sheet through the whole-sheet save leaves unchanged lines exactly as stored.
+    const legacy = await prisma.stocktake.create({ data: { name: `Legacy ${tag}`, venue: 'St Alma', countedAt: new Date(), status: 'IN_PROGRESS', lines: { create: [
+      { position: 1, label: gin.name, itemId: gin.id, countedQty: 22, unit: 'ml' },
+      { position: 2, label: nuts.name, itemId: nuts.id, countedQty: null, unit: 'g' }
+    ] } }, include: { lines: { orderBy: { position: 'asc' } } } });
+    stocktakeIds.push(legacy.id);
+    await stocktakesService.updateStocktake(legacy.id, { lines: [
+      { id: legacy.lines[0]!.id, itemId: gin.id, label: gin.name, countedQty: 22, unit: 'ml' },
+      { id: legacy.lines[1]!.id, itemId: nuts.id, label: nuts.name, countedQty: 500, unit: 'g' }
+    ] }, MANAGER);
+    const legacyAfter = await prisma.stocktakeLine.findMany({ where: { stocktakeId: legacy.id }, orderBy: { position: 'asc' } });
+    assert.deepEqual(legacyAfter.map((l) => [l.countedQty, l.unit]), [[22, 'ml'], [0.5, 'each']]);
+  } finally {
+    await prisma.inventoryMovement.deleteMany({ where: { itemId: { in: [gin.id, nuts.id, herbs.id] } } });
+    await prisma.venueStockItem.deleteMany({ where: { stockItemId: { in: [gin.id, nuts.id, herbs.id] } } });
+    await cleanup({ stocktakeIds, itemIds: [gin.id, nuts.id, herbs.id] });
+  }
+});

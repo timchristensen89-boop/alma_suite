@@ -47,3 +47,20 @@ test('a measure on an item with no measure to convert by is still refused', () =
   assert.equal(found.length, 1);
   assert.equal(found[0]!.convertsTo, null);
 });
+
+test('inCountUnit converts what cannot be wrong and refuses what could be', async () => {
+  const { inCountUnit } = await import('./apply-unit-guard.js');
+  const placeholder = { unit: 'each', countUnit: 'each', conversionFactor: 1, measurePerCountUnit: 100, measureUnit: 'g' };
+  const ok = (r: ReturnType<typeof inCountUnit>) => (r.ok ? [r.countedQty, r.unit, r.converted] : r.message);
+  assert.deepEqual(ok(inCountUnit(2, 'case', caseOf6)), [12, 'bottle', true]);
+  assert.deepEqual(ok(inCountUnit(1500, 'g', byKg)), [1.5, 'kg', true]);
+  assert.deepEqual(ok(inCountUnit(970, 'g', bag)), [0.97, 'each', true]);
+  assert.deepEqual(ok(inCountUnit(4, '700ml', bottle)), [4, 'bottle', false]);
+  assert.deepEqual(ok(inCountUnit(10, 'bottle', bag)), [10, 'each', false]);
+  assert.deepEqual(ok(inCountUnit(null, 'g', bag)), [null, 'each', false]);
+  // The first catalogue import left 100 g on 80 pack items: never trusted.
+  assert.match(String(ok(inCountUnit(970, 'g', placeholder, { label: 'Pistachio' }))), /^Pistachio: 970 g can't be turned into each — the item doesn't yet say how much one each holds\. Enter it in each\.$/);
+  // At apply, a conversion that rests on the measure is refused outright.
+  assert.match(String(ok(inCountUnit(19400, 'mL', bottle, { allowMeasure: false }))), /has to be entered as a count/);
+  assert.deepEqual(ok(inCountUnit(2, 'case', caseOf6, { allowMeasure: false })), [12, 'bottle', true]);
+});

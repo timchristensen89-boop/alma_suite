@@ -1,4 +1,4 @@
-import { convertQuantityToCostUnit, isMeasureUnit, type CostUnitItem } from '@alma/shared';
+import { convertQuantityToCostUnit, isMeasureUnit, normaliseUnitLabel, type CostUnitItem } from '@alma/shared';
 
 /**
  * Applying a stocktake writes each line's countedQty straight into on-hand, in
@@ -53,4 +53,62 @@ export function unitMismatchMessage(mismatches: UnitMismatch[]): string {
     `and applying would store the number as that many count units: ${shown.join('; ')}${more}. ` +
     'Restate those lines in the count unit, then apply.'
   );
+}
+
+/**
+ * A quantity in the item's count unit — the one unit every stored count and
+ * every applied holding uses, so a manager never has to think about units.
+ *
+ * Converted automatically when the conversion cannot be wrong for this item:
+ * the same unit or a generic "each"; a pack label naming the container
+ * ("700ml" on a bottle item); the item's purchase unit (cases → bottles by the
+ * item's pack size); one metric unit to another (g → kg, mL → L); or a weight /
+ * volume on a pack item whose measure is real ("970 g" of a 1 kg bag = 0.97).
+ *
+ * Refused, with a message the manager can act on, when it could be wrong: a
+ * weight or volume on an item with no measure, or with the placeholder measure
+ * (100 g / 100 mL on a pack item, left by the first catalogue import on 80
+ * items), or a measure on an item counted by another kind of thing.
+ */
+export type CountUnitResult =
+  | { ok: true; countedQty: number | null; unit: string; converted: boolean }
+  | { ok: false; countUnit: string; message: string };
+
+export function isPlaceholderMeasure(item: CostUnitItem): boolean {
+  const countUnit = item.countUnit ?? item.unit;
+  return item.measurePerCountUnit === 100 && ['g', 'ml'].includes(normaliseUnitLabel(item.measureUnit)) && !isMeasureUnit(countUnit);
+}
+
+export function inCountUnit(
+  countedQty: number | null | undefined,
+  unit: string | null | undefined,
+  item: CostUnitItem,
+  options: { label?: string; allowMeasure?: boolean } = {}
+): CountUnitResult {
+  const countUnit = item.countUnit ?? item.unit;
+  if (countedQty === null || countedQty === undefined) return { ok: true, countedQty: null, unit: countUnit, converted: false };
+  const converted = convertQuantityToCostUnit(countedQty, unit, item);
+  const round = (value: number) => Math.round(value * 1e6) / 1e6;
+  const refuse = (why: string): CountUnitResult => ({
+    ok: false,
+    countUnit,
+    message: `${options.label ? `${options.label}: ` : ''}${countedQty} ${unit ?? ''} can't be turned into ${countUnit} — ${why}. Enter it in ${countUnit}.`
+  });
+  switch (converted.via) {
+    case 'same-unit':
+    case 'pack-label':
+      return { ok: true, countedQty, unit: countUnit, converted: false };
+    case 'pack':
+    case 'measure':
+      return { ok: true, countedQty: round(converted.quantity), unit: countUnit, converted: true };
+    case 'measure-pack':
+      if (options.allowMeasure === false) return refuse(`it depends on how much one ${countUnit} holds, so it has to be entered as a count`);
+      if (isPlaceholderMeasure(item)) return refuse(`the item doesn't yet say how much one ${countUnit} holds`);
+      return { ok: true, countedQty: round(converted.quantity), unit: countUnit, converted: true };
+    default:
+      // Two names for one kind of thing ("bottle" on an item counted in
+      // "each") carry across; a measure against a count cannot.
+      if (isMeasureUnit(unit) === isMeasureUnit(countUnit)) return { ok: true, countedQty, unit: countUnit, converted: false };
+      return refuse(isMeasureUnit(unit) ? `the item doesn't say how much one ${countUnit} holds` : `the item is counted by measure`);
+  }
 }

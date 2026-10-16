@@ -75,7 +75,7 @@ test('a mL line on a bottle item cannot be applied until it is restated', NO_DB,
   try {
     await assert.rejects(stocktakesService.applyStocktake(f.latest.id, null), (error: { statusCode?: number; message: string }) => {
       assert.equal(error.statusCode, 409);
-      assert.match(error.message, /2 lines are in a unit other than the item's count unit/);
+      assert.match(error.message, /2 lines can't be applied yet/);
       return true;
     });
     // Nothing was written by the refused apply.
