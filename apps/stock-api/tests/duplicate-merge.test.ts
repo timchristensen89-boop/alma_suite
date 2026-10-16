@@ -82,7 +82,7 @@ test('a cluster merge discards the stale holding, drops the double count, never 
     assert.equal(plan.discarded.length, 1);
     assert.equal(plan.discarded[0]!.valueCents, 28400);
     assert.equal(plan.doubleCounts.length, 1, 'the latest sheet is a double count; the stray sheet is not folded so it is not one');
-    assert.equal(plan.foldExcluded, 1, 'the twin’s line on the stray sheet is repointed only');
+    assert.equal(plan.foldExcluded, 2, 'the twin’s lines on the stray sheet and on the old applied sheet (history) are repointed only');
 
     const result = await applyCluster(runId, plan);
     assert.equal(result.mergedCount, 1);
