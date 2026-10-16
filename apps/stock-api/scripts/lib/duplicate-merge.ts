@@ -489,8 +489,13 @@ export async function rollback(runId: string, options: { force?: boolean } = {})
 export type VerifyReport = { duplicateLinePairs: number; orphanedAnchors: number; danglingRefs: Record<string, number>; venueValueCents: Record<string, number> };
 
 export async function verify(): Promise<VerifyReport> {
+  // Only finalised real-venue sheets count: the stray venue-less and phantom
+  // sheets list every item twice by construction and are never folded.
   const twoLines = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
-    `SELECT count(*)::int AS n FROM (SELECT 1 FROM "StocktakeLine" WHERE "itemId" IS NOT NULL GROUP BY "stocktakeId", "itemId" HAVING count(*) > 1) t`
+    `SELECT count(*)::int AS n FROM (
+       SELECT 1 FROM "StocktakeLine" l JOIN "Stocktake" s ON s.id = l."stocktakeId"
+       WHERE l."itemId" IS NOT NULL AND s.venue IN ('Alma Avalon','St Alma') AND s.status IN ('SUBMITTED','REVIEWED','LOCKED')
+       GROUP BY l."stocktakeId", l."itemId" HAVING count(*) > 1) t`
   );
   const orphans = await prisma.$queryRawUnsafe<Array<{ n: number }>>(`SELECT count(*)::int AS n FROM "InventoryMovement" WHERE "sourceStocktakeLineId" IS NULL AND "sourceStocktakeId" IS NOT NULL`);
   const dangling: Record<string, number> = {};
@@ -511,7 +516,7 @@ export async function verify(): Promise<VerifyReport> {
     danglingRefs: dangling,
     venueValueCents: Object.fromEntries(venues.map((v) => [v.venue, Number(v.value)]))
   };
-  console.log(`\nverify: stocktakes with two lines for one item: ${report.duplicateLinePairs}; orphaned ledger anchors: ${report.orphanedAnchors}; rows still on archived duplicates: ${Object.values(dangling).reduce((a, b) => a + b, 0)}`);
+  console.log(`\nverify: finalised real-venue sheets with two lines for one item: ${report.duplicateLinePairs}; orphaned ledger anchors: ${report.orphanedAnchors}; rows still on archived duplicates: ${Object.values(dangling).reduce((a, b) => a + b, 0)}`);
   for (const [venue, cents] of Object.entries(report.venueValueCents)) console.log(`  ${venue}: active stock value ${dollars(cents)}`);
   return report;
 }
