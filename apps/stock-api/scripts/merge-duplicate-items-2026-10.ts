@@ -77,8 +77,9 @@ async function main() {
   for (const plan of plans) printPlan(plan, apply);
   const refused = plans.filter((p) => !p.check.ok);
   const ready = plans.filter((p) => p.check.ok);
-  const discardedCents = ready.reduce((sum, p) => sum + p.discarded.reduce((s, x) => s + x.valueCents, 0), 0);
-  console.log(`\n${ready.length} ready, ${refused.length} refused. Stale holdings to discard: ${dollars(discardedCents)}.`);
+  const discardedCents = ready.reduce((sum, p) => sum + p.discarded.reduce((acc, x) => acc + x.valueCents, 0), 0);
+  const recountCents = ready.reduce((sum, p) => sum + p.recount.reduce((acc, x) => acc + x.valueCents, 0), 0);
+  console.log(`\n${ready.length} ready, ${refused.length} refused. Stale holdings to discard: ${dollars(discardedCents)}; carried across for recount: ${dollars(recountCents)}.`);
   if (!apply) {
     console.log('Dry run — nothing written. Re-run with --apply to merge (a snapshot is taken first; --rollback <runId> restores it).');
     return;

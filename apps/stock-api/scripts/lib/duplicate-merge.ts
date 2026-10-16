@@ -233,7 +233,10 @@ export async function checkCluster(d: Decision): Promise<Check> {
         if (plan?.treatment === 'discard_stale' && plan.onHand != null && Math.abs((vs.onHand ?? 0) - plan.onHand) > 0.005) {
           problems.push(`${item.name} @ ${vs.venue} on hand is ${vs.onHand}, the review saw ${plan.onHand} — counted since; re-review`);
         }
-        if (plan?.treatment === 'recount') problems.push(`${item.name} @ ${vs.venue} needs a recount before merging`);
+        // A holding nothing on the latest sheet accounts for is carried
+        // across unchanged and listed for the next count; it is not a
+        // reason to leave the duplicate in place.
+        if (plan?.treatment === 'recount') warnings.push(`recount ${item.name} @ ${vs.venue} (${vs.onHand}) at the next count — carried across as is`);
       }
     }
     // One recipe fed by two members ends up with two lines for one item.
@@ -267,6 +270,7 @@ export type Plan = {
   holdingsBefore: Record<string, { onHand: number; valueCents: number }>;
   holdingsAfter: Record<string, { onHand: number; valueCents: number }>;
   discarded: Array<{ item: string; venue: string; onHand: number; valueCents: number }>;
+  recount: Array<{ item: string; venue: string; onHand: number; valueCents: number }>;
   doubleCounts: Array<{ sheet: string; sheetId: string; treatment: DoubleCountTreatment; parentQty: number | null; dupQty: number | null; dupValueCents: number | null }>;
   foldExcluded: number;
   refCounts: Record<string, number>;
@@ -283,6 +287,7 @@ export async function planCluster(d: Decision): Promise<Plan> {
   const holdingsBefore: Plan['holdingsBefore'] = {};
   const holdingsAfter: Plan['holdingsAfter'] = {};
   const discarded: Plan['discarded'] = [];
+  const recount: Plan['recount'] = [];
   for (const item of items) {
     for (const vs of item.venueStock) {
       if (!REAL_VENUES.has(vs.venue)) continue;
@@ -290,6 +295,7 @@ export async function planCluster(d: Decision): Promise<Plan> {
       const valueCents = Math.round(onHand * costOf(item.id));
       holdingsBefore[vs.venue] = { onHand: (holdingsBefore[vs.venue]?.onHand ?? 0) + onHand, valueCents: (holdingsBefore[vs.venue]?.valueCents ?? 0) + valueCents };
       const treatment = d.onHandPlan.find((p) => p.itemId === item.id && p.venue === vs.venue)?.treatment ?? 'keep';
+      if (treatment === 'recount') recount.push({ item: item.name, venue: vs.venue, onHand, valueCents });
       if (treatment === 'discard_stale' && onHand !== 0) {
         discarded.push({ item: item.name, venue: vs.venue, onHand, valueCents });
       } else {
@@ -312,7 +318,7 @@ export async function planCluster(d: Decision): Promise<Plan> {
   refCounts.StocktakeLine = await prisma.stocktakeLine.count({ where: { itemId: { in: d.duplicateIds } } });
   refCounts.aliases = await prisma.stockItemAlias.count({ where: { stockItemId: { in: d.duplicateIds } } });
   return {
-    d, check, holdingsBefore, holdingsAfter, discarded, doubleCounts, foldExcluded, refCounts,
+    d, check, holdingsBefore, holdingsAfter, discarded, recount, doubleCounts, foldExcluded, refCounts,
     names: { canonical: canonical?.name ?? d.canonicalId, duplicates: d.duplicateIds.map((id) => byId.get(id)?.name ?? id) }
   };
 }
@@ -328,6 +334,7 @@ export function printPlan(plan: Plan, apply: boolean) {
     console.log(`  ${venue.padEnd(12)} on hand ${b.onHand} → ${a.onHand}   value ${dollars(b.valueCents)} → ${dollars(a.valueCents)}`);
   }
   for (const x of plan.discarded) console.log(`  discard stale: ${x.item} @ ${x.venue}: ${x.onHand} (${dollars(x.valueCents)})`);
+  for (const x of plan.recount) console.log(`  recount next count: ${x.item} @ ${x.venue}: ${x.onHand} (${dollars(x.valueCents)}) — carried across as is`);
   for (const x of plan.doubleCounts) console.log(`  double count on "${x.sheet}": survivor ${x.parentQty ?? '—'}, duplicate ${x.dupQty} (${dollars(x.dupValueCents)}) → ${x.treatment}`);
   if (plan.foldExcluded) console.log(`  ${plan.foldExcluded} line${plan.foldExcluded === 1 ? '' : 's'} on venue-less / phantom / open sheets repointed only, never folded`);
   const refs = Object.entries(plan.refCounts).filter(([, n]) => n > 0).map(([t, n]) => `${t} ${n}`).join(', ');
