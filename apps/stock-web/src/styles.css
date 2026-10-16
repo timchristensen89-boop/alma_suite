@@ -1574,14 +1574,6 @@ tbody tr.row-detail:hover {
   min-height: 38px;
 }
 
-.stocktake-count-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-top: 6px;
-}
-
 .stocktake-table-scroll {
   width: 100%;
   overflow-x: auto;
@@ -1590,57 +1582,6 @@ tbody tr.row-detail:hover {
 
 .stocktake-history-card table {
   min-width: 760px;
-}
-
-.stocktake-count-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.stocktake-count-line {
-  display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) minmax(160px, 1.2fr) minmax(88px, 0.6fr) minmax(78px, 0.5fr) minmax(120px, 0.8fr) minmax(110px, 0.7fr) auto;
-  gap: 10px;
-  align-items: end;
-  padding: 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-}
-
-/* Start-from-template picker at the top of a new count. */
-.stocktake-template-start {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-  max-width: 520px;
-}
-
-/* Live per-line cost readout while counting — spots a wrong unit before submit. */
-.stocktake-count-cost {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  align-items: baseline;
-  margin: 4px 2px 0;
-  font-size: 0.82rem;
-  color: var(--color-text-muted);
-}
-.stocktake-count-cost strong {
-  color: var(--color-text);
-  font-weight: 600;
-}
-.stocktake-count-cost.is-missing {
-  color: var(--color-warning-strong, #9a6a00);
-}
-.stocktake-count-cost.is-alert strong {
-  color: var(--color-danger-strong, #b42318);
 }
 
 /* Bulk line editing bar in review. */
@@ -1866,12 +1807,6 @@ tbody tr.row-detail:hover {
   }
 }
 
-@media (max-width: 1100px) {
-  .stocktake-count-line {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 560px) {
   .stocktake-history-card {
     margin-inline: -8px;
@@ -1916,18 +1851,9 @@ tbody tr.row-detail:hover {
     flex: 1 1 auto;
   }
 
-  .stocktake-count-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .stocktake-count-toolbar .btn,
   .toolbar-right .btn {
     flex: 1 1 auto;
-  }
-
-  .stocktake-count-line {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -2495,43 +2421,6 @@ html[data-theme='dark'] .price-movement-tile.is-positive strong { color: var(--t
   }
 }
 
-/* Data quality + variance review surfaces — both shared by the
-   stocktake page and the Loaded replacement dashboard. */
-.stocktake-data-quality {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px;
-  margin-top: 8px;
-}
-.stocktake-data-quality-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(248, 246, 241, 0.6);
-  border-left: 3px solid rgba(31, 53, 36, 0.18);
-}
-.stocktake-data-quality-cell.is-warning {
-  border-left-color: #D18A00;
-  background: rgba(209, 138, 0, 0.06);
-}
-.stocktake-data-quality-cell.is-danger {
-  border-left-color: #9A3A2E;
-  background: rgba(154, 58, 46, 0.06);
-}
-.stocktake-data-quality-cell strong {
-  font-family: var(--font-serif, 'Cormorant Garamond', serif);
-  font-weight: 500;
-  font-size: 22px;
-}
-.stocktake-data-quality-cell span {
-  font-size: 11.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-
 .stocktake-variance-table {
   width: 100%;
   border-collapse: collapse;
@@ -2802,67 +2691,6 @@ html[data-theme='dark'] .stock-bulk-edit-title { color: var(--color-text); }
 .hub-tab-icon svg { width: 15px; height: 15px; }
 html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #fff); }
 
-/* ── Stocktake Phase 1: progress, count toggles, area walking ─────── */
-.stocktake-count-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin: 8px 0 12px;
-}
-.stocktake-count-progress {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 220px;
-  flex: 1;
-}
-.stocktake-progress-track {
-  flex: 1;
-  max-width: 260px;
-  height: 7px;
-  border-radius: 9999px;
-  background: rgba(31, 53, 36, 0.12);
-  overflow: hidden;
-}
-.stocktake-progress-bar {
-  height: 100%;
-  border-radius: 9999px;
-  background: #4f6b47;
-  transition: width 200ms ease;
-}
-.stocktake-count-toggles {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.stocktake-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--color-text, #1f3524);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.stocktake-toggle input {
-  cursor: pointer;
-}
-.stocktake-area-header {
-  margin: 14px 0 6px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: var(--color-surface-muted, #eef2ea);
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-text-muted, #5a6b58);
-}
-
 /* ── Menu-engineering quadrant ── */
 .menu-quadrant {
   display: grid;
@@ -3005,31 +2833,6 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   }
   .menu-quadrant-caption .menu-quadrant-clear {
     margin-left: 0;
-  }
-}
-
-/* ── Stocktake mobile count polish (phone counting on the floor) ──── */
-@media (max-width: 720px) {
-  .stocktake-count-line {
-    gap: 8px;
-    padding: 12px;
-    border-radius: 12px;
-  }
-  /* Bigger, thumb-friendly quantity field — the one you touch most while counting */
-  .stocktake-count-line input[type='number'] {
-    font-size: 17px;
-    padding: 12px 10px;
-    text-align: center;
-  }
-  .stocktake-count-toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 4;
-    background: var(--color-bg, #fff);
-    padding: 8px 0;
-  }
-  .stocktake-count-progress {
-    width: 100%;
   }
 }
 
@@ -3818,23 +3621,6 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   gap: 4px;
 }
 
-/* A prep line on the count sheet: no item picker (it points at a recipe),
-   so the first column names it instead. */
-.stocktake-count-line.is-prep {
-  border-left: 3px solid #4f6b47;
-}
-.stocktake-prep-label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  justify-content: flex-end;
-  padding-bottom: 6px;
-  min-width: 0;
-}
-.stocktake-prep-label strong {
-  overflow-wrap: anywhere;
-}
-
 /* What the prep lines will book, shown before approval. */
 .stocktake-prep-preview {
   margin-top: 14px;
@@ -3880,16 +3666,6 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   }
 }
 
-/* The one instruction that decides how long a count takes: you do not have to
-   type a zero. Sits directly above the count lines, not in a tooltip. */
-.stocktake-blank-note {
-  margin: 12px 0 0;
-  padding: 8px 12px;
-  border-left: 3px solid #4f6b47;
-  border-radius: 8px;
-  background: rgba(79, 107, 71, 0.06);
-}
-
 /* ------------------------------------------------------------------ */
 /* Count sheet — the printable stocktake.                              */
 /* Screen shows a preview with a toolbar; print strips the app shell   */
@@ -3897,23 +3673,21 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 /* ------------------------------------------------------------------ */
 
 .count-sheet-page {
-  display: grid;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .count-sheet-toolbar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px 20px;
-  padding: 12px 16px;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  position: sticky;
-  top: 8px;
-  z-index: 5;
 }
 
 .count-sheet-toolbar-left {
@@ -3924,8 +3698,8 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 
 .count-sheet-toolbar-options {
   display: flex;
+  gap: 14px;
   flex-wrap: wrap;
-  gap: 6px 16px;
 }
 
 .count-sheet-option {
@@ -3934,6 +3708,7 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   gap: 6px;
   font-size: 13px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .count-sheet-toolbar-actions {
@@ -3941,107 +3716,77 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   gap: 8px;
 }
 
+/* The sheet itself. Everything below is sized for paper: 9.5pt type, rows a
+   touch under 6mm, hairline borders. The screen preview shows the same. */
 .count-sheet {
   background: #fff;
   color: #111;
-  padding: 24px 28px;
+  padding: 10mm 10mm;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  max-width: 900px;
-  font-size: 13px;
-  line-height: 1.35;
+  max-width: 210mm;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+  font-size: 9.5pt;
+  line-height: 1.2;
 }
 
 .count-sheet-head {
   display: flex;
   justify-content: space-between;
-  gap: 24px;
-  align-items: flex-start;
-  border-bottom: 2px solid #111;
-  padding-bottom: 12px;
-}
-
-.count-sheet-eyebrow {
-  display: block;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #555;
+  align-items: flex-end;
+  gap: 16px;
+  padding-bottom: 4px;
+  border-bottom: 1.5px solid #111;
 }
 
 .count-sheet-title h1 {
-  margin: 4px 0 4px;
-  font-size: 22px;
-  line-height: 1.15;
+  margin: 0;
+  font-size: 14pt;
+  line-height: 1.1;
 }
 
-.count-sheet-meta {
-  margin: 0;
+.count-sheet-title span {
+  display: block;
+  font-size: 8.5pt;
   color: #333;
 }
 
 .count-sheet-signoff {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(120px, 1fr));
-  gap: 8px 16px;
-  margin: 0;
-  min-width: 260px;
-}
-
-.count-sheet-signoff div {
   display: flex;
-  flex-direction: column;
-}
-
-.count-sheet-signoff dt {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #555;
-}
-
-.count-sheet-signoff dd {
-  margin: 0;
-  min-height: 22px;
-  border-bottom: 1px solid #111;
-  font-size: 13px;
-}
-
-.count-sheet-instructions {
-  margin: 12px 0 8px;
+  gap: 14px;
+  font-size: 8.5pt;
   color: #333;
-  font-size: 12px;
+  white-space: nowrap;
+}
+
+.count-sheet-signoff b {
+  display: inline-block;
+  min-width: 34mm;
+  border-bottom: 1px solid #111;
+  font-weight: 400;
+}
+
+.count-sheet-signoff .count-sheet-pageno { min-width: 10mm; }
+
+.count-sheet-note {
+  margin: 4px 0 6px;
+  font-size: 8pt;
+  color: #333;
+}
+
+.count-sheet-columns {
+  column-gap: 6mm;
+  column-fill: auto;
+}
+
+.count-sheet-page.is-two-col .count-sheet-columns {
+  column-count: 2;
 }
 
 .count-sheet-section {
-  margin-top: 16px;
-}
-
-.count-sheet-section h2 {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 0 0 6px;
-  font-size: 15px;
-  break-after: avoid;
-  page-break-after: avoid;
-}
-
-.count-sheet-section-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  border: 1.5px solid #111;
-  border-radius: 999px;
-  font-size: 12px;
-}
-
-.count-sheet-section-count {
-  font-weight: 400;
-  font-size: 11px;
-  color: #555;
+  margin: 0 0 4mm;
+  break-inside: auto;
 }
 
 .count-sheet-table {
@@ -4052,74 +3797,85 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 
 .count-sheet-table th,
 .count-sheet-table td {
-  border: 1px solid #111;
-  padding: 5px 7px;
-  vertical-align: top;
+  border: 0.5pt solid #666;
+  padding: 1.5pt 4pt;
+  vertical-align: middle;
   text-align: left;
+  overflow-wrap: anywhere;
 }
+
+.count-sheet-table thead { display: table-header-group; }
 
 .count-sheet-table thead th {
   background: #eee;
-  font-size: 10.5px;
+  font-size: 7pt;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
+  color: #333;
 }
 
-.count-sheet-table .col-index { width: 28px; text-align: right; color: #555; }
-.count-sheet-table .col-unit { width: 84px; }
-.count-sheet-table .col-num { width: 80px; text-align: right; }
-.count-sheet-table .col-tally { width: 110px; }
-.count-sheet-table .col-count { width: 86px; }
-.count-sheet-table .col-notes { width: 150px; }
-
-.count-sheet-table tbody td.col-count,
-.count-sheet-table tbody td.col-tally,
-.count-sheet-table tbody td.col-notes {
-  height: 30px;
+.count-sheet-table thead .count-sheet-section-row th {
+  background: #111;
+  color: #fff;
+  font-size: 8.5pt;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-weight: 700;
+  padding: 2.5pt 5pt;
 }
+
+.count-sheet-section-count {
+  float: right;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.count-sheet-table .col-vint { width: 11.5mm; text-align: center; white-space: nowrap; overflow-wrap: normal; }
+.count-sheet-table .col-unit { width: 12mm; font-size: 8pt; color: #333; }
+.count-sheet-table .col-num { width: 11mm; text-align: right; }
+.count-sheet-table .col-tally { width: 20mm; }
+.count-sheet-table .col-count { width: 15mm; }
+.count-sheet-table .col-notes { width: 30mm; }
+
+.count-sheet-table tbody tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  height: 5.6mm;
+}
+
+.count-sheet-table tbody td.col-item {
+  font-weight: 500;
+}
+
+.count-sheet-table tbody tr.is-vintage td.col-item {
+  padding-left: 5mm;
+  font-weight: 400;
+}
+
+.count-sheet-table tbody .count-sheet-group-row td {
+  font-weight: 700;
+  background: #f6f6f6;
+}
+
+.count-sheet-table tbody tr.is-prep td.col-item { font-style: italic; }
 
 .count-sheet-table tbody td.col-tally {
-  background-image: linear-gradient(to right, transparent 33%, #bbb 33%, #bbb calc(33% + 1px), transparent calc(33% + 1px), transparent 66%, #bbb 66%, #bbb calc(66% + 1px), transparent calc(66% + 1px));
+  background-image: linear-gradient(to right, transparent 33%, #bbb 33%, #bbb calc(33% + 0.5pt), transparent calc(33% + 0.5pt), transparent 66%, #bbb 66%, #bbb calc(66% + 0.5pt), transparent calc(66% + 0.5pt));
 }
 
-.count-sheet-table tbody tr { break-inside: avoid; page-break-inside: avoid; }
-.count-sheet-table tbody tr:nth-child(5n) td { border-bottom-width: 2px; }
-.count-sheet-table tr.is-prep td.col-item { font-style: italic; }
+.count-sheet-table tbody tr:nth-child(5n) td { border-bottom-width: 1pt; }
 
-.count-sheet-item-name { display: block; font-weight: 600; }
-.count-sheet-item-sub { display: block; font-size: 10.5px; color: #555; }
-.count-sheet-item-sub:empty { display: none; }
-.count-sheet-unit-hint { display: block; font-size: 10px; color: #555; }
 .count-sheet-prefilled { color: #888; font-style: italic; }
 
-.count-sheet-foot {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 16px;
-  padding-top: 8px;
-  border-top: 1px solid #111;
-  font-size: 10.5px;
-  color: #555;
-}
-
-.count-sheet-page.is-compact .count-sheet { font-size: 11.5px; }
-.count-sheet-page.is-compact .count-sheet-table th,
-.count-sheet-page.is-compact .count-sheet-table td { padding: 3px 5px; }
-.count-sheet-page.is-compact .count-sheet-table tbody td.col-count,
-.count-sheet-page.is-compact .count-sheet-table tbody td.col-tally,
-.count-sheet-page.is-compact .count-sheet-table tbody td.col-notes { height: 22px; }
-.count-sheet-page.is-compact .count-sheet-item-sub { display: none; }
-
 @media (max-width: 720px) {
-  .count-sheet { padding: 16px; }
-  .count-sheet-head { flex-direction: column; }
-  .count-sheet-signoff { min-width: 0; }
+  .count-sheet { padding: 12px; }
+  .count-sheet-head { flex-direction: column; align-items: flex-start; }
+  .count-sheet-page.is-two-col .count-sheet-columns { column-count: 1; }
 }
 
 @page {
   size: A4 portrait;
-  margin: 12mm 12mm 14mm;
+  margin: 9mm 9mm 10mm;
 }
 
 @media print {
@@ -4157,13 +3913,12 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
     border-radius: 0;
     padding: 0;
     max-width: none;
-    font-size: 12px;
   }
   .count-sheet-table thead { display: table-header-group; }
-  .count-sheet-table th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .count-sheet-table th,
+  .count-sheet-table tbody .count-sheet-group-row td,
   .count-sheet-table tbody td.col-tally { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .count-sheet-section { break-inside: auto; }
-  .count-sheet-foot { position: static; }
   a[href]::after { content: none !important; }
 }
 
@@ -4183,3 +3938,358 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 .stock-duplicate-group-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
 .stock-duplicate-members { display: flex; flex-direction: column; gap: 6px; }
 .stock-duplicate-members .stock-merge-option { flex-wrap: wrap; }
+
+/* ── Counting screen (/stocktake/:id/count) ──────────────────────────────
+   One list, one box per line, saved as you type. The header stays put so
+   the search box and the save state are always in reach; everything else
+   is rows. Row height and tap targets are sized for a phone held in one
+   hand in a cool room. */
+.count-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 80px;
+}
+.count-head {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: -8px -8px 0;
+  padding: 10px 8px 10px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+.count-head-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.count-back {
+  flex: 0 0 auto;
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: none;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.count-back:hover { color: var(--color-text); }
+.count-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.count-title strong {
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.count-title .subtle { font-size: 12.5px; display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.count-save {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.count-save.is-saved { color: #2f6b3a; }
+.count-save.is-saving { color: var(--color-text-muted); }
+.count-save.is-readonly { color: var(--color-text-muted); font-weight: 500; }
+.count-save.is-error { color: var(--color-danger-strong, #b42318); white-space: normal; }
+.count-save .link { font: inherit; color: inherit; text-decoration: underline; background: none; border: 0; padding: 0; cursor: pointer; }
+.count-save-detail { font-weight: 400; font-size: 11.5px; }
+.count-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.count-search {
+  flex: 1 1 260px;
+  min-width: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 10px 14px;
+  min-height: 42px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-elevated);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 15px;
+}
+.count-search:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+.count-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.count-progress-track {
+  width: 110px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(31, 53, 36, 0.12);
+  overflow: hidden;
+}
+.count-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: #4f6b47;
+  transition: width 200ms ease;
+}
+.count-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.count-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.count-details-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.count-details-save { display: inline-flex; align-items: center; gap: 10px; }
+.count-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.count-notice {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  font-size: 13px;
+}
+.count-notice.is-closed { background: rgba(154, 58, 46, 0.08); color: var(--color-danger-strong, #b42318); }
+.count-notice .link { background: none; border: 0; padding: 0; margin-left: 8px; font: inherit; text-decoration: underline; cursor: pointer; color: inherit; }
+
+.count-body { display: flex; flex-direction: column; gap: 8px; }
+.count-section {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.count-section-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.count-section-head:hover { background: var(--color-surface-muted); }
+.count-section.is-open .count-section-head { border-bottom: 1px solid var(--color-border); background: var(--color-surface-muted); }
+.count-section-name { flex: 1 1 auto; font-weight: 700; font-size: 15px; }
+.count-section-meta { font-size: 12.5px; opacity: 0.7; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.count-section-chevron { opacity: 0.6; font-size: 12px; }
+.count-rows { display: flex; flex-direction: column; }
+.count-group { display: flex; flex-direction: column; }
+.count-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px 4px;
+  font-weight: 700;
+  font-size: 14px;
+}
+.count-group-head .subtle { font-size: 12px; font-weight: 500; }
+.count-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px 34px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 6px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  min-height: 48px;
+}
+.count-group .count-row:first-child { border-top: 0; }
+.count-row.is-vintage { padding-left: 32px; }
+.count-row.is-pending .count-qty { border-color: #c9a227; }
+.count-row.is-failed .count-qty { border-color: var(--color-danger-strong, #b42318); background: rgba(180, 35, 24, 0.06); }
+.count-row.is-prep .count-row-name { font-style: italic; }
+.count-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+.count-row-name {
+  font-size: 14.5px;
+  font-weight: 500;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.count-row-vintage {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+.is-vintage .count-row-vintage { color: var(--color-text); font-size: 15px; }
+.count-row-detail { font-size: 12px; font-weight: 500; color: var(--color-text-muted); }
+.count-row-unit { font-size: 12px; color: var(--color-text-muted); }
+.count-row-hint { font-size: 12px; margin-top: 2px; }
+.count-row-hint.is-muted { color: var(--color-text-subtle); }
+.count-row-hint.is-alert { color: var(--color-danger-strong, #b42318); font-weight: 600; }
+.count-qty {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border-strong, var(--color-border));
+  border-radius: 10px;
+  background: var(--color-elevated);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.count-qty:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+.count-qty:disabled { opacity: 0.6; }
+.count-qty::placeholder { color: var(--color-text-subtle); font-weight: 400; }
+.count-row-edit {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.count-row-edit:hover { background: var(--color-surface-muted); color: var(--color-text); }
+.count-row-edit.is-placeholder { pointer-events: none; }
+.count-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+}
+.count-add {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  margin-top: 6px;
+}
+.count-total { margin: 4px 2px; }
+
+.count-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(20, 24, 18, 0.35);
+  display: flex;
+  justify-content: flex-end;
+}
+.count-drawer {
+  width: min(560px, 100%);
+  height: 100%;
+  background: var(--color-surface);
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+}
+.count-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 15px;
+}
+.count-drawer-close {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-text-muted);
+}
+.count-drawer-close:hover { background: var(--color-surface-muted); color: var(--color-text); }
+.count-drawer-body { flex: 1 1 auto; overflow-y: auto; padding: 16px 18px 32px; }
+.count-drawer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.stocktake-count-toggles { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+.start-count { display: flex; flex-direction: column; gap: 12px; }
+.start-count-actions { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 720px) {
+  .count-head { margin: -8px -8px 0; padding: 8px 10px; }
+  .count-head-row { gap: 10px; }
+  .count-title strong { font-size: 15px; }
+  .count-save { font-size: 12px; }
+  .count-tools { gap: 8px; }
+  .count-search { flex-basis: 100%; }
+  .count-progress-track { width: 70px; }
+  .count-actions { margin-left: 0; }
+  .count-row { grid-template-columns: minmax(0, 1fr) 88px 30px; padding: 6px 8px 6px 12px; gap: 8px; }
+  .count-row.is-vintage { padding-left: 24px; }
+  .count-qty { min-height: 44px; font-size: 18px; }
+  .count-drawer { width: 100%; }
+  .start-count-actions { justify-content: stretch; }
+  .start-count-actions .btn { flex: 1 1 auto; }
+}
