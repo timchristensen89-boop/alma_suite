@@ -146,8 +146,17 @@ DATABASE_URL=… ./apps/stock-api/node_modules/.bin/tsx apps/stock-api/scripts/a
 
 ## 7–9. Before / after
 
-See the PR description for the screenshots (counting interface desktop and
-mobile, search, edit drawer, print page 1 and a wine page, Excel sample).
+Screenshots in `docs/screenshots/stock-count-2026-10/` (same count, same
+519-line Alma Avalon Bar & FOH sheet, local clone of production):
+
+| | Before | After |
+|---|---|---|
+| Counting, desktop | `before-count-desktop.jpg` | `after-count-desktop.jpg` |
+| Counting, phone | `before-count-mobile.jpg` | `after-count-mobile.jpg` |
+| Print, page 1 | `before-print-page1.jpg` (20 pages) | `print-page1.jpg` (8 pages); wine page `print-page7-wine.jpg` |
+| Search / edit drawer / re-grouped vintage | — | `after-count-search.jpg`, `after-edit-drawer.jpg`, `after-edit-regrouped.jpg` |
+| Start a count / Details | — | `after-start-count.jpg`, `after-details-panel.jpg` |
+| Blank Excel | — | `sample-blank-avalon-bar.xlsx` |
 
 ## 10. Test results
 
