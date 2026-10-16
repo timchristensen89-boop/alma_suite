@@ -62,6 +62,10 @@ type LinePatch = { countedQty?: string; unit?: string; label?: string; notes?: s
 
 type SaveState = 'saved' | 'saving' | 'error' | 'offline' | 'closed';
 
+// Lines per autosave request. The API caps a patch at 500 and a phone that
+// was offline for an hour has more than that queued.
+const AUTOSAVE_CHUNK = 100;
+
 const SCOPE_LABELS: Record<StocktakeScope, string> = {
   FOOD: 'Food',
   BEVERAGE: 'Beverage',
@@ -164,32 +168,25 @@ async function loadUnitAliases() {
 function useLineAutosave(stocktakeId: string | undefined, onSaved: (result: StocktakeLinesPatchResult) => void) {
   const queue = useRef(new Map<string, LinePatch>());
   const timer = useRef<number | null>(null);
-  const inFlight = useRef(false);
-  const flushAgain = useRef(false);
+  const inFlight = useRef<Promise<boolean> | null>(null);
   const attempts = useRef(0);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [failedIds, setFailedIds] = useState<Set<string>>(() => new Set());
   const [state, setState] = useState<SaveState>('saved');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
 
-  const flush = useCallback(
-    async (options: { keepalive?: boolean } = {}) => {
-      if (!stocktakeId) return;
-      if (inFlight.current) {
-        flushAgain.current = true;
-        return;
-      }
-      if (queue.current.size === 0) return;
-      const batch = new Map(queue.current);
-      queue.current = new Map();
-      inFlight.current = true;
-      setState('saving');
+  // Send one request of at most CHUNK lines. Resolves true when it landed.
+  const sendBatch = useCallback(
+    async (batch: Map<string, LinePatch>, keepalive: boolean): Promise<boolean> => {
+      if (!stocktakeId) return false;
       try {
         const result = await api<StocktakeLinesPatchResult>(`/api/stocktake/${stocktakeId}/lines`, {
           method: 'PATCH',
           body: JSON.stringify({ lines: Array.from(batch.entries()).map(([id, patch]) => ({ id, ...patch })) }),
-          keepalive: options.keepalive ?? false
+          keepalive
         });
         attempts.current = 0;
         setFailedIds((current) => {
@@ -206,9 +203,9 @@ function useLineAutosave(stocktakeId: string | undefined, onSaved: (result: Stoc
           return next;
         });
         setLastSavedAt(new Date());
-        setMessage(null);
-        onSaved(result);
-        setState(queue.current.size > 0 ? 'saving' : 'saved');
+        setMessage(result.missing?.length ? `${result.missing.length} line${result.missing.length === 1 ? ' was' : 's were'} removed from this count on another device.` : null);
+        onSavedRef.current(result);
+        return true;
       } catch (err) {
         // Put the failed patches back, underneath anything typed since.
         batch.forEach((patch, id) => {
@@ -227,41 +224,86 @@ function useLineAutosave(stocktakeId: string | undefined, onSaved: (result: Stoc
           });
           setState(typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'error');
           setMessage(err instanceof ApiError ? err.message : 'Could not reach the Stock API');
-          const delay = Math.min(30_000, 2_000 * 2 ** Math.min(attempts.current - 1, 4));
-          if (timer.current) window.clearTimeout(timer.current);
-          timer.current = window.setTimeout(() => void flush(), delay);
         }
-      } finally {
-        inFlight.current = false;
-        if (flushAgain.current) {
-          flushAgain.current = false;
-          void flush();
-        }
+        return false;
       }
     },
-    [stocktakeId, onSaved]
+    [stocktakeId]
   );
 
-  const enqueue = useCallback(
-    (lineId: string, patch: LinePatch) => {
-      queue.current.set(lineId, { ...(queue.current.get(lineId) ?? {}), ...patch });
-      setPendingIds((current) => (current.has(lineId) ? current : new Set(current).add(lineId)));
-      setState((current) => (current === 'closed' ? current : 'saving'));
-      if (timer.current) window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => void flush(), 600);
+  // Drain the queue in chunks. Resolves true only when everything queued at
+  // the time of the call (and anything typed while it ran) has landed; a
+  // caller that needs the sheet saved — submit, leaving the page — awaits it.
+  const flush = useCallback(
+    (options: { keepalive?: boolean } = {}): Promise<boolean> => {
+      if (inFlight.current) return inFlight.current.then(() => (queue.current.size > 0 ? flush(options) : true));
+      if (queue.current.size === 0) return Promise.resolve(state !== 'closed');
+      if (timer.current) {
+        window.clearTimeout(timer.current);
+        timer.current = null;
+      }
+      const run = (async () => {
+        setState((current) => (current === 'closed' ? current : 'saving'));
+        while (queue.current.size > 0) {
+          const entries = Array.from(queue.current.entries()).slice(0, AUTOSAVE_CHUNK);
+          const batch = new Map(entries);
+          for (const [id] of entries) queue.current.delete(id);
+          const ok = await sendBatch(batch, options.keepalive ?? false);
+          if (!ok) {
+            // Back off and try again on our own; whoever awaited us hears "not yet".
+            const delay = Math.min(30_000, 2_000 * 2 ** Math.min(Math.max(attempts.current - 1, 0), 4));
+            if (timer.current) window.clearTimeout(timer.current);
+            timer.current = window.setTimeout(() => void flush(), delay);
+            return false;
+          }
+        }
+        setState((current) => (current === 'closed' ? current : 'saved'));
+        return true;
+      })();
+      inFlight.current = run;
+      return run.finally(() => {
+        if (inFlight.current === run) inFlight.current = null;
+      });
     },
-    [flush]
+    [sendBatch, state]
   );
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+
+  const enqueue = useCallback((lineId: string, patch: LinePatch) => {
+    queue.current.set(lineId, { ...(queue.current.get(lineId) ?? {}), ...patch });
+    setPendingIds((current) => (current.has(lineId) ? current : new Set(current).add(lineId)));
+    setState((current) => (current === 'closed' ? current : 'saving'));
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => void flushRef.current(), 600);
+  }, []);
+
+  // A line that no longer exists has nothing to save.
+  const forget = useCallback((lineId: string) => {
+    queue.current.delete(lineId);
+    setPendingIds((current) => {
+      if (!current.has(lineId)) return current;
+      const next = new Set(current);
+      next.delete(lineId);
+      return next;
+    });
+    setFailedIds((current) => {
+      if (!current.has(lineId)) return current;
+      const next = new Set(current);
+      next.delete(lineId);
+      return next;
+    });
+  }, []);
 
   const retry = useCallback(() => {
     attempts.current = 0;
     if (timer.current) window.clearTimeout(timer.current);
-    void flush();
-  }, [flush]);
+    void flushRef.current();
+  }, []);
 
   useEffect(() => {
     function onHide() {
-      if (document.visibilityState === 'hidden' && queue.current.size > 0) void flush({ keepalive: true });
+      if (document.visibilityState === 'hidden' && queue.current.size > 0) void flushRef.current({ keepalive: true });
     }
     function onBeforeUnload(event: BeforeUnloadEvent) {
       if (queue.current.size > 0 || inFlight.current) {
@@ -282,11 +324,15 @@ function useLineAutosave(stocktakeId: string | undefined, onSaved: (result: Stoc
       window.removeEventListener('beforeunload', onBeforeUnload);
       window.removeEventListener('online', onOnline);
       if (timer.current) window.clearTimeout(timer.current);
+      // Leaving the page inside the app (a Link, the task bar) does not fire
+      // beforeunload. Whatever is still queued goes now, kept alive past the
+      // unmount, rather than being thrown away with the component.
+      if (queue.current.size > 0) void flushRef.current({ keepalive: true });
     };
-  }, [flush, retry]);
+  }, [retry]);
 
-  const hasUnsaved = pendingIds.size > 0;
-  return { enqueue, flush, retry, state, message, lastSavedAt, pendingIds, failedIds, hasUnsaved };
+  const hasUnsaved = pendingIds.size > 0 || failedIds.size > 0;
+  return { enqueue, flush, forget, retry, state, message, lastSavedAt, pendingIds, failedIds, hasUnsaved };
 }
 
 export function StocktakeCountPage() {
@@ -316,8 +362,20 @@ export function StocktakeCountPage() {
 
   const onSaved = useCallback((result: StocktakeLinesPatchResult) => {
     setStocktake((current) => (current ? { ...current, updatedAt: result.updatedAt } : current));
+    // Lines removed on another device: drop them here too rather than keep
+    // showing a box whose number can never land.
+    if (result.missing?.length) {
+      const gone = new Set(result.missing);
+      setMeta((current) => current.filter((line) => !gone.has(line.id)));
+      setQty((current) => {
+        const next = new Map(current);
+        gone.forEach((lineId) => next.delete(lineId));
+        return next;
+      });
+    }
   }, []);
   const autosave = useLineAutosave(id, onSaved);
+  const { enqueue, forget } = autosave;
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -349,7 +407,11 @@ export function StocktakeCountPage() {
 
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const open = stocktake ? isOpenForCounting(stocktake) : false;
-  const readOnly = !open || autosave.state === 'closed';
+  // A manager may still correct a count that is submitted or reviewed but
+  // not applied — the same rule the API enforces. Locked and applied counts
+  // are read only for everyone.
+  const managerCorrection = Boolean(stocktake && canManage && !stocktake.appliedAt && (stocktake.status === 'SUBMITTED' || stocktake.status === 'REVIEWED'));
+  const readOnly = !(open || managerCorrection) || autosave.state === 'closed';
 
   // The walk: categories in order, wines grouped. Depends on the sheet's
   // structure (which lines, which items), never on the quantities, so typing
@@ -432,13 +494,15 @@ export function StocktakeCountPage() {
         values.push([line.id, cents]);
       }
     }
-    const set = new Set<string>();
+    // Share of the count each flagged line holds, so the row can say "41%"
+    // rather than a vaguer phrase.
+    const shares = new Map<string, number>();
     if (total > 0) {
       for (const [lineId, cents] of values) {
-        if (cents >= IMPLAUSIBLE_COUNT_FLOOR_CENTS && cents / total >= IMPLAUSIBLE_COUNT_SHARE) set.add(lineId);
+        if (cents >= IMPLAUSIBLE_COUNT_FLOOR_CENTS && cents / total >= IMPLAUSIBLE_COUNT_SHARE) shares.set(lineId, cents / total);
       }
     }
-    return { set, total };
+    return { shares, total };
   }, [meta, qty, itemsById]);
 
   const toggleSection = useCallback((name: string) => {
@@ -459,9 +523,12 @@ export function StocktakeCountPage() {
         next.set(lineId, value);
         return next;
       });
-      autosave.enqueue(lineId, { countedQty: value });
+      // A box holding only '.' (someone meant '.5' and was interrupted) is
+      // blank as far as the count is concerned; the server would reject the
+      // text and take the whole batch down with it.
+      enqueue(lineId, { countedQty: parseQty(value) === null ? '' : value });
     },
-    [autosave]
+    [enqueue]
   );
 
   // Focus a line's box once it exists — used after opening the next category
@@ -557,6 +624,7 @@ export function StocktakeCountPage() {
     if (!id) return;
     try {
       await api(`/api/stocktake/${id}/lines/${lineId}`, { method: 'DELETE' });
+      forget(lineId);
       setMeta((current) => current.filter((line) => line.id !== lineId));
       setQty((current) => {
         const next = new Map(current);
@@ -574,6 +642,9 @@ export function StocktakeCountPage() {
   function onItemSaved(saved: StockItem) {
     const before = itemsById.get(saved.id);
     setItems((current) => current.map((item) => (item.id === saved.id ? { ...item, ...saved, venueStock: item.venueStock } : item)));
+    // Only an open count follows the catalogue change; a submitted, locked or
+    // applied count keeps its lines exactly as they were counted.
+    if (readOnly) return;
     setMeta((current) =>
       current.map((line) => {
         if (line.itemId !== saved.id) return line;
@@ -581,9 +652,19 @@ export function StocktakeCountPage() {
         if (before && line.label === before.name && saved.name !== before.name) patch.label = saved.name;
         const oldUnit = before ? stockCountUnit(before) : null;
         const newUnit = stockCountUnit(saved);
-        if (oldUnit && line.unit === oldUnit && newUnit !== oldUnit) patch.unit = newUnit;
+        const counted = (qty.get(line.id) ?? '').trim() !== '';
+        // A number already typed was typed in the old unit; relabelling it
+        // would change its meaning. The unit follows only on a blank line —
+        // a counted line keeps its unit and shows the mismatch hint instead.
+        if (oldUnit && line.unit === oldUnit && newUnit !== oldUnit && !counted) patch.unit = newUnit;
+        // A price or pack-size fix must reach the lines already counted: a
+        // no-op quantity patch makes the server value them again.
+        if (counted && Object.keys(patch).length === 0) {
+          enqueue(line.id, { countedQty: qty.get(line.id) ?? '' });
+          return line;
+        }
         if (Object.keys(patch).length === 0) return line;
-        autosave.enqueue(line.id, patch);
+        enqueue(line.id, counted ? { ...patch, countedQty: qty.get(line.id) ?? '' } : patch);
         return { ...line, ...patch };
       })
     );
@@ -591,23 +672,41 @@ export function StocktakeCountPage() {
 
   async function submitForReview() {
     if (!id || !stocktake) return;
-    const blanks = meta.length - counted;
-    const ok = window.confirm(
-      `Submit "${stocktake.name}" for review?\n\n${counted} of ${meta.length} lines counted.${
-        blanks > 0 ? ` ${blanks} blank line${blanks === 1 ? '' : 's'} will be recorded as zero.` : ''
-      }`
-    );
-    if (!ok) return;
     setSubmitting(true);
     try {
-      await autosave.flush();
-      await api<Stocktake>(`/api/stocktake/${id}/submit`, { method: 'POST' });
-      navigate('/stocktake');
+      // Everything typed here must have landed, and the blanks must be
+      // counted from the server's copy — other people have been saving to
+      // this sheet too.
+      const saved = await autosave.flush();
+      if (!saved) {
+        setNotice('Some counts have not saved yet. Check the connection, wait for “Saved”, then submit.');
+        return;
+      }
+      const fresh = await api<StocktakeWithLines>(`/api/stocktake/${id}`);
+      const blanks = fresh.lines.filter((line) => line.countedQty === null || line.countedQty === undefined).length;
+      const countedNow = fresh.lines.length - blanks;
+      const ok = window.confirm(
+        `Submit "${stocktake.name}" for review?\n\n${countedNow} of ${fresh.lines.length} lines counted.${
+          blanks > 0 ? ` ${blanks} blank line${blanks === 1 ? '' : 's'} will be recorded as zero.` : ''
+        }`
+      );
+      if (!ok) return;
+      const result = await api<Stocktake>(`/api/stocktake/${id}/submit`, { method: 'POST' });
+      const zeroed = result.blankLinesZeroed ?? 0;
+      navigate('/stocktake', { state: { notice: `"${stocktake.name}" submitted for review.${zeroed > 0 ? ` ${zeroed} blank line${zeroed === 1 ? ' was' : 's were'} recorded as zero.` : ''}` } });
     } catch (err) {
       setNotice(err instanceof ApiError ? err.message : 'Could not submit the count');
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Leaving through the app: get the queue down first. If it will not go,
+  // say so rather than lose it quietly.
+  async function leaveToList() {
+    const saved = autosave.hasUnsaved ? await autosave.flush({ keepalive: true }) : true;
+    if (!saved && !window.confirm('Some counts have not saved. Leave anyway? They will keep retrying in the background, but may be lost.')) return;
+    navigate('/stocktake');
   }
 
   async function downloadExcel() {
@@ -642,7 +741,17 @@ export function StocktakeCountPage() {
     <div className="count-page">
       <header className="count-head">
         <div className="count-head-row">
-          <Link to="/stocktake" className="count-back" aria-label="Back to counts">‹ Counts</Link>
+          <Link
+            to="/stocktake"
+            className="count-back"
+            aria-label="Back to counts"
+            onClick={(event) => {
+              event.preventDefault();
+              void leaveToList();
+            }}
+          >
+            ‹ Counts
+          </Link>
           <div className="count-title">
             <strong>{stocktake.name}</strong>
             <span className="subtle">
@@ -697,10 +806,17 @@ export function StocktakeCountPage() {
           />
         ) : null}
         {notice ? <p className="count-notice" role="status">{notice} <button type="button" className="link" onClick={() => setNotice(null)}>Dismiss</button></p> : null}
-        {!open ? (
+        {!open && !managerCorrection ? (
           <p className="count-notice is-closed">
-            {stocktake.appliedAt ? 'This count has been applied to stock and can no longer be changed.' : 'This count is closed for counting. A manager can reopen it from the counts list.'}
+            {stocktake.appliedAt
+              ? 'This count has been applied to stock and can no longer be changed.'
+              : stocktake.status === 'LOCKED'
+                ? 'This count is locked as a baseline. Reopen it with a reason from the counts list to change it.'
+                : 'This count is closed for counting. A manager can reopen it from the counts list.'}
           </p>
+        ) : null}
+        {managerCorrection ? (
+          <p className="count-notice">This count has been submitted. Your changes save straight onto the submitted count.</p>
         ) : null}
       </header>
 
@@ -744,12 +860,12 @@ export function StocktakeCountPage() {
                             vintage={group.wine ? entry.vintageLabel : null}
                             detail={entry.detail}
                             value={qty.get(entry.row.id) ?? ''}
-                            flagged={flagged.set.has(entry.row.id)}
+                            flaggedShare={flagged.shares.get(entry.row.id) ?? null}
                             pending={autosave.pendingIds.has(entry.row.id)}
                             failed={autosave.failedIds.has(entry.row.id)}
                             showExpected={showExpected}
                             readOnly={readOnly}
-                            canEdit={canManage && Boolean(entry.row.itemId)}
+                            canEdit={canManage && !readOnly && Boolean(entry.row.itemId)}
                             onChange={setLineQty}
                             onKeyDown={onLineKey}
                             onEdit={setEditingItemId}
@@ -827,7 +943,8 @@ type CountRowProps = {
   vintage: string | null;
   detail: string | null;
   value: string;
-  flagged: boolean;
+  /** Share of the whole count this line holds when it is implausibly large; null otherwise. */
+  flaggedShare: number | null;
   pending: boolean;
   failed: boolean;
   showExpected: boolean;
@@ -842,7 +959,8 @@ type CountRowProps = {
  * One line. Memoised: a full count is 800 of these and only the one being
  * typed in should re-render on a keystroke.
  */
-const CountRow = memo(function CountRow({ line, item, name, vintage, detail, value, flagged, pending, failed, showExpected, readOnly, canEdit, onChange, onKeyDown, onEdit }: CountRowProps) {
+const CountRow = memo(function CountRow({ line, item, name, vintage, detail, value, flaggedShare, pending, failed, showExpected, readOnly, canEdit, onChange, onKeyDown, onEdit }: CountRowProps) {
+  const flagged = flaggedShare !== null;
   const parsed = parseQty(value);
   const estimate = item ? estimateLineValueCents(item, parsed, line.unit || null) : null;
   const expected = item ? item.venueStock?.onHand ?? item.onHand : null;
@@ -856,7 +974,7 @@ const CountRow = memo(function CountRow({ line, item, name, vintage, detail, val
     hint = `Unit “${line.unit}” does not match ${estimate.countUnit} — check the item`;
     hintTone = ' is-alert';
   } else if (flagged && estimate?.cents != null) {
-    hint = `${formatCurrency(estimate.cents)} — most of this whole count. ${asMeasure !== null ? `If you counted ${item?.measureUnit}, that is about ${asMeasure} ${estimate.countUnit}.` : `Check you are counting ${estimate.countUnit}.`}`;
+    hint = `About ${formatCurrency(estimate.cents)} — ${Math.round((flaggedShare ?? 0) * 100)}% of this whole count. ${asMeasure !== null ? `If you counted ${item?.measureUnit}, that is about ${asMeasure} ${estimate.countUnit}.` : `Check you are counting ${estimate.countUnit}.`}`;
     hintTone = ' is-alert';
   } else if (showExpected && expected !== null && expected !== undefined) {
     hint = `Expected ${formatQty(expected) || '0'}`;

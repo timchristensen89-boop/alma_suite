@@ -131,3 +131,19 @@ test('withVintage keeps the vintage where the name already put it', () => {
   assert.equal(withVintage('Teusner Wark Family Shiraz', 2021), 'Teusner Wark Family Shiraz 2021');
   assert.equal(withVintage('Rockford Basket Press Shiraz 2017', null), 'Rockford Basket Press Shiraz');
 });
+
+test('abbreviation dots do not split a group; decimals still count', () => {
+  assert.equal(wineGroupKey('Bruxo No. 2'), wineGroupKey('Bruxo No 2'));
+  assert.notEqual(wineGroupKey('Bruxo No. 2'), wineGroupKey('Bruxo No. 4'));
+  assert.equal(wineGroupKey('Mt. Difficulty Pinot Noir 2021'), wineGroupKey('Mt Difficulty Pinot Noir 2022'));
+  assert.notEqual(wineGroupKey('Surco 2.7 Cabernet Sauvignon'), wineGroupKey('Surco 27 Cabernet Sauvignon'));
+  assert.ok(countSearchMatcher('no. 2')('Bruxo No 2'));
+});
+
+test('withVintage writes and clears the NV marker, and replaces it with a year', () => {
+  assert.equal(withVintage('NV Laurent Perrier Brut Rose (Case of 6)', 2015), '2015 Laurent Perrier Brut Rose (Case of 6)');
+  assert.equal(withVintage('Serenello Prosecco', 'NV'), 'NV Serenello Prosecco');
+  assert.equal(withVintage('Serenello Prosecco 2022', 'NV'), 'NV Serenello Prosecco');
+  assert.equal(withVintage('NV Serenello Prosecco (Case of 6)', null), 'Serenello Prosecco (Case of 6)');
+  assert.equal(wineGroupKey(withVintage('Serenello Prosecco', 'NV')), wineGroupKey('Serenello Prosecco'));
+});

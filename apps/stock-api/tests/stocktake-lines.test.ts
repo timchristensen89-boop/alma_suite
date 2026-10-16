@@ -81,11 +81,11 @@ test('a per-line save values the line server-side and leaves the other lines alo
     assert.equal(cleared.lines[0]!.countedQty, null);
     assert.equal(cleared.lines[0]!.stockValueCents, null);
 
-    // A line from another count is refused outright.
-    await assert.rejects(
-      () => stocktakesService.updateLines(stocktake.id, { lines: [{ id: 'not-a-line', countedQty: 1 }] }, COUNTER),
-      (err: unknown) => (err as { statusCode?: number }).statusCode === 404
-    );
+    // A line from another count (or one removed meanwhile) is reported, not
+    // allowed to fail the batch.
+    const partial = await stocktakesService.updateLines(stocktake.id, { lines: [{ id: 'not-a-line', countedQty: 1 }] }, COUNTER);
+    assert.deepEqual(partial.missing, ['not-a-line']);
+    assert.equal(partial.lines.length, 0);
   } finally {
     await cleanup({ stocktakeIds: [stocktake.id], itemIds: [gin.id, limes.id] });
   }
@@ -145,5 +145,52 @@ test('counters may only write lines on an open count at their venue; managers ma
     await prisma.inventoryMovement.deleteMany({ where: { sourceStocktakeId: { in: [open.id, elsewhere.id] } } });
     await prisma.inventoryMovement.deleteMany({ where: { itemId: { in: [item.id, extra.id] } } });
     await cleanup({ stocktakeIds: [open.id, elsewhere.id], itemIds: [item.id, extra.id] });
+  }
+});
+
+test('the lines patch schema: whitespace and a lone dot are blank, non-numbers are refused', () => {
+  const parsed = stocktakeLinesPatchInputSchema.parse({ lines: [{ id: 'a', countedQty: ' ' }, { id: 'b', countedQty: '.' }, { id: 'c', countedQty: ' 2 ' }, { id: 'd', countedQty: 0 }] });
+  assert.deepEqual(parsed.lines.map((l) => l.countedQty), [null, null, 2, 0]);
+  for (const bad of [true, [], 'abc', {}]) {
+    assert.throws(() => stocktakeLinesPatchInputSchema.parse({ lines: [{ id: 'a', countedQty: bad }] }), `${JSON.stringify(bad)} must be refused`);
+  }
+});
+
+test('a locked count is closed to everyone, a missing line is reported not fatal, duplicate ids merge, and a line with ledger history cannot be removed', NO_DB, async () => {
+  const tag = `lines-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const item = await prisma.stockItem.create({ data: { name: `Mezcal ${tag}`, unit: 'bottle', avgCostCents: 9000, onHand: 0, parLevel: 0, status: 'ACTIVE' } });
+  const count = await stocktakesService.createStocktake(
+    { name: `Guard ${tag}`, venue: 'St Alma', countedAt: new Date().toISOString(), lines: [{ itemId: item.id, label: item.name, unit: 'bottle' }] },
+    MANAGER
+  );
+  try {
+    const line = count.lines[0]!;
+    // Two patches for one line in a batch are one line with two edits.
+    const merged = await stocktakesService.updateLines(count.id, { lines: [{ id: line.id, countedQty: 5 }, { id: line.id, notes: 'half case' }, { id: 'gone', countedQty: 1 }] }, COUNTER);
+    assert.equal(merged.lines.length, 1);
+    assert.equal(merged.lines[0]!.countedQty, 5);
+    assert.equal(merged.lines[0]!.notes, 'half case');
+    assert.deepEqual(merged.missing, ['gone'], 'a line that is not on the count is reported, the rest still save');
+
+    await stocktakesService.submitStocktake(count.id, MANAGER);
+    await stocktakesService.lockStocktake(count.id, MANAGER);
+    await assert.rejects(
+      () => stocktakesService.updateLines(count.id, { lines: [{ id: line.id, countedQty: 6 }] }, MANAGER),
+      (err: unknown) => (err as { statusCode?: number }).statusCode === 409 && /locked/i.test((err as Error).message),
+      'a locked baseline refuses even a manager until it is reopened with a reason'
+    );
+    await stocktakesService.reopenStocktakeWithReason(count.id, MANAGER, 'test correction');
+    // Apply, reverse: the line now anchors ledger movements and cannot be removed.
+    await stocktakesService.submitStocktake(count.id, MANAGER);
+    await stocktakesService.applyStocktake(count.id, MANAGER);
+    await stocktakesService.reverseStocktake(count.id, { reason: 'test reversal' }, MANAGER);
+    await assert.rejects(
+      () => stocktakesService.removeLine(count.id, line.id, MANAGER),
+      (err: unknown) => (err as { statusCode?: number }).statusCode === 409
+    );
+    assert.ok(await prisma.stocktakeLine.findUnique({ where: { id: line.id } }), 'the anchored line is still there');
+  } finally {
+    await prisma.inventoryMovement.deleteMany({ where: { OR: [{ sourceStocktakeId: count.id }, { itemId: item.id }] } });
+    await cleanup({ stocktakeIds: [count.id], itemIds: [item.id] });
   }
 });

@@ -1152,11 +1152,16 @@ export const itemsService = {
       data.latestCostCents !== undefined
         ? normaliseOptionalNumber(data.latestCostCents) ?? null
         : existing.latestCostCents;
+    // Re-derive the per-unit cost only when there is a purchase price to
+    // derive it from. The edit form always sends conversionFactor, and for
+    // the 449 items that carry an average cost but no latest purchase price
+    // this used to null the average on any edit at all — a name fix from the
+    // counting screen silently un-valued the item.
     const avgCostCents =
       data.avgCostCents !== undefined
         ? normaliseOptionalNumber(data.avgCostCents) ?? null
-        : data.latestCostCents !== undefined || data.conversionFactor !== undefined
-          ? unitCostFromPurchaseCost(nextLatestCostCents, nextConversionFactor) ?? null
+        : (data.latestCostCents !== undefined || data.conversionFactor !== undefined) && nextLatestCostCents !== null
+          ? unitCostFromPurchaseCost(nextLatestCostCents, nextConversionFactor) ?? existing.avgCostCents
           : undefined;
     await assertCategoryExists(categoryId);
 

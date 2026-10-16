@@ -152,8 +152,8 @@ export function ItemForm({
     setVintageDraft(raw);
     if (text === '' ) {
       update('name', withVintage(draft.name, null));
-    } else if (text === 'NV') {
-      update('name', withVintage(draft.name, null));
+    } else if (text === 'NV' || text === 'N.V.') {
+      update('name', withVintage(draft.name, 'NV'));
     } else if (/^(19|20)\d\d$/.test(text)) {
       update('name', withVintage(draft.name, Number(text)));
     }

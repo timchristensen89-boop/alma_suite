@@ -37,22 +37,22 @@ const MOVES: Move[] = [
   { id: 'cmoqfbpi700d69ky2f8gje5og', name: 'Herradura agave nectar', from: 'Oils & Condiments', to: 'Non-Alcoholic & Mixers', why: 'sweetener, not a spirit' },
   { id: 'cmoqfbtf400m49ky2a0orrz04', name: 'Triple SEC 20L', from: 'Spirits', to: 'Liqueurs & Aperitifs', why: 'the only item in the legacy "Spirits" category; it is a liqueur' },
   { id: 'cmoqfbm58005i9ky2i8jc8sy9', name: 'Billecart-Salmon Rosé', from: 'Wine — Rosé', to: 'Wine — Sparkling', why: 'champagne' },
-  { id: 'cmoqfbmrs006y9ky2jknan3jn', name: 'Celery', from: null, to: 'Produce', why: 'fresh vegetable' },
-  { id: 'cmoqfbrmm00i29ky2e6zhjbll', name: 'Pepitas', from: null, to: 'Dry / Pantry', why: 'dry goods' },
-  { id: 'cmoqfbu2s00nm9ky2obvg1wm5', name: 'Cascabel', from: null, to: 'Dry / Pantry', why: 'dried chilli' },
-  { id: 'cmoqfbn2h007m9ky23kc27jqf', name: 'Morita', from: null, to: 'Dry / Pantry', why: 'dried chilli' },
-  { id: 'cmoqfbt6e00lk9ky2s49xhsub', name: 'Tomatillo', from: null, to: 'Dry / Pantry', why: 'tinned' },
-  { id: 'cmptowb6i00tas601fb42rtbn', name: 'Tomatillo', from: null, to: 'Dry / Pantry', why: 'tinned' },
-  { id: 'cmoqfbtbn00lw9ky2oy3ilcko', name: 'Mutti pelati', from: null, to: 'Dry / Pantry', why: 'tinned tomatoes' },
-  { id: 'cmoqfbqc900f49ky2w05b2hki', name: 'Maseca', from: null, to: 'Dry / Pantry', why: 'masa flour' },
-  { id: 'cmoqfbn51007s9ky24h5tiwej', name: 'Chipotle in adobo', from: null, to: 'Oils & Condiments', why: 'condiment' },
-  { id: 'cmsdf12t70016mij91xsikjsq', name: 'Pomace oil', from: null, to: 'Oils & Condiments', why: 'oil' },
-  { id: 'cmsdf12vb002imij9keor7liy', name: 'White wine vinegar', from: null, to: 'Oils & Condiments', why: 'vinegar' },
-  { id: 'cmptowatg00qvs601oasi3tiy', name: 'Coriander Ground', from: null, to: 'Herbs & Spices', why: 'spice' },
-  { id: 'cmptowbm700w1s601v69vps2z', name: 'Thyme Dried', from: null, to: 'Herbs & Spices', why: 'herb' },
-  { id: 'cmsdf12sy0010mij9lyo56458', name: 'Garlic Powder', from: null, to: 'Herbs & Spices', why: 'spice' },
-  { id: 'cmsdf12th001cmij97z2i2rgw', name: 'Onion Powder', from: null, to: 'Herbs & Spices', why: 'spice' },
-  { id: 'cmsdf12tr001imij9wegfg9q4', name: 'Paprika Smoked', from: null, to: 'Herbs & Spices', why: 'spice' }
+  { id: 'cmoqfbmrs006y9ky2jknan3jn', name: 'Celery', from: 'Other', to: 'Produce', why: 'fresh vegetable' },
+  { id: 'cmoqfbrmm00i29ky2e6zhjbll', name: 'Pepitas', from: 'Other', to: 'Dry / Pantry', why: 'dry goods' },
+  { id: 'cmoqfbu2s00nm9ky2obvg1wm5', name: 'Cascabel', from: 'Other', to: 'Dry / Pantry', why: 'dried chilli' },
+  { id: 'cmoqfbn2h007m9ky23kc27jqf', name: 'Morita', from: 'Produce', to: 'Dry / Pantry', why: 'dried chilli' },
+  { id: 'cmoqfbt6e00lk9ky2s49xhsub', name: 'Tomatillo', from: 'Produce', to: 'Dry / Pantry', why: 'tinned' },
+  { id: 'cmptowb6i00tas601fb42rtbn', name: 'Tomatillo', from: 'Produce', to: 'Dry / Pantry', why: 'tinned' },
+  { id: 'cmoqfbtbn00lw9ky2oy3ilcko', name: 'Mutti pelati', from: 'Produce', to: 'Dry / Pantry', why: 'tinned tomatoes' },
+  { id: 'cmoqfbqc900f49ky2w05b2hki', name: 'Maseca', from: 'Bakery', to: 'Dry / Pantry', why: 'masa flour' },
+  { id: 'cmoqfbn51007s9ky24h5tiwej', name: 'Chipotle in adobo', from: 'Produce', to: 'Oils & Condiments', why: 'condiment' },
+  { id: 'cmsdf12t70016mij91xsikjsq', name: 'Pomace oil', from: 'Dry / Pantry', to: 'Oils & Condiments', why: 'oil' },
+  { id: 'cmsdf12vb002imij9keor7liy', name: 'White wine vinegar', from: 'Dry / Pantry', to: 'Oils & Condiments', why: 'vinegar' },
+  { id: 'cmptowatg00qvs601oasi3tiy', name: 'Coriander Ground', from: 'Produce', to: 'Herbs & Spices', why: 'spice' },
+  { id: 'cmptowbm700w1s601v69vps2z', name: 'Thyme Dried', from: 'Dry / Pantry', to: 'Herbs & Spices', why: 'herb' },
+  { id: 'cmsdf12sy0010mij9lyo56458', name: 'Garlic Powder', from: 'Dry / Pantry', to: 'Herbs & Spices', why: 'spice' },
+  { id: 'cmsdf12th001cmij97z2i2rgw', name: 'Onion Powder', from: 'Dry / Pantry', to: 'Herbs & Spices', why: 'spice' },
+  { id: 'cmsdf12tr001imij9wegfg9q4', name: 'Paprika Smoked', from: 'Dry / Pantry', to: 'Herbs & Spices', why: 'spice' }
 ];
 
 async function main() {
@@ -87,7 +87,7 @@ async function main() {
     }
     // The audit named the category it found each item in; a different one
     // now means somebody has already acted, and this script must not undo it.
-    if (move.from !== null && current !== move.from) {
+    if (current !== move.from) {
       console.log(`SKIP ${item.name} — expected in "${move.from}", found in "${current ?? 'none'}"`);
       skipped += 1;
       continue;

@@ -29,9 +29,17 @@ function formatQty(value: number | null): number | '' {
   return value === null || value === undefined ? '' : value;
 }
 
+// A grouped vintage row shows its qualifier (or, failing one, the line's own
+// name) indented under the wine; a standalone row shows the wine or item name.
 function itemLabel(row: StocktakeCountSheetRow): string {
-  if (row.group) return `    ${row.vintageDetail ?? ''}`.trimEnd() || '    ';
+  if (row.group) return `    ${row.vintageDetail ?? (row.vintage && row.vintage !== 'No year' ? '' : row.label)}`.trimEnd() || `    ${row.label}`;
   return row.wineName ?? row.label;
+}
+
+function vintageCell(row: StocktakeCountSheetRow): string {
+  if (!row.vintage) return '';
+  if (row.vintage === 'No year') return row.group ? 'no year' : '';
+  return row.vintage;
 }
 
 export async function buildCountSheetWorkbook(
@@ -100,8 +108,8 @@ export async function buildCountSheetWorkbook(
       lastGroup = row.group ?? null;
       const excel = ws.addRow([
         itemLabel(row),
-        row.vintage && row.vintage !== 'No year' ? row.vintage : '',
-        row.group ? '' : row.unit,
+        vintageCell(row),
+        row.unit,
         blank ? '' : formatQty(row.countedQty),
         blank ? '' : row.notes ?? '',
         row.lineId ?? row.itemId ?? row.recipeId ?? ''

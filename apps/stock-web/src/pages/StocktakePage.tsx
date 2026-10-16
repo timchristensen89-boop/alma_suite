@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type {
   ApplyStocktakeResult,
   StockItem,
@@ -8,7 +8,7 @@ import type {
   StocktakeMovementHistoryPayload,
   StocktakeMovementResult,
   Stocktake,
-  StocktakeLineInput,
+  StocktakeLinesPatchResult,
   StocktakePrepPreview,
   StocktakePrepRecipeOption,
   StocktakeTemplate,
@@ -180,7 +180,14 @@ export function StocktakePage() {
   // Outcomes that are not errors (a bulk submit that zeroed blanks, an
   // export that ran) used to go through `error`, which replaced the whole
   // history table with "Stocktakes unavailable". They get their own line.
-  const [notice, setNotice] = useState<string | null>(null);
+  // A count just submitted from its own screen says so here.
+  const location = useLocation();
+  const [notice, setNotice] = useState<string | null>(() => {
+    const state = location.state as { notice?: string } | null;
+    return state?.notice ?? null;
+  });
+  // One line about the catalogue: the detail lives under Items → Costing health.
+  const [dataQuality, setDataQuality] = useState<{ itemsWithWarning: number; totalActiveItems: number } | null>(null);
   const [venues, setVenues] = useState<string[]>([]);
   const canManageReview = canManageStock(user);
 
@@ -196,6 +203,9 @@ export function StocktakePage() {
       setSummary(sum);
       setItems(itemPayload.items);
       setVenues((itemPayload.venues ?? []).filter((venue) => !isPseudoVenue(venue)));
+      void api<{ itemsWithWarning: number; totalActiveItems: number }>('/api/items/data-quality')
+        .then((quality) => setDataQuality({ itemsWithWarning: quality.itemsWithWarning, totalActiveItems: quality.totalActiveItems }))
+        .catch(() => setDataQuality(null));
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load stocktakes');
@@ -671,7 +681,11 @@ export function StocktakePage() {
 
       <Card
         title="Stocktake history"
-        subtitle="Start a count, count it on its own screen, then submit it for review here. Catalogue problems (units, costs) live under Items → Costing health."
+        subtitle={`Start a count, count it on its own screen, then submit it for review here.${
+          dataQuality && dataQuality.itemsWithWarning > 0
+            ? ` ${dataQuality.itemsWithWarning} of ${dataQuality.totalActiveItems} items have a catalogue warning (missing unit, category or cost) — see Items → Costing health.`
+            : ''
+        }`}
         action={
           !starting ? (
             <Button
@@ -1322,23 +1336,18 @@ function StocktakeLinesTable({
     setSavingBulk(true);
     setBulkFeedback(null);
     try {
-      const lines: StocktakeLineInput[] = detail.lines.map((line) => {
-        const apply = selected.has(line.id);
-        return {
-          itemId: line.itemId ?? '',
-          // The PATCH deletes and recreates every line from this payload, so a
-          // bulk unit fix that forgot this would quietly unlink every prepped
-          // item on the sheet and stop its ingredients being booked.
-          recipeId: line.recipeId ?? '',
-          label: line.label,
-          countedQty:
-            apply && qtyOverride !== undefined ? qtyOverride : line.countedQty ?? null,
-          unit: apply && unitOverride ? unitOverride : line.unit ?? '',
-          location: line.location ?? '',
-          notes: line.notes ?? ''
-        };
-      });
-      await api<StocktakeWithLines>(`/api/stocktake/${detail.id}`, {
+      // Only the selected lines, by id, through the same endpoint the
+      // counting screen autosaves with. Sending the whole sheet back used to
+      // recreate every line — wiping counts saved from a phone meanwhile and
+      // cutting the ledger's anchors to the lines.
+      const lines = detail.lines
+        .filter((line) => selected.has(line.id))
+        .map((line) => ({
+          id: line.id,
+          ...(unitOverride ? { unit: unitOverride } : {}),
+          ...(qtyOverride !== undefined ? { countedQty: qtyOverride } : {})
+        }));
+      await api<StocktakeLinesPatchResult>(`/api/stocktake/${detail.id}/lines`, {
         method: 'PATCH',
         body: JSON.stringify({ lines })
       });

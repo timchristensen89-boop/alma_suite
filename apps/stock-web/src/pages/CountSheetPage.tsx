@@ -184,7 +184,7 @@ export function CountSheetPage({ source }: { source: 'stocktake' | 'template' })
             </div>
           </header>
           <p className="count-sheet-note">
-            Write what you see, in the unit shown. None on the shelf: <strong>0</strong>. Not checked: <strong>NC</strong>. Part bottles as decimals (0.5).
+            Write what you see, in the unit shown. None on the shelf: <strong>0</strong>. Part bottles as decimals (0.5). A line left blank is recorded as <strong>zero</strong> when the count is submitted.
           </p>
 
           <div className="count-sheet-columns">

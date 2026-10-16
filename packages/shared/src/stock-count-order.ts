@@ -68,6 +68,9 @@ export function foldText(value: string): string {
     .toLowerCase()
     .replace(/[&+]/g, ' and ')
     .replace(/['’‘`"“”]/g, '')
+    // A dot between digits is a decimal ("Surco 2.7"); any other dot is an
+    // abbreviation ("No.", "N.V.", "Mt.") and must not split a group.
+    .replace(/(?<!\d)\.|\.(?!\d)/g, ' ')
     .replace(/[^a-z0-9.]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -147,19 +150,24 @@ export function wineGroupKey(name: string): string {
 /**
  * Rewrite a wine name with a new vintage, keeping where the name already put
  * it (leading or trailing) and any pack suffix. A name with no vintage gets
- * the new one at the end. `null` removes the vintage.
+ * the new one at the end. `'NV'` writes the non-vintage marker (where the
+ * year was, else leading, as the catalogue writes it); `null` removes both.
  */
-export function withVintage(name: string, vintage: number | null): string {
+export function withVintage(name: string, vintage: number | 'NV' | null): string {
   const trimmed = name.trim();
   const suffixMatch = trimmed.match(PACK_SUFFIX);
   const suffix = suffixMatch ? suffixMatch[0] : '';
   const body = suffix ? trimmed.slice(0, trimmed.length - suffix.length).trim() : trimmed;
   const leading = body.match(LEADING_YEAR);
   const trailing = leading ? null : body.match(TRAILING_YEAR);
-  const core = leading ? body.slice(leading[0].length) : trailing ? body.slice(0, body.length - trailing[0].length) : body;
+  const hadNv = NON_VINTAGE.test(body);
+  const nvLeading = /^(nv|n\.v\.|non[- ]vintage)\s/i.test(body);
+  let core = leading ? body.slice(leading[0].length) : trailing ? body.slice(0, body.length - trailing[0].length) : body;
+  core = core.replace(NON_VINTAGE, ' ').replace(/\s+/g, ' ').trim();
   let next: string;
   if (vintage === null) next = core;
-  else if (leading) next = `${vintage} ${core}`;
+  else if (vintage === 'NV') next = hadNv && !nvLeading ? `${core} NV` : `NV ${core}`;
+  else if (leading || nvLeading) next = `${vintage} ${core}`;
   else next = `${core} ${vintage}`;
   return `${next.trim()}${suffix}`;
 }

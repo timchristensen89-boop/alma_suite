@@ -7990,10 +7990,19 @@ export const stocktakeLinesPatchInputSchema = z.object({
     .array(
       z.object({
         id: z.string().min(1),
-        countedQty: z.preprocess(
-          (value) => (value === undefined || value === '' ? null : value),
-          z.coerce.number().nullable()
-        ).optional(),
+        // Absent = not sent (keep what is stored); blank, whitespace or a lone
+        // '.' = not counted (null); a number or numeric string = that count.
+        // Anything else (true, [], 'abc') is rejected rather than coerced to 0.
+        countedQty: z.preprocess((value) => {
+          if (value === undefined || value === null) return value;
+          if (typeof value === 'number') return value;
+          if (typeof value === 'string') {
+            const text = value.trim();
+            if (text === '' || text === '.') return null;
+            return Number(text);
+          }
+          return Number.NaN;
+        }, z.number().nullable()).optional(),
         unit: z.string().optional(),
         label: z.string().min(1).optional(),
         notes: z.string().optional()
@@ -8003,7 +8012,7 @@ export const stocktakeLinesPatchInputSchema = z.object({
     .max(500)
 });
 export type StocktakeLinesPatchInput = z.infer<typeof stocktakeLinesPatchInputSchema>;
-export type StocktakeLinesPatchResult = { updatedAt: string; lines: StocktakeLine[] };
+export type StocktakeLinesPatchResult = { updatedAt: string; lines: StocktakeLine[]; /** ids sent that are no longer on the count */ missing: string[] };
 
 // Add one line to an open count: a stock item, or a prepped item (recipe).
 export const stocktakeLineAddInputSchema = z
