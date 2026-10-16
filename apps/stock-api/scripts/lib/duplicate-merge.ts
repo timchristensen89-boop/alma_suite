@@ -361,6 +361,9 @@ export async function applyCluster(runId: string, plan: Plan) {
 
     for (const x of d.onHandPlan) {
       if (x.treatment !== 'discard_stale') continue;
+      // A merge changes only the items it merges. An item a partial merge
+      // keeps apart is outside the snapshot, so its holding is left alone.
+      if (!memberIds.includes(x.itemId)) continue;
       await tx.venueStockItem.updateMany({ where: { stockItemId: x.itemId, venue: x.venue }, data: { onHand: 0 } });
     }
 
