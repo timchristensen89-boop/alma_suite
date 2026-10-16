@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { prisma } from '@alma/db';
+import { prisma, prismaCogsReader } from '@alma/db';
 import {
   implausibleCountLines,
   summarisePurchases,
@@ -383,6 +383,12 @@ async function venueOptions(actor?: AuthUser | null) {
   if (actor && !isVenueUnscopedActor(actor)) {
     return actor.venue ? [actor.venue] : [];
   }
+
+  // Settings › Venues is the list of places the business has. Stored venue
+  // strings are only a fallback: building pickers from them is how a typo
+  // ("Avalon") became a third venue every page offered.
+  const configured = await prismaCogsReader.configuredVenues();
+  if (configured.length > 0) return configured;
 
   const [venueRows, venueStockRows, stocktakeRows, staffRows] = await Promise.all([
     prisma.venue.findMany({ select: { name: true }, orderBy: { name: 'asc' } }),

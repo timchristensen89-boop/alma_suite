@@ -1032,6 +1032,10 @@ function StartCountCard({
       setFeedback('Give the count a name.');
       return;
     }
+    if (!venue) {
+      setFeedback('Choose the venue this count is for.');
+      return;
+    }
     setBusy(true);
     try {
       let lines: Array<{ itemId: string; recipeId: string; label: string; unit: string; location: string; countedQty: null }>;
@@ -1072,7 +1076,9 @@ function StartCountCard({
     }
   }
 
-  const venueOptions = [{ label: 'Not set', value: '' }, ...(venues.length ? venues : ['Alma Avalon', 'St Alma']).map((entry) => ({ label: entry, value: entry }))];
+  // A count belongs to a venue. The blank option that used to sit here is
+  // how a venue-less 778-line "count" came to exist in June 2026.
+  const venueOptions = [...(venue ? [] : [{ label: 'Choose a venue', value: '' }]), ...(venues.length ? venues : ['Alma Avalon', 'St Alma']).map((entry) => ({ label: entry, value: entry }))];
   const templateOptions = [
     ...(templates ?? []).map((entry) => ({ label: `${entry.name}${entry.venue ? ` · ${entry.venue}` : ''} (${entry.resolvedItemCount} items)`, value: entry.id })),
     { label: `Full count — every active item (${items.filter((item) => item.status === 'ACTIVE').length})`, value: '' }
@@ -1103,7 +1109,7 @@ function StartCountCard({
         />
         <div className="start-count-actions">
           <Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>Cancel</Button>
-          <Button type="submit" disabled={busy || templates === null}>{busy ? 'Starting…' : 'Start counting'}</Button>
+          <Button type="submit" disabled={busy || templates === null || !venue}>{busy ? 'Starting…' : 'Start counting'}</Button>
         </div>
       </div>
       <ActionFeedback message={feedback} tone="error" />

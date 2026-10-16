@@ -27,6 +27,7 @@ import {
   type StocktakesSummary,
   STOCKTAKE_PREP_AREA,
   STOCKTAKE_STALE_DAYS,
+  resolveVenueLabel,
   scopeForTemplate,
   type ScopeDerivation,
   type StocktakeScope
@@ -335,6 +336,23 @@ function targetVenueForActor(requestedVenue: string | null | undefined, actor?: 
   return actor.venue;
 }
 
+/**
+ * The venue a count is filed under must be one the business has. On 1 Sep
+ * 2026 a manager typed "Avalon" into what was then a free-text box and the
+ * API created a third venue with 830 empty holdings. Known spellings
+ * ("Avalon", "Freshwater") resolve to the configured name; anything else is
+ * refused rather than stored. Blank stays blank (an unassigned count).
+ */
+async function canonicalVenue(requested: string | null | undefined): Promise<string | null> {
+  const trimmed = requested?.trim();
+  if (!trimmed) return null;
+  const configured = await prismaCogsReader.configuredVenues();
+  if (configured.length === 0) return trimmed;
+  const resolved = resolveVenueLabel(trimmed, configured);
+  if ((resolved.status === 'canonical' || resolved.status === 'alias') && resolved.venue) return resolved.venue;
+  throw new HttpError(400, `Venue must be one of: ${configured.join(', ')}`);
+}
+
 function assertVenueChangeAllowed(
   requestedVenue: string | null | undefined,
   existingVenue: string | null,
@@ -414,6 +432,12 @@ async function ensureVenueStockRowsForLines(
   itemIds: Array<string | null | undefined>
 ) {
   if (!venue) return;
+  // This is the write that turns a string into a venue with a full catalogue
+  // of holdings. It must never do that for a venue the business does not have.
+  const configured = await prismaCogsReader.configuredVenues();
+  if (configured.length > 0 && !configured.includes(venue)) {
+    throw new HttpError(400, `Venue must be one of: ${configured.join(', ')}`);
+  }
   const uniqueItemIds = Array.from(new Set(itemIds.filter((id): id is string => Boolean(id))));
   if (uniqueItemIds.length === 0) return;
   const items = await tx.stockItem.findMany({
@@ -978,7 +1002,7 @@ export const stocktakesService = {
       throw new HttpError(400, 'countedAt is not a valid date');
     }
     const requestedVenue = normaliseOptionalText(data.venue);
-    const venue = targetVenueForActor(requestedVenue, actor);
+    const venue = await canonicalVenue(targetVenueForActor(requestedVenue, actor));
     const submittedAt = data.status === 'SUBMITTED' ? new Date() : null;
     const scope = await deriveCountScope({ scope: data.scope, template: normaliseOptionalText(data.template) ?? null, venue, actor });
 
@@ -1084,7 +1108,10 @@ export const stocktakesService = {
 
     const requestedVenue =
       data.venue !== undefined ? normaliseOptionalText(data.venue) : existing.venue;
-    const venue = assertVenueChangeAllowed(requestedVenue, existing.venue, actor);
+    const allowedVenue = assertVenueChangeAllowed(requestedVenue, existing.venue, actor);
+    // Only a venue actually being changed is checked; a count already filed
+    // under an odd label stays editable until it is cleaned up.
+    const venue = data.venue !== undefined ? await canonicalVenue(allowedVenue) : allowedVenue;
     const statusChanged = data.status !== undefined && data.status !== existing.status;
     const nextStatus = data.status ?? existing.status;
     const now = new Date();
