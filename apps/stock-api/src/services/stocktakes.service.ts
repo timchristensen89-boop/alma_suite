@@ -3,6 +3,8 @@ import { prisma, prismaCogsReader, stockBracket, type StockBracket } from '@alma
 import {
   stocktakeCorrectionInputSchema,
   stocktakeBulkDeleteInputSchema,
+  stocktakeLineAddInputSchema,
+  stocktakeLinesPatchInputSchema,
   stocktakeCreateInputSchema,
   stocktakeReversalInputSchema,
   stocktakeUpdateInputSchema,
@@ -14,6 +16,7 @@ import {
   type StocktakeReviewItem,
   type Stocktake,
   type StocktakeLine,
+  type StocktakeLinesPatchResult,
   type StocktakeWithLines,
   type StocktakeCountSheet,
   type StocktakeLineInput,
@@ -22,6 +25,7 @@ import {
   type StocktakePrepApplySummary,
   type StocktakePrepPreview,
   type StocktakesSummary,
+  STOCKTAKE_PREP_AREA,
   STOCKTAKE_STALE_DAYS,
   scopeForTemplate,
   type ScopeDerivation,
@@ -512,6 +516,17 @@ async function writeStocktakeLines(
     } else {
       await tx.stocktakeLine.create({ data: { ...values, stocktakeId } });
     }
+  }
+}
+
+// The rule for touching lines on a count, shared by the per-line writes:
+// anyone who can count may write lines on an OPEN count; a count that has
+// been applied to stock is closed to everyone until it is reversed.
+async function assertLinesWritable(existing: { id: string; status: string; appliedAt: Date | null }, actor?: AuthUser | null) {
+  if (!isStockManager(actor)) assertMayEnterCounts(existing, undefined);
+  if (existing.appliedAt) {
+    const reversed = await prisma.inventoryMovement.count({ where: reversalSinceAppliedWhere(existing.id, existing.appliedAt) });
+    if (!reversed) throw new HttpError(409, 'This count has been applied to stock and cannot be changed until it is reversed.');
   }
 }
 
@@ -1145,6 +1160,137 @@ export const stocktakesService = {
       return updated;
     }, { maxWait: 15_000, timeout: 30_000 });
     return loadStocktakeWithVenueOnHand(row.id, actor);
+  },
+
+  /**
+   * Autosave from the counting screen: the changed lines only, by id.
+   *
+   * The whole-sheet PATCH above sends every line back and refuses the save
+   * when anyone else has saved since, which is right for editing the count's
+   * identity and wrong for counting it — two people on one sheet each lost
+   * the other's shelves to the 409. Writing the touched lines alone makes
+   * the sheet safe to share: the only line a save can overwrite is one the
+   * same person is standing in front of. Values are recomputed server-side
+   * exactly as the full save does; the client's number is never trusted.
+   */
+  async updateLines(id: string, input: unknown, actor?: AuthUser | null): Promise<StocktakeLinesPatchResult> {
+    const data = stocktakeLinesPatchInputSchema.parse(input);
+    const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
+    if (!existing) throw new HttpError(404, 'Stocktake not found');
+    await assertLinesWritable(existing, actor);
+
+    const ids = [...new Set(data.lines.map((line) => line.id))];
+    const now = new Date();
+    const updated = await prisma.$transaction(async (tx) => {
+      const current = await tx.stocktakeLine.findMany({ where: { stocktakeId: id, id: { in: ids } } });
+      const byId = new Map(current.map((line) => [line.id, line]));
+      const missing = ids.filter((lineId) => !byId.has(lineId));
+      if (missing.length) {
+        throw new HttpError(404, 'Some lines are no longer on this count. Reload the count.');
+      }
+      const costById = await loadLineCostItems(tx, current);
+      const results: string[] = [];
+      for (const patch of data.lines) {
+        const line = byId.get(patch.id)!;
+        const countedQty = patch.countedQty !== undefined ? patch.countedQty : line.countedQty;
+        const unit = patch.unit !== undefined ? normaliseOptionalText(patch.unit) ?? null : line.unit;
+        const label = patch.label !== undefined ? patch.label.trim() || line.label : line.label;
+        const notes = patch.notes !== undefined ? normaliseOptionalText(patch.notes) ?? null : line.notes;
+        let stockValueCents: number | null;
+        if (line.recipeId) {
+          const [prep] = await explodePrepLines(tx, [{ recipeId: line.recipeId, countedQty, unit }]);
+          stockValueCents = prep?.valueCents ?? null;
+        } else {
+          stockValueCents = stocktakeLineValueCents(countedQty, unit, costById.get(line.itemId ?? ''));
+        }
+        await tx.stocktakeLine.update({
+          where: { id: line.id },
+          data: { countedQty, unit, label, notes, stockValueCents }
+        });
+        results.push(line.id);
+      }
+      // Bump so the whole-sheet stale guard sees this save too.
+      await tx.stocktake.update({ where: { id }, data: { updatedAt: now } });
+      return tx.stocktakeLine.findMany({ where: { id: { in: results } }, include: lineInclude });
+    }, { maxWait: 15_000, timeout: 30_000 });
+
+    const onHand = await venueOnHandLookup([{ venue: existing.venue, lines: updated.map((line) => ({ itemId: line.itemId, item: line.item ? { id: line.item.id } : null })) }]);
+    return {
+      updatedAt: now.toISOString(),
+      lines: updated.map((row) => ({
+        ...toLinePayload(row),
+        item: row.item ? { ...row.item, onHand: effectiveVenueOnHand(existing.venue, row.item.id, row.item.onHand, onHand) } : null
+      }))
+    };
+  },
+
+  /** Put one more item (or prepped item) on an open count, at the end. */
+  async addLine(id: string, input: unknown, actor?: AuthUser | null): Promise<StocktakeLine> {
+    const data = stocktakeLineAddInputSchema.parse(input);
+    const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
+    if (!existing) throw new HttpError(404, 'Stocktake not found');
+    await assertLinesWritable(existing, actor);
+
+    const row = await prisma.$transaction(async (tx) => {
+      const last = await tx.stocktakeLine.findFirst({ where: { stocktakeId: id }, orderBy: { position: 'desc' }, select: { position: true } });
+      const position = (last?.position ?? 0) + 1;
+      if (data.itemId) {
+        const duplicate = await tx.stocktakeLine.findFirst({ where: { stocktakeId: id, itemId: data.itemId }, select: { id: true } });
+        if (duplicate) throw new HttpError(409, 'That item is already on this count.');
+        const item = await tx.stockItem.findUnique({
+          where: { id: data.itemId },
+          select: { id: true, name: true, unit: true, countUnit: true, countArea: true, category: { select: { name: true } } }
+        });
+        if (!item) throw new HttpError(404, 'Item not found');
+        const created = await tx.stocktakeLine.create({
+          data: {
+            stocktakeId: id,
+            position,
+            label: item.name,
+            itemId: item.id,
+            countedQty: null,
+            unit: item.countUnit ?? item.unit,
+            location: item.countArea && item.countArea !== 'Default' ? item.countArea : item.category?.name ?? null,
+            stockValueCents: null
+          },
+          include: lineInclude
+        });
+        await ensureVenueStockRowsForLines(tx, existing.venue, [item.id]);
+        return created;
+      }
+      const recipeId = data.recipeId!;
+      const duplicate = await tx.stocktakeLine.findFirst({ where: { stocktakeId: id, recipeId }, select: { id: true } });
+      if (duplicate) throw new HttpError(409, 'That prepped item is already on this count.');
+      const recipe = await tx.recipe.findUnique({ where: { id: recipeId }, select: { id: true, title: true, yieldUnit: true } });
+      if (!recipe) throw new HttpError(404, 'Recipe not found');
+      return tx.stocktakeLine.create({
+        data: {
+          stocktakeId: id,
+          position,
+          label: recipe.title,
+          recipeId: recipe.id,
+          countedQty: null,
+          unit: recipe.yieldUnit ?? null,
+          location: STOCKTAKE_PREP_AREA,
+          stockValueCents: null
+        },
+        include: lineInclude
+      });
+    });
+    await prisma.stocktake.update({ where: { id }, data: { updatedAt: new Date() } });
+    return toLinePayload(row);
+  },
+
+  /** Take a line off an open count. Nothing in the ledger refers to it yet. */
+  async removeLine(id: string, lineId: string, actor?: AuthUser | null): Promise<{ id: string }> {
+    const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
+    if (!existing) throw new HttpError(404, 'Stocktake not found');
+    await assertLinesWritable(existing, actor);
+    const line = await prisma.stocktakeLine.findFirst({ where: { id: lineId, stocktakeId: id }, select: { id: true } });
+    if (!line) throw new HttpError(404, 'Line not found on this count');
+    await prisma.stocktakeLine.delete({ where: { id: line.id } });
+    await prisma.stocktake.update({ where: { id }, data: { updatedAt: new Date() } });
+    return { id: line.id };
   },
 
   async applyStocktake(id: string, reviewer?: AuthUser | null): Promise<ApplyStocktakeResult> {

@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type {
   ApplyStocktakeResult,
@@ -11,7 +11,6 @@ import type {
   StocktakeLineInput,
   StocktakePrepPreview,
   StocktakePrepRecipeOption,
-  StocktakeStatus,
   StocktakeTemplate,
   StocktakeScope,
   StocktakeTemplatesPayload,
@@ -20,17 +19,9 @@ import type {
   StocktakesPayload,
   StocktakesSummary
 } from '@alma/shared';
-import {
-  IMPLAUSIBLE_COUNT_SHARE,
-  IMPLAUSIBLE_COUNT_FLOOR_CENTS,
-  STOCKTAKE_PREP_AREA,
-  convertQuantityToCostUnit,
-  normaliseUnitLabel,
-  setActiveUnitAliases
-} from '@alma/shared';
-import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
+import { isPseudoVenue } from '@alma/shared';
+import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } from '@alma/ui';
 import { LoadedStocktakeImportCard } from '../components/LoadedStocktakeImportCard';
-import { StockItemPicker } from '../components/StockItemPicker';
 import { IconStocktake } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
@@ -38,65 +29,6 @@ import { downloadCsv } from '../lib/csv';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
-
-type FormState =
-  | { mode: 'closed' }
-  | { mode: 'create' }
-  | { mode: 'edit'; stocktake: StocktakeWithLines };
-
-// Data quality report from /api/items/data-quality. Shape lives in
-// stock-api/src/services/items.service.ts → dataQualityReport.
-type DataQualityPayload = {
-  generatedAt: string;
-  totalActiveItems: number;
-  itemsWithWarning: number;
-  quality: 'good' | 'partial' | 'poor';
-  counts: Record<string, number>;
-  countAreas: string[];
-  problemItems: Array<{
-    id: string;
-    name: string;
-    category: string | null;
-    unit: string;
-    countUnit: string | null;
-    countArea: string | null;
-    conversionFactor: number;
-    latestCostCents: number | null;
-    latestCostAt: string | null;
-    warnings: string[];
-  }>;
-};
-
-type LineDraft = {
-  // Server line id when editing an existing count; '' for a new row. Sent
-  // back so the API updates the row in place.
-  id: string;
-  itemId: string;
-  // A PREPPED-ITEM line — something the kitchen made, counted as itself.
-  // Exclusive with itemId, and it MUST survive every round-trip: the PATCH
-  // deletes and recreates all lines from the payload, so a draft that drops
-  // this turns the mole back into a bare label and stops booking its
-  // ingredients.
-  recipeId: string;
-  label: string;
-  countedQty: string;
-  unit: string;
-  location: string;
-  stockValueCents: string;
-  notes: string;
-};
-
-type StocktakeDraft = {
-  name: string;
-  venue: string;
-  template: string;
-  /** '' = let the API derive it from the template (categories, then name); otherwise a reviewed choice. */
-  scope: '' | StocktakeScope;
-  countedAt: string;
-  status: StocktakeStatus;
-  notes: string;
-  lines: LineDraft[];
-};
 
 const SCOPE_LABELS: Record<StocktakeScope, string> = {
   FOOD: 'Food',
@@ -123,13 +55,6 @@ function formatDate(iso: string) {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-function formatDateTimeInput(iso: string) {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso.slice(0, 16);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 function normalQuantity(qty: number | null | undefined) {
   return typeof qty === 'number' && Number.isFinite(qty) ? qty : null;
 }
@@ -148,10 +73,9 @@ function formatSignedQuantity(qty: number | null | undefined, unit: string | nul
   return `${sign}${formatQuantity(safeQty, unit)}`;
 }
 
-function effectiveItemOnHand(item: StockItem) {
-  return item.venueStock?.onHand ?? item.onHand;
-}
-
+// Still being counted, so anyone at the venue may enter counts. Once it is
+// SUBMITTED it belongs to the reviewer; a manager reopens it to hand it back.
+// The same rule is enforced server-side in stocktakes.service.updateStocktake.
 function stockCountUnit(item: StockItem) {
   return item.countUnit ?? item.unit;
 }
@@ -163,50 +87,6 @@ function stockUnitCostCents(item: StockItem) {
   return item.avgCostCents;
 }
 
-// Live value estimates use the SAME conversion the API uses —
-// convertQuantityToCostUnit from @alma/shared — so a value shown while
-// counting matches the authoritative one computed on save. The shared module
-// also understands unit aliases ("KILO" = kg, "Unit" = each; editable in
-// Items → Units) and pack-size labels ("700ml" counted against an item
-// counted in bottles is a bottle count) once loadUnitAliases below has run.
-async function loadUnitAliases(): Promise<void> {
-  try {
-    const rows = await api<Array<{ alias: string; canonical: string }>>('/api/items/unit-aliases');
-    if (rows.length > 0) {
-      setActiveUnitAliases(Object.fromEntries(rows.map((row) => [row.alias, row.canonical])));
-    }
-  } catch {
-    // Defaults still apply; live estimates just miss any custom aliases.
-  }
-}
-
-// Live value estimate for a count line. unitMismatch = the entered unit can't be
-// resolved to the item's cost unit (the classic mL/g-vs-parent setup error).
-function estimateLineValueCents(
-  item: StockItem | undefined,
-  countedQty: number | null,
-  unit: string | null
-): { cents: number | null; unitMismatch: boolean; countUnit: string | null; unitCostCents: number | null } {
-  if (!item) return { cents: null, unitMismatch: false, countUnit: null, unitCostCents: null };
-  const unitCostCents = stockUnitCostCents(item) ?? null;
-  const countUnit = stockCountUnit(item);
-  if (countedQty === null || unitCostCents === null) {
-    return { cents: null, unitMismatch: false, countUnit, unitCostCents };
-  }
-  const conv = convertQuantityToCostUnit(countedQty, unit, item);
-  const unitMismatch =
-    conv.via === 'unknown' && !!unit && normaliseUnitLabel(unit) !== normaliseUnitLabel(countUnit);
-  return {
-    cents: unitMismatch ? null : Math.round(unitCostCents * conv.quantity),
-    unitMismatch,
-    countUnit,
-    unitCostCents
-  };
-}
-
-// Still being counted, so anyone at the venue may enter counts. Once it is
-// SUBMITTED it belongs to the reviewer; a manager reopens it to hand it back.
-// The same rule is enforced server-side in stocktakes.service.updateStocktake.
 function isOpenForCounting(status: Stocktake['status']) {
   return status === 'IN_PROGRESS' || status === 'REOPENED';
 }
@@ -253,125 +133,6 @@ function varianceSummary(detail: StocktakeWithLines) {
   );
 }
 
-// blind=true seeds a line WITHOUT the expected on-hand in the qty field, so the
-// counter records what they actually see rather than being nudged to the system
-// number. Value is left blank too — it is recomputed on apply from the count.
-function emptyLine(item?: StockItem, blind = true): LineDraft {
-  const onHand = item ? effectiveItemOnHand(item) : 0;
-  const unitCostCents = item ? stockUnitCostCents(item) : null;
-  const value = unitCostCents ? Math.round(unitCostCents * onHand) : '';
-  return {
-    id: '',
-    itemId: item?.id ?? '',
-    recipeId: '',
-    label: item?.name ?? '',
-    countedQty: blind ? '' : item ? String(onHand) : '0',
-    unit: item ? stockCountUnit(item) : '',
-    // The count area is the physical walk (Bar, Cool room…); the category is
-    // only the fallback. Seeding the category here is why "walk by area" was
-    // really "walk by category" and the printed sheet could not follow the
-    // room.
-    location: item?.countArea ?? item?.category?.name ?? '',
-    stockValueCents: blind ? '' : value === '' ? '' : String(value),
-    notes: ''
-  };
-}
-
-// A prepped-item line. Always blind: there is no system on-hand for a tub of
-// mole to prefill from — the whole point is that nothing has been tracking it.
-function prepLine(recipe: StocktakePrepRecipeOption): LineDraft {
-  return {
-    id: '',
-    itemId: '',
-    recipeId: recipe.id,
-    label: recipe.title,
-    countedQty: '',
-    unit: recipe.yieldUnit ?? '',
-    location: STOCKTAKE_PREP_AREA,
-    stockValueCents: '',
-    notes: ''
-  };
-}
-
-function emptyDraft(items: StockItem[], blind = true): StocktakeDraft {
-  return {
-    name: `Stocktake ${new Date().toLocaleDateString()}`,
-    venue: '',
-    template: 'Full count',
-    scope: '',
-    countedAt: formatDateTimeInput(new Date().toISOString()),
-    status: 'IN_PROGRESS',
-    notes: '',
-    lines: items.filter((item) => item.status === 'ACTIVE').map((item) => emptyLine(item, blind))
-  };
-}
-
-// Seed a draft from a template's resolved item ids (walking order: area/category
-// then name), carrying the template's name, venue and blind default onto the count.
-function draftFromTemplate(
-  items: StockItem[],
-  resolvedItemIds: string[],
-  template: StocktakeTemplate,
-  blind: boolean,
-  prepRecipes: StocktakePrepRecipeOption[]
-): StocktakeDraft {
-  const order = new Map(resolvedItemIds.map((id, index) => [id, index] as const));
-  const chosen = items
-    .filter((item) => item.status === 'ACTIVE' && order.has(item.id))
-    .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
-  return {
-    name: `${template.name} ${new Date().toLocaleDateString()}`,
-    venue: template.venue ?? '',
-    template: template.name,
-    scope: '',
-    countedAt: formatDateTimeInput(new Date().toISOString()),
-    status: 'IN_PROGRESS',
-    notes: '',
-    // Prep last, as one block: the kitchen walks the shelves first and the
-    // production fridge at the end.
-    lines: [...chosen.map((item) => emptyLine(item, blind)), ...prepRecipes.map(prepLine)]
-  };
-}
-
-function draftFromStocktake(stocktake: StocktakeWithLines): StocktakeDraft {
-  return {
-    name: stocktake.name,
-    venue: stocktake.venue ?? '',
-    template: stocktake.template ?? '',
-    scope: stocktake.scope ?? '',
-    countedAt: formatDateTimeInput(stocktake.countedAt),
-    status: stocktake.status,
-    notes: stocktake.notes ?? '',
-    lines: stocktake.lines.map((line) => ({
-      id: line.id,
-      itemId: line.itemId ?? '',
-      recipeId: line.recipeId ?? '',
-      label: line.label,
-      countedQty: line.countedQty == null ? '' : String(line.countedQty),
-      unit: line.unit ?? line.item?.unit ?? '',
-      location: line.location ?? '',
-      stockValueCents: line.stockValueCents === null ? '' : String(line.stockValueCents),
-      notes: line.notes ?? ''
-    }))
-  };
-}
-
-function linePayload(line: LineDraft): StocktakeLineInput {
-  // A blank field means "not counted yet" (null) — distinct from a counted zero.
-  const countRaw = String(line.countedQty ?? '').trim();
-  return {
-    ...(line.id ? { id: line.id } : {}),
-    itemId: line.itemId,
-    recipeId: line.recipeId,
-    label: line.label.trim(),
-    countedQty: countRaw === '' ? null : Number(countRaw),
-    unit: line.unit.trim(),
-    location: line.location.trim(),
-    stockValueCents: line.stockValueCents === '' ? undefined : Math.round(Number(line.stockValueCents)),
-    notes: line.notes.trim()
-  };
-}
-
 // Every status the API can hold, not the three the badge used to collapse
 // them to. LOCKED in particular is the state the variance report depends on
 // and there was no way to see it.
@@ -397,6 +158,7 @@ function countSheetUrl(stocktakeId: string) {
 export function StocktakePage() {
   useDocumentTitle('Stocktake');
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [data, setData] = useState<StocktakesPayload | null>(null);
   const [summary, setSummary] = useState<StocktakesSummary | null>(null);
@@ -408,17 +170,13 @@ export function StocktakePage() {
   const [detail, setDetail] = useState<StocktakeWithLines | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>({ mode: 'closed' });
+  const [starting, setStarting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<null | 'submit' | 'approve'>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [lockingId, setLockingId] = useState<string | null>(null);
   const [reopeningId, setReopeningId] = useState<string | null>(null);
-  // Data quality snapshot from /api/items/data-quality — fed by Sprint 1's
-  // new dataQualityReport service. Renders as a Card above the stocktake
-  // list so the user spots catalogue gaps before counting.
-  const [dataQuality, setDataQuality] = useState<DataQualityPayload | null>(null);
   // Outcomes that are not errors (a bulk submit that zeroed blanks, an
   // export that ran) used to go through `error`, which replaced the whole
   // history table with "Stocktakes unavailable". They get their own line.
@@ -429,19 +187,15 @@ export function StocktakePage() {
   async function load() {
     setLoading(true);
     try {
-      const [list, sum, itemPayload, quality] = await Promise.all([
+      const [list, sum, itemPayload] = await Promise.all([
         api<StocktakesPayload>('/api/stocktake'),
         api<StocktakesSummary>('/api/stocktake/summary'),
-        api<StockItemsPayload>('/api/items/picker'),
-        // Data quality is optional — gracefully degrade if the endpoint
-        // isn't deployed yet so older builds don't break.
-        api<DataQualityPayload>('/api/items/data-quality').catch(() => null)
+        api<StockItemsPayload>('/api/items/picker')
       ]);
       setData(list);
       setSummary(sum);
       setItems(itemPayload.items);
-      setVenues(itemPayload.venues ?? []);
-      setDataQuality(quality);
+      setVenues((itemPayload.venues ?? []).filter((venue) => !isPseudoVenue(venue)));
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load stocktakes');
@@ -452,9 +206,6 @@ export function StocktakePage() {
 
   useEffect(() => {
     void load();
-    // Custom unit aliases feed the live value estimates; fire-and-forget so a
-    // slow settings read never blocks the count list.
-    void loadUnitAliases();
   }, []);
 
   const filtered = useMemo(() => {
@@ -513,28 +264,14 @@ export function StocktakePage() {
     }
   }
 
-  async function editStocktake(stocktake: Stocktake) {
+  // Counting happens on its own screen — one list, autosaved — so opening a
+  // count is a navigation, not a form that takes over the history page.
+  function openCount(stocktake: Stocktake) {
     if (stocktake.appliedAt) {
       setDetailError('Applied stocktakes cannot be edited.');
       return;
     }
-    setDetailLoading(true);
-    setDetailError(null);
-    try {
-      const full = await api<StocktakeWithLines>(`/api/stocktake/${stocktake.id}`);
-      setForm({ mode: 'edit', stocktake: full });
-    } catch (err) {
-      setDetailError(err instanceof ApiError ? err.message : 'Could not load stocktake');
-    } finally {
-      setDetailLoading(false);
-    }
-  }
-
-  async function handleSaved() {
-    setForm({ mode: 'closed' });
-    setExpandedId(null);
-    setDetail(null);
-    await load();
+    navigate(`/stocktake/${stocktake.id}/count`);
   }
 
   async function refreshDetail(id: string) {
@@ -716,9 +453,6 @@ export function StocktakePage() {
       setSelectedIds(new Set());
       setExpandedId((current) => (current && ids.includes(current) ? null : current));
       setDetail((current) => (current && ids.includes(current.id) ? null : current));
-      if (form.mode === 'edit' && ids.includes(form.stocktake.id)) {
-        setForm({ mode: 'closed' });
-      }
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not delete stocktakes');
@@ -808,13 +542,6 @@ export function StocktakePage() {
     }
   }
 
-  const cardTitle =
-    form.mode === 'create'
-      ? 'New stocktake'
-      : form.mode === 'edit'
-        ? `Editing ${form.stocktake.name}`
-        : 'Stocktake history';
-
   return (
     <div className="page-stack stocktake-page">
       <div className="stat-grid">
@@ -841,64 +568,6 @@ export function StocktakePage() {
       </div>
 
       <LoadedStocktakeImportCard onImported={() => void load()} />
-
-      {dataQuality ? (
-        <Card
-          title="Catalogue data quality"
-          subtitle={`Sprint 1 / Loaded replacement: catches missing units, conversion factors, count areas, and stale costs. Grade: ${dataQuality.quality.toUpperCase()} (${dataQuality.itemsWithWarning} of ${dataQuality.totalActiveItems} active items have at least one warning).`}
-          action={
-            <Badge tone={dataQuality.quality === 'good' ? 'positive' : dataQuality.quality === 'partial' ? 'warning' : 'danger'}>
-              {dataQuality.quality === 'good' ? 'Good' : dataQuality.quality === 'partial' ? 'Partial' : 'Poor'}
-            </Badge>
-          }
-        >
-          <div className="stocktake-data-quality">
-            {([
-              ['missing_unit', 'Missing unit'],
-              ['missing_count_unit', 'No count unit'],
-              ['missing_conversion', 'No conversion'],
-              ['missing_category', 'No category'],
-              ['missing_count_area', 'No count area'],
-              ['missing_latest_cost', 'No cost'],
-              ['stale_latest_cost', 'Stale cost (>90d)']
-            ] as const).map(([key, label]) => {
-              const value = dataQuality.counts[key] ?? 0;
-              const tone = value > 0 ? (key === 'missing_unit' || key === 'missing_latest_cost' || key === 'missing_count_unit' ? 'is-danger' : 'is-warning') : '';
-              return (
-                <div key={key} className={`stocktake-data-quality-cell ${tone}`}>
-                  <strong>{value}</strong>
-                  <span>{label}</span>
-                </div>
-              );
-            })}
-          </div>
-          {dataQuality.countAreas.length > 0 ? (
-            <p className="subtle" style={{ marginTop: 12 }}>
-              Walking-order areas: {dataQuality.countAreas.join(' · ')}
-            </p>
-          ) : (
-            <p className="subtle" style={{ marginTop: 12 }}>
-              No count areas configured. Set a <em>countArea</em> on each item so stocktakes group by walking order.
-            </p>
-          )}
-          {dataQuality.problemItems.length > 0 ? (
-            <details style={{ marginTop: 10 }}>
-              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
-                Items with warnings ({dataQuality.problemItems.length} shown)
-              </summary>
-              <ul style={{ marginTop: 8, paddingLeft: 18, fontSize: 13 }}>
-                {dataQuality.problemItems.slice(0, 30).map((row) => (
-                  <li key={row.id} style={{ marginBottom: 4 }}>
-                    <strong>{row.name}</strong>
-                    {' — '}
-                    <span style={{ color: '#9A3A2E' }}>{row.warnings.join(', ')}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
-        </Card>
-      ) : null}
 
       <Card
         title="Review queue"
@@ -1001,36 +670,28 @@ export function StocktakePage() {
       </Card>
 
       <Card
-        title={cardTitle}
-        subtitle={
-          form.mode === 'closed'
-            ? 'Start a count, save drafts, submit for review, then approve ledger-backed inventory adjustments.'
-            : 'Count lines are saved to stocktake history. Submitting sends the count for review and does not update stock balances.'
-        }
+        title="Stocktake history"
+        subtitle="Start a count, count it on its own screen, then submit it for review here. Catalogue problems (units, costs) live under Items → Costing health."
         action={
-          form.mode === 'closed' ? (
+          !starting ? (
             <Button
               type="button"
               size="sm"
               disabled={!canManageReview}
               title={canManageReview ? undefined : 'Manager access required'}
-              onClick={() => setForm({ mode: 'create' })}
+              onClick={() => setStarting(true)}
             >
-              {canManageReview ? 'New stocktake' : 'Manager required'}
+              {canManageReview ? 'Start a count' : 'Manager required'}
             </Button>
           ) : null
         }
       >
-        {form.mode !== 'closed' ? (
-          <StocktakeForm
-            mode={form.mode}
-            initial={form.mode === 'edit' ? form.stocktake : undefined}
+        {starting ? (
+          <StartCountCard
             items={items}
             venues={venues}
-            canSubmitForReview={canManageReview}
-            onSaved={() => void handleSaved()}
-            onReload={form.mode === 'edit' ? () => void editStocktake(form.stocktake) : undefined}
-            onCancel={() => setForm({ mode: 'closed' })}
+            defaultVenue={user?.venue && !isPseudoVenue(user.venue) ? user.venue : ''}
+            onCancel={() => setStarting(false)}
           />
         ) : loading ? (
           <Spinner label="Loading stocktakes" />
@@ -1207,15 +868,11 @@ export function StocktakePage() {
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     if (canManageReview || isOpenForCounting(stocktake.status)) {
-                                      void editStocktake(stocktake);
+                                      openCount(stocktake);
                                     }
                                   }}
                                 >
-                                  {canManageReview
-                                    ? 'Edit'
-                                    : isOpenForCounting(stocktake.status)
-                                      ? 'Count'
-                                      : 'View only'}
+                                  {canManageReview || isOpenForCounting(stocktake.status) ? 'Count' : 'View only'}
                                 </Button>
                                 {stocktake.appliedAt && stocktake.status !== 'LOCKED' && canManageReview ? (
                                   <Button
@@ -1293,9 +950,9 @@ export function StocktakePage() {
                 type="button"
                 disabled={!canManageReview}
                 title={canManageReview ? undefined : 'Manager access required'}
-                onClick={() => setForm({ mode: 'create' })}
+                onClick={() => setStarting(true)}
               >
-                {canManageReview ? 'Start stocktake' : 'Manager required'}
+                {canManageReview ? 'Start a count' : 'Manager required'}
               </Button>
             }
           />
@@ -1306,799 +963,153 @@ export function StocktakePage() {
 }
 
 /**
- * Adding prepped items to a count sheet.
- *
- * Prep is not a StockItem and never resolves from a count area or a category,
- * so it cannot arrive the way everything else on the sheet does. It has to be
- * chosen — which is also the honest thing, because a venue with 69 production
- * recipes does not count all 69 every week.
- *
- * Recipes that CANNOT be exploded are still listed, disabled, with the reason.
- * Hiding them is how this feature would come to look like it works: the mole
- * simply never appears and nobody can say why.
+ * Starting a count: pick the sheet (template), the venue and the date, and
+ * go. The count is created on the API with its lines straight away, blank,
+ * so the counting screen has something to autosave into from the first tap.
  */
-function PreppedItemsPicker({
-  recipes,
-  lines,
-  onAdd
-}: {
-  recipes: StocktakePrepRecipeOption[];
-  lines: LineDraft[];
-  onAdd: (chosen: StocktakePrepRecipeOption[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const alreadyOn = useMemo(
-    () => new Set(lines.map((line) => line.recipeId).filter(Boolean)),
-    [lines]
-  );
-  const [picked, setPicked] = useState<Set<string>>(() => new Set());
-  const [filter, setFilter] = useState('');
-
-  const available = recipes.filter((recipe) => !alreadyOn.has(recipe.id));
-  const countable = available.filter((recipe) => recipe.countable);
-  const blocked = available.filter((recipe) => !recipe.countable);
-  const onSheet = recipes.filter((recipe) => alreadyOn.has(recipe.id));
-
-  // One flat list of ninety is a kitchen list a bar manager has to read
-  // through to find two batches. The recipes already carry their category, so
-  // group by it: the bar count opens on "Batches", the kitchen on its sauces,
-  // and neither has to scroll past the other.
-  const needle = filter.trim().toLowerCase();
-  const matching = needle
-    ? countable.filter(
-        (recipe) =>
-          recipe.title.toLowerCase().includes(needle) ||
-          (recipe.category ?? '').toLowerCase().includes(needle)
-      )
-    : countable;
-  const byCategory = new Map<string, StocktakePrepRecipeOption[]>();
-  for (const recipe of matching) {
-    const key = recipe.category?.trim() || 'Uncategorised';
-    const bucket = byCategory.get(key);
-    if (bucket) bucket.push(recipe);
-    else byCategory.set(key, [recipe]);
-  }
-  const groups = [...byCategory.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-
-  if (recipes.length === 0) return null;
-
-  function add(chosen: StocktakePrepRecipeOption[]) {
-    if (chosen.length === 0) return;
-    onAdd(chosen);
-    setPicked(new Set());
-  }
-
-  return (
-    <div className="stocktake-prep-picker">
-      <button
-        type="button"
-        className={`stocktake-category-header${open ? ' is-open' : ''}`}
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-      >
-        <span className="stocktake-category-name">
-          {open ? '▾' : '▸'} Prepped items — count what the kitchen has made
-        </span>
-        <span className="stocktake-category-count">
-          {onSheet.length} on this sheet · {countable.length} to add
-        </span>
-      </button>
-      {open ? (
-        <div className="stocktake-prep-body">
-          <p className="subtle">
-            Counted as the made item (kg, litres, portions). Approving the count works the
-            ingredients out and adds them to those items’ counts — the mayonnaise in a tub of
-            chipotle mayo stops reading as shrinkage.
-          </p>
-          {countable.length > 0 ? (
-            <>
-              <input
-                type="search"
-                className="stocktake-prep-filter"
-                placeholder={`Filter ${countable.length} prepped items — batch, salsa, mole…`}
-                value={filter}
-                onChange={(event) => setFilter(event.currentTarget.value)}
-                aria-label="Filter prepped items"
-              />
-              {groups.length === 0 ? (
-                <p className="subtle">Nothing matches “{filter}”.</p>
-              ) : null}
-              {groups.map(([category, inCategory]) => (
-                <div key={category} className="stocktake-prep-group">
-                  <div className="stocktake-prep-group-head">
-                    <strong>{category}</strong>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => add(inCategory)}
-                    >
-                      Add all {inCategory.length}
-                    </Button>
-                  </div>
-                  <div className="stocktake-prep-grid">
-                {inCategory.map((recipe) => (
-                  <label
-                    key={recipe.id}
-                    className={`stocktake-prep-option${picked.has(recipe.id) ? ' is-picked' : ''}`}
-                    title={recipe.warnings?.length ? recipe.warnings.join(' ') : undefined}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={picked.has(recipe.id)}
-                      onChange={(event) => {
-                        // Read `checked` HERE, not inside the updater. React
-                        // nulls currentTarget once the handler returns, and a
-                        // set-state updater runs later, during render — so
-                        // reading it in there threw and took the whole count
-                        // sheet down to the error boundary the moment anyone
-                        // ticked a prepped item.
-                        const checked = event.currentTarget.checked;
-                        setPicked((prev) => {
-                          const next = new Set(prev);
-                          if (checked) next.add(recipe.id);
-                          else next.delete(recipe.id);
-                          return next;
-                        });
-                      }}
-                    />
-                    <span className="stocktake-prep-option-text">
-                      <strong>{recipe.title}</strong>
-                      {recipe.yieldQuantity ? (
-                        <span className="subtle">
-                          makes {recipe.yieldQuantity} {recipe.yieldUnit ?? ''}
-                        </span>
-                      ) : null}
-                      {/* Countable, but it will book less than everything. Said
-                          here rather than after the count, when the number is
-                          already in the ledger — but as a count, with the
-                          sentences on the label's title. Spelled out inline,
-                          ninety of these is a wall of prose nobody reads. */}
-                      {recipe.warnings?.length ? (
-                        <span className="stocktake-prep-option-warn">
-                          {recipe.warnings.length} ingredient issue
-                          {recipe.warnings.length === 1 ? '' : 's'} — books less than everything
-                        </span>
-                      ) : null}
-                    </span>
-                  </label>
-                ))}
-                  </div>
-                </div>
-              ))}
-              <div className="stocktake-count-toggles">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={picked.size === 0}
-                  onClick={() => add(countable.filter((recipe) => picked.has(recipe.id)))}
-                >
-                  Add {picked.size || ''} selected
-                </Button>
-                <Button type="button" variant="secondary" size="sm" onClick={() => add(countable)}>
-                  Add all {countable.length}
-                </Button>
-              </div>
-            </>
-          ) : (
-            <p className="subtle">Every countable prep recipe is already on this sheet.</p>
-          )}
-          {blocked.length > 0 ? (
-            <div className="stocktake-prep-blocked">
-              <strong>Not countable yet ({blocked.length})</strong>
-              <p className="subtle">
-                A count of these would book nothing at all — no batch yield, or not one
-                ingredient linked to a stock item. Fix the recipe and they appear above.
-              </p>
-              <ul>
-                {blocked.map((recipe) => (
-                  <li key={recipe.id}>
-                    <strong>{recipe.title}</strong> — {recipe.problems.join(' ')}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function StocktakeForm({
-  mode,
-  initial,
+function StartCountCard({
   items,
   venues,
-  canSubmitForReview,
-  onSaved,
-  onReload,
+  defaultVenue,
   onCancel
 }: {
-  mode: 'create' | 'edit';
-  initial?: StocktakeWithLines;
   items: StockItem[];
   venues: string[];
-  /** Managers own the state machine; staff count and save drafts. */
-  canSubmitForReview: boolean;
-  onSaved: () => void;
-  /** Re-fetch the count after a stale-save refusal. */
-  onReload?: () => void;
+  defaultVenue: string;
   onCancel: () => void;
 }) {
-  const [draft, setDraft] = useState<StocktakeDraft>(() =>
-    initial ? draftFromStocktake(initial) : emptyDraft(items, mode === 'create')
-  );
-  const [saving, setSaving] = useState(false);
+  const navigate = useNavigate();
+  const [templates, setTemplates] = useState<StocktakeTemplate[] | null>(null);
+  const [templateId, setTemplateId] = useState('');
+  const [venue, setVenue] = useState(defaultVenue);
+  const [name, setName] = useState('');
+  const [nameTouched, setNameTouched] = useState(false);
+  const [countedAt, setCountedAt] = useState(() => {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  });
+  const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [feedbackTone, setFeedbackTone] = useState<'success' | 'error'>('success');
-  const [feedbackTarget, setFeedbackTarget] = useState<'draft' | 'review'>('draft');
-  // Set when the API refused the save because someone else saved first.
-  const [stale, setStale] = useState(false);
-  // Blind count (best practice: don't show the expected number while counting)
-  // defaults on for new counts. Walk-by-area orders entry by physical location.
-  const [blind, setBlind] = useState(mode === 'create');
-  const [walkByArea, setWalkByArea] = useState(false);
-  // Start-from-template (new counts only): pick a saved template to seed the
-  // draft with just that template's resolved items, in walking order.
-  const [templates, setTemplates] = useState<StocktakeTemplate[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState('');
-  const [templateBusy, setTemplateBusy] = useState(false);
-  // Prepped items are offered on every count, not just template-seeded ones —
-  // the first real count came back with twenty-two of them written by hand at
-  // the bottom, and the fix has to reach a sheet that is already open.
-  const [prepRecipes, setPrepRecipes] = useState<StocktakePrepRecipeOption[]>([]);
+
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const payload = await api<{ prepRecipes: StocktakePrepRecipeOption[] }>('/api/stocktake/prep-recipes');
-        if (!cancelled) setPrepRecipes(payload.prepRecipes);
-      } catch {
-        /* older API build — the picker simply doesn't appear */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  useEffect(() => {
-    if (mode !== 'create') return;
     let cancelled = false;
     void (async () => {
       try {
         const payload = await api<StocktakeTemplatesPayload>('/api/stocktake-templates');
-        if (!cancelled) setTemplates(payload.templates.filter((template) => template.active));
+        if (cancelled) return;
+        const active = payload.templates.filter((template) => template.active);
+        setTemplates(active);
+        // A manager at a venue starts on that venue's first sheet.
+        const first = active.find((template) => !defaultVenue || template.venue === defaultVenue);
+        if (first) {
+          setTemplateId(first.id);
+          if (!venue && first.venue) setVenue(first.venue);
+        }
       } catch {
-        /* templates are optional — a blank list just means "Full count only" */
+        if (!cancelled) setTemplates([]);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultVenue]);
 
-  async function applyTemplate(templateId: string) {
-    setSelectedTemplateId(templateId);
-    if (!templateId) {
-      setDraft(emptyDraft(items, blind));
-      return;
-    }
-    setTemplateBusy(true);
-    try {
-      const resolved = await api<StocktakeTemplateResolved>(`/api/stocktake-templates/${templateId}/resolve`);
-      setBlind(resolved.template.blindDefault);
-      setDraft(
-        draftFromTemplate(
-          items,
-          resolved.items.map((item) => item.id),
-          resolved.template,
-          resolved.template.blindDefault,
-          resolved.prepRecipes ?? []
-        )
-      );
-    } catch {
-      /* leave the current draft as-is on failure */
-    } finally {
-      setTemplateBusy(false);
-    }
+  const template = templates?.find((entry) => entry.id === templateId) ?? null;
+  const suggestedName = `${template ? template.name : 'Full count'} ${new Date(countedAt).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+  const effectiveName = nameTouched ? name : suggestedName;
+
+  function chooseTemplate(id: string) {
+    setTemplateId(id);
+    const chosen = templates?.find((entry) => entry.id === id);
+    if (chosen?.venue) setVenue(chosen.venue);
   }
 
-  const countedCount = draft.lines.filter((line) => line.countedQty.trim() !== '').length;
-  const progressPct = draft.lines.length ? Math.round((countedCount / draft.lines.length) * 100) : 0;
-
-  const orderedIndices = useMemo(() => {
-    const idx = draft.lines.map((_, i) => i);
-    if (!walkByArea) return idx;
-    return idx.sort((a, b) =>
-      (draft.lines[a]?.location || 'ZZZ').localeCompare(draft.lines[b]?.location || 'ZZZ')
-    );
-  }, [draft.lines, walkByArea]);
-
-  // One map, not a find() per row. Each count line looked its item up with
-  // items.find() over the whole catalogue, so a 716-line count did roughly
-  // half a million comparisons on every keystroke.
-  const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
-
-  // Running value of the count so far. A single line worth a large share of it
-  // is how a millilitre count recorded as bottles announces itself — see
-  // count-scale.ts. Catching it here means the counter fixes it on the floor
-  // rather than a costing report finding it months later. Memoised: a full
-  // count is 716 rows and this runs on every keystroke otherwise.
-  const countTotalCents = useMemo(
-    () =>
-      draft.lines.reduce((total, line) => {
-        const item = line.itemId ? itemsById.get(line.itemId) : undefined;
-        if (!item) return total;
-        const raw = String(line.countedQty ?? '').trim();
-        if (raw === '') return total;
-        const qty = Number(raw);
-        if (!Number.isFinite(qty)) return total;
-        return total + Math.max(0, estimateLineValueCents(item, qty, line.unit || null).cents ?? 0);
-      }, 0),
-    [draft.lines, itemsById]
-  );
-
-  /**
-   * Count lines grouped by category, one collapsible section each.
-   *
-   * A full stocktake is a line per active item — 716 of them — and opening it
-   * as one flat list meant scrolling past everything to reach the section you
-   * were actually counting, with 3,500 inputs live in the DOM. Sections start
-   * closed, so the screen opens as ten headings and you open the one you are
-   * standing in front of. Collapsed lines are still part of the draft and
-   * still save; they are simply not rendered.
-   */
-  const categoryGroups = useMemo(() => {
-    const map = new Map<string, number[]>();
-    for (const index of orderedIndices) {
-      const line = draft.lines[index];
-      if (!line) continue;
-      const item = line.itemId ? itemsById.get(line.itemId) : undefined;
-      const key = item?.category?.name ?? item?.categoryName ?? 'Uncategorised';
-      const bucket = map.get(key);
-      if (bucket) bucket.push(index);
-      else map.set(key, [index]);
-    }
-    return [...map.entries()]
-      .map(([name, indices]) => ({
-        name,
-        indices,
-        counted: indices.filter((i) => String(draft.lines[i]?.countedQty ?? '').trim() !== '').length
-      }))
-      // Uncategorised last: it is a data-quality tail, not somewhere you walk to.
-      .sort((a, b) => (a.name === 'Uncategorised' ? 1 : b.name === 'Uncategorised' ? -1 : a.name.localeCompare(b.name)));
-  }, [orderedIndices, draft.lines, itemsById]);
-
-  const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
-  const toggleCategory = useCallback((name: string) => {
-    setOpenCategories((current) => {
-      const next = new Set(current);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }, []);
-
-  function toggleBlind(next: boolean) {
-    setBlind(next);
-    setDraft((current) => ({
-      ...current,
-      lines: current.lines.map((line) => {
-        if (!line.itemId) return line;
-        const item = items.find((candidate) => candidate.id === line.itemId);
-        if (!item) return line;
-        if (next) return { ...line, countedQty: '', stockValueCents: '' };
-        if (line.countedQty.trim() !== '') return line; // never clobber a real count
-        const seeded = emptyLine(item, false);
-        return { ...line, countedQty: seeded.countedQty, stockValueCents: seeded.stockValueCents };
-      })
-    }));
-  }
-
-  function update<K extends keyof StocktakeDraft>(key: K, value: StocktakeDraft[K]) {
-    setDraft((current) => ({ ...current, [key]: value }));
-  }
-
-  // One stable onChange per row index. An inline arrow would be a new function
-  // on every render, which defeats the memo on StockItemPicker entirely.
-  // Points at the latest selectLineItem so the cached per-row handlers never
-  // close over stale draft state.
-  const selectLineItemRef = useRef<(index: number, itemId: string) => void>(() => {});
-  const updateLineRef = useRef<(index: number, patch: Partial<LineDraft>) => void>(() => {});
-  const removeLineRef = useRef<(index: number) => void>(() => {});
-  const selectHandlers = useRef(new Map<number, (itemId: string) => void>());
-  // Pass these, never `ref.current` directly: the ref is reassigned on every
-  // render, so handing `.current` to a memoised child changes the prop every
-  // time and defeats the memo completely — which is exactly what happened on
-  // the first attempt here.
-  const onUpdateLine = useCallback((index: number, patch: Partial<LineDraft>) => updateLineRef.current(index, patch), []);
-  const onRemoveLine = useCallback((index: number) => removeLineRef.current(index), []);
-
-  const makeSelectLineItem = useCallback((index: number) => {
-    const existing = selectHandlers.current.get(index);
-    if (existing) return existing;
-    const handler = (itemId: string) => selectLineItemRef.current(index, itemId);
-    selectHandlers.current.set(index, handler);
-    return handler;
-  }, []);
-
-  function updateLine(index: number, patch: Partial<LineDraft>) {
-    setDraft((current) => ({
-      ...current,
-      lines: current.lines.map((line, i) => (i === index ? { ...line, ...patch } : line))
-    }));
-  }
-
-  selectLineItemRef.current = (index: number, itemId: string) => selectLineItem(index, itemId);
-  updateLineRef.current = updateLine;
-  removeLineRef.current = removeLine;
-
-  function selectLineItem(index: number, itemId: string) {
-    const item = itemsById.get(itemId);
-    updateLine(index, {
-      itemId,
-      label: item?.name ?? '',
-      // Count unit, as emptyLine does — the purchase unit tripped the unit
-      // mismatch warning on every hand-picked line.
-      unit: item ? stockCountUnit(item) : '',
-      location: item?.countArea ?? item?.category?.name ?? ''
-    });
-  }
-
-  function removeLine(index: number) {
-    setDraft((current) => ({ ...current, lines: current.lines.filter((_, i) => i !== index) }));
-  }
-
-  async function submit(status: StocktakeStatus, target: 'draft' | 'review') {
+  async function start() {
     setFeedback(null);
-    setFeedbackTarget(target);
-    if (!draft.name.trim()) {
-      setFeedback('Stocktake name is required');
-      setFeedbackTone('error');
+    if (!effectiveName.trim()) {
+      setFeedback('Give the count a name.');
       return;
     }
-    const lines = draft.lines.filter((line) => line.label.trim()).map(linePayload);
-    if (lines.length === 0) {
-      setFeedback('Add at least one count line');
-      setFeedbackTone('error');
-      return;
-    }
-
-    const payload = {
-      name: draft.name.trim(),
-      venue: draft.venue.trim(),
-      template: draft.template.trim(),
-      ...(draft.scope ? { scope: draft.scope } : {}),
-      countedAt: new Date(draft.countedAt).toISOString(),
-      status,
-      notes: draft.notes.trim(),
-      lines,
-      // Refused with 409 if someone else saved this count after we loaded it.
-      ...(mode === 'edit' && initial ? { expectedUpdatedAt: initial.updatedAt } : {})
-    };
-
-    setSaving(true);
-    setStale(false);
+    setBusy(true);
     try {
-      let zeroedNote = '';
-      if (mode === 'edit' && initial) {
-        await api<StocktakeWithLines>(`/api/stocktake/${initial.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify(payload)
-        });
-        if (status === 'SUBMITTED') {
-          const blanks = draft.lines.filter((line) => String(line.countedQty ?? '').trim() === '').length;
-          if (blanks > 0) zeroedNote = ` ${blanks} blank line${blanks === 1 ? '' : 's'} recorded as zero.`;
-        }
+      let lines: Array<{ itemId: string; recipeId: string; label: string; unit: string; location: string; countedQty: null }>;
+      let templateName = '';
+      if (template) {
+        const resolved = await api<StocktakeTemplateResolved>(`/api/stocktake-templates/${template.id}/resolve`);
+        templateName = resolved.template.name;
+        lines = [
+          ...resolved.items.map((item) => ({ itemId: item.id, recipeId: '', label: item.name, unit: item.countUnit ?? item.unit, location: item.categoryName ?? '', countedQty: null })),
+          ...(resolved.prepRecipes ?? []).map((recipe) => ({ itemId: '', recipeId: recipe.id, label: recipe.title, unit: recipe.yieldUnit ?? '', location: 'Prep (made items)', countedQty: null }))
+        ];
       } else {
-        await api<StocktakeWithLines>('/api/stocktake', {
-          method: 'POST',
-          body: JSON.stringify(payload)
-        });
+        templateName = 'Full count';
+        lines = items
+          .filter((item) => item.status === 'ACTIVE')
+          .map((item) => ({ itemId: item.id, recipeId: '', label: item.name, unit: item.countUnit ?? item.unit, location: item.category?.name ?? item.categoryName ?? '', countedQty: null }));
       }
-      setFeedback(
-        status === 'SUBMITTED' ? `Stocktake marked ready for review.${zeroedNote}` : 'Stocktake draft saved.'
-      );
-      setFeedbackTone('success');
-      window.setTimeout(() => onSaved(), 500);
+      if (lines.length === 0) {
+        setFeedback('That sheet has no items. Check the template.');
+        return;
+      }
+      const created = await api<StocktakeWithLines>('/api/stocktake', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: effectiveName.trim(),
+          venue,
+          template: templateName,
+          countedAt: new Date(countedAt).toISOString(),
+          status: 'IN_PROGRESS',
+          lines
+        })
+      });
+      navigate(`/stocktake/${created.id}/count`);
     } catch (err) {
-      setFeedback(err instanceof ApiError ? err.message : 'Could not save stocktake');
-      setFeedbackTone('error');
-      if (err instanceof ApiError && err.status === 409 && mode === 'edit') setStale(true);
+      setFeedback(err instanceof ApiError ? err.message : 'Could not start the count');
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
-  const venueOptions = useMemo(() => {
-    const known = venues.length ? venues : ['Alma Avalon', 'St Alma'];
-    const list = draft.venue && !known.includes(draft.venue) ? [...known, draft.venue] : known;
-    return [{ label: 'Not set', value: '' }, ...list.map((venue) => ({ label: venue, value: venue }))];
-  }, [draft.venue, venues]);
+  const venueOptions = [{ label: 'Not set', value: '' }, ...(venues.length ? venues : ['Alma Avalon', 'St Alma']).map((entry) => ({ label: entry, value: entry }))];
+  const templateOptions = [
+    ...(templates ?? []).map((entry) => ({ label: `${entry.name}${entry.venue ? ` · ${entry.venue}` : ''} (${entry.resolvedItemCount} items)`, value: entry.id })),
+    { label: `Full count — every active item (${items.filter((item) => item.status === 'ACTIVE').length})`, value: '' }
+  ];
 
   return (
     <form
-      className="new-item-form"
+      className="start-count"
       onSubmit={(event) => {
         event.preventDefault();
-        void submit(draft.status, 'draft');
+        void start();
       }}
     >
-      {mode === 'create' && templates.length > 0 ? (
-        <div className="stocktake-template-start">
-          <Select
-            label="Start from template"
-            value={selectedTemplateId}
-            disabled={templateBusy}
-            onChange={(event) => void applyTemplate(event.currentTarget.value)}
-            options={[
-              { label: 'Full count — all active items', value: '' },
-              ...templates.map((template) => ({
-                label: `${template.name}${template.venue ? ` · ${template.venue}` : ''} (≈ ${template.resolvedItemCount} items)`,
-                value: template.id
-              }))
-            ]}
-          />
-          <span className="subtle">{templateBusy ? 'Loading template…' : 'Loads just that template’s items, in walking order.'}</span>
-        </div>
-      ) : null}
       <div className="form-grid three">
-        <Input label="Name" required value={draft.name} onChange={(event) => update('name', event.currentTarget.value)} />
-        <Select label="Venue" value={draft.venue} onChange={(event) => update('venue', event.currentTarget.value)} options={venueOptions} />
-        <Input label="Counted at" type="datetime-local" required value={draft.countedAt} onChange={(event) => update('countedAt', event.currentTarget.value)} />
+        <Select label="Count sheet" value={templateId} disabled={templates === null || busy} options={templateOptions} onChange={(event) => chooseTemplate(event.currentTarget.value)} />
+        <Select label="Venue" value={venue} disabled={busy} options={venueOptions} onChange={(event) => setVenue(event.currentTarget.value)} />
+        <Input label="Counted at" type="datetime-local" required value={countedAt} disabled={busy} onChange={(event) => setCountedAt(event.currentTarget.value)} />
       </div>
       <div className="form-grid two">
-        <Input label="Template" value={draft.template} onChange={(event) => update('template', event.currentTarget.value)} placeholder="Full count, Bar, Kitchen…" />
-        <Select
-          label="What this count covers"
-          value={draft.scope}
-          onChange={(event) => update('scope', event.currentTarget.value as StocktakeDraft['scope'])}
-          options={[
-            { label: 'From the template (Kitchen → food, Bar & FOH → beverage)', value: '' },
-            { label: 'Food (kitchen) only', value: 'FOOD' },
-            { label: 'Beverage (bar & FOH) only', value: 'BEVERAGE' },
-            { label: 'Combined — the whole venue', value: 'COMBINED' },
-            { label: 'Unknown / mixed', value: 'UNKNOWN' }
-          ]}
+        <Input
+          label="Name"
+          value={effectiveName}
+          disabled={busy}
+          onChange={(event) => {
+            setNameTouched(true);
+            setName(event.currentTarget.value);
+          }}
         />
-      </div>
-      <div className="form-grid two">
-        <span className="subtle">Cost of goods needs a combined count, or a food count plus a beverage count, at each month end. A count marked Unknown cannot bound it.</span>
-        <Textarea label="Notes" rows={2} value={draft.notes} onChange={(event) => update('notes', event.currentTarget.value)} />
-      </div>
-
-      <PreppedItemsPicker
-        recipes={prepRecipes}
-        lines={draft.lines}
-        onAdd={(chosen) => update('lines', [...draft.lines, ...chosen.map(prepLine)])}
-      />
-
-      <p className="subtle stocktake-blank-note">
-        Leave a line blank when there is none of it — blanks are recorded as zero when the count is
-        submitted. Only type a number for what you actually have.
-      </p>
-
-      <div className="stocktake-count-toolbar">
-        <div className="stocktake-count-progress">
-          <strong>{countedCount} / {draft.lines.length} counted</strong>
-          <div className="stocktake-progress-track" aria-hidden>
-            <div className="stocktake-progress-bar" style={{ width: `${progressPct}%` }} />
-          </div>
-          <span className="subtle">{progressPct}%</span>
-        </div>
-        <div className="stocktake-count-toggles">
-          <label className="stocktake-toggle" title="Hide the expected on-hand while counting — record what you actually see.">
-            <input type="checkbox" checked={blind} onChange={(event) => toggleBlind(event.currentTarget.checked)} />
-            Blind count
-          </label>
-          <label className="stocktake-toggle" title="Order the count lines by location so you can count one area at a time.">
-            <input type="checkbox" checked={walkByArea} onChange={(event) => setWalkByArea(event.currentTarget.checked)} />
-            Walk by area
-          </label>
-          <Button type="button" variant="secondary" size="sm" onClick={() => update('lines', [...draft.lines, emptyLine(undefined, blind)])}>
-            Add line
-          </Button>
+        <div className="start-count-actions">
+          <Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>Cancel</Button>
+          <Button type="submit" disabled={busy || templates === null}>{busy ? 'Starting…' : 'Start counting'}</Button>
         </div>
       </div>
-
-      <div className="stocktake-count-lines">
-        {categoryGroups.map((group) => {
-          const open = openCategories.has(group.name);
-          return (
-            <div key={group.name} className="stocktake-category-group">
-              <button
-                type="button"
-                className={`stocktake-category-header${open ? ' is-open' : ''}`}
-                onClick={() => toggleCategory(group.name)}
-                aria-expanded={open}
-              >
-                <span className="stocktake-category-name">{open ? '▾' : '▸'} {group.name}</span>
-                <span className="stocktake-category-count">
-                  {group.counted} of {group.indices.length} counted
-                </span>
-              </button>
-              {open ? group.indices.map((index, displayPos) => {
-                const line = draft.lines[index];
-                if (!line) return null;
-                const prevIdx = displayPos > 0 ? group.indices[displayPos - 1] : undefined;
-                const prevLine = prevIdx !== undefined ? draft.lines[prevIdx] ?? null : null;
-                const showAreaHeader = walkByArea && (!prevLine || (prevLine.location || '') !== (line.location || ''));
-                return (
-            <CountLineRow
-              key={index}
-              index={index}
-              line={line}
-              item={line.itemId ? itemsById.get(line.itemId) : undefined}
-              items={items}
-              countTotalCents={countTotalCents}
-              showAreaHeader={showAreaHeader}
-              onSelectItem={makeSelectLineItem(index)}
-                    onUpdate={onUpdateLine}
-                    onRemove={onRemoveLine}
-                  />
-                );
-              }) : null}
-            </div>
-          );
-        })}
-      </div>
-
-      <p className="subtle">
-        {canSubmitForReview
-          ? 'Submitting sends this count for review. It does not update stock balances.'
-          : 'Save draft keeps your counts. A manager submits the count and applies it to stock.'}
-      </p>
-
-      <div className="toolbar-right">
-        <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
-        {mode === 'edit' && initial ? (
-          <a
-            className="btn btn-ghost btn-md"
-            href={countSheetUrl(initial.id)}
-            target="_blank"
-            rel="noopener"
-            title="Open the printable count sheet in a new tab. Save first so the sheet shows what has been counted."
-          >
-            <span>Print sheet</span>
-          </a>
-        ) : null}
-        {stale && onReload ? (
-          <Button type="button" variant="secondary" onClick={onReload}>Reload this count</Button>
-        ) : null}
-        <Button type="submit" variant="secondary" disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</Button>
-        <ActionFeedback message={feedbackTarget === 'draft' ? feedback : null} tone={feedbackTone} />
-        {canSubmitForReview ? (
-          <>
-            <Button type="button" disabled={saving} onClick={() => void submit('SUBMITTED', 'review')}>
-              {saving ? 'Submitting…' : 'Submit for review'}
-            </Button>
-            <ActionFeedback message={feedbackTarget === 'review' ? feedback : null} tone={feedbackTone} />
-          </>
-        ) : null}
-      </div>
+      <ActionFeedback message={feedback} tone="error" />
     </form>
   );
 }
-
-
-/**
- * One count line, memoised.
- *
- * A full stocktake is one row per active item — 716 of them. Every row used to
- * re-render on every keystroke anywhere in the count, each re-running the value
- * estimate and re-rendering its item picker. updateLine replaces only the line
- * being edited and leaves the other objects untouched, so comparing on `line`
- * identity lets the other 715 rows sit still.
- */
-const CountLineRow = memo(function CountLineRow({
-  index,
-  line,
-  item,
-  items,
-  countTotalCents,
-  showAreaHeader,
-  onSelectItem,
-  onUpdate,
-  onRemove
-}: {
-  index: number;
-  line: LineDraft;
-  item: StockItem | undefined;
-  items: StockItem[];
-  /** Value of the whole count so far, to judge this line against. */
-  countTotalCents: number;
-  showAreaHeader: boolean;
-  onSelectItem: (itemId: string) => void;
-  onUpdate: (index: number, patch: Partial<LineDraft>) => void;
-  onRemove: (index: number) => void;
-}) {
-  const countRaw = String(line.countedQty ?? '').trim();
-  const countedQty = countRaw === '' ? null : Number(countRaw);
-  const estimate = item
-    ? estimateLineValueCents(item, Number.isFinite(countedQty as number) ? (countedQty as number) : null, line.unit || null)
-    : null;
-
-  // A single line worth a large share of the whole count is not a count, it is
-  // a units mistake. The same rule the costing-health check uses, applied while
-  // the person is still standing in front of the shelf.
-  const outOfScale =
-    estimate?.cents != null &&
-    estimate.cents >= IMPLAUSIBLE_COUNT_FLOOR_CENTS &&
-    countTotalCents > 0 &&
-    estimate.cents / countTotalCents >= IMPLAUSIBLE_COUNT_SHARE;
-  // If the item knows how much its count unit holds, say what the number would
-  // mean read as that measure — usually the count they meant.
-  const measurePer = item?.measurePerCountUnit ?? null;
-  const asMeasure =
-    outOfScale && measurePer && measurePer > 0 && item?.measureUnit && countedQty
-      ? Math.round((countedQty / measurePer) * 100) / 100
-      : null;
-
-  // A prepped-item line counts a made thing, not a shelf item. Swapping the
-  // item picker for its name is not cosmetic: picking an item here would leave
-  // the line pointing at both a recipe and an item, and the server would treat
-  // it as an item line and drop the ingredients.
-  const isPrep = Boolean(line.recipeId);
-
-  return (
-    <div>
-      {showAreaHeader ? <div className="stocktake-area-header">{line.location || 'No location'}</div> : null}
-      <div className={`stocktake-count-line${isPrep ? ' is-prep' : ''}`}>
-        {isPrep ? (
-          <div className="stocktake-prep-label">
-            <span className="subtle">Prepped item</span>
-            <strong>{line.label}</strong>
-          </div>
-        ) : (
-          <StockItemPicker label="Item" items={items} value={line.itemId} onChange={onSelectItem} />
-        )}
-        <Input
-          label="Label"
-          required
-          readOnly={isPrep}
-          value={line.label}
-          onChange={(event) => onUpdate(index, { label: event.currentTarget.value })}
-        />
-        <Input label="Qty" type="number" step="0.01" value={line.countedQty} onChange={(event) => onUpdate(index, { countedQty: event.currentTarget.value })} />
-        <Input label="Unit" value={line.unit} onChange={(event) => onUpdate(index, { unit: event.currentTarget.value })} />
-        <Input label="Location" value={line.location} onChange={(event) => onUpdate(index, { location: event.currentTarget.value })} />
-        <Button type="button" variant="ghost" size="sm" onClick={() => onRemove(index)}>
-          Remove
-        </Button>
-      </div>
-      {isPrep ? (
-        <div className="stocktake-count-cost">
-          Counted as made. Approving works the ingredients out and adds them to those items&apos;
-          counts — check <strong>Prepped items</strong> on the count before approving.
-        </div>
-      ) : null}
-      {item && estimate ? (
-        estimate.unitCostCents === null ? (
-          <div className="stocktake-count-cost is-missing">No cost set for {item.name} — value can&apos;t be checked</div>
-        ) : (
-          <div className={`stocktake-count-cost${estimate.unitMismatch || outOfScale ? ' is-alert' : ''}`}>
-            <span>{formatCurrency(estimate.unitCostCents)} / {estimate.countUnit}</span>
-            {estimate.unitMismatch ? (
-              <strong>⚠ unit “{line.unit}” ≠ {estimate.countUnit} — check against parent product</strong>
-            ) : outOfScale ? (
-              <strong>
-                ⚠ {formatCurrency(estimate.cents ?? 0)} — {Math.round(((estimate.cents ?? 0) / countTotalCents) * 100)}% of
-                this whole count.{' '}
-                {asMeasure !== null
-                  ? `If you counted ${item?.measureUnit}, that is about ${asMeasure} ${estimate.countUnit}.`
-                  : `Check you are counting ${estimate.countUnit}.`}
-              </strong>
-            ) : estimate.cents !== null ? (
-              <strong>line value {formatCurrency(estimate.cents)}</strong>
-            ) : null}
-          </div>
-        )
-      ) : null}
-    </div>
-  );
-});
 
 /**
  * What the prepped-item lines on a count will actually book.

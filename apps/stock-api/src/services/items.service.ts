@@ -1121,6 +1121,12 @@ export const itemsService = {
     return toItemPayload(row);
   },
 
+  async getItem(id: string): Promise<StockItem> {
+    const row = await prisma.stockItem.findUnique({ where: { id }, include: { category: { select: { id: true, name: true } } } });
+    if (!row) throw new HttpError(404, 'Item not found');
+    return toItemPayload(row);
+  },
+
   async updateItem(id: string, input: unknown): Promise<StockItem> {
     assertNoDirectOnHandMutation(input);
     const data = stockItemUpdateInputSchema.parse(input);

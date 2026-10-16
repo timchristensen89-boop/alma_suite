@@ -223,10 +223,14 @@ test('a reopened count can be submitted again, and reopening does not record a r
   }
 });
 
-test('the count sheet walks by area, hides expected quantities when blind, and prints prep last', NO_DB, async () => {
+test('the count sheet sections by category in walking order, hides expected quantities when blind, and prints prep last', NO_DB, async () => {
   const tag = suffix('sheet');
-  const bar = await prisma.stockItem.create({ data: { name: `Corona ${tag}`, unit: 'case', countUnit: 'bottle', conversionFactor: 24, countArea: 'Bar', onHand: 40, parLevel: 24, venueStock: { create: { venue: 'St Alma', onHand: 30 } } } });
-  const cool = await prisma.stockItem.create({ data: { name: `Limes ${tag}`, unit: 'kg', countArea: 'Cool room', onHand: 8, parLevel: 5 } });
+  // Every item in production carries countArea 'Default'; the sheet must
+  // section by category regardless, in walking order (beer before produce).
+  const beer = await prisma.stockCategory.upsert({ where: { name: 'Beer & Cider' }, update: {}, create: { name: 'Beer & Cider' } });
+  const produce = await prisma.stockCategory.upsert({ where: { name: 'Produce' }, update: {}, create: { name: 'Produce' } });
+  const bar = await prisma.stockItem.create({ data: { name: `Corona ${tag}`, unit: 'case', countUnit: 'bottle', conversionFactor: 24, countArea: 'Default', categoryId: beer.id, onHand: 40, parLevel: 24, venueStock: { create: { venue: 'St Alma', onHand: 30 } } } });
+  const cool = await prisma.stockItem.create({ data: { name: `Limes ${tag}`, unit: 'kg', countArea: 'Default', categoryId: produce.id, onHand: 8, parLevel: 5 } });
   const recipe = await prisma.recipe.create({ data: { title: `Birria ${tag}`, isPrepRecipe: true, yieldQuantity: 6, yieldUnit: 'kg' } });
   const stocktake = await stocktakesService.createStocktake({
     name: `Sheet ${tag}`, venue: 'St Alma', countedAt: new Date().toISOString(),
@@ -240,20 +244,20 @@ test('the count sheet walks by area, hides expected quantities when blind, and p
   try {
     const blind = await stocktakesService.countSheet(stocktake.id, null);
     assert.equal(blind.blind, true);
-    assert.deepEqual(blind.sections.map((section) => section.area), ['Cool room', 'Bar', STOCKTAKE_PREP_AREA]);
+    assert.deepEqual(blind.sections.map((section) => section.area), ['Beer & Cider', 'Produce', STOCKTAKE_PREP_AREA]);
     assert.equal(blind.sections.every((section) => section.rows.every((row) => row.expectedQty === null)), true);
-    const barRow = blind.sections[1]!.rows[0]!;
+    const barRow = blind.sections[0]!.rows[0]!;
     assert.equal(barRow.purchaseUnit, 'case');
     assert.equal(barRow.conversionFactor, 24);
     assert.equal(barRow.unit, 'bottle');
 
     const open = await stocktakesService.countSheet(stocktake.id, null, { blind: false });
-    assert.equal(open.sections[1]!.rows[0]!.expectedQty, 30, 'venue on-hand, not the group total');
+    assert.equal(open.sections[0]!.rows[0]!.expectedQty, 30, 'venue on-hand, not the group total');
 
     const fromTemplate = await stocktakeTemplatesService.countSheet(template.id, null);
     assert.equal(fromTemplate.source, 'template');
     assert.equal(fromTemplate.blind, false);
-    assert.deepEqual(fromTemplate.sections.map((section) => section.area), ['Bar', 'Cool room', STOCKTAKE_PREP_AREA]);
+    assert.deepEqual(fromTemplate.sections.map((section) => section.area), ['Beer & Cider', 'Produce', STOCKTAKE_PREP_AREA]);
     assert.equal(fromTemplate.sections[0]!.rows[0]!.expectedQty, 30);
     assert.equal(fromTemplate.sections[2]!.rows[0]!.kind, 'PREPPED_ITEM');
   } finally {

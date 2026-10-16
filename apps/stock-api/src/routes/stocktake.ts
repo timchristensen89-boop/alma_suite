@@ -1,10 +1,18 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { requireStockManager, requireStockUser } from '../lib/stock-permissions.js';
 import { stocktakesService } from '../services/stocktakes.service.js';
 import { listPrepRecipeOptions } from '../services/prep-recipes.service.js';
 import { stockReportsService } from '../services/stock-reports.service.js';
+import { buildCountSheetWorkbook, countSheetFilename } from '../lib/count-sheet-xlsx.js';
 
 export const stocktakeRouter = Router();
+
+export function sendXlsx(res: Response, filename: string, buffer: Buffer) {
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const asciiFilename = filename.replace(/[^\x20-\x7E]/g, '-').replace(/"/g, '');
+  res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  res.send(buffer);
+}
 
 stocktakeRouter.get('/', async (req, res, next) => {
   try {
@@ -170,6 +178,35 @@ stocktakeRouter.patch('/:id', async (req, res, next) => {
   }
 });
 
+// Counting-screen autosave: the changed lines only. Same access rule as the
+// whole-sheet PATCH — anyone who can count, on an open count.
+stocktakeRouter.patch('/:id/lines', async (req, res, next) => {
+  try {
+    requireStockUser(req.user);
+    res.json(await stocktakesService.updateLines(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+stocktakeRouter.post('/:id/lines', async (req, res, next) => {
+  try {
+    requireStockUser(req.user);
+    res.status(201).json(await stocktakesService.addLine(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+stocktakeRouter.delete('/:id/lines/:lineId', async (req, res, next) => {
+  try {
+    requireStockUser(req.user);
+    res.json(await stocktakesService.removeLine(String(req.params.id), String(req.params.lineId), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Loaded replacement state machine endpoints — IN_PROGRESS → SUBMITTED →
 // REVIEWED → LOCKED. Reopen with reason flips any of those back to
 // REOPENED. See stocktakes.service.ts for full guards.
@@ -218,6 +255,21 @@ stocktakeRouter.get('/:id/count-sheet', async (req, res, next) => {
     requireStockUser(req.user);
     const blind = req.query.blind === undefined ? undefined : req.query.blind !== '0' && req.query.blind !== 'false';
     res.json(await stocktakesService.countSheet(String(req.params.id), req.user, { blind }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// The Excel count sheet — blank by default (?blank=0 carries the counts so
+// far). Open to anyone who can count, like the paper sheet, and like it
+// carries quantities only, never values.
+stocktakeRouter.get('/:id/export.xlsx', async (req, res, next) => {
+  try {
+    requireStockUser(req.user);
+    const blank = req.query.blank === undefined ? true : req.query.blank !== '0' && req.query.blank !== 'false';
+    const sheet = await stocktakesService.countSheet(String(req.params.id), req.user, { blind: true });
+    const buffer = await buildCountSheetWorkbook(sheet, { blank });
+    sendXlsx(res, countSheetFilename(sheet), buffer);
   } catch (error) {
     next(error);
   }

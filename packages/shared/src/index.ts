@@ -16,6 +16,7 @@ export * from './rostering-guards.js';
 export * from './invoice-matching.js';
 export * from './purchase-history.js';
 export * from './xero-timesheet-push.js';
+export * from './stock-count-order.js';
 export * from './checklist-cadence.js';
 export * from './venue-day.js';
 export * from './guest-tags.js';
@@ -7617,9 +7618,21 @@ export type StocktakeCountSheetRow = {
   countedQty: number | null;
   notes: string | null;
   kind: 'STOCK_ITEM' | 'PREPPED_ITEM';
+  /**
+   * Wine rows only: the wine without its vintage or pack suffix, and the
+   * vintage as a label ("2022", "NV", "No year"). A sheet prints the wine
+   * once and its vintages under it; see stock-count-order.ts.
+   */
+  wineName?: string | null;
+  vintage?: string | null;
+  /** Set when two vintages of one wine share a label ("Case of 12"). */
+  vintageDetail?: string | null;
+  /** The wine group this row belongs to, when the group has more than one row. */
+  group?: string | null;
 };
 
 export type StocktakeCountSheetSection = {
+  /** The category (or "Prep (made items)") — the sheet's heading. */
   area: string;
   rows: StocktakeCountSheetRow[];
 };
@@ -7969,6 +7982,40 @@ export const stocktakeUpdateInputSchema = stocktakeCreateInputSchema.partial().e
   // discarding their counts.
   expectedUpdatedAt: z.string().optional().or(z.literal(''))
 });
+// Autosave from the counting screen: only the lines that changed, by id.
+// Nothing else on the count is touched, so two people counting different
+// shelves of one sheet never overwrite each other.
+export const stocktakeLinesPatchInputSchema = z.object({
+  lines: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        countedQty: z.preprocess(
+          (value) => (value === undefined || value === '' ? null : value),
+          z.coerce.number().nullable()
+        ).optional(),
+        unit: z.string().optional(),
+        label: z.string().min(1).optional(),
+        notes: z.string().optional()
+      })
+    )
+    .min(1)
+    .max(500)
+});
+export type StocktakeLinesPatchInput = z.infer<typeof stocktakeLinesPatchInputSchema>;
+export type StocktakeLinesPatchResult = { updatedAt: string; lines: StocktakeLine[] };
+
+// Add one line to an open count: a stock item, or a prepped item (recipe).
+export const stocktakeLineAddInputSchema = z
+  .object({
+    itemId: z.string().min(1).optional(),
+    recipeId: z.string().min(1).optional()
+  })
+  .refine((value) => Boolean(value.itemId) !== Boolean(value.recipeId), {
+    message: 'Pick a stock item or a prepped item, not both'
+  });
+export type StocktakeLineAddInput = z.infer<typeof stocktakeLineAddInputSchema>;
+
 export const stocktakeBulkDeleteInputSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, 'Select at least one stocktake'),
   confirmationText: z.literal('DELETE STOCKTAKES', {

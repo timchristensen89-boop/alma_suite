@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { requireStockManager } from '../lib/stock-permissions.js';
 import { stocktakeTemplatesService } from '../services/stocktake-templates.service.js';
+import { buildCountSheetWorkbook, countSheetFilename } from '../lib/count-sheet-xlsx.js';
+import { sendXlsx } from './stocktake.js';
 
 export const stocktakeTemplatesRouter = Router();
 
@@ -27,6 +29,19 @@ stocktakeTemplatesRouter.get('/:id/count-sheet', async (req, res, next) => {
     const blind = req.query.blind === undefined ? undefined : req.query.blind !== '0' && req.query.blind !== 'false';
     const venue = typeof req.query.venue === 'string' ? req.query.venue : null;
     res.json(await stocktakeTemplatesService.countSheet(String(req.params.id), req.user, { blind, venue }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Blank Excel count sheet for a template — the paper sheet as a .xlsx, for
+// managers who count in a spreadsheet. Same rows, same order.
+stocktakeTemplatesRouter.get('/:id/export.xlsx', async (req, res, next) => {
+  try {
+    const venue = typeof req.query.venue === 'string' ? req.query.venue : null;
+    const sheet = await stocktakeTemplatesService.countSheet(String(req.params.id), req.user, { blind: true, venue });
+    const buffer = await buildCountSheetWorkbook(sheet, { blank: true });
+    sendXlsx(res, countSheetFilename(sheet), buffer);
   } catch (error) {
     next(error);
   }
