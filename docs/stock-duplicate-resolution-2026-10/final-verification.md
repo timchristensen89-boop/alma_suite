@@ -158,3 +158,30 @@ This morning the totals were Alma Avalon $3,004,624 and St Alma $265,027. The re
 4. **Merge and deploy #321 and #322,** for the automatic conversion and the apply guard.
 
 After that: your calls on the 151 clusters, the case-price costs in §2, and the 83 placeholder measures.
+
+## Production run: 16 October 2026, 22:35–22:47 AEDT (approved by Tim)
+
+Tim recorded "merge as proposed" for all 151 groups on the review page, then approved the production order. Each step was rehearsed on a copy of production first, matched it exactly, and had a full backup taken before it ran.
+
+| Step | Run | Result | Backup taken first (`/opt/alma/backups/`) |
+|---|---|---|---|
+| Juice fix | `prod-unitfix-20261016-juices` | 2 measures, 3 lines; both 1 Oct sheets have no line in the wrong unit | `pre-juice-fix-20261016-223554.dump` |
+| Merges | `prod-merges-20261016` | **163 merged** (65 approved + 98 of the 151); applied history unchanged field for field | `pre-merges-20261016-223626.dump` |
+| 1 Oct sheets | applied through the stocktake service, reviewed by Tim Christensen | St Alma 267 movements, Avalon 378. Every on-hand equals its count; no other sheet or earlier movement changed | `pre-oct1-apply-20261016-224528.dump` |
+
+**Stock value now:** Alma Avalon **$37,596.28** and St Alma **$63,527.66**. This morning they were $3,004,624 and $265,027.
+
+**Not merged: 69 groups,** listed with the reason for each in `held-back-2026-10-16.md`.
+- **12:** the proposal itself is "keep separate" or "shelf check".
+- **38:** refused by the script's guards (different count unit, costs 2× or more apart, a double count marked recount).
+- **15:** "as proposed", these would discard real stock the final check found (mostly stock held inside counted prep batches, about $646 in all).
+- **4:** two pairs of groups share an item and need to be run as one.
+
+**Found and fixed during the rehearsal:** a partial merge zeroed the stale holding of an item it was *keeping apart* (Limes #225, Teusner #199). That item was outside the snapshot, so the rollback couldn't restore it. The fix is that a merge now changes only the items it merges. After the fix, the rollback rehearsal restored all 14 tables exactly.
+
+**Undoing any step:**
+- **Merges:** `merge-duplicate-items-2026-10.ts --rollback prod-merges-20261016 --i-mean-production`. Because the 1 Oct sheets have since been applied to the merged items, it refuses until those are reversed, or with `--force`.
+- **1 Oct sheets:** the Stocktake page's reversal.
+- **Last resort:** the backups above.
+
+The first apply attempt hit the service's 30-second transaction limit over the SSH tunnel and rolled back in full; production was checked and was unchanged. The second run used the same code with a longer limit, as a local change that was reverted and never committed.
