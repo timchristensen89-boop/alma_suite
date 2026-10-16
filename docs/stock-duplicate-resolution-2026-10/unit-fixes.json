@@ -300,7 +300,7 @@
    "reason": "Loaded counted \"1 x 5 L\" and costed \"1 Bottle = $220.91\" — the cost is a 5 L pack price. SHELF CHECK the pack size. NOT APPLIED: the shelf check found 1 bottle, which does not confirm a 5 L pack. Measure left at 750 mL until the bottle size is known."
   },
   {
-   "confidence": "medium",
+   "confidence": "high",
    "itemId": "cmptovuy9002ls601d8i19i99",
    "item": "Massenez Pomme Verte",
    "from": {
@@ -308,13 +308,13 @@
     "measureUnit": "ml"
    },
    "to": {
-    "measurePerCountUnit": 5000,
+    "measurePerCountUnit": 500,
     "measureUnit": "ml"
    },
-   "reason": "Same Massenez 5 L pack format as Creme de Peche ($208.20 per \"bottle\"). SHELF CHECK the pack size."
+   "reason": "Shelf check 16 Oct 2026 (Tim): Massenez Pomme Verte is a 500 mL bottle. The $208.20 per-bottle cost still looks wrong for a 500 mL bottle — check against an invoice."
   },
   {
-   "confidence": "medium",
+   "confidence": "low",
    "itemId": "cmsdf10jz004fmiioy6e21lmz",
    "item": "Lime Juice",
    "from": {
@@ -325,7 +325,7 @@
     "measurePerCountUnit": 2000,
     "measureUnit": "ml"
    },
-   "reason": "Cost $15.20 = 2 L at $7.60/L (17 Jun 2026 invoice for the 2 L lime juice, cluster #105). Measure said 5 L. SHELF CHECK."
+   "reason": "Cost $15.20 = 2 L at $7.60/L (17 Jun 2026 invoice for the 2 L lime juice, cluster #105). Measure said 5 L. SHELF CHECK. NOT APPLIED: shelf check says 5 L packs, which matches the existing 5000 mL measure. $15.20 per 5 L pack looks low — check against an invoice."
   }
  ],
  "lines": [
@@ -382,7 +382,7 @@
   },
   {
    "action": "restate",
-   "confidence": "medium",
+   "confidence": "high",
    "venue": "Alma Avalon",
    "item": "Avocadoes Hass",
    "itemId": "cmsdf12vj002omij9vsz913bw",
@@ -395,7 +395,7 @@
     "countedQty": 0.2946,
     "unit": "each"
    },
-   "reason": "1.473 kg of a 5 kg tray (item measure 5000 g; no invoice)."
+   "reason": "Shelf check 16 Oct 2026 (Tim): avocados are counted by the ~5 kg tray; 1.473 kg = 0.2946 of a tray."
   },
   {
    "action": "recount",
@@ -705,7 +705,7 @@
   },
   {
    "action": "restate",
-   "confidence": "medium",
+   "confidence": "high",
    "venue": "Alma Avalon",
    "item": "Lime Juice",
    "itemId": "cmsdf10jz004fmiioy6e21lmz",
@@ -715,10 +715,10 @@
     "unit": "L"
    },
    "to": {
-    "countedQty": 12.55,
+    "countedQty": 5.02,
     "unit": "each"
    },
-   "reason": "25.1 L of 2 L bottles (see measure note). Shelf check."
+   "reason": "Shelf check 16 Oct 2026 (Tim): lime juice comes in 5 L packs; 25.1 L = 5.02 packs."
   },
   {
    "action": "restate",
@@ -807,7 +807,7 @@
   },
   {
    "action": "restate",
-   "confidence": "medium",
+   "confidence": "high",
    "venue": "Alma Avalon",
    "item": "Massenez Pomme Verte",
    "itemId": "cmptovuy9002ls601d8i19i99",
@@ -817,10 +817,10 @@
     "unit": "L"
    },
    "to": {
-    "countedQty": 0.6,
+    "countedQty": 6,
     "unit": "bottle"
    },
-   "reason": "3 L of a 5 L pack (see measure note). Shelf check."
+   "reason": "Shelf check 16 Oct 2026 (Tim): Pomme Verte is a 500 mL bottle; 3 L = 6 bottles."
   },
   {
    "action": "restate",
@@ -1079,7 +1079,7 @@
   },
   {
    "action": "restate",
-   "confidence": "medium",
+   "confidence": "high",
    "venue": "Alma Avalon",
    "item": "Watermelon Juice",
    "itemId": "cmsdf10l00053miioyzpx19ey",
@@ -1092,7 +1092,7 @@
     "countedQty": 3.32,
     "unit": "each"
    },
-   "reason": "16.6 L of 5 L packs (item measure 5000 mL; no invoice to confirm)."
+   "reason": "Shelf check 16 Oct 2026 (Tim): watermelon juice is counted in 5 L containers; 16.6 L = 3.32."
   },
   {
    "action": "restate",
@@ -1401,7 +1401,7 @@
    "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
   },
   {
-   "confidence": "medium",
+   "confidence": "high",
    "venue": "St Alma",
    "item": "Lime Juice",
    "itemId": "cmsdf10jz004fmiioy6e21lmz",
@@ -1410,7 +1410,7 @@
     "onHand": 8
    },
    "to": {
-    "onHand": 4
+    "onHand": 1.6
    },
    "sourceStocktakeId": "cmtgs6a1a06faoe01qwx3ci3y",
    "sourceStocktakeLineId": "cmtim0y9c04xpoa015kt9lioh",
@@ -1419,7 +1419,7 @@
     "countedQty": 8,
     "unit": "L"
    },
-   "reason": "8 L of 2 L bottles entered as \"each\" (see measure note). Shelf check."
+   "reason": "Shelf check 16 Oct 2026 (Tim): 5 L packs; 8 L had been stored as 8 packs = 1.6 packs."
   }
  ]
 }
