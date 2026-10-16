@@ -11,6 +11,7 @@ import { stocktakeTemplateInputSchema } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { buildCountSheetSections } from '../lib/count-sheet.js';
 import { listPrepRecipeOptions } from './prep-recipes.service.js';
+import { actorPinnedVenue } from '../lib/venue-scope.js';
 
 type TemplateRow = Prisma.StocktakeTemplateGetPayload<Record<string, never>>;
 
@@ -153,7 +154,9 @@ export const stocktakeTemplatesService = {
     if (!row) throw new HttpError(404, 'Template not found');
     const ids = await resolveItemIds(row);
     const blind = options.blind ?? row.blindDefault;
-    const venue = options.venue?.trim() || row.venue || null;
+    // A venue-scoped counter prints their own venue's sheet whatever the
+    // query says; the expected column is that venue's on-hand.
+    const venue = actorPinnedVenue(_actor) ?? (options.venue?.trim() || row.venue || null);
     const items = await prisma.stockItem.findMany({
       where: { id: { in: [...ids] }, status: 'ACTIVE' },
       select: {

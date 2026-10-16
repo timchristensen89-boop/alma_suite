@@ -544,6 +544,9 @@ importers:
       cors:
         specifier: ^2.8.5
         version: 2.8.6
+      exceljs:
+        specifier: ^4.4.0
+        version: 4.4.0
       express:
         specifier: ^4.21.2
         version: 4.22.1

@@ -11,6 +11,7 @@ import { StockItemPicker } from '../components/StockItemPicker';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { downloadCsv } from '../lib/csv';
 import { canManageStock } from '../lib/stockPermissions';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 
@@ -473,6 +474,15 @@ export function StocktakeTemplatesPage() {
                   >
                     <span>Print blank sheet</span>
                   </a>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    title="Download a blank Excel count sheet for this template — same items, same order"
+                    onClick={() => void downloadCsv(`/api/stocktake-templates/${template.id}/export.xlsx`, `${template.name.replace(/[^\p{L}\p{N}]+/gu, '-').toLowerCase()}-count-sheet.xlsx`).catch((err: unknown) => setFeedback({ tone: 'error', message: err instanceof Error ? err.message : 'Could not download the Excel sheet' }))}
+                  >
+                    Blank Excel
+                  </Button>
                   {canManage ? (
                     <>
                       <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => editTemplate(template)}>Edit</Button>

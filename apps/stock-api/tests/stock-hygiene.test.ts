@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { prisma } from '@alma/db';
+import { prisma, prismaCogsReader } from '@alma/db';
 import { STOCKTAKE_PREP_AREA } from '@alma/shared';
 import { itemsService } from '../src/services/items.service.js';
 import { stocktakesService } from '../src/services/stocktakes.service.js';
@@ -223,10 +223,14 @@ test('a reopened count can be submitted again, and reopening does not record a r
   }
 });
 
-test('the count sheet walks by area, hides expected quantities when blind, and prints prep last', NO_DB, async () => {
+test('the count sheet sections by category in walking order, hides expected quantities when blind, and prints prep last', NO_DB, async () => {
   const tag = suffix('sheet');
-  const bar = await prisma.stockItem.create({ data: { name: `Corona ${tag}`, unit: 'case', countUnit: 'bottle', conversionFactor: 24, countArea: 'Bar', onHand: 40, parLevel: 24, venueStock: { create: { venue: 'St Alma', onHand: 30 } } } });
-  const cool = await prisma.stockItem.create({ data: { name: `Limes ${tag}`, unit: 'kg', countArea: 'Cool room', onHand: 8, parLevel: 5 } });
+  // Every item in production carries countArea 'Default'; the sheet must
+  // section by category regardless, in walking order (beer before produce).
+  const beer = await prisma.stockCategory.upsert({ where: { name: 'Beer & Cider' }, update: {}, create: { name: 'Beer & Cider' } });
+  const produce = await prisma.stockCategory.upsert({ where: { name: 'Produce' }, update: {}, create: { name: 'Produce' } });
+  const bar = await prisma.stockItem.create({ data: { name: `Corona ${tag}`, unit: 'case', countUnit: 'bottle', conversionFactor: 24, countArea: 'Default', categoryId: beer.id, onHand: 40, parLevel: 24, venueStock: { create: { venue: 'St Alma', onHand: 30 } } } });
+  const cool = await prisma.stockItem.create({ data: { name: `Limes ${tag}`, unit: 'kg', countArea: 'Default', categoryId: produce.id, onHand: 8, parLevel: 5 } });
   const recipe = await prisma.recipe.create({ data: { title: `Birria ${tag}`, isPrepRecipe: true, yieldQuantity: 6, yieldUnit: 'kg' } });
   const stocktake = await stocktakesService.createStocktake({
     name: `Sheet ${tag}`, venue: 'St Alma', countedAt: new Date().toISOString(),
@@ -240,23 +244,67 @@ test('the count sheet walks by area, hides expected quantities when blind, and p
   try {
     const blind = await stocktakesService.countSheet(stocktake.id, null);
     assert.equal(blind.blind, true);
-    assert.deepEqual(blind.sections.map((section) => section.area), ['Cool room', 'Bar', STOCKTAKE_PREP_AREA]);
+    assert.deepEqual(blind.sections.map((section) => section.area), ['Beer & Cider', 'Produce', STOCKTAKE_PREP_AREA]);
     assert.equal(blind.sections.every((section) => section.rows.every((row) => row.expectedQty === null)), true);
-    const barRow = blind.sections[1]!.rows[0]!;
+    const barRow = blind.sections[0]!.rows[0]!;
     assert.equal(barRow.purchaseUnit, 'case');
     assert.equal(barRow.conversionFactor, 24);
     assert.equal(barRow.unit, 'bottle');
 
     const open = await stocktakesService.countSheet(stocktake.id, null, { blind: false });
-    assert.equal(open.sections[1]!.rows[0]!.expectedQty, 30, 'venue on-hand, not the group total');
+    assert.equal(open.sections[0]!.rows[0]!.expectedQty, 30, 'venue on-hand, not the group total');
 
     const fromTemplate = await stocktakeTemplatesService.countSheet(template.id, null);
     assert.equal(fromTemplate.source, 'template');
     assert.equal(fromTemplate.blind, false);
-    assert.deepEqual(fromTemplate.sections.map((section) => section.area), ['Bar', 'Cool room', STOCKTAKE_PREP_AREA]);
+    assert.deepEqual(fromTemplate.sections.map((section) => section.area), ['Beer & Cider', 'Produce', STOCKTAKE_PREP_AREA]);
     assert.equal(fromTemplate.sections[0]!.rows[0]!.expectedQty, 30);
     assert.equal(fromTemplate.sections[2]!.rows[0]!.kind, 'PREPPED_ITEM');
   } finally {
     await cleanup({ stocktakeIds: [stocktake.id], templateIds: [template.id], recipeIds: [recipe.id], itemIds: [bar.id, cool.id] });
+  }
+});
+
+test('a count can only be filed under a venue the business has; a known spelling resolves, anything else is refused', NO_DB, async () => {
+  const tag = suffix('venue');
+  const admin = { id: 'admin-test', firstName: 'Admin', lastName: 'Test', email: 'admin@example.com', roleTitle: 'Admin', venue: 'Both', accountType: 'HUMAN', isAdmin: true, trainingOnly: false, role: 'ADMIN', appAccess: [] } as unknown as import('@alma/shared').AuthUser;
+  const item = await prisma.stockItem.create({ data: { name: `Venue guard ${tag}`, unit: 'each', onHand: 0, parLevel: 0, status: 'ACTIVE' } });
+  const configured = await prismaCogsReader.configuredVenues();
+  const stocktakeIds: string[] = [];
+  try {
+    if (configured.length === 0) return; // nothing configured on this database — the guard is dormant by design
+    // "Avalon" is the spelling that created a phantom venue on 1 Sep 2026.
+    const resolved = await stocktakesService.createStocktake(
+      { name: `Avalon ${tag}`, venue: 'Avalon', countedAt: new Date().toISOString(), lines: [{ itemId: item.id, label: item.name, unit: 'each' }] },
+      admin
+    );
+    stocktakeIds.push(resolved.id);
+    assert.equal(resolved.venue, 'Alma Avalon');
+    assert.equal(await prisma.venueStockItem.count({ where: { stockItemId: item.id, venue: 'Avalon' } }), 0, 'no holdings are manufactured for the typo');
+    await assert.rejects(
+      () => stocktakesService.createStocktake({ name: `Nowhere ${tag}`, venue: 'Nowhere', countedAt: new Date().toISOString(), lines: [] }, admin),
+      (err: unknown) => (err as { statusCode?: number }).statusCode === 400
+    );
+    await assert.rejects(
+      () => stocktakesService.updateStocktake(resolved.id, { venue: 'Nowhere' }, admin),
+      (err: unknown) => (err as { statusCode?: number }).statusCode === 400
+    );
+  } finally {
+    await cleanup({ stocktakeIds, itemIds: [item.id] });
+  }
+});
+
+test('editing an item that has an average cost but no purchase price keeps the average', NO_DB, async () => {
+  const tag = suffix('avgcost');
+  const item = await prisma.stockItem.create({ data: { name: `Avg only ${tag}`, unit: 'bottle', countUnit: 'bottle', conversionFactor: 1, avgCostCents: 4500, latestCostCents: null, onHand: 0, parLevel: 0, status: 'ACTIVE' } });
+  try {
+    // The edit form always sends the full draft — conversionFactor included,
+    // latestCostCents omitted when the price box is blank.
+    const saved = await itemsService.updateItem(item.id, { name: `Avg only renamed ${tag}`, unit: 'bottle', countUnit: 'bottle', conversionFactor: 1, parLevel: 0, status: 'ACTIVE', notes: '' });
+    assert.equal(saved.avgCostCents, 4500, 'a rename must not un-value the item');
+    const priced = await itemsService.updateItem(item.id, { latestCostCents: 60000, conversionFactor: 6 });
+    assert.equal(priced.avgCostCents, 10000, 'a real purchase price re-derives the per-unit cost');
+  } finally {
+    await cleanup({ itemIds: [item.id] });
   }
 });

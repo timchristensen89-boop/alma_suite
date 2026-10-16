@@ -6,6 +6,7 @@ import type {
   StockItemStatus,
   StockItemUpdateInput
 } from '@alma/shared';
+import { isWineCategory, splitWineName, withVintage } from '@alma/shared';
 import { ActionFeedback, Button, Input, Select } from '@alma/ui';
 import { ApiError, api } from '../../lib/api';
 
@@ -135,6 +136,28 @@ export function ItemForm({
     ],
     [categories]
   );
+
+  // Vintage is part of the name ("2022 Teusner 'Wark Family' Shiraz"), so a
+  // wine gets a field of its own that rewrites the name rather than a column
+  // nothing else reads. Every vintage stays its own item.
+  const categoryName = categories.find((c) => c.id === draft.categoryId)?.name ?? initial?.category?.name ?? null;
+  const isWine = isWineCategory(categoryName);
+  const wineParts = isWine ? splitWineName(draft.name) : null;
+  const [vintageDraft, setVintageDraft] = useState(() => {
+    const parts = splitWineName(mode === 'edit' && initial ? initial.name : '');
+    return parts.vintage ? String(parts.vintage) : parts.nonVintage ? 'NV' : '';
+  });
+  function changeVintage(raw: string) {
+    const text = raw.trim().toUpperCase();
+    setVintageDraft(raw);
+    if (text === '' ) {
+      update('name', withVintage(draft.name, null));
+    } else if (text === 'NV' || text === 'N.V.') {
+      update('name', withVintage(draft.name, 'NV'));
+    } else if (/^(19|20)\d\d$/.test(text)) {
+      update('name', withVintage(draft.name, Number(text)));
+    }
+  }
 
   async function handleCreateCategory() {
     if (!canManageCategories) {
@@ -305,14 +328,25 @@ export function ItemForm({
         void handleSubmit();
       }}
     >
-      <div className="form-grid two">
+      <div className={`form-grid ${isWine ? 'three' : 'two'}`}>
         <Input
           label="Name"
           required
           value={draft.name}
           onChange={(event) => update('name', event.currentTarget.value)}
           placeholder="e.g. House red wine"
+          hint={wineParts ? `Wine: ${wineParts.wineName}${wineParts.packSuffix ? ' · bought by the case' : ''}` : undefined}
         />
+        {isWine ? (
+          <Input
+            label="Vintage"
+            inputMode="numeric"
+            value={vintageDraft}
+            onChange={(event) => changeVintage(event.currentTarget.value)}
+            placeholder="2022 or NV"
+            hint="Kept in the name; vintages group together on count sheets."
+          />
+        ) : null}
         <Input
           label="SKU"
           value={draft.sku}

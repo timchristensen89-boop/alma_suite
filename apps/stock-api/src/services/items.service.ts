@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { prisma } from '@alma/db';
+import { prisma, prismaCogsReader } from '@alma/db';
 import {
   implausibleCountLines,
   summarisePurchases,
@@ -383,6 +383,12 @@ async function venueOptions(actor?: AuthUser | null) {
   if (actor && !isVenueUnscopedActor(actor)) {
     return actor.venue ? [actor.venue] : [];
   }
+
+  // Settings › Venues is the list of places the business has. Stored venue
+  // strings are only a fallback: building pickers from them is how a typo
+  // ("Avalon") became a third venue every page offered.
+  const configured = await prismaCogsReader.configuredVenues();
+  if (configured.length > 0) return configured;
 
   const [venueRows, venueStockRows, stocktakeRows, staffRows] = await Promise.all([
     prisma.venue.findMany({ select: { name: true }, orderBy: { name: 'asc' } }),
@@ -1354,6 +1360,12 @@ export const itemsService = {
     return toItemPayload(row);
   },
 
+  async getItem(id: string): Promise<StockItem> {
+    const row = await prisma.stockItem.findUnique({ where: { id }, include: { category: { select: { id: true, name: true } } } });
+    if (!row) throw new HttpError(404, 'Item not found');
+    return toItemPayload(row);
+  },
+
   async updateItem(id: string, input: unknown): Promise<StockItem> {
     assertNoDirectOnHandMutation(input);
     const data = stockItemUpdateInputSchema.parse(input);
@@ -1373,11 +1385,16 @@ export const itemsService = {
       data.latestCostCents !== undefined
         ? normaliseOptionalNumber(data.latestCostCents) ?? null
         : existing.latestCostCents;
+    // Re-derive the per-unit cost only when there is a purchase price to
+    // derive it from. The edit form always sends conversionFactor, and for
+    // the 449 items that carry an average cost but no latest purchase price
+    // this used to null the average on any edit at all — a name fix from the
+    // counting screen silently un-valued the item.
     const avgCostCents =
       data.avgCostCents !== undefined
         ? normaliseOptionalNumber(data.avgCostCents) ?? null
-        : data.latestCostCents !== undefined || data.conversionFactor !== undefined
-          ? unitCostFromPurchaseCost(nextLatestCostCents, nextConversionFactor) ?? null
+        : (data.latestCostCents !== undefined || data.conversionFactor !== undefined) && nextLatestCostCents !== null
+          ? unitCostFromPurchaseCost(nextLatestCostCents, nextConversionFactor) ?? existing.avgCostCents
           : undefined;
     await assertCategoryExists(categoryId);
 

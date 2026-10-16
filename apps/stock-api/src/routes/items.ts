@@ -232,6 +232,16 @@ itemsRouter.post('/merge', async (req, res, next) => {
   }
 });
 
+// One item in full, for the edit drawer on the counting screen. Registered
+// after every static GET so '/picker', '/summary' and friends keep winning.
+itemsRouter.get('/:id', async (req, res, next) => {
+  try {
+    res.json(await itemsService.getItem(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.patch('/:id', async (req, res, next) => {
   try {
     requireStockManager(req.user);
