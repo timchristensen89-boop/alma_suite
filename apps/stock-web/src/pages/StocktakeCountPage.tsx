@@ -799,7 +799,7 @@ export function StocktakeCountPage() {
         {detailsOpen ? (
           <CountDetails
             stocktake={stocktake}
-            canManage={canManage && open}
+            canManage={canManage && !readOnly}
             showExpected={showExpected}
             onShowExpected={setShowExpected}
             onSaved={(next) => setStocktake((current) => (current ? { ...current, ...next } : current))}

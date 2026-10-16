@@ -293,3 +293,18 @@ test('a count can only be filed under a venue the business has; a known spelling
     await cleanup({ stocktakeIds, itemIds: [item.id] });
   }
 });
+
+test('editing an item that has an average cost but no purchase price keeps the average', NO_DB, async () => {
+  const tag = suffix('avgcost');
+  const item = await prisma.stockItem.create({ data: { name: `Avg only ${tag}`, unit: 'bottle', countUnit: 'bottle', conversionFactor: 1, avgCostCents: 4500, latestCostCents: null, onHand: 0, parLevel: 0, status: 'ACTIVE' } });
+  try {
+    // The edit form always sends the full draft — conversionFactor included,
+    // latestCostCents omitted when the price box is blank.
+    const saved = await itemsService.updateItem(item.id, { name: `Avg only renamed ${tag}`, unit: 'bottle', countUnit: 'bottle', conversionFactor: 1, parLevel: 0, status: 'ACTIVE', notes: '' });
+    assert.equal(saved.avgCostCents, 4500, 'a rename must not un-value the item');
+    const priced = await itemsService.updateItem(item.id, { latestCostCents: 60000, conversionFactor: 6 });
+    assert.equal(priced.avgCostCents, 10000, 'a real purchase price re-derives the per-unit cost');
+  } finally {
+    await cleanup({ itemIds: [item.id] });
+  }
+});
