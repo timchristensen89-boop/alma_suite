@@ -48,6 +48,14 @@ async function main() {
   if (!local && (apply || option('--rollback')) && !flag('--i-mean-production')) {
     throw new Error('DATABASE_URL is not a local database. Add --i-mean-production to write to it.');
   }
+  // A tunnel to production looks like localhost, so the host alone is not
+  // enough: the production database is named, and naming it needs the flag.
+  const [{ db }] = await prisma.$queryRawUnsafe<Array<{ db: string }>>('SELECT current_database() AS db');
+  const production = db === 'alma_suite_v18';
+  if ((production || !local) && (apply || option('--rollback')) && !flag('--i-mean-production')) {
+    throw new Error(`Connected to ${db}${production ? ' (production)' : ''}. Add --i-mean-production to write to it.`);
+  }
+  console.log(`database: ${db}${production ? ' — PRODUCTION' : ''}`);
   const file = option('--fixes') ?? resolve(process.cwd(), 'docs/stock-duplicate-resolution-2026-10/unit-fixes.json');
   const fixes = JSON.parse(readFileSync(file, 'utf8')) as UnitFixFile;
   const sheetIds = Object.values(fixes.sheets);

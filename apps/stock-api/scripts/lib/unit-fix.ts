@@ -28,6 +28,8 @@ import { setActiveUnitAliases, convertQuantityToCostUnit, normaliseUnitLabel } f
 
 export type Confidence = 'high' | 'medium' | 'low';
 export type MeasureFix = {
+  /** Absent means high. A measure that only a medium/low line depends on waits with that line. */
+  confidence?: Confidence;
   itemId: string;
   item: string;
   from: { measurePerCountUnit: number | null; measureUnit: string | null };
@@ -126,6 +128,7 @@ export async function planUnitFix(file: UnitFixFile, options: { confidence?: Con
   const holdings: PlannedHolding[] = [];
 
   for (const fix of file.measures) {
+    if (!allowed.has(fix.confidence ?? 'high')) continue;
     const item = await prisma.stockItem.findUnique({ where: { id: fix.itemId }, select: { id: true, name: true, measurePerCountUnit: true, measureUnit: true } });
     if (!item) { refusals.push(`measure ${fix.item}: item ${fix.itemId} not found`); continue; }
     if (!same(item.measurePerCountUnit, fix.from.measurePerCountUnit) || (item.measureUnit ?? null) !== (fix.from.measureUnit ?? null)) {
@@ -194,7 +197,7 @@ export async function planUnitFix(file: UnitFixFile, options: { confidence?: Con
 export function printUnitFixPlan(plan: UnitFixPlan) {
   console.log(`\n== Item measures (${plan.measures.length}) — what one count unit holds`);
   for (const m of plan.measures) {
-    console.log(`  ${m.item}: ${m.from.measurePerCountUnit ?? '—'} ${m.from.measureUnit ?? ''} → ${m.to.measurePerCountUnit} ${m.to.measureUnit}${m.metricRecipeLines ? `  (${m.metricRecipeLines} recipe line(s) in g/mL re-cost)` : ''}`);
+    console.log(`  [${m.confidence ?? 'high'}] ${m.item}: ${m.from.measurePerCountUnit ?? '—'} ${m.from.measureUnit ?? ''} → ${m.to.measurePerCountUnit} ${m.to.measureUnit}${m.metricRecipeLines ? `  (${m.metricRecipeLines} recipe line(s) in g/mL re-cost)` : ''}`);
     console.log(`      ${m.reason}`);
   }
   for (const venue of [...new Set(plan.lines.map((l) => l.venue))]) {

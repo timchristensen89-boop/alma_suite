@@ -6,6 +6,7 @@
  },
  "measures": [
   {
+   "confidence": "high",
    "itemId": "cmptowawj00rgs601q0qie3ec",
    "item": "Nut Pistachio Kernel",
    "from": {
@@ -19,6 +20,7 @@
    "reason": "Costed per kilo ($44.68): Loaded counted it in Kilo (0.47, 1 Kilo)."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowb9b00tss6018qwk7nnl",
    "item": "Wakame",
    "from": {
@@ -32,6 +34,7 @@
    "reason": "Loaded costed it as a 500 g pack: \"0.2 500 Grams = $4.50\" ($22.50 per pack)."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowc4w00z4s601oluv35mi",
    "item": "Mesculin Greens Mix",
    "from": {
@@ -45,6 +48,7 @@
    "reason": "Loaded cost \"1.2 kg = $14.00\" ($11.67/kg); invoice price 1759 is also per kg."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowb1f00sds60107gsotjy",
    "item": "Pepita Seeds",
    "from": {
@@ -58,6 +62,7 @@
    "reason": "Costed per kilo ($12.07); Loaded counted it in Kilo (2.98, 4.72, 1.69 Kilo)."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowand00pps601bmioxrei",
    "item": "Cream Thickened",
    "from": {
@@ -71,6 +76,7 @@
    "reason": "Loaded cost \"2.71 Litre = $20.16\" ($7.44/L); counted in Litre."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowbf000uss6015b29ykiv",
    "item": "Allspice",
    "from": {
@@ -84,6 +90,7 @@
    "reason": "Loaded counted it as 350 g packs (\"0.43 350 Grams\"); $14.00 per pack."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowbdl00ujs601rftq9996",
    "item": "Pears Nashi",
    "from": {
@@ -97,6 +104,7 @@
    "reason": "Loaded cost \"1.2 Kilo = $9.00\" ($7.50/kg)."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowaqp00qds6019uh8qktj",
    "item": "Breadcrumbs Panko",
    "from": {
@@ -110,6 +118,7 @@
    "reason": "Costed per kilo ($6.24); Loaded counted it in Kilo (0.96, 0.79 Kilo)."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowavm00ras601cxfynwme",
    "item": "Mustard Dijon",
    "from": {
@@ -123,6 +132,7 @@
    "reason": "Invoices: \"MUSTARD DIJON 170GM (Masterfoods) EA\" at $4.50 = avg cost."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowc7c00zis601hpou3t4s",
    "item": "Tomatoes",
    "from": {
@@ -136,6 +146,7 @@
    "reason": "Loaded cost \"10.55 Kilo = $420.11\"; counted in Kilo."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowb9o00tvs601jv2xy0xl",
    "item": "Chips Shoestring Fries",
    "from": {
@@ -149,6 +160,7 @@
    "reason": "Costed per kilo ($4.47); Loaded counted it in Kilo (15, 17, 22 Kilo)."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowb7v00tjs601pnmvxbc8",
    "item": "Vinegar Apple Cider",
    "from": {
@@ -162,6 +174,7 @@
    "reason": "Invoices: \"VINEGAR APPLE CIDER 5LT (PGF) EA\" at $21.00; Loaded \"0.81 5 L = $16.91\"."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowc5p00z7s6012errl49s",
    "item": "Onions Brown",
    "from": {
@@ -175,6 +188,7 @@
    "reason": "Loaded cost \"15.39 Kilo = $21.89\" ($1.42/kg)."
   },
   {
+   "confidence": "high",
    "itemId": "cmoqfbnlu008u9ky27xeoi31h",
    "item": "Corn Sweet Box",
    "from": {
@@ -188,6 +202,7 @@
    "reason": "Loaded cost \"1 kg = $3.18\"; counted in kg (11, 15, 20 kg)."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowaxv00rps6010886cel8",
    "item": "Oil Grapeseed",
    "from": {
@@ -201,6 +216,7 @@
    "reason": "Invoices: \"OIL GRAPESEED 1LT (Chefs Choice) EA\" at $12.00 = avg cost."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowav600r7s601h67jhrcs",
    "item": "Mayonnaise Whole Egg",
    "from": {
@@ -214,6 +230,7 @@
    "reason": "Loaded cost \"6.11 Kilo = $51.47\" ($8.42/kg)."
   },
   {
+   "confidence": "high",
    "itemId": "cmoqfbu9u00o29ky2ubrdkwxq",
    "item": "Zucchini Medium",
    "from": {
@@ -227,6 +244,7 @@
    "reason": "Invoice \"Zuchinni Medium Kg\"; item note \"Pack: 1 kg\"."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowb3800sps601994a7sjm",
    "item": "Salt Flakes",
    "from": {
@@ -240,6 +258,7 @@
    "reason": "Invoices: \"SEA SALT FLAKES 2KG (Pyramid) EA\" at $25.00. Item has no cost yet."
   },
   {
+   "confidence": "high",
    "itemId": "cmptowb2f00sjs601qlkwclqb",
    "item": "Peppercorns Black Whole",
    "from": {
@@ -253,6 +272,7 @@
    "reason": "Loaded counted it as 500 g packs (\"1 500 Grams\"). Item cost is 0 — needs a price."
   },
   {
+   "confidence": "high",
    "itemId": "cmptovv23003cs6013b0couwj",
    "item": "First Press Black Cold Drip Coffee Mixer",
    "from": {
@@ -266,6 +286,7 @@
    "reason": "Loaded cost \"4 750 mL = $75.76\" ($18.94 per 750 mL bottle)."
   },
   {
+   "confidence": "medium",
    "itemId": "cmptovuxi002fs601ncx5ye8f",
    "item": "Massenez Creme de Peche",
    "from": {
@@ -279,6 +300,7 @@
    "reason": "Loaded counted \"1 x 5 L\" and costed \"1 Bottle = $220.91\" — the cost is a 5 L pack price. SHELF CHECK the pack size."
   },
   {
+   "confidence": "medium",
    "itemId": "cmptovuy9002ls601d8i19i99",
    "item": "Massenez Pomme Verte",
    "from": {
@@ -292,6 +314,7 @@
    "reason": "Same Massenez 5 L pack format as Creme de Peche ($208.20 per \"bottle\"). SHELF CHECK the pack size."
   },
   {
+   "confidence": "medium",
    "itemId": "cmsdf10jz004fmiioy6e21lmz",
    "item": "Lime Juice",
    "from": {
