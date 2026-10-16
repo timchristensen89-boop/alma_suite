@@ -1,0 +1,854 @@
+81 merge decisions from docs/stock-duplicate-resolution-2026-10/decisions.json — dry run
+
+#1 Aprendiz — plan
+  survivor:   Aprendiz Ensamble Mezcal (cmptovvjf006os601q8ojgcux)
+  duplicate:  APRENDIZ 750ML BOTTLE (cmoqfblmp004c9ky2qynqiqjd)
+  Alma Avalon  on hand 1.8 → 0.9   value $239.39 → $119.70
+  St Alma      on hand 1.6 → 0.8   value $212.79 → $106.40
+  discard stale: APRENDIZ 750ML BOTTLE @ Alma Avalon: 0.9 ($119.69)
+  discard stale: APRENDIZ 750ML BOTTLE @ St Alma: 0.8 ($106.39)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 12, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 14
+
+#4 Arette Suave Blanco — plan
+  survivor:   Arette Suave Blanco (cmptovvkz0070s601192af70l)
+  duplicate:  ARETTE SUAVE BLANCO 750ML BOTTLE (cmoqfblpc004i9ky2slcm5tns)
+  Alma Avalon  on hand 1.6 → 0.8   value $193.70 → $96.85
+  St Alma      on hand 1.4 → 0.6   value $169.49 → $72.64
+  discard stale: ARETTE SUAVE BLANCO 750ML BOTTLE @ Alma Avalon: 0.8 ($96.85)
+  discard stale: ARETTE SUAVE BLANCO 750ML BOTTLE @ St Alma: 0.8 ($96.85)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 3, InventoryMovement 12, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 14
+
+#6 Calle 23 Blanco — plan
+  survivor:   Calle 23 Blanco (cmptovvop007rs601jheanhrc)
+  duplicate:  CALLE 23 BLANCO 750ML BOTTLE (cmoqfbmex00649ky2a8dwjdzn)
+  Alma Avalon  on hand 1.1 → 0.6   value $84.94 → $46.32
+  St Alma      on hand 2 → 1   value $154.44 → $77.20
+  discard stale: CALLE 23 BLANCO 750ML BOTTLE @ St Alma: 1 ($77.24)
+  discard stale: CALLE 23 BLANCO 750ML BOTTLE @ Alma Avalon: 0.5 ($38.62)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 16, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 18
+
+#8 Codigo 1530 Rosa — plan
+  survivor:   Codigo 1530 Rosa (cmptovvrn008fs6016lmcda3e)
+  duplicate:  CODIGO 1530 BLANCO ROSA 750ML BOTTLE (cmoqfbnfc008g9ky2r9ziwzn4)
+  Alma Avalon  on hand 1.85 → 0.9   value $200.35 → $97.46
+  St Alma      on hand 1.15 → 0.25   value $124.54 → $27.07
+  discard stale: CODIGO 1530 BLANCO ROSA 750ML BOTTLE @ Alma Avalon: 0.95 ($102.89)
+  discard stale: CODIGO 1530 BLANCO ROSA 750ML BOTTLE @ St Alma: 0.9 ($97.47)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 3, InventoryMovement 11, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 13
+
+#9 Del Maguey Vida — plan
+  survivor:   Del Maguey Vida (cmptovvt7008rs601e8b0092x)
+  duplicate:  DEL MAGUEY VIDA 750ML BOTTLE (cmoqfbnvb009g9ky26vs8a7vd)
+  Alma Avalon  on hand 0.8 → 0.5   value $72.48 → $45.30
+  St Alma      on hand 0.4 → 0.4   value $36.24 → $36.24
+  discard stale: DEL MAGUEY VIDA 750ML BOTTLE @ Alma Avalon: 0.3 ($27.18)
+  recount next count: Del Maguey Vida @ St Alma: 0.4 ($36.24) — carried across as is
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 11, StockReorderNotice 1, PurchaseOrderLine 1, StocktakeLine 13
+  warn: recount Del Maguey Vida @ St Alma (0.4) at the next count — carried across as is
+
+#10 Don Julio 1942 — plan
+  survivor:   Don Julio 1942 (cmptovvui0090s601bvpnwb8z)
+  duplicate:  DON JULIO 1942 750ML BOTTLE (cmoqfbnyv009o9ky2yxfcha96)
+  Alma Avalon  on hand 2 → 1   value $484.94 → $242.47
+  St Alma      on hand 1.65 → 0.75   value $400.07 → $181.85
+  discard stale: DON JULIO 1942 750ML BOTTLE @ Alma Avalon: 1 ($242.47)
+  discard stale: DON JULIO 1942 750ML BOTTLE @ St Alma: 0.9 ($218.22)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 9, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 11
+
+#11 Don Julio Anejo — plan
+  survivor:   Don Julio Anejo (cmptovvuu0093s601ojyqx51d)
+  duplicate:  DON JULIO ANEJO 750ML BOTTLE (cmoqfbnzr009q9ky25nbry076)
+  Alma Avalon  on hand 1.25 → 0.9   value $162.83 → $117.29
+  St Alma      on hand 1.8 → 0.9   value $234.40 → $117.29
+  discard stale: DON JULIO ANEJO 750ML BOTTLE @ St Alma: 0.9 ($117.11)
+  discard stale: DON JULIO ANEJO 750ML BOTTLE @ Alma Avalon: 0.35 ($45.54)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 4, InventoryMovement 17, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 19
+
+#12 Don Julio Blanco — REFUSED
+  survivor:   Don Julio Blanco (cmptovvv70096s601mzhseahb)
+  duplicate:  DON JULIO BLANCO 750ML BOTTLE (cmoqfbo0n009s9ky23tatpkjn)
+  Alma Avalon  on hand 1.1 → 0.9   value $175.08 → $75.06
+  St Alma      on hand 0.75 → 0.7   value $83.39 → $58.38
+  discard stale: DON JULIO BLANCO 750ML BOTTLE @ Alma Avalon: 0.2 ($100.02)
+  discard stale: DON JULIO BLANCO 750ML BOTTLE @ St Alma: 0.05 ($25.01)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 16, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 18
+  REFUSED: avg cost differs 6.0× ($83.40 vs $500.10) — set costReviewed once the right cost is on the survivor
+
+#13 Don Julio Reposado — plan
+  survivor:   Don Julio Reposado (cmptovvvo0099s6017b3y9unw)
+  duplicate:  DON JULIO REPOSADO 750ML BOTTLE (cmoqfbo1i009u9ky2co0lnou4)
+  Alma Avalon  on hand 0.9 → 0.4   value $95.11 → $42.27
+  St Alma      on hand 1.4 → 0.7   value $147.94 → $73.97
+  discard stale: DON JULIO REPOSADO 750ML BOTTLE @ Alma Avalon: 0.5 ($52.84)
+  discard stale: DON JULIO REPOSADO 750ML BOTTLE @ St Alma: 0.7 ($73.97)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 11, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 13
+
+#14 El Jimador Reposado — plan
+  survivor:   EL JIMADOR REPOSADO 700ML BOTTLE (cmoqfbo7n00a89ky2wndy34ao)
+  duplicate:  EL JIMADOR REPOSADO 700ML - (CASE OF 6) (cmoqfbo6s00a69ky2ec9oo7we)
+  duplicate:  El Jimador Reposado (cmsdf10sc00a3miio2f92xj98)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 3.3 → 0   value $175.03 → $0.00
+  discard stale: EL JIMADOR REPOSADO 700ML BOTTLE @ St Alma: 3.3 ($175.03)
+  double count on "Alma Avalon — Bar & FOH 9/1/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  3 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 25, StockReorderNotice 1, PurchaseOrderLine 1, StocktakeLine 29, aliases 1
+  warn: measure per count unit differs (700 vs 750 ml) — recipe lines in g/mL will cost off the survivor's
+
+#15 El Jolgorio Espadin — plan
+  survivor:   El Jolgorio Espadin (Green) (cmptovvwn009is601t5uie803)
+  duplicate:  EL JOLGORIO ESPADIN (GREEN) 750ML BOTTLE (cmoqfbo8i00aa9ky24jvzky7q)
+  Alma Avalon  on hand 1.7 → 0.85   value $273.81 → $136.91
+  St Alma      on hand 0.05 → 0   value $8.05 → $0.00
+  discard stale: EL JOLGORIO ESPADIN (GREEN) 750ML BOTTLE @ Alma Avalon: 0.85 ($136.90)
+  discard stale: EL JOLGORIO ESPADIN (GREEN) 750ML BOTTLE @ St Alma: 0.05 ($8.05)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 3, InventoryMovement 43, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 45
+
+#16 El Jolgorio Mexicano — plan
+  survivor:   El Jolgorio Mexicano (Brown) (cmptovvxo009rs601zcqi9eax)
+  duplicate:  EL JOLGORIO MEXICANO (BROWN) 750ML BOTTLE (cmoqfbo9g00ac9ky26vzlars6)
+  Alma Avalon  on hand 1.8 → 0.9   value $372.48 → $186.24
+  St Alma      on hand 2.65 → 1.4   value $548.36 → $289.70
+  discard stale: EL JOLGORIO MEXICANO (BROWN) 750ML BOTTLE @ Alma Avalon: 0.9 ($186.24)
+  discard stale: EL JOLGORIO MEXICANO (BROWN) 750ML BOTTLE @ St Alma: 1.25 ($258.66)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 3, InventoryMovement 36, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 38
+
+#18 El Jolgorio Tepeztate — plan
+  survivor:   El Jolgorio Tepeztate (Blue) (cmptovvz000a3s6015h89q0uw)
+  duplicate:  EL JOLGORIO TEPEZTATE (BLUE) 750ML BOTTLE (cmoqfboba00ag9ky2dn9e3v63)
+  Alma Avalon  on hand 1 → 0.5   value $275.19 → $137.60
+  St Alma      on hand 0.5 → 0.2   value $137.59 → $55.04
+  discard stale: EL JOLGORIO TEPEZTATE (BLUE) 750ML BOTTLE @ St Alma: 0.3 ($82.55)
+  discard stale: EL JOLGORIO TEPEZTATE (BLUE) 750ML BOTTLE @ Alma Avalon: 0.5 ($137.59)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 26, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 28
+
+#19 El Jolgorio Tobasiche — plan
+  survivor:   El Jolgorio Tobasiche (Black Brown) (cmptovvzc00a6s601wlaxdpc5)
+  duplicate:  EL JOLGORIO TOBASICHE (BLACK BROWN) 750ML BOTTLE (cmoqfboc500ai9ky2bb9zv8j6)
+  Alma Avalon  on hand 1.58 → 0.88   value $431.79 → $240.49
+  St Alma      on hand 0.6 → 0   value $163.97 → $0.00
+  discard stale: EL JOLGORIO TOBASICHE (BLACK BROWN) 750ML BOTTLE @ St Alma: 0.6 ($163.97)
+  discard stale: EL JOLGORIO TOBASICHE (BLACK BROWN) 750ML BOTTLE @ Alma Avalon: 0.7 ($191.30)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 31, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 33
+
+#20 El Tequileno 1959 Anejo — plan
+  survivor:   El Tequileno 1959 Anejo (cmptovw0c00afs601ofscu5mh)
+  duplicate:  EL TEQUILENO 1959 ANEJO 750ML BOTTLE (cmoqfbod100ak9ky2um90p39d)
+  Alma Avalon  on hand 1.75 → 0.85   value $223.40 → $108.51
+  St Alma      on hand 1.7000000000000002 → 0.8   value $217.02 → $102.13
+  discard stale: EL TEQUILENO 1959 ANEJO 750ML BOTTLE @ Alma Avalon: 0.9 ($114.89)
+  discard stale: EL TEQUILENO 1959 ANEJO 750ML BOTTLE @ St Alma: 0.9 ($114.89)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 21, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 22
+
+#21 El Tequileno 1959 Platinum — plan
+  survivor:   El Tequileno 1959 Platinum (cmptovw0p00ais6014t4uy6no)
+  duplicate:  EL TEQUILENO 1959 PLATINUM 750ML BOTTLE (cmoqfbodw00am9ky29nhf378y)
+  Alma Avalon  on hand 1.7000000000000002 → 0.8   value $147.69 → $69.50
+  St Alma      on hand 1.7000000000000002 → 0.9   value $147.69 → $78.19
+  discard stale: EL TEQUILENO 1959 PLATINUM 750ML BOTTLE @ Alma Avalon: 0.9 ($78.19)
+  discard stale: EL TEQUILENO 1959 PLATINUM 750ML BOTTLE @ St Alma: 0.8 ($69.50)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 11, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 12
+
+#22 El Tequileno 1959 Reposado Rare — plan
+  survivor:   El Tequileno 1959 Reposado Rare (cmptovw1i00aos601ptttqxvx)
+  duplicate:  EL TEQUILENO 1959 REPOSADO RARE 750ML BOTTLE (cmoqfboes00ao9ky27grn21c4)
+  Alma Avalon  on hand 1.75 → 0.8   value $453.03 → $207.10
+  St Alma      on hand 1.5 → 0.8   value $388.31 → $207.10
+  discard stale: EL TEQUILENO 1959 REPOSADO RARE 750ML BOTTLE @ Alma Avalon: 0.95 ($245.93)
+  discard stale: EL TEQUILENO 1959 REPOSADO RARE 750ML BOTTLE @ St Alma: 0.7 ($181.21)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 5, InventoryMovement 13, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 14
+
+#23 El Tequileno 1959 Reposado Gran Reserva — plan
+  survivor:   El Tequileno 1959 Reposado Gran Reserva (cmptovw1200als601i7hrddqo)
+  duplicate:  EL TEQUILENO 1959 RESERVA REPOSADO 750ML BOTTLE (cmoqfbofo00aq9ky2qhanmuam)
+  Alma Avalon  on hand 1.7000000000000002 → 0.8   value $152.90 → $72.00
+  St Alma      on hand 1.1 → 0.9   value $98.98 → $81.00
+  discard stale: EL TEQUILENO 1959 RESERVA REPOSADO 750ML BOTTLE @ St Alma: 0.2 ($17.98)
+  discard stale: EL TEQUILENO 1959 RESERVA REPOSADO 750ML BOTTLE @ Alma Avalon: 0.9 ($80.90)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 7, InventoryMovement 12, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 13
+
+#24 El Tequileno Blanco — plan
+  survivor:   El Tequileno Blanco (cmptovw1w00ars601aagggwkw)
+  duplicate:  EL TEQUILENO BLANCO 750ML - (CASE OF 12) (cmoqfbogk00as9ky26ir0xs4m)
+  duplicate:  EL TEQUILENO BLANCO 750ML BOTTLE (cmoqfbohe00au9ky2b5jv59fq)
+  Alma Avalon  on hand 14.1 → 3.6   value $690.90 → $176.40
+  St Alma      on hand 11.649999999999999 → 0.7   value $570.85 → $34.30
+  discard stale: EL TEQUILENO BLANCO 750ML - (CASE OF 12) @ St Alma: 10.95 ($536.55)
+  discard stale: EL TEQUILENO BLANCO 750ML BOTTLE @ Alma Avalon: 10.5 ($514.50)
+  4 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 22, InventoryMovement 64, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 66
+
+#25 Fortaleza Blanco — REFUSED
+  survivor:   Fortaleza Blanco (cmptovw4m00bcs6011ec7d7l9)
+  duplicate:  FORTALEZA BLANCO 750ML BOTTLE (cmoqfbory00bi9ky29bqkgj74)
+  Alma Avalon  on hand 1.1 → 0.5   value $56.09 → $56.00
+  St Alma      on hand 7.25 → 0.25   value $29.05 → $28.00
+  discard stale: FORTALEZA BLANCO 750ML BOTTLE @ Alma Avalon: 0.6 ($0.09)
+  discard stale: FORTALEZA BLANCO 750ML BOTTLE @ St Alma: 7 ($1.05)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 7, InventoryMovement 16, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 18
+  REFUSED: avg cost differs 746.7× ($112.00 vs $0.15) — set costReviewed once the right cost is on the survivor
+
+#26 Fortaleza Reposado — plan
+  survivor:   Fortaleza Reposado (cmptovw4z00bfs601hm4l4ksx)
+  duplicate:  FORTALEZA REPOSADO 750ML BOTTLE (cmoqfboss00bk9ky24y28tfq0)
+  Alma Avalon  on hand 0.85 → 0.25   value $108.33 → $31.86
+  St Alma      on hand 0.25 → 0   value $31.86 → $0.00
+  discard stale: FORTALEZA REPOSADO 750ML BOTTLE @ Alma Avalon: 0.6 ($76.47)
+  discard stale: FORTALEZA REPOSADO 750ML BOTTLE @ St Alma: 0.25 ($31.86)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 11, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 13
+
+#28 G4 Blanco — plan
+  survivor:   G4 Blanco Tequila (cmptovw6400bos601bkmekizq)
+  duplicate:  G4 Blanco (cmsdf10st00afmiio81ozy5zv)
+  duplicate:  G4 BLANCO 750ML BOTTLE (cmoqfbow900bs9ky2dg7w0bp7)
+  Alma Avalon  on hand 0.15000000000000002 → 0.05   value $14.33 → $4.78
+  St Alma      on hand 1.3499999999999999 → 0.2   value $128.93 → $19.10
+  discard stale: G4 BLANCO 750ML BOTTLE @ Alma Avalon: 0.1 ($9.55)
+  discard stale: G4 BLANCO 750ML BOTTLE @ St Alma: 0.95 ($90.73)
+  discard stale: G4 Blanco Tequila @ St Alma: 0.2 ($19.10)
+  double count on "St Alma — Bar & FOH 31/08/2026": survivor 0.2, duplicate 0.2 ($19.10) → keep_canonical_line_only
+  3 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 4, InventoryMovement 19, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 25, aliases 1
+
+#29 G4 Reposado — plan
+  survivor:   G4 Reposado (cmptovw6h00brs6012r5a0wd6)
+  duplicate:  G4 REPOSADO 750ML BOTTLE (cmoqfbox400bu9ky22jfzdog5)
+  Alma Avalon  on hand 0.65 → 0.05   value $70.74 → $5.44
+  St Alma      on hand 0.7 → 0.3   value $76.18 → $32.65
+  discard stale: G4 REPOSADO 750ML BOTTLE @ Alma Avalon: 0.6 ($65.30)
+  discard stale: G4 REPOSADO 750ML BOTTLE @ St Alma: 0.4 ($43.53)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 3, InventoryMovement 11, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 13
+
+#35 Herradura Seleccion Suprema — plan
+  survivor:   Herradura Seleccion Suprema Extra Anejo (cmptovw9m00cfs601l33gptp6)
+  duplicate:  HERRADURA SELECCION SUPREMA 750ML BOTTLE (cmoqfbpmn00dg9ky26x2fue4q)
+  Alma Avalon  on hand 1.4 → 0.6   value $694.73 → $297.74
+  St Alma      on hand 1.7999999999999998 → 0.85   value $893.23 → $421.80
+  discard stale: HERRADURA SELECCION SUPREMA 750ML BOTTLE @ Alma Avalon: 0.8 ($396.99)
+  discard stale: HERRADURA SELECCION SUPREMA 750ML BOTTLE @ St Alma: 0.95 ($471.43)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 5, InventoryMovement 21, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 22
+
+#42 Madre Mezcal Ensamble — plan
+  survivor:   Madre Mezcal Ensamble (cmsdf10v600c3miioyyfbktmm)
+  duplicate:  MADRE MEZCAL ENSAMBLE 750ML BOTTLE (cmoqfbq8r00ew9ky2o9g3194v)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 1.1 → 0.5   value $98.85 → $44.93
+  discard stale: MADRE MEZCAL ENSAMBLE 750ML BOTTLE @ St Alma: 0.6 ($53.92)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 6, StockReorderNotice 1, StocktakeLine 8
+
+#43 Madre Mezcal Espadin — plan
+  survivor:   Madre Mezcal Espadin (cmsdf10ve00c9miioe6tjyhbp)
+  duplicate:  MADRE MEZCAL ESPADIN 750ML BOTTLE (cmoqfbq9k00ey9ky2unh96abz)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 0.2 → 0   value $16.79 → $0.00
+  discard stale: MADRE MEZCAL ESPADIN 750ML BOTTLE @ St Alma: 0.2 ($16.79)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 26, StockReorderNotice 1, StocktakeLine 28
+
+#50 Nuestra Soledad Santiago Matatlan — plan
+  survivor:   Nuestra Soledad Santiago Matatlan (cmptovwlo00eos60132mym7tt)
+  duplicate:  NUESTRA SOLEDAD SANTIAGO MATATLAN 750ML BOTTLE (cmoqfbqtp00g89ky2tyw4fc43)
+  Alma Avalon  on hand 0.6 → 0.3   value $52.30 → $26.65
+  St Alma      on hand 1.95 → 0.95   value $169.89 → $84.39
+  discard stale: NUESTRA SOLEDAD SANTIAGO MATATLAN 750ML BOTTLE @ Alma Avalon: 0.3 ($25.65)
+  discard stale: NUESTRA SOLEDAD SANTIAGO MATATLAN 750ML BOTTLE @ St Alma: 1 ($85.50)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 4, InventoryMovement 11, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 12
+
+#53 Pasote Blanco — plan
+  survivor:   Pasote Blanco (cmptovwpd00fis601ilg3xx2a)
+  duplicate:  PASOTE BLANCO 750ML BOTTLE (cmoqfbrdv00hi9ky22dhwwlrp)
+  Alma Avalon  on hand 2 → 1   value $248.78 → $124.39
+  St Alma      on hand 1.7000000000000002 → 0.8   value $211.46 → $99.51
+  discard stale: PASOTE BLANCO 750ML BOTTLE @ Alma Avalon: 1 ($124.39)
+  discard stale: PASOTE BLANCO 750ML BOTTLE @ St Alma: 0.9 ($111.95)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 3, InventoryMovement 11, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 12
+
+#61 Tapatio Blanco — plan
+  survivor:   Tapatio Blanco (cmptovwtx00gis601c1p518qq)
+  duplicate:  TAPATIO BLANCO 750ML BOTTLE (cmoqfbszi00l49ky20186fdvv)
+  Alma Avalon  on hand 1.75 → 0.75   value $168.65 → $72.28
+  St Alma      on hand 0.8 → 0.4   value $77.10 → $38.55
+  discard stale: TAPATIO BLANCO 750ML BOTTLE @ Alma Avalon: 1 ($96.37)
+  discard stale: TAPATIO BLANCO 750ML BOTTLE @ St Alma: 0.4 ($38.55)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 11, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 13
+
+#62 Terralta Blanco — plan
+  survivor:   Terralta Blanco (cmptovwuo00gos6011tygee78)
+  duplicate:  TERRALTA BLANCO 750ML BOTTLE (cmoqfbt0d00l69ky2khlkq5fv)
+  Alma Avalon  on hand 1.95 → 0.95   value $184.05 → $89.66
+  St Alma      on hand 1 → 0.5   value $94.39 → $47.19
+  discard stale: TERRALTA BLANCO 750ML BOTTLE @ Alma Avalon: 1 ($94.39)
+  discard stale: TERRALTA BLANCO 750ML BOTTLE @ St Alma: 0.5 ($47.20)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 3, InventoryMovement 11, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 13
+
+#72 Glenfiddich 12 — plan
+  survivor:   Glenfiddich 12YO (cmsdf10ta00armiion18jgcaz)
+  duplicate:  Glen fi ddich 12yo Whiskey (cmptovw6u00bus6018sk0oul2)
+  Alma Avalon  on hand 0.8 → 0.8   value $64.31 → $64.31
+  St Alma      on hand 1.45 → 0.6   value $110.96 → $48.23
+  discard stale: Glen fi ddich 12yo Whiskey @ St Alma: 0.85 ($62.73)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 2, StockReorderNotice 1, StocktakeLine 5
+  warn: measure per count unit differs (700 vs 750 ml) — recipe lines in g/mL will cost off the survivor's
+
+#76 Katun Gin — plan
+  survivor:   Katun Gin (cmsdf10up00brmiiok0qgp9vs)
+  duplicate:  KATUN GIN 700ML BOTTLE (cmoqfbpv300e09ky29e8aoks7)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 1 → 0.8   value $85.50 → $68.40
+  discard stale: KATUN GIN 700ML BOTTLE @ St Alma: 0.2 ($17.10)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 6, StockReorderNotice 2, StocktakeLine 8
+
+#77 Old Forester — plan
+  survivor:   Old Forester (cmsdf10wk00d3miiolkw54z2q)
+  duplicate:  OLD FORESTER 700ML BOTTLE (cmoqfbr5a00gy9ky29gmscdwi)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 0.8500000000000001 → 0.8   value $42.48 → $39.98
+  discard stale: OLD FORESTER 700ML BOTTLE @ St Alma: 0.05 ($2.50)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 6, StockReorderNotice 2, StocktakeLine 9
+
+#79 Thoquino Cachaca — plan
+  survivor:   THOQUINO CACACHA 700ML BOTTLE (cmoqfbt2x00lc9ky2bdi99n44)
+  duplicate:  Thoquino Cachaca (cmptovwuz00grs601mh510dwu)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 2 → 1   value $119.74 → $59.87
+  discard stale: Thoquino Cachaca @ St Alma: 1 ($59.87)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 6, StockReorderNotice 1, StocktakeLine 10
+  warn: measure per count unit differs (700 vs 750 ml) — recipe lines in g/mL will cost off the survivor's
+
+#82 Lyre's White Cane — REFUSED
+  survivor:   Lyres White Cane (cmptovwfk00dos601jtbuuixb)
+  duplicate:  LYRES WHITE CANE SPIRIT 700ML BOTTLE (cmoqfbq7w00eu9ky2gcs0n6ja)
+  Alma Avalon  on hand 7.7 → 1.7   value $1276.26 → $49.74
+  St Alma      on hand 4.371703 → 0   value $893.66 → $0.00
+  discard stale: LYRES WHITE CANE SPIRIT 700ML BOTTLE @ Alma Avalon: 6 ($1226.52)
+  discard stale: LYRES WHITE CANE SPIRIT 700ML BOTTLE @ St Alma: 4.371703 ($893.66)
+  recount next count: Lyres White Cane @ St Alma: 0 ($0.00) — carried across as is
+  double count on "St Alma — Bar & FOH 31/08/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 3, InventoryMovement 8, StocktakeLine 12
+  warn: recount Lyres White Cane @ St Alma (0) at the next count — carried across as is
+  REFUSED: count unit differs: Lyres White Cane (can) vs LYRES WHITE CANE SPIRIT 700ML BOTTLE (bottle) and the decision is not marked unitSafe
+  REFUSED: avg cost differs 7.0× ($29.26 vs $204.42) — set costReviewed once the right cost is on the survivor
+
+#85 Campari — plan
+  survivor:   Campari (cmsdf10fg001fmiioi3lxasvi)
+  duplicate:  CAMPARI 700ML BOTTLE (cmoqfbmhi006a9ky22fkntbgd)
+  duplicate:  Campari Aperitif (cmptovurv0019s601c4zx7ncn)
+  Alma Avalon  on hand 3.5100000000000002 → 0.4   value $136.13 → $15.84
+  St Alma      on hand 7.66 → 1.2   value $297.35 → $47.52
+  discard stale: Campari Aperitif @ Alma Avalon: 2.16 ($83.57)
+  discard stale: Campari Aperitif @ St Alma: 3.66 ($141.61)
+  discard stale: CAMPARI 700ML BOTTLE @ Alma Avalon: 0.95 ($36.72)
+  discard stale: CAMPARI 700ML BOTTLE @ St Alma: 2.8 ($108.22)
+  4 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 5, InventoryMovement 14, StockReorderNotice 1, PurchaseOrderLine 2, StocktakeLine 21
+  warn: measure per count unit differs (700 vs 750 ml) — recipe lines in g/mL will cost off the survivor's
+
+#93 Rosso Antico — plan
+  survivor:   Rosso Antico Sweet Vermouth (cmptovuzb002us601pbzt7wxd)
+  duplicate:  ROSSO ANTICO 750ML BOTTLE (cmoqfbs6d00ja9ky21qejd31g)
+  Alma Avalon  on hand 1.9500000000000002 → 1.1   value $40.31 → $22.72
+  St Alma      on hand 0.8 → 0.2   value $16.53 → $4.13
+  discard stale: ROSSO ANTICO 750ML BOTTLE @ Alma Avalon: 0.85 ($17.59)
+  discard stale: Rosso Antico Sweet Vermouth @ St Alma: 0.6 ($12.39)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 4, InventoryMovement 12, StockReorderNotice 3, PurchaseOrderLine 1, StocktakeLine 15
+
+#95 Capi Grapefruit — plan
+  survivor:   CAPI GRAPEFRUIT SODA - (CASE OF 12) (cmoqfbmjb006e9ky2wvkd0v3z)
+  duplicate:  Capi Sparkling Grapefruit (cmptovv1m0039s601s1ujhx2l)
+  Alma Avalon  on hand 19 → 2   value $40.99 → $7.50
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: Capi Sparkling Grapefruit @ Alma Avalon: 17 ($33.49)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 4, StocktakeLine 7
+  warn: measure per count unit differs (250 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+
+#96 Finest Call Mango Puree — REFUSED
+  survivor:   Finest Call Mango Puree (cmsdf10hg002rmiiojx5lfshq)
+  duplicate:  FINEST CALL MANGO PUREE 1000ML BOTTLE (cmoqfboky00b29ky211u9f76e)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 4.2 → 1.7   value $60.94 → $23.14
+  discard stale: FINEST CALL MANGO PUREE 1000ML BOTTLE @ St Alma: 2.5 ($37.80)
+  double count on "Alma Avalon — Bar & FOH 9/1/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 7, StocktakeLine 9
+  REFUSED: count unit differs: Finest Call Mango Puree (l) vs FINEST CALL MANGO PUREE 1000ML BOTTLE (bottle) and the decision is not marked unitSafe
+
+#97 Finest Call Passionfruit Puree — plan
+  survivor:   Finest Call Passionfruit Puree (cmsdf10hp002xmiio9cli3wg4)
+  duplicate:  FINEST CALL PASSIONFRUIT PUREE 1L BOTTLE (cmoqfbolt00b49ky20er2dldq)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 2 → 0   value $30.24 → $0.00
+  discard stale: FINEST CALL PASSIONFRUIT PUREE 1L BOTTLE @ St Alma: 2 ($30.24)
+  double count on "Alma Avalon — Bar & FOH 9/1/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 7, StocktakeLine 9
+
+#108 Supasawa — REFUSED
+  survivor:   Supasawa (cmsdf10kj004rmiiotqllpqd9)
+  duplicate:  SUPASAWA 700ML - (CASE OF 6) (cmoqfbswy00ky9ky2n2nczql9)
+  Alma Avalon  on hand 7.5 → 6.1   value $375.92 → $168.36
+  St Alma      on hand 3.3 → 0   value $489.26 → $0.00
+  discard stale: SUPASAWA 700ML - (CASE OF 6) @ Alma Avalon: 1.4 ($207.56)
+  discard stale: SUPASAWA 700ML - (CASE OF 6) @ St Alma: 3.3 ($489.26)
+  3 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 5, InventoryMovement 15, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 17
+  REFUSED: avg cost differs 5.4× ($27.60 vs $148.26) — set costReviewed once the right cost is on the survivor
+
+#110 Modus Operandi Cerveza — REFUSED
+  survivor:   MODUS CERVEZA CAN - (CASE OF 12) (cmoqfbqlt00fq9ky2ft2fnprc)
+  duplicate:  Modus Operandi Cerveza (cmptovunp000js601dnfuov48)
+  Alma Avalon  on hand 18 → 0   value $44.64 → $0.00
+  St Alma      on hand 19 → 0   value $47.12 → $0.00
+  discard stale: MODUS CERVEZA CAN - (CASE OF 12) @ Alma Avalon: 18 ($44.64)
+  discard stale: MODUS CERVEZA CAN - (CASE OF 12) @ St Alma: 19 ($47.12)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 6, StocktakeLine 10
+  warn: measure per count unit differs (375 vs 750 ml) — recipe lines in g/mL will cost off the survivor's
+  REFUSED: count unit differs: MODUS CERVEZA CAN - (CASE OF 12) (can) vs Modus Operandi Cerveza (bottle) and the decision is not marked unitSafe
+
+#111 Wedge Cerveza Keg — plan
+  survivor:   Freshwater Brewing Wedge Cerveza Keg (cmptovuq5000xs601q1f9kaxv)
+  duplicate:  Wedge Cerveza Keg (cmoqfbtxh00na9ky2u9rt3d49)
+  Alma Avalon  on hand 0.3 → 0   value $81.00 → $0.00
+  St Alma      on hand 1.8 → 0   value $486.00 → $0.00
+  discard stale: Wedge Cerveza Keg @ Alma Avalon: 0.3 ($81.00)
+  discard stale: Wedge Cerveza Keg @ St Alma: 1.8 ($486.00)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 8, InventoryMovement 15, StockReorderNotice 2, StocktakeLine 18
+
+#115 Stephane Brocard Gevrey-Chambertin — plan
+  survivor:   2022 Stephane Brocard Gevrey-Chambertin Vielles Vignes (Case of 6) (cmoqfbkd1001g9ky2nksoxut4)
+  duplicate:  Stephane Brocard Gevrey-Chambertin (cmsdf10oe007fmiioqo8nqs8h)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 15 → 9   value $1616.10 → $868.86
+  discard stale: Stephane Brocard Gevrey-Chambertin @ St Alma: 6 ($747.24)
+  double count on "Stocktake 10/1/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  1 line on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 2, StocktakeLine 5, aliases 1
+
+#119 Chateau La Grave Figeac — plan
+  survivor:   Chateau La Grave Figeac (cmoqfbmti00729ky2g0t02x73)
+  duplicate:  Cheateau La Grave Figeac St Emilion Grand Cru (cmsdf10mb005xmiiod0q42oc0)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 6 → 3   value $418.80 → $209.40
+  discard stale: Cheateau La Grave Figeac St Emilion Grand Cru @ St Alma: 3 ($209.40)
+  double count on "Stocktake 10/1/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  1 line on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 2, StocktakeLine 4, aliases 1
+
+#124 Shut The Gate Gewurztraminer — plan
+  survivor:   Shut The Gate For Freedom Gewurztraminer (cmptovx2n00ifs601oytnde3s)
+  duplicate:  2023 Shut The Gate For Freedom Gewurtztraminer (Case of 12) (cmoqfbktt002i9ky2eer32l96)
+  Alma Avalon  on hand 35 → 20   value $560.65 → $340.60
+  St Alma      on hand 35.9 → 25.8   value $587.54 → $439.37
+  discard stale: 2023 Shut The Gate For Freedom Gewurtztraminer (Case of 12) @ Alma Avalon: 15 ($220.05)
+  discard stale: 2023 Shut The Gate For Freedom Gewurtztraminer (Case of 12) @ St Alma: 10.1 ($148.17)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 8, InventoryMovement 11, StockReorderNotice 3, StocktakeLine 14
+
+#125 i Lauri Pecorino — plan
+  survivor:   i Lauri AVALOS Pecorino (cmptovx0b00hxs601t8z53137)
+  duplicate:  2024 i Lauri Pecorino D'Abruzzo (Case of 6) (cmoqfbl3c00349ky20k5ndzbl)
+  Alma Avalon  on hand 9.98 → 9.98   value $234.43 → $234.43
+  St Alma      on hand 13 → 4   value $305.37 → $93.96
+  discard stale: 2024 i Lauri Pecorino D'Abruzzo (Case of 6) @ St Alma: 9 ($211.41)
+  double count on "Stocktake 10/1/2026": survivor 10, duplicate 10 ($234.90) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 10, StockReorderNotice 2, SquareMenuRecipeMapping 1, StocktakeLine 13
+
+#126 Maison Saint Aix Rose — plan
+  survivor:   Maison Saint AIX Rose (cmsdf10np006xmiio5qobl72f)
+  duplicate:  2023 Maison Saint Aix Dry Rose 750ml (Case of 12) (cmoqfbkq6002a9ky251mk5od4)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 11 → 2   value $221.35 → $47.38
+  discard stale: 2023 Maison Saint Aix Dry Rose 750ml (Case of 12) @ St Alma: 9 ($173.97)
+  double count on "Stocktake 10/1/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 6, StocktakeLine 9
+
+#127 Laurent-Perrier La Cuvee — plan
+  survivor:   Laurent Perrier La Cuvee Champagne (cmptovuoq000os601tw9t7842)
+  duplicate:  NV Laurent Perrier La Cuvee (Case of 6) (cmoqfbqvi00gc9ky27iq1rn3l)
+  Alma Avalon  on hand 26 → 14   value $1715.68 → $943.60
+  St Alma      on hand 6 → 5   value $401.34 → $337.00
+  discard stale: NV Laurent Perrier La Cuvee (Case of 6) @ Alma Avalon: 12 ($772.08)
+  discard stale: NV Laurent Perrier La Cuvee (Case of 6) @ St Alma: 1 ($64.34)
+  double count on "Stocktake 10/1/2026": survivor 13, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 16, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 19
+
+#131 Wonton egg wrapper — plan
+  survivor:   Wonton Egg Wrapper (cmsdf12qh0006mij918l5a1ff)
+  duplicate:  WONTON EGG WRAPPER 300GM (Mc Yee Noodles) EA (cmoqfbu6c00nu9ky26w5euhqz)
+  Alma Avalon  on hand 4 → 2   value $12.00 → $6.00
+  St Alma      on hand 3.64 → 3.64   value $10.92 → $10.92
+  discard stale: WONTON EGG WRAPPER 300GM (Mc Yee Noodles) EA @ Alma Avalon: 2 ($6.00)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 3.64, duplicate 0 ($0.00) → sum
+  3 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 7, SupplierInvoiceLine 27, StockReorderNotice 1, PurchaseOrderLine 1, StocktakeLine 10
+
+#132 Ascorbic acid — plan
+  survivor:   Ascorbic Acid 600g - Red Spoon (cmoqfblr3004m9ky2sqjpkwct)
+  duplicate:  Ascorbic Acid (cmptowapi00q4s601wkfg9fp5)
+  Alma Avalon  on hand 0.875 → 0   value $46.81 → $0.00
+  St Alma      on hand 2.54 → 2.54   value $135.89 → $135.89
+  discard stale: Ascorbic Acid 600g - Red Spoon @ Alma Avalon: 0.875 ($46.81)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 2.54, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 7, StockReorderNotice 1, StocktakeLine 9
+  warn: measure per count unit differs (600 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+
+#133 Black beans dry — plan
+  survivor:   Beans Black Dry (cmsdf12sc000omij9uj88ejbf)
+  duplicate:  BEANS BLACK DRY 1KG (Galaxy) EA (12) (cmoqfblyy00549ky2levrzq9s)
+  Alma Avalon  on hand 0.87 → 0   value $4.35 → $0.00
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: BEANS BLACK DRY 1KG (Galaxy) EA (12) @ Alma Avalon: 0.87 ($4.35)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  3 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 14, SupplierInvoiceLine 4, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 16
+  warn: count unit differs (kg vs each) — decision says unitSafe
+
+#134 Coconut milk — plan
+  survivor:   Coconut Milk (cmsdf12sm000umij9mzl6ks4x)
+  duplicate:  COCONUT MILK 400ML (Royal Line) EA (24) (cmoqfbneg008e9ky28x1bmxfo)
+  Alma Avalon  on hand 6.85 → 0   value $11.65 → $0.00
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: COCONUT MILK 400ML (Royal Line) EA (24) @ Alma Avalon: 6.85 ($11.65)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  3 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 16, StocktakeLine 18
+
+#135 Plain flour 1 kg — REFUSED
+  survivor:   Flour Plain (cmptowats00qys601jz6ayyqv)
+  duplicate:  FLOUR PLAIN 1KG (Manildra) EA (cmoqfbopa00bc9ky27h97zxb8)
+  Alma Avalon  on hand 5.82 → 5.82   value $6.52 → $6.52
+  St Alma      on hand 1 → 1   value $2.50 → $1.12
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 1 ($2.50) → keep_duplicate_line
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 5, SupplierInvoiceLine 5, StocktakeLine 7
+  REFUSED: avg cost differs 2.2× ($1.12 vs $2.50) — set costReviewed once the right cost is on the survivor
+
+#139 Hazelnuts roasted — plan
+  survivor:   HAZELNUT ROASTED 1KG (Natures Secret) EA (12) (cmoqfbpge00d29ky2sm7h6vof)
+  duplicate:  Nut Hazelnut Roasted (cmptowaw300rds6016lskiiir)
+  Alma Avalon  on hand 1.35 → 0.85   value $37.19 → $22.10
+  St Alma      on hand 0.61 → 0.61   value $15.86 → $15.86
+  discard stale: HAZELNUT ROASTED 1KG (Natures Secret) EA (12) @ Alma Avalon: 0.5 ($13.00)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0.61, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 6, StockReorderNotice 1, PurchaseOrderLine 1, StocktakeLine 8
+  warn: measure per count unit differs (1000 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+
+#143 Basmati rice — REFUSED
+  survivor:   Rice Basmati (cmsdf12u0001omij9a4rffdxk)
+  duplicate:  RICE BASMATI 1KG (Natures Secret) EA (12) (cmoqfbs0300iw9ky2r864y9f8)
+  Alma Avalon  on hand 5 → 1   value $15.00 → $3.00
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: RICE BASMATI 1KG (Natures Secret) EA (12) @ Alma Avalon: 4 ($12.00)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  3 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 4, InventoryMovement 8, SupplierInvoiceLine 6, StocktakeLine 10
+  REFUSED: count unit differs: Rice Basmati (kg) vs RICE BASMATI 1KG (Natures Secret) EA (12) (each) and the decision is not marked unitSafe
+
+#155 Mexican oregano — plan
+  survivor:   Mexican Oregano - 250g (cmoqfbqgk00fe9ky2ziiwf2bf)
+  duplicate:  Oregano Mexican (cmsdf12x0003omij9wjaa0mul)
+  duplicate:  Oregano Mexican 250gm (cmptowbil00ves601b1z7ehnh)
+  Alma Avalon  on hand 4 → 2   value $70.80 → $35.40
+  St Alma      on hand 1.063879 → 1.063879   value $18.83 → $18.83
+  discard stale: Oregano Mexican @ Alma Avalon: 2 ($35.40)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0.82, duplicate 0 ($0.00) → keep_canonical_line_only
+  3 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 6, StocktakeLine 9, aliases 1
+
+#156 Black pepper cracked — plan
+  survivor:   PEPPER BLACK CRACKED RESTAURANT 400GM (Windsor Farm) EA (cmoqfbrnh00i49ky2pyl3ug0h)
+  duplicate:  Pepper Black Cracked (cmptowb1x00sgs601dff7shwr)
+  Alma Avalon  on hand 1.13 → 0.13   value $15.78 → $1.82
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: PEPPER BLACK CRACKED RESTAURANT 400GM (Windsor Farm) EA @ Alma Avalon: 1 ($14.00)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_duplicate_line
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 6, StockReorderNotice 1, PurchaseOrderLine 1, StocktakeLine 7
+  warn: measure per count unit differs (400 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+
+#158 Vanilla bean paste — plan
+  survivor:   VANILLA BEAN PASTE ORGANIC TUBE 320GM (Queen) EA (10) (cmoqfbtl600mi9ky22v3m1s40)
+  duplicate:  Vanilla Bean Paste (cmptowb7d00tgs60196v00cbx)
+  Alma Avalon  on hand 0.7 → 0.2   value $21.03 → $6.00
+  St Alma      on hand 0.16 → 0.16   value $4.80 → $4.80
+  discard stale: VANILLA BEAN PASTE ORGANIC TUBE 320GM (Queen) EA (10) @ Alma Avalon: 0.5 ($15.00)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0.16, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 7, SupplierInvoiceLine 5, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 9
+  warn: measure per count unit differs (320 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+
+#161 Olive oil extra virgin — REFUSED
+  survivor:   OIL OLIVE EXTRA VIRGIN 4LT (Natures Secret) (cmoqfbr1o00gq9ky2w9f9olq3)
+  duplicate:  Oil Olive Extra Virgin (cmptowayc00rss601jvo6xbsn)
+  Alma Avalon  on hand 4.24 → 0   value $52.02 → $0.00
+  St Alma      on hand 0.819406 → 0.819406   value $10.04 → $10.04
+  discard stale: Oil Olive Extra Virgin @ Alma Avalon: 4.24 ($52.02)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 7, StockReorderNotice 1, StocktakeLine 10
+  warn: measure per count unit differs (1000 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+  REFUSED: count unit differs: OIL OLIVE EXTRA VIRGIN 4LT (Natures Secret) (l) vs Oil Olive Extra Virgin (each) and the decision is not marked unitSafe
+
+#163 Mixed berries frozen — plan
+  survivor:   MIXED BERRIES WHOLE FROZEN 1KG (Harvestime) EA (10) (cmoqfbqk000fm9ky28v51vdfu)
+  duplicate:  Mixed Berries Frozen (cmptowbap00u1s601mys0u56v)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 6, StockReorderNotice 1, StocktakeLine 8
+  warn: measure per count unit differs (1000 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+
+#165 Butter unsalted 1 kg — plan
+  survivor:   Butter Unsalted (cmsdf12qt000cmij95wm1f90w)
+  duplicate:  BUTTER UNSALTED 1KG (Devondale) (cmoqfbmbf005w9ky2s56nzqsn)
+  Alma Avalon  on hand 1.54 → 0.54   value $25.34 → $8.84
+  St Alma      on hand 1.174 → 1.174   value $19.37 → $19.22
+  discard stale: BUTTER UNSALTED 1KG (Devondale) @ Alma Avalon: 1 ($16.50)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 1.174 ($19.37) → sum
+  3 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 5, InventoryMovement 7, SupplierInvoiceLine 9, StockReorderNotice 1, PurchaseOrderLine 1, StocktakeLine 9
+
+#170 Condensed milk — plan
+  survivor:   CONDENSED MILK 395GM (Nestle) EA (12) (cmoqfbng7008i9ky2de5tltvx)
+  duplicate:  Milk Condensed (cmptowao600pvs601zrhsle1i)
+  Alma Avalon  on hand 12.42 → 5.42   value $47.84 → $21.68
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: CONDENSED MILK 395GM (Nestle) EA (12) @ Alma Avalon: 7 ($28.00)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 7, StockReorderNotice 1, StocktakeLine 9
+  warn: measure per count unit differs (395 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+
+#171 Beef chuck roll — REFUSED
+  survivor:   Beef Chuck Roll (cmptowbmp00w4s60158syh5ra)
+  duplicate:  YG BEEF CHUCK ROLL (cmoqfbu8y00o09ky2md6lkxv9)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 2.756846 → 2.756846   value $341.85 → $56.52
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 2, StocktakeLine 4
+  REFUSED: avg cost differs 6.0× ($20.50 vs $124.00) — set costReviewed once the right cost is on the survivor
+
+#172 Beef short ribs 3-rib — REFUSED
+  survivor:   Beef Short Ribs Grainfed 3rib (cmptowbnz00was601c2hr91o3)
+  duplicate:  BEEF SHORT RIBS GRAINFED 3 RIB (cmoqfbm1m005a9ky2bo078h4b)
+  Alma Avalon  on hand 8.97 → 8.97   value $232.23 → $232.23
+  St Alma      on hand 24.590223 → 24.590223   value $1273.77 → $636.64
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 11, SupplierInvoiceLine 12, StocktakeLine 13
+  REFUSED: avg cost differs 2.0× ($25.89 vs $51.80) — set costReviewed once the right cost is on the survivor
+
+#174 Barramundi fillets — plan
+  survivor:   Barramundi Fillets (cmptowbr900wos6017aiqhusr)
+  duplicate:  BARRAMUNDI FILLETS IMP 200/300 S/OFF 5KG (Trading) CTN (cmoqfblvg004w9ky2n36m6wkg)
+  Alma Avalon  on hand 6.074 → 5   value $105.69 → $87.00
+  St Alma      on hand 3.5 → 3.5   value $60.90 → $60.90
+  discard stale: BARRAMUNDI FILLETS IMP 200/300 S/OFF 5KG (Trading) CTN @ Alma Avalon: 1.074 ($18.69)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 3.5, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 3, InventoryMovement 5, SupplierInvoiceLine 29, PurchaseOrderLine 1, StocktakeLine 7
+
+#175 Prawn meat raw — plan
+  survivor:   Prawn Meat Raw (cmptowbsd00wus601fjwi5dv2)
+  duplicate:  PRAWN MEAT RAW VANNAMEI 31/40 700GM (Trading) EA (10) (cmoqfbrxd00iq9ky2o4v4ecmh)
+  Alma Avalon  on hand 6 → 2   value $108.00 → $36.00
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: PRAWN MEAT RAW VANNAMEI 31/40 700GM (Trading) EA (10) @ Alma Avalon: 4 ($72.00)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 5, SupplierInvoiceLine 7, StockReorderNotice 1, PurchaseOrderLine 1, StocktakeLine 7
+
+#176 Salmon fillet sashimi skin on — plan
+  survivor:   Salmon Fillet Sashimi Skin On (cmptowbsy00wxs601gf9775f0)
+  duplicate:  SALMON FILLET S/ON TASI SASHIMI 1.5-2KG  (Huon) (cmoqfbs8z00jg9ky29fx7kh7f)
+  Alma Avalon  on hand 2.3 → 2.3   value $86.23 → $86.23
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 4, InventoryMovement 4, SupplierInvoiceLine 14, StocktakeLine 6
+
+#177 Jerusalem artichoke box — plan
+  survivor:   ARTICHOKE JERUSALEM box (5kg) (cmoqfblq9004k9ky2vnlgxlge)
+  duplicate:  Artichokes Jerusalem Box (cmptowbti00x0s6014liq439s)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 6, StocktakeLine 8
+  warn: measure per count unit differs (5000 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+
+#178 Cabbage — plan
+  survivor:   Cabbage (cmsdf12xa003umij9s7ng4m59)
+  duplicate:  Cabbage Each (cmoqfbmd600609ky2c4s5av0d)
+  Alma Avalon  on hand 2.4699999999999998 → 1.47   value $11.39 → $5.59
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: Cabbage Each @ Alma Avalon: 1 ($5.80)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  3 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 11, SupplierInvoiceLine 9, StockReorderNotice 2, SquareMenuRecipeMapping 2, StocktakeLine 14
+
+#179 Red cabbage — plan
+  survivor:   Cabbage Red (cmsdf12xg0040mij9918ebd7f)
+  duplicate:  Cabbage Red Each (cmoqfbme100629ky2jjom0w39)
+  Alma Avalon  on hand 2.4699999999999998 → 1.47   value $12.19 → $5.59
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: Cabbage Red Each @ Alma Avalon: 1 ($6.60)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  3 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 3, InventoryMovement 10, SupplierInvoiceLine 5, StockReorderNotice 1, StocktakeLine 12
+
+#180 Dill — REFUSED
+  survivor:   Dill Bunch (cmptowbho00v8s6015b4wn135)
+  duplicate:  Dill (cmoqfbnx3009k9ky2oav6wpwa)
+  Alma Avalon  on hand 3 → 1   value $6.85 → $2.85
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: Dill @ Alma Avalon: 2 ($4.00)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 5, StocktakeLine 7
+  warn: measure per count unit differs (30 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+  REFUSED: count unit differs: Dill Bunch (bunch) vs Dill (each) and the decision is not marked unitSafe
+
+#181 Forage mix 100 g — plan
+  survivor:   Fresh Mix Forage (cmsdf12xr004cmij9mhw0pbqj)
+  duplicate:  Forage Fresh Mix (100 gram) (cmoqfbor200bg9ky28wllsmib)
+  duplicate:  Fresh Mix Forage 100g (cmptowc2500yjs601gm9rr4jb)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  4 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 7, InventoryMovement 8, StocktakeLine 12
+
+#185 Tomatillos canned — plan
+  survivor:   TOMATILLOS A10 GREEN TOMATO (Faro) EA (6) (cmoqfbt6e00lk9ky2s49xhsub)
+  duplicate:  Tomatillos Green Can (cmptowb6i00tas601fb42rtbn)
+  Alma Avalon  on hand 1.8 → 1   value $24.30 → $13.50
+  St Alma      on hand 36.283898 → 36.283898   value $489.83 → $489.83
+  discard stale: TOMATILLOS A10 GREEN TOMATO (Faro) EA (6) @ Alma Avalon: 0.8 ($10.80)
+  recount next count: TOMATILLOS A10 GREEN TOMATO (Faro) EA (6) @ St Alma: 36.283898 ($489.83) — carried across as is
+  recount next count: Tomatillos Green Can @ Alma Avalon: 1 ($13.50) — carried across as is
+  double count on "St Alma — Kitchen 31/8/2026": survivor 36, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 6, StockReorderNotice 2, StocktakeLine 8
+  warn: recount TOMATILLOS A10 GREEN TOMATO (Faro) EA (6) @ St Alma (36.283898) at the next count — carried across as is
+  warn: recount Tomatillos Green Can @ Alma Avalon (1) at the next count — carried across as is
+
+#186 Cherry tomatoes — plan
+  survivor:   Tomatoes Cherry (cmptowc7t00zls601u3qyp57t)
+  duplicate:  TOMATO CHERRY 400GM (Chefs Choice) EA (12) (cmoqfbt8500lo9ky2qysewf8z)
+  Alma Avalon  on hand 3 → 3   value $9.00 → $9.00
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  recount next count: Tomatoes Cherry @ Alma Avalon: 3 ($9.00) — carried across as is
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 5, StocktakeLine 7
+  warn: measure per count unit differs (100 vs 400 g) — recipe lines in g/mL will cost off the survivor's
+  warn: recount Tomatoes Cherry @ Alma Avalon (3) at the next count — carried across as is
+
+#187 Medley tomatoes — REFUSED
+  survivor:   Tomatoes Medley 200 Punnets (cmoqfbtdc00m09ky2ttwijl3l)
+  duplicate:  Medley Tomatoes (cmptowc4700yys601clclnxhr)
+  Alma Avalon  on hand 0 → 0   value $0.00 → $0.00
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 6, StocktakeLine 7
+  warn: measure per count unit differs (200 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+  REFUSED: count unit differs: Tomatoes Medley 200 Punnets (punnet) vs Medley Tomatoes (each) and the decision is not marked unitSafe
+
+#192 Manly Australian Dry Gin bulk — REFUSED
+  survivor:   Manly Spirits Bulk 20Ltr Australian Dry Gin 1 x 20ltr Drum (cmoqfbqah00f09ky2lwzzszmq)
+  duplicate:  ADG 20L Cube - 20L - 40% ABV (ADG-20L) (cmsdf10ac0009miiooz0labvx)
+  Alma Avalon  on hand 0.5 → 0.5   value $0.04 → $0.04
+  St Alma      on hand 0.775 → 0   value $0.05 → $0.00
+  discard stale: Manly Spirits Bulk 20Ltr Australian Dry Gin 1 x 20ltr Drum @ St Alma: 0.775 ($0.05)
+  1 line on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 2, StocktakeLine 4, aliases 1
+  REFUSED: count unit differs: Manly Spirits Bulk 20Ltr Australian Dry Gin 1 x 20ltr Drum (gram) vs ADG 20L Cube - 20L - 40% ABV (ADG-20L) (each) and the decision is not marked unitSafe
+
+#197 Freshwater Brewing kegs — plan
+  survivor:   Freshwater Brewing Hazy Pale Keg (cmptovupo000us601bx6i2hjl)
+  duplicate:  Secrets Hazy Pale Keg (cmoqfbsjv00k49ky2xjcdyti7)
+  Alma Avalon  on hand 0.9 → 0   value $243.00 → $0.00
+  St Alma      on hand 1.8 → 0   value $486.00 → $0.00
+  discard stale: Secrets Hazy Pale Keg @ Alma Avalon: 0.9 ($243.00)
+  discard stale: Secrets Hazy Pale Keg @ St Alma: 1.8 ($486.00)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 7, InventoryMovement 11, StockReorderNotice 2, StocktakeLine 14
+
+#198 Heaps Normal — REFUSED
+  survivor:   Heaps Normal Quiet XPA (cmptovumn000ds601vvr3abs2)
+  duplicate:  HEAPS NORMAL CAN - (CASE OF 24) (cmoqfbph800d49ky2azdg1s27)
+  Alma Avalon  on hand 36 → 15   value $81.39 → $33.30
+  St Alma      on hand 56 → 9   value $127.61 → $19.98
+  discard stale: HEAPS NORMAL CAN - (CASE OF 24) @ Alma Avalon: 21 ($48.09)
+  discard stale: HEAPS NORMAL CAN - (CASE OF 24) @ St Alma: 47 ($107.63)
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 2, InventoryMovement 13, SupplierInvoiceLine 1, StockReorderNotice 2, PurchaseOrderLine 1, StocktakeLine 16, aliases 1
+  REFUSED: count unit differs: Heaps Normal Quiet XPA (bottle) vs HEAPS NORMAL CAN - (CASE OF 24) (can) and the decision is not marked unitSafe
+
+#221 Cucumber Qukes — REFUSED
+  survivor:   Cucumber Quks Punnet (cmoqfbnq600949ky2ivt75r59)
+  duplicate:  Cucumber Quks (cmptowbzp00y1s601sgs2p9p8)
+  Alma Avalon  on hand 3 → 2   value $10.80 → $7.60
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: Cucumber Quks Punnet @ Alma Avalon: 1 ($3.80)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: InventoryMovement 6, StocktakeLine 8
+  warn: measure per count unit differs (200 vs 100 g) — recipe lines in g/mL will cost off the survivor's
+  REFUSED: count unit differs: Cucumber Quks Punnet (punnet) vs Cucumber Quks (each) and the decision is not marked unitSafe
+
+#230 Strawberries punnet — plan
+  survivor:   Strawberries Large Punnet (cmptowbej00ups60149firyd2)
+  duplicate:  Strawberries Extra Lge Punnet (cmoqfbsuf00ks9ky2t84r95io)
+  Alma Avalon  on hand 3 → 2   value $13.50 → $9.00
+  St Alma      on hand 0 → 0   value $0.00 → $0.00
+  discard stale: Strawberries Extra Lge Punnet @ Alma Avalon: 1 ($4.50)
+  double count on "St Alma — Kitchen 31/8/2026": survivor 0, duplicate 0 ($0.00) → keep_canonical_line_only
+  2 lines on venue-less / phantom / open sheets repointed only, never folded
+  moves: RecipeLine 1, InventoryMovement 4, StockReorderNotice 1, PurchaseOrderLine 1, StocktakeLine 6
+
+65 ready, 16 refused. Stale holdings to discard: $11465.62; carried across for recount: $548.57.
+Dry run — nothing written. Re-run with --apply to merge (a snapshot is taken first; --rollback <runId> restores it).

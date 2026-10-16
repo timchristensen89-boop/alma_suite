@@ -1,0 +1,3899 @@
+[
+ {
+  "index": 1,
+  "cluster": "Aprendiz",
+  "action": "merge",
+  "canonicalId": "cmptovvjf006os601q8ojgcux",
+  "duplicateIds": [
+   "cmoqfblmp004c9ky2qynqiqjd"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvjf006os601q8ojgcux",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.9,
+    "why": "Canonical; on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 0.9) and onHand already matches."
+   },
+   {
+    "itemId": "cmptovvjf006os601q8ojgcux",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.8,
+    "why": "Canonical; on the latest St Alma sheet (Bar & FOH 01/10/2026, SUBMITTED, 0.8) and onHand already matches."
+   },
+   {
+    "itemId": "cmoqfblmp004c9ky2qynqiqjd",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.9,
+    "why": "Last counted 2026-09-01 (0.9) on Alma Avalon Bar & FOH 9/1/2026 under this row. It is the same single 0.9 bottle the canonical read on 1 Oct: the counter filled the Ensamble line (0.9) and left this row's adjacent line blank. Not stale by age, but fully represented by the canonical's count; summing would make 1.8 bottles ($239) for one bottle on the shelf."
+   },
+   {
+    "itemId": "cmoqfblmp004c9ky2qynqiqjd",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.8,
+    "why": "Last counted 2025-12-31 (0.7) on Historical Bar Stocktake 12.25; onHand 0.8 is the 09.25 count applied last on 2026-07-16. The same bottle has since been counted as the canonical at St Alma on 2026-03-31 (0.8), 06-02 (0.85), Aug-1 (0.8), 31/08 (0.8) and 01/10 (0.8)."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No real-venue sheet carries a non-null count for both rows. Stocktake 10/1/2026 (Alma Avalon): canonical 0.9, twin blank on adjacent lines 66/67 - the blank folds as +0 and is deleted. Alma Avalon Bar & FOH 9/1/2026: twin only (0.9) - repoints to the canonical, giving it a continuous AA series (Jun 0.9 -> Sep 0.9 -> Oct 0.9). Historical Bar Stocktake 08.25-12.25: twin only. Loaded imports, St Alma Sat 1st Aug, 31/08 and 01/10: canonical only. VOID (1.6 on twin, 0.8 on canonical) and phantom Avalon sheets excluded."
+  },
+  "canonicalNameSuggestion": "Aprendiz Ensamble Mezcal",
+  "renameCanonical": false
+ },
+ {
+  "index": 4,
+  "cluster": "Arette Suave Blanco",
+  "action": "merge",
+  "canonicalId": "cmptovvkz0070s601192af70l",
+  "duplicateIds": [
+   "cmoqfblpc004i9ky2slcm5tns"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvkz0070s601192af70l",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.8,
+    "why": "Canonical's holding; last counted 0.8 on 'Alma Avalon - Bar & FOH 9/1/2026' (REVIEWED, applied 2026-10-02). The 10/1 AA sheet left both members' lines blank, so the 1 Sep count stands as the latest evidence."
+   },
+   {
+    "itemId": "cmptovvkz0070s601192af70l",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.6,
+    "why": "Canonical's holding; on the latest StA sheet 'Bar & FOH 01/10/2026' at 0.7 (SUBMITTED, not yet applied). Current 0.6 is the applied 31/08 count; apply will move it to 0.7."
+   },
+   {
+    "itemId": "cmoqfblpc004i9ky2slcm5tns",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.8,
+    "why": "Twin's AA holding: last real count 0.7 on 'Historical Bar Stocktake 12.25' (2025-12-31); the stored 0.8 is the Sep-2025 figure left by the out-of-order historical applies on 2026-07-16. The canonical counted the same bottle at 0.75 (Jun 2026) and 0.8 (1 Sep 2026). Discard 9685c."
+   },
+   {
+    "itemId": "cmoqfblpc004i9ky2slcm5tns",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.8,
+    "why": "Twin's StA holding: last real count 0.9 on 'Historical Bar Stocktake 12.25' (2025-12-31); stored 0.8 is the Sep-2025 figure from the 2026-07-16 out-of-order apply. The canonical has carried the StA count since 2026-03-31 (0.75, 0.8, 0.8, 0.6, 0.6, 0.7). Discard 9685c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has countedQty for both members. 'Stocktake 10/1/2026' (AA, SUBMITTED) has a blank line for each (null + null folds to null and the twin's line is deleted). The two twin lines on Historical 08.25 AA (0.7 + 0.3) are two locations of the same member, not a cross-member double count. Historical 2025 sheets carry only the twin; all 2026 sheets carry only the canonical."
+  },
+  "canonicalNameSuggestion": "Arette Suave Blanco",
+  "renameCanonical": false
+ },
+ {
+  "index": 6,
+  "cluster": "Calle 23 Blanco",
+  "action": "merge",
+  "canonicalId": "cmptovvop007rs601jheanhrc",
+  "duplicateIds": [
+   "cmoqfbmex00649ky2a8dwjdzn"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvop007rs601jheanhrc",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.6,
+    "why": "Canonical is on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, counted 0.5 bottle / 3860c, not yet applied); onHand 0.6 still reflects the applied 9/1 sheet and will become 0.5 when 10/1 is applied."
+   },
+   {
+    "itemId": "cmptovvop007rs601jheanhrc",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 1,
+    "why": "Canonical is on the latest St Alma sheet (Bar & FOH 01/10/2026, SUBMITTED, 1 bottle / 7720c); onHand matches the last count."
+   },
+   {
+    "itemId": "cmoqfbmex00649ky2a8dwjdzn",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.5,
+    "why": "Last counted 2025-12-31 (Historical Bar Stocktake 12.25; the 0.5 that stuck is actually the 'Calle 23 Anejo'-labelled line applied last). Not on any 2026 sheet; the canonical's 0.5 on 1 Oct 2026 is the same bottle. Summing would double it to 1.1."
+   },
+   {
+    "itemId": "cmoqfbmex00649ky2a8dwjdzn",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "Last counted 2025-12-31 (Historical Bar Stocktake 12.25, 1 bottle). The canonical has been counted at 1 bottle at St Alma on every sheet since 2026-06-02 including 01/10/2026; summing would show 2 bottles for one on the shelf."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries a non-null count for both members. The only overlap is 'Stocktake 10/1/2026' (Alma Avalon, SUBMITTED): canonical line 0.5 bottle / 3860c at position 138, twin line at position 139 with countedQty null and stockValueCents null (unit 'bottle'). mergeItems' fold would compute 0.5 + 0 = 0.5 and 3860 + 0 = 3860 then delete the blank line, so the canonical's count is untouched; deleting the blank line explicitly is equivalent. The Historical Bar Stocktake sheets hold lines for the twin only (parent has none there), so those are repointed, not folded. Phantom 'Stocktake 9/1/2026' (both null) and VOID (units differ: '700 mL' vs 'ml') are excluded by the script."
+  },
+  "canonicalNameSuggestion": "Calle 23 Blanco",
+  "renameCanonical": false
+ },
+ {
+  "index": 8,
+  "cluster": "Codigo 1530 Rosa",
+  "action": "merge",
+  "canonicalId": "cmptovvrn008fs6016lmcda3e",
+  "duplicateIds": [
+   "cmoqfbnfc008g9ky2r9ziwzn4"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvrn008fs6016lmcda3e",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.9,
+    "why": "Canonical is on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 0.9 bottle / 9746c); onHand matches the last count."
+   },
+   {
+    "itemId": "cmptovvrn008fs6016lmcda3e",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.25,
+    "why": "Canonical is on the latest St Alma sheet (Bar & FOH 01/10/2026, SUBMITTED, 0.2 bottle / 2166c, not yet applied); onHand 0.25 reflects the applied 31/08 sheet."
+   },
+   {
+    "itemId": "cmoqfbnfc008g9ky2r9ziwzn4",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.95,
+    "why": "Last counted 2025-12-31 (Historical Bar Stocktake 12.25, 0.85; onHand 0.95 is an artefact of the 2026-07-16 apply order). The canonical's AA bottle (0.85 Jun, 0.9 Sep, 0.9 Oct) is the same bottle; summing would give 1.85."
+   },
+   {
+    "itemId": "cmoqfbnfc008g9ky2r9ziwzn4",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.9,
+    "why": "Last counted 2025-12-31 (Historical Bar Stocktake 12.25, 0.6; onHand 0.9 is an apply-order artefact). The canonical has been counted at St Alma on every sheet since 2026-03-31 (0.2 on 01/10/2026). Summing would show 1.15 bottles for a fifth of a bottle on the shelf."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has a non-null count for both members. Overlap only on 'Stocktake 10/1/2026' (Alma Avalon, SUBMITTED): canonical 0.9 bottle / 9746c (pos 222), twin countedQty null / value null (pos 221, unit bottle). The fold yields 0.9 + 0 and 9746 + 0 and removes the blank line; deleting the blank twin line explicitly is equivalent. Historical Bar Stocktake sheets hold twin lines only (repointed). Phantom 'Stocktake 9/1/2026' (both null) and VOID (units '700 mL' vs 'ml') excluded."
+  },
+  "canonicalNameSuggestion": "Codigo 1530 Rosa Blanco",
+  "renameCanonical": false
+ },
+ {
+  "index": 9,
+  "cluster": "Del Maguey Vida",
+  "action": "merge",
+  "canonicalId": "cmptovvt7008rs601e8b0092x",
+  "duplicateIds": [
+   "cmoqfbnvb009g9ky26vs8a7vd"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvt7008rs601e8b0092x",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.5,
+    "why": "Canonical's holding; on the latest AA sheet 'Stocktake 10/1/2026' (SUBMITTED, 0.5 bottle) and the applied 9/1/2026 sheet (0.5). On-hand matches last count."
+   },
+   {
+    "itemId": "cmptovvt7008rs601e8b0092x",
+    "venue": "St Alma",
+    "treatment": "recount",
+    "onHand": 0.4,
+    "why": "Canonical's own holding but stale: last counted 0.4 on the 'Loaded import \u00b7 St Alma \u00b7 2026-03-31' (REVIEWED, applied 2026-06-02, 3624c). Vida is absent from every St Alma sheet since (Loaded 06-02, Loaded 06-30, 'Sat 1st Aug (from Loaded)', 'Bar & FOH 31/08/2026', 'Bar & FOH 01/10/2026') even though those sheets list Del Maguey Minero, Tobala, San Luis Del Rio and Wild Jabali \u2014 so St Alma has almost certainly delisted it. No twin count represents this stock, so the merge cannot settle it: St Alma to confirm the shelf and zero it (or add Vida to the StA template if it is there). Not touched by the merge."
+   },
+   {
+    "itemId": "cmoqfbnvb009g9ky26vs8a7vd",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.3,
+    "why": "Twin's holding, last real count 0.2 on 'Historical Bar Stocktake \u2022 12.25' (2025-12-31, REVIEWED). The 0.3 on hand is an artefact of the 2026-07-16 re-apply, which ran the 2025 sheets 12.25\u219209.25 so the oldest sheet (09.25, 0.3) won. AA Vida stock is already represented by the canonical's 0.5 counted on 2026-10-01; summing would double-count 2718c. Set to 0 before merge."
+   },
+   {
+    "itemId": "cmoqfbnvb009g9ky26vs8a7vd",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Empty VenueStockItem row (onHand null, never counted at St Alma, value 0). Nothing to carry; the row is deleted when the merge sums into the canonical's St Alma row."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "keep_canonical_line_only",
+   "detail": "No finalised real-venue sheet has a counted quantity for both members. The only shared real sheet is AA 'Stocktake 10/1/2026' (SUBMITTED, not applied): canonical 0.5 bottle, twin blank (null). mergeItems folds that as (0.5 ?? 0) + (null ?? 0) = 0.5 and deletes the blank line \u2014 harmless. The 2025 Historical sheets have twin lines only; the Loaded/Bar & FOH sheets have canonical lines only. Phantom Avalon 9/1 (both blank) and VOID (units differ: '750 mL' vs 'ml', so it would be repointed not folded) are ignored."
+  },
+  "canonicalNameSuggestion": "Del Maguey Vida",
+  "renameCanonical": false
+ },
+ {
+  "index": 10,
+  "cluster": "Don Julio 1942",
+  "action": "merge",
+  "canonicalId": "cmptovvui0090s601bvpnwb8z",
+  "duplicateIds": [
+   "cmoqfbnyv009o9ky2yxfcha96"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvui0090s601bvpnwb8z",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 1,
+    "why": "Canonical's holding; on the latest AA sheet 'Stocktake 10/1/2026' (SUBMITTED, 1 bottle) and the applied 9/1/2026 sheet (1). Matches last count."
+   },
+   {
+    "itemId": "cmptovvui0090s601bvpnwb8z",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.75,
+    "why": "Canonical's holding; on the latest StA sheet 'Bar & FOH 01/10/2026' (SUBMITTED, 0.7). The 0.75 on hand is the applied 31/08/2026 count; it becomes 0.7 when the 01/10 sheet is applied. Real, current stock."
+   },
+   {
+    "itemId": "cmoqfbnyv009o9ky2yxfcha96",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "Twin's holding, last counted 1 on 'Historical Bar Stocktake \u2022 12.25' (2025-12-31, REVIEWED; re-applied 2026-07-16). The AA 1942 stock is the canonical's 1 bottle counted 2026-10-01 \u2014 the same bottle; summing would double it to 2 (48494c). Set to 0 before merge."
+   },
+   {
+    "itemId": "cmoqfbnyv009o9ky2yxfcha96",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.9,
+    "why": "Twin's holding, last counted 0.9 on 'Historical Bar Stocktake \u2022 12.25' (2025-12-31). St Alma's 1942 stock is the canonical's 0.7 counted 2026-10-01 (0.75 applied 31/08); summing would show 1.65 bottles. Set to 0 before merge."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "keep_canonical_line_only",
+   "detail": "No finalised real-venue sheet has counted quantities for both members. Shared real sheet: AA 'Stocktake 10/1/2026' (SUBMITTED, unapplied) \u2014 canonical 1 bottle, twin blank (null); the fold yields 1 and deletes the blank line. All eight 2025 Historical sheets carry twin lines only; the 2026 Loaded/Bar & FOH sheets carry canonical lines only. Phantom Avalon (both blank) and VOID ('750 mL' vs 'ml', would be repointed not folded) are ignored."
+  },
+  "canonicalNameSuggestion": "Don Julio 1942",
+  "renameCanonical": false
+ },
+ {
+  "index": 11,
+  "cluster": "Don Julio Anejo",
+  "action": "merge",
+  "canonicalId": "cmptovvuu0093s601ojyqx51d",
+  "duplicateIds": [
+   "cmoqfbnzr009q9ky25nbry076"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvuu0093s601ojyqx51d",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.9,
+    "why": "Canonical's holding; on the latest AA sheet 'Stocktake 10/1/2026' (SUBMITTED, 0.9) and the applied 9/1/2026 sheet (0.9). Matches last count."
+   },
+   {
+    "itemId": "cmptovvuu0093s601ojyqx51d",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.9,
+    "why": "Canonical's holding; on the latest StA sheet 'Bar & FOH 01/10/2026' (SUBMITTED, 0.9) and the applied 31/08/2026 sheet (0.9). Matches last count."
+   },
+   {
+    "itemId": "cmoqfbnzr009q9ky25nbry076",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.35,
+    "why": "Twin's holding; last Don Julio-labelled count was 1.0 on 'Historical Bar Stocktake \u2022 12.25' (2025-12-31). The 0.35 on hand is not even a Don Julio figure: the 2026-07-16 re-apply ran the sheets 12.25\u219209.25 and the last movement applied was the 09.25 'Don Fulano Anejo' line (0.35). AA Anejo stock is the canonical's 0.9 counted 2026-10-01; summing would show 1.25. Set to 0 before merge."
+   },
+   {
+    "itemId": "cmoqfbnzr009q9ky25nbry076",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.9,
+    "why": "Twin's holding, last counted 0.9 on 'Historical Bar Stocktake \u2022 12.25' (2025-12-31). St Alma's Anejo stock is the canonical's 0.9 counted 2026-10-01 \u2014 the same bottle; summing would double it to 1.8 (23440c). Set to 0 before merge."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "keep_canonical_line_only",
+   "detail": "No finalised real-venue sheet has counted quantities for both members. Shared real sheet: AA 'Stocktake 10/1/2026' (SUBMITTED, unapplied) \u2014 canonical 0.9 bottle, twin blank (null); the fold yields 0.9 and deletes the blank line. The 2025 Historical sheets carry twin lines only (including the Don Fulano-labelled ones); the 2026 Loaded/Bar & FOH sheets carry canonical lines only. Phantom Avalon (both blank) and VOID ('750 mL' vs 'ml', would be repointed not folded) are ignored."
+  },
+  "canonicalNameSuggestion": "Don Julio Anejo",
+  "renameCanonical": false
+ },
+ {
+  "index": 12,
+  "cluster": "Don Julio Blanco",
+  "action": "merge",
+  "canonicalId": "cmptovvv70096s601mzhseahb",
+  "duplicateIds": [
+   "cmoqfbo0n009s9ky23tatpkjn"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvv70096s601mzhseahb",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.9,
+    "why": "Canonical's holding; on the latest Alma Avalon sheet 'Stocktake 10/1/2026' (SUBMITTED, counted 0.9 on 2026-10-01) and matches the last count."
+   },
+   {
+    "itemId": "cmptovvv70096s601mzhseahb",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.7,
+    "why": "Canonical's holding; on the latest St Alma sheet 'St Alma \u2014 Bar & FOH 01/10/2026' (SUBMITTED, counted 0.7 on 2026-10-01) and matches the last count."
+   },
+   {
+    "itemId": "cmoqfbo0n009s9ky23tatpkjn",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.2,
+    "why": "Not on the latest sheet (its 'Stocktake 10/1/2026' line is null). Last genuine count 0.05 on 2025-12-31 (Historical Bar Stocktake 12.25); the 0.2 is residue of the 2025 historical sheets being applied out of order on 2026-07-16 (09.25 applied last: 0.85 -> 0.2) and is valued at the 6x case cost (0.2 x 50010c). The canonical's 0.9 counted on 2026-10-01 is the only Don Julio Blanco stock at Avalon, so this would double-count if summed."
+   },
+   {
+    "itemId": "cmoqfbo0n009s9ky23tatpkjn",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.05,
+    "why": "No line on 'St Alma \u2014 Bar & FOH 01/10/2026'. Last count 1.1 on 2025-12-31; the 0.05 is the Sept-2025 count left by the out-of-order apply on 2026-07-16 (09.25 applied last). The canonical's 0.7 counted on 2026-10-01 already represents the St Alma stock."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "Sheets where both members have a line: AA 'Stocktake 10/1/2026' (canonical 0.9, twin null \u2014 fold yields 0.9, twin line deleted), the phantom Avalon 'Stocktake 9/1/2026' (both null, excluded) and the VOID sheet (canonical 1.05 '750 mL' vs twin 1.9 'ml' \u2014 different units, no fold, excluded anyway). The 2025 historical sheets carry only the twin; the 2026 floor sheets carry only the canonical. No finalised real-venue sheet has two counted lines."
+  },
+  "canonicalNameSuggestion": "Don Julio Blanco",
+  "renameCanonical": false
+ },
+ {
+  "index": 13,
+  "cluster": "Don Julio Reposado",
+  "action": "merge",
+  "canonicalId": "cmptovvvo0099s6017b3y9unw",
+  "duplicateIds": [
+   "cmoqfbo1i009u9ky2co0lnou4"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvvo0099s6017b3y9unw",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.4,
+    "why": "Canonical's holding; on the latest Alma Avalon sheet 'Stocktake 10/1/2026' (SUBMITTED, counted 0.4 on 2026-10-01), matches the last count."
+   },
+   {
+    "itemId": "cmptovvvo0099s6017b3y9unw",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.7,
+    "why": "Canonical's holding; on the latest St Alma sheet 'St Alma \u2014 Bar & FOH 01/10/2026' (SUBMITTED, counted 0.7 on 2026-10-01), matches the last count."
+   },
+   {
+    "itemId": "cmoqfbo1i009u9ky2co0lnou4",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.5,
+    "why": "Not on the latest sheet (its 'Stocktake 10/1/2026' line is null). Last count 0.6 on 2025-12-31 (Historical 12.25); the 0.5 is residue of the historical sheets applied out of order on 2026-07-16 (10.25 then 09.25 last). The canonical's 0.4 counted on 2026-10-01 is the Avalon stock."
+   },
+   {
+    "itemId": "cmoqfbo1i009u9ky2co0lnou4",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.7,
+    "why": "No line on 'St Alma \u2014 Bar & FOH 01/10/2026'. Last count 0.75 on 2025-12-31; the 0.7 is the Sept-2025 count (09.25 applied last on 2026-07-16). It equals the canonical's 0.7 only by coincidence \u2014 the canonical's 2026-10-01 count already represents the St Alma stock, so summing would double it to 1.4."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "Sheets where both members have a line: AA 'Stocktake 10/1/2026' (canonical 0.4, twin null \u2014 fold yields 0.4), the phantom Avalon sheet (both null, excluded) and VOID (0.55 '750 mL' vs 1.35 'ml', different units, excluded). The 2025 historical sheets carry only the twin, the 2026 sheets only the canonical. No finalised real-venue sheet has two counted lines."
+  },
+  "canonicalNameSuggestion": "Don Julio Reposado",
+  "renameCanonical": false
+ },
+ {
+  "index": 14,
+  "cluster": "El Jimador Reposado",
+  "action": "merge",
+  "canonicalId": "cmoqfbo7n00a89ky2wndy34ao",
+  "duplicateIds": [
+   "cmoqfbo6s00a69ky2ec9oo7we",
+   "cmsdf10sc00a3miio2f92xj98"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbo7n00a89ky2wndy34ao",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's holding; on the latest Alma Avalon sheet 'Stocktake 10/1/2026' (SUBMITTED, counted 0 on 2026-10-01) and counted 0 on 9/1/2026 too. Matches the last count."
+   },
+   {
+    "itemId": "cmoqfbo7n00a89ky2wndy34ao",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 3.3,
+    "why": "Stale value on the survivor, not a duplicate effect. 3.3 is the Sept-2025 count (Historical 09.25) left as the final on-hand because the historical sheets were applied out of order on 2026-07-16 (12.25 applied before 09.25; movement log 0.9 -> 3.3 on 2026-07-16). The item has no line on any 2026 St Alma sheet; the last physical evidence is the floor twin's count of 0 at St Alma on 2026-08-03 (Loaded), and the 31/08 and 01/10 St Alma sheets carry no El Jimador line at all \u2014 the product has been delisted at both venues (Avalon counted 0 twice). Zero it; if preferred, confirm at the St Alma shelf first, but nothing suggests 3.3 bottles exist."
+   },
+   {
+    "itemId": "cmoqfbo6s00a69ky2ec9oo7we",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on AA 9/1/2026 (REVIEWED, applied 2026-10-02); null on 10/1/2026. The canonical was counted 0 on both sheets. Nothing to carry; summing 0 would also be harmless."
+   },
+   {
+    "itemId": "cmoqfbo6s00a69ky2ec9oo7we",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Empty placeholder holding (onHand null, row created 2026-08-31); the case item was never counted at St Alma."
+   },
+   {
+    "itemId": "cmsdf10sc00a3miio2f92xj98",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Empty placeholder holding (onHand null); its AA 9/1/2026 and 10/1/2026 lines are both null \u2014 never counted at Avalon."
+   },
+   {
+    "itemId": "cmsdf10sc00a3miio2f92xj98",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on 'St Alma \u2014 Sat 1st Aug (from Loaded)' on 2026-08-03 and dropped from the 31/08 and 01/10 St Alma sheets. Nothing to carry."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "'Alma Avalon \u2014 Bar & FOH 9/1/2026' (REVIEWED, applied): canonical bottle item 0 and CASE item 0 both counted (floor item null). Both zero, so no stock was double-counted and no value is affected; delete the CASE line so one line remains. On AA 'Stocktake 10/1/2026' (SUBMITTED) only the canonical is counted (0); the CASE and floor lines are null and fold harmlessly. The 2025 historical sheets never overlap (CASE lines are all on the Alma Avalon sheets, canonical lines all on the separate St Alma sheets \u2014 verified the Historical Bar Stocktakes are distinct per-venue stocktake rows). Excluded: phantom Avalon 9/1/2026 (all null) and VOID, where the canonical (2.65 'ml') and the CASE item (2.3 'ml') share a unit, so native mergeItems WOULD fold them to 4.95 \u2014 the wrapper's never-fold-VOID guard must apply."
+  },
+  "canonicalNameSuggestion": "El Jimador Reposado",
+  "renameCanonical": false
+ },
+ {
+  "index": 15,
+  "cluster": "El Jolgorio Espadin",
+  "action": "merge",
+  "canonicalId": "cmptovvwn009is601t5uie803",
+  "duplicateIds": [
+   "cmoqfbo8i00aa9ky24jvzky7q"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvwn009is601t5uie803",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.85,
+    "why": "Canonical is on the latest AA sheet (Stocktake 10/1/2026, SUBMITTED, 0.8 btl); current 0.85 is the applied 9/1/2026 REVIEWED count and will move to 0.8 when 10/1 is applied."
+   },
+   {
+    "itemId": "cmptovvwn009is601t5uie803",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on 'St Alma \u2014 Sat 1st Aug' (REVIEWED, applied 8 Aug 2026) and absent from the 31/08 and 01/10 St Alma sheets, so St Alma no longer carries it; nothing real to recount (the twin's 0.05 btl \u2248 37 mL is an artefact, see below)."
+   },
+   {
+    "itemId": "cmoqfbo8i00aa9ky24jvzky7q",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.85,
+    "why": "Last count 0.85 on 'Historical Bar Stocktake \u2022 12.25' (2025-12-31, REVIEWED, applied 16 Jul 2026); the same physical bottle is represented by the canonical's 2026 counts. Summing would double the AA holding to 1.7 btl. Value discarded 13690c."
+   },
+   {
+    "itemId": "cmoqfbo8i00aa9ky24jvzky7q",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.05,
+    "why": "Last count 0.95 on 'Historical Bar Stocktake \u2022 12.25' (2025-12-31); the 0.05 on hand is whatever mis-mapped 2025 line was applied last (09.25 'Espadin (Green)' 0.05, applied 16 Jul 2026 after 12.25). The canonical counted 0 at St Alma on 3 Aug 2026. Value discarded 805c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has countedQty for both members. Shared sheets: AA 'Stocktake 10/1/2026' (SUBMITTED) \u2014 canonical 0.8 btl, twin line blank (countedQty null); mergeItems folds it as 0.8 + 0 and deletes the blank line, so the count is unchanged (blank is not turned into a counted zero on its own line). Phantom 'Stocktake 9/1/2026' (Avalon) \u2014 both blank, ignored. VOID sheet \u2014 canonical 0.8 '750 mL', twin 6.4 'ml' snapshot, ignored (units differ, would not fold anyway)."
+  },
+  "canonicalNameSuggestion": "El Jolgorio Espadin (Green)",
+  "renameCanonical": false
+ },
+ {
+  "index": 16,
+  "cluster": "El Jolgorio Mexicano",
+  "action": "merge",
+  "canonicalId": "cmptovvxo009rs601zcqi9eax",
+  "duplicateIds": [
+   "cmoqfbo9g00ac9ky26vzlars6"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvxo009rs601zcqi9eax",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.9,
+    "why": "Canonical is on the latest AA sheet (10/1/2026 SUBMITTED, 0.85 btl); 0.9 is the applied 9/1/2026 count and will become 0.85 on apply."
+   },
+   {
+    "itemId": "cmptovvxo009rs601zcqi9eax",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 1.4,
+    "why": "Canonical is on the latest StA sheet (01/10/2026 SUBMITTED, 1.4 btl, matching on hand)."
+   },
+   {
+    "itemId": "cmoqfbo9g00ac9ky26vzlars6",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.9,
+    "why": "Last count 0.8 on 'Historical Bar Stocktake \u2022 12.25' (2025-12-31, applied 16 Jul 2026); the 0.9 on hand is the residue of applying mis-mapped 2025 lines in sequence. The canonical's 2026 counts represent the same bottle; summing would give 1.8 btl. Value discarded 18624c."
+   },
+   {
+    "itemId": "cmoqfbo9g00ac9ky26vzlars6",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 1.25,
+    "why": "Last count 1.2 on 'Historical Bar Stocktake \u2022 12.25' (2025-12-31); the canonical counted 1.4 at St Alma on 01/10/2026 and 31/08/2026. Summing would give 2.65 btl. Value discarded 25866c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has countedQty for both members. AA 'Stocktake 10/1/2026' (SUBMITTED): canonical 0.85 btl, twin blank (null) \u2014 folds as 0.85 + 0, blank line deleted, count unchanged. StA 01/10/2026 and 31/08/2026 sheets: canonical only. Phantom Avalon 9/1 (both blank) and VOID (6.1 'ml' vs 0.9 '750 mL') ignored."
+  },
+  "canonicalNameSuggestion": "El Jolgorio Mexicano (Brown)",
+  "renameCanonical": false
+ },
+ {
+  "index": 18,
+  "cluster": "El Jolgorio Tepeztate",
+  "action": "merge",
+  "canonicalId": "cmptovvz000a3s6015h89q0uw",
+  "duplicateIds": [
+   "cmoqfboba00ag9ky2dn9e3v63"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvz000a3s6015h89q0uw",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.5,
+    "why": "Canonical is on the latest Alma Avalon sheet ('Stocktake 10/1/2026', SUBMITTED, counted 0.6); onHand 0.5 is the applied 9/1/2026 count and will move to 0.6 when the 1 Oct sheet is applied. Real, current stock."
+   },
+   {
+    "itemId": "cmptovvz000a3s6015h89q0uw",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.2,
+    "why": "Canonical is on the latest St Alma sheet ('Bar & FOH 01/10/2026', SUBMITTED, 0.2), matching the applied 31/08 count. Real, current stock."
+   },
+   {
+    "itemId": "cmoqfboba00ag9ky2dn9e3v63",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.5,
+    "why": "Not on any 2026 sheet with a count. Last genuine count 2025-12-31 ('Historical Bar Stocktake \u2022 12.25', 0.55); the stored 0.5 was written on 2026-07-16 when the Sep 2025 sheet was replayed (and is in fact the 'Koch Tepeztate' line's value). The same bottle is counted under the canonical (0.6 on 1 Oct 2026). Set to 0 before merge so it is not summed. Stale value 13759c."
+   },
+   {
+    "itemId": "cmoqfboba00ag9ky2dn9e3v63",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.3,
+    "why": "Last genuine count 2025-12-31 (0.25); stored 0.3 written 2026-07-16 by replaying the Sep 2025 sheet. Canonical counted 0.2 at St Alma on 3 Aug, 31 Aug and 1 Oct 2026, which is this bottle. Set to 0 before merge. Stale value 8255c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries a counted line for both members. The only shared sheet is Alma Avalon 'Stocktake 10/1/2026' (SUBMITTED): canonical 0.6 bottle / 16512c, twin countedQty null. mergeItems folds the twin's line into the canonical's (null adds 0, value stays 16512) and deletes the empty twin line \u2014 the right outcome. Shared lines on the phantom 'Stocktake 9/1/2026' (both null) and VOID (0.6 '750 mL' vs 5.8 'ml') are out of scope and never folded by the script."
+  },
+  "canonicalNameSuggestion": "El Jolgorio Tepeztate (Blue)",
+  "renameCanonical": false
+ },
+ {
+  "index": 19,
+  "cluster": "El Jolgorio Tobasiche",
+  "action": "merge",
+  "canonicalId": "cmptovvzc00a6s601wlaxdpc5",
+  "duplicateIds": [
+   "cmoqfboc500ai9ky2bb9zv8j6"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovvzc00a6s601wlaxdpc5",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.88,
+    "why": "Canonical is on the latest Alma Avalon sheet ('Stocktake 10/1/2026', SUBMITTED, 0.9); onHand 0.88 is the applied 9/1/2026 count. Real, current stock."
+   },
+   {
+    "itemId": "cmptovvzc00a6s601wlaxdpc5",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Zero holding backed by three explicit zero counts (Loaded import 2 Jun, 1 Aug from Loaded, 31 Aug 2026 REVIEWED); the item was then left off the 1 Oct St Alma sheet, consistent with St Alma not stocking it. Nothing to discard or sum; keep at 0."
+   },
+   {
+    "itemId": "cmoqfboc500ai9ky2bb9zv8j6",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.7,
+    "why": "Last genuine Black Brown count 2025-12-31 (0.85); stored 0.7 written 2026-07-16 by replaying the Sep 2025 sheet. The bottle is counted under the canonical (0.88 on 1 Sep, 0.9 on 1 Oct 2026). Set to 0 before merge. Stale value 19130c."
+   },
+   {
+    "itemId": "cmoqfboc500ai9ky2bb9zv8j6",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.6,
+    "why": "Black Brown was never counted at St Alma in any 2025 sheet; the stored 0.6 is the 'El Jolgorio Todos Santos Tobasiche (Neon Orange)' 09.25 line (a different product, mis-mapped) replayed on 2026-07-16. The floor counted Black Brown at St Alma as 0 on 2 Jun, 1 Aug and 31 Aug 2026. Set to 0 before merge. Stale value 16397c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has counted lines for both members. Only shared sheet: Alma Avalon 'Stocktake 10/1/2026' (SUBMITTED) \u2014 canonical 0.9 bottle / 24595c, twin null; the fold adds 0 and deletes the empty twin line. Phantom 'Stocktake 9/1/2026' (both null) and VOID (0.85 '750 mL' vs 5.15 'ml') are ignored and never folded."
+  },
+  "canonicalNameSuggestion": "El Jolgorio Tobasiche (Black Brown)",
+  "renameCanonical": false
+ },
+ {
+  "index": 20,
+  "cluster": "El Tequileno 1959 Anejo",
+  "action": "merge",
+  "canonicalId": "cmptovw0c00afs601ofscu5mh",
+  "duplicateIds": [
+   "cmoqfbod100ak9ky2um90p39d"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovw0c00afs601ofscu5mh",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.85,
+    "why": "Canonical is on the latest Alma Avalon sheet ('Stocktake 10/1/2026', SUBMITTED, 0.85), matching the applied 9/1 count. Real, current stock."
+   },
+   {
+    "itemId": "cmptovw0c00afs601ofscu5mh",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.8,
+    "why": "Canonical is on the latest St Alma sheet ('Bar & FOH 01/10/2026', SUBMITTED, 0.8), matching the applied 31/08 count. Real, current stock."
+   },
+   {
+    "itemId": "cmoqfbod100ak9ky2um90p39d",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.9,
+    "why": "Last genuine count 2025-12-31 (0.85); stored 0.9 written 2026-07-16 by replaying the Sep 2025 sheet. The bottle is counted under the canonical (0.85 on 1 Sep and 1 Oct 2026). Set to 0 before merge. Stale value 11489c."
+   },
+   {
+    "itemId": "cmoqfbod100ak9ky2um90p39d",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.9,
+    "why": "Last genuine count 2025-12-31 (0.85; the facts' 0.05 'lastCount' is the mis-mapped El Tesoro line); stored 0.9 written 2026-07-16 by replaying the Sep 2025 sheet. Canonical counted 0.8 at St Alma on 31 Aug and 1 Oct 2026. Set to 0 before merge. Stale value 11489c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "The twin has no line on any 2026 real-venue sheet; the members share only the phantom 'Stocktake 9/1/2026' (both null) and VOID (0.95 '750 mL' vs 2.65 'ml'), both out of scope and never folded. All 20 of the twin's real-venue lines are on the 2025 historical sheets, where the canonical has no line, so they are simply repointed."
+  },
+  "canonicalNameSuggestion": "El Tequileno 1959 Anejo",
+  "renameCanonical": false
+ },
+ {
+  "index": 21,
+  "cluster": "El Tequileno 1959 Platinum",
+  "action": "merge",
+  "canonicalId": "cmptovw0p00ais6014t4uy6no",
+  "duplicateIds": [
+   "cmoqfbodw00am9ky29nhf378y"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovw0p00ais6014t4uy6no",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.8,
+    "why": "Canonical is on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 0.8) and onHand matches that count; the 9/1/2026 reviewed sheet also read 0.8."
+   },
+   {
+    "itemId": "cmptovw0p00ais6014t4uy6no",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.9,
+    "why": "Canonical is on the latest St Alma sheet (St Alma \u2014 Bar & FOH 01/10/2026, SUBMITTED, 0.9) and onHand matches; 31/08/2026 also read 0.9."
+   },
+   {
+    "itemId": "cmoqfbodw00am9ky29nhf378y",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.9,
+    "why": "Not on any 2026 sheet. Last count 0.8 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25, REVIEWED); the 0.9 on hand is the 10.25 count, applied last on 16 Jul 2026. It is the same single open bottle the canonical counted at 0.8 on 1 Oct 2026, so summing would double it. Value discarded: 7819 cents."
+   },
+   {
+    "itemId": "cmoqfbodw00am9ky29nhf378y",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.8,
+    "why": "Not on any 2026 sheet. Last count 0.9 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25); onHand 0.8 is the 09.25 count applied last. The canonical counted 0.9 at St Alma on 1 Oct 2026 and 0.9 on 31 Aug \u2014 the same bottle. Value discarded: 6950 cents."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries a counted line for both members. Canonical lines sit on the 2026 Loaded imports and the Aug\u2013Oct 2026 floor sheets; twin lines sit only on Historical Bar Stocktake 08.25\u201312.25 (2025). The two share a sheet only on the phantom-Avalon 'Stocktake 9/1/2026' (both uncounted) and the VOID stray count (0.9 '750 mL' vs 1.7 'ml' \u2014 different units, would not fold anyway); both sheets are excluded from folding."
+  },
+  "canonicalNameSuggestion": "El Tequileno 1959 Platinum",
+  "renameCanonical": false
+ },
+ {
+  "index": 22,
+  "cluster": "El Tequileno 1959 Reposado Rare",
+  "action": "merge",
+  "canonicalId": "cmptovw1i00aos601ptttqxvx",
+  "duplicateIds": [
+   "cmoqfboes00ao9ky27grn21c4"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovw1i00aos601ptttqxvx",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.8,
+    "why": "Canonical is on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 0.8) and onHand matches; 9/1/2026 also read 0.8."
+   },
+   {
+    "itemId": "cmptovw1i00aos601ptttqxvx",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.8,
+    "why": "Canonical is on the latest St Alma sheet (01/10/2026, SUBMITTED, 0.8) and onHand matches; 31/08/2026 read 0.8, 1 Aug 0.7."
+   },
+   {
+    "itemId": "cmoqfboes00ao9ky27grn21c4",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.95,
+    "why": "Not on any 2026 sheet. Last product-labelled count 0.85 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25); the 0.95 on hand is the 10.25 count applied last on 16 Jul 2026 after the on-hand had bounced through 0.6 and 3 from the mis-mapped 'El Tequileno Reposado' lines. The canonical counted the one open Rare bottle at 0.8 on 1 Oct 2026. Value discarded: 24593 cents."
+   },
+   {
+    "itemId": "cmoqfboes00ao9ky27grn21c4",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.7,
+    "why": "Not on any 2026 sheet. Last count 0.8 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25); onHand 0.7 is the 09.25 count applied last. The canonical counted 0.8 at St Alma on 1 Oct 2026 \u2014 the same bottle. Value discarded: 18121 cents."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has counted lines for both members: canonical on the 2026 Loaded imports and Aug\u2013Oct 2026 floor sheets, twin only on Historical Bar Stocktake 08.25\u201312.25. Shared sheets are only the phantom-Avalon 9/1/2026 (both uncounted) and the VOID stray count (0.9 '750 mL' vs 2.25 'ml'), both excluded. Note the twin alone has two lines on Historical 11.25 AA (0.9 Rare + 3 'El Tequileno Reposado') and 12.25 AA (0.85 Rare + 0.6 'El Tequileno Reposado') \u2014 a same-item double line from the mis-mapped standard Reposado, not a cross-member double count; it moves as-is."
+  },
+  "canonicalNameSuggestion": "El Tequileno 1959 Reposado Rare",
+  "renameCanonical": false
+ },
+ {
+  "index": 23,
+  "cluster": "El Tequileno 1959 Reposado Gran Reserva",
+  "action": "merge",
+  "canonicalId": "cmptovw1200als601i7hrddqo",
+  "duplicateIds": [
+   "cmoqfbofo00aq9ky2qhanmuam"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovw1200als601i7hrddqo",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.8,
+    "why": "Canonical is on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 0.8) and onHand matches; 9/1/2026 also read 0.8."
+   },
+   {
+    "itemId": "cmptovw1200als601i7hrddqo",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.9,
+    "why": "Canonical is on the latest St Alma sheet (01/10/2026, SUBMITTED, 0.9) and onHand matches; 31/08/2026 read 0.9, 1 Aug 0.85."
+   },
+   {
+    "itemId": "cmoqfbofo00aq9ky2qhanmuam",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.9,
+    "why": "Not on any 2026 sheet. Last count 0.8 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25, 'El Tequileno Reposado Gran Reserva'); the 0.9 on hand is the 10.25 count applied last on 16 Jul 2026. The canonical counted the one open bottle at 0.8 on 1 Oct 2026. Value discarded: 8090 cents."
+   },
+   {
+    "itemId": "cmoqfbofo00aq9ky2qhanmuam",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.2,
+    "why": "Not on any 2026 sheet. The facts' 'last count' of 12 on 2025-12-31 is the mis-mapped 'El Tequileno Reposado' line (12 @ 77880, standard Reposado at 6490/bottle), not Gran Reserva; the genuine Gran Reserva line on that sheet read 0.8, and the 0.2 on hand is the 09.25 count applied last. The canonical counted 0.9 at St Alma on 1 Oct 2026 \u2014 the same bottle. Value discarded: 1798 cents."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has counted lines for both members: canonical on the 2026 Loaded imports and Aug\u2013Oct 2026 floor sheets, twin only on Historical Bar Stocktake 08.25\u201312.25. Shared sheets are only the phantom-Avalon 9/1/2026 (both uncounted) and the VOID stray count (0.85 '750 mL' vs 13.6 'ml'), both excluded. The twin alone has two lines on Historical 12.25 St Alma (0.8 Gran Reserva + 12 'El Tequileno Reposado') \u2014 a same-item double line from the mis-mapped standard Reposado, not a cross-member double count; it moves as-is."
+  },
+  "canonicalNameSuggestion": "El Tequileno 1959 Reposado Gran Reserva",
+  "renameCanonical": false
+ },
+ {
+  "index": 24,
+  "cluster": "El Tequileno Blanco",
+  "action": "merge",
+  "canonicalId": "cmptovw1w00ars601aagggwkw",
+  "duplicateIds": [
+   "cmoqfbogk00as9ky26ir0xs4m",
+   "cmoqfbohe00au9ky2b5jv59fq"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovw1w00ars601aagggwkw",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 3.6,
+    "why": "Canonical is on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 13.5 @ 66150, not yet applied); the 3.6 on hand is the applied 9/1/2026 count. It will rise to 13.5 when the October sheet is reviewed \u2014 expected, not a merge matter."
+   },
+   {
+    "itemId": "cmptovw1w00ars601aagggwkw",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.7,
+    "why": "Canonical is on the latest St Alma sheet (St Alma \u2014 Bar & FOH 01/10/2026, SUBMITTED, 4.1 @ 20090, not yet applied); the 0.7 on hand is the applied 31/08/2026 count."
+   },
+   {
+    "itemId": "cmoqfbogk00as9ky26ir0xs4m",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Empty placeholder row (onHand NULL, value NULL, par 0) \u2014 the case twin was never counted or stocked at Alma Avalon. Nothing to sum; mergeItems deletes it because the canonical already has an Alma Avalon row. Listed so the merge cannot sum a null."
+   },
+   {
+    "itemId": "cmoqfbogk00as9ky26ir0xs4m",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 10.95,
+    "why": "Not on any 2026 sheet. The facts' 'last count 0.65 on 2025-12-31' is the mis-mapped 'El Tesoro Blanco' line; the genuine 'El Tequileno Blanco' line on Historical 12.25 read 28.9, and the 10.95 on hand is the 09.25 St Alma count (30 Sep 2025) applied last on 16 Jul 2026. The canonical has counted this stock at St Alma six times since (31.02 on 31 Mar, 23.71 on 2 Jun, 28.68 on 30 Jun, 26.98 on 1 Aug, 0.7 on 31 Aug, 4.1 on 1 Oct 2026), so the twin's figure is a year-old snapshot of the same bottles, not extra stock. Value discarded: 53655 cents (10.95 \u00d7 4900)."
+   },
+   {
+    "itemId": "cmoqfbohe00au9ky2b5jv59fq",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 10.5,
+    "why": "Not on any 2026 sheet. Last count 33.8 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25, 'El Tequileno Blanco'); the 10.5 on hand is the 09.25 Alma Avalon count applied last on 16 Jul 2026. The canonical has counted Alma Avalon at 29.23 (2 Jun), 41.58 (30 Jun), 3.6 (1 Sep) and 13.5 (1 Oct 2026) \u2014 the same shelf. Value discarded: 51450 cents (10.5 \u00d7 4900)."
+   },
+   {
+    "itemId": "cmoqfbohe00au9ky2b5jv59fq",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Empty placeholder row (onHand NULL, value NULL, par 0) \u2014 the bottle twin was never counted or stocked at St Alma. Nothing to sum; mergeItems deletes it because the canonical already has a St Alma row."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries counted lines for two or more members. The canonical's lines sit on the 2026 Loaded imports and the Aug\u2013Oct 2026 floor sheets; the case twin's only on St Alma Historical Bar Stocktake 08.25\u201312.25; the bottle twin's only on Alma Avalon Historical 08.25\u201312.25 \u2014 the two twins never share a sheet either. All three meet only on the phantom-Avalon 'Stocktake 9/1/2026' (all uncounted) and the VOID stray count (31.02 '750 mL' / 31.15 'ml' / 38.8 'ml'), both excluded from folding. Each twin does carry several lines per historical sheet (one genuine 'El Tequileno Blanco' plus 4\u20137 mis-mapped other-blanco lines) \u2014 a same-item multi-line from the import, not a cross-member double count; those move as-is."
+  },
+  "canonicalNameSuggestion": "El Tequileno Blanco",
+  "renameCanonical": false
+ },
+ {
+  "index": 25,
+  "cluster": "Fortaleza Blanco",
+  "action": "merge",
+  "canonicalId": "cmptovw4m00bcs6011ec7d7l9",
+  "duplicateIds": [
+   "cmoqfbory00bi9ky29bqkgj74"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovw4m00bcs6011ec7d7l9",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.5,
+    "why": "Canonical is on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 0.45, not yet applied); the 0.5 on hand is the applied 9/1/2026 count."
+   },
+   {
+    "itemId": "cmptovw4m00bcs6011ec7d7l9",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.25,
+    "why": "Canonical is on the latest St Alma sheet (01/10/2026, SUBMITTED, 0.2, not yet applied); the 0.25 on hand is the applied 31/08/2026 count (also 0.25 on 1 Aug)."
+   },
+   {
+    "itemId": "cmoqfbory00bi9ky29bqkgj74",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.6,
+    "why": "Not counted on any 2026 sheet (its 10/1/2026 line is blank). The facts' 'last count 0.495 on 2025-12-31' is the mis-mapped 'Fortaleza Anejo' line; the genuine 'Fortaleza Blanco' line on Historical 12.25 read 0.55, and the 0.6 on hand is the 09.25 count applied last on 16 Jul 2026. The canonical counted the one open bottle at Alma Avalon at 0.5 (2 Jun), 0.5 (30 Jun), 0.5 (1 Sep) and 0.45 (1 Oct 2026) \u2014 the same bottle. Value discarded: 9 cents at the twin's corrupt 15-cent avgCost (6720 cents at the true 11200)."
+   },
+   {
+    "itemId": "cmoqfbory00bi9ky29bqkgj74",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 7,
+    "why": "Not on any 2026 sheet. Last count 0.4 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25); the 7 on hand is the 09.25 St Alma count (30 Sep 2025, 7 @ 86240) applied last on 16 Jul 2026. The canonical has counted St Alma at 0.5 (31 Mar), 0.3 (2 Jun), 0.35 (30 Jun), 0.25 (1 Aug), 0.25 (31 Aug) and 0.2 (1 Oct 2026) \u2014 a single open bottle; the seven bottles of Sep 2025 were sold long ago. Value discarded: 105 cents at the corrupt 15-cent cost (78400 cents at the true 11200)."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has counted lines for both members. Canonical lines sit on the 2026 Loaded imports and the Aug\u2013Oct 2026 floor sheets; twin counted lines sit only on Historical Bar Stocktake 08.25\u201312.25. The two share 'Stocktake 10/1/2026' (Alma Avalon, SUBMITTED) but the twin's line there is blank (countedQty null) against the canonical's 0.45 \u2014 not a double count; mergeItems folds the blank into the canonical's line with no change (0.45 + 0, 5040 + 0) and deletes it. They also share the phantom-Avalon 9/1/2026 (both uncounted) and the VOID stray count (0.5 '750 mL' vs 1.445 'ml'), both excluded. The twin alone has two lines on each Alma Avalon historical sheet (one Blanco + one 'Fortaleza Anejo') \u2014 a same-item double line from the mis-mapped A\u00f1ejo, not a cross-member double count; it moves as-is."
+  },
+  "canonicalNameSuggestion": "Fortaleza Blanco",
+  "renameCanonical": false
+ },
+ {
+  "index": 26,
+  "cluster": "Fortaleza Reposado",
+  "action": "merge",
+  "canonicalId": "cmptovw4z00bfs601hm4l4ksx",
+  "duplicateIds": [
+   "cmoqfboss00bk9ky24y28tfq0"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovw4z00bfs601hm4l4ksx",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.25,
+    "why": "Canonical is on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 0.2, not yet applied); the 0.25 on hand is the applied 9/1/2026 count."
+   },
+   {
+    "itemId": "cmptovw4z00bfs601hm4l4ksx",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's own St Alma holding; on-hand 0 matches its last applied count (St Alma \u2014 Bar & FOH 31/08/2026, REVIEWED, 0). Its line on the latest St Alma sheet (01/10/2026) is blank, so the 31 Aug zero stands. Nothing to discard; kept at zero."
+   },
+   {
+    "itemId": "cmoqfboss00bk9ky24y28tfq0",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.6,
+    "why": "Not counted on any 2026 sheet (its 10/1/2026 line is blank). Last count 0.5 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25); the 0.6 on hand is the 09.25 Alma Avalon count applied last on 16 Jul 2026. The canonical counted the one open bottle at Alma Avalon at 0.3 (2 Jun), 0.3 (30 Jun), 0.25 (1 Sep) and 0.2 (1 Oct 2026) \u2014 the same bottle. Value discarded: 7647 cents (0.6 \u00d7 12745)."
+   },
+   {
+    "itemId": "cmoqfboss00bk9ky24y28tfq0",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.25,
+    "why": "Not on any 2026 sheet. Last count 1 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25); the 0.25 on hand is the 09.25 St Alma count applied last. The canonical has counted St Alma at 0.3 (31 Mar), 0 (2 Jun), 0.2 (30 Jun), 0.2 (1 Aug) and 0 (31 Aug 2026) \u2014 the Sep-2025 quarter-bottle is long gone and the latest explicit count is zero. Value discarded: 3186 cents (0.25 \u00d7 12745). If a Reposado does turn up behind the St Alma bar it will be caught at the next count under the canonical; nothing is lost by zeroing this."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has counted lines for both members. Canonical lines sit on the 2026 Loaded imports and the Aug\u2013Oct 2026 floor sheets; twin counted lines sit only on Historical Bar Stocktake 08.25\u201312.25. The two share 'Stocktake 10/1/2026' (Alma Avalon, SUBMITTED) but the twin's line is blank (countedQty null) against the canonical's 0.2 \u2014 not a double count; mergeItems folds the blank into the canonical's line with no change and deletes it. They also share the phantom-Avalon 9/1/2026 (both uncounted) and the VOID stray count (0.3 '750 mL' vs 1.5 'ml'), both excluded."
+  },
+  "canonicalNameSuggestion": "Fortaleza Reposado",
+  "renameCanonical": false
+ },
+ {
+  "index": 28,
+  "cluster": "G4 Blanco",
+  "action": "merge",
+  "canonicalId": "cmptovw6400bos601bkmekizq",
+  "duplicateIds": [
+   "cmsdf10st00afmiio81ozy5zv",
+   "cmoqfbow900bs9ky2dg7w0bp7"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovw6400bos601bkmekizq",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.05,
+    "why": "Canonical is on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 0.05) and onHand matches; 9/1/2026 also read 0.05, the June Loaded imports 0.1 \u2014 one nearly empty bottle."
+   },
+   {
+    "itemId": "cmptovw6400bos601bkmekizq",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.2,
+    "why": "The canonical's OWN St Alma row, zeroed deliberately: it is not on the latest St Alma sheet (01/10/2026 carries only the 3-Aug twin, 0.1). Its 0.2 is the 31/08/2026 reading of the same bottle the 3-Aug twin read at 0.2 that day and 0.1 on 1 Oct; keeping both would make 0.4. The 3-Aug twin's row (kept, below) is summed into this zeroed row so St Alma ends at 0.2, and the repointed 01/10 line takes it to 0.1 when that sheet is applied. Last count 0.2 on 2026-08-31; value zeroed: 1910 cents."
+   },
+   {
+    "itemId": "cmsdf10st00afmiio81ozy5zv",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Row exists but has never been counted at Avalon (onHand null, no last count; blank on the 9/1 and 10/1 sheets). No-op; value 0."
+   },
+   {
+    "itemId": "cmsdf10st00afmiio81ozy5zv",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.2,
+    "why": "This is the holding on the latest St Alma sheet (St Alma \u2014 Bar & FOH 01/10/2026, SUBMITTED, 0.1); onHand 0.2 is the applied 31/08/2026 count (0.25 on 1 Aug \u2192 0.2 \u2192 0.1). Summed onto the canonical after the canonical's own St Alma row is zeroed, so the merged St Alma holding is 0.2 (955 cents' worth, 0.1, once the 01/10 sheet is applied)."
+   },
+   {
+    "itemId": "cmoqfbow900bs9ky2dg7w0bp7",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.1,
+    "why": "Not on any 2026 sheet. Last count 0.1 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25, REVIEWED); the canonical counted the same dregs at 0.1 in June and 0.05 on 1 Sep and 1 Oct 2026. Value discarded: 955 cents."
+   },
+   {
+    "itemId": "cmoqfbow900bs9ky2dg7w0bp7",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.95,
+    "why": "Not on any 2026 sheet. Last count 0.95 on 2025-12-31 (the 'G4 Blanco' line of Historical Bar Stocktake \u2022 12.25; onHand 0.95 is the 09.25 standard reading applied last on 16 Jul 2026). The 2026 counts of St Alma's bottle run 0.1 (31 Mar) \u2192 0.25 (1 Aug) \u2192 0.2 \u2192 0.1 (1 Oct), so the 2025 bottle is long gone. Value discarded: 9072 cents."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma \u2014 Bar & FOH 31/08/2026 (REVIEWED, applied, unit 'bottle' on all): canonical 'G4 Blanco Tequila' 0.2 @ 1910 and twin 'G4 Blanco' 0.2 @ 1910 PLUS a second, blank 'G4 Blanco' line for the same twin on the same sheet. Identical readings of one bottle (the twin read 0.25 on 1 Aug, 0.2 on 31 Aug, 0.1 on 1 Oct; the canonical's previous St Alma count was 0.1 on 31 Mar, a different finished bottle). Both of the twin's lines on that sheet must be dropped \u2014 the fold would otherwise add 0.2 + 0 and leave 0.4. The May twin's own two-lines-per-sheet pattern on Historical 08.25\u201312.25 St Alma ('G4 Blanco' + 'G4 Blanco 54%') is a same-item double line from the mis-mapped overproof, not a cross-member double count; it moves as-is. Alma Avalon 9/1/2026 and Stocktake 10/1/2026: only the canonical counted (0.05), the twins' lines are blank \u2014 folds to 0.05. Phantom-Avalon and VOID excluded."
+  },
+  "canonicalNameSuggestion": "G4 Blanco",
+  "renameCanonical": false
+ },
+ {
+  "index": 29,
+  "cluster": "G4 Reposado",
+  "action": "merge",
+  "canonicalId": "cmptovw6h00brs6012r5a0wd6",
+  "duplicateIds": [
+   "cmoqfbox400bu9ky22jfzdog5"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovw6h00brs6012r5a0wd6",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.05,
+    "why": "Canonical is on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 0.5). onHand 0.05 is the applied 9/1/2026 count and will become 0.5 (5442 cents) when the 10/1 sheet is applied; the June Loaded imports read 0.5 too, so the 9/1 '0.05' looks like a decimal slip rather than a bottle that was finished and replaced."
+   },
+   {
+    "itemId": "cmptovw6h00brs6012r5a0wd6",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.3,
+    "why": "Canonical is on the latest St Alma sheet (St Alma \u2014 Bar & FOH 01/10/2026, SUBMITTED, 0.3) and onHand matches; 31/08 and 1 Aug also read 0.3."
+   },
+   {
+    "itemId": "cmoqfbox400bu9ky22jfzdog5",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.6,
+    "why": "Not on any 2026 sheet. Last count 0.5 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25, REVIEWED); the 0.6 on hand is the 09.25 count applied last on 16 Jul 2026. It is the same slow-moving open bottle the canonical counted at 0.5 on 1 Oct 2026; summing would double it. Value discarded: 6530 cents."
+   },
+   {
+    "itemId": "cmoqfbox400bu9ky22jfzdog5",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.4,
+    "why": "Not on any 2026 sheet. Last count 0.4 on 2025-12-31 (Historical Bar Stocktake \u2022 12.25); onHand matches that 2025 reading. The canonical counted the St Alma bottle at 0.3 on 1 Aug, 31 Aug and 1 Oct 2026 \u2014 the same bottle, a little lower. Value discarded: 4353 cents."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries a counted line for both members. Canonical lines sit on the 2026 Loaded imports and the Aug\u2013Oct 2026 floor sheets; twin lines sit only on Historical Bar Stocktake 08.25\u201312.25 (2025). They share Stocktake 10/1/2026 AA (canonical 0.5, twin blank \u2014 folds to 0.5), the phantom-Avalon 9/1/2026 (both blank) and the VOID stray count (0.5 '750 mL' vs 0.9 'ml' \u2014 different units, would not fold anyway); the last two are excluded."
+  },
+  "canonicalNameSuggestion": "G4 Reposado",
+  "renameCanonical": false
+ },
+ {
+  "index": 35,
+  "cluster": "Herradura Seleccion Suprema",
+  "action": "merge",
+  "canonicalId": "cmptovw9m00cfs601l33gptp6",
+  "duplicateIds": [
+   "cmoqfbpmn00dg9ky26x2fue4q"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovw9m00cfs601l33gptp6",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.6,
+    "why": "Canonical; on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 0.6 bottle), matching the applied 9/1 count of 0.6."
+   },
+   {
+    "itemId": "cmptovw9m00cfs601l33gptp6",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.85,
+    "why": "Canonical; on the latest St Alma sheet (Bar & FOH 01/10/2026, SUBMITTED, 0.85 bottle), matching the applied 31/08 count of 0.85."
+   },
+   {
+    "itemId": "cmoqfbpmn00dg9ky26x2fue4q",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.8,
+    "why": "Last genuine count 2025-12-31 (0.75 Herradura) on Historical Bar Stocktake 12.25 (valuation.json shows 0.6 because the mis-attributed Cashcahuin line sorted last); onHand 0.8 is the 09.25 count applied out of order on 2026-07-16. The same open bottle has since been counted as the floor row at Alma Avalon on 2026-06-02 (0.65), 06-30 (0.65), 9/1 (0.6) and 10/1 (0.6). Summing would add 0.8 phantom bottle ($396.99) of a $496 tequila."
+   },
+   {
+    "itemId": "cmoqfbpmn00dg9ky26x2fue4q",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.95,
+    "why": "Last counted 2025-12-31 (0.9) on Historical Bar Stocktake 12.25; onHand 0.95 is the 11.25 count applied last on 2026-07-16. The same bottle has since been counted as the floor row at St Alma on 2026-03-31 (0.75), 06-02 (0.9), 06-30 (0.8), 3 Aug (0.8), 31/08 (0.85) and 01/10 (0.85). Summing would add 0.95 phantom bottle ($471.43)."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "The canonical's lines are all on 2026 sheets and the twin's are all on the 2025 Historical Bar Stocktakes 08.25-12.25; no finalised real-venue sheet holds both members. The twin carries three lines of its own on each 2025 Alma Avalon sheet (Herradura + Cashcahuin + Ocho labels), but with no canonical line there they all repoint; nothing is folded or added."
+  },
+  "canonicalNameSuggestion": "Herradura Seleccion Suprema Extra Anejo",
+  "renameCanonical": false
+ },
+ {
+  "index": 42,
+  "cluster": "Madre Mezcal Ensamble",
+  "action": "merge",
+  "canonicalId": "cmsdf10v600c3miioyyfbktmm",
+  "duplicateIds": [
+   "cmoqfbq8r00ew9ky2o9g3194v"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf10v600c3miioyyfbktmm",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's holding. Counted 0 on Alma Avalon \u2014 Bar & FOH 9/1/2026 (REVIEWED, applied); its line on the latest Alma Avalon sheet 'Stocktake 10/1/2026' is blank (not counted). On-hand 0 matches the last real count; nothing to discard."
+   },
+   {
+    "itemId": "cmsdf10v600c3miioyyfbktmm",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.5,
+    "why": "Canonical's holding, on the latest finalised St Alma sheet (St Alma \u2014 Bar & FOH 01/10/2026, SUBMITTED, counted 0.4). On-hand 0.5 is the applied 31/08/2026 count (also 0.5 on 1 Aug 2026); it moves to 0.4 when the 1 Oct sheet is applied. Keep as is."
+   },
+   {
+    "itemId": "cmoqfbq8r00ew9ky2o9g3194v",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Twin's Alma Avalon holding is empty (onHand null, value null): the row was created 2026-09-01 02:09 when the item was dropped as a blank line onto the Avalon sheets and has never been counted. Zeroing it before the merge folds nothing; listed so the merge cannot sum a null."
+   },
+   {
+    "itemId": "cmoqfbq8r00ew9ky2o9g3194v",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.6,
+    "why": "Not on any 2026 real count. Last real count on this record: 2025-12-31 (Historical Bar Stocktake \u2022 12.25, 0.65, 6425c). The 0.6 on hand today is the Sept-2025 count (Historical 09.25) replayed as a STOCKTAKE_ADJUSTMENT on 2026-07-16, not stock. The canonical's St Alma count of 0.4 on 1 Oct 2026 (0.5 applied from 31/08) already represents the one open bottle; summing would show 1.1 bottles. Discard 5392c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries a counted quantity for both members. The only shared real sheet is Alma Avalon 'Stocktake 10/1/2026' (SUBMITTED, unapplied) where BOTH lines are blank (countedQty null); the fold yields null, deletes the twin's blank line and leaves the canonical's blank line, so nothing is added. The twin's counts all sit on Historical Bar Stocktake 08.25-12.25 (St Alma), where the canonical has no line; the canonical's counts (Aug-Oct 2026) are on sheets where the twin has no line. Phantom Avalon 9/1/2026 (both blank) and VOID are ignored."
+  },
+  "canonicalNameSuggestion": "Madre Mezcal Ensamble",
+  "renameCanonical": false
+ },
+ {
+  "index": 43,
+  "cluster": "Madre Mezcal Espadin",
+  "action": "merge",
+  "canonicalId": "cmsdf10ve00c9miioe6tjyhbp",
+  "duplicateIds": [
+   "cmoqfbq9k00ey9ky2unh96abz"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf10ve00c9miioe6tjyhbp",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's holding. Counted 0 on Alma Avalon \u2014 Bar & FOH 9/1/2026 (REVIEWED, applied); blank on the latest Alma Avalon sheet 'Stocktake 10/1/2026'. On-hand 0 matches the last real count; value 0 (no cost yet)."
+   },
+   {
+    "itemId": "cmsdf10ve00c9miioe6tjyhbp",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's holding. Counted 0 on St Alma \u2014 Bar & FOH 31/08/2026 (REVIEWED, applied) and 0 on the 1 Aug 2026 Loaded count; its line on the latest St Alma sheet (01/10/2026, SUBMITTED) is blank, i.e. not counted rather than counted zero. On-hand 0 matches the last real count. Keep; if Madre Espadin is back on the St Alma shelf it needs a counted line on the next sheet, not an inherited 2025 number."
+   },
+   {
+    "itemId": "cmoqfbq9k00ey9ky2unh96abz",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Twin's Alma Avalon holding is empty (onHand null, value null): the row was created 2026-09-01 02:09 when the item was dropped as a blank line onto the Avalon sheets and has never been counted. Zeroing it folds nothing; listed so the merge cannot sum a null."
+   },
+   {
+    "itemId": "cmoqfbq9k00ey9ky2unh96abz",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.2,
+    "why": "Not on any 2026 real count. Last real count on this record: 2025-12-31 (Historical 12.25, Madre-labelled line 0.3, 2770c; the facts' 0.1 is the Quiquiriqui-labelled line on the same sheet). The 0.2 on hand today is a Sept-2025 quantity from one of the mis-mapped Quiquiriqui/Koch Ancestral lines replayed on 2026-07-16, not stock \u2014 the Madre-labelled 09.25 line was 0.4. The canonical counted 0 at St Alma on 1 Aug and 31 Aug 2026; summing would conjure 0.2 of a bottle that two 2026 counts say is not there. Discard 1679c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries a counted quantity for both members. Shared sheets: Alma Avalon 'Stocktake 10/1/2026' (SUBMITTED, unapplied) where both lines are blank \u2014 the fold deletes the twin's blank line and leaves the canonical's blank; and the phantom Avalon 9/1/2026 (both blank, ignored). The twin's counts all sit on Historical Bar Stocktake 08.25-12.25 (St Alma), where the canonical has no line (those sheets carry five counts per sheet on the twin, but they are five different products mis-mapped, not two Madre Espadin counts); the canonical's zero counts (1 Aug 2026 Loaded, 31/08, 9/1) are on sheets where the twin has no line."
+  },
+  "canonicalNameSuggestion": "Madre Mezcal Espadin",
+  "renameCanonical": false
+ },
+ {
+  "index": 50,
+  "cluster": "Nuestra Soledad Santiago Matatlan",
+  "action": "merge",
+  "canonicalId": "cmptovwlo00eos60132mym7tt",
+  "duplicateIds": [
+   "cmoqfbqtp00g89ky2tyw4fc43"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovwlo00eos60132mym7tt",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.3,
+    "why": "Canonical; counted 0.3 on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED) and 0.3 on every applied 2026 sheet; onHand matches the last count."
+   },
+   {
+    "itemId": "cmptovwlo00eos60132mym7tt",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.95,
+    "why": "Canonical; on the latest St Alma sheet (Bar & FOH 01/10/2026, SUBMITTED, 0.8). 0.95 is the applied 31/08/2026 count and becomes 0.8 when the 1 Oct sheet is applied."
+   },
+   {
+    "itemId": "cmoqfbqtp00g89ky2tyw4fc43",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.3,
+    "why": "Not on any 2026 sheet. Last count 0.3 on 2025-12-31 (Historical Bar Stocktake 12.25, REVIEWED). The canonical has been counted at 0.3 on every Alma Avalon sheet since June 2026, i.e. this is the same part-bottle carried twice. Set to 0 before merging so the fold does not double it to 0.6 bottles / +2565c."
+   },
+   {
+    "itemId": "cmoqfbqtp00g89ky2tyw4fc43",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "Not on any 2026 sheet. Last count 1 on 2025-12-31 (Historical Bar Stocktake 12.25, REVIEWED). St Alma has counted the canonical on every sheet since 2026-03-31 (0.3 / 1 / 1 / 1 / 0.95 / 0.8); this is the same stock as a ghost. Set to 0 before merging so the fold does not add 1 bottle / 8550c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries a non-null count for both members: the canonical's lines are all on 2026 sheets, the duplicate's all on the 2025 Historical Bar Stocktake 08.25-12.25 sheets (one line per sheet per venue). Phantom 'Stocktake 9/1/2026' (venue Avalon) and the VOID sheet are excluded."
+  },
+  "canonicalNameSuggestion": "Nuestra Soledad Santiago Matatlan",
+  "renameCanonical": false
+ },
+ {
+  "index": 53,
+  "cluster": "Pasote Blanco",
+  "action": "merge",
+  "canonicalId": "cmptovwpd00fis601ilg3xx2a",
+  "duplicateIds": [
+   "cmoqfbrdv00hi9ky22dhwwlrp"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovwpd00fis601ilg3xx2a",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 1,
+    "why": "Canonical is on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, counted 1; 1 on the REVIEWED 9/1/2026 sheet and every 2026 Loaded import). onHand matches the last count."
+   },
+   {
+    "itemId": "cmptovwpd00fis601ilg3xx2a",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.8,
+    "why": "Canonical is on the latest St Alma sheet (Bar & FOH 01/10/2026, SUBMITTED, counted 0.8; also 0.8 on 31/08/2026, 1-Aug and the 30-Jun Loaded import). onHand matches the last count."
+   },
+   {
+    "itemId": "cmoqfbrdv00hi9ky22dhwwlrp",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "Last counted 1 on 2025-12-31 (Historical Bar Stocktake 12.25, REVIEWED, 13683c at the time). Avalon has carried exactly one Pasote Blanco on every sheet since, counted under the floor item (1 on 10/1/2026); the twin has no line on any 2026 sheet. This holding is the same bottle, and summing would make it two."
+   },
+   {
+    "itemId": "cmoqfbrdv00hi9ky22dhwwlrp",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.9,
+    "why": "Last counted 0.85 on 2025-12-31 (Historical Bar Stocktake 12.25, REVIEWED, 11631c at the time); the holding reads 0.9 (11195c) after the July-2026 historical re-applies. St Alma's Pasote Blanco has been counted under the floor item on every 2026 sheet (1, 0.9, 0.8, 0.8, 0.8, 0.8 on 01/10/2026). Same open bottle; summing would double-count it."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries both members: the floor item's lines are all 2026 sheets, the May twin's are all 2025 Historical Bar Stocktakes. The VOID snapshot (1 vs 1.85) and the phantom Avalon sheet are ignored. Every stocktake line simply repoints."
+  },
+  "canonicalNameSuggestion": "Pasote Blanco",
+  "renameCanonical": false
+ },
+ {
+  "index": 61,
+  "cluster": "Tapatio Blanco",
+  "action": "merge",
+  "canonicalId": "cmptovwtx00gis601c1p518qq",
+  "duplicateIds": [
+   "cmoqfbszi00l49ky20186fdvv"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovwtx00gis601c1p518qq",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.75,
+    "why": "Canonical; counted 0.75 on the latest AA sheet 'Stocktake 10/1/2026' (SUBMITTED, 2026-10-01) and 0.75 on the applied 9/1/2026 sheet; onHand matches."
+   },
+   {
+    "itemId": "cmptovwtx00gis601c1p518qq",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.4,
+    "why": "Canonical; counted 0.4 on the latest StA sheet 'St Alma - Bar & FOH 01/10/2026' (SUBMITTED, 2026-10-01) and 0.4 on the applied 31/08 sheet; onHand matches."
+   },
+   {
+    "itemId": "cmoqfbszi00l49ky20186fdvv",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "Twin's last count was 1.0 on 'Historical Bar Stocktake 12.25' (2025-12-31); not counted on any 2026 AA sheet. The same bottle is the canonical's 0.75 counted 2026-10-01. Summing would double-count 9637 cents."
+   },
+   {
+    "itemId": "cmoqfbszi00l49ky20186fdvv",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.4,
+    "why": "Twin's last count was 0.85 on 'Historical Bar Stocktake 12.25' (2025-12-31, value 8191); onHand reads 0.4 only because the 2025 StA sheets were applied out of order on 2026-07-16 (09.25 applied last). It is not a 2026 count; the canonical's 0.4 counted 2026-10-01 is the real stock. Summing would double-count 3855 cents."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries counted lines for both members: the floor item's counted lines are all on 2026 sheets, the twin's are all on the 2025 'Historical Bar Stocktake' sheets. The twin's line on AA 'Stocktake 10/1/2026' is uncounted (countedQty null, value null), so folding it leaves the canonical's line at 0.75 / 7228. Both have uncounted lines on the phantom 'Stocktake 9/1/2026' (Avalon) and counted lines on the VOID snapshot (0.7 '750 mL' vs 1.85 'ml') - ignored and never folded."
+  },
+  "canonicalNameSuggestion": "Tapatio Blanco",
+  "renameCanonical": false
+ },
+ {
+  "index": 62,
+  "cluster": "Terralta Blanco",
+  "action": "merge",
+  "canonicalId": "cmptovwuo00gos6011tygee78",
+  "duplicateIds": [
+   "cmoqfbt0d00l69ky2khlkq5fv"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovwuo00gos6011tygee78",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.95,
+    "why": "Canonical; counted 0.95 on the latest AA sheet 'Stocktake 10/1/2026' (SUBMITTED, 2026-10-01) and 0.95 on the applied 9/1/2026 sheet; onHand matches."
+   },
+   {
+    "itemId": "cmptovwuo00gos6011tygee78",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.5,
+    "why": "Canonical; counted 0.5 on the latest StA sheet 'St Alma - Bar & FOH 01/10/2026' (SUBMITTED, 2026-10-01) and 0.5 on the applied 31/08 sheet; onHand matches."
+   },
+   {
+    "itemId": "cmoqfbt0d00l69ky2khlkq5fv",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "Twin's last count was 1.0 on 'Historical Bar Stocktake 12.25' (2025-12-31); not counted on any 2026 AA sheet. The same bottle is the canonical's 0.95 counted 2026-10-01. Summing would double-count 9439 cents."
+   },
+   {
+    "itemId": "cmoqfbt0d00l69ky2khlkq5fv",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.5,
+    "why": "Twin's last count was 0.5 on 'Historical Bar Stocktake 12.25' (2025-12-31); not counted on any 2026 StA sheet. The canonical's 0.5 counted 2026-10-01 is the real stock. Summing would double-count 4720 cents."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries counted lines for both members: the floor item's counted lines are all on 2026 sheets, the twin's are all on the 2025 'Historical Bar Stocktake' sheets. The twin's line on AA 'Stocktake 10/1/2026' is uncounted (countedQty null, value null), so folding it leaves the canonical's line at 0.95 / 8966. Both have uncounted lines on the phantom 'Stocktake 9/1/2026' (Avalon) and counted lines on the VOID snapshot (0.95 '750 mL' vs 1.5 'ml') - ignored and never folded."
+  },
+  "canonicalNameSuggestion": "Terralta Blanco",
+  "renameCanonical": false
+ },
+ {
+  "index": 72,
+  "cluster": "Glenfiddich 12",
+  "action": "merge",
+  "canonicalId": "cmsdf10ta00armiion18jgcaz",
+  "duplicateIds": [
+   "cmptovw6u00bus6018sk0oul2"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf10ta00armiion18jgcaz",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.8,
+    "why": "Canonical; on the latest Alma Avalon sheet (Stocktake 10/1/2026, SUBMITTED, counted 0.7) and the applied 9/1/2026 sheet (0.8, which is the current onHand)."
+   },
+   {
+    "itemId": "cmsdf10ta00armiion18jgcaz",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.6,
+    "why": "Canonical; on the latest St Alma sheet (Bar & FOH 01/10/2026, SUBMITTED, counted 0.5) and the applied 31/08/2026 sheet (0.6, the current onHand)."
+   },
+   {
+    "itemId": "cmptovw6u00bus6018sk0oul2",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.85,
+    "why": "Last counted 2026-03-31 (Loaded import, REVIEWED) at 0.85 = 6273c. The same Glenfiddich bottles were then counted under the canonical at St Alma on 2026-08-03 (0.7), 31/08 (0.6) and 01/10 (0.5); summing would double-count 0.85 of a bottle."
+   },
+   {
+    "itemId": "cmptovw6u00bus6018sk0oul2",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Holding row exists with onHand NULL and no value; it was never counted at Alma Avalon (its 9/1 and 10/1 Avalon sheet lines are blank). Nothing to carry."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has both members counted. The duplicate's only real count is the St Alma Loaded import 2026-03-31 (0.85), where the canonical did not exist yet. The duplicate also has BLANK (countedQty null) lines on Alma Avalon 9/1/2026 (REVIEWED) and Stocktake 10/1/2026 (SUBMITTED), both sheets where the canonical was counted (0.8 and 0.7) in the same unit 'bottle' - these add nothing but the fold must treat null as 0 (or drop the blank line) rather than nulling the parent's count."
+  },
+  "canonicalNameSuggestion": "Glenfiddich 12 Year Old",
+  "renameCanonical": false
+ },
+ {
+  "index": 76,
+  "cluster": "Katun Gin",
+  "action": "merge",
+  "canonicalId": "cmsdf10up00brmiiok0qgp9vs",
+  "duplicateIds": [
+   "cmoqfbpv300e09ky29e8aoks7"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf10up00brmiiok0qgp9vs",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's Alma Avalon holding is empty (onHand null, 0c): the row was created 2026-09-01 when the item appeared as a blank line on the Avalon sheets; blank on 9/1/2026 and 10/1/2026. Katun is not stocked at Alma Avalon. Nothing to discard; keep at 0."
+   },
+   {
+    "itemId": "cmsdf10up00brmiiok0qgp9vs",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.8,
+    "why": "Canonical's holding, on the latest St Alma sheet (St Alma \u2014 Bar & FOH 01/10/2026, SUBMITTED, 0.8 bottle) and matching it; also 0.8 on 31/08/2026 and 1 Aug 2026. Real stock; retain."
+   },
+   {
+    "itemId": "cmoqfbpv300e09ky29e8aoks7",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Twin's Alma Avalon holding is empty (onHand null, 0c), created 2026-09-01 by the blank Avalon sheet lines and never counted. Zeroing folds nothing; listed so every real-venue holding has a plan."
+   },
+   {
+    "itemId": "cmoqfbpv300e09ky29e8aoks7",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.2,
+    "why": "Not on any 2026 real count. The 0.2 is the 16 Jul 2026 replay of the Sept-2025 historical count; last real count on this record 0.9 on 2025-12-31 (Historical Bar Stocktake 12.25, 8464c). The canonical's 0.8 on 1 Oct 2026 already represents the one open bottle at St Alma; summing would show 1.0. Discard 1710c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries a counted quantity for both members. Both sit on Alma Avalon 'Stocktake 10/1/2026' (SUBMITTED) with BOTH lines blank, so the fold yields null and leaves one blank line. The twin's counts are all on Historical Bar Stocktake 08.25-12.25 (St Alma), where the canonical has no line; the canonical's counts (1 Aug, 31 Aug, 1 Oct 2026) are on sheets where the twin has no line. Phantom Avalon 9/1/2026 (both blank) and VOID (twin 0.9) are ignored."
+  },
+  "canonicalNameSuggestion": "Katun Gin",
+  "renameCanonical": false
+ },
+ {
+  "index": 77,
+  "cluster": "Old Forester",
+  "action": "merge",
+  "canonicalId": "cmsdf10wk00d3miiolkw54z2q",
+  "duplicateIds": [
+   "cmoqfbr5a00gy9ky29gmscdwi"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf10wk00d3miiolkw54z2q",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's Alma Avalon holding is empty (onHand null, 0c): the row was created 2026-09-01 when the item appeared as a blank line on the Avalon sheets; blank on 9/1/2026 and 10/1/2026. Old Forester is not stocked at Alma Avalon. Nothing to discard; keep at 0."
+   },
+   {
+    "itemId": "cmsdf10wk00d3miiolkw54z2q",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.8,
+    "why": "Canonical's holding, on the latest St Alma sheet (St Alma \u2014 Bar & FOH 01/10/2026, SUBMITTED, 0.8 bottle) and matching it; also 0.8 on 31/08/2026 and 1 Aug 2026. Real stock; retain."
+   },
+   {
+    "itemId": "cmoqfbr5a00gy9ky29gmscdwi",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Twin's Alma Avalon holding is empty (onHand null, 0c), created 2026-09-01 by the blank Avalon sheet lines (blank on 9/1/2026 and 10/1/2026) and never counted. Zeroing folds nothing; listed so every real-venue holding has a plan."
+   },
+   {
+    "itemId": "cmoqfbr5a00gy9ky29gmscdwi",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.05,
+    "why": "Not on any 2026 real count. The 0.05 is the 16 Jul 2026 replay of the Sept-2025 historical count; last real count on this record 0.7 on 2025-12-31 (Historical Bar Stocktake 12.25, 3849c). The canonical's 0.8 on 1 Oct 2026 already represents the one open bottle at St Alma; summing would show 0.85. Discard 250c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries a counted quantity for both members. Both sit on Alma Avalon 'Stocktake 10/1/2026' (SUBMITTED) and on Alma Avalon \u2014 Bar & FOH 9/1/2026 (REVIEWED) with BOTH lines blank on each, so the fold yields null and leaves one blank line per sheet. The twin's counts are all on Historical Bar Stocktake 08.25-12.25 (St Alma), where the canonical has no line; the canonical's counts (1 Aug, 31 Aug, 1 Oct 2026) are on sheets where the twin has no line. Phantom Avalon 9/1/2026 (both blank) and VOID (twin 0.7) are ignored."
+  },
+  "canonicalNameSuggestion": "Old Forester",
+  "renameCanonical": false
+ },
+ {
+  "index": 79,
+  "cluster": "Thoquino Cachaca",
+  "action": "merge",
+  "canonicalId": "cmoqfbt2x00lc9ky2bdi99n44",
+  "duplicateIds": [
+   "cmptovwuz00grs601mh510dwu"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbt2x00lc9ky2bdi99n44",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 1,
+    "why": "Counted 1 btl on StA 31/08/2026 (REVIEWED, applied) and 1 btl on the latest StA sheet 01/10/2026 (SUBMITTED)."
+   },
+   {
+    "itemId": "cmoqfbt2x00lc9ky2bdi99n44",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Holding row exists with onHand NULL (par 0; never counted at Avalon \u2014 null on AA 9/1 and 10/1/2026). mergeItems treats NULL as 0 when the duplicate's Avalon 0 is summed in, so the result is 0. Nothing to discard."
+   },
+   {
+    "itemId": "cmptovwuz00grs601mh510dwu",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "Last counted 1 btl on 2026-08-03 (StA 'Sat 1st Aug, from Loaded', REVIEWED). From 31/08/2026 the St Alma counters recorded the single Thoquino bottle under the invoice-named twin (1 on 31/08, 1 on 01/10) and this floor item was left off those sheets entirely. Par is 1 on both members: it is the same bottle. Summing would show 2."
+   },
+   {
+    "itemId": "cmptovwuz00grs601mh510dwu",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "0 on hand; counted 0 on 2026-06-30 (Loaded import, LOCKED) and 0 on 02/06/2026 (REVIEWED); Avalon does not stock it (par 0). Nothing of value; the 0 merges into the canonical's NULL/0 Avalon row."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet carries a non-null count for both members: AA 9/1/2026 and 10/1/2026 hold null lines for both (fold of null+null stays null); StA 3 Aug 2026 has only the floor item (1); StA 31/08 and 01/10/2026 have only the invoice item (1); the Loaded imports only the floor item; 'Historical \u2022 12.25' only the invoice item. The hand-over of the one bottle between items happened between sheets, not on one sheet. VOID sheet has 0 and 1 but is ignored by rule."
+  },
+  "canonicalNameSuggestion": "Thoquino Cachaca",
+  "renameCanonical": false
+ },
+ {
+  "index": 82,
+  "cluster": "Lyre's White Cane",
+  "action": "merge",
+  "canonicalId": "cmptovwfk00dos601jtbuuixb",
+  "duplicateIds": [
+   "cmoqfbq7w00eu9ky2gcs0n6ja"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovwfk00dos601jtbuuixb",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 1.7,
+    "why": "Canonical, and the member on the latest Alma Avalon sheet ('Stocktake 10/1/2026', 2.7 loose, SUBMITTED). The 1.7 is the applied 9/1 count (movement 7.86 -> 1.7 on 2026-10-02). Once the Sensible Marg Batch recipe line points at the canonical, applying 10/1 will set 2.7 loose + 0.514 held (900 mL of batch counted that day) = 3.214 on this row - today that held credit would go to the twin's blank line and be lost."
+   },
+   {
+    "itemId": "cmptovwfk00dos601jtbuuixb",
+    "venue": "St Alma",
+    "treatment": "recount",
+    "onHand": 0,
+    "why": "The canonical's own row: 0 loose counted on 'St Alma - Bar & FOH 31/08/2026' (applied 2026-10-02), but its line on the latest sheet (01/10, SUBMITTED) is blank, par is 12, and that sheet counts 400 mL of Sensible Marg Batch (= 0.229 bottle of White Cane held). The apply skips blank lines, so until the loose count is entered on the 01/10 St Alma line (0 if the shelf is empty) the row stays 0 and the held 0.23 is never booked. Nothing to sum or discard (value 0); counted in neither valuation figure."
+   },
+   {
+    "itemId": "cmoqfbq7w00eu9ky2gcs0n6ja",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 6,
+    "why": "Last real count 3.3 on 2025-11-30 (Historical Bar Stocktake 11.25); the 10.25 sheet was replayed after it on 2026-07-16 and left 6, the Oct-2025 figure. Blank on AA 9/1 and 10/1. The floor item has read the Avalon shelf 7.86 (2 Jun) -> 6.87 (30 Jun) -> 1.7 (1 Sep) -> 2.7 (1 Oct), so these are the same bottles. Set to 0 before merging so the fold does not add 6 btl (122652c at the twin's inflated cost; 17556c even at 2926)."
+   },
+   {
+    "itemId": "cmoqfbq7w00eu9ky2gcs0n6ja",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 4.371703,
+    "why": "Not a loose count. The twin's 31/08 St Alma line was 0 and the 2026-10-02 apply wrote 'Counted 0 loose + 4.371703 bottle held in Sensible Marg Batch': 7650 mL of batch counted that day x 1400 mL per 3499.78 mL yield / 700 mL, credited to this twin only because the batch recipe line points at it; the same sheet counted the floor item at 0 loose. The 01/10 sheet (SUBMITTED) counts the batch at 400 mL (0.229 bottle), so the 4.37 is superseded, and after the merge the batch line credits the canonical at the next apply. Carrying it across would book about 4.1 bottles St Alma no longer holds (12792c at the canonical's cost)."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "'St Alma - Bar & FOH 31/08/2026' (REVIEWED, applied 2026-10-02) carries both members: canonical 0 can, twin 0 bottle - identical zero loose counts, so no stock is double-booked; the twin's line is the one the apply credited with the 4.371703 held-in-prep (its 2026-10-02 movement's sourceStocktakeLineId points at that line; the FK is onDelete SetNull). 'Alma Avalon - Bar & FOH 9/1/2026' (REVIEWED), 'Stocktake 10/1/2026' and 'St Alma - Bar & FOH 01/10/2026' (SUBMITTED) also carry both, but the twin's lines are blank. Because the units differ ('can' vs 'bottle') mergeItems would not fold any of these; it would repoint them and leave two lines per sheet."
+  },
+  "canonicalNameSuggestion": "Lyre's White Cane Spirit",
+  "renameCanonical": false
+ },
+ {
+  "index": 85,
+  "cluster": "Campari",
+  "action": "merge",
+  "canonicalId": "cmsdf10fg001fmiioi3lxasvi",
+  "duplicateIds": [
+   "cmoqfbmhi006a9ky22fkntbgd",
+   "cmptovurv0019s601c4zx7ncn"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf10fg001fmiioi3lxasvi",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.4,
+    "why": "Canonical's own holding; on the latest AA sheet (Stocktake 10/1/2026, SUBMITTED, counted 0.7). onHand 0.4 is the applied 9/1/2026 count."
+   },
+   {
+    "itemId": "cmsdf10fg001fmiioi3lxasvi",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 1.2,
+    "why": "Canonical's own holding; on the latest StA sheet (Bar & FOH 01/10/2026, SUBMITTED, counted 0.4). onHand 1.2 is the applied 31/08/2026 count."
+   },
+   {
+    "itemId": "cmoqfbmhi006a9ky22fkntbgd",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.95,
+    "why": "Last counted 2025-12-31 (Historical Bar Stocktake 12.25, qty 2.3); null on every 2026 AA sheet. The AA Campari shelf was counted against the canonical on 9/1 (0.4) and 10/1 (0.7)."
+   },
+   {
+    "itemId": "cmoqfbmhi006a9ky22fkntbgd",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 2.8,
+    "why": "Last counted 2025-12-31 (Historical Bar Stocktake 12.25, qty 1.6); not on any 2026 StA sheet. StA has since been counted against the canonical (1.83 on 1 Aug, 1.2 on 31 Aug, 0.4 on 1 Oct)."
+   },
+   {
+    "itemId": "cmptovurv0019s601c4zx7ncn",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 2.16,
+    "why": "Last real count 2026-06-30 Loaded import, qty 1.36 (LOCKED, never applied; onHand 2.16 is the 2 Jun Loaded count). Null on AA 9/1 and 10/1, where the whole Campari shelf was counted against the canonical (0.4, 0.7). Keeping 8357c would triple the AA value against 0.7 bottles on the shelf."
+   },
+   {
+    "itemId": "cmptovurv0019s601c4zx7ncn",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 3.66,
+    "why": "Last counted 2026-03-31 Loaded import, qty 3.66; absent from the StA Loaded imports of 2 Jun and 30 Jun and from every later StA sheet. The 1 Aug Loaded count that created the canonical found 1.83 bottles in the whole venue, and 1 Oct found 0.4 \u2014 this 14161c is the largest ghost in the cluster."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "On AA Stocktake 10/1/2026 (SUBMITTED) and AA Bar & FOH 9/1/2026 (REVIEWED) all three members have lines but only the canonical is counted (0.7 and 0.4); the two twins are null. The 2025 Historical Bar Stocktakes carry only CAMPARI 700ML BOTTLE; the Mar/Jun Loaded imports carry only Campari Aperitif; the StA Aug\u2013Oct sheets carry only the canonical. No finalised real-venue sheet has two counted lines."
+  },
+  "canonicalNameSuggestion": "Campari",
+  "renameCanonical": false
+ },
+ {
+  "index": 93,
+  "cluster": "Rosso Antico",
+  "action": "merge",
+  "canonicalId": "cmptovuzb002us601pbzt7wxd",
+  "duplicateIds": [
+   "cmoqfbs6d00ja9ky21qejd31g"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovuzb002us601pbzt7wxd",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 1.1,
+    "why": "Canonical is the member counted on the latest Alma Avalon sheet 'Stocktake 10/1/2026' (SUBMITTED, unapplied) at 1.5; the 1.1 on hand is its applied 9/1/2026 count and moves to 1.5 when October is applied."
+   },
+   {
+    "itemId": "cmptovuzb002us601pbzt7wxd",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.6,
+    "why": "Last counted 2026-08-03 (St Alma 1 Aug from Loaded = 0.6, 1239c). Superseded by the St Alma - Bar & FOH 31/08/2026 count of 0.2 entered under the twin's line (the canonical had no line on that sheet), so the 0.6 is the same bottle seen four weeks earlier. Summing would show 0.8."
+   },
+   {
+    "itemId": "cmoqfbs6d00ja9ky21qejd31g",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.85,
+    "why": "Blank on both 2026 Alma Avalon sheets (9/1 and 10/1). Last real count on this record 2025-12-31 (Historical Bar Stocktake 12.25 = 1, 2276c); the 0.85 is the Sept-2025 count replayed on 2026-07-16. Alma Avalon Rosso Antico is represented by the canonical's 1.5 counted 1 Oct 2026."
+   },
+   {
+    "itemId": "cmoqfbs6d00ja9ky21qejd31g",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.2,
+    "why": "This is the latest real St Alma count of the product: St Alma - Bar & FOH 31/08/2026 = 0.2, applied 2026-10-02. It moves onto the canonical (whose own St Alma holding is zeroed first). The St Alma 01/10/2026 sheet left the canonical's line blank (24 of 301 lines blank), so October St Alma is unconfirmed - check on the next count."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has both members counted. Alma Avalon 'Stocktake 10/1/2026': canonical 1.5, twin blank. Alma Avalon 9/1/2026: canonical 1.1, twin blank. Folding a blank line adds nothing and deletes the twin's line. St Alma 31/08/2026 has only the twin (0.2) and St Alma 01/10/2026 only the canonical (blank). VOID (canonical 1.93 '750 mL', twin 3.95 'ml') and phantom Avalon are ignored."
+  },
+  "canonicalNameSuggestion": "Rosso Antico Sweet Vermouth",
+  "renameCanonical": false
+ },
+ {
+  "index": 95,
+  "cluster": "Capi Grapefruit",
+  "action": "merge",
+  "canonicalId": "cmoqfbmjb006e9ky2wvkd0v3z",
+  "duplicateIds": [
+   "cmptovv1m0039s601s1ujhx2l"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbmjb006e9ky2wvkd0v3z",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 2,
+    "why": "Canonical is the member counted on the latest Alma Avalon sheet 'Stocktake 10/1/2026' (10, SUBMITTED unapplied); 2 is its applied 9/1/2026 count."
+   },
+   {
+    "itemId": "cmoqfbmjb006e9ky2wvkd0v3z",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Zero, last counted 2026-08-03 (St Alma 1 Aug from Loaded = 0), consistent with the floor item's 0 on 31/08/2026. Neither member is on the St Alma 01/10/2026 sheet. Nothing to sum."
+   },
+   {
+    "itemId": "cmptovv1m0039s601s1ujhx2l",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 17,
+    "why": "Last applied count 2026-06-02 (Loaded import Alma Avalon = 17, 3349c; the locked 06-30 Loaded 28 was never applied). Blank on the 10/1/2026 sheet and absent from 9/1/2026, where the same stock was counted under the May item (2 then 10). Summing would add 17 phantom bottles."
+   },
+   {
+    "itemId": "cmptovv1m0039s601s1ujhx2l",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Latest real St Alma count of the product: 31/08/2026 = 0. Zero, so summing into the canonical's 0 changes nothing."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "keep_canonical_line_only",
+   "detail": "Only shared real sheet is Alma Avalon 'Stocktake 10/1/2026': canonical 10 (unit 'bottle'), floor twin blank (unit 'each'). Units differ, so mergeItems repoints rather than folds, leaving a second blank Capi line on that SUBMITTED sheet - harmless (null adds nothing), but delete it with keep_canonical_line_only for tidiness. No other sheet carries both. Historical 2025 sheets double up only within the canonical (grapefruit + mis-labelled soda-water lines), not across members. VOID and phantom ignored."
+  },
+  "canonicalNameSuggestion": "Capi Sparkling Grapefruit",
+  "renameCanonical": false
+ },
+ {
+  "index": 96,
+  "cluster": "Finest Call Mango Puree",
+  "action": "merge",
+  "canonicalId": "cmsdf10hg002rmiiojx5lfshq",
+  "duplicateIds": [
+   "cmoqfboky00b29ky211u9f76e"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf10hg002rmiiojx5lfshq",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's own holding; it is the member counted on the latest AA sheet (Stocktake 10/1/2026, SUBMITTED, 0.6 L / 817c). onHand 0 is the applied 9/1/2026 count and becomes 0.6 when the October sheet is applied."
+   },
+   {
+    "itemId": "cmsdf10hg002rmiiojx5lfshq",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 1.7,
+    "why": "Canonical's own holding; on the latest StA sheet (Bar & FOH 01/10/2026, SUBMITTED, counted 1). onHand 1.7 is the applied 31/08/2026 count; the shelf has been counted against this row on every StA sheet since 1 Aug 2026."
+   },
+   {
+    "itemId": "cmoqfboky00b29ky211u9f76e",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Last counted 0 on 2026-09-01 (AA Bar & FOH 9/1/2026, REVIEWED, applied 2 Oct) and left blank on 10/1/2026. The 0.6 L counted against the canonical on 1 Oct is the only mango puree on the AA shelf. Zero value, so the discard changes nothing today; it is marked so the fold never sums a revived ghost."
+   },
+   {
+    "itemId": "cmoqfboky00b29ky211u9f76e",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 2.5,
+    "why": "Last counted 2025-12-31 (Historical Bar Stocktake 12.25, qty 2.8); the twin is on no 2026 St Alma sheet. Every StA count since (1 Aug 2.6, 31 Aug 1.7, 1 Oct 1) was taken against the canonical, so these 2.5 bottles (3780c) are a nine-month-old ghost that would lift the StA holding to 4.2 if summed."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "'Alma Avalon \u2014 Bar & FOH 9/1/2026' (REVIEWED, applied 2 Oct): canonical 0 'L' (pos 176) and twin 0 'bottle' (pos 177) \u2014 both counted, both zero, so no stock was double-counted and no value is affected. Units differ, so native mergeItems would not fold them and would leave two zero lines for one item: delete the twin's line (and repoint or drop its 0\u21920 STOCKTAKE_ADJUSTMENT movement with it). 'Stocktake 10/1/2026' AA (SUBMITTED, unapplied): only the canonical is counted (0.6 L, pos 323); the twin's line is blank 'bottle' at pos 324 \u2014 not a double count, but because the units differ the fold will repoint it as a second, later, blank line for the canonical and apply/variance keep the last line per item, so it must be deleted explicitly (risk 1). St Alma sheets (1 Aug, 31/08, 01/10/2026) carry only the canonical; the 2025 Historical Bar Stocktakes only the twin. Phantom Avalon 9/1/2026 (both blank) and VOID (twin 2.8 'ml') are excluded."
+  },
+  "canonicalNameSuggestion": "Finest Call Mango Puree 1L",
+  "renameCanonical": false
+ },
+ {
+  "index": 97,
+  "cluster": "Finest Call Passionfruit Puree",
+  "action": "merge",
+  "canonicalId": "cmsdf10hp002xmiio9cli3wg4",
+  "duplicateIds": [
+   "cmoqfbolt00b49ky20er2dldq"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf10hp002xmiio9cli3wg4",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's own holding; it is the member counted on the latest AA sheet (Stocktake 10/1/2026, SUBMITTED, 1.3 / 1769c). onHand 0 is the applied 9/1/2026 count and becomes 1.3 when the October sheet is applied."
+   },
+   {
+    "itemId": "cmsdf10hp002xmiio9cli3wg4",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's own holding; on the latest StA sheet (Bar & FOH 01/10/2026, SUBMITTED, counted 1). onHand 0 is the applied 31/08/2026 count (the bottle counted on 1 Oct was bought after that); every 2026 StA count is on this row."
+   },
+   {
+    "itemId": "cmoqfbolt00b49ky20er2dldq",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Last counted 0 on 2026-09-01 (AA Bar & FOH 9/1/2026, REVIEWED) and blank on 10/1/2026; the 1.3 bottles counted against the canonical on 1 Oct are the AA shelf. Zero value, marked so nothing can be summed later."
+   },
+   {
+    "itemId": "cmoqfbolt00b49ky20er2dldq",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 2,
+    "why": "Last counted 2025-12-31 (Historical Bar Stocktake 12.25, qty 2); the twin is on no 2026 St Alma sheet. The canonical was counted 1 on 1 Aug, 0 on 31 Aug and 1 on 1 Oct, so these 2 bottles (3024c) are stock the 31 Aug count already showed was gone; summing them would show 2 at StA against a shelf count of 1."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "'Alma Avalon \u2014 Bar & FOH 9/1/2026' (REVIEWED, applied 2 Oct): canonical 0 (pos 178) and twin 0 (pos 179), both unit 'bottle' \u2014 both counted, both zero, so no stock was double-counted and no value is affected; the native fold would add 0 + 0 and delete the twin's line, and an explicit delete of the twin's line gives the same single zero line (repoint its 0\u21920 movement). 'Stocktake 10/1/2026' AA (SUBMITTED): canonical 1.3 / 1769c (pos 325), twin blank (pos 326, 'bottle') \u2014 one member counted; the fold yields 1.3 / 1769 and removes the blank line, which is correct. St Alma sheets carry only the canonical; the 2025 Historical sheets only the twin. Phantom Avalon (both blank) and VOID (twin 2 'ml') excluded."
+  },
+  "canonicalNameSuggestion": "Finest Call Passionfruit Puree 1L",
+  "renameCanonical": false
+ },
+ {
+  "index": 108,
+  "cluster": "Supasawa",
+  "action": "merge",
+  "canonicalId": "cmsdf10kj004rmiiotqllpqd9",
+  "duplicateIds": [
+   "cmoqfbswy00ky9ky2n2nczql9"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf10kj004rmiiotqllpqd9",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 6.1,
+    "why": "Canonical holding; it is the item counted on the latest AA sheet (Stocktake 10/1/2026, 1 bottle, SUBMITTED, not yet applied). 6.1 is the applied 1 Sep count; applying the 1 Oct sheet will set it to 1."
+   },
+   {
+    "itemId": "cmsdf10kj004rmiiotqllpqd9",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical holding; counted 2 bottles on the latest StA sheet (01/10/2026, SUBMITTED, not applied); 0 is the applied 31 Aug count."
+   },
+   {
+    "itemId": "cmoqfbswy00ky9ky2n2nczql9",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1.4,
+    "why": "Stale: 1.4 matches the Sep 2025 historical count; last count on this item was 12.09 on 2 Jun 2026, and the floor item has carried every AA count since (6.1 on 1 Sep, 1 on 1 Oct). Value is also inflated by the case-cost-per-bottle error. Summing would double count."
+   },
+   {
+    "itemId": "cmoqfbswy00ky9ky2n2nczql9",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 3.3,
+    "why": "Stale: 3.3 matches the Sep 2025 historical count; last count on this item was 5.82 on 2 Jun 2026; StA counts since 3 Aug are on the floor item (5.21, 0, 2). Summing would double count."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "Only Stocktake 10/1/2026 (AA, SUBMITTED) has lines for both members: canonical 1 bottle, twin null (placeholder, same unit 'bottle'). The fold gives 1 + null = 1, so nothing is added. No other sheet has both members."
+  },
+  "canonicalNameSuggestion": "Supasawa 700 mL",
+  "renameCanonical": false
+ },
+ {
+  "index": 110,
+  "cluster": "Modus Operandi Cerveza",
+  "action": "merge",
+  "canonicalId": "cmoqfbqlt00fq9ky2ft2fnprc",
+  "duplicateIds": [
+   "cmptovunp000js601dnfuov48"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbqlt00fq9ky2ft2fnprc",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 18,
+    "why": "Stale: 18 cans is the Sep 2025 historical figure; last count on this item was 6 on 30 Nov 2025. Since Mar 2026 the venue counted this beer as 0 on the floor item (AA 2 Jun and 30 Jun LOCKED), and its line on the 1 Oct sheet is empty. Zero it before merging."
+   },
+   {
+    "itemId": "cmoqfbqlt00fq9ky2ft2fnprc",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 19,
+    "why": "Stale: last count 19 on 31 Aug 2025. StA counted 0 on the floor item on 31 Mar, 2 Jun, 30 Jun and 3 Aug 2026."
+   },
+   {
+    "itemId": "cmptovunp000js601dnfuov48",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Zero holding (last count 0 on 30 Jun 2026, LOCKED); moving or summing 0 changes nothing."
+   },
+   {
+    "itemId": "cmptovunp000js601dnfuov48",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Zero holding (last count 0 on 3 Aug 2026); moving or summing 0 changes nothing."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "Both members have lines on Stocktake 10/1/2026 and Alma Avalon Bar & FOH 9/1/2026, but all four counts are null. Units differ (bottle vs can), so the floor lines are repointed, not folded. That leaves two empty lines for one item on those AA sheets. Harmless while both are null, but delete the floor's empty line on the open 1 Oct sheet if someone is about to count it."
+  },
+  "canonicalNameSuggestion": "Modus Operandi Cerveza Can 375 mL",
+  "renameCanonical": false
+ },
+ {
+  "index": 111,
+  "cluster": "Wedge Cerveza Keg",
+  "action": "merge",
+  "canonicalId": "cmptovuq5000xs601q1f9kaxv",
+  "duplicateIds": [
+   "cmoqfbtxh00na9ky2u9rt3d49"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovuq5000xs601q1f9kaxv",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's holding. It is on the latest Alma Avalon sheet 'Stocktake 10/1/2026' (SUBMITTED) with a blank line, and was last counted at 0 on Loaded import 2026-06-30 (LOCKED). Nothing to change."
+   },
+   {
+    "itemId": "cmptovuq5000xs601q1f9kaxv",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical's holding. Last real count 0 on 'St Alma \u2014 Sat 1st Aug, 10:00 AM (from Loaded)' (2026-08-03). Neither member is on the latest St Alma sheet (St Alma \u2014 Bar & FOH 01/10/2026), which carries Balter Cerveza (27) instead, so Wedge is no longer stocked there."
+   },
+   {
+    "itemId": "cmoqfbtxh00na9ky2u9rt3d49",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.3,
+    "why": "Not counted on any 2026 sheet (blank on 9/1/2026 and 10/1/2026). Last real count on this record: 2025-12-31 (Historical Bar Stocktake 12.25 = 2 kegs, 59400c). The 0.3 is the Sept 2025 (09.25) count replayed last on 2026-07-16, not stock seen in 2026. Alma Avalon's Wedge keg is represented by the canonical's 0 counted on 30 Jun 2026."
+   },
+   {
+    "itemId": "cmoqfbtxh00na9ky2u9rt3d49",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 1.8,
+    "why": "No line on any 2026 St Alma sheet. Last real count on this record: 2025-12-31 (Historical Bar Stocktake 12.25 = 1.9, 56430c). The 1.8 is a 2025 count replayed last on 2026-07-16. St Alma's Wedge keg is represented by the canonical's 0 counted 3 Aug 2026, and it is no longer on the October sheet."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "Both members have lines on Alma Avalon 'Stocktake 10/1/2026' (SUBMITTED) and Alma Avalon \u2014 Bar & FOH 9/1/2026 (REVIEWED), but every one of those lines is blank. No real sheet has a non-null countedQty on both members. The twin's two lines per historical sheet (Freshwater-labelled plus 'Balter Cerveza' with blank qty) sit on one member, so they are not a cross-member double count."
+  },
+  "canonicalNameSuggestion": "Freshwater Brewing Wedge Cerveza Keg 50L",
+  "renameCanonical": false
+ },
+ {
+  "index": 115,
+  "cluster": "Stephane Brocard Gevrey-Chambertin",
+  "action": "merge",
+  "canonicalId": "cmoqfbkd1001g9ky2nksoxut4",
+  "duplicateIds": [
+   "cmsdf10oe007fmiioqo8nqs8h"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbkd1001g9ky2nksoxut4",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 9,
+    "why": "Canonical, counted on the latest StA sheet (Bar & FOH 01/10/2026, SUBMITTED, 9) and on 31/08/2026 (9, applied). The holding matches the count."
+   },
+   {
+    "itemId": "cmoqfbkd1001g9ky2nksoxut4",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "The holding is NULL, and the canonical was counted 0 on the latest AA sheet (Stocktake 10/1/2026, SUBMITTED). Nothing is held at AA."
+   },
+   {
+    "itemId": "cmsdf10oe007fmiioqo8nqs8h",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 6,
+    "why": "Last counted 6 on 2026-08-03 (StA Sat 1st Aug, from Loaded). The twin was blank on 31/08/2026 and is absent from 01/10/2026; both of those StA counts (9 each) were taken against the canonical and represent the whole shelf. Adding the holdings would give 15 for a shelf counted at 9."
+   },
+   {
+    "itemId": "cmsdf10oe007fmiioqo8nqs8h",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "The holding is NULL, and the twin was counted 0 on AA Stocktake 10/1/2026. It is zero value; marked so that nothing is summed."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "AA 'Stocktake 10/1/2026' (SUBMITTED, unapplied): canonical 0 bottle and twin 0 bottle are both counted and both zero, so there is no stock or value at stake. Delete the twin's line so the canonical keeps a single 0 line. On StA Bar & FOH 31/08/2026 the canonical has 9 and the twin is blank, so the fold adds null (no change). On AA Bar & FOH 9/1/2026 both are blank. The 2025 Historical sheets have two canonical lines each (Gevrey + mislabelled Chablis), but that is not a member double count. The phantom Avalon sheet and VOID are excluded."
+  },
+  "canonicalNameSuggestion": "Stephane Brocard Gevrey-Chambertin Vieilles Vignes 2022",
+  "renameCanonical": false
+ },
+ {
+  "index": 119,
+  "cluster": "Chateau La Grave Figeac",
+  "action": "merge",
+  "canonicalId": "cmoqfbmti00729ky2g0t02x73",
+  "duplicateIds": [
+   "cmsdf10mb005xmiiod0q42oc0"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbmti00729ky2g0t02x73",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 3,
+    "why": "Canonical's holding. Counted 3 on StA 31/08 (applied) and 3 on the latest StA sheet 01/10/2026 (SUBMITTED); onHand matches the last count."
+   },
+   {
+    "itemId": "cmoqfbmti00729ky2g0t02x73",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Null/0 holding; counted 0 on AA 10/1/2026. Not stocked at AA."
+   },
+   {
+    "itemId": "cmsdf10mb005xmiiod0q42oc0",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 3,
+    "why": "Last counted 3 on the 3 Aug 2026 Loaded sheet and absent from the StA 31/08 and 01/10 sheets. Those sheets counted the same 3 bottles on the canonical. Summing would put 6 at StA against a count of 3."
+   },
+   {
+    "itemId": "cmsdf10mb005xmiiod0q42oc0",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Null/0 holding, counted 0 on AA 10/1/2026 next to the canonical's 0."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "Stocktake 10/1/2026 (AA, SUBMITTED): canonical 0 and twin 0. No other finalised sheet has both rows counted: on the StA 3 Aug sheet only the twin (3); on StA 31/08 and 01/10 only the canonical (3, 3)."
+  },
+  "canonicalNameSuggestion": "Chateau La Grave Figeac St Emilion Grand Cru",
+  "renameCanonical": false
+ },
+ {
+  "index": 124,
+  "cluster": "Shut The Gate Gewurztraminer",
+  "action": "merge",
+  "canonicalId": "cmptovx2n00ifs601oytnde3s",
+  "duplicateIds": [
+   "cmoqfbktt002i9ky2eer32l96"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovx2n00ifs601oytnde3s",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 25.8,
+    "why": "Canonical; on the latest St Alma sheet (1 Oct 2026, SUBMITTED, counted 25). The onHand of 25.8 is the applied 31 Aug count."
+   },
+   {
+    "itemId": "cmptovx2n00ifs601oytnde3s",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 20,
+    "why": "Canonical; applied 1 Sep 2026 Avalon count of 20. The latest Avalon count (1 Oct, 18 btl) sits on the twin's line and repoints to the canonical in the merge (the canonical has no line on that sheet). Applying the sheet then sets the holding to 18."
+   },
+   {
+    "itemId": "cmoqfbktt002i9ky2eer32l96",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 15,
+    "why": "The holding of 15 is a pre-August value (last movement 16 Jul 2026) and does not match any recent count. The real Avalon stock is the 1 Sep count of 20 on the canonical and the 1 Oct count of 18, which moves to the canonical. Summing would give 35, double-counting the same bottles."
+   },
+   {
+    "itemId": "cmoqfbktt002i9ky2eer32l96",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 10.1,
+    "why": "Last St Alma count was 31 Dec 2025 (42.1, Historical Bar Stocktake 12.25). The case item is not on any 2026 St Alma sheet. The floor item has carried the St Alma count since Mar 2026 (23 -> 30 -> 25.8 -> 25)."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "No finalised real-venue sheet has counts on both members. The 2025 historical sheets hold only the case item (one line per venue). The 2026 Loaded/St Alma sheets and the 1 Sep Avalon sheet count only the floor item (the case item's 1 Sep line is null). The 1 Oct Avalon sheet counts only the case item."
+  },
+  "canonicalNameSuggestion": "Shut The Gate For Freedom Gewurztraminer",
+  "renameCanonical": false
+ },
+ {
+  "index": 125,
+  "cluster": "i Lauri Pecorino",
+  "action": "merge",
+  "canonicalId": "cmptovx0b00hxs601t8z53137",
+  "duplicateIds": [
+   "cmoqfbl3c00349ky20k5ndzbl"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovx0b00hxs601t8z53137",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 9.98,
+    "why": "Canonical; on the latest Avalon sheet (1 Oct 2026, counted 10). The onHand of 9.98 is the applied 1 Sep count."
+   },
+   {
+    "itemId": "cmptovx0b00hxs601t8z53137",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 4,
+    "why": "Canonical; on the latest St Alma sheet (1 Oct 2026, counted 4), which matches the holding."
+   },
+   {
+    "itemId": "cmoqfbl3c00349ky20k5ndzbl",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 9,
+    "why": "The case item's last St Alma count was 31 Dec 2025 (Historical 12.25), and it is not on any 2026 St Alma sheet. The floor item has carried St Alma since Mar 2026 (6 -> 5 -> 5 -> 4 -> 4)."
+   },
+   {
+    "itemId": "cmoqfbl3c00349ky20k5ndzbl",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Empty (null) holding. The 1 Oct 2026 Avalon count of 10 on this item duplicates the canonical's 10 on the same sheet (see sameSheetDoubleCount)."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "On 'Stocktake 10/1/2026' (Alma Avalon, SUBMITTED, 1 Oct 2026), both members were counted 10 bottles (23490c each). Avalon's floor-item history is 8 (Jun), 5 (30 Jun) and 9.98 (1 Sep), so 10 is consistent and 20 would be an unexplained doubling. The identical figures on both lines of the same product mean the same bottles were entered twice. The 1 Sep Avalon sheet has the case line null, so no double count there."
+  },
+  "canonicalNameSuggestion": "i Lauri Avalos Pecorino",
+  "renameCanonical": false
+ },
+ {
+  "index": 126,
+  "cluster": "Maison Saint Aix Rose",
+  "action": "merge",
+  "canonicalId": "cmsdf10np006xmiio5qobl72f",
+  "duplicateIds": [
+   "cmoqfbkq6002a9ky251mk5od4"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf10np006xmiio5qobl72f",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 2,
+    "why": "The canonical is on the latest StA sheet (01/10/2026), counted 19, SUBMITTED and not yet applied. The 2 held is its applied 31/08 count. Applying the 01/10 sheet brings it to 19."
+   },
+   {
+    "itemId": "cmsdf10np006xmiio5qobl72f",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "The holding is null. The canonical is on the latest AA sheet (Stocktake 10/1/2026), counted 0. The wine is not stocked at Avalon."
+   },
+   {
+    "itemId": "cmoqfbkq6002a9ky251mk5od4",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 9,
+    "why": "The twin was last counted at StA on 2025-12-31 (Historical Bar Stocktake 12.25, 15 bottles). The 9 held is older drift. The canonical has counted this wine at StA since then: 9 on 3 Aug, 2 on 31/08, 19 on 01/10. Summing would double-count."
+   },
+   {
+    "itemId": "cmoqfbkq6002a9ky251mk5od4",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "The holding is null. The twin was counted 0 on AA 10/1/2026, the same as the canonical. Nothing to carry."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "On Stocktake 10/1/2026 (Alma Avalon, SUBMITTED) both members counted 0. That is the same empty bin under two names, so dropping the twin's line loses nothing. On Alma Avalon \u2014 Bar & FOH 9/1/2026 (REVIEWED) both lines are null. At St Alma the members never share a sheet: the twin holds only the 2025 historical sheets and the canonical holds the 2026 sheets."
+  },
+  "canonicalNameSuggestion": "Maison Saint Aix Ros\u00e9",
+  "renameCanonical": false
+ },
+ {
+  "index": 127,
+  "cluster": "Laurent-Perrier La Cuvee",
+  "action": "merge",
+  "canonicalId": "cmptovuoq000os601tw9t7842",
+  "duplicateIds": [
+   "cmoqfbqvi00gc9ky27iq1rn3l"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovuoq000os601tw9t7842",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 14,
+    "why": "The canonical is on the latest AA sheet (Stocktake 10/1/2026), counted 13, SUBMITTED and not yet applied. The 14 held is its applied 9/1 count."
+   },
+   {
+    "itemId": "cmptovuoq000os601tw9t7842",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 5,
+    "why": "The canonical is on the latest StA sheet (01/10/2026), counted 3, not yet applied. The 5 held is its applied 31/08 count."
+   },
+   {
+    "itemId": "cmoqfbqvi00gc9ky27iq1rn3l",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 12,
+    "why": "The twin was counted 0 on AA 10/1/2026, and its last non-zero AA count was 11 on 2025-12-31 (Historical 12.25). The 12 held is drift from the 2025 era. The canonical has counted La Cuv\u00e9e at AA ever since: 14 on 2 Jun, 14 on 30 Jun, 14 on 9/1, 13 on 10/1. Summing would show 27 bottles against a real count of 13."
+   },
+   {
+    "itemId": "cmoqfbqvi00gc9ky27iq1rn3l",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "The twin was last counted at StA on 2025-12-31 (Historical 12.25). The 1 held matches the 'Taittinger Brut Cuvee 375mL' line misattached to this item that month, not La Cuv\u00e9e. The canonical has counted La Cuv\u00e9e at StA since: 10 on 31 Mar, 9 on 2 Jun, 7 on 3 Aug, 5 on 31/08, 3 on 01/10."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "On Stocktake 10/1/2026 (Alma Avalon, SUBMITTED) the canonical counted 13 and the twin counted 0. The twin's 0 is the empty case-named line, not distinct stock, so drop it and keep the 13. On Alma Avalon \u2014 Bar & FOH 9/1/2026 (REVIEWED) the canonical counted 14 and the twin's line is null, so there is nothing to fold. At St Alma the members never share a sheet. The twin's two lines per Historical sheet (La Cuv\u00e9e and the Taittinger 375 label) belong to the same item, not to two members. The canonical has no lines on those sheets, so they repoint with no fold."
+  },
+  "canonicalNameSuggestion": "Laurent-Perrier La Cuv\u00e9e NV",
+  "renameCanonical": false
+ },
+ {
+  "index": 131,
+  "cluster": "Wonton egg wrapper",
+  "action": "merge",
+  "canonicalId": "cmsdf12qh0006mij918l5a1ff",
+  "duplicateIds": [
+   "cmoqfbu6c00nu9ky26w5euhqz"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf12qh0006mij918l5a1ff",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 2,
+    "why": "The canonical is on the latest AA sheet (10/1/2026: 2, SUBMITTED). Its holding of 2 matches that count."
+   },
+   {
+    "itemId": "cmsdf12qh0006mij918l5a1ff",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 3.64,
+    "why": "Canonical holding = its applied St Alma 31/8/2026 count of 3.64. Neither member is on the St Alma 01/10 sheet (Bar & FOH only)."
+   },
+   {
+    "itemId": "cmoqfbu6c00nu9ky26w5euhqz",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 2,
+    "why": "Stale. The twin's last real AA count was 3 on 2026-05-31 (Loaded, $9.00); the holding of 2 dates from the Nov 2025 Historical count. The twin is blank on AA 10/1/2026, where the canonical counted 2. Summing would double the AA stock to 4."
+   },
+   {
+    "itemId": "cmoqfbu6c00nu9ky26w5euhqz",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "The twin was counted at 0 on the St Alma 31/8/2026 sheet next to the canonical's 3.64. Summing 0 changes nothing."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "sum",
+   "detail": "St Alma \u2014 Kitchen 31/8/2026 (REVIEWED, applied): canonical 3.64 each, twin 0 each, same unit. mergeItems will fold them as 3.64 + 0 = 3.64, which is correct, since the twin line is 0. AA 10/1/2026: only the canonical is counted (the twin is blank)."
+  },
+  "canonicalNameSuggestion": "Wonton Egg Wrapper 300g",
+  "renameCanonical": false
+ },
+ {
+  "index": 132,
+  "cluster": "Ascorbic acid",
+  "action": "merge",
+  "canonicalId": "cmoqfblr3004m9ky2sqjpkwct",
+  "duplicateIds": [
+   "cmptowapi00q4s601wkfg9fp5"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfblr3004m9ky2sqjpkwct",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 2.54,
+    "why": "Canonical counted 2.54 tubs on the latest finalised St Alma sheet (Kitchen 31/8/2026)."
+   },
+   {
+    "itemId": "cmoqfblr3004m9ky2sqjpkwct",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.875,
+    "why": "Last counted 2025-11-30 (Historical Kitchen Stocktake 11.25); superseded by the twin's 0 count on the latest finalised Alma Avalon sheet (3 Aug 2026)."
+   },
+   {
+    "itemId": "cmptowapi00q4s601wkfg9fp5",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "This is the latest finalised Alma Avalon count (0 on 3 Aug 2026); moves onto the canonical, giving 0."
+   },
+   {
+    "itemId": "cmptowapi00q4s601wkfg9fp5",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "0 counted on St Alma Kitchen 31/8/2026, the same sheet where the canonical holds the real 2.54 count; redundant line, zero value."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma Kitchen 31/8/2026 (REVIEWED): canonical 2.54 each, duplicate 0 each, same unit so the fold would add 0. The real count is on the 600 g item line."
+  },
+  "canonicalNameSuggestion": "Ascorbic Acid 600g",
+  "renameCanonical": false
+ },
+ {
+  "index": 133,
+  "cluster": "Black beans dry",
+  "action": "merge",
+  "canonicalId": "cmsdf12sc000omij9uj88ejbf",
+  "duplicateIds": [
+   "cmoqfblyy00549ky2levrzq9s"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf12sc000omij9uj88ejbf",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical counted 0 kg on latest finalised Alma Avalon sheet (3 Aug 2026)."
+   },
+   {
+    "itemId": "cmsdf12sc000omij9uj88ejbf",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical counted 0 kg on latest finalised St Alma sheet (Kitchen 31/8/2026)."
+   },
+   {
+    "itemId": "cmoqfblyy00549ky2levrzq9s",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.87,
+    "why": "Last counted 2026-05-31 (Loaded import); superseded by the canonical's 0 count on 3 Aug 2026."
+   },
+   {
+    "itemId": "cmoqfblyy00549ky2levrzq9s",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "0 on St Alma Kitchen 31/8/2026, same sheet as the canonical's 0; redundant."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma Kitchen 31/8/2026 (REVIEWED): canonical 0 kg, duplicate 0 each. Different unit labels so the fold would not combine them; both zero."
+  },
+  "canonicalNameSuggestion": "Black Beans Dry",
+  "renameCanonical": false
+ },
+ {
+  "index": 134,
+  "cluster": "Coconut milk",
+  "action": "merge",
+  "canonicalId": "cmsdf12sm000umij9mzl6ks4x",
+  "duplicateIds": [
+   "cmoqfbneg008e9ky28x1bmxfo"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf12sm000umij9mzl6ks4x",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical counted 0 on latest finalised Alma Avalon sheet (3 Aug 2026)."
+   },
+   {
+    "itemId": "cmsdf12sm000umij9mzl6ks4x",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical counted 0 on latest finalised St Alma sheet (Kitchen 31/8/2026)."
+   },
+   {
+    "itemId": "cmoqfbneg008e9ky28x1bmxfo",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 6.85,
+    "why": "Holding does not match its last count (0 on 2026-05-31); 6.85 matches the mislinked 'Coconut Margarita' line of 2025-09-30. Canonical counted 0 on 3 Aug 2026."
+   },
+   {
+    "itemId": "cmoqfbneg008e9ky28x1bmxfo",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "0 on St Alma Kitchen 31/8/2026, same sheet as canonical's 0; redundant."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma Kitchen 31/8/2026 (REVIEWED): canonical 0 each, duplicate 0 each, same unit; fold would add 0."
+  },
+  "canonicalNameSuggestion": "Coconut Milk 400ml",
+  "renameCanonical": false
+ },
+ {
+  "index": 135,
+  "cluster": "Plain flour 1 kg",
+  "action": "merge",
+  "canonicalId": "cmptowats00qys601jz6ayyqv",
+  "duplicateIds": [
+   "cmoqfbopa00bc9ky27h97zxb8"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptowats00qys601jz6ayyqv",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 5.82,
+    "why": "Canonical's latest real count at Avalon (3 Aug 2026 REVIEWED, 5.82 kg); both lines on the 1 Oct Avalon sheet are blank, and the twin has no Avalon holding."
+   },
+   {
+    "itemId": "cmptowats00qys601jz6ayyqv",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8/2026 (the latest kitchen sheet; the 1 Oct St Alma sheet is Bar & FOH only)."
+   },
+   {
+    "itemId": "cmoqfbopa00bc9ky27h97zxb8",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 1,
+    "why": "The one 1 kg bag was recorded on the twin's line on the same 31/8 sheet where the canonical line was 0; it is real stock and sums into the canonical's 0 to give 1."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_duplicate_line",
+   "detail": "St Alma Kitchen 31/8/2026 (REVIEWED, applied): canonical 0 each, twin 1 each (250c), same unit. One bag counted on the twin's line, none on the floor line, so real stock is 1. Alma Avalon 1 Oct (SUBMITTED) has both lines blank; VOID and phantom sheets are ignored."
+  },
+  "canonicalNameSuggestion": "Plain Flour 1 kg",
+  "renameCanonical": false
+ },
+ {
+  "index": 139,
+  "cluster": "Hazelnuts roasted",
+  "action": "merge",
+  "canonicalId": "cmoqfbpge00d29ky2sm7h6vof",
+  "duplicateIds": [
+   "cmptowaw300rds6016lskiiir"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbpge00d29ky2sm7h6vof",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.5,
+    "why": "This 0.5 is the 2025 Historical 10.25 count (31 Oct 2025, $13.00). The floor row's AA count (0.85 on Loaded 31 Jul, applied 3 Aug) is the latest real AA count and represents this shelf."
+   },
+   {
+    "itemId": "cmoqfbpge00d29ky2sm7h6vof",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.61,
+    "why": "Canonical holding equals its count on the latest St Alma kitchen sheet (Kitchen 31/8, REVIEWED, applied, 0.61 bag)."
+   },
+   {
+    "itemId": "cmptowaw300rds6016lskiiir",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.85,
+    "why": "This is the latest real AA count (Loaded 31 Jul, applied 3 Aug, 0.85 kg). Neither row was counted on AA 10/1 (both blank), so this is the only current evidence. It moves onto the canonical (whose stale 0.5 is zeroed first)."
+   },
+   {
+    "itemId": "cmptowaw300rds6016lskiiir",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8 beside the canonical's 0.61. It is the empty twin row on the same sheet."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma Kitchen 31/8/2026 (REVIEWED, applied): the canonical has 0.61 each and the duplicate has 0 each. The units match, so the fold would give 0.61 + 0 = 0.61, which is correct either way. The duplicate's 0 is its empty row beside the real count. On AA Stocktake 10/1/2026 both rows are blank, so there is nothing to fold. No other finalised real-venue sheet has both rows."
+  },
+  "canonicalNameSuggestion": "Hazelnuts Roasted 1 kg",
+  "renameCanonical": false
+ },
+ {
+  "index": 143,
+  "cluster": "Basmati rice",
+  "action": "merge",
+  "canonicalId": "cmsdf12u0001omij9a4rffdxk",
+  "duplicateIds": [
+   "cmoqfbs0300iw9ky2r864y9f8"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf12u0001omij9a4rffdxk",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 1,
+    "why": "Matches its applied AA 3 Aug count of 1 kg ($3.00). The canonical's line on the latest AA sheet (10/1/2026) is blank, as is the twin's."
+   },
+   {
+    "itemId": "cmsdf12u0001omij9a4rffdxk",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Matches its applied St Alma Kitchen 31/8 count of 0. Neither member is on the 01/10 St Alma Bar & FOH sheet."
+   },
+   {
+    "itemId": "cmoqfbs0300iw9ky2r864y9f8",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 4,
+    "why": "Stale. The 4 is the Historical Nov 2025 count ($12.00). The twin's last AA count was 0 on Loaded 31 May 2026, so the holding does not match it. AA's current count is the canonical's 1 kg on 3 Aug."
+   },
+   {
+    "itemId": "cmoqfbs0300iw9ky2r864y9f8",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8, the same as the canonical. Nothing to carry."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "On 'St Alma \u2014 Kitchen 31/8/2026' (REVIEWED, applied), both members were counted 0: the canonical in kg and the twin in each. The units differ, so the fold would not combine them and the sheet would keep two lines for one product. Both are 0, so delete the twin's line and keep the canonical's."
+  },
+  "canonicalNameSuggestion": "Basmati Rice",
+  "renameCanonical": false
+ },
+ {
+  "index": 155,
+  "cluster": "Mexican oregano",
+  "action": "merge",
+  "canonicalId": "cmoqfbqgk00fe9ky2ziiwf2bf",
+  "duplicateIds": [
+   "cmsdf12x0003omij9wjaa0mul",
+   "cmptowbil00ves601b1z7ehnh"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbqgk00fe9ky2ziiwf2bf",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 2,
+    "why": "The canonical is the only member counted on the latest AA sheet (Stocktake 10/1/2026, SUBMITTED, 1 each). Its holding of 2 equals the floor row's applied 3 Aug AA count of 2, so it stands for current AA stock until the 1 Oct sheet is applied and sets it to 1."
+   },
+   {
+    "itemId": "cmoqfbqgk00fe9ky2ziiwf2bf",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 1.063879,
+    "why": "Real stock. The StA Kitchen 31/8 apply set it to 0.82 counted loose + 0.243879 held in the Chimichurri and Beef Birria preps. The other two members counted 0 on that sheet."
+   },
+   {
+    "itemId": "cmsdf12x0003omij9wjaa0mul",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 2,
+    "why": "This is the same tubs as the canonical's AA holding: its 3 Aug AA count of 2 ($35.40), which the canonical's 1 Oct count (1) supersedes. The floor row is blank on AA 10/1. Summing would read 4."
+   },
+   {
+    "itemId": "cmsdf12x0003omij9wjaa0mul",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on StA Kitchen 31/8, next to the canonical's 0.82. There is nothing to carry."
+   },
+   {
+    "itemId": "cmptowbil00ves601b1z7ehnh",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "The holding row has onHand null and it has never been counted at AA (it is blank on 10/1). There is nothing to carry."
+   },
+   {
+    "itemId": "cmptowbil00ves601b1z7ehnh",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on StA Kitchen 31/8, next to the canonical's 0.82. The older Loaded 30 Apr 2.85 is superseded."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma \u2014 Kitchen 31/8/2026 (REVIEWED, applied): all three are counted in 'each': canonical 0.82, floor cmsdf12x0 0, cmptowbil 0. The fold would give 0.82 + 0 + 0 = 0.82, which is correct, but the zeros are empty duplicate rows, so delete them. AA Stocktake 10/1/2026 (SUBMITTED): only the canonical is counted (1 each). The two duplicates have blank 'each' lines (positions 587/588), so delete them rather than fold a null. The VOID and phantom sheets are ignored."
+  },
+  "canonicalNameSuggestion": "Mexican Oregano",
+  "renameCanonical": false
+ },
+ {
+  "index": 156,
+  "cluster": "Black pepper cracked",
+  "action": "merge",
+  "canonicalId": "cmoqfbrnh00i49ky2pyl3ug0h",
+  "duplicateIds": [
+   "cmptowb1x00sgs601dff7shwr"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbrnh00i49ky2pyl3ug0h",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "This 1 is the 2025 AA Historical 11.25 count (30 Nov 2025, $14.00). The floor row's AA counts (0.13 on Loaded 31 Jul, applied 3 Aug; 0.3 on AA 10/1) are the current counts of this shelf."
+   },
+   {
+    "itemId": "cmoqfbrnh00i49ky2pyl3ug0h",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Equals its count on the latest St Alma kitchen sheet (Kitchen 31/8, REVIEWED, applied, 0)."
+   },
+   {
+    "itemId": "cmptowb1x00sgs601dff7shwr",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.13,
+    "why": "This is the latest applied real AA count (Loaded 31 Jul, applied 3 Aug, 0.13 pack). It moves onto the canonical after the canonical's stale 1 is zeroed. Applying AA 10/1 later sets it to 0.3."
+   },
+   {
+    "itemId": "cmptowb1x00sgs601dff7shwr",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8 beside the canonical's 0. This is the empty twin row; there is nothing to sum."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_duplicate_line",
+   "detail": "AA Stocktake 10/1/2026 (SUBMITTED, not applied): the duplicate has 0.3 each (positions 614/615, adjacent) and the canonical is blank. Both are 'each', so the real count is the duplicate's 0.3 and it should land on the canonical's blank line (0.3 x 400 g = 120 g). St Alma Kitchen 31/8/2026 (REVIEWED, applied): both are 0 each, so the fold gives 0 either way. No other finalised real-venue sheet has both rows counted."
+  },
+  "canonicalNameSuggestion": "Pepper Black Cracked 400 g",
+  "renameCanonical": false
+ },
+ {
+  "index": 158,
+  "cluster": "Vanilla bean paste",
+  "action": "merge",
+  "canonicalId": "cmoqfbtl600mi9ky22v3m1s40",
+  "duplicateIds": [
+   "cmptowb7d00tgs60196v00cbx"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbtl600mi9ky22v3m1s40",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.5,
+    "why": "This 0.5 is the 2025 AA Historical 11.25 count (30 Nov 2025, $15.00). The latest applied AA count is the floor row's 0.2 (Loaded 31 Jul, applied 3 Aug), and the 1 Oct count of 1 tube on this row's AA 10/1 line replaces both once applied."
+   },
+   {
+    "itemId": "cmoqfbtl600mi9ky22v3m1s40",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.16,
+    "why": "Equals its count on the latest St Alma kitchen sheet (Kitchen 31/8, REVIEWED, applied, 0.16 tube)."
+   },
+   {
+    "itemId": "cmptowb7d00tgs60196v00cbx",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.2,
+    "why": "This is the latest applied real AA count (Loaded 31 Jul, applied 3 Aug, 0.2 tube). It moves onto the canonical after the canonical's stale 0.5 is zeroed. Applying AA 10/1 later sets it to 1."
+   },
+   {
+    "itemId": "cmptowb7d00tgs60196v00cbx",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8 beside the canonical's real 0.16. This is the empty twin row."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma Kitchen 31/8/2026 (REVIEWED, applied): the canonical has 0.16 each and the duplicate has 0 each. The units match, so the fold gives 0.16 either way. The duplicate's 0 is the empty row beside the real count. On AA Stocktake 10/1/2026 only the canonical is counted (1 each, position 757) and the duplicate is blank (756), so nothing is added. No other finalised real-venue sheet has both rows counted."
+  },
+  "canonicalNameSuggestion": "Vanilla Bean Paste Organic Tube",
+  "renameCanonical": false
+ },
+ {
+  "index": 161,
+  "cluster": "Olive oil extra virgin",
+  "action": "merge",
+  "canonicalId": "cmoqfbr1o00gq9ky2w9f9olq3",
+  "duplicateIds": [
+   "cmptowayc00rss601jvo6xbsn"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbr1o00gq9ky2w9f9olq3",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "The holding is null now. The latest AA sheet, 10/1/2026 (SUBMITTED, not applied), counted EVOO on this line: 1 L, 1225c. Applying it will set the holding."
+   },
+   {
+    "itemId": "cmoqfbr1o00gq9ky2w9f9olq3",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0.819406,
+    "why": "This is real stock. The St Alma Kitchen 31/8 apply counted 0 loose plus 0.819406 L held in Salsa Macha prep (movement note), so it is a prep-held holding, not stale."
+   },
+   {
+    "itemId": "cmptowayc00rss601jvo6xbsn",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 4.24,
+    "why": "This is the AA 3 Aug count of 4.24 L (5202c), superseded by the 10/1 AA count of 1 L on the canonical. The floor line on 10/1 is blank. Summing would double-count EVOO."
+   },
+   {
+    "itemId": "cmptowayc00rss601jvo6xbsn",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "0 from StA Kitchen 31/8, where the canonical was also counted 0 (plus prep-held). There is nothing to carry."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma Kitchen 31/8/2026 (REVIEWED/applied): floor 0 'each', twin 0 'L'. Both are zero. Because the line units differ, mergeItems would not fold them and would leave two lines for one item, so delete the floor's line. On AA 10/1 (SUBMITTED) only the twin was counted (1 L). The floor line is null."
+  },
+  "canonicalNameSuggestion": "Oil Olive Extra Virgin 4 L",
+  "renameCanonical": false
+ },
+ {
+  "index": 163,
+  "cluster": "Mixed berries frozen",
+  "action": "merge",
+  "canonicalId": "cmoqfbqk000fm9ky28v51vdfu",
+  "duplicateIds": [
+   "cmptowbap00u1s601mys0u56v"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbqk000fm9ky28v51vdfu",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical; counted 0 on St Alma Kitchen 31/8/2026 (latest kitchen count)."
+   },
+   {
+    "itemId": "cmptowbap00u1s601mys0u56v",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Only AA holding in the cluster (canonical has none, so it moves to the canonical); last counted 0 on AA 31 Jul, uncounted (null) on 10/1. Zero either way."
+   },
+   {
+    "itemId": "cmptowbap00u1s601mys0u56v",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8/2026 alongside the canonical (also 0); represented by the canonical's line."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma \u2014 Kitchen 31/8/2026 (REVIEWED): both counted 0 each. AA 10/1/2026 has both lines but both null."
+  },
+  "canonicalNameSuggestion": "Mixed Berries Frozen 1kg",
+  "renameCanonical": false
+ },
+ {
+  "index": 165,
+  "cluster": "Butter unsalted 1 kg",
+  "action": "merge",
+  "canonicalId": "cmsdf12qt000cmij95wm1f90w",
+  "duplicateIds": [
+   "cmoqfbmbf005w9ky2s56nzqsn"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf12qt000cmij95wm1f90w",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.54,
+    "why": "Matches the latest applied AA count (3 Aug, 0.54 kg). The 10/1 AA sheet is blank for both members."
+   },
+   {
+    "itemId": "cmsdf12qt000cmij95wm1f90w",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Matches its StA Kitchen 31/8 count of 0. The butter on hand that day was counted on the twin's line (1.174 kg), which is carried in by the merge."
+   },
+   {
+    "itemId": "cmoqfbmbf005w9ky2s56nzqsn",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "Not counted at AA since the Loaded 31 May import (1.86 kg). The holding of 1 matches no count. The canonical's AA 3 Aug count (0.54 kg) is the AA butter figure. Summing would overstate AA by 1 kg."
+   },
+   {
+    "itemId": "cmoqfbmbf005w9ky2s56nzqsn",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 1.174,
+    "why": "This is the real StA Kitchen 31/8 count (1.174 kg). The canonical counted 0 on the same sheet, so summing gives the right 1.174 kg."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "sum",
+   "detail": "'St Alma \u2014 Kitchen 31/8/2026' (REVIEWED/applied): the canonical counted 0 kg and the twin counted 1.174 kg (1937 c), both in unit kg. The two lines are the same product, but only one carries stock, so summing gives 1.174 kg, the true count. The same answer comes from keeping the twin's line. 'Stocktake 10/1/2026' (AA, SUBMITTED) has both lines blank, so nothing folds there."
+  },
+  "canonicalNameSuggestion": "Butter Unsalted",
+  "renameCanonical": false
+ },
+ {
+  "index": 170,
+  "cluster": "Condensed milk",
+  "action": "merge",
+  "canonicalId": "cmoqfbng7008i9ky2de5tltvx",
+  "duplicateIds": [
+   "cmptowao600pvs601zrhsle1i"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbng7008i9ky2de5tltvx",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 7,
+    "why": "The canonical's AA quantity is from the Historical Kitchen Stocktake of 31 Oct 2025 (7 cans, 2800c). The twin's 3 Aug 2026 count (5.42) is the later real count of the same cans. Summing would give 12.42."
+   },
+   {
+    "itemId": "cmptowao600pvs601zrhsle1i",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 5.42,
+    "why": "Latest real AA count (3 Aug 2026, Loaded, 5.42 cans). Neither item was counted on the 1 Oct AA sheet (both lines null). This becomes the canonical's AA holding once the canonical's stale 7 is zeroed."
+   },
+   {
+    "itemId": "cmoqfbng7008i9ky2de5tltvx",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on the latest St Alma kitchen sheet (31/8/2026)."
+   },
+   {
+    "itemId": "cmptowao600pvs601zrhsle1i",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on 31/8 alongside the canonical. Nothing to carry over."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma Kitchen 31/8/2026 (REVIEWED): both counted 0 'each'. The fold would add 0 to 0, which is harmless. AA 1 Oct (SUBMITTED): both lines null, so no double count, but condensed milk was not counted on 1 Oct."
+  },
+  "canonicalNameSuggestion": "Condensed Milk 395g",
+  "renameCanonical": false
+ },
+ {
+  "index": 171,
+  "cluster": "Beef chuck roll",
+  "action": "merge",
+  "canonicalId": "cmptowbmp00w4s60158syh5ra",
+  "duplicateIds": [
+   "cmoqfbu8y00o09ky2md6lkxv9"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptowbmp00w4s60158syh5ra",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Matches its applied AA 3 Aug 2026 count of 0 kg, the latest finalised AA sheet. The 10/1 SUBMITTED sheet left the line blank."
+   },
+   {
+    "itemId": "cmptowbmp00w4s60158syh5ra",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Matches its applied StA Kitchen 31/8 count of 0 kg."
+   },
+   {
+    "itemId": "cmoqfbu8y00o09ky2md6lkxv9",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "The holding is null and the item was never counted at AA. There is nothing to carry."
+   },
+   {
+    "itemId": "cmoqfbu8y00o09ky2md6lkxv9",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 2.756846,
+    "why": "This is real stock. The StA Kitchen 31/8 apply counted 0 loose plus 2.756846 kg held in Beef Birria prep (2 Oct movement note), so the holding is held in prep, not stale. The canonical's 0 loose count does not represent it. Summed into the canonical's 0, it gives 2.757 kg. At the recorded twin cost of 12400c/kg it is worth 34185c, but at the canonical's correct 2050c/kg it is about 5652c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "StA Kitchen 31/8/2026 (REVIEWED, applied): canonical 0 kg and twin 0 kg, same unit. Both lines are zero, so a fold would add nothing, but the twin's line is redundant. The held-in-prep 2.756846 kg is in the twin's holding, not in its countedQty. On AA 10/1 (SUBMITTED) both lines are blank. The phantom-Avalon and VOID sheets are not folded."
+  },
+  "canonicalNameSuggestion": "Beef Chuck Roll",
+  "renameCanonical": false
+ },
+ {
+  "index": 172,
+  "cluster": "Beef short ribs 3-rib",
+  "action": "merge",
+  "canonicalId": "cmptowbnz00was601c2hr91o3",
+  "duplicateIds": [
+   "cmoqfbm1m005a9ky2bo078h4b"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptowbnz00was601c2hr91o3",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 8.97,
+    "why": "Matches its applied AA 3 Aug 2026 count of 8.97 kg (23226c), the latest finalised AA sheet. The 10/1 SUBMITTED sheet left the line blank."
+   },
+   {
+    "itemId": "cmptowbnz00was601c2hr91o3",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Matches its applied StA Kitchen 31/8 count of 0 kg."
+   },
+   {
+    "itemId": "cmoqfbm1m005a9ky2bo078h4b",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "0, last counted 30 Nov 2025 (Historical Kitchen Stocktake 11.25). AA has since been counted on the canonical (31 May, 30 Jun, 3 Aug). There is nothing to carry."
+   },
+   {
+    "itemId": "cmoqfbm1m005a9ky2bo078h4b",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 24.590223,
+    "why": "This is real stock. The StA Kitchen 31/8 apply counted 0 loose plus 24.590223 kg held in Short Ribs prep (2 Oct movement note), so the holding is held in prep, not stale, and the canonical's 0 loose count does not include it. Summed into the canonical's 0, it gives 24.59 kg. It is recorded at 127377c using the twin's 5180c/kg, but at the canonical's 2589c/kg it is about 63664c."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "StA Kitchen 31/8/2026 (REVIEWED, applied): canonical 0 kg and twin 0 kg, same unit. Both lines are zero, so a fold adds nothing. The prep-held 24.59 kg is in the twin's holding, not in its countedQty. On AA 10/1 (SUBMITTED) both lines are blank. No other finalised real-venue sheet has both members: the Loaded imports carry only the canonical, and the 2025 historical sheets carry only the twin (sometimes several mislabelled twin lines on one sheet, which is within one item)."
+  },
+  "canonicalNameSuggestion": "Beef Short Ribs Grainfed 3 Rib",
+  "renameCanonical": false
+ },
+ {
+  "index": 174,
+  "cluster": "Barramundi fillets",
+  "action": "merge",
+  "canonicalId": "cmptowbr900wos6017aiqhusr",
+  "duplicateIds": [
+   "cmoqfblvg004w9ky2n36m6wkg"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptowbr900wos6017aiqhusr",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 5,
+    "why": "The canonical is on the latest AA sheet (Stocktake 10/1/2026, counted 4.222 kg, SUBMITTED and not yet applied). The holding equals its applied 3 Aug count of 5 kg and becomes 4.222 when 10/1 is applied."
+   },
+   {
+    "itemId": "cmptowbr900wos6017aiqhusr",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 3.5,
+    "why": "This is the canonical's latest St Alma count (Kitchen 31/8/2026, 3.5 kg, applied). The only later StA sheet is the 01/10 Bar & FOH count, which does not cover kitchen seafood."
+   },
+   {
+    "itemId": "cmoqfblvg004w9ky2n36m6wkg",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1.074,
+    "why": "The twin was last counted at 1.074 on 2025-11-30 (Historical Kitchen Stocktake 11.25) and was left uncounted on AA 10/1. The canonical has been counted at AA since then (5 kg on 3 Aug, 4.222 on 10/1), so summing would add stock from a 2025 count."
+   },
+   {
+    "itemId": "cmoqfblvg004w9ky2n36m6wkg",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "The twin was counted at 0 on StA Kitchen 31/8/2026, on the same sheet where the canonical counted 3.5. This is an empty old-name line, so there is nothing to carry."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "On St Alma Kitchen 31/8/2026 (REVIEWED, applied), the canonical counted 3.5 kg and the twin counted 0. The twin's 0 is the old-name line left empty, not separate stock. On Stocktake 10/1/2026 the twin's line is null, so there is nothing to fold there. No other finalised real-venue sheet has both members."
+  },
+  "canonicalNameSuggestion": "Barramundi Fillets 200/300 Skin Off",
+  "renameCanonical": false
+ },
+ {
+  "index": 175,
+  "cluster": "Prawn meat raw",
+  "action": "merge",
+  "canonicalId": "cmptowbsd00wus601fjwi5dv2",
+  "duplicateIds": [
+   "cmoqfbrxd00iq9ky2o4v4ecmh"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptowbsd00wus601fjwi5dv2",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 2,
+    "why": "This is the canonical's latest AA count (Loaded 3 Aug 2026: 2, applied). Its line on the latest AA sheet (10/1) was left uncounted, as was the twin's, so the 3 Aug figure is the best evidence. Confirm at the next count."
+   },
+   {
+    "itemId": "cmptowbsd00wus601fjwi5dv2",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "This is the canonical's latest StA count (Kitchen 31/8/2026: 0, applied). The 01/10 StA sheet is Bar & FOH only."
+   },
+   {
+    "itemId": "cmoqfbrxd00iq9ky2o4v4ecmh",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 4,
+    "why": "The twin was last counted at 4 on 2025-11-30 (Historical Kitchen 11.25) and was left uncounted on AA 10/1. The canonical has counted AA since then (4 on 31 May, 2 on 3 Aug), so summing would add 2025 stock."
+   },
+   {
+    "itemId": "cmoqfbrxd00iq9ky2o4v4ecmh",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "The twin was counted at 0 on StA Kitchen 31/8/2026 alongside the canonical's 0. Nothing to carry."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "On St Alma Kitchen 31/8/2026 (REVIEWED), both members counted 0, which is the same empty product under two names. On Stocktake 10/1/2026 both lines are null. No other finalised real-venue sheet has both."
+  },
+  "canonicalNameSuggestion": "Prawn Meat Raw Vannamei 31/40",
+  "renameCanonical": false
+ },
+ {
+  "index": 176,
+  "cluster": "Salmon fillet sashimi skin on",
+  "action": "merge",
+  "canonicalId": "cmptowbsy00wxs601gf9775f0",
+  "duplicateIds": [
+   "cmoqfbs8z00jg9ky29fx7kh7f"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptowbsy00wxs601gf9775f0",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 2.3,
+    "why": "This is the canonical's latest AA count (Loaded 3 Aug 2026: 2.3 kg, applied). Both members' lines on the latest AA sheet (10/1) are uncounted, so the 3 Aug figure stands until the next count."
+   },
+   {
+    "itemId": "cmptowbsy00wxs601gf9775f0",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "This is the canonical's latest StA count (Kitchen 31/8/2026: 0, applied). The 01/10 StA sheet is Bar & FOH only."
+   },
+   {
+    "itemId": "cmoqfbs8z00jg9ky29fx7kh7f",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "The twin's last AA count was 0 on 2025-10-31 (Historical 10.25), and its 10/1 line is uncounted. It holds nothing, and the canonical's 3 Aug count covers AA."
+   },
+   {
+    "itemId": "cmoqfbs8z00jg9ky29fx7kh7f",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "The twin was counted at 0 on StA Kitchen 31/8/2026 alongside the canonical's 0. Nothing to carry."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "On St Alma Kitchen 31/8/2026 (REVIEWED), both members counted 0. On Stocktake 10/1/2026 both lines are null. No other finalised real-venue sheet has both members."
+  },
+  "canonicalNameSuggestion": "Huon Salmon Fillet Sashimi Skin On",
+  "renameCanonical": false
+ },
+ {
+  "index": 177,
+  "cluster": "Jerusalem artichoke box",
+  "action": "merge",
+  "canonicalId": "cmoqfblq9004k9ky2vnlgxlge",
+  "duplicateIds": [
+   "cmptowbti00x0s6014liq439s"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfblq9004k9ky2vnlgxlge",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical; 0 on hand, consistent with the twin's 0 on the latest finalised AA sheet (3 Aug Loaded)."
+   },
+   {
+    "itemId": "cmoqfblq9004k9ky2vnlgxlge",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical; counted 0 on latest finalised St Alma kitchen sheet 31/8/2026."
+   },
+   {
+    "itemId": "cmptowbti00x0s6014liq439s",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on the latest finalised AA sheet (3 Aug Loaded); summing 0 into the canonical changes nothing."
+   },
+   {
+    "itemId": "cmptowbti00x0s6014liq439s",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8/2026, same as canonical; sums to 0."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma \u2014 Kitchen 31/8/2026 (REVIEWED): both members counted 0 each. No other finalised real-venue sheet has both counted (AA 1 Oct SUBMITTED lines are null)."
+  },
+  "canonicalNameSuggestion": "Jerusalem Artichoke Box 5kg",
+  "renameCanonical": false
+ },
+ {
+  "index": 178,
+  "cluster": "Cabbage",
+  "action": "merge",
+  "canonicalId": "cmsdf12xa003umij9s7ng4m59",
+  "duplicateIds": [
+   "cmoqfbmd600609ky2c4s5av0d"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf12xa003umij9s7ng4m59",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 1.47,
+    "why": "Canonical counted 1.47 on latest finalised AA sheet (3 Aug Loaded)."
+   },
+   {
+    "itemId": "cmsdf12xa003umij9s7ng4m59",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on latest finalised St Alma kitchen sheet 31/8/2026."
+   },
+   {
+    "itemId": "cmoqfbmd600609ky2c4s5av0d",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "Not on the 3 Aug AA sheet; last AA count 0.25 on 31 May 2026 (106c) and onHand 1 doesn't even match it. The 3 Aug count of 1.47 under the canonical already represents Avalon's cabbage; summing would double-count."
+   },
+   {
+    "itemId": "cmoqfbmd600609ky2c4s5av0d",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8, same sheet as canonical; sums to 0."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma \u2014 Kitchen 31/8/2026 (REVIEWED): both counted 0 each. AA 1 Oct SUBMITTED lines null for both. No other shared finalised sheet."
+  },
+  "canonicalNameSuggestion": "Cabbage",
+  "renameCanonical": false
+ },
+ {
+  "index": 179,
+  "cluster": "Red cabbage",
+  "action": "merge",
+  "canonicalId": "cmsdf12xg0040mij9918ebd7f",
+  "duplicateIds": [
+   "cmoqfbme100629ky2jjom0w39"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf12xg0040mij9918ebd7f",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 1.47,
+    "why": "Canonical counted 1.47 on latest finalised AA sheet (3 Aug Loaded)."
+   },
+   {
+    "itemId": "cmsdf12xg0040mij9918ebd7f",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on latest finalised St Alma kitchen sheet 31/8/2026."
+   },
+   {
+    "itemId": "cmoqfbme100629ky2jjom0w39",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "Not on the 3 Aug AA sheet; last AA count 0.25 on 31 May 2026 (118c), onHand 1 does not match it. Canonical's 3 Aug count already represents Avalon's red cabbage."
+   },
+   {
+    "itemId": "cmoqfbme100629ky2jjom0w39",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8, same as canonical; sums to 0."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma \u2014 Kitchen 31/8/2026 (REVIEWED): both counted 0 each. AA 1 Oct SUBMITTED lines null."
+  },
+  "canonicalNameSuggestion": "Red Cabbage",
+  "renameCanonical": false
+ },
+ {
+  "index": 180,
+  "cluster": "Dill",
+  "action": "merge",
+  "canonicalId": "cmptowbho00v8s6015b4wn135",
+  "duplicateIds": [
+   "cmoqfbnx3009k9ky2oav6wpwa"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmptowbho00v8s6015b4wn135",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 1,
+    "why": "Counted 1 bunch on the latest Alma Avalon sheet (Stocktake 10/1/2026)."
+   },
+   {
+    "itemId": "cmptowbho00v8s6015b4wn135",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8/2026, the latest St Alma kitchen count."
+   },
+   {
+    "itemId": "cmoqfbnx3009k9ky2oav6wpwa",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 2,
+    "why": "Last counted 2 on Historical Kitchen Stocktake 11.25 (30 Nov 2025); left blank on the 10/1/2026 sheet where the canonical Dill Bunch was counted at 1. Eleven-month-old herb count; the canonical's count already represents the dill on hand. Summing would double the dill to 3."
+   },
+   {
+    "itemId": "cmoqfbnx3009k9ky2oav6wpwa",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8/2026 alongside the canonical (also 0); nothing to carry."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma Kitchen 31/8/2026 (REVIEWED): both members counted 0 (Dill 0 each, Dill Bunch 0 bunch). Units differ so the fold would repoint rather than add, leaving two parent lines on one sheet. Alma Avalon 10/1/2026: only Dill Bunch counted (1); Dill line is null."
+  },
+  "canonicalNameSuggestion": "Dill",
+  "renameCanonical": false
+ },
+ {
+  "index": 181,
+  "cluster": "Forage mix 100 g",
+  "action": "merge",
+  "canonicalId": "cmsdf12xr004cmij9mhw0pbqj",
+  "duplicateIds": [
+   "cmoqfbor200bg9ky28wllsmib",
+   "cmptowc2500yjs601gm9rr4jb"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmsdf12xr004cmij9mhw0pbqj",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Latest real count 0 on Alma Avalon Loaded 31 Jul (3 Aug 2026); listed but uncounted on the 10/1/2026 sheet like its twins."
+   },
+   {
+    "itemId": "cmsdf12xr004cmij9mhw0pbqj",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8/2026."
+   },
+   {
+    "itemId": "cmoqfbor200bg9ky28wllsmib",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Last counted 0 on Historical Kitchen 10.25 (31 Oct 2025); zero, nothing to carry."
+   },
+   {
+    "itemId": "cmoqfbor200bg9ky28wllsmib",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8/2026 alongside the canonical; zero."
+   },
+   {
+    "itemId": "cmptowc2500yjs601gm9rr4jb",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "onHand is null (never counted at Alma Avalon); nothing to carry."
+   },
+   {
+    "itemId": "cmptowc2500yjs601gm9rr4jb",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8/2026 alongside the canonical; zero."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma Kitchen 31/8/2026 (REVIEWED): all three members counted 0 each, same unit - folding would sum 0+0+0. On Alma Avalon 10/1/2026 all three lines are null (uncounted)."
+  },
+  "canonicalNameSuggestion": "Forage Fresh Mix 100g",
+  "renameCanonical": false
+ },
+ {
+  "index": 185,
+  "cluster": "Tomatillos canned",
+  "action": "merge",
+  "canonicalId": "cmoqfbt6e00lk9ky2s49xhsub",
+  "duplicateIds": [
+   "cmptowb6i00tas601fb42rtbn"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbt6e00lk9ky2s49xhsub",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.8,
+    "why": "This is not tomatillo stock. Its last AA 'count' is the Historical Bar Stocktake 12.25 line labelled 'Chartreuse Green' (0.75), a liqueur bottle mis-mapped onto this item. No tomatillo count at AA since Oct 2025, and it was not counted on the latest AA sheet (10/1, null). The twin's 3 Aug count of 1 can is the real AA evidence."
+   },
+   {
+    "itemId": "cmoqfbt6e00lk9ky2s49xhsub",
+    "venue": "St Alma",
+    "treatment": "recount",
+    "onHand": 36.283898,
+    "why": "It matches the latest St Alma kitchen count (Kitchen 31/8/2026: 36 x $13.50 = $486), but the quantity is implausible. FoodByUs supplied only about 25 cans to StA between 9 May and 7 Jul, with no purchases after 7 Jul. 36 A10 cans on 31 Aug cannot be right unless counted in another unit (100 g portions? kg?). Recount in cans."
+   },
+   {
+    "itemId": "cmptowb6i00tas601fb42rtbn",
+    "venue": "Alma Avalon",
+    "treatment": "recount",
+    "onHand": 1,
+    "why": "1 can counted on the Loaded 31 Jul count (applied 3 Aug). The latest AA sheet (10/1) left both members uncounted, so this is the only real tomatillo evidence at AA and may still be on the shelf. Let it move onto the canonical (the canonical's 0.8 Chartreuse figure is zeroed) and confirm 1 can on the next AA count."
+   },
+   {
+    "itemId": "cmptowb6i00tas601fb42rtbn",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Counted 0 on StA Kitchen 31/8/2026 beside the canonical's 36. Nothing to carry."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma \u2014 Kitchen 31/8/2026 (REVIEWED, applied): canonical 36 cans ($486) and twin 0. The twin's zero adds nothing. Keep the canonical line, but its 36 is under recount (see onHandPlan). On AA 10/1/2026 both lines are null, so there is no double count there."
+  },
+  "canonicalNameSuggestion": "Tomatillos Green A10 Can (Faro)",
+  "renameCanonical": false
+ },
+ {
+  "index": 186,
+  "cluster": "Cherry tomatoes",
+  "action": "merge",
+  "canonicalId": "cmptowc7t00zls601u3qyp57t",
+  "duplicateIds": [
+   "cmoqfbt8500lo9ky2qysewf8z"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmptowc7t00zls601u3qyp57t",
+    "venue": "Alma Avalon",
+    "treatment": "recount",
+    "onHand": 3,
+    "why": "The holding is the canonical's count of 3 punnets from 3 Aug 2026 (REVIEWED). The 1 Oct sheet has an uncounted line for it, so produce counted 10 weeks ago cannot still be on the shelf. Recount, or zero it when the 1 Oct sheet is applied."
+   },
+   {
+    "itemId": "cmptowc7t00zls601u3qyp57t",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8/2026 (REVIEWED), which is the latest St Alma kitchen count."
+   },
+   {
+    "itemId": "cmoqfbt8500lo9ky2qysewf8z",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "This is the duplicate line on the same 31/8 kitchen sheet, also counted 0. The canonical's line already represents the stock, so there is nothing to sum."
+   },
+   {
+    "itemId": "cmoqfbt8500lo9ky2qysewf8z",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "An empty holding (onHand null) that was never counted at Alma Avalon. It is set to 0 so the merge does not create anything."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "On St Alma Kitchen 31/8/2026 (REVIEWED) both members were counted, canonical 0 each and duplicate 0 each. Both are also on Alma Avalon Stocktake 10/1/2026 (SUBMITTED), but neither was counted there. They never share any other real-venue sheet."
+  },
+  "canonicalNameSuggestion": "Cherry Tomatoes",
+  "renameCanonical": false
+ },
+ {
+  "index": 187,
+  "cluster": "Medley tomatoes",
+  "action": "merge",
+  "canonicalId": "cmoqfbtdc00m09ky2ttwijl3l",
+  "duplicateIds": [
+   "cmptowc4700yys601clclnxhr"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbtdc00m09ky2ttwijl3l",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8/2026 (REVIEWED), the latest St Alma kitchen count."
+   },
+   {
+    "itemId": "cmoqfbtdc00m09ky2ttwijl3l",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "An empty holding (null) that was never counted. The 0 count from the duplicate's AA holding lands here."
+   },
+   {
+    "itemId": "cmptowc4700yys601clclnxhr",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "This is the only real Alma Avalon evidence, counted 0 on 3 Aug 2026 (REVIEWED). It is summed into the canonical's empty AA holding as 0. The AA 1 Oct line is uncounted for both members."
+   },
+   {
+    "itemId": "cmptowc4700yys601clclnxhr",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "This is the duplicate line on the same 31/8 kitchen sheet, also counted 0. The canonical's line represents the stock."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "On St Alma Kitchen 31/8/2026 (REVIEWED) both members were counted, canonical 0 punnet and duplicate 0 each. The units differ, so the fold would not combine them. Both are on AA Stocktake 10/1/2026 (SUBMITTED), but neither was counted there."
+  },
+  "canonicalNameSuggestion": "Medley Tomatoes 200g",
+  "renameCanonical": false
+ },
+ {
+  "index": 192,
+  "cluster": "Manly Australian Dry Gin bulk",
+  "action": "merge",
+  "canonicalId": "cmoqfbqah00f09ky2lwzzszmq",
+  "duplicateIds": [
+   "cmsdf10ac0009miiooz0labvx"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbqah00f09ky2lwzzszmq",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0.5,
+    "why": "Canonical is counted on the latest Avalon sheet (Stocktake 10/1/2026, SUBMITTED, 18.1 L). The stored 0.5 g / 4c is unit-corrupt and the 1 Oct count will replace it once applied with the right unit."
+   },
+   {
+    "itemId": "cmoqfbqah00f09ky2lwzzszmq",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0.775,
+    "why": "Last counted on the Dec 2025 historical sheet (0.505 drums keyed as ml). The item is not on the 1 Oct St Alma sheet. St Alma's real Manly Dry Gin stock is on the floor item cmptovwfz00drs601ep9r8o8y 'Manly Spirits Dry Gin' (8300 ml on 1 Oct). The 0.775 / 5c value is stale and unit-corrupt."
+   },
+   {
+    "itemId": "cmsdf10ac0009miiooz0labvx",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "onHand is null and the item has never been counted at Avalon (null lines on 1 Sep and 1 Oct). The canonical's 1 Oct Avalon count holds the stock."
+   },
+   {
+    "itemId": "cmsdf10ac0009miiooz0labvx",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 0,
+    "why": "Last count was 0 on 3 Aug 2026 (Loaded import). Nothing to sum."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "Both members have lines on the Avalon 1 Sep (both null) and Avalon 1 Oct sheets (ADG null, Manly 18.1 L), but on no finalised real-venue sheet were both counted."
+  },
+  "canonicalNameSuggestion": "Manly Spirits Australian Dry Gin 20 L Bulk",
+  "renameCanonical": false
+ },
+ {
+  "index": 197,
+  "cluster": "Freshwater Brewing kegs",
+  "action": "merge_partial",
+  "canonicalId": "cmptovupo000us601bx6i2hjl",
+  "duplicateIds": [
+   "cmoqfbsjv00k49ky2xjcdyti7"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovupo000us601bx6i2hjl",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical is on the latest AA sheet (null on 1 Oct) and was last counted 0 (30 Jun Loaded)."
+   },
+   {
+    "itemId": "cmptovupo000us601bx6i2hjl",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Canonical was last counted 0 on 3 Aug at St Alma. It is not on the 1 Oct StA sheet, so no Hazy Pale keg was counted there."
+   },
+   {
+    "itemId": "cmoqfbsjv00k49ky2xjcdyti7",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 0.9,
+    "why": "Comes from the Historical Bar Stocktake of 31 Dec 2025 (2 kegs) and later depletion, value $243. The canonical has counted 0 Hazy Pale at AA since 2 Jun. Stale."
+   },
+   {
+    "itemId": "cmoqfbsjv00k49ky2xjcdyti7",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 1.8,
+    "why": "Comes from the Historical Bar Stocktake of 31 Dec 2025 (2.2 kegs), value $486. The canonical has counted 0 at St Alma on 2 Jun, 30 Jun and 3 Aug. Stale."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "none",
+   "detail": "On every shared finalised sheet (AA 1 Sep) both Hazy Pale members are null. Their counted sheets never overlap: Historical 2025 for Secrets, Loaded/Aug 2026 for the canonical."
+  },
+  "canonicalNameSuggestion": "Freshwater Brewing Hazy Pale Keg 50 L",
+  "renameCanonical": false
+ },
+ {
+  "index": 198,
+  "cluster": "Heaps Normal",
+  "action": "merge_partial",
+  "canonicalId": "cmptovumn000ds601vvr3abs2",
+  "duplicateIds": [
+   "cmoqfbph800d49ky2azdg1s27"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmptovumn000ds601vvr3abs2",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 15,
+    "why": "The canonical is on the latest AA sheets: counted 15 on the applied 1 Sep sheet, and 28 on the submitted, unapplied 1 Oct sheet."
+   },
+   {
+    "itemId": "cmptovumn000ds601vvr3abs2",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 9,
+    "why": "The canonical was counted 9 on the applied 31 Aug sheet and 15 on the submitted 1 Oct StA sheet."
+   },
+   {
+    "itemId": "cmoqfbph800d49ky2azdg1s27",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 21,
+    "why": "Its last real count was 37 on 31 Dec 2025 (Historical Bar Stocktake 12.25). The on-hand of 21 matches the Sep 2025 count. It is null on the AA 1 Sep and 1 Oct sheets, where the canonical carries the Quiet XPA count. Summing would double-count."
+   },
+   {
+    "itemId": "cmoqfbph800d49ky2azdg1s27",
+    "venue": "St Alma",
+    "treatment": "discard_stale",
+    "onHand": 47,
+    "why": "Its last count was 27 on 31 Dec 2025, and 47 is the Sep 2025 figure. It is absent from all 2026 StA floor sheets, where the canonical was counted (3 Aug, 31 Aug, 1 Oct)."
+   },
+   {
+    "itemId": "cmptovum3000as601zbxhbfyt",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 57,
+    "why": "Another Lager stays a separate item. It was counted 57 on AA 1 Sep (applied) and 48 on 1 Oct (submitted)."
+   },
+   {
+    "itemId": "cmptovum3000as601zbxhbfyt",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 33,
+    "why": "Another Lager stays a separate item. It was counted 33 on StA 31 Aug (applied) and 20 on 1 Oct (submitted)."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": false,
+   "treatment": "keep_canonical_line_only",
+   "detail": "On AA 1 Sep (REVIEWED) and AA 1 Oct (SUBMITTED), the case item has a line with countedQty null (unit 'can') next to the canonical's count (15 / 28, unit 'bottle'). No sheet has two non-null counts for the merged pair. Because the units differ the fold would not trigger anyway. Drop the empty duplicate lines so the canonical does not end up with two lines on one sheet."
+  },
+  "canonicalNameSuggestion": "Heaps Normal Quiet XPA Can",
+  "renameCanonical": false
+ },
+ {
+  "index": 221,
+  "cluster": "Cucumber Qukes",
+  "action": "merge",
+  "canonicalId": "cmoqfbnq600949ky2ivt75r59",
+  "duplicateIds": [
+   "cmptowbzp00y1s601sgs2p9p8"
+  ],
+  "unitSafe": false,
+  "onHandPlan": [
+   {
+    "itemId": "cmoqfbnq600949ky2ivt75r59",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "This 1 punnet is the Historical Kitchen Stocktake 11.25 count (30 Nov 2025). The canonical was never counted at AA in 2026 (blank on 10/1). The floor twin counted AA cucumbers more recently (2 on 3 Aug 2026), so this is a stale record of the same stock. Set it to 0 before merging so the twin's 2 is not inflated to 3. Discard 380c."
+   },
+   {
+    "itemId": "cmoqfbnq600949ky2ivt75r59",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on the latest St Alma kitchen sheet (31/8/2026, REVIEWED), which matches onHand."
+   },
+   {
+    "itemId": "cmptowbzp00y1s601sgs2p9p8",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 2,
+    "why": "This is the most recent real AA count for the product (2 punnets on 3 Aug 2026, AA Loaded, REVIEWED) and matches onHand. It moves or sums onto the canonical after the canonical's stale 1 is zeroed, giving 2. Both lines were left blank on AA 10/1, so a recount at the next AA count is advisable."
+   },
+   {
+    "itemId": "cmptowbzp00y1s601sgs2p9p8",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8/2026, the same sheet where the canonical counted 0. Summing gives 0."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma Kitchen 31/8/2026 (REVIEWED): floor 0 each and canonical 0 punnet. The units differ, so the fold would leave two zero lines. On AA 10/1 (SUBMITTED) both lines are uncounted. No other finalised real-venue sheet has both members (the Loaded 30 Jun sheets are AA for the floor item and StA for the punnet item). Phantom and VOID sheets are ignored."
+  },
+  "canonicalNameSuggestion": "Cucumber Qukes",
+  "renameCanonical": false
+ },
+ {
+  "index": 230,
+  "cluster": "Strawberries punnet",
+  "action": "merge",
+  "canonicalId": "cmptowbej00ups60149firyd2",
+  "duplicateIds": [
+   "cmoqfbsuf00ks9ky2t84r95io"
+  ],
+  "unitSafe": true,
+  "onHandPlan": [
+   {
+    "itemId": "cmptowbej00ups60149firyd2",
+    "venue": "Alma Avalon",
+    "treatment": "keep",
+    "onHand": 2,
+    "why": "Canonical's most recent Avalon count (3 Aug, 2 punnets). Both strawberry lines on the latest AA sheet (10/1) were left blank, so no newer count exists. Perishable, so the next count will almost certainly zero it."
+   },
+   {
+    "itemId": "cmptowbej00ups60149firyd2",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on the latest St Alma kitchen sheet (31/8)."
+   },
+   {
+    "itemId": "cmoqfbsuf00ks9ky2t84r95io",
+    "venue": "Alma Avalon",
+    "treatment": "discard_stale",
+    "onHand": 1,
+    "why": "Last counted 30 Nov 2025 on Historical Kitchen Stocktake 11.25 (1 punnet, $4.50). Strawberries from 11 months ago are gone, and the canonical's 3 Aug count (2) already represents Avalon's strawberries. Summing would double them."
+   },
+   {
+    "itemId": "cmoqfbsuf00ks9ky2t84r95io",
+    "venue": "St Alma",
+    "treatment": "keep",
+    "onHand": 0,
+    "why": "Counted 0 on St Alma Kitchen 31/8, so summing it adds nothing."
+   }
+  ],
+  "sameSheetDoubleCount": {
+   "present": true,
+   "treatment": "keep_canonical_line_only",
+   "detail": "St Alma \u2014 Kitchen 31/8/2026 (REVIEWED): both lines counted 0 punnets, so the total is 0 either way and nothing is lost by dropping the duplicate's zero line. On Stocktake 10/1/2026 (AA, SUBMITTED) both lines are blank. The 2025 historical sheets hold only the duplicate."
+  },
+  "canonicalNameSuggestion": "Strawberries Large Punnet",
+  "renameCanonical": false
+ }
+]

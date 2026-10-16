@@ -1,0 +1,2935 @@
+[
+ {
+  "index": 81,
+  "field": "onHandPlan[cmptovwwd00h3s601h44sp6ix@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.4,
+   "valueCents": 2402
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] Canonical StA 0.4 is the latest APPLIED St Alma count (Bar & FOH 31/08/2026); the twin 0.05 is Sept-2025 replay residue. Same rule as 113/117 (interim holding = most recent applied count)."
+ },
+ {
+  "index": 81,
+  "field": "onHandPlan[cmoqfbu7700nw9ky2fv68pmc9@St Alma]",
+  "current": {
+   "treatment": "keep",
+   "onHand": 0.05,
+   "valueCents": 289
+  },
+  "corrected": {
+   "treatment": "discard_stale"
+  },
+  "reason": "[verdict-endorsed] Twin 0.05 is 2025 residue, not from any 2026 count."
+ },
+ {
+  "index": 81,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 7020,
+   "realCentsRetained": 1490
+  },
+  "corrected": {
+   "staleCentsDiscarded": 4907,
+   "realCentsRetained": 3603
+  },
+  "reason": "[verdict-endorsed] Follows the two flips."
+ },
+ {
+  "index": 101,
+  "field": "onHandPlan[cmoqfbp3y00ca9ky2jzs8f0n8@Alma Avalon]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.6875,
+   "valueCents": 1471
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] PREP-HELD: 0.6875 bottle held in Ginger Spice Batch, credited by the AA 9/1 apply; the canonical 1.7 counts loose only."
+ },
+ {
+  "index": 101,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 7934,
+   "realCentsRetained": 0
+  },
+  "corrected": {
+   "staleCentsDiscarded": 6463,
+   "realCentsRetained": 1471
+  },
+  "reason": "[verdict-endorsed] Only the twin StA 3.02 (Dec-2025 replay) is stale."
+ },
+ {
+  "index": 105,
+  "field": "onHandPlan[cmsdf10jz004fmiioy6e21lmz@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 8,
+   "valueCents": 12160
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] Twin StA 8 L is the applied 31/08 count on the row next to the canonical 0 L; sum gives 8 L. Value at canonical corrected cost (8 x 1400 = 11200c)."
+ },
+ {
+  "index": 105,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "recount",
+  "corrected": [
+   {
+    "sheet": "St Alma — Bar & FOH 31/08/2026",
+    "treatment": "keep_duplicate_line"
+   },
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_duplicate_line",
+    "note": "canonical line blank, twin 25.1 L"
+   },
+   {
+    "sheet": "St Alma — Bar & FOH 01/10/2026",
+    "treatment": "collapse_to_one_line_after_recount",
+    "note": "3.8 L vs 1 each; units differ so no fold; apply keeps the last counted line"
+   }
+  ],
+  "reason": "[verdict-endorsed] 'recount' is not an executable fold treatment; AA 10/1 canonical line is blank so the 25.1 L must survive."
+ },
+ {
+  "index": 105,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Backfill would copy 5000 ml onto a litre item (5x recipe error); decision states this only in prose."
+ },
+ {
+  "index": 105,
+  "field": "avgCostCents",
+  "current": 7000,
+  "corrected": {
+   "value": 1400,
+   "when": "pre-merge"
+  },
+  "reason": "[verdict-endorsed] Canonical 7000c is the 5 L pack price on a litre item (decision + verdict)."
+ },
+ {
+  "index": 129,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "canonical cmupcujb803fdpd0190j2modm 561 g"
+  },
+  "corrected": {
+   "countedQty": 0.561,
+   "unit": "each",
+   "deleteDuplicateBlankLine": "cmupcujb803fcpd01lrq3l9mm"
+  },
+  "reason": "[verdict-endorsed] applyStocktake writes countedQty raw (stocktakes.service.ts 1451-1453, no unit conversion); 561 g would book 561 bags (~$3,500). The decision assumed the measure converts it."
+ },
+ {
+  "index": 129,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Canonical 100 g is the floor default; twin and recipe line are 1000 g."
+ },
+ {
+  "index": 136,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_canonical_line_only",
+  "corrected": [
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_duplicate_line",
+    "resultingLine": {
+     "countedQty": 1,
+     "unit": "each"
+    }
+   },
+   {
+    "sheet": "St Alma — Kitchen 31/8/2026",
+    "treatment": "keep_canonical_line_only"
+   }
+  ],
+  "reason": "[verdict-endorsed] Surviving AA line must be 1 each, never 540 (raw apply = 540 tubs, ~$4,887)."
+ },
+ {
+  "index": 136,
+  "field": "categoryOverride",
+  "current": "Dry / Pantry",
+  "corrected": "Herbs & Spices",
+  "reason": "[critic-consistency] Same spice pattern as 137/138/204: floor row filed Dry / Pantry, invoice row Herbs & Spices."
+ },
+ {
+  "index": 137,
+  "field": "onHandPlan[cmoqfbr7100h29ky2r48yn0lt@Alma Avalon]",
+  "current": {
+   "treatment": "recount",
+   "onHand": 1,
+   "valueCents": 900
+  },
+  "corrected": {
+   "treatment": "discard_stale"
+  },
+  "reason": "[verdict-endorsed] Twin AA 1 is the Nov-2025 Historical Kitchen 11.25 replay; superseded by 31 May (0.83) and 3 Aug (0.6). recount on a duplicate is not executable (it is summed)."
+ },
+ {
+  "index": 137,
+  "field": "onHandPlan[cmsdf12th001cmij97z2i2rgw@Alma Avalon]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.6,
+   "valueCents": 540
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] Canonical 0.6 is the most recent APPLIED AA count (3 Aug)."
+ },
+ {
+  "index": 137,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 540,
+   "realCentsRetained": 900
+  },
+  "corrected": {
+   "staleCentsDiscarded": 900,
+   "realCentsRetained": 540
+  },
+  "reason": "[verdict-endorsed] Follows the swap."
+ },
+ {
+  "index": 137,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "canonical 500 g + twin 0.5 each"
+  },
+  "corrected": {
+   "collapseTo": "one canonical line in each",
+   "countedQty": "shelf check: 1 or 0.5 (never 1.5 or 500)"
+  },
+  "reason": "[verdict-endorsed] Units differ so no fold; raw apply of 500 g books 500 tubs."
+ },
+ {
+  "index": 137,
+  "field": "categoryOverride",
+  "current": "Dry / Pantry",
+  "corrected": "Herbs & Spices",
+  "reason": "[critic-consistency] Same as 136."
+ },
+ {
+  "index": 140,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_canonical_line_only",
+  "corrected": [
+   {
+    "sheet": "St Alma — Kitchen 31/8/2026",
+    "treatment": "keep_canonical_line_only"
+   },
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_duplicate_line",
+    "resultingLine": {
+     "countedQty": 0.97,
+     "unit": "each"
+    }
+   }
+  ],
+  "reason": "[verdict-endorsed] Cluster-wide keep_canonical_line_only would delete the only AA pistachio count (970 g); the line must be restated (raw 970 = $43,165)."
+ },
+ {
+  "index": 140,
+  "field": "preMergeDuplicatePatch",
+  "current": {
+   "cmptowawj00rgs601q0qie3ec.measurePerCountUnit": 100
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000
+  },
+  "reason": "[verdict-endorsed] Script spec §5.1 refuses when both measures are set and differ."
+ },
+ {
+  "index": 145,
+  "field": "action",
+  "current": {
+   "action": "merge",
+   "duplicateIds": [
+    "cmoqfbsiy00k29ky26w7hlejy"
+   ],
+   "keepSeparateIds": []
+  },
+  "corrected": {
+   "action": "keep_separate"
+  },
+  "reason": "[verdict-endorsed] Olssons 6 kg carton is not the 2 kg Pyramid bag; the 2 kg floor item belongs with Salt Flakes (cluster 203), which itself needs a shelf check. cmsdf12uj also sits in cluster 203 (whole-run refusal §5.2)."
+ },
+ {
+  "index": 146,
+  "field": "onHandPlan[cmoqfbskr00k69ky2ie8qaiuw@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.312161,
+   "valueCents": 281
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] PREP-HELD 0.312161 bag (Salsa Macha, Mole Verde) set by the applied StA Kitchen 31/8."
+ },
+ {
+  "index": 146,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 1181,
+   "realCentsRetained": 477
+  },
+  "corrected": {
+   "staleCentsDiscarded": 900,
+   "realCentsRetained": 758
+  },
+  "reason": "[verdict-endorsed] Follows the flip."
+ },
+ {
+  "index": 146,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "canonical 969 g"
+  },
+  "corrected": {
+   "countedQty": 0.969,
+   "unit": "each",
+   "deleteDuplicateNullLine": true
+  },
+  "reason": "[verdict-endorsed] Raw apply = 969 bags (~$8,721)."
+ },
+ {
+  "index": 148,
+  "field": "onHandPlan[cmoqfbtqg00mu9ky23ctmc7au@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.137842,
+   "valueCents": 69
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] PREP-HELD 0.137842 (Beef Birria), set by the 31/8 apply; canonical StA is 0."
+ },
+ {
+  "index": 148,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 569,
+   "realCentsRetained": 60
+  },
+  "corrected": {
+   "staleCentsDiscarded": 500,
+   "realCentsRetained": 77
+  },
+  "reason": "[verdict-endorsed] At canonical 120c."
+ },
+ {
+  "index": 149,
+  "field": "onHandPlan[cmoqfbr2k00gs9ky2ncbfja0w@St Alma]",
+  "current": {
+   "treatment": "recount",
+   "onHand": 0.41731,
+   "valueCents": 1085
+  },
+  "corrected": {
+   "treatment": "discard_stale"
+  },
+  "reason": "[verdict-endorsed] 'recount' is summed raw (0.41731 tins read as 0.417 L). Zero it, then set the canonical StA holding post-merge."
+ },
+ {
+  "index": 149,
+  "field": "postMergeOnHand",
+  "current": null,
+  "corrected": {
+   "venue": "St Alma",
+   "onHand": 1.66924,
+   "unit": "L",
+   "valueCents": 1085
+  },
+  "reason": "[critic-new] Critic call on the verdict hedge: 0.3 loose tins + 0.11731 tins prep-held = 0.41731 x 4 L. Prep-held stock is kept everywhere else (consistency rule P1)."
+ },
+ {
+  "index": 149,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Otherwise backfill copies 4000 ml onto a litre item (14 recipe lines 4x)."
+ },
+ {
+  "index": 150,
+  "field": "onHandPlan[cmoqfbu4l00nq9ky2hmc9vwwh@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.175988,
+   "valueCents": 847
+  },
+  "corrected": {
+   "treatment": "keep",
+   "onHand": 1.75988
+  },
+  "reason": "[verdict-endorsed] PREP-HELD 0.175988 kg-bag set by the 31/8 apply. Rewrite to canonical 100 g units before summing."
+ },
+ {
+  "index": 150,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 5662,
+   "realCentsRetained": 3150
+  },
+  "corrected": {
+   "staleCentsDiscarded": 4815,
+   "realCentsRetained": 3997
+  },
+  "reason": "[verdict-endorsed] Follows the flip."
+ },
+ {
+  "index": 150,
+  "field": "latestCostCents",
+  "current": 4824,
+  "corrected": {
+   "value": 482,
+   "when": "pre-merge"
+  },
+  "reason": "[verdict-endorsed] Canonical latestCost 4824 is per kg on a 100 g item; exports read latestCost first."
+ },
+ {
+  "index": 150,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "repointed twin line 157 g + canonical blank each"
+  },
+  "corrected": {
+   "countedQty": 1.57,
+   "unit": "each",
+   "onLine": "canonical",
+   "deleteOther": true
+  },
+  "reason": "[critic-new] Verdict says the 157 g line \"converts to 1.57 when applied\"; it does not (raw apply = 157 x 482c = $757). Restate it."
+ },
+ {
+  "index": 151,
+  "field": "onHandPlan[cmoqfblfq003w9ky26t8runbo@St Alma]",
+  "current": {
+   "treatment": "recount",
+   "onHand": 0.367277,
+   "valueCents": 514
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] Not drift: 0.17 loose + 0.197277 prep-held, exactly what the 31/8 apply wrote. Sum after the canonical measure is set to 350 g."
+ },
+ {
+  "index": 151,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 350,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Twin bag is 350 g; canonical 100 g is the floor default."
+ },
+ {
+  "index": 151,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_duplicate_line",
+  "corrected": [
+   {
+    "sheet": "St Alma — Kitchen 31/8/2026",
+    "treatment": "keep_duplicate_line"
+   },
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_canonical_line_only"
+   }
+  ],
+  "reason": "[critic-new] A cluster-wide keep_duplicate_line would overwrite the canonical AA 350 g count with the twin blank."
+ },
+ {
+  "index": 151,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "canonical 350 g"
+  },
+  "corrected": {
+   "countedQty": 1,
+   "unit": "each"
+  },
+  "reason": "[critic-new] Decision assumes apply converts g by measure; raw apply = 350 bags ($4,900)."
+ },
+ {
+  "index": 160,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 2030,
+   "when": "pre-merge"
+  },
+  "reason": "[verdict-endorsed] Canonical latestCost is NULL, so step 6 backfills the floor item per-kg 678 onto a 3 kg tub. costTreatment claims the opposite."
+ },
+ {
+  "index": 168,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Canonical kg item has NULL measure; backfill would copy 2000 g (a bag)."
+ },
+ {
+  "index": 168,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 1150,
+   "when": "pre-merge"
+  },
+  "reason": "[verdict-endorsed] Backfill would copy 2300 (per 2 kg bag) onto the kg item."
+ },
+ {
+  "index": 168,
+  "field": "costReviewed",
+  "current": false,
+  "corrected": true,
+  "reason": "[verdict-endorsed] Per-bag vs per-kg cost reviewed."
+ },
+ {
+  "index": 173,
+  "field": "action",
+  "current": {
+   "action": "merge",
+   "duplicateIds": [
+    "cmoqfbmzg007g9ky2i997b2mv",
+    "cmoqfbt2200la9ky2nxnixo13"
+   ],
+   "keepSeparateIds": []
+  },
+  "corrected": {
+   "action": "merge_partial",
+   "duplicateIds": [
+    "cmoqfbmzg007g9ky2i997b2mv"
+   ],
+   "keepSeparateIds": [
+    "cmoqfbt2200la9ky2nxnixo13"
+   ]
+  },
+  "reason": "[verdict-endorsed] 'THIGH FILLET SKIN OFF (Pack of 5kg)' is a different pack (likely frozen) with per-pack cost 6750; keep separate until the chef confirms."
+ },
+ {
+  "index": 199,
+  "field": "action",
+  "current": {
+   "action": "merge_partial",
+   "duplicateIds": [
+    "cmoqfbkvm002m9ky2rzyybxgs"
+   ],
+   "keepSeparateIds": [
+    "cmoqfbkdv001i9ky2leqkwvfo"
+   ]
+  },
+  "corrected": {
+   "action": "merge",
+   "duplicateIds": [
+    "cmoqfbkvm002m9ky2rzyybxgs",
+    "cmoqfbkdv001i9ky2leqkwvfo"
+   ],
+   "keepSeparateIds": [],
+   "preMergeRelinks": {
+    "Teusner Avatar GSM 12.25 AA line (on 2023)": "cmptovvg40060s60123zb2ouq",
+    "Teusner Big Jim Shiraz 11.25/12.25 StA lines (on 2022)": "cmsdf10os007rmiiocxqo2ss2"
+   }
+  },
+  "reason": "[verdict-endorsed] Critic call: take the verdict's preferred option. The 2022/2023 split follows spelling ('Teusner' StA vs 'Tesuner' AA), both carried the same $18.65 valuation, recipes are undated, the floor item continues BOTH series, and the decision itself discards the 2022 StA 15 as 'the same bin'. This is consistent with clusters 112-126 and 200-202, where every vintaged invoice twin folds into the undated floor item. Requires Tim to confirm the venues do not track Wark vintages; otherwise fall back to merging nothing."
+ },
+ {
+  "index": 199,
+  "field": "canonicalNameSuggestion",
+  "current": "Teusner Wark Family Shiraz 2023",
+  "corrected": "Teusner Wark Family Shiraz",
+  "reason": "[verdict-endorsed] Nothing shows the floor item is the 2023."
+ },
+ {
+  "index": 201,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 4752,
+   "when": "pre-merge (or null the twin latestCost)"
+  },
+  "reason": "[verdict-endorsed] Backfill copies the twin case price 28512 onto a bottle item (6x)."
+ },
+ {
+  "index": 203,
+  "field": "action",
+  "current": {
+   "action": "merge",
+   "duplicateIds": [
+    "cmptowb3800sps601994a7sjm"
+   ],
+   "keepSeparateIds": []
+  },
+  "corrected": {
+   "action": "keep_separate"
+  },
+  "reason": "[verdict-endorsed] Salt Flakes (Kilo-counted) and Sea Salt Flakes (2 KG) were counted side by side on the same Loaded sheets; needs a shelf check. Also removes the cmsdf12uj double membership with 145."
+ },
+ {
+  "index": 204,
+  "field": "onHandPlan[cmoqfbt4p00lg9ky2n6pigdc8@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.297956,
+   "valueCents": 238
+  },
+  "corrected": {
+   "treatment": "keep",
+   "onHand": 0.059591
+  },
+  "reason": "[verdict-endorsed] PREP-HELD 0.297956 pack (Chimichurri). Convert 200 g pack to canonical 1 kg units before summing."
+ },
+ {
+  "index": 204,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 1038,
+   "realCentsRetained": 400
+  },
+  "corrected": {
+   "staleCentsDiscarded": 800,
+   "realCentsRetained": 638
+  },
+  "reason": "[verdict-endorsed] Follows the flip."
+ },
+ {
+  "index": 206,
+  "field": "onHandPlan[cmoqfbn51007s9ky24h5tiwej@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.244853,
+   "valueCents": 453
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] PREP-HELD 0.244853 tin (Chipotle Mayo, Chicken Tinga) written by the 31/8 apply."
+ },
+ {
+  "index": 206,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 4231,
+   "realCentsRetained": 6092
+  },
+  "corrected": {
+   "staleCentsDiscarded": 3778,
+   "realCentsRetained": 6545
+  },
+  "reason": "[verdict-endorsed] Follows the flip."
+ },
+ {
+  "index": 210,
+  "field": "action",
+  "current": {
+   "action": "merge",
+   "duplicateIds": [
+    "cmptowbqp00wls601bcwq8o9w",
+    "cmoqfbo5x00a49ky2ntwtoqo6"
+   ],
+   "keepSeparateIds": []
+  },
+  "corrected": {
+   "action": "merge_partial",
+   "duplicateIds": [
+    "cmptowbqp00wls601bcwq8o9w"
+   ],
+   "keepSeparateIds": [
+    "cmoqfbo5x00a49ky2ntwtoqo6"
+   ]
+  },
+  "reason": "[verdict-endorsed] Keep 'Eggs 700g Packet Dozen' separate until Avalon confirms free-range vs caged; zero its stale AA 2 by a standalone adjustment."
+ },
+ {
+  "index": 210,
+  "field": "avgCostCents",
+  "current": 63,
+  "corrected": {
+   "value": 760,
+   "when": "pre-merge"
+  },
+  "reason": "[verdict-endorsed] Canonical 63c per dozen is wrong (decision states this in prose)."
+ },
+ {
+  "index": 215,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Canonical kg item has NULL measure; step-6 backfill would copy the floor item 100 g (1 kg = 100 g)."
+ },
+ {
+  "index": 217,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Canonical kg item has NULL measure; step-6 backfill would copy the floor item 100 g (1 kg = 100 g)."
+ },
+ {
+  "index": 218,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Canonical kg item has NULL measure; step-6 backfill would copy the floor item 100 g (1 kg = 100 g)."
+ },
+ {
+  "index": 219,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Canonical kg item has NULL measure; step-6 backfill would copy the floor item 100 g (1 kg = 100 g)."
+ },
+ {
+  "index": 223,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Canonical kg item has NULL measure; step-6 backfill would copy the floor item 100 g (1 kg = 100 g)."
+ },
+ {
+  "index": 229,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Canonical kg item has NULL measure; step-6 backfill would copy the floor item 100 g (1 kg = 100 g)."
+ },
+ {
+  "index": 224,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Same kg-produce backfill hazard as 215/217/218/219/223/229; neither the decision nor the verdict mentions it here."
+ },
+ {
+  "index": 225,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Backfill would copy 70 g (one lime) onto the kg item."
+ },
+ {
+  "index": 225,
+  "field": "avgCostCents",
+  "current": 4557,
+  "corrected": {
+   "value": 1852,
+   "when": "pre-merge"
+  },
+  "reason": "[verdict-endorsed] Canonical 4557 is a box price; 22 Sep invoice 1852c/kg."
+ },
+ {
+  "index": 225,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 1852,
+   "when": "pre-merge"
+  },
+  "reason": "[verdict-endorsed] Backfill would copy 3374 (5 kg box)."
+ },
+ {
+  "index": 215,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 266,
+   "when": "pre-merge"
+  },
+  "reason": "[verdict-endorsed] 29 Sep invoice; backfill would copy 264 (acceptable but stale)."
+ },
+ {
+  "index": 217,
+  "field": "avgCostCents",
+  "current": null,
+  "corrected": {
+   "value": 2233,
+   "when": "pre-merge"
+  },
+  "reason": "[verdict-endorsed] Neither member has a cost; without this every habanero holding values at 0. 25 Jun invoice 2233c/kg."
+ },
+ {
+  "index": 216,
+  "field": "onHandPlan[cmoqfbmq3006u9ky2moifslkb@Alma Avalon]",
+  "current": {
+   "treatment": "keep",
+   "onHand": 1,
+   "valueCents": 480
+  },
+  "corrected": {
+   "treatment": "discard_stale"
+  },
+  "reason": "[verdict-endorsed] Canonical AA 1 head is unsupported by any 2026 count."
+ },
+ {
+  "index": 216,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 0,
+   "realCentsRetained": 2242
+  },
+  "corrected": {
+   "staleCentsDiscarded": 480,
+   "realCentsRetained": 1762
+  },
+  "reason": "[verdict-endorsed] Follows the flip."
+ },
+ {
+  "index": 220,
+  "field": "onHandPlan[cmoqfbnit008o9ky2rf1uo52e@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 3.730637,
+   "valueCents": 75
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] PREP-HELD 3.730637 bunches (Chimichurri, Short Ribs, Mole Verde) from the 31/8 apply."
+ },
+ {
+  "index": 220,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 408,
+   "realCentsRetained": 0
+  },
+  "corrected": {
+   "staleCentsDiscarded": 333,
+   "realCentsRetained": 888
+  },
+  "reason": "[verdict-endorsed] At canonical 238c/bunch."
+ },
+ {
+  "index": 224,
+  "field": "onHandPlan[cmoqfbmkz006i9ky21eucn5r4@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.238365,
+   "valueCents": 138
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] PREP-HELD 0.238365 kg (Chimichurri) from the 31/8 apply."
+ },
+ {
+  "index": 224,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 138,
+   "realCentsRetained": 715
+  },
+  "corrected": {
+   "staleCentsDiscarded": 0,
+   "realCentsRetained": 853
+  },
+  "reason": "[verdict-endorsed] Follows the flip."
+ },
+ {
+  "index": 227,
+  "field": "onHandPlan[cmoqfbr8s00h69ky2mqpn80eh@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 5.042474,
+   "valueCents": 983
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] PREP-HELD 5.042474 kg from the 31/8 apply."
+ },
+ {
+  "index": 227,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 1178,
+   "realCentsRetained": 2185
+  },
+  "corrected": {
+   "staleCentsDiscarded": 195,
+   "realCentsRetained": 3168
+  },
+  "reason": "[verdict-endorsed] Follows the flip."
+ },
+ {
+  "index": 227,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_canonical_line_only",
+  "corrected": [
+   {
+    "sheet": "St Alma — Kitchen 31/8/2026",
+    "treatment": "keep_canonical_line_only"
+   },
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_duplicate_line",
+    "note": "canonical null kg, floor 11 kg"
+   }
+  ],
+  "reason": "[verdict-endorsed] Blanket keep_canonical_line_only deletes the only AA onion count."
+ },
+ {
+  "index": 228,
+  "field": "onHandPlan[cmoqfbr9m00h89ky2axze22b1@St Alma]",
+  "current": {
+   "treatment": "recount",
+   "onHand": 2.555085,
+   "valueCents": 8176
+  },
+  "corrected": {
+   "treatment": "discard_stale"
+  },
+  "reason": "[verdict-endorsed] 'recount' is summed raw: 2.555 bags (~7159c) would land on the merged item; the prep share is ~255 g."
+ },
+ {
+  "index": 228,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 10648,
+   "realCentsRetained": 8775
+  },
+  "corrected": {
+   "staleCentsDiscarded": 18824,
+   "realCentsRetained": 0
+  },
+  "reason": "[verdict-endorsed] Kept-separate kg item value is not part of this merge."
+ },
+ {
+  "index": 231,
+  "field": "onHandPlan[cmoqfbt7900lm9ky2nx5k7g6p@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.430956,
+   "valueCents": 2793
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[verdict-endorsed] PREP-HELD 0.430956 box written by the 31/8 apply."
+ },
+ {
+  "index": 231,
+  "field": "onHandPlan[cmoqfbtch00ly9ky24k97oeb6@St Alma]",
+  "current": {
+   "treatment": "recount",
+   "onHand": 0.757898,
+   "valueCents": 2691
+  },
+  "corrected": {
+   "treatment": "keep",
+   "onHand": 0.476839
+  },
+  "reason": "[verdict-endorsed] Correct the 100x prep mis-scaling: 0.474 loose + 0.002839 held."
+ },
+ {
+  "index": 231,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 9273,
+   "realCentsRetained": 44701
+  },
+  "corrected": {
+   "staleCentsDiscarded": 6480,
+   "realCentsRetained": 46496
+  },
+  "reason": "[verdict-endorsed] Follows the two changes."
+ },
+ {
+  "index": 128,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_canonical_line_only",
+  "corrected": [
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_canonical_line_only"
+   },
+   {
+    "sheet": "Alma Avalon — Bar & FOH 9/1/2026",
+    "treatment": "keep_duplicate_line"
+   },
+   {
+    "sheet": "St Alma — Bar & FOH 31/08/2026",
+    "treatment": "keep_canonical_line_only"
+   }
+  ],
+  "reason": "[verdict-endorsed] Canonical line on AA 9/1 is blank; twin holds the real 0."
+ },
+ {
+  "index": 114,
+  "field": "onHandPlan[cmptovvc20056s601ll6tfzz1@St Alma]",
+  "current": {
+   "treatment": "keep",
+   "onHand": 17.3,
+   "valueCents": 26106
+  },
+  "corrected": {
+   "treatment": "discard_stale"
+  },
+  "reason": "[critic-consistency] Rule P2 (as applied in 81, 113, 117): the interim holding is the most recent APPLIED count. Canonical 17.3 is the 3 Aug count; the twin 10.2 is the later applied 31/08 count of the same shelf. Same end state after the 1 Oct apply (5)."
+ },
+ {
+  "index": 114,
+  "field": "onHandPlan[cmoqfbk6u00129ky27whltdip@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 10.2,
+   "valueCents": 13005
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[critic-consistency] Twin 10.2 = applied 31/08 count; summed onto the zeroed canonical row."
+ },
+ {
+  "index": 114,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 16320,
+   "realCentsRetained": 31991
+  },
+  "corrected": {
+   "staleCentsDiscarded": 29421,
+   "realCentsRetained": 18890
+  },
+  "reason": "[critic-consistency] Swap 26106 (canonical 3 Aug) for 13005 (twin 31/08); 15392c at canonical cost."
+ },
+ {
+  "index": 89,
+  "field": "onHandPlan[cmptovuve0020s601uaajndu4@St Alma]",
+  "current": {
+   "treatment": "keep",
+   "onHand": 1.42,
+   "valueCents": 6602
+  },
+  "corrected": {
+   "treatment": "discard_stale"
+  },
+  "reason": "[critic-consistency] Rule P2: canonical 1.42 is the 3 Aug Loaded count; twin 1.1 is the later applied 31/08 count."
+ },
+ {
+  "index": 89,
+  "field": "onHandPlan[cmoqfbpa200co9ky24zyqif44@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 1.1,
+   "valueCents": 4550
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[critic-consistency] Twin 1.1 = applied 31/08 count."
+ },
+ {
+  "index": 89,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 8272,
+   "realCentsRetained": 10786
+  },
+  "corrected": {
+   "staleCentsDiscarded": 10324,
+   "realCentsRetained": 8734
+  },
+  "reason": "[critic-consistency] Swap; 5114c at canonical cost."
+ },
+ {
+  "index": 99,
+  "field": "onHandPlan[cmoqfbp2600c69ky24p8ikf3e@Alma Avalon]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.525686,
+   "valueCents": 6750
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[critic-consistency] Rule P1: stale-decisions classes this PREP-HELD (0 loose + 0.525686 in Coconut Margarita Batch, AA 9/1 apply). Decision calls it drift. Kept in 101/146/148/150/204/206/220/224/227/231. Value at canonical 2610 = 1372c; the AA 10/1 apply (canonical counted 2.5) overwrites it."
+ },
+ {
+  "index": 99,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 40134,
+   "realCentsRetained": 10962
+  },
+  "corrected": {
+   "staleCentsDiscarded": 33384,
+   "realCentsRetained": 12334
+  },
+  "reason": "[critic-consistency] Retained at canonical cost."
+ },
+ {
+  "index": 100,
+  "field": "onHandPlan[cmoqfbp3200c89ky2hb00l6gn@Alma Avalon]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.225,
+   "valueCents": 482
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[critic-consistency] Rule P1: PREP-HELD 0.225 bottle in Beach, Please Batch. 521c at canonical 2316."
+ },
+ {
+  "index": 100,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 9234,
+   "realCentsRetained": 9707
+  },
+  "corrected": {
+   "staleCentsDiscarded": 8752,
+   "realCentsRetained": 10228
+  },
+  "reason": "[critic-consistency] Retained at canonical cost."
+ },
+ {
+  "index": 102,
+  "field": "onHandPlan[cmoqfbp7g00ci9ky2fenupt1l@Alma Avalon]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.725,
+   "valueCents": 10320
+  },
+  "corrected": {
+   "treatment": "keep",
+   "onHand": 0.225
+  },
+  "reason": "[critic-consistency] Rule P1: 0.725 = 0.5 loose (same half bottle as canonical 0.48, correctly not carried) + 0.225 PREP-HELD (Beach, Please Batch). Carry only the held share."
+ },
+ {
+  "index": 102,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 76434,
+   "realCentsRetained": 6122
+  },
+  "corrected": {
+   "staleCentsDiscarded": 66114,
+   "realCentsRetained": 6656
+  },
+  "reason": "[critic-consistency] 0.225 x 2373."
+ },
+ {
+  "index": 106,
+  "field": "onHandPlan[cmoqfbq6600eq9ky2qgnr8ejx@Alma Avalon]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.985776,
+   "valueCents": 20814
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[critic-consistency] Rule P1: PREP-HELD 0.985776 bottle in Sensible Marg Batch (AA 9/1 apply). 2883c at canonical 2925. Cluster 82 discards its batch credit only because the 1 Oct StA batch recount supersedes it and the canonical line there is blank; at AA the canonical is counted on 10/1, so the apply overwrites anyway."
+ },
+ {
+  "index": 106,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 147498,
+   "realCentsRetained": 16672
+  },
+  "corrected": {
+   "staleCentsDiscarded": 126684,
+   "realCentsRetained": 19555
+  },
+  "reason": "[critic-consistency] Retained at canonical cost."
+ },
+ {
+  "index": 141,
+  "field": "onHandPlan[cmoqfbrjy00hw9ky2or0xpza8@St Alma]",
+  "current": {
+   "treatment": "discard_stale",
+   "onHand": 0.14828,
+   "valueCents": 119
+  },
+  "corrected": {
+   "treatment": "keep"
+  },
+  "reason": "[critic-consistency] Rule P1: PREP-HELD 0.14828 bag in Mole Verde; valid once the canonical measure is 1000 g (decision). 119c."
+ },
+ {
+  "index": 141,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 119,
+   "realCentsRetained": 0
+  },
+  "corrected": {
+   "staleCentsDiscarded": 0,
+   "realCentsRetained": 119
+  },
+  "reason": "[critic-consistency] Immaterial; for rule consistency."
+ },
+ {
+  "index": 100,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_duplicate_line",
+  "corrected": [
+   {
+    "sheet": "Alma Avalon — Bar & FOH 9/1/2026",
+    "treatment": "keep_duplicate_line",
+    "from": "cmptovv30003is60112onwtn0",
+    "deleteLines": [
+     "cmoqfbp3200c89ky2hb00l6gn line (0)"
+    ]
+   },
+   {
+    "sheet": "St Alma — Bar & FOH 31/08/2026",
+    "treatment": "keep_duplicate_line",
+    "from": "cmptovv30003is60112onwtn0"
+   },
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_canonical_line_only",
+    "note": "canonical 1.25, twins blank"
+   }
+  ],
+  "reason": "[critic-new] A single keep_duplicate_line would blank the canonical 1.25 on AA 10/1 and could copy the 0 line over 0.8 on AA 9/1. The detail text already says this; the field does not."
+ },
+ {
+  "index": 116,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_canonical_line_only",
+  "corrected": [
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_canonical_line_only"
+   },
+   {
+    "sheet": "St Alma — Bar & FOH 31/08/2026",
+    "treatment": "keep_duplicate_line",
+    "note": "canonical blank, twin 28"
+   }
+  ],
+  "reason": "[critic-new] Cluster-wide keep_canonical_line_only would delete the 28-bottle count from an APPLIED sheet (history loss, sheet total -98000c)."
+ },
+ {
+  "index": 117,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_canonical_line_only",
+  "corrected": [
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_canonical_line_only"
+   },
+   {
+    "sheet": "St Alma — Bar & FOH 31/08/2026",
+    "treatment": "keep_duplicate_line",
+    "note": "canonical blank, case row 3.6"
+   }
+  ],
+  "reason": "[critic-new] Same as 116 (3.6 bottles on an applied sheet)."
+ },
+ {
+  "index": 144,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_duplicate_line",
+  "corrected": [
+   {
+    "sheet": "St Alma — Kitchen 31/8/2026",
+    "treatment": "keep_duplicate_line",
+    "resultingLine": {
+     "countedQty": 15.27,
+     "unit": "kg"
+    }
+   },
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_canonical_line_only",
+    "note": "canonical 2 kg, carton line blank"
+   }
+  ],
+  "reason": "[critic-new] Single keep_duplicate_line would blank the AA 2 kg count; the moved 1.09 carton must be converted x14."
+ },
+ {
+  "index": 169,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_canonical_line_only",
+  "corrected": [
+   {
+    "sheet": "St Alma — Kitchen 31/8/2026",
+    "treatment": "keep_canonical_line_only"
+   },
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_duplicate_line",
+    "resultingLine": {
+     "countedQty": 0.16,
+     "unit": "each"
+    }
+   }
+  ],
+  "reason": "[critic-new] Cluster-wide keep_canonical_line_only would delete the only AA cream count (800 mL); raw apply of 800 = $29,760."
+ },
+ {
+  "index": 200,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_duplicate_line",
+  "corrected": [
+   {
+    "sheet": "St Alma — Bar & FOH 31/08/2026",
+    "treatment": "keep_duplicate_line"
+   },
+   {
+    "sheet": "Alma Avalon — Bar & FOH 9/1/2026",
+    "treatment": "keep_canonical_line_only",
+    "note": "canonical 7, case rows blank"
+   }
+  ],
+  "reason": "[critic-new] Single keep_duplicate_line would blank the canonical AA 9/1 count of 7."
+ },
+ {
+  "index": 209,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_duplicate_line",
+  "corrected": [
+   {
+    "sheet": "St Alma — Kitchen 31/8/2026",
+    "treatment": "keep_duplicate_line"
+   },
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_canonical_line_only",
+    "note": "canonical 1700, twin blank"
+   }
+  ],
+  "reason": "[critic-new] Single keep_duplicate_line would blank the canonical AA count."
+ },
+ {
+  "index": 214,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_duplicate_line",
+  "corrected": [
+   {
+    "sheet": "St Alma — Kitchen 31/8/2026",
+    "treatment": "keep_duplicate_line"
+   },
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_canonical_line_only",
+    "note": "canonical 1.473 kg (restate), tray blank"
+   }
+  ],
+  "reason": "[critic-new] Single keep_duplicate_line would blank the canonical AA count."
+ },
+ {
+  "index": 225,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_duplicate_line",
+  "corrected": [
+   {
+    "sheet": "St Alma — Kitchen 31/8/2026",
+    "treatment": "keep_duplicate_line"
+   },
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_canonical_line_only",
+    "note": "canonical 5.8 kg, box blank"
+   }
+  ],
+  "reason": "[critic-new] Single keep_duplicate_line would blank the canonical 5.8 kg."
+ },
+ {
+  "index": 226,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "keep_canonical_line_only",
+  "corrected": [
+   {
+    "sheet": "St Alma — Kitchen 31/8/2026",
+    "treatment": "keep_canonical_line_only"
+   },
+   {
+    "sheet": "Alma Avalon — Fri 31st Jul, 10:55 PM (from Loaded)",
+    "treatment": "repoint_only (applied history)"
+   },
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "keep_duplicate_line",
+    "resultingLine": {
+     "countedQty": 0.533,
+     "unit": "each"
+    }
+   }
+  ],
+  "reason": "[critic-new] Cluster-wide keep_canonical_line_only would delete Greens Mix's 800 g, the only AA count; raw apply of 800 = $22,400."
+ },
+ {
+  "index": 157,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "recount",
+  "corrected": [
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "collapse_to_one_line_after_shelf_check",
+    "resultingLine": {
+     "countedQty": "1 or 1.474",
+     "unit": "each"
+    },
+    "mustDelete": "237 g line"
+   },
+   {
+    "sheet": "St Alma — Kitchen 31/8/2026",
+    "treatment": "keep_canonical_line_only"
+   }
+  ],
+  "reason": "[critic-new] 'recount' is not executable; the 237 g line must not survive (raw = 237 packs, $3,674)."
+ },
+ {
+  "index": 137,
+  "field": "sameSheetDoubleCount.treatment",
+  "current": "recount",
+  "corrected": [
+   {
+    "sheet": "Stocktake 10/1/2026",
+    "treatment": "collapse_to_one_line_after_shelf_check"
+   }
+  ],
+  "reason": "[verdict-endorsed] 'recount' is not executable; see preApplyLineFix."
+ },
+ {
+  "index": 130,
+  "field": "onHandPlan[cmoqfboq500be9ky25wyc1a1x@St Alma]",
+  "current": {
+   "treatment": "recount",
+   "onHand": 0.83,
+   "valueCents": 473
+  },
+  "corrected": {
+   "treatment": "keep",
+   "onHand": 9.96
+  },
+  "reason": "[critic-new] 'recount' is summed raw (0.83 pack read as 0.83 tortilla). Convert to canonical units first: 0.83 x 12 = 9.96 tortillas (~478c)."
+ },
+ {
+  "index": 144,
+  "field": "onHandPlan[cmoqfbscr00jo9ky2pmb89fp0@St Alma]",
+  "current": {
+   "treatment": "recount",
+   "onHand": 1.090608,
+   "valueCents": 1527
+  },
+  "corrected": {
+   "treatment": "keep",
+   "onHand": 15.27
+  },
+  "reason": "[critic-new] 'recount' is summed raw (1.09 carton read as 1.09 kg). Convert x14 to kg first (15.27 kg = 1527c), as the decision's own risks say."
+ },
+ {
+  "index": 144,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Backfill would copy 14000 g onto the kg item (decision states it in prose)."
+ },
+ {
+  "index": 226,
+  "field": "onHandPlan[cmptowc4w00z4s601oluv35mi@Alma Avalon]",
+  "current": {
+   "treatment": "keep",
+   "onHand": 1.2,
+   "valueCents": 1400
+  },
+  "corrected": {
+   "treatment": "keep",
+   "onHand": 0.8
+  },
+  "reason": "[critic-new] Decision 'why' says enter it as 0.8 box but the treatment 'keep' sums 1.2 raw (1.2 boxes, 3360c)."
+ },
+ {
+  "index": 226,
+  "field": "valuation",
+  "current": {
+   "staleCentsDiscarded": 0,
+   "realCentsRetained": 2520
+  },
+  "corrected": {
+   "staleCentsDiscarded": 0,
+   "realCentsRetained": 3360
+  },
+  "reason": "[critic-new] 0.4 box StA (1120c) + 0.8 box AA (2240c) at 2800c."
+ },
+ {
+  "index": 120,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 3798,
+   "when": "pre-merge"
+  },
+  "reason": "[critic-consistency] Backfill copies the twin's CASE price 45581 onto a bottle item; decision only says 'watch'. Same fix as 121/122/123."
+ },
+ {
+  "index": 121,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 1808,
+   "when": "pre-merge"
+  },
+  "reason": "[critic-consistency] Prose-only fix in costTreatment; make it machine-readable."
+ },
+ {
+  "index": 122,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 1467,
+   "when": "pre-merge"
+  },
+  "reason": "[critic-consistency] Prose-only fix."
+ },
+ {
+  "index": 123,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 2029,
+   "when": "pre-merge"
+  },
+  "reason": "[critic-consistency] Prose-only fix."
+ },
+ {
+  "index": 157,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 1550,
+   "when": "pre-merge"
+  },
+  "reason": "[critic-consistency] Backfill copies the floor 0."
+ },
+ {
+  "index": 169,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 3720,
+   "when": "pre-merge"
+  },
+  "reason": "[critic-new] Backfill copies the floor item's 773 (per litre) onto the 5 L tub; costTreatment says nothing is backfilled."
+ },
+ {
+  "index": 183,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 3373,
+   "when": "pre-merge"
+  },
+  "reason": "[critic-consistency] Backfill copies 179 (per head) onto the box item; prose-only."
+ },
+ {
+  "index": 226,
+  "field": "latestCostCents",
+  "current": null,
+  "corrected": {
+   "value": 2423,
+   "when": "pre-merge"
+  },
+  "reason": "[critic-new] Backfill copies Greens Mix 1759 (per kg) onto the 1.5 kg box item; not mentioned."
+ },
+ {
+  "index": 226,
+  "field": "avgCostCents",
+  "current": 2800,
+  "corrected": {
+   "value": 2423,
+   "when": "pre-merge"
+  },
+  "reason": "[critic-consistency] costTreatment says update to ~2423; make executable."
+ },
+ {
+  "index": 182,
+  "field": "avgCostCents",
+  "current": null,
+  "corrected": {
+   "value": 200,
+   "when": "pre-merge"
+  },
+  "reason": "[critic-new] Step 6 backfills any non-null avgCost, so the duplicate's 0 IS copied (the check is !== null). Pre-set 200c (interim from 2025 sheets)."
+ },
+ {
+  "index": 27,
+  "field": "categoryOverride",
+  "current": "Spirits — Other",
+  "corrected": "Spirits — Tequila & Mezcal",
+  "reason": "[critic-consistency] Decision says re-file in prose; make it executable (mergeItems never replaces a non-null category)."
+ },
+ {
+  "index": 37,
+  "field": "categoryOverride",
+  "current": "Spirits — Other",
+  "corrected": "Spirits — Tequila & Mezcal",
+  "reason": "[critic-consistency] Decision says re-file in prose; make it executable (mergeItems never replaces a non-null category)."
+ },
+ {
+  "index": 38,
+  "field": "categoryOverride",
+  "current": "Spirits — Other",
+  "corrected": "Spirits — Tequila & Mezcal",
+  "reason": "[critic-consistency] Decision says re-file in prose; make it executable (mergeItems never replaces a non-null category)."
+ },
+ {
+  "index": 47,
+  "field": "categoryOverride",
+  "current": "Spirits — Other",
+  "corrected": "Spirits — Tequila & Mezcal",
+  "reason": "[critic-consistency] Decision says re-file in prose; make it executable (mergeItems never replaces a non-null category)."
+ },
+ {
+  "index": 63,
+  "field": "categoryOverride",
+  "current": "Spirits — Other",
+  "corrected": "Spirits — Tequila & Mezcal",
+  "reason": "[critic-consistency] Decision says re-file in prose; make it executable (mergeItems never replaces a non-null category)."
+ },
+ {
+  "index": 64,
+  "field": "categoryOverride",
+  "current": "Spirits — Other",
+  "corrected": "Spirits — Tequila & Mezcal",
+  "reason": "[critic-consistency] Decision says re-file in prose; make it executable (mergeItems never replaces a non-null category)."
+ },
+ {
+  "index": 65,
+  "field": "categoryOverride",
+  "current": "Spirits — Other",
+  "corrected": "Spirits — Tequila & Mezcal",
+  "reason": "[critic-consistency] Decision says re-file in prose; make it executable (mergeItems never replaces a non-null category)."
+ },
+ {
+  "index": 66,
+  "field": "categoryOverride",
+  "current": "Spirits — Other",
+  "corrected": "Spirits — Tequila & Mezcal",
+  "reason": "[critic-consistency] Decision says re-file in prose; make it executable (mergeItems never replaces a non-null category)."
+ },
+ {
+  "index": 5,
+  "field": "categoryOverride",
+  "current": "Spirits — Other",
+  "corrected": "Spirits — Tequila & Mezcal",
+  "reason": "[critic-consistency] Decision says re-file in prose; make it executable (mergeItems never replaces a non-null category)."
+ },
+ {
+  "index": 138,
+  "field": "categoryOverride",
+  "current": "Dry / Pantry",
+  "corrected": "Herbs & Spices",
+  "reason": "[critic-consistency] Same floor-spice pattern as 136/137, which do re-file; this decision is silent."
+ },
+ {
+  "index": 204,
+  "field": "categoryOverride",
+  "current": "Dry / Pantry",
+  "corrected": "Herbs & Spices",
+  "reason": "[critic-consistency] Same floor-spice pattern as 136/137, which do re-file; this decision is silent."
+ },
+ {
+  "index": 148,
+  "field": "categoryOverride",
+  "current": "Dry / Pantry",
+  "corrected": "Oils & Condiments",
+  "reason": "[critic-consistency] Vinegar/oil filed Dry / Pantry on the floor row; invoice twin is Oils & Condiments; decision silent."
+ },
+ {
+  "index": 149,
+  "field": "categoryOverride",
+  "current": "Dry / Pantry",
+  "corrected": "Oils & Condiments",
+  "reason": "[critic-consistency] Vinegar/oil filed Dry / Pantry on the floor row; invoice twin is Oils & Condiments; decision silent."
+ },
+ {
+  "index": 190,
+  "field": "categoryOverride",
+  "current": "Liqueurs & Aperitifs",
+  "corrected": "Non-Alcoholic & Mixers",
+  "reason": "[critic-consistency] Lyre's is non-alcoholic (82 and 106 file Lyre's there); canonical sits in Liqueurs & Aperitifs."
+ },
+ {
+  "index": 140,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "twin 970 g"
+  },
+  "corrected": {
+   "countedQty": 0.97,
+   "unit": "each"
+  },
+  "reason": "[verdict-endorsed] Raw = 970 bags ($43,165)."
+ },
+ {
+  "index": 142,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "canonical 757 g"
+  },
+  "corrected": {
+   "countedQty": 0.757,
+   "unit": "each"
+  },
+  "reason": "[critic-consistency] Raw = 757 bags ($9,137); decision states this in prose."
+ },
+ {
+  "index": 152,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "canonical 300 g"
+  },
+  "corrected": {
+   "countedQty": 0.75,
+   "unit": "each"
+  },
+  "reason": "[critic-new] Decision says '300 g = 0.75 tub, which supersedes this when applied' - apply is raw: 300 tubs ($3,369)."
+ },
+ {
+  "index": 153,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "canonical 400 g"
+  },
+  "corrected": {
+   "countedQty": 2,
+   "unit": "each"
+  },
+  "reason": "[critic-consistency] Raw = 400 packs ($4,000); prose-only."
+ },
+ {
+  "index": 154,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "canonical 100 g"
+  },
+  "corrected": {
+   "countedQty": 0.222,
+   "unit": "each"
+  },
+  "reason": "[critic-consistency] Raw = 100 packs ($1,100); prose-only."
+ },
+ {
+  "index": 169,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "twin 800 mL"
+  },
+  "corrected": {
+   "countedQty": 0.16,
+   "unit": "each"
+  },
+  "reason": "[critic-consistency] Raw = 800 tubs ($29,760)."
+ },
+ {
+  "index": 195,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "canonical 3.8 L"
+  },
+  "corrected": {
+   "countedQty": 1.9,
+   "unit": "each",
+   "requires": "measureOverride 2000 ml"
+  },
+  "reason": "[critic-consistency] Raw = 3.8 bottles of 2 L."
+ },
+ {
+  "index": 196,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "canonical 2.15 L"
+  },
+  "corrected": {
+   "countedQty": 1.075,
+   "unit": "each",
+   "requires": "measureOverride 2000 ml"
+  },
+  "reason": "[critic-consistency] Raw = 2.15 bottles of 2 L."
+ },
+ {
+  "index": 214,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "canonical 1.473 kg"
+  },
+  "corrected": {
+   "countedQty": "shelf check: 0.29 tray if kg",
+   "unit": "each"
+  },
+  "reason": "[critic-consistency] kg on a 5 kg tray item."
+ },
+ {
+  "index": 226,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "twin 800 g"
+  },
+  "corrected": {
+   "countedQty": 0.533,
+   "unit": "each"
+  },
+  "reason": "[critic-new] Raw = 800 boxes ($22,400)."
+ },
+ {
+  "index": 98,
+  "field": "preApplyLineFix",
+  "current": {
+   "sheet": "Stocktake 10/1/2026",
+   "line": "twin 0.3 L"
+  },
+  "corrected": {
+   "countedQty": 0.4,
+   "unit": "bottle",
+   "deleteCanonicalBlankLine": true
+  },
+  "reason": "[critic-consistency] 0.3 L of a 750 ml bottle."
+ },
+ {
+  "index": 195,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 2000,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Canonical 1000 ml halves the per-ml cost; decision and verdicts agree 2 L."
+ },
+ {
+  "index": 196,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 2000,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[verdict-endorsed] Canonical 1000 ml halves the per-ml cost; decision and verdicts agree 2 L."
+ },
+ {
+  "index": 0,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750
+  },
+  "corrected": {
+   "measurePerCountUnit": "shelf check before merge",
+   "note": "Loaded labels say 750 (x4) vs name 700"
+  },
+  "reason": "[critic-consistency] Conflicting evidence; spec §5.1 will refuse this cluster until one value is set on both members."
+ },
+ {
+  "index": 2,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 3,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 5,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 700
+  },
+  "corrected": {
+   "measurePerCountUnit": "shelf check before merge",
+   "note": "Aug-wave canonical 700 vs invoice name 750ML"
+  },
+  "reason": "[critic-consistency] Conflicting evidence; spec §5.1 will refuse this cluster until one value is set on both members."
+ },
+ {
+  "index": 7,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 30,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels none, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 31,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 32,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 33,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 34,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 36,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750
+  },
+  "corrected": {
+   "measurePerCountUnit": "shelf check before merge",
+   "note": "Loaded labels say 750 (x6) vs name 700"
+  },
+  "reason": "[critic-consistency] Conflicting evidence; spec §5.1 will refuse this cluster until one value is set on both members."
+ },
+ {
+  "index": 37,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 700
+  },
+  "corrected": {
+   "measurePerCountUnit": "shelf check before merge",
+   "note": "Aug-wave canonical 700 vs invoice name 750ML"
+  },
+  "reason": "[critic-consistency] Conflicting evidence; spec §5.1 will refuse this cluster until one value is set on both members."
+ },
+ {
+  "index": 39,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 40,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 2, '750': 4}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 41,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 44,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750
+  },
+  "corrected": {
+   "measurePerCountUnit": "shelf check before merge",
+   "note": "Loaded labels say 750 (x6) vs name 700"
+  },
+  "reason": "[critic-consistency] Conflicting evidence; spec §5.1 will refuse this cluster until one value is set on both members."
+ },
+ {
+  "index": 45,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 46,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 2, '750': 4}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 47,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels none, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 48,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'750': 2, '700': 4}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 49,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 51,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'750': 2, '700': 4}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 52,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'750': 2, '700': 4}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 54,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 55,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 2, '750': 4}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 56,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 57,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 58,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 4}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 59,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 60,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 67,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 700
+  },
+  "corrected": {
+   "measurePerCountUnit": "shelf check before merge",
+   "note": "Aug-wave canonical 700 vs invoice name 750ML (decision sets 750)"
+  },
+  "reason": "[critic-consistency] Conflicting evidence; spec §5.1 will refuse this cluster until one value is set on both members."
+ },
+ {
+  "index": 69,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 70,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 71,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'750': 2, '700': 4}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 73,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 4}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 74,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 78,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 4}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 80,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 81,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 6}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 83,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 5}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 84,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 5}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 86,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 5}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 87,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 3}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 88,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 5}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 89,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 5}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 90,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 5}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 91,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 3}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 92,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] Floor-wave 750 is a blanket default (all 123 cmptov spirits = 750). Evidence: Loaded labels {'700': 5}, invoice name {'700': 1}. Decision is prose-only or says 'check'; make it executable and unblock spec §5.1 (refuses differing measures)."
+ },
+ {
+  "index": 68,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] 1 L bottle; Loaded lines 1000 mL. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 75,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] shelf check: name says 1000, notes/Loaded 700; decision expects 1000. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 94,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 500,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] 500 ml bottle. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 104,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 478,
+   "measureUnit": "ml"
+  },
+  "corrected": {
+   "measurePerCountUnit": 473,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] 473 ml. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 109,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] litre item; backfill would copy 5000. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 141,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] 1 kg bag. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 142,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] 1 kg bag. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 147,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] kg item. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 159,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 4000,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] 4 L bottle; ml recipe lines. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 162,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] each counted as 1 kg. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 166,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] 1 kg. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 167,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 750,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] 750 g. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 184,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": null,
+   "measureUnit": null
+  },
+  "corrected": {
+   "measurePerCountUnit": 1500,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] whole pineapple; backfill copies 400 g. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 107,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 700,
+   "measureUnit": "ml",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] bottle; ml recipe lines cannot convert against 100 g. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 130,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 91,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] pack note 91 g. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 206,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 3000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] 3 kg tin. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 204,
+  "field": "measureOverride",
+  "current": {
+   "measurePerCountUnit": 100,
+   "measureUnit": "g"
+  },
+  "corrected": {
+   "measurePerCountUnit": 1000,
+   "measureUnit": "g",
+   "when": "pre-merge (so step-6 backfill cannot copy the duplicate value)"
+  },
+  "reason": "[critic-consistency] kg pack. Decision/verdict state this in prose only."
+ },
+ {
+  "index": 194,
+  "field": "action",
+  "current": {
+   "action": "merge",
+   "canonicalId": "cmsdf10iz003rmiio5evtegxv"
+  },
+  "corrected": {
+   "action": "fold_into_103",
+   "note": "run as one merge: 103.duplicateIds += cmsdf10g1001rmiiowqgdccbj"
+  },
+  "reason": "[critic-new] cmsdf10iz is canonical in both 103 and 194; spec §5.2 refuses the whole run when an id is in two clusters. Combining keeps the 103 AA 10/1 keep_canonical_line_only."
+ },
+ {
+  "index": 103,
+  "field": "duplicateIds",
+  "current": [
+   "cmoqfbp8b00ck9ky299ayujyi"
+  ],
+  "corrected": [
+   "cmoqfbp8b00ck9ky299ayujyi",
+   "cmsdf10g1001rmiiowqgdccbj"
+  ],
+  "reason": "[critic-new] Absorb cluster 194 (same canonical)."
+ },
+ {
+  "index": 205,
+  "field": "keepSeparateIds",
+  "current": [
+   "cmoqfbld6003q9ky2v4i89e7q"
+  ],
+  "corrected": [],
+  "reason": "[critic-new] cmoqfbld6003q9ky2v4i89e7q is merged by 159; listing it here trips the §5.2 whole-run refusal. Separation from the organic nectar is preserved because 159 merges it into a different item."
+ },
+ {
+  "index": 188,
+  "field": "canonicalId",
+  "current": "cmptovvyb009xs6016axnnhxj",
+  "corrected": null,
+  "reason": "[critic-new] keep_separate cluster names cluster-17 canonical as its canonical; harmless semantically but trips §5.2. Use canonicalId null for keep_separate."
+ },
+ {
+  "index": 17,
+  "field": "note",
+  "current": null,
+  "corrected": "cmptovvyb009xs6016axnnhxj also appears in keep_separate cluster 188 (Black Yellow stays separate) - no conflict.",
+  "reason": "[critic-new] Cross-cluster awareness."
+ },
+ {
+  "index": 112,
+  "field": "canonicalNameSuggestion",
+  "current": "Cà di Bruno Barbaresco DOCG 2019",
+  "corrected": "Cà di Bruno Barbaresco DOCG",
+  "reason": "[critic-consistency] Vintage naming: 8 of 18 vintaged-twin clusters put a year in the suggested name, 10 drop it. The floor catalogue that staff count is undated and nothing on the shelf side confirms the year (verdict 199). Use undated names; keep the vintage in notes until a shelf check."
+ },
+ {
+  "index": 113,
+  "field": "canonicalNameSuggestion",
+  "current": "Villa Albergotti Chianti Superiore DOCG 2021",
+  "corrected": "Villa Albergotti Chianti Superiore DOCG",
+  "reason": "[critic-consistency] Vintage naming: 8 of 18 vintaged-twin clusters put a year in the suggested name, 10 drop it. The floor catalogue that staff count is undated and nothing on the shelf side confirms the year (verdict 199). Use undated names; keep the vintage in notes until a shelf check."
+ },
+ {
+  "index": 114,
+  "field": "canonicalNameSuggestion",
+  "current": "Capa Single Vineyard Tempranillo 2022",
+  "corrected": "Capa Single Vineyard Tempranillo",
+  "reason": "[critic-consistency] Vintage naming: 8 of 18 vintaged-twin clusters put a year in the suggested name, 10 drop it. The floor catalogue that staff count is undated and nothing on the shelf side confirms the year (verdict 199). Use undated names; keep the vintage in notes until a shelf check."
+ },
+ {
+  "index": 116,
+  "field": "canonicalNameSuggestion",
+  "current": "Bonnet & Cotton Beaujolais Rouge 2023",
+  "corrected": "Bonnet & Cotton Beaujolais Rouge",
+  "reason": "[critic-consistency] Vintage naming: 8 of 18 vintaged-twin clusters put a year in the suggested name, 10 drop it. The floor catalogue that staff count is undated and nothing on the shelf side confirms the year (verdict 199). Use undated names; keep the vintage in notes until a shelf check."
+ },
+ {
+  "index": 118,
+  "field": "canonicalNameSuggestion",
+  "current": "2024 Yangarra Estate Circle Shiraz",
+  "corrected": "Yangarra Estate Circle Shiraz",
+  "reason": "[critic-consistency] Vintage naming: 8 of 18 vintaged-twin clusters put a year in the suggested name, 10 drop it. The floor catalogue that staff count is undated and nothing on the shelf side confirms the year (verdict 199). Use undated names; keep the vintage in notes until a shelf check."
+ },
+ {
+  "index": 201,
+  "field": "canonicalNameSuggestion",
+  "current": "Domaines Schlumberger Saering Grand Cru Riesling 2021",
+  "corrected": "Domaines Schlumberger Saering Grand Cru Riesling",
+  "reason": "[critic-consistency] Vintage naming: 8 of 18 vintaged-twin clusters put a year in the suggested name, 10 drop it. The floor catalogue that staff count is undated and nothing on the shelf side confirms the year (verdict 199). Use undated names; keep the vintage in notes until a shelf check."
+ },
+ {
+  "index": 202,
+  "field": "canonicalNameSuggestion",
+  "current": "La Belle Colette Rosé 2024",
+  "corrected": "La Belle Colette Rosé",
+  "reason": "[critic-consistency] Vintage naming: 8 of 18 vintaged-twin clusters put a year in the suggested name, 10 drop it. The floor catalogue that staff count is undated and nothing on the shelf side confirms the year (verdict 199). Use undated names; keep the vintage in notes until a shelf check."
+ }
+]
