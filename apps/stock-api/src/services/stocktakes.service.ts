@@ -29,6 +29,7 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { buildCountSheetSections } from '../lib/count-sheet.js';
+import { unitMismatches, unitMismatchMessage } from '../lib/apply-unit-guard.js';
 import { assertMayEnterCounts, isStockManager } from '../lib/stock-permissions.js';
 import {
   explodePrepCount,
@@ -1178,6 +1179,32 @@ export const stocktakesService = {
       // applied; the review queue offers both.
       if (stocktake.status !== 'SUBMITTED' && stocktake.status !== 'REVIEWED') {
         throw new HttpError(400, 'Only submitted stocktakes can be applied');
+      }
+
+      // The loop below stores countedQty as count units without converting.
+      // A line counted in mL, g or cases would be stored as that many
+      // bottles/bags — refuse, and name the lines, before anything is written.
+      const countedItemIds = [
+        ...new Set(stocktake.lines.filter((line) => line.itemId && line.countedQty != null).map((line) => line.itemId as string))
+      ];
+      const unitItems = new Map(
+        (
+          await tx.stockItem.findMany({
+            where: { id: { in: countedItemIds } },
+            select: { id: true, unit: true, countUnit: true, conversionFactor: true, measurePerCountUnit: true, measureUnit: true }
+          })
+        ).map((item) => [item.id, item])
+      );
+      const mismatches = unitMismatches(
+        stocktake.lines.map((line) => ({
+          label: line.label,
+          countedQty: line.countedQty,
+          unit: line.unit,
+          item: line.itemId ? unitItems.get(line.itemId) ?? null : null
+        }))
+      );
+      if (mismatches.length) {
+        throw new HttpError(409, unitMismatchMessage(mismatches));
       }
 
       // Applying is the review, so it has to move the status as well as stamp
