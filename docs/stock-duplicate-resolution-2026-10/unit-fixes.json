@@ -286,7 +286,7 @@
    "reason": "Loaded cost \"4 750 mL = $75.76\" ($18.94 per 750 mL bottle)."
   },
   {
-   "confidence": "medium",
+   "confidence": "low",
    "itemId": "cmptovuxi002fs601ncx5ye8f",
    "item": "Massenez Creme de Peche",
    "from": {
@@ -297,7 +297,7 @@
     "measurePerCountUnit": 5000,
     "measureUnit": "ml"
    },
-   "reason": "Loaded counted \"1 x 5 L\" and costed \"1 Bottle = $220.91\" — the cost is a 5 L pack price. SHELF CHECK the pack size."
+   "reason": "Loaded counted \"1 x 5 L\" and costed \"1 Bottle = $220.91\" — the cost is a 5 L pack price. SHELF CHECK the pack size. NOT APPLIED: the shelf check found 1 bottle, which does not confirm a 5 L pack. Measure left at 750 mL until the bottle size is known."
   },
   {
    "confidence": "medium",
@@ -790,7 +790,7 @@
   },
   {
    "action": "restate",
-   "confidence": "medium",
+   "confidence": "high",
    "venue": "Alma Avalon",
    "item": "Massenez Creme de Peche",
    "itemId": "cmptovuxi002fs601ncx5ye8f",
@@ -800,10 +800,10 @@
     "unit": "L"
    },
    "to": {
-    "countedQty": 0.98,
+    "countedQty": 1,
     "unit": "bottle"
    },
-   "reason": "4.9 L of a 5 L pack (see measure note). Shelf check."
+   "reason": "Shelf check 16 Oct 2026 (Tim): Alma Avalon has 1 bottle. Was 4.9 L, which cannot be one bottle; restated to the shelf count."
   },
   {
    "action": "restate",
@@ -1338,7 +1338,7 @@
    "reason": "mL entered on a bottle item; Manly items are costed per 750 mL (\"Cost taken from the Loaded count: … mL = $…\"), so bottles = mL ÷ 750."
   },
   {
-   "confidence": "medium",
+   "confidence": "high",
    "venue": "Alma Avalon",
    "item": "Massenez Creme de Peche",
    "itemId": "cmptovuxi002fs601ncx5ye8f",
@@ -1347,7 +1347,7 @@
     "onHand": 4800
    },
    "to": {
-    "onHand": 0.96
+    "onHand": 1
    },
    "sourceStocktakeId": "cmti14e7m02nooa01uz4i5l9a",
    "sourceStocktakeLineId": "cmti4209w040goa0164tql9fh",
@@ -1356,7 +1356,7 @@
     "countedQty": 4800,
     "unit": "mL"
    },
-   "reason": "4800 mL of a 5 L pack entered as bottles (see measure note). Shelf check."
+   "reason": "Shelf check 16 Oct 2026 (Tim): Alma Avalon has 1 bottle. 4800 mL had been stored as 4800 bottles."
   },
   {
    "confidence": "high",

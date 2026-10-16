@@ -1,0 +1,21 @@
+database: alma_suite_v18 — PRODUCTION
+Unit fixes from docs/stock-duplicate-resolution-2026-10/unit-fixes-2026-10-16-massenez.json — APPLYING
+
+== Item measures (0) — what one count unit holds
+
+== Stocktake 10/1/2026 (Alma Avalon, not yet applied) — 1 line(s)
+  [high] Massenez Creme de Peche: 4.9 L → 1 bottle   line value $0.00 → $220.91; applied as it stands it would book $1082.46
+      Shelf check 16 Oct 2026 (Tim): Alma Avalon has 1 bottle. Was 4.9 L, which cannot be one bottle; restated to the shelf count.
+  → applying this sheet as it stands would book $1082.46 for these lines; after the restatement $220.91.
+
+== Holdings already written from such a line (1) — corrected with a STOCKTAKE_CORRECTION movement
+  [high] Alma Avalon · Massenez Creme de Peche: 4800 → 1   $1060368.00 → $220.91   (from line 4800 mL)
+      Shelf check 16 Oct 2026 (Tim): Alma Avalon has 1 bottle. 4800 mL had been stored as 4800 bottles.
+  → holdings $1060368.00 → $220.91 ($-1060147.09).
+
+Applied run prod-unitfix-20261016-massenez: 0 measure(s), 1 line(s), 1 holding(s) with 1 correction movement(s).
+Rollback: --rollback prod-unitfix-20261016-massenez
+verify: St Alma — Bar & FOH 01/10/2026 (St Alma, not applied): 0 counted line(s) still in a unit apply would not convert
+verify: Stocktake 10/1/2026 (Alma Avalon, not applied): 10 counted line(s) still in a unit apply would not convert — Avocadoes Hass 1.473 kg; Bay Leaves Bunch 170 g; Lime Juice 25.1 L; Manly Spirits Bulk 20Ltr Australian Dry Gin 1 x 20ltr Drum 18.1 L; Massenez Pomme Verte 3 L; Onion Powder 500 g; Paprika Smoked 1.2 kg; Parrot Fish Fillets 9.2 g
+  Alma Avalon: active stock value $52274.51
+  St Alma: active stock value $79227.53
