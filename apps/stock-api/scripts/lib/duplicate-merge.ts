@@ -86,15 +86,18 @@ async function backup(tx: Tx, runId: string, clusterIndex: number, step: string,
 }
 
 /**
- * Sheets whose lines are repointed but never folded: anything not at a real
- * venue (the stray venue-less count, the phantom "Avalon" count — both list
+ * Sheets whose lines are repointed but never folded: anything already applied
+ * (history), anything not at a real venue (the stray venue-less count, the phantom "Avalon" count — both list
  * every item, so parent and duplicate each have a line) and anything still
  * open for counting. A double count on a finalised real-venue sheet is handled
  * explicitly by the decision's sameSheetDoubleCount instead.
  */
 export async function foldExcludedSheetIds(tx: Tx): Promise<string[]> {
   const rows = await tx.stocktake.findMany({
-    where: { OR: [{ venue: null }, { venue: { notIn: Array.from(REAL_VENUES) } }, { status: { in: ['IN_PROGRESS', 'REOPENED'] } }] },
+    // Applied sheets are history: their lines are repointed to the survivor
+    // but never summed or deleted, so every count keeps the quantity, unit,
+    // label and value it was applied with.
+    where: { OR: [{ venue: null }, { venue: { notIn: Array.from(REAL_VENUES) } }, { status: { in: ['IN_PROGRESS', 'REOPENED', 'LOCKED'] } }, { appliedAt: { not: null } }] },
     select: { id: true }
   });
   return rows.map((row) => row.id);

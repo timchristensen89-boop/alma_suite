@@ -1,0 +1,90 @@
+{
+ "sheets": {
+  "Alma Avalon": "cmupcujav03c0pd01796c5bpm",
+  "St Alma": "cmup72ay90000pd01tfoyqda1"
+ },
+ "measures": [
+  {
+   "confidence": "high",
+   "itemId": "cmptovv0p0033s6019qlmle2x",
+   "item": "Apple Juice",
+   "from": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "ml"
+   },
+   "to": {
+    "measurePerCountUnit": 2000,
+    "measureUnit": "ml"
+   },
+   "reason": "Invoices: \"Apple Juice 2 Litre Bottle\" at $6.65 = the item cost, so one each is a 2 L bottle; 3.8 L = 1.9. Measure was 1000 mL."
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmptovv5b003xs601fqpmghzr",
+   "item": "Grapefruit Juice",
+   "from": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "ml"
+   },
+   "to": {
+    "measurePerCountUnit": 2000,
+    "measureUnit": "ml"
+   },
+   "reason": "Loaded cost \"1.3 2 L = $9.75\" ($7.50 per 2 L bottle), so one each is a 2 L bottle; 2.15 L = 1.075. Measure was 1000 mL."
+  }
+ ],
+ "lines": [
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Apple Juice",
+   "itemId": "cmptovv0p0033s6019qlmle2x",
+   "lineId": "cmupcujb703dspd010mge5lx2",
+   "from": {
+    "countedQty": 3.8,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 1.9,
+    "unit": "each"
+   },
+   "reason": "Invoices: \"Apple Juice 2 Litre Bottle\" at $6.65 = the item cost, so one each is a 2 L bottle; 3.8 L = 1.9. Measure was 1000 mL."
+  },
+  {
+   "action": "restate",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Grapefruit Juice",
+   "itemId": "cmptovv5b003xs601fqpmghzr",
+   "lineId": "cmupcujbh03n6pd01pz1b2bl3",
+   "from": {
+    "countedQty": 2.15,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 1.075,
+    "unit": "each"
+   },
+   "reason": "Loaded cost \"1.3 2 L = $9.75\" ($7.50 per 2 L bottle), so one each is a 2 L bottle; 2.15 L = 1.075. Measure was 1000 mL."
+  },
+  {
+   "action": "relabel",
+   "confidence": "high",
+   "venue": "Alma Avalon",
+   "item": "Ice Cream Chocolate",
+   "itemId": "cmptowba600tys601ukmxaz12",
+   "lineId": "cmupcujbj03nypd01yg6qqlfg",
+   "from": {
+    "countedQty": 7,
+    "unit": "L"
+   },
+   "to": {
+    "countedQty": 7,
+    "unit": "each"
+   },
+   "reason": "Cost is $2.50 per each = $25.00 per 10 L tub (invoice \"ICE CREAM CHOCOLATE 10LT\"), so one each is 1 L; 7 L = 7. Only the label changes."
+  }
+ ],
+ "holdings": []
+}
