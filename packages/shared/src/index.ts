@@ -6154,23 +6154,96 @@ export const stockItemBulkDeleteInputSchema = z.object({
   })
 });
 
-// Merge duplicate items into one parent. All history (recipes, invoices,
-// stocktakes, movements, POs…) repoints to the parent; per-venue stock is
-// summed where the parent already stocks that venue and otherwise moved onto
-// the parent (so one item ends up stocked at both venues); the duplicates are
-// archived.
-export const stockItemMergeInputSchema = z.object({
+// Merge duplicate items into one kept item. History (recipes, invoices,
+// stocktake lines, movements, POs…) is repointed to the kept item exactly as
+// recorded — never summed, never rewritten. Stock on hand is NEVER added
+// together: per venue, a holding is carried across only when one record holds
+// stock (converted to the kept item's count unit); when two or more records
+// hold stock at a venue the manager must say which quantity is real, or enter
+// the counted quantity. The duplicates are archived.
+export const stockItemMergeHoldingResolutionSchema = z.object({
+  venue: z.string().min(1),
+  /** keep: the kept item's own holding; duplicate: one duplicate's holding (converted); counted: a quantity the manager enters, in the kept item's count unit. */
+  keep: z.enum(['keep', 'duplicate', 'counted']),
+  itemId: z.string().min(1).optional(),
+  countedQty: z.number().finite().nonnegative().optional()
+});
+export type StockItemMergeHoldingResolution = z.infer<typeof stockItemMergeHoldingResolutionSchema>;
+
+export const stockItemMergePreviewInputSchema = z.object({
   parentId: z.string().min(1, 'Pick the item to keep'),
-  duplicateIds: z.array(z.string().min(1)).min(1, 'Pick at least one item to merge in'),
+  duplicateIds: z.array(z.string().min(1)).min(1, 'Pick at least one item to merge in')
+});
+export type StockItemMergePreviewInput = z.infer<typeof stockItemMergePreviewInputSchema>;
+
+export const stockItemMergeInputSchema = stockItemMergePreviewInputSchema.extend({
   confirmationText: z.literal('MERGE ITEMS', {
     errorMap: () => ({ message: 'Type MERGE ITEMS to confirm the merge' })
-  })
+  }),
+  /** One per venue that needs a decision (see the preview's venues with needsDecision). */
+  holdings: z.array(stockItemMergeHoldingResolutionSchema).optional(),
+  /** The preview's planToken: the merge refuses if stock or counts changed since the manager reviewed it. */
+  planToken: z.string().optional()
 });
 export type StockItemMergeInput = z.infer<typeof stockItemMergeInputSchema>;
+
+export type StockItemMergeHoldingMember = {
+  itemId: string;
+  name: string;
+  isKept: boolean;
+  onHand: number | null;
+  /** The member's own count unit. */
+  unit: string;
+  /** onHand expressed in the kept item's count unit; null when the units cannot be converted. */
+  onHandInKeptUnit: number | null;
+  /** Most recent applied count of this record at this venue. */
+  lastCountedAt: string | null;
+  lastCountedQty: number | null;
+};
+
+export type StockItemMergeVenuePlan = {
+  venue: string;
+  members: StockItemMergeHoldingMember[];
+  /** What happens with no decision: 'nothing' (no stock), 'keep' (only the kept item holds stock), 'carry' (only one duplicate holds stock). */
+  outcome: 'nothing' | 'keep' | 'carry' | 'decide';
+  /** Quantity the kept item will hold after the merge (null until decided). */
+  resultOnHand: number | null;
+  /** Hard limits the merge enforces at this venue: the kept item may hold no more than the largest single record held (null when a record's unit cannot be converted), and the stock value may not exceed what the records were worth together. */
+  ceiling: { onHand: number | null; valueCents: number };
+  needsDecision: boolean;
+  /** Why a decision is needed, in plain words. */
+  reason: string | null;
+  /** The record counted most recently at this venue — a hint, never applied automatically. */
+  suggestedItemId: string | null;
+};
+
+export type StockItemMergePreview = {
+  parentId: string;
+  parentName: string;
+  keptUnit: string;
+  /** The kept item's cost per count unit: every holding is valued at it after the merge. */
+  keptCostCents: number | null;
+  duplicates: Array<{ id: string; name: string; unit: string; factor: number | null; alreadyMerged: boolean }>;
+  venues: StockItemMergeVenuePlan[];
+  /** Merges that cannot happen until something is fixed (an open count listing both records, a unit that cannot be converted on an open count…). */
+  blockers: string[];
+  /** History that will be repointed, unchanged. */
+  repoint: { stocktakeLines: number; movements: number; recipeLines: number; invoiceLines: number; aliases: number; purchaseOrderLines: number };
+  /** Stock value at today's costs, before (all records) and after (kept item, undecided venues left as the kept item's holding). */
+  valueBeforeCents: number;
+  valueAfterCents: number;
+  planToken: string;
+  alreadyMerged: boolean;
+};
+
 export type StockItemMergeResult = {
   parentId: string;
   mergedCount: number;
   venuesAdded: string[];
+  /** True when every duplicate had already been merged into this item: nothing changed. */
+  alreadyMerged?: boolean;
+  /** Per venue, the kept item's holding before → after the merge. */
+  holdings?: Array<{ venue: string; before: number | null; after: number | null }>;
   // What moved, so the merge message can say it and the archived item's note
   // records it.
   moved: {

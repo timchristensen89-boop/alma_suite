@@ -31,7 +31,7 @@ async function cleanup(ids: { stocktakeIds?: string[]; itemIds?: string[]; suppl
   }
 }
 
-test('merging repoints every reference, folds same-count lines, sums venue stock and backfills the keeper', NO_DB, async () => {
+test('merging repoints every reference, never adds counts or stock together, and backfills the keeper', NO_DB, async () => {
   const tag = suffix('merge');
   const keep = await prisma.stockItem.create({
     data: { name: `Beef short rib ${tag}`, unit: 'kg', onHand: 22, parLevel: 0, status: 'ACTIVE', venueStock: { create: { venue: 'St Alma', onHand: 22 } } }
@@ -65,8 +65,19 @@ test('merging repoints every reference, folds same-count lines, sums venue stock
   const dupLine = stocktake.lines.find((line) => line.itemId === dup.id)!;
   await prisma.inventoryMovement.create({ data: { itemId: dup.id, movementType: 'WASTAGE', quantityDelta: -1, quantityBefore: 5, quantityAfter: 4, sourceStocktakeLineId: dupLine.id } });
 
+  // The count is history: applied before the merge.
+  await prisma.stocktake.update({ where: { id: stocktake.id }, data: { status: 'REVIEWED', appliedAt: new Date() } });
+
   try {
-    const result = await itemsService.mergeItems({ parentId: keep.id, duplicateIds: [dup.id], confirmationText: 'MERGE ITEMS' });
+    // Both rows hold stock at St Alma: the merge will not pick for the manager.
+    await assert.rejects(
+      itemsService.mergeItems({ parentId: keep.id, duplicateIds: [dup.id], confirmationText: 'MERGE ITEMS' }),
+      (error: { statusCode?: number; message: string }) => error.statusCode === 409 && /St Alma/.test(error.message)
+    );
+    const result = await itemsService.mergeItems({
+      parentId: keep.id, duplicateIds: [dup.id], confirmationText: 'MERGE ITEMS',
+      holdings: [{ venue: 'St Alma', keep: 'keep' }]
+    });
     assert.equal(result.mergedCount, 1);
     assert.deepEqual(result.venuesAdded, ['Alma Avalon']);
     assert.equal(result.moved.aliases, 2);
@@ -81,8 +92,8 @@ test('merging repoints every reference, folds same-count lines, sums venue stock
     assert.equal(keeper.countArea, 'Kitchen');
     assert.equal(keeper.latestCostCents, 2400);
     assert.equal(keeper.parLevel, 4);
-    assert.deepEqual(keeper.venueStock.map((row) => [row.venue, row.onHand]), [['Alma Avalon', 5], ['St Alma', 26]]);
-    assert.equal(keeper.onHand, 31);
+    assert.deepEqual(keeper.venueStock.map((row) => [row.venue, row.onHand]), [['Alma Avalon', 5], ['St Alma', 22]], 'St Alma kept at 22, not 26; Avalon carried');
+    assert.equal(keeper.onHand, 27);
     assert.equal(keeper.aliases.length, 2, 'colliding alias dropped, the other repointed');
     assert.equal(keeper.aliases.every((alias) => alias.stockItemId === keep.id), true);
     assert.equal(keeper.priceListItems.length, 1, 'keeper kept its own supplier price');
@@ -94,15 +105,13 @@ test('merging repoints every reference, folds same-count lines, sums venue stock
     assert.match(archived.notes ?? '', /Merged into/);
     assert.equal(archived.aliases.length + archived.priceListItems.length + archived.venueStock.length + archived.invoiceLines.length + archived.recipeLines.length + archived.stocktakeLines.length, 0);
 
-    // The count now has ONE line for the shelf, summed, with the note kept and
-    // the ledger row re-anchored to it.
-    const lines = await prisma.stocktakeLine.findMany({ where: { stocktakeId: stocktake.id } });
-    assert.equal(lines.length, 1);
-    assert.equal(lines[0]?.itemId, keep.id);
-    assert.equal(lines[0]?.countedQty, 24);
-    assert.equal(lines[0]?.notes, 'back fridge');
+    // The count keeps both lines exactly as counted, both now on the keeper,
+    // and the ledger row still points at its own line.
+    const lines = await prisma.stocktakeLine.findMany({ where: { stocktakeId: stocktake.id }, orderBy: { position: 'asc' } });
+    assert.deepEqual(lines.map((l) => [l.itemId, l.countedQty, l.notes]), [[keep.id, 20, null], [keep.id, 4, 'back fridge']]);
     const movement = await prisma.inventoryMovement.findFirst({ where: { itemId: keep.id, movementType: 'WASTAGE' } });
-    assert.equal(movement?.sourceStocktakeLineId, lines[0]?.id);
+    assert.equal(movement?.sourceStocktakeLineId, dupLine.id);
+    assert.equal(movement?.quantityDelta, -1);
 
     // Merged rows disappear from the duplicate report.
     const report = await itemsService.duplicates();

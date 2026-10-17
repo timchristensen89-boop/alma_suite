@@ -233,6 +233,17 @@ itemsRouter.post('/bulk', async (req, res, next) => {
   }
 });
 
+// What a merge would do — holdings per venue, decisions needed, blockers.
+// Changes nothing.
+itemsRouter.post('/merge/preview', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await itemsService.previewMerge(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.post('/merge', async (req, res, next) => {
   try {
     requireStockManager(req.user);
