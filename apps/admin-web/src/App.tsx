@@ -73,6 +73,7 @@ const VenuesPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({
 const XeroIntegrationPage = lazy(() => import('./pages/AdminFeaturePages').then((m) => ({ default: m.XeroIntegrationPage })));
 const BulkStaffOnboardingPage = lazy(() => import('./pages/BulkStaffOnboardingPage').then((m) => ({ default: m.BulkStaffOnboardingPage })));
 const IntegrationHealthPage = lazy(() => import('./pages/IntegrationHealthPage').then((m) => ({ default: m.IntegrationHealthPage })));
+const OpenTableIntegrationPage = lazy(() => import('./pages/OpenTableIntegrationPage').then((m) => ({ default: m.OpenTableIntegrationPage })));
 const LoadedImportPage = lazy(() => import('./pages/LoadedImportPage').then((m) => ({ default: m.LoadedImportPage })));
 const LoadedReplacementPage = lazy(() => import('./pages/LoadedReplacementPage').then((m) => ({ default: m.LoadedReplacementPage })));
 const SquareMenuMappingPage = lazy(() => import('./pages/SquareMenuMappingPage').then((m) => ({ default: m.SquareMenuMappingPage })));
@@ -257,6 +258,12 @@ const NAV_GROUPS: AdminNavGroup[] = [
         label: 'Xero',
         description: 'Health checks, previews, and selected imports',
         icon: <IconReceipt />
+      },
+      {
+        to: '/integrations/opentable',
+        label: 'OpenTable',
+        description: 'Menus and restaurant profile, pushed on request',
+        icon: <IconPlug />
       },
       {
         to: '/integrations/square/menu-mapping',
@@ -636,6 +643,7 @@ function AdminWorkspace() {
         <Route path="/handbook" element={<HandbookAdminPage staffHandbookHref={`${complianceUrl}/handbook`} />} />
         <Route path="/integrations" element={<IntegrationsPage />} />
         <Route path="/integrations/xero" element={<XeroIntegrationPage />} />
+        <Route path="/integrations/opentable" element={<OpenTableIntegrationPage />} />
         <Route path="/integrations/square/menu-mapping" element={<SquareMenuMappingPage />} />
         <Route path="/imports" element={<ImportsPage />} />
         <Route path="/danger-zone" element={<DangerZonePage />} />

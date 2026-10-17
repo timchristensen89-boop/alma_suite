@@ -866,3 +866,52 @@ html[data-theme='dark'] {
 .admin-section:has(> .admin-debt-card + .admin-release-notes) > .admin-release-notes {
   margin-top: 0;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Integrations → OpenTable
+   ══════════════════════════════════════════════════════════════════════════ */
+.ot-page .card + .card { margin-top: 0; }
+.ot-title { display: inline-flex; align-items: center; gap: 10px; }
+.ot-note { margin: 12px 0 0; }
+.ot-loading { display: flex; align-items: center; gap: 10px; color: var(--color-text-muted); padding: 12px 0; }
+.ot-venue-switch { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ot-venue-rid { margin-left: 8px; font-weight: 400; opacity: 0.75; font-size: 12px; }
+.ot-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+.ot-settings { display: grid; gap: 10px; }
+.ot-ticks { display: inline-flex; flex-wrap: wrap; gap: 10px; font-weight: 500; }
+.ot-tick { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; }
+.ot-tick.is-on { color: var(--tone-positive-fg, #15803d); }
+.ot-tick.is-off { color: var(--color-text-subtle); }
+.ot-h4 { margin: 18px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-subtle); }
+.ot-detail-row { flex-direction: row; flex-wrap: wrap; gap: 24px; }
+.ot-detail-row > div { gap: 10px; }
+.ot-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.ot-table { overflow-x: auto; }
+.ot-table td { padding: 8px 16px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.ot-cell { max-width: 420px; white-space: normal; }
+.ot-row-muted td { color: var(--color-text-muted); }
+.ot-click { cursor: pointer; }
+.ot-click:hover td { background: var(--color-surface-muted); }
+.ot-warnings { margin: 8px 0 0; padding-left: 18px; color: var(--tone-warning-fg, #b45309); font-size: 13px; }
+.ot-diff { display: grid; gap: 10px; }
+.ot-diff p { margin: 0; font-size: 13.5px; }
+.ot-compare { display: grid; gap: 10px; }
+.ot-compare-block strong { display: block; font-size: 13px; margin-bottom: 4px; }
+.ot-compare-block ul { margin: 0; padding-left: 18px; font-size: 13px; }
+.ot-json { margin: 0; padding: 12px; max-height: 420px; overflow: auto; font-size: 11.5px; line-height: 1.45; background: var(--color-surface-muted); border-radius: var(--radius-md); white-space: pre; }
+.ot-profile-form { display: grid; gap: 16px; margin-top: 16px; }
+.ot-span-2 { grid-column: span 2; }
+.ot-managed { margin-top: 4px; font-size: 12.5px; color: var(--color-text-muted); }
+.ot-inline-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.ot-fieldset { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 12px 14px; }
+.ot-fieldset legend { font-size: 12.5px; font-weight: 600; padding: 0 6px; }
+.ot-checks { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 8px; }
+.ot-fieldset.is-compact .ot-checks { max-height: 160px; overflow: auto; }
+@media (max-width: 900px) {
+  .ot-grid-2 { grid-template-columns: 1fr; }
+  .ot-span-2 { grid-column: auto; }
+  .ot-page .form-grid.two, .ot-page .form-grid.three { grid-template-columns: 1fr; }
+  .ot-page .card-header { flex-wrap: wrap; gap: 8px; }
+  .ot-page .inline-actions { flex-wrap: wrap; }
+  .ot-cell { max-width: none; }
+}
