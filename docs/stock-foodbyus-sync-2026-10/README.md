@@ -194,3 +194,19 @@ Rolled back: StockItem and RecipeLine checksums identical, valuations back to
 $31,154.50 / $58,739.31. Production order: `--fixes item-cost-fixes.json --apply
 --run-id prod-fbu-costs-YYYYMMDD --i-mean-production`, then `--refresh-costs
 --apply-refresh`. Rollback: `--rollback <runId>`, then refresh again.
+
+### Phase B production run (18 Oct 2026 01:53, approved by Tim)
+
+Backup `/opt/alma/backups/pre-fbu-b-oct18-20261018-015141.dump` (99.7 MB), restored
+locally and matched on all six tables (RecipeLine 1,500 after Phase A). Dry run
+matched the rehearsal with no refusals.
+
+```
+Applied run prod-fbu-costs-20261018: 17 cost(s), 4 measure(s), 0 line(s), 0 holding(s) with 0 correction movement(s).
+Refreshed 659 recipe cost(s); 71 changed.
+```
+
+Valuations: Alma Avalon $31,154.50 → **$31,536.57**, St Alma $58,739.31 → **$57,818.49**
+(exactly the rehearsal). VenueStockItem, StocktakeLine and InventoryMovement
+byte-identical to the backup. Rollback: `fix-unit-entries-2026-10.ts --rollback
+prod-fbu-costs-20261018 --i-mean-production`, then `--refresh-costs --apply-refresh`.
