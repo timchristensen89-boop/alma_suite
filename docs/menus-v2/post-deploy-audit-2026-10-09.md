@@ -193,3 +193,13 @@ Before anything is published:
 4. Owner decisions §7; then run the import as drafts and work the checklist (§9).
 5. Housekeeping after sign-off: delete the ten older `pre-*` dumps and the twin, remove seven stale image tags (§4), shred the `.bak-*` env copies once rotation is done.
 6. Process: one operator per production rollout — check `docker events --since 15m` on the VPS before starting, and never run a bare `docker compose config` (runbook fixed in this PR).
+
+## 11. Addendum — PR #317 rollout and the probe incident (9 Oct 2026, 15:56–16:30 AEDT)
+
+**Rolled out:** merge commit `9efcd27c` (venue-scoped, explicit publishing). suite-api image `b6a0a0260051` (`prod-9efcd27`; previous `prod-cfaa8ea` kept), dump `pre-menus-perms-20261009-155611.sql.gz` (90 MB), no migration (`migrate status`: up to date), Firebase `alma-menus` and `alma-staff` at `9efcd27c`. Release lock taken (`/opt/alma/deploy/.release.who`). Grants applied in one guarded transaction: Caio (both venues, no publish), Citlally (St Alma, no publish), Rodrigo (Alma Avalon, no publish), Dirk (St Alma, publish), Trystan (Alma Avalon, publish); admins untouched. Stale image tags removed (six; `deploy-stock-api:release-07752f5` kept because it is the running stock-api image): root disk 89 % → 80 %.
+
+**Incident.** The first authenticated production probe, run before the grants, called `POST /api/menus/:id/draft/publish` for the admin identity with a body it assumed the schema would reject. The schema ignores unknown keys, so **Alma Avalon Food draft v5 was published at 16:01:55 AEDT, attributed to Tim Christensen**, who had opened that draft at 12:43 and not changed it. The publish diff recorded "No content changes": v5 is identical to v4, the public API and PDF serve the same content under a new version id (`cmv0axgep1e4rmt017gma7756`), and the website (committed data, `MENUS_FROM_API` unset) was never affected. v4 is now ARCHIVED, the open draft is gone, and a version number was consumed.
+
+**Decision (owner, 9 Oct):** leave v5 published, preserve the audit history, no manual reversal, no MenuVersion rows modified or deleted.
+
+**Rule from here on** (also in the probe script on the VPS, `perm-probe-ro.sh`): production authorisation probes use GET requests only, or writes the guard is proven to refuse for that identity (403/404 before the service runs). Positive publish rights are verified on a local or test database (`menu-access.integration.test.ts`), never live.
