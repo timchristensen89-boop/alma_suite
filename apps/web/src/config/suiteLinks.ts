@@ -16,6 +16,8 @@ export const MARKETING_WEB_URL = envUrl('VITE_MARKETING_WEB_URL', 'http://localh
 export const GIFTCARDS_WEB_URL = envUrl('VITE_GIFTCARDS_WEB_URL', 'http://localhost:5179');
 export const SETTINGS_WEB_URL = envUrl('VITE_SETTINGS_WEB_URL', 'http://localhost:5180');
 export const POS_WEB_URL = envUrl('VITE_POS_WEB_URL', 'http://localhost:5199') || 'https://alma-pos.web.app';
+// Menus is its own hosted site (alma-menus.web.app), like POS.
+export const MENUS_WEB_URL = envUrl('VITE_MENUS_WEB_URL', 'http://localhost:5190') || 'https://alma-menus.web.app';
 
 function safeProductionUrl(name: string, value: string) {
   if (import.meta.env.PROD && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(value)) {
@@ -27,6 +29,7 @@ function safeProductionUrl(name: string, value: string) {
 
 const suiteUrls = {
   pos: safeProductionUrl('VITE_POS_WEB_URL', POS_WEB_URL),
+  menus: safeProductionUrl('VITE_MENUS_WEB_URL', MENUS_WEB_URL),
   compliance: safeProductionUrl('VITE_COMPLIANCE_WEB_URL', COMPLIANCE_WEB_URL),
   stock: safeProductionUrl('VITE_STOCK_WEB_URL', STOCK_WEB_URL),
   staff: safeProductionUrl('VITE_STAFF_WEB_URL', STAFF_WEB_URL),
@@ -64,6 +67,9 @@ export function suiteAppHref(app: SuiteAppIdentity) {
   // to forward you to POS, which resolved to that same URL, so the tab
   // reloaded itself forever (the admin -> POS ping-pong, fixed 2026-08-11).
   if (app.id === 'pos') return suiteUrls.pos ? `${trimTrailingSlash(suiteUrls.pos)}/` : undefined;
+  // Menus likewise: without this case it fell through to /apps/menus/login,
+  // which showed "Menus needs an app URL" (reported 17 Oct 2026).
+  if (app.id === 'menus') return suiteUrls.menus ? `${trimTrailingSlash(suiteUrls.menus)}/` : undefined;
   return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/apps/${app.id}/login` : undefined;
 }
 
