@@ -1,0 +1,32 @@
+[
+ {
+  "recipeId": "cmoqfcxa102p29ky20c9ksk32",
+  "recipe": "Agave Beef Short Ribs prep (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 25005,
+   "yieldUnit": "g",
+   "portionSize": 250,
+   "portionUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 30,
+   "yieldUnit": "units",
+   "portionSize": null,
+   "portionUnit": null
+  },
+  "why": "FoodByUs: the batch yields 30 portions (one rib each); Stock had the raw ingredient weight. The dish line is restated to 1 units alongside. The stale 250 g portion size is cleared, otherwise the per-portion figure divides 30 units by 250."
+ },
+ {
+  "recipeId": "cmoqfcy6j02sp9ky2md75axp4",
+  "recipe": "Snapper (new) prep (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 461,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 1,
+   "yieldUnit": "units"
+  },
+  "why": "FoodByUs: the prep makes one plated portion; the dish uses it as '1 units'. Stock had the raw ingredient weight."
+ }
+]
