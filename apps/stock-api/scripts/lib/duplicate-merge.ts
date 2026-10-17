@@ -369,6 +369,22 @@ export async function applyCluster(runId: string, plan: Plan) {
 
     const excluded = new Set(await foldExcludedSheetIds(tx));
     const treatment = d.sameSheetDoubleCount.treatment;
+    if (treatment === 'sum') {
+      // The reviewed decision for these sheets is that both lines are real
+      // stock. The merge itself never adds lines together, so do it here,
+      // explicitly, before merging.
+      for (const x of await doubleCountSheets(tx, d, excluded)) {
+        const parent = x.parentLines[0];
+        if (!parent) continue;
+        const qty = (parent.countedQty ?? 0) + x.dupLines.reduce((sum, l) => sum + (l.countedQty ?? 0), 0);
+        const value = (parent.stockValueCents ?? 0) + x.dupLines.reduce((sum, l) => sum + (l.stockValueCents ?? 0), 0);
+        await tx.stocktakeLine.update({ where: { id: parent.id }, data: { countedQty: qty, stockValueCents: value } });
+        for (const dup of x.dupLines) {
+          await tx.inventoryMovement.updateMany({ where: { sourceStocktakeLineId: dup.id }, data: { sourceStocktakeLineId: parent.id } });
+          await tx.stocktakeLine.delete({ where: { id: dup.id } });
+        }
+      }
+    }
     if (treatment === 'keep_canonical_line_only' || treatment === 'keep_duplicate_line') {
       for (const x of await doubleCountSheets(tx, d, excluded)) {
         const parent = x.parentLines[0];
@@ -384,7 +400,54 @@ export async function applyCluster(runId: string, plan: Plan) {
       }
     }
 
-    const result = await mergeItemsWithin(tx, { parentId: d.canonicalId, duplicateIds: d.duplicateIds, actorName: `merge-duplicate-items-2026-10 run ${runId}`, foldExcludeStocktakeIds: Array.from(excluded) });
+    // A reviewed, unapplied sheet that still lists the survivor and a twin
+    // where at most one of them was counted is not a double count: keep the
+    // counted figure on the survivor's line and drop the blank line. (The
+    // merge refuses an open sheet that lists both, so this is explicit here.)
+    {
+      const pairs = await tx.stocktakeLine.findMany({
+        where: { itemId: { in: memberIds }, stocktakeId: { notIn: Array.from(excluded) }, stocktake: { appliedAt: null } },
+        orderBy: { position: 'asc' }
+      });
+      const bySheet = new Map<string, typeof pairs>();
+      for (const line of pairs) bySheet.set(line.stocktakeId, [...(bySheet.get(line.stocktakeId) ?? []), line]);
+      for (const list of bySheet.values()) {
+        if (new Set(list.map((l) => l.itemId)).size < 2) continue;
+        const counted = list.filter((l) => l.countedQty !== null);
+        if (counted.length > 1) continue;
+        const keep = list.find((l) => l.itemId === d.canonicalId) ?? list[0]!;
+        const source = counted[0];
+        if (source && source.id !== keep.id) {
+          await tx.stocktakeLine.update({ where: { id: keep.id }, data: { countedQty: source.countedQty, stockValueCents: source.stockValueCents, notes: source.notes ?? keep.notes } });
+        }
+        for (const line of list) {
+          if (line.id === keep.id) continue;
+          await tx.inventoryMovement.updateMany({ where: { sourceStocktakeLineId: line.id }, data: { sourceStocktakeLineId: keep.id } });
+          await tx.stocktakeLine.delete({ where: { id: line.id } });
+        }
+      }
+    }
+
+    // The reviewed decisions say, per venue, which holdings are real (stale
+    // ones were zeroed above). Pass that as an explicit counted quantity: the
+    // merge never adds holdings together on its own.
+    const after = await tx.venueStockItem.findMany({ where: { stockItemId: { in: memberIds } } });
+    const holdings = Array.from(new Set(after.map((r) => r.venue))).map((venue) => ({
+      venue,
+      keep: 'counted' as const,
+      countedQty: after.filter((r) => r.venue === venue).reduce((sum, r) => sum + (r.onHand ?? 0), 0)
+    }));
+    const actorName = `merge-duplicate-items-2026-10 run ${runId}`;
+    const result = await mergeItemsWithin(tx, { parentId: d.canonicalId, duplicateIds: d.duplicateIds, actorName, holdings });
+    // The merge records each holding change as a correction movement; note
+    // them so a rollback removes them.
+    const created = await tx.inventoryMovement.findMany({ where: { itemId: { in: memberIds }, movementType: 'STOCKTAKE_CORRECTION', notes: { contains: `by ${actorName}` } }, select: { id: true } });
+    for (const m of created) {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "${BACKUP_TABLE}" ("runId","clusterIndex",step,"tableName","rowId",payload) VALUES ($1,$2,'created','InventoryMovement',$3,'{}'::jsonb)`,
+        runId, d.index, m.id
+      );
+    }
 
     if (d.parLevelOverride) {
       for (const [venue, parLevel] of Object.entries(d.parLevelOverride)) {
@@ -435,7 +498,7 @@ export async function rollback(runId: string, options: { force?: boolean } = {})
       const since = merged.createdAt;
       const later = await Promise.all([
         prisma.stocktakeLine.count({ where: { itemId: decision.canonicalId, createdAt: { gt: since } } }),
-        prisma.inventoryMovement.count({ where: { itemId: decision.canonicalId, createdAt: { gt: since } } }),
+        prisma.inventoryMovement.count({ where: { itemId: decision.canonicalId, createdAt: { gt: since }, id: { notIn: mine.filter((r) => r.step === 'created' && r.tableName === 'InventoryMovement').map((r) => r.rowId) } } }),
         prisma.recipeLine.count({ where: { itemId: decision.canonicalId, createdAt: { gt: since } } }),
         prisma.supplierInvoiceLine.count({ where: { itemId: decision.canonicalId, createdAt: { gt: since } } })
       ]);
@@ -447,6 +510,8 @@ export async function rollback(runId: string, options: { force?: boolean } = {})
     console.log(`restoring cluster #${clusterIndex} ${decision.cluster}`);
     await prisma.$transaction(async (tx) => {
       await tx.$queryRawUnsafe(`SELECT id FROM "StockItem" WHERE id = ANY($1::text[]) FOR UPDATE`, memberIds);
+      const createdMoves = mine.filter((r) => r.step === 'created' && r.tableName === 'InventoryMovement').map((r) => r.rowId);
+      if (createdMoves.length) await tx.inventoryMovement.deleteMany({ where: { id: { in: createdMoves } } });
       // Free the unique sku before restoring rows that may swap it.
       await tx.stockItem.updateMany({ where: { id: { in: memberIds } }, data: { sku: null } });
       const itemRows = of('StockItem');
