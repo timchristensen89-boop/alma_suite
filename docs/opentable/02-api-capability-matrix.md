@@ -9,7 +9,7 @@ Our subscriptions (owner-stated, 16 Oct 2026):
 | Menus Partner | Production application in review | Menus API: publish (webhook POST) and, depending on partner type, retrieve (GET) |
 | Restaurant Content Partner | Production contract awaiting signature; contract portal returning an error | Profile Content API: POST only |
 
-Never used, never assumed: Booking/Consumer API, Reviews API, CRM/Sync API, Directory API (Consumer Partners only), POS API, Private Dining API, Diner Persona. The website's existing OpenTable hand-off (`restref` availability URL, see `01-audit.md` §4) stays exactly as it is.
+Never used, never assumed **by the suite**: Booking/Consumer API, Reviews API, CRM/Sync API, Directory API (Consumer Partners only), POS API, Private Dining API, Diner Persona. The website's existing OpenTable hand-off (`restref` availability URL, see `01-audit.md` §4) stays exactly as it is. *Update 18 Oct 2026:* the group now holds a Booking Partner — Directory API (Bronze) sandbox subscription, used by the website only; see `05-subscription-review-2026-10-18.md` for the group-wide matrix.
 
 ## 1. Platform facts that bind every call
 
