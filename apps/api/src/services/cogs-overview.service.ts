@@ -75,7 +75,17 @@ export function toFigure(month: XeroPlMonth | undefined): StockCogsFigure {
   return {
     cogsCents,
     salesCents,
-    cogsPercent: salesCents > 0 ? Math.round((cogsCents / salesCents) * 1000) / 10 : null
+    cogsPercent: salesCents > 0 ? Math.round((cogsCents / salesCents) * 1000) / 10 : null,
+    ...(month
+      ? {
+          detail: {
+            foodCogsCents: month.foodCogsCents,
+            bevCogsCents: month.bevCogsCents,
+            otherCogsCents: month.otherCogsCents,
+            accounts: month.accounts.map((a) => ({ name: a.name, cents: a.cents, bucket: a.bucket }))
+          }
+        }
+      : {})
   };
 }
 

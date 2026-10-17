@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildCogsOverview, cogsWindows, sameDaysLastMonth, sameDaysLastYear, todayInSydney } from './cogs-overview.service.js';
+import { buildCogsOverview, cogsWindows, sameDaysLastMonth, sameDaysLastYear, toFigure, todayInSydney } from './cogs-overview.service.js';
 import type { XeroPlMonth, XeroPlPeriodPairs } from './integration.service.js';
 
 const month = (key: string, salesCents: number, cogsCents: number): XeroPlMonth => ({
@@ -55,6 +55,9 @@ test('rows: group first, St Alma before Alma Avalon, percentages of sales and ch
   assert.equal(stAlma.yearToDate.prior.cogsPercent, null, 'no sales last year → no percentage');
   assert.equal(stAlma.yearToDate.changePercent, null, 'no prior COGS → no change');
   assert.deepEqual(out.notes, []);
+  // The expandable view reads the account lines behind each figure.
+  assert.deepEqual(group.monthToDate.current.detail, { foodCogsCents: 0, bevCogsCents: 0, otherCogsCents: 0, accounts: [] });
+  assert.equal(toFigure(undefined).detail, undefined, 'an empty venue has no detail');
 });
 
 test('an unmatched Xero organisation and a venue with no organisation are called out', () => {
