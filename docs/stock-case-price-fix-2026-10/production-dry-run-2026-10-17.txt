@@ -1,0 +1,59 @@
+database: alma_suite_v18 — PRODUCTION
+Unit fixes from docs/stock-case-price-fix-2026-10/case-price-fixes.json — dry run
+
+== Costs (13) — case or drum price stored as a unit cost
+  [high] LYRES WHITE CANE SPIRIT 700ML BOTTLE: $204.42 → $29.19
+      Alma Avalon: 6 on hand, $1226.52 → $175.14
+      St Alma: 4.371703 on hand, $893.66 → $127.61
+      supplier price: 2 × Lyre's White Rum Alternative 700ml @ $29.19 (ex GST) — Paramount Liquor 2026-07-26; St Alma PO forwarded by Dirk, Gmail thread 19f9db619f1f80a0
+  [high] LYRES AGAVE BLANCO 700ML BOTTLE: $211.14 → $29.19
+      Alma Avalon: 6.785776 on hand, $1432.75 → $198.08
+      St Alma: 6 on hand, $1266.84 → $175.14
+      supplier price: 1 × Lyre's Tequila Alternative 700ml @ $29.19 (ex GST) — Paramount Liquor 2026-07-26; St Alma PO, Gmail thread 19f9db619f1f80a0
+  [high] SAMMY PIQUANT JETSETTER 700ML BOTTLE: $179.70 → $29.95
+      Alma Avalon: 10.7 on hand, $1922.79 → $320.46
+      St Alma: 1.95 on hand, $350.42 → $58.40
+      case ÷ 6, matches twin: $179.70 = 6 × $29.95 — (no supplier document found); twin record "Sammy Piquant The Jetsetter" latest purchase price $29.95
+  [high] HERRADURA AGAVE NECTAR 473ML - (CASE OF 12): $134.88 → $11.24
+      Alma Avalon: 15 on hand, $2023.20 → $168.60
+      case ÷ 12: $134.88 = 12 × $11.24 — (no supplier document found); item purchase setup: case of 12; twin "Herradura Agave Nectar" $12.28
+  [high] SUPASAWA 700ML - (CASE OF 6): $148.26 → $24.71
+      Alma Avalon: 2.4 on hand, $355.82 → $59.30
+      St Alma: 5.3 on hand, $785.78 → $130.96
+      case ÷ 6: $148.26 = 6 × $24.71 — (no supplier document found); item purchase setup: case of 6; twin "Supasawa" $27.60
+  [high] GIFFARD ROSE SYRUP 1L BOTTLE: $142.35 → $23.73
+      St Alma: 8.57 on hand, $1219.94 → $203.37
+      Alma Avalon: 1.825 on hand, $259.79 → $43.31
+      case ÷ 6, matches supplier price: Giffard Vanilla Syrup 1L @ $23.73 (same Giffard 1 L syrup price); $142.35 = 6 × $23.73 — Paramount Liquor 2026-07-26; St Alma PO, Gmail thread 19f9db619f1f80a0
+  [high] GIFFARD COCONUT SYRUP 1000ML BOTTLE: $128.40 → $21.40
+      St Alma: 5.4 on hand, $693.36 → $115.56
+      Alma Avalon: 3.025686 on hand, $388.50 → $64.75
+      case ÷ 6: $128.40 = 6 × $21.40 — (no coconut-specific document); other Giffard 1 L records cost $21.40; Paramount Giffard 1 L syrup $23.73 (26 Jul)
+  [high] DON JULIO BLANCO 750ML BOTTLE: $500.10 → $83.35
+      Alma Avalon: 0.2 on hand, $100.02 → $16.67
+      St Alma: 0.05 on hand, $25.01 → $4.17
+      case ÷ 6, matches twin: $500.10 = 6 × $83.35 — (no supplier document found); twin record "Don Julio Blanco" $83.40
+  [high] TSEC 20L (NoSugar) - 20L - 20% ABV: $680.00 → $34.00
+      Alma Avalon: 1.05 on hand, $714.00 → $35.70
+      St Alma: 0.015 on hand, $10.20 → $0.51
+      drum ÷ 20 L: $680 = one 20 L drum; ÷ 20 = $34.00/L — Manly Spirits (receipts carry no line items); twin "Triple SEC 20L - 20% ABV" $30.00/L ($600 a drum)
+  [high] Watermelon Juice (1 x 5L): $30.00 → $6.96
+      St Alma: 3.1 on hand, $93.00 → $21.58
+      Alma Avalon: 14.62 on hand, $438.60 → $101.76
+      supplier price: Pure Watermelon Juice 5L @ $34.80 → $6.96/L — Nectar Cold Pressed 2026-10-06; Order Confirmation OMO14912, Gmail thread 1a1100d63e027370 (also 31 Aug thread 1a0578539dd976c3; Xero bill OMI13328 6 May)
+  [high] YG BEEF CHUCK ROLL: $124.00 → $20.50
+      St Alma: 2.756846 on hand, $341.85 → $56.52
+      supplier price: 13.9 kg $284.95; 15 kg $307.50; 20.3 kg $416.15 = $20.50/kg each time — FoodByUs 2026-06-30; invoice lines 30 Jun, 2 Jun, 9 May (stored SupplierInvoiceLine)
+  [high] Lime Juice (1 x 5L): $70.00 → $14.00
+      St Alma: 4.8 on hand, $336.00 → $67.20
+      Alma Avalon: 8.52 on hand, $596.40 → $119.28
+      supplier price: Lime Juice 5L @ $70.00 → $14.00/L — Nectar Cold Pressed 2026-10-06; Order Confirmation OMO14912 (Gmail 1a1100d63e027370), Xero bill OMI13328
+  [high] BEEF SHORT RIBS GRAINFED 3 RIB: $51.80 → $29.00
+      St Alma: 24.590223 on hand, $1273.77 → $713.12
+      supplier price (latest invoice): $29.00/kg on every delivery since 13 Jun (14.1 kg $408.90, 14.9 kg $432.10, 17.1 kg $495.90 on 2 Jul, 57.4 kg $1,664.60 on 7 Jul); $25.90/kg before (e.g. 41.1 kg $1,064.49, 45.4 kg $1,175.86); stored $51.80 = 2 × $25.90; Avalon twin $25.89 — FoodByUs; invoice lines matched to this item (stored SupplierInvoiceLine), Apr–Jul 2026
+  → Alma Avalon: stock value $-8155.34
+  → St Alma: stock value $-5615.69
+
+Dry run — nothing written. Re-run with --apply (a snapshot is taken first; --rollback <runId> restores it).
+  Alma Avalon: active stock value $39322.32
+  St Alma: active stock value $64566.68

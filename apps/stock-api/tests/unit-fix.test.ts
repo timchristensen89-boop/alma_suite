@@ -150,3 +150,63 @@ test('rollback refuses when a restated row was edited after the fix', NO_DB, asy
     await f.cleanup();
   }
 });
+
+test('a case-price correction lowers only the average cost, leaves history alone, and rolls back exactly', NO_DB, async () => {
+  const tag = `cost-${process.pid}-${Date.now()}`;
+  const runId = `test-${tag}`;
+  const item = await prisma.stockItem.create({
+    data: {
+      name: `Lyres Agave ${tag}`, unit: 'bottle', countUnit: 'bottle', conversionFactor: 1, measurePerCountUnit: 700, measureUnit: 'ml',
+      avgCostCents: 21114, latestCostCents: 21114, onHand: 7, parLevel: 0, status: 'ACTIVE',
+      venueStock: { create: [{ venue: 'Alma Avalon', onHand: 1, active: true }, { venue: 'St Alma', onHand: 6, active: true }] }
+    }
+  });
+  const sheet = await prisma.stocktake.create({
+    data: { name: `Old count ${tag}`, venue: 'St Alma', countedAt: new Date('2026-08-31'), status: 'REVIEWED', appliedAt: new Date('2026-09-01'),
+      lines: { create: [{ position: 1, label: item.name, itemId: item.id, countedQty: 6, unit: 'bottle', stockValueCents: 126684 }] } }
+  });
+  const snapshot = async () => ({
+    item: await prisma.stockItem.findUniqueOrThrow({ where: { id: item.id } }),
+    venues: await prisma.venueStockItem.findMany({ where: { stockItemId: item.id }, orderBy: { id: 'asc' } }),
+    lines: await prisma.stocktakeLine.findMany({ where: { itemId: item.id }, orderBy: { id: 'asc' } })
+  });
+  const file: UnitFixFile = { costs: [{ confidence: 'high', itemId: item.id, item: item.name, from: { avgCostCents: 21114 }, to: { avgCostCents: 3519 }, reason: '6 × $35.19' }] };
+  try {
+    const before = await snapshot();
+    const plan = await planUnitFix(file);
+    assert.deepEqual(plan.refusals, []);
+    assert.deepEqual(plan.costs[0]!.holdings.map((h) => [h.venue, h.beforeCents, h.afterCents]).sort(), [['Alma Avalon', 21114, 3519], ['St Alma', 126684, 21114]]);
+    await ensureUnitFixBackupTable();
+    await applyUnitFix(runId, plan);
+
+    const after = await snapshot();
+    assert.equal(after.item.avgCostCents, 3519);
+    assert.equal(after.item.latestCostCents, 21114, 'the latest purchase price is not touched');
+    assert.deepEqual(after.venues.map((v) => v.onHand), before.venues.map((v) => v.onHand), 'holdings are not touched');
+    assert.deepEqual(after.lines, before.lines, 'stocktake history keeps the value it was recorded with');
+
+    // Reviewed against a cost that has since changed: refused, nothing written.
+    const stale = await planUnitFix(file);
+    assert.equal(stale.refusals.length, 1);
+    assert.match(stale.refusals[0]!, /now \$35\.19, reviewed as \$211\.14/);
+
+    await rollbackUnitFix(runId);
+    assert.deepEqual(await snapshot(), before);
+  } finally {
+    await prisma.$executeRawUnsafe(`DELETE FROM "_stock_unit_fix_backup" WHERE "runId" = $1`, runId).catch(() => {});
+    await prisma.stocktake.deleteMany({ where: { id: sheet.id } });
+    await prisma.venueStockItem.deleteMany({ where: { stockItemId: item.id } });
+    await prisma.stockItem.deleteMany({ where: { id: item.id } });
+  }
+});
+
+test('a cost correction that would raise the cost is refused', NO_DB, async () => {
+  const item = await prisma.stockItem.create({ data: { name: `Raise ${process.pid}-${Date.now()}`, unit: 'bottle', countUnit: 'bottle', avgCostCents: 1000, onHand: 0, parLevel: 0, status: 'ACTIVE' } });
+  try {
+    const plan = await planUnitFix({ costs: [{ itemId: item.id, item: item.name, from: { avgCostCents: 1000 }, to: { avgCostCents: 6000 }, reason: 'wrong way' }] });
+    assert.equal(plan.costs.length, 0);
+    assert.match(plan.refusals[0]!, /must lower the cost/);
+  } finally {
+    await prisma.stockItem.deleteMany({ where: { id: item.id } });
+  }
+});

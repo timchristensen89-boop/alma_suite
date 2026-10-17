@@ -1,0 +1,265 @@
+{
+ "generatedFrom": "17 Oct 2026: audit PR #323 confirmed items, verified against supplier documents (Gmail order confirmations / POs, stored invoice lines, Xero bills)",
+ "costs": [
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbq7w00eu9ky2gcs0n6ja",
+   "item": "LYRES WHITE CANE SPIRIT 700ML BOTTLE",
+   "from": {
+    "avgCostCents": 20442
+   },
+   "to": {
+    "avgCostCents": 2919
+   },
+   "reason": "supplier price: 2 × Lyre's White Rum Alternative 700ml @ $29.19 (ex GST) — Paramount Liquor 2026-07-26; St Alma PO forwarded by Dirk, Gmail thread 19f9db619f1f80a0",
+   "pack": "700 mL bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "Paramount Liquor",
+    "date": "2026-07-26",
+    "document": "St Alma PO forwarded by Dirk, Gmail thread 19f9db619f1f80a0",
+    "line": "2 × Lyre's White Rum Alternative 700ml @ $29.19 (ex GST)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbq6600eq9ky2qgnr8ejx",
+   "item": "LYRES AGAVE BLANCO 700ML BOTTLE",
+   "from": {
+    "avgCostCents": 21114
+   },
+   "to": {
+    "avgCostCents": 2919
+   },
+   "reason": "supplier price: 1 × Lyre's Tequila Alternative 700ml @ $29.19 (ex GST) — Paramount Liquor 2026-07-26; St Alma PO, Gmail thread 19f9db619f1f80a0",
+   "pack": "700 mL bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "Paramount Liquor",
+    "date": "2026-07-26",
+    "document": "St Alma PO, Gmail thread 19f9db619f1f80a0",
+    "line": "1 × Lyre's Tequila Alternative 700ml @ $29.19 (ex GST)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbsdo00jq9ky2k3aq5jkd",
+   "item": "SAMMY PIQUANT JETSETTER 700ML BOTTLE",
+   "from": {
+    "avgCostCents": 17970
+   },
+   "to": {
+    "avgCostCents": 2995
+   },
+   "reason": "case ÷ 6, matches twin: $179.70 = 6 × $29.95 — (no supplier document found); twin record \"Sammy Piquant The Jetsetter\" latest purchase price $29.95",
+   "pack": "700 mL bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "(no supplier document found)",
+    "date": null,
+    "document": "twin record \"Sammy Piquant The Jetsetter\" latest purchase price $29.95",
+    "line": "$179.70 = 6 × $29.95",
+    "basis": "case ÷ 6, matches twin"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbpi700d69ky2f8gje5og",
+   "item": "HERRADURA AGAVE NECTAR 473ML - (CASE OF 12)",
+   "from": {
+    "avgCostCents": 13488
+   },
+   "to": {
+    "avgCostCents": 1124
+   },
+   "reason": "case ÷ 12: $134.88 = 12 × $11.24 — (no supplier document found); item purchase setup: case of 12; twin \"Herradura Agave Nectar\" $12.28",
+   "pack": "473 mL bottle; purchase unit case of 12",
+   "evidence": {
+    "supplier": "(no supplier document found)",
+    "date": null,
+    "document": "item purchase setup: case of 12; twin \"Herradura Agave Nectar\" $12.28",
+    "line": "$134.88 = 12 × $11.24",
+    "basis": "case ÷ 12"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbswy00ky9ky2n2nczql9",
+   "item": "SUPASAWA 700ML - (CASE OF 6)",
+   "from": {
+    "avgCostCents": 14826
+   },
+   "to": {
+    "avgCostCents": 2471
+   },
+   "reason": "case ÷ 6: $148.26 = 6 × $24.71 — (no supplier document found); item purchase setup: case of 6; twin \"Supasawa\" $27.60",
+   "pack": "700 mL bottle; purchase unit case of 6",
+   "evidence": {
+    "supplier": "(no supplier document found)",
+    "date": null,
+    "document": "item purchase setup: case of 6; twin \"Supasawa\" $27.60",
+    "line": "$148.26 = 6 × $24.71",
+    "basis": "case ÷ 6"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbp7g00ci9ky2fenupt1l",
+   "item": "GIFFARD ROSE SYRUP 1L BOTTLE",
+   "from": {
+    "avgCostCents": 14235
+   },
+   "to": {
+    "avgCostCents": 2373
+   },
+   "reason": "case ÷ 6, matches supplier price: Giffard Vanilla Syrup 1L @ $23.73 (same Giffard 1 L syrup price); $142.35 = 6 × $23.73 — Paramount Liquor 2026-07-26; St Alma PO, Gmail thread 19f9db619f1f80a0",
+   "pack": "1 L bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "Paramount Liquor",
+    "date": "2026-07-26",
+    "document": "St Alma PO, Gmail thread 19f9db619f1f80a0",
+    "line": "Giffard Vanilla Syrup 1L @ $23.73 (same Giffard 1 L syrup price); $142.35 = 6 × $23.73",
+    "basis": "case ÷ 6, matches supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbp2600c69ky24p8ikf3e",
+   "item": "GIFFARD COCONUT SYRUP 1000ML BOTTLE",
+   "from": {
+    "avgCostCents": 12840
+   },
+   "to": {
+    "avgCostCents": 2140
+   },
+   "reason": "case ÷ 6: $128.40 = 6 × $21.40 — (no coconut-specific document); other Giffard 1 L records cost $21.40; Paramount Giffard 1 L syrup $23.73 (26 Jul)",
+   "pack": "1 L bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "(no coconut-specific document)",
+    "date": null,
+    "document": "other Giffard 1 L records cost $21.40; Paramount Giffard 1 L syrup $23.73 (26 Jul)",
+    "line": "$128.40 = 6 × $21.40",
+    "basis": "case ÷ 6"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbo0n009s9ky23tatpkjn",
+   "item": "DON JULIO BLANCO 750ML BOTTLE",
+   "from": {
+    "avgCostCents": 50010
+   },
+   "to": {
+    "avgCostCents": 8335
+   },
+   "reason": "case ÷ 6, matches twin: $500.10 = 6 × $83.35 — (no supplier document found); twin record \"Don Julio Blanco\" $83.40",
+   "pack": "750 mL bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "(no supplier document found)",
+    "date": null,
+    "document": "twin record \"Don Julio Blanco\" $83.40",
+    "line": "$500.10 = 6 × $83.35",
+    "basis": "case ÷ 6, matches twin"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbtik00mc9ky2871h92mv",
+   "item": "TSEC 20L (NoSugar) - 20L - 20% ABV",
+   "from": {
+    "avgCostCents": 68000
+   },
+   "to": {
+    "avgCostCents": 3400
+   },
+   "reason": "drum ÷ 20 L: $680 = one 20 L drum; ÷ 20 = $34.00/L — Manly Spirits (receipts carry no line items); twin \"Triple SEC 20L - 20% ABV\" $30.00/L ($600 a drum)",
+   "pack": "per litre of a 20 L drum",
+   "evidence": {
+    "supplier": "Manly Spirits (receipts carry no line items)",
+    "date": null,
+    "document": "twin \"Triple SEC 20L - 20% ABV\" $30.00/L ($600 a drum)",
+    "line": "$680 = one 20 L drum; ÷ 20 = $34.00/L",
+    "basis": "drum ÷ 20 L"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbtwm00n89ky2nzqu27ne",
+   "item": "Watermelon Juice (1 x 5L)",
+   "from": {
+    "avgCostCents": 3000
+   },
+   "to": {
+    "avgCostCents": 696
+   },
+   "reason": "supplier price: Pure Watermelon Juice 5L @ $34.80 → $6.96/L — Nectar Cold Pressed 2026-10-06; Order Confirmation OMO14912, Gmail thread 1a1100d63e027370 (also 31 Aug thread 1a0578539dd976c3; Xero bill OMI13328 6 May)",
+   "pack": "per litre of a 5 L container",
+   "evidence": {
+    "supplier": "Nectar Cold Pressed",
+    "date": "2026-10-06",
+    "document": "Order Confirmation OMO14912, Gmail thread 1a1100d63e027370 (also 31 Aug thread 1a0578539dd976c3; Xero bill OMI13328 6 May)",
+    "line": "Pure Watermelon Juice 5L @ $34.80 → $6.96/L",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbu8y00o09ky2md6lkxv9",
+   "item": "YG BEEF CHUCK ROLL",
+   "from": {
+    "avgCostCents": 12400
+   },
+   "to": {
+    "avgCostCents": 2050
+   },
+   "reason": "supplier price: 13.9 kg $284.95; 15 kg $307.50; 20.3 kg $416.15 = $20.50/kg each time — FoodByUs 2026-06-30; invoice lines 30 Jun, 2 Jun, 9 May (stored SupplierInvoiceLine)",
+   "pack": "per kg",
+   "evidence": {
+    "supplier": "FoodByUs",
+    "date": "2026-06-30",
+    "document": "invoice lines 30 Jun, 2 Jun, 9 May (stored SupplierInvoiceLine)",
+    "line": "13.9 kg $284.95; 15 kg $307.50; 20.3 kg $416.15 = $20.50/kg each time",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbq3n00ek9ky2f7n9793j",
+   "item": "Lime Juice (1 x 5L)",
+   "from": {
+    "avgCostCents": 7000
+   },
+   "to": {
+    "avgCostCents": 1400
+   },
+   "pack": "per litre of a 5 L container",
+   "evidence": {
+    "supplier": "Nectar Cold Pressed",
+    "date": "2026-10-06",
+    "document": "Order Confirmation OMO14912, Gmail thread 1a1100d63e027370 (also Xero bill OMI13328 6 May)",
+    "line": "Lime Juice 5L @ $70.00 → $14.00/L",
+    "basis": "supplier price"
+   },
+   "reason": "supplier price: Lime Juice 5L @ $70.00 → $14.00/L — Nectar Cold Pressed 2026-10-06; Order Confirmation OMO14912 (Gmail 1a1100d63e027370), Xero bill OMI13328"
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbm1m005a9ky2bo078h4b",
+   "item": "BEEF SHORT RIBS GRAINFED 3 RIB",
+   "from": {
+    "avgCostCents": 5180
+   },
+   "to": {
+    "avgCostCents": 2900
+   },
+   "pack": "per kg (was 2 × the per-kg price)",
+   "evidence": {
+    "supplier": "FoodByUs",
+    "date": "2026-07-07",
+    "document": "invoice lines matched to this item (stored SupplierInvoiceLine), Apr–Jul 2026",
+    "line": "$29.00/kg on every delivery since 13 Jun (14.1 kg $408.90, 14.9 kg $432.10, 17.1 kg $495.90 on 2 Jul, 57.4 kg $1,664.60 on 7 Jul); $25.90/kg before (e.g. 41.1 kg $1,064.49, 45.4 kg $1,175.86); stored $51.80 = 2 × $25.90; Avalon twin $25.89",
+    "basis": "supplier price (latest invoice)"
+   },
+   "reason": "supplier price (latest invoice): $29.00/kg on every delivery since 13 Jun (14.1 kg $408.90, 14.9 kg $432.10, 17.1 kg $495.90 on 2 Jul, 57.4 kg $1,664.60 on 7 Jul); $25.90/kg before (e.g. 41.1 kg $1,064.49, 45.4 kg $1,175.86); stored $51.80 = 2 × $25.90; Avalon twin $25.89 — FoodByUs; invoice lines matched to this item (stored SupplierInvoiceLine), Apr–Jul 2026"
+  }
+ ]
+}
