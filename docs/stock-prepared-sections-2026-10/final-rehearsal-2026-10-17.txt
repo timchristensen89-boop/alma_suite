@@ -1,0 +1,68 @@
+### 1. Migration
+migrated
+### 2. Merge repair
+Applied run final-repair. Rollback: --rollback final-repair
+  Alma Avalon: active stock value $39789.36
+  St Alma: active stock value $63223.51
+### 3. Case prices (PR #324 @ 3c7f7082)
+Applied run final-case: 13 cost(s), 0 measure(s), 0 line(s), 0 holding(s) with 0 correction movement(s).
+Rollback: --rollback final-case
+  Alma Avalon: active stock value $31154.50
+  St Alma: active stock value $58739.31
+### 4. Ingredient measures
+Applied run final-measures: 3 measure(s), 0 line(s), 0 holding(s) with 0 correction movement(s).
+Rollback: --rollback final-measures
+  Alma Avalon: active stock value $31154.50
+  St Alma: active stock value $58739.31
+### 5. Recipe links
+Applied links run final-links: 2 recipe line(s). Rollback: --rollback final-links
+### 6. Prepared items
+
+== Batch Cocktails (13)
+  Beach, Please Batch — Alma Avalon | Alma Avalon | counted in L | container 1.39 L | $46.43 per L
+  Beach, Please Batch — St Alma | St Alma | counted in L | container 1.44 L | $46.34 per L
+  Classic Margarita Batch | Alma Avalon | counted in L | container 1.5 L | $47.67 per L
+  Coconut Margarita Batch | St Alma | counted in L | container 2.825 L | $55.86 per L
+  Espresso Martini Batch | Alma Avalon | counted in L | container 3.5 L | $54.18 per L
+  Ginger Spice Batch — Alma Avalon | Alma Avalon | counted in L | container 2.4 L | $55.07 per L
+  Ginger Spice Batch — St Alma | St Alma | counted in L | container 2.4 L | $55.07 per L
+  Oaxacan Negroni Batch | St Alma | counted in L | container 2.52 L | $73.33 per L
+  Pornstar Margarita Batch | St Alma | counted in L | container 1 L | $58.27 per L
+  Sensible Marg Batch | Alma Avalon | counted in L | container 3.5 L | $35.08 per L
+  Spiced Tequila & Triple Sec | Alma Avalon | counted in L | container 4.5 L | $26.78 per L
+  Strawberry Habanero Sour Batch | St Alma | counted in L | container 3.6 L | $48.65 per L
+  Zest I Ever Had Batch | Alma Avalon | counted in L | container 1.4 L | $50.88 per L
+
+== Kitchen Prep (28)
+  Agave Beef Short Ribs | St Alma | counted in kg | container 25.005 kg | $24.28 per kg
+  Avocado Cream | Alma Avalon | counted in kg | container 3.19 kg | $23.63 per kg
+  Beef Birria | Alma Avalon | counted in kg | container 87.056 kg | $10.41 per kg
+  Cauliflower Puree | St Alma | counted in kg | container 0.82 kg | $10.99 per kg
+  Chicken Tinga | Alma Avalon | counted in kg | container 30.59 kg | $6.63 per kg
+  Chicken Tinga Empanada | Alma Avalon | counted in ? | container ?  | — per unit  ⚠ yield is "1 units" — needs a litre or kilo yield before it can be counted by volume or weight
+  Chimichurri | Alma Avalon | counted in kg | container 0.318 kg | $29.78 per kg
+  Chipotle Mayo | St Alma | counted in kg | container 1.09 kg | $8.16 per kg
+  Churros | St Alma | counted in kg | container 1.38 kg | $13.20 per kg
+  Coleslaw | Alma Avalon | counted in kg | container 5.408 kg | $7.28 per kg
+  Cooked Prawns | St Alma | counted in kg | container 4.15 kg | $10.88 per kg
+  Cured Salmon | Alma Avalon | counted in kg | container 2.52 kg | $16.49 per kg
+  Dulce de Leche | Alma Avalon | counted in kg | container 0.895 kg | $5.61 per kg
+  Guacachile | Alma Avalon | counted in kg | container 1.616 kg | $4.16 per kg
+  Guacamole | St Alma | counted in ? | container ?  | — per unit  ⚠ yield is "80 portions" — needs a litre or kilo yield before it can be counted by volume or weight
+  Martajada Sauce | St Alma | counted in kg | container 2.1 kg | $6.65 per kg
+  Mole Verde | Alma Avalon | counted in ? | container ?  | — per unit  ⚠ yield is "50 portions" — needs a litre or kilo yield before it can be counted by volume or weight
+  Octopus Adobo | St Alma | counted in kg | container 0.75 kg | $10.12 per kg
+  Pico de Gallo | Alma Avalon | counted in kg | container 2.27 kg | $2.49 per kg
+  Pineapple Salsa | St Alma | counted in kg | container 5.55 kg | $3.52 per kg
+  Polenta Fries | St Alma | counted in kg | container 2.128 kg | $7.28 per kg
+  Pork Belly | Alma Avalon | counted in kg | container 10.04 kg | $9.04 per kg
+  Salmon & Guajillo Pate | St Alma | counted in kg | container 2.33 kg | $10.98 per kg
+  Salsa Macha | St Alma | counted in kg | container 10.914 kg | $5.84 per kg
+  Short Ribs | Alma Avalon | counted in kg | container 25.099 kg | $24.89 per kg
+  Smoked Chipotle | Alma Avalon | counted in kg | container 6.45 kg | $3.17 per kg
+  Tomatillo Salsa | St Alma | counted in kg | container 2.36 kg | $7.73 per kg
+  White Chocolate Almond Ganache | St Alma | counted in kg | container 3.25 kg | $7.44 per kg
+
+38 ready, 3 need attention first.
+Dry run — nothing written. Re-run with --apply (recorded for --rollback <runId>).
+Applied run final-prepared: 38 prepared-stock item(s) created. Rollback: --rollback final-prepared

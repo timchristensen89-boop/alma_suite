@@ -57,28 +57,12 @@ Three recipes have no litre or kilo yield and are skipped until one is set:
 - Guacamole (yield "80 portions")
 - Mole Verde (yield "50 portions")
 
-Seven items get a blank cost because their recipe cost looks wrong. The usual causes are case prices entered as unit prices and the 100 g placeholder measures:
+All 38 items now get a complete cost. The seven that were inflated are fixed by the case-price corrections (PR #324), three ingredient measures and two recipe links. Details are in `stock-prepared-sections-2026-10/PRODUCTION-RUNBOOK.md`.
 
-- Ginger Spice Batch, both venues ($131.87/L)
-- Sensible Marg Batch ($187.20/L)
-- Agave Beef Short Ribs ($70.63/kg)
-- Martajada Sauce ($550.84/kg)
-- Pineapple Salsa ($166.55/kg)
-- Tomatillo Salsa ($128.41/kg)
+## Production
 
-Managers can type a cost, or press "Use recipe cost" once the ingredient fixes land.
-
-## Production order (each step needs Tim's approval)
-
-1. Take a database backup.
-2. Run the migration (adds the column and the two categories, nothing else).
-3. Land the case-price corrections and placeholder-measure fixes, so recipe costs are right.
-4. Run the setup script as a dry run on production, review, then `--apply --i-mean-production`.
-5. Deploy stock-api and stock-web.
-6. Smoke test: open a bar count and a kitchen count, enter 2.5 L and 1300 g, check values, print a blank sheet, export Excel.
-
-Rollback: `--rollback <runId>` removes the created items (refused if any were counted), then redeploy the previous images. The migration's column is nullable and harmless to leave in place.
+See `stock-prepared-sections-2026-10/PRODUCTION-RUNBOOK.md` for the full order, the expected values at each step, the rehearsal evidence and rollback.
 
 ## Tests
 
-`apps/stock-api/tests/prepared-stock.test.ts` covers section order, unit conversions and valuation, the recipe cost suggestion and both double-count guards. Full API suite: 337 of 337 pass.
+`apps/stock-api/tests/prepared-stock.test.ts` covers section order, unit conversions and valuation, the recipe cost suggestion and both double-count guards. Full API suite with all three PRs merged: 339 of 339 pass.
