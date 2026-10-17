@@ -80,7 +80,9 @@ export {
   SuiteApps,
   SuiteAppSwitcher,
   SuiteLogo,
-  suiteApp, installSuiteAppAccess, suiteAppAllowed } from './brand/SuiteApps';
-export type { SuiteAppId, SuiteAppIdentity, SuiteAppStatus } from './brand/SuiteApps';
+  suiteApp, installSuiteAppAccess, suiteAppAllowed,
+  SUITE_LAUNCHER_GROUPS, suiteLauncherInfo } from './brand/SuiteApps';
+export type { SuiteAppId, SuiteAppIdentity, SuiteAppStatus, SuiteLauncherGroup, SuiteLauncherInfo } from './brand/SuiteApps';
 export { canUseApp, accessibleSuiteApps, almaAppIdForSuiteApp } from './brand/appAccess';
 export { AppAccessGate } from './brand/AppAccessGate';
+export { isSharedDeviceUser, launchableSuiteApps, launcherAppsForUser, searchSuiteLauncher, suiteLauncherMatch } from './brand/launcher';

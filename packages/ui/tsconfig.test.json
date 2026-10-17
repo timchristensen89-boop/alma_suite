@@ -1,0 +1,9 @@
+{
+  // Only for `pnpm test`: tsx otherwise compiles .tsx with the classic
+  // React.createElement transform, and the brand components assume the
+  // automatic runtime the apps' Vite builds use. Apps never read this file.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx"
+  }
+}

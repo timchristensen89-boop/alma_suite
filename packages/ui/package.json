@@ -16,6 +16,6 @@
     "tsx": "^4.21.0"
   },
   "scripts": {
-    "test": "node --import tsx --test $(find src -name \"*.test.ts\" | sort)"
+    "test": "TSX_TSCONFIG_PATH=tsconfig.test.json node --import tsx --test $(find src -name \"*.test.ts\" | sort)"
   }
 }
