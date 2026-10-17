@@ -206,6 +206,12 @@ test('a cost correction that would raise the cost is refused', NO_DB, async () =
     const plan = await planUnitFix({ costs: [{ itemId: item.id, item: item.name, from: { avgCostCents: 1000 }, to: { avgCostCents: 6000 }, reason: 'wrong way' }] });
     assert.equal(plan.costs.length, 0);
     assert.match(plan.refusals[0]!, /must lower the cost/);
+    // A supplier-price rise goes through only when someone has put their name to it.
+    const approved = await planUnitFix({ costs: [{ itemId: item.id, item: item.name, from: { avgCostCents: 1000 }, to: { avgCostCents: 6000 }, reason: 'supplier price', approvedIncrease: 'Owner, 18 Oct 2026' }] });
+    assert.equal(approved.refusals.length, 0);
+    assert.equal(approved.costs.length, 1);
+    const blank = await planUnitFix({ costs: [{ itemId: item.id, item: item.name, from: { avgCostCents: 1000 }, to: { avgCostCents: 6000 }, reason: 'supplier price', approvedIncrease: '  ' }] });
+    assert.match(blank.refusals[0]!, /must lower the cost/);
   } finally {
     await prisma.stockItem.deleteMany({ where: { id: item.id } });
   }

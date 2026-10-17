@@ -75,6 +75,12 @@ export type CostFix = {
   from: { avgCostCents: number };
   to: { avgCostCents: number };
   reason: string;
+  /**
+   * A cost correction normally only lowers a cost (a case price on a unit).
+   * A supplier-price update that raises it needs this set to the name of
+   * the person who approved the increase; otherwise it is refused.
+   */
+  approvedIncrease?: string;
 };
 export type UnitFixFile = {
   sheets?: Record<string, string>;
@@ -155,8 +161,12 @@ export async function planUnitFix(file: UnitFixFile, options: { confidence?: Con
       refusals.push(`cost ${fix.item}: now ${dollars(item.avgCostCents)}, reviewed as ${dollars(fix.from.avgCostCents)}`);
       continue;
     }
-    if (!(fix.to.avgCostCents > 0) || fix.to.avgCostCents >= fix.from.avgCostCents) {
-      refusals.push(`cost ${fix.item}: a case-price correction must lower the cost (${dollars(fix.from.avgCostCents)} → ${dollars(fix.to.avgCostCents)})`);
+    if (!(fix.to.avgCostCents > 0) || fix.to.avgCostCents === fix.from.avgCostCents) {
+      refusals.push(`cost ${fix.item}: the new cost must be positive and different (${dollars(fix.from.avgCostCents)} → ${dollars(fix.to.avgCostCents)})`);
+      continue;
+    }
+    if (fix.to.avgCostCents > fix.from.avgCostCents && !fix.approvedIncrease?.trim()) {
+      refusals.push(`cost ${fix.item}: a case-price correction must lower the cost (${dollars(fix.from.avgCostCents)} → ${dollars(fix.to.avgCostCents)}); set approvedIncrease to the approver's name for a supplier-price rise`);
       continue;
     }
     costs.push({

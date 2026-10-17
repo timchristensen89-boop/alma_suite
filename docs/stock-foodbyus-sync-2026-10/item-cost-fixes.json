@@ -1,0 +1,376 @@
+{
+ "generatedFrom": "18 Oct 2026: FoodByUs Menu Costing (St Alma) ingredient prices vs Stock avgCostCents, PR #333 Phase B; each row approved by Tim 18 Oct 2026 (Rum at $54.68)",
+ "costs": [
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbrd000hg9ky27o1tt8g3",
+   "item": "PARMESAN GRANA WEDGE 14 X 200GM (Zanetti) CTN",
+   "from": {
+    "avgCostCents": 11600
+   },
+   "to": {
+    "avgCostCents": 830
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Foodlink $0.0415/g = $116.20 per 14\u00d7200 g carton; one wedge is $8.30",
+   "evidence": {
+    "supplier": "Foodlink",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbmud00749ky2mu2gd12f",
+   "item": "CHEESE BLUE 100GM (Castello) EA (10)",
+   "from": {
+    "avgCostCents": 4962
+   },
+   "to": {
+    "avgCostCents": 400
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Foodlink $4.00 per 100 g piece; $49.62 was the 10-pack",
+   "evidence": {
+    "supplier": "Foodlink",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmptowali00pds601pr4jz6a4",
+   "item": "Cheese Goat",
+   "from": {
+    "avgCostCents": 2757
+   },
+   "to": {
+    "avgCostCents": 275
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Foodlink $27.50/kg; one 100 g unit is $2.75; $27.57 was the kilo",
+   "evidence": {
+    "supplier": "Foodlink",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbnw8009i9ky261wivvu9",
+   "item": "DELI BACON STREAKY",
+   "from": {
+    "avgCostCents": 5460
+   },
+   "to": {
+    "avgCostCents": 1800
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Mastercut Meats $18.00/kg; $54.60 was the 3 kg pack",
+   "evidence": {
+    "supplier": "Mastercut Meats",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbn8g00809ky2hws596tc",
+   "item": "CHORIZO DON'S",
+   "from": {
+    "avgCostCents": 3950
+   },
+   "to": {
+    "avgCostCents": 1600
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Mastercut Meats $16.00/kg; $39.50 was the 2.5 kg pack",
+   "evidence": {
+    "supplier": "Mastercut Meats",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbs7900jc9ky2ubm4bauh",
+   "item": "Rum",
+   "from": {
+    "avgCostCents": 40482
+   },
+   "to": {
+    "avgCostCents": 5468
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: FoodByUs $0.0729/mL \u00d7 750 mL; $404.82 was a case price. Approved by Tim 18 Oct",
+   "evidence": {
+    "supplier": "FoodByUs",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "item": "Coriander Dozen",
+   "from": {
+    "avgCostCents": 20
+   },
+   "to": {
+    "avgCostCents": 2202
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Produce To Perfection $1.835 a bunch \u00d7 12",
+   "evidence": {
+    "supplier": "Produce To Perfection",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   },
+   "approvedIncrease": "Tim Christensen, 18 Oct 2026 (FoodByUs supplier price)"
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "item": "Limes Volume Box 10kg",
+   "from": {
+    "avgCostCents": 770
+   },
+   "to": {
+    "avgCostCents": 460
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Produce To Perfection $46.00 per 10 kg box = $4.60/kg",
+   "evidence": {
+    "supplier": "Produce To Perfection",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbnq600949ky2ivt75r59",
+   "item": "Cucumber Quks Punnet",
+   "from": {
+    "avgCostCents": 380
+   },
+   "to": {
+    "avgCostCents": 300
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Produce To Perfection $3.00 per 250 g punnet",
+   "evidence": {
+    "supplier": "Produce To Perfection",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbs9w00ji9ky2v0axetiu",
+   "item": "SALMON FILLETS S/OFF TASI SASHIMI 1.5-2KG R/W (Huon)",
+   "from": {
+    "avgCostCents": 2145
+   },
+   "to": {
+    "avgCostCents": 5070
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Foodlink $50.70/kg",
+   "evidence": {
+    "supplier": "Foodlink",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   },
+   "approvedIncrease": "Tim Christensen, 18 Oct 2026 (FoodByUs supplier price)"
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmptowc7t00zls601u3qyp57t",
+   "item": "Tomatoes Cherry",
+   "from": {
+    "avgCostCents": 300
+   },
+   "to": {
+    "avgCostCents": 55
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Foodlink $2.20 per 400 g = $0.55 per 100 g unit",
+   "evidence": {
+    "supplier": "Foodlink",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmptowak400p4s601hqhv1mtt",
+   "item": "Tortilla Flour 12inch",
+   "from": {
+    "avgCostCents": 48
+   },
+   "to": {
+    "avgCostCents": 19
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Foodlink $5.70 per 30 = $0.19 each",
+   "evidence": {
+    "supplier": "Foodlink",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmptowats00qys601jz6ayyqv",
+   "item": "Flour Plain",
+   "from": {
+    "avgCostCents": 112
+   },
+   "to": {
+    "avgCostCents": 250
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Foodlink $2.50/kg",
+   "evidence": {
+    "supplier": "Foodlink",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   },
+   "approvedIncrease": "Tim Christensen, 18 Oct 2026 (FoodByUs supplier price)"
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmsdf12xg0040mij9918ebd7f",
+   "item": "Cabbage Red",
+   "from": {
+    "avgCostCents": 380
+   },
+   "to": {
+    "avgCostCents": 676
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Produce To Perfection $6.76 each",
+   "evidence": {
+    "supplier": "Produce To Perfection",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   },
+   "approvedIncrease": "Tim Christensen, 18 Oct 2026 (FoodByUs supplier price)"
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbtor00mq9ky2jb7tdpcq",
+   "item": "VINEGAR WHITE 4LT (Edlyn) EA (3)",
+   "from": {
+    "avgCostCents": 430
+   },
+   "to": {
+    "avgCostCents": 600
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Foodlink $7.50 per 5 L = $6.00 per 4 L",
+   "evidence": {
+    "supplier": "Foodlink",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   },
+   "approvedIncrease": "Tim Christensen, 18 Oct 2026 (FoodByUs supplier price)"
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbn3c007o9ky2xlb42tz4",
+   "item": "Chilli Poblano Kilo",
+   "from": {
+    "avgCostCents": 1750
+   },
+   "to": {
+    "avgCostCents": 2380
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Produce To Perfection $23.80/kg",
+   "evidence": {
+    "supplier": "Produce To Perfection",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   },
+   "approvedIncrease": "Tim Christensen, 18 Oct 2026 (FoodByUs supplier price)"
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbqgk00fe9ky2ziiwf2bf",
+   "item": "Mexican Oregano - 250g",
+   "from": {
+    "avgCostCents": 1770
+   },
+   "to": {
+    "avgCostCents": 2400
+   },
+   "reason": "FoodByUs supplier price 18 Oct 2026: Fireworks Foods $0.096/g \u00d7 250 g",
+   "evidence": {
+    "supplier": "Fireworks Foods",
+    "date": "2026-10-18",
+    "document": "FoodByUs Menu Costing ingredient list (St Alma)",
+    "basis": "supplier price"
+   },
+   "approvedIncrease": "Tim Christensen, 18 Oct 2026 (FoodByUs supplier price)"
+  }
+ ],
+ "measures": [
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "item": "Coriander Dozen",
+   "from": {
+    "measurePerCountUnit": 100.0,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1200,
+    "measureUnit": "g"
+   },
+   "reason": "a dozen bunches at ~100 g each, not 100 g; FoodByUs costs it per bunch"
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbmrs006y9ky2jknan3jn",
+   "item": "Celery Bunch",
+   "from": {
+    "measurePerCountUnit": 120.0,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 615,
+    "measureUnit": "g"
+   },
+   "reason": "Produce To Perfection bunch is 615 g at $3.81 \u2014 price kept, measure was 120 g"
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "item": "Limes Volume Box 10kg",
+   "from": {
+    "measurePerCountUnit": 70.0,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 1000,
+    "measureUnit": "g"
+   },
+   "reason": "counted in kg; 70 g was one lime"
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbnq600949ky2ivt75r59",
+   "item": "Cucumber Quks Punnet",
+   "from": {
+    "measurePerCountUnit": 200.0,
+    "measureUnit": "g"
+   },
+   "to": {
+    "measurePerCountUnit": 250,
+    "measureUnit": "g"
+   },
+   "reason": "Produce To Perfection punnet is 250 g"
+  }
+ ]
+}
