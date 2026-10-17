@@ -3,7 +3,8 @@
 Tim keeps the real recipes in FoodByUs (Menu Costing, venue **St Alma**; the
 "Alma Group" venue there holds no costing). This folder is the read-only pull of
 that data on 18 Oct 2026 compared with Stock, and the guarded fixes that follow
-from it. **Nothing here has been applied to production.**
+from it. **Phase A was applied to production on 18 Oct 2026 01:35 (Sydney)** — see
+"Production run" below. Phase B is still a proposal.
 
 ## What FoodByUs holds
 
@@ -143,3 +144,23 @@ turned into a guarded fixes file; that follows Tim's call on each row.
 - Mole Verde (Avalon) yield still in portions.
 - Stock's sales-margin figures use stored costs; they correct themselves once
   Phase A runs in production.
+
+## Production run (18 Oct 2026, approved by Tim)
+
+Backup `/opt/alma/backups/pre-fbu-oct18-20261018-013343.dump` (99.7 MB), restored
+locally and matched on StockItem 889, VenueStockItem 1910, StocktakeLine 9701,
+InventoryMovement 6933, Recipe 702, RecipeLine 1664. All three dry runs
+matched the rehearsal with no refusals. Applied, in order:
+
+```
+Applied prune run prod-fbu-prune-20261018: 164 line(s) removed; 86 recipe cost(s) refreshed
+Applied links run prod-fbu-links-20261018: 49 recipe line(s); 37 recipe cost(s) refreshed
+Applied recipes run prod-fbu-yields-20261018: 21 recipe(s); 21 recipe cost(s) refreshed
+Refreshed 659 recipe cost(s); 213 changed.
+```
+
+After: RecipeLine 1,500 (11 still unlinked, none are leftovers); VenueStockItem
+byte-identical; StocktakeLine and InventoryMovement identical to the backup;
+valuations unchanged — Alma Avalon $31,154.50, St Alma $58,739.31.
+Rollback: `--rollback prod-fbu-yields-20261018`, then `-links-`, then
+`-prune-`, then `--refresh-costs --apply-refresh`.
