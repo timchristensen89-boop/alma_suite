@@ -67,6 +67,10 @@ export function suiteAppHref(app: SuiteAppIdentity) {
   // to forward you to POS, which resolved to that same URL, so the tab
   // reloaded itself forever (the admin -> POS ping-pong, fixed 2026-08-11).
   if (app.id === 'pos') return suiteUrls.pos ? `${trimTrailingSlash(suiteUrls.pos)}/` : undefined;
+  // Anything without a case here (Menus, in most apps) goes straight to the
+  // URL the shared registry carries, rather than through Compliance's
+  // /apps/<id>/login placeholder, which only exists to forward you on.
+  if (app.href) return app.href;
   return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/apps/${app.id}/login` : undefined;
 }
 

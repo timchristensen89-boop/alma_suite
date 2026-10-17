@@ -70,6 +70,10 @@ export function suiteAppHref(app: SuiteAppIdentity) {
   // Menus likewise: without this case it fell through to /apps/menus/login,
   // which showed "Menus needs an app URL" (reported 17 Oct 2026).
   if (app.id === 'menus') return suiteUrls.menus ? `${trimTrailingSlash(suiteUrls.menus)}/` : undefined;
+  // Anything without a case here (Menus, in most apps) goes straight to the
+  // URL the shared registry carries, rather than through Compliance's
+  // /apps/<id>/login placeholder, which only exists to forward you on.
+  if (app.href) return app.href;
   return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/apps/${app.id}/login` : undefined;
 }
 

@@ -246,6 +246,56 @@ const SUITE_SHORT_LABEL: Partial<Record<SuiteAppId, string>> = {
 
 const SUITE_GROUP_THRESHOLD = 10;
 
+// ── Launcher metadata ─────────────────────────────────────────────────────
+// Alma Home lays the registry out as a launcher. Grouping, the one-line
+// tagline on each card and the words a search should match all live here,
+// beside the URLs, so Home and the topbar switcher read one list instead of
+// keeping their own.
+export type SuiteLauncherGroup = 'daily' | 'management' | 'more';
+
+export const SUITE_LAUNCHER_GROUPS: { id: SuiteLauncherGroup; label: string }[] = [
+  { id: 'daily', label: 'Daily operations' },
+  { id: 'management', label: 'Management' },
+  { id: 'more', label: 'Guests & growth' }
+];
+
+export type SuiteLauncherInfo = {
+  group: SuiteLauncherGroup;
+  tagline: string;
+  keywords: string[];
+  /**
+   * Back-office apps that a shared venue device (the iPad on the pass) must
+   * never offer, whoever is holding it. The destination still enforces its
+   * own permissions — this only keeps the launcher from advertising them.
+   */
+  managementOnly?: boolean;
+  /** Position on the launcher — the order the entries are listed below. */
+  order: number;
+};
+
+const SUITE_LAUNCHER: Partial<Record<SuiteAppId, Omit<SuiteLauncherInfo, 'order'>>> = {
+  stock: { group: 'daily', tagline: 'Counts, orders, deliveries and wastage', keywords: ['inventory', 'stocktake', 'suppliers', 'orders', 'wastage', 'transfers'] },
+  menus: { group: 'daily', tagline: 'Edit and publish the printed menus', keywords: ['food', 'drinks', 'print', 'pdf', 'dishes'] },
+  compliance: { group: 'daily', tagline: 'Food safety, checklists and incidents', keywords: ['food safety', 'temperatures', 'checklists', 'incidents', 'audits', 'licences', 'maintenance'] },
+  pos: { group: 'daily', tagline: 'The register — tables, orders and payments', keywords: ['register', 'till', 'orders', 'payments', 'tables', 'dockets'] },
+  // Comms was folded into Staff on 2026-08-03 (noticeboard + messages), so
+  // a search for it lands here rather than on the retired app.
+  staff: { group: 'daily', tagline: 'Rosters, timesheets, leave and notices', keywords: ['roster', 'timesheets', 'leave', 'team', 'people', 'comms', 'noticeboard', 'notices', 'messages', 'announcements', 'clock'] },
+  settings: { group: 'management', tagline: 'Venues, integrations and suite settings', keywords: ['admin', 'settings', 'integrations', 'venues', 'users', 'access'], managementOnly: true },
+  reports: { group: 'management', tagline: 'Sales, wages, COGS and forecasts', keywords: ['sales', 'wages', 'cogs', 'forecast', 'dashboards', 'performance'], managementOnly: true },
+  giftcards: { group: 'management', tagline: 'Sell, check and redeem gift cards', keywords: ['gift cards', 'vouchers', 'redeem', 'balance'] },
+  reserve: { group: 'more', tagline: 'Bookings, guests and the table diary', keywords: ['bookings', 'reservations', 'opentable', 'guests', 'covers', 'waitlist', 'diary'] },
+  marketing: { group: 'more', tagline: 'Guest lists, campaigns and social', keywords: ['campaigns', 'email', 'social', 'guests', 'segments'], managementOnly: true }
+};
+
+const SUITE_LAUNCHER_ORDER = Object.keys(SUITE_LAUNCHER);
+
+export function suiteLauncherInfo(id: string): SuiteLauncherInfo {
+  const info = SUITE_LAUNCHER[id as SuiteAppId];
+  if (!info) return { group: 'more', tagline: descriptionFor(id), keywords: [], order: SUITE_LAUNCHER_ORDER.length };
+  return { ...info, order: SUITE_LAUNCHER_ORDER.indexOf(id) };
+}
+
 function descriptionFor(id: string) {
   switch (id) {
     case 'compliance':

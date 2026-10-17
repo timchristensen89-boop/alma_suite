@@ -16,8 +16,10 @@ import { VENUE_TIME_ZONE } from '@alma/shared';
 import {
   AlmaAppIcon,
   SUITE_APPS,
+  launcherAppsForUser,
   type SuiteAppIdentity
 } from '@alma/ui';
+import { Launcher } from './Launcher';
 
 /*
  * Alma Home - venue device clock-in kiosk + suite launcher.
@@ -172,14 +174,6 @@ function isVenueDeviceUser(user: AuthUser | null) {
   return Boolean(user && (user.accountType === 'VENUE_DEVICE' || user.deviceAccount));
 }
 
-function quickLaunchApps(): SuiteAppIdentity[] {
-  return SUITE_APPS.filter((app) =>
-    app.status === 'active' &&
-    Boolean(app.href) &&
-    app.id !== 'settings'
-  );
-}
-
 function staffPinHref() {
   const staffHref = SUITE_APPS.find((app) => app.id === 'staff')?.href || 'https://alma-staff.web.app';
   return `${staffHref.replace(/\/+$/, '')}/pin`;
@@ -251,24 +245,12 @@ export function App() {
   const [setupMsg, setSetupMsg] = useState('');
   const [confirm, setConfirm] = useState<ConfirmInfo | null>(null);
 
-  // General staff only see the apps their access rows enable; admins and the
-  // venue kiosks keep the full set.
-  const apps = useMemo(() => {
-    const all = quickLaunchApps();
-    const account = user as
-      | (typeof user & { isAdmin?: boolean; appAccess?: Array<{ appId: string; status: string }> })
-      | null;
-    if (!account || account.isAdmin || isVenueDeviceUser(user)) return all;
-    const enabled = [
-      // POS has no app-access row to grant — the register checks the staff
-      // PIN itself — so it always shows.
-      'pos',
-      ...(account.appAccess ?? []).filter((access) => access.status === 'ENABLED').map((access) => access.appId.toLowerCase())
-    ];
-    return all.filter((app) => enabled.includes(app.id));
-  }, [user]);
+  // Shared registry, filtered to this person — see launcherAppsForUser.
+  const apps = useMemo(() => launcherAppsForUser(user), [user]);
   const pinSetupHref = useMemo(() => staffPinHref(), []);
   const deviceReady = isVenueDeviceRoute && isVenueDeviceUser(user);
+  // A signed-in person (not the kiosk) on the plain Home URL gets the launcher.
+  const launcherActive = !isVenueDeviceRoute && !isPinSetupRoute && user?.accountType === 'HUMAN';
 
   const navigateHome = useCallback((path: string) => {
     const next = path.replace(/\/+$/, '') || '/';
@@ -669,7 +651,10 @@ export function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const pinEntryReady = isVenueDeviceRoute ? deviceReady : !isPinSetupRoute;
+      // Once someone is signed in the keyboard belongs to the launcher's
+      // search, not the PIN pad — digits typed there used to be swallowed as
+      // a fresh PIN attempt.
+      const pinEntryReady = isVenueDeviceRoute ? deviceReady : !isPinSetupRoute && !launcherActive;
       if (!pinEntryReady) return;
       if (event.key >= '0' && event.key <= '9') press(event.key);
       else if (event.key === 'Backspace') press('del');
@@ -678,10 +663,10 @@ export function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [deviceReady, isPinSetupRoute, isVenueDeviceRoute, press, submitPin]);
+  }, [deviceReady, isPinSetupRoute, isVenueDeviceRoute, launcherActive, press, submitPin]);
 
   useEffect(() => {
-    const pinEntryReady = isVenueDeviceRoute ? deviceReady : !isPinSetupRoute;
+    const pinEntryReady = isVenueDeviceRoute ? deviceReady : !isPinSetupRoute && !launcherActive;
     const canSubmitPin = isVenueDeviceRoute ? selectedCanUsePin : true;
     if (!pinEntryReady || !canSubmitPin || busy || locked || entry.length < 4 || entry.length > 6) return;
     const id = window.setTimeout(() => {
@@ -694,6 +679,7 @@ export function App() {
     entry,
     isPinSetupRoute,
     isVenueDeviceRoute,
+    launcherActive,
     locked,
     selectedCanUsePin,
     submitPin
@@ -721,6 +707,63 @@ export function App() {
       : isVenueDeviceRoute
         ? 'Select a staff profile first.'
         : 'Enter your staff PIN.');
+
+  if (launcherActive && user) {
+    const activeSession = humanClock?.activeSession ?? null;
+    const nextShift = humanClock?.currentShift ?? humanClock?.nextShift ?? null;
+    const clockStatus = activeSession
+      ? `Clocked in at ${clockStr(activeSession.clockInAt)} · ${durSince(activeSession.clockInAt)} on shift`
+      : nextShift
+        ? `Next shift ${clockStr(nextShift.startsAt)}${nextShift.area ? ` · ${nextShift.area}` : ''}`
+        : 'Not clocked in';
+    return (
+      <Launcher
+        user={user}
+        apps={apps}
+        api={api}
+        clock={humanClock}
+        clockLabel={activeSession ? `On shift · ${durSince(activeSession.clockInAt)}` : 'Clock in'}
+        clockStatus={clockStatus}
+        busy={busy}
+        error={entryStatus === 'err' ? entryMsg : ''}
+        theme={theme}
+        onToggleTheme={() => setTheme((value) => (value === 'dark' ? 'light' : 'dark'))}
+        onClockToggle={toggleSignedInClock}
+        onOpenApp={openSuiteApp}
+        onRefresh={() => {
+          void loadHomeState();
+          void loadAlmaTasks();
+        }}
+        onSwitchStaff={() => {
+          void signOutSession().then(() => navigateHome('/'));
+        }}
+        onSignOut={() => void signOutSession()}
+        tasks={
+          almaTasks && almaTasks.length > 0 ? (
+            <details className="hl-tasks">
+              <summary>
+                <span>Your tasks</span>
+                <b>{almaTasksSummary?.outstandingTotal ?? almaTasks.length} outstanding</b>
+              </summary>
+              <AlmaTasksPanel
+                tasks={almaTasks}
+                summary={almaTasksSummary}
+                actioningId={almaTasksActioningId}
+                onComplete={(task) => void completeAlmaTask(task, 'complete')}
+                onDismiss={(task) => void completeAlmaTask(task, 'dismiss')}
+                onOpenTask={(task) => { if (task.link) void navigateWithHandoff(task.link); }}
+              />
+            </details>
+          ) : null
+        }
+        overlay={
+          confirm ? (
+            <ConfirmOverlay info={confirm} apps={[]} fixed onDone={() => setConfirm(null)} />
+          ) : null
+        }
+      />
+    );
+  }
 
   return (
     <div className="kiosk">
@@ -807,35 +850,6 @@ export function App() {
             onConfirmPin={setSetupConfirm}
             onSubmit={submitPinSetup}
             onBack={() => navigateHome('/')}
-          />
-        ) : signedInHuman ? (
-          <HumanWelcomePanel
-            user={signedInHuman}
-            clock={humanClock}
-            apps={apps}
-            busy={busy}
-            error={entryStatus === 'err' ? entryMsg : ''}
-            onClockToggle={toggleSignedInClock}
-            onOpenApp={openSuiteApp}
-            onRefresh={() => {
-              void loadHomeState();
-              void loadHomeSummary();
-              void loadAlmaTasks();
-            }}
-            onSwitchStaff={() => {
-              void signOutSession().then(() => navigateHome('/'));
-            }}
-            onSignOut={() => void signOutSession()}
-            tasksPanel={
-              <AlmaTasksPanel
-                tasks={almaTasks}
-                summary={almaTasksSummary}
-                actioningId={almaTasksActioningId}
-                onComplete={(task) => void completeAlmaTask(task, 'complete')}
-                onDismiss={(task) => void completeAlmaTask(task, 'dismiss')}
-                onOpenTask={user ? (task) => { if (task.link) void navigateWithHandoff(task.link); } : undefined}
-              />
-            }
           />
         ) : (
           <>
@@ -1131,90 +1145,6 @@ function AlmaTasksPanel({
         <div className="kiosk-tasks__more">{remaining} more — open Alma to see the full list.</div>
       ) : null}
     </div>
-  );
-}
-
-function HumanWelcomePanel({
-  user,
-  clock,
-  apps,
-  busy,
-  error,
-  onClockToggle,
-  onOpenApp,
-  onRefresh,
-  onSwitchStaff,
-  onSignOut,
-  tasksPanel
-}: {
-  user: AuthUser;
-  clock: StaffClockStatusPayload | null;
-  apps: SuiteAppIdentity[];
-  busy: boolean;
-  error: string;
-  onClockToggle: () => void;
-  onOpenApp: AppOpenHandler;
-  onRefresh: () => void;
-  onSwitchStaff: () => void;
-  onSignOut: () => void;
-  tasksPanel?: React.ReactNode;
-}) {
-  const name = displayName(user);
-  const first = user.firstName || name.split(' ')[0] || 'there';
-  const activeSession = clock?.activeSession ?? null;
-  const nextShift = clock?.currentShift ?? clock?.nextShift ?? null;
-  const clockLabel = activeSession ? 'Clock out' : 'Clock in';
-  const status = activeSession
-    ? `Clocked in at ${clockStr(activeSession.clockInAt)}${activeSession.venue ? ` · ${activeSession.venue}` : ''}`
-    : nextShift
-      ? `Next shift ${clockStr(nextShift.startsAt)}${nextShift.area ? ` · ${nextShift.area}` : ''}`
-      : 'Ready when you are.';
-
-  return (
-    <>
-      <div className="kiosk-right-head">
-        <div className="kiosk-eyebrow">Alma Home</div>
-        <h2>
-          Welcome, <span className="kiosk-it">{first}.</span>
-        </h2>
-        <p>Open the app you need — and clock in or out below whenever you want.</p>
-      </div>
-
-      <div className={`kiosk-welcome-card${activeSession ? ' is-clocked-in' : ''}`}>
-        <div className="kiosk-welcome-card__top">
-          <span className="kiosk-avatar kiosk-avatar--welcome">{initials(name)}</span>
-          <div className="kiosk-welcome-card__text">
-            <div className="kiosk-welcome-card__label">{activeSession ? 'On shift' : 'Signed in'}</div>
-            <strong>{name}</strong>
-            <span>{user.roleTitle || user.venue || 'Staff'}</span>
-          </div>
-        </div>
-        <div className="kiosk-clock-status">
-          <span>{status}</span>
-          {activeSession ? <b>{durSince(activeSession.clockInAt)} on shift</b> : null}
-        </div>
-        {error ? <div className="kiosk-msg is-error">{error}</div> : null}
-        <button type="button" className="kiosk-clock-btn kiosk-clock-btn--wide" onClick={onClockToggle} disabled={busy}>
-          {busy ? 'Updating...' : clockLabel}
-        </button>
-      </div>
-
-      {tasksPanel}
-
-      <SuiteAppGrid apps={apps} onOpenApp={onOpenApp} />
-
-      <div className="kiosk-right-foot">
-        <button type="button" className="kiosk-linkbtn" onClick={onRefresh} disabled={busy}>
-          Refresh
-        </button>
-        <button type="button" className="kiosk-linkbtn" onClick={onSwitchStaff} disabled={busy}>
-          Use another PIN
-        </button>
-        <button type="button" className="kiosk-linkbtn" onClick={onSignOut} disabled={busy}>
-          Sign out
-        </button>
-      </div>
-    </>
   );
 }
 
@@ -1517,18 +1447,21 @@ function ConfirmOverlay({
   info,
   apps,
   onOpenApp,
-  onDone
+  onDone,
+  fixed = false
 }: {
   info: ConfirmInfo;
   apps: SuiteAppIdentity[];
   onOpenApp?: AppOpenHandler;
   onDone: () => void;
+  /** Cover the viewport (the launcher has no kiosk card to sit inside). */
+  fixed?: boolean;
 }) {
   const isIn = info.dir === 'in';
   const isLogin = info.dir === 'login';
   const first = info.staffName.split(' ')[0] || 'there';
   return (
-    <div className={`kiosk-overlay show ${isIn || isLogin ? 'tint-in' : 'tint-out'}`}>
+    <div className={`kiosk-overlay show ${isIn || isLogin ? 'tint-in' : 'tint-out'}${fixed ? ' kiosk-overlay--fixed' : ''}`}>
       <div className="kiosk-confirm">
         <span className="kiosk-confirm__ava">{initials(info.staffName)}</span>
         <div className="kiosk-confirm__status">
@@ -1585,7 +1518,7 @@ function ConfirmOverlay({
         <button type="button" className="kiosk-done-btn" onClick={onDone}>
           Done
         </button>
-        <div className="kiosk-confirm__auto">Returning to the clock...</div>
+        <div className="kiosk-confirm__auto">{fixed ? 'Back to your apps in a moment…' : 'Returning to the clock...'}</div>
       </div>
     </div>
   );
