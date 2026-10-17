@@ -16,6 +16,8 @@ const API_BASE_URL = requiredUrl(
   ['VITE_STOCK_API_URL', 'VITE_STOCK_API_BASE_URL'],
   'http://localhost:3019'
 );
+// The suite API (reports, Xero, staff) — the same session token works there.
+const SUITE_API_BASE_URL = requiredUrl(['VITE_API_URL', 'VITE_API_BASE_URL'], 'http://localhost:3018');
 const AUTH_TOKEN_KEY = 'alma.stock.session';
 
 export function setApiAuthToken(token: string | null | undefined) {
@@ -86,6 +88,24 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return JSON.parse(body) as T;
+}
+
+// Same as api(), against the suite API. A 401 here does not sign the user
+// out of Stock: it only means the suite API would not accept this session.
+export async function suiteApi<T>(path: string, init?: RequestInit): Promise<T> {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  let response: Response;
+  try {
+    response = await fetch(`${SUITE_API_BASE_URL}${cleanPath}`, { credentials: 'include', ...init, headers: requestHeaders(init) });
+  } catch {
+    throw new ApiError(`Cannot reach the ALMA suite API at ${SUITE_API_BASE_URL}.`, 0);
+  }
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({ message: 'Request failed' }));
+    throw new ApiError(errorBody.message ?? 'Request failed', response.status);
+  }
+  const body = await response.text();
+  return (body ? JSON.parse(body) : undefined) as T;
 }
 
 export function apiUrl(path: string) {
