@@ -221,7 +221,8 @@ async function main() {
   const writing = flag('--apply') || flag('--apply-links') || option('--rollback');
   if (production && writing && !flag('--i-mean-production')) throw new Error(`Connected to ${db}. Add --i-mean-production to write to it.`);
   console.log(`database: ${db}${production ? ' — PRODUCTION' : ''}`);
-  await ensureTable();
+  // A dry run is strictly read-only: the backup table is created only when writing.
+  if (writing) await ensureTable();
   const runToRollback = option('--rollback');
   if (runToRollback) return rollback(runToRollback, flag('--force'));
   const linksFile = option('--links');
