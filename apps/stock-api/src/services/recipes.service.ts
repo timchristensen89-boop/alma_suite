@@ -604,6 +604,22 @@ async function refreshRecipeEstimatedCost(id: string) {
   });
 }
 
+/**
+ * Refresh the stored cost of the given recipes and everything that uses them
+ * (a dish that uses a prep whose yield changed). Best-effort and idempotent;
+ * for scripts that change recipe lines or yields outside the normal edit path.
+ */
+export async function refreshRecipeCosts(recipeIds: string[]): Promise<{ recipesRefreshed: number }> {
+  const seen = new Set<string>();
+  for (const id of new Set(recipeIds.filter(Boolean))) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    await refreshRecipeEstimatedCost(id).catch(() => undefined);
+    await refreshRecipeDependents(id);
+  }
+  return { recipesRefreshed: seen.size };
+}
+
 // Recompute stored estimatedCost for every recipe affected by a change to the
 // given stock items' costs — directly (a recipe that uses the item) and then
 // up the prep-recipe chain (recipes that use those recipes as ingredients), so

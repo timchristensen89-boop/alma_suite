@@ -1,0 +1,275 @@
+[
+ {
+  "recipeId": "cmoqfcw8102ke9ky2h5kk2mcb",
+  "recipe": "Salmon & Guajillo Pate (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 2330,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 1300.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 1.3 kg = 1 portions \u00d7 1.3 kg; Stock had 2330 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcw5i02k89ky2zpm06evc",
+  "recipe": "Cooked Prawns (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 4150,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 2000,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 2 kg = 200 portions \u00d7 10 g; Stock had 4150 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcx5202og9ky26qt01zr5",
+  "recipe": "Coriander Cashew Salsa (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 635,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 500.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 0.5 kg = 1 portions \u00d7 500 g; Stock had 635 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcx0502nu9ky23rqatq7l",
+  "recipe": "Pineapple Salsa (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 5550,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 2700.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 2.7 kg = 1 portions \u00d7 2.7 kg; Stock had 5550 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcwg002lf9ky29zih1dxf",
+  "recipe": "Guacamole (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 80,
+   "yieldUnit": "portions"
+  },
+  "set": {
+   "yieldQuantity": 8000,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 8 kg = 800 portions \u00d7 10 g; Stock had 80 portions (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcxz302rr9ky2zaisydpg",
+  "recipe": "White Chocolate Almond Ganache (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 3250,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 2650.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 2.65 kg = 1 portions \u00d7 2.65 kg; Stock had 3250 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcy1k02rz9ky2ufwlv42g",
+  "recipe": "Chicken Poblano Style (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 11500,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 4400.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 4.4 kg = 1 portions \u00d7 4.4 kg; Stock had 11500 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcxrh02qu9ky2nv43esln",
+  "recipe": "Eggplant Taco Mix (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 9505,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 4400.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 4.4 kg = 1 portions \u00d7 4.4 kg; Stock had 9505 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcvve02j89ky27as1l16s",
+  "recipe": "Green Aguachile (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 625,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 300.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 0.3 kg = 1 portions \u00d7 300 g; Stock had 625 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcvy002jj9ky2ggm8j8e1",
+  "recipe": "Red Aguachile (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 1995,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 1100.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 1.1 kg = 1 portions \u00d7 1.1 kg; Stock had 1995 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcw0h02jw9ky28hb6v5rm",
+  "recipe": "Roasted Pistachios (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 2010,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 1000,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 1 kg = 1 portions \u00d7 1 kg; Stock had 2010 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcw3002k29ky2zcv18du4",
+  "recipe": "Guajillo Paste (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 450,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 300.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 0.3 kg = 1 portions \u00d7 300 g; Stock had 450 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcwsn02mu9ky2elzvsp8z",
+  "recipe": "Pork Cochinita (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 69320,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 28000,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 28 kg = 280 portions \u00d7 100 g; Stock had 69320 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcwxn02nn9ky2vllb0d5f",
+  "recipe": "Slaw (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 960,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 780.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 0.78 kg = 1 portions \u00d7 780 g; Stock had 960 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcx2l02o59ky227l3ri09",
+  "recipe": "Tomatillo Salsa (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 2360,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 1300.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 1.3 kg = 1 portions \u00d7 1.3 kg; Stock had 2360 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcxch02pf9ky2wmm9y94v",
+  "recipe": "Salmon Cure (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 2300,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 1150.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 1.15 kg = 1 portions \u00d7 1.15 kg; Stock had 2300 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcxoz02qo9ky2vwdn4j65",
+  "recipe": "Goats Cheese Cream (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 4500,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 2500.0,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 2.5 kg = 1 portions \u00d7 2.5 kg; Stock had 4500 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcwai02ko9ky2ernfwq8u",
+  "recipe": "Salsa Macha (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 10914,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 6000,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 6 kg = 1 portions \u00d7 6 kg; Stock had 10914 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcwl402m69ky2a745ijxd",
+  "recipe": "Corn Masa (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 3090,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 2045,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 2045 g = 81.8 portions \u00d7 25 g; Stock had 3090 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcwd102l09ky2v5gp1skz",
+  "recipe": "Chicken Tinga (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 14545,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 5000,
+   "yieldUnit": "g"
+  },
+  "why": "FoodByUs records the finished batch as 5 kg = 1 portions \u00d7 5 kg; Stock had 14545 g (the raw ingredient weight), which spread the batch cost over too many grams."
+ },
+ {
+  "recipeId": "cmoqfcwnl02md9ky2edjshr9h",
+  "recipe": "Chicken Tinga Empanada (St Alma)",
+  "expectNow": {
+   "yieldQuantity": 55.0,
+   "yieldUnit": "g"
+  },
+  "set": {
+   "yieldQuantity": 1,
+   "yieldUnit": "units"
+  },
+  "why": "One batch is one empanada (30 g tinga + 25 g masa = 55 g). The dishes use it as '1 units' and '3 units', which cannot be costed against a yield in grams; FoodByUs also treats it as units."
+ }
+]

@@ -1,0 +1,737 @@
+[
+ {
+  "lineId": "cmoqfcuh202f59ky25iy172ss",
+  "recipe": "Guacamole & Tostadas (St Alma)",
+  "expectNow": {
+   "ingredientName": "Salsa Macha",
+   "quantity": 10.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwai02ko9ky2ernfwq8u"
+  },
+  "why": "10 g of the St Alma prep recipe 'Salsa Macha' (yield 10914 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcuh202f79ky27sw7s2n6",
+  "recipe": "Guacamole & Tostadas (St Alma)",
+  "expectNow": {
+   "ingredientName": "Guacamole",
+   "quantity": 180.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwg002lf9ky29zih1dxf"
+  },
+  "why": "180 g of the St Alma prep recipe 'Guacamole' (yield 80 portions); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcuek02ew9ky25jlbenxa",
+  "recipe": "Salmon Crudo (St Alma)",
+  "expectNow": {
+   "ingredientName": "Green Aguachile",
+   "quantity": 27.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcvve02j89ky27as1l16s"
+  },
+  "why": "27 g of the St Alma prep recipe 'Green Aguachile' (yield 625 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcuji02fa9ky2vis96dfe",
+  "recipe": "Poached Snapper 'Veracruzana' (St Alma)",
+  "expectNow": {
+   "ingredientName": "Veracruzana Sauce",
+   "quantity": 180.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwik02lr9ky28ptt8de5"
+  },
+  "why": "180 g of the St Alma prep recipe 'Veracruzana Sauce' (yield 5.9 kg); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcvdx02hy9ky2g5iyyk4l",
+  "recipe": "Pork Taco (St Alma)",
+  "expectNow": {
+   "ingredientName": "Pork Cochinita",
+   "quantity": 35.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwsn02mu9ky2elzvsp8z"
+  },
+  "why": "35 g of the St Alma prep recipe 'Pork Cochinita' (yield 69320 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmt4cd8jn0006o101gc4y03nh",
+  "recipe": "Chicken With Mole Taco (St Alma)",
+  "expectNow": {
+   "ingredientName": "Chicken with Mole",
+   "quantity": 40.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcy4002s99ky2ap86zjr6"
+  },
+  "why": "40 g of the St Alma prep recipe 'Chicken with Mole' (yield 3.35 kg); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmt4cdvff000bo101stfapkw3",
+  "recipe": "Poblano Chicken Taco (St Alma)",
+  "expectNow": {
+   "ingredientName": "Chicken Poblano Style",
+   "quantity": 40.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcy1k02rz9ky2ufwlv42g"
+  },
+  "why": "40 g of the St Alma prep recipe 'Chicken Poblano Style' (yield 11500 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmt4cdvff000co101e0rcdruf",
+  "recipe": "Poblano Chicken Taco (St Alma)",
+  "expectNow": {
+   "ingredientName": "Salsa Macha",
+   "quantity": 6.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwai02ko9ky2ernfwq8u"
+  },
+  "why": "6 g of the St Alma prep recipe 'Salsa Macha' (yield 10914 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcur402fw9ky2ptq00yxk",
+  "recipe": "Chicken Tinga Empanadas (St Alma)",
+  "expectNow": {
+   "ingredientName": "Chicken Tinga Empanada",
+   "quantity": 3.0,
+   "unit": "units",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwnl02md9ky2edjshr9h"
+  },
+  "why": "3 units of the St Alma prep recipe 'Chicken Tinga Empanada' (yield 55 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcur402fx9ky2bk4enny1",
+  "recipe": "Chicken Tinga Empanadas (St Alma)",
+  "expectNow": {
+   "ingredientName": "Martajada Sauce",
+   "quantity": 25.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwq302mj9ky2n82nbt5d"
+  },
+  "why": "25 g of the St Alma prep recipe 'Martajada Sauce' (yield 2.1 kg); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcuok02fr9ky2rawk8kbg",
+  "recipe": "Chicken Tinga Empanada (1pc) (St Alma)",
+  "expectNow": {
+   "ingredientName": "Chicken Tinga Empanada",
+   "quantity": 1.0,
+   "unit": "units",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwnl02md9ky2edjshr9h"
+  },
+  "why": "1 units of the St Alma prep recipe 'Chicken Tinga Empanada' (yield 55 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcuok02fs9ky29yilhn70",
+  "recipe": "Chicken Tinga Empanada (1pc) (St Alma)",
+  "expectNow": {
+   "ingredientName": "Martajada Sauce",
+   "quantity": 15.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwq302mj9ky2n82nbt5d"
+  },
+  "why": "15 g of the St Alma prep recipe 'Martajada Sauce' (yield 2.1 kg); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcfjj01t39ky28xwmbo7x",
+  "recipe": "Beach, Please (St Alma)",
+  "expectNow": {
+   "ingredientName": "Beach, Please Batch",
+   "quantity": 60.0,
+   "unit": "ml",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfctzq02dm9ky25hz0qjnx"
+  },
+  "why": "60 ml of the St Alma prep recipe 'Beach, Please Batch' (yield 1440 ml); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcuw902gh9ky2ecditwzi",
+  "recipe": "Chicken (St Alma)",
+  "expectNow": {
+   "ingredientName": "Salsa Macha",
+   "quantity": 15.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwai02ko9ky2ernfwq8u"
+  },
+  "why": "15 g of the St Alma prep recipe 'Salsa Macha' (yield 10914 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcwnl02mf9ky2ucbgoobu",
+  "recipe": "Chicken Tinga Empanada (St Alma)",
+  "expectNow": {
+   "ingredientName": "Chicken Tinga",
+   "quantity": 30.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwd102l09ky2v5gp1skz"
+  },
+  "why": "30 g of the St Alma prep recipe 'Chicken Tinga' (yield 14545 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcwnl02mg9ky2bdx47cvt",
+  "recipe": "Chicken Tinga Empanada (St Alma)",
+  "expectNow": {
+   "ingredientName": "Corn Masa",
+   "quantity": 25.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcwl402m69ky2a745ijxd"
+  },
+  "why": "25 g of the St Alma prep recipe 'Corn Masa' (yield 3090 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfcfw701to9ky2thfpq1f9",
+  "recipe": "Oaxacan Negroni (St Alma)",
+  "expectNow": {
+   "ingredientName": "Oaxacan Negroni Batch",
+   "quantity": 60.0,
+   "unit": "ml",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfcu7602ec9ky2tnff8zl2"
+  },
+  "why": "60 ml of the St Alma prep recipe 'Oaxacan Negroni Batch' (yield 2520 ml); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc50h01au9ky261d78tju",
+  "recipe": "Eggplant Mix (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Smoked Chipotle",
+   "quantity": 40.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc52y01ax9ky2k7e2b6xs"
+  },
+  "why": "40 g of the Alma Avalon prep recipe 'Smoked Chipotle' (yield 6450 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc15b00zb9ky2ai3h2wwm",
+  "recipe": "Broccolini (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Mole Verde",
+   "quantity": 1.0,
+   "unit": "portion",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc5yl01e29ky24guam2f6"
+  },
+  "why": "1 portion of the Alma Avalon prep recipe 'Mole Verde' (yield 50 portions); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc419017a9ky22ox3h2jv",
+  "recipe": "Salmon Taco Mix (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Pico de Gallo",
+   "quantity": 130.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc38b013v9ky2zslaczzt"
+  },
+  "why": "130 g of the Alma Avalon prep recipe 'Pico de Gallo' (yield 2270 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc419017d9ky2zhc6qow9",
+  "recipe": "Salmon Taco Mix (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Guacachile",
+   "quantity": 30.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc4nv019a9ky2ht19fk80"
+  },
+  "why": "30 g of the Alma Avalon prep recipe 'Guacachile' (yield 1616 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc4xz01ah9ky27pi5gc2c",
+  "recipe": "Pineapple Salsa (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Pico de Gallo",
+   "quantity": 100.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc38b013v9ky2zslaczzt"
+  },
+  "why": "100 g of the Alma Avalon prep recipe 'Pico de Gallo' (yield 2270 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc10b00yx9ky245pomfe0",
+  "recipe": "Grilled Halloumi (1pc) (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Salsa Macha",
+   "quantity": 7.0,
+   "unit": "ml",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc3ks01539ky22qd7e0g4"
+  },
+  "why": "7 ml of the Alma Avalon prep recipe 'Salsa Macha' (yield 10179.5 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc88201i69ky2fjgooo72",
+  "recipe": "Zest I Ever Had (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Zest I Ever Had Batch",
+   "quantity": 60.0,
+   "unit": "ml",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc07a00wh9ky2paawrd2i"
+  },
+  "why": "60 ml of the Alma Avalon prep recipe 'Zest I Ever Had Batch' (yield 1400.03 ml); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmovf4p0z0001s6016mfw0add",
+  "recipe": "Eggplant Taco (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Pico Verde",
+   "quantity": 24.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc55e01b49ky2egbsihxc"
+  },
+  "why": "24 g of the Alma Avalon prep recipe 'Pico Verde' (yield 843.5 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc0si00y99ky2oszqpyr3",
+  "recipe": "Prawn Tostada (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Pico de Gallo",
+   "quantity": 50.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc38b013v9ky2zslaczzt"
+  },
+  "why": "50 g of the Alma Avalon prep recipe 'Pico de Gallo' (yield 2270 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmpxhmtoo0009s6012tieyeoq",
+  "recipe": "Guacamole (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Pico de Gallo",
+   "quantity": 500.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc38b013v9ky2zslaczzt"
+  },
+  "why": "500 g of the Alma Avalon prep recipe 'Pico de Gallo' (yield 2270 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc2ld012k9ky26anjv7ho",
+  "recipe": "Beef Burrito (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Beef Birria",
+   "quantity": 85.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc3vr016b9ky2dxsq9g3g"
+  },
+  "why": "85 g of the Alma Avalon prep recipe 'Beef Birria' (yield 87056 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc2vb01379ky2xwka6uwx",
+  "recipe": "Snapper Al Pastor (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Pico de Gallo",
+   "quantity": 40.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc38b013v9ky2zslaczzt"
+  },
+  "why": "40 g of the Alma Avalon prep recipe 'Pico de Gallo' (yield 2270 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmps2lhza0004s601bmimnz9l",
+  "recipe": "Battered Barramundi Taco (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Coleslaw",
+   "quantity": 12.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc4dv018j9ky2gul3ktgd"
+  },
+  "why": "12 g of the Alma Avalon prep recipe 'Coleslaw' (yield 5408 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmps2lhza0005s601e8z95e8x",
+  "recipe": "Battered Barramundi Taco (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Guacamole",
+   "quantity": 22.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc35f013k9ky22ebo5bqv"
+  },
+  "why": "22 g of the Alma Avalon prep recipe 'Guacamole' (yield 10.86 portions); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmps2lhza0006s60110mjdbbv",
+  "recipe": "Battered Barramundi Taco (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Chipotle Aioli",
+   "quantity": 5.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc43s017g9ky2mv8n3fu4"
+  },
+  "why": "5 g of the Alma Avalon prep recipe 'Chipotle Aioli' (yield 18235 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc17s00zh9ky2o3j1rtxv",
+  "recipe": "Grilled Halloumi (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Salsa Macha",
+   "quantity": 20.0,
+   "unit": "ml",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc3ks01539ky22qd7e0g4"
+  },
+  "why": "20 ml of the Alma Avalon prep recipe 'Salsa Macha' (yield 10179.5 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc1mk010d9ky2wcpyfcln",
+  "recipe": "Chicken Tinga Empanada (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Chicken Tinga Empanada",
+   "quantity": 3.0,
+   "unit": "units",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc4gd018s9ky2zznvkzp4"
+  },
+  "why": "3 units of the Alma Avalon prep recipe 'Chicken Tinga Empanada' (yield 1 units); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc1ml010e9ky2vnunm5ff",
+  "recipe": "Chicken Tinga Empanada (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Martajada Sauce",
+   "quantity": 75.0,
+   "unit": "ml",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc3t701619ky288wqj0ds"
+  },
+  "why": "75 ml of the Alma Avalon prep recipe 'Martajada Sauce' (yield 5 l); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc2ns012q9ky2znhmms1i",
+  "recipe": "Chicken Burrito (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Chipotle Aioli",
+   "quantity": 30.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc43s017g9ky2mv8n3fu4"
+  },
+  "why": "30 g of the Alma Avalon prep recipe 'Chipotle Aioli' (yield 18235 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc2qb012x9ky2vqp1ajjz",
+  "recipe": "Fish Burrito (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Guacamole",
+   "quantity": 50.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc35f013k9ky22ebo5bqv"
+  },
+  "why": "50 g of the Alma Avalon prep recipe 'Guacamole' (yield 10.86 portions); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc1rl010n9ky2q9q0puon",
+  "recipe": "Sweet Corn (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Chipotle Aioli",
+   "quantity": 20.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc43s017g9ky2mv8n3fu4"
+  },
+  "why": "20 g of the Alma Avalon prep recipe 'Chipotle Aioli' (yield 18235 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc2iv012f9ky2cs1v3p68",
+  "recipe": "Cheese Quesadilla (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Guacamole",
+   "quantity": 50.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc35f013k9ky22ebo5bqv"
+  },
+  "why": "50 g of the Alma Avalon prep recipe 'Guacamole' (yield 10.86 portions); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc85o01i19ky2v3tcq2u5",
+  "recipe": "Beach, Please (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Beach, Please Batch",
+   "quantity": 60.0,
+   "unit": "ml",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc04i00w99ky2ualoyg4i"
+  },
+  "why": "60 ml of the Alma Avalon prep recipe 'Beach, Please Batch' (yield 1390 ml); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc8ai01ia9ky2sw50nnzu",
+  "recipe": "Ginger Spice (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Ginger Spice Batch",
+   "quantity": 75.0,
+   "unit": "ml",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc0a600wq9ky2ie38rpcl"
+  },
+  "why": "75 ml of the Alma Avalon prep recipe 'Ginger Spice Batch' (yield 2400 ml); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc2gf01279ky2v4obsdmi",
+  "recipe": "Cauliflower (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Chimichurri",
+   "quantity": 1.0,
+   "unit": "portion",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc5ta01dk9ky2tik5npya"
+  },
+  "why": "1 portion of the Alma Avalon prep recipe 'Chimichurri' (yield 318 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc2gf01289ky21igcwhgn",
+  "recipe": "Cauliflower (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Herb Oil",
+   "quantity": 1.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc3ap01429ky2576bz2ry"
+  },
+  "why": "1 g of the Alma Avalon prep recipe 'Herb Oil' (yield 462 ml); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc32x013i9ky2j3q23u8f",
+  "recipe": "Beef Quesadilla (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Beef Birria",
+   "quantity": 60.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc3vr016b9ky2dxsq9g3g"
+  },
+  "why": "60 g of the Alma Avalon prep recipe 'Beef Birria' (yield 87056 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc32x013j9ky2jhkudfaa",
+  "recipe": "Beef Quesadilla (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Guacamole",
+   "quantity": 50.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc35f013k9ky22ebo5bqv"
+  },
+  "why": "50 g of the Alma Avalon prep recipe 'Guacamole' (yield 10.86 portions); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc1wo01109ky2n6ldubm2",
+  "recipe": "Pork Belly Taco (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Guacamole",
+   "quantity": 19.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc35f013k9ky22ebo5bqv"
+  },
+  "why": "19 g of the Alma Avalon prep recipe 'Guacamole' (yield 10.86 portions); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc2dy011z9ky26zh9bezs",
+  "recipe": "Churros (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Churros",
+   "quantity": 1.0,
+   "unit": "portion",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc5ku01ck9ky2ejimt7fn"
+  },
+  "why": "1 portion of the Alma Avalon prep recipe 'Churros' (yield 1095 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc2dy01209ky2vcp0zsd8",
+  "recipe": "Churros (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Dulce de Leche",
+   "quantity": 50.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc5nc01cu9ky2lfj85kvd"
+  },
+  "why": "50 g of the Alma Avalon prep recipe 'Dulce de Leche' (yield 895 g); the import never linked it, so the dish had no cost for it."
+ },
+ {
+  "lineId": "cmoqfc1a900zo9ky2rjqqo6ik",
+  "recipe": "Shoestring Fries (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Chipotle Aioli",
+   "quantity": 50.0,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": null
+  },
+  "set": {
+   "subRecipeId": "cmoqfc43s017g9ky2mv8n3fu4"
+  },
+  "why": "50 g of the Alma Avalon prep recipe 'Chipotle Aioli' (yield 18235 g); the import never linked it, so the dish had no cost for it."
+ }
+]
