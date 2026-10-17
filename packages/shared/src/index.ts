@@ -47,6 +47,7 @@ export * from './corporate-gift-cards.js';
 export * from './menus.js';
 export * from './menu-render.js';
 export * from './promotions.js';
+export * from './opentable.js';
 import type { ParsedInvoiceLine } from './invoice-paste.js';
 import { IMPLAUSIBLE_COUNT_FLOOR_CENTS, IMPLAUSIBLE_COUNT_SHARE } from './count-scale.js';
 import { CHECKLIST_CADENCES, type ChecklistCadence } from './checklist-cadence.js';

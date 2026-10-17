@@ -381,6 +381,7 @@ enum IntegrationProvider {
   META
   SEVENROOMS
   LIGHTSPEED
+  OPENTABLE
 }
 
 enum IntegrationConnectionStatus {
@@ -3162,6 +3163,70 @@ model IntegrationEvent {
 }
 
 // @domain: integrations | home: suite
+// OpenTable free APIs (Menus Partner, Restaurant Content Partner). One row per
+// venue: the restaurant id, the switches, the approved Alma-side profile, and
+// what OpenTable last accepted so the dashboard can tell "pending" from "synced".
+model OpenTableVenueSetting {
+  id                      String    @id @default(cuid())
+  venueId                 String    @unique
+  /// OpenTable restaurant id (the same number the website uses as `restref`).
+  rid                     String?
+  enabled                 Boolean   @default(false)
+  menusEnabled            Boolean   @default(true)
+  profileEnabled          Boolean   @default(true)
+  /// AlmaVenueProfile (packages/shared/src/opentable.ts), validated on save.
+  profile                 Json      @default("{}")
+  /// Only these profile fields are ever sent — the API overwrites field by field.
+  profileManagedFields    String[]  @default([])
+  lastMenusAcceptedHash   String?
+  lastMenusAcceptedAt     DateTime?
+  lastMenusRequestId      String?
+  lastProfileAcceptedHash String?
+  lastProfileAcceptedAt   DateTime?
+  lastProfileRequestId    String?
+  lastConnectionCheckAt   DateTime?
+  lastConnectionOk        Boolean?
+  lastConnectionError     String?
+  lastRemoteMenusJson     Json?
+  lastRemoteMenusAt       DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  venue                   Venue     @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  runs                    OpenTableSyncRun[]
+}
+
+// @domain: integrations | home: suite
+// Every attempt to talk to OpenTable for a venue, including the ones the flags
+// stopped (SKIPPED keeps the payload so the preview is still honest). The
+// latest ACCEPTED run per kind is the comparison baseline.
+model OpenTableSyncRun {
+  id              String                @id @default(cuid())
+  settingId       String
+  venueId         String
+  kind            String
+  status          String
+  payloadHash     String?
+  payload         Json?
+  /// The X-Request-Id we sent: idempotent on OpenTable's side for a retry.
+  requestKey      String?
+  /// OpenTable's requestId from the 200 body.
+  requestId       String?
+  response        Json?
+  httpStatus      Int?
+  attempts        Int                   @default(0)
+  error           String?
+  summary         String                @default("")
+  triggeredById   String?
+  triggeredByName String?
+  createdAt       DateTime              @default(now())
+  completedAt     DateTime?
+  setting         OpenTableVenueSetting @relation(fields: [settingId], references: [id], onDelete: Cascade)
+
+  @@index([venueId, kind, createdAt])
+  @@index([venueId, status, createdAt])
+}
+
+// @domain: integrations | home: suite
 model IntegrationWebhookEvent {
   id                String                        @id @default(cuid())
   connectionId      String?
@@ -4281,6 +4346,7 @@ model Venue {
   updatedAt DateTime @updatedAt
   menus     Menu[]
   promotions Promotion[]
+  openTable  OpenTableVenueSetting?
 }
 
 enum CommsThreadCategory {
