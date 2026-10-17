@@ -114,8 +114,12 @@ more than 25% off the FoodByUs supplier price. Proposed values are the
 FoodByUs unit cost scaled to Stock's count unit. Several look like a pack or
 measure error rather than a price error (a carton price on a per-wedge item, a
 case price on a bottle) — those should have the count unit checked before the
-cost is changed, because the fix may be the measure, not the cost. Not yet
-turned into a guarded fixes file; that follows Tim's call on each row.
+cost is changed, because the fix may be the measure, not the cost. Tim approved every row on 18 Oct 2026 (Rum at $54.68); the reviewed file is
+`item-cost-fixes.json` (17 costs + 4 measures), run by
+`fix-unit-entries-2026-10.ts --fixes …`. Four rows are measure fixes, not price
+changes (Coriander dozen = 1,200 g, Celery bunch = 615 g, Limes kg = 1,000 g,
+Cucumber punnet = 250 g). Seven rows RAISE a cost; the fix tool refuses a rise
+unless the row carries `approvedIncrease` with the approver's name.
 
 | Stock item | Venue lines | Stock cost (per count unit) | FoodByUs | Proposed | Basis | Read as |
 |---|---|---|---|---|---|---|
@@ -164,3 +168,29 @@ byte-identical; StocktakeLine and InventoryMovement identical to the backup;
 valuations unchanged — Alma Avalon $31,154.50, St Alma $58,739.31.
 Rollback: `--rollback prod-fbu-yields-20261018`, then `-links-`, then
 `-prune-`, then `--refresh-costs --apply-refresh`.
+
+### Phase B rehearsal (copy at the Phase A state, 18 Oct)
+
+```
+Applied run pB-rehearsal2: 17 cost(s), 4 measure(s), 0 line(s), 0 holding(s) with 0 correction movement(s).
+Refreshed 659 recipe cost(s); 71 changed.
+```
+
+| | Alma Avalon | St Alma |
+|---|---:|---:|
+| Before (Phase A state = production now) | $31,154.50 | $58,739.31 |
+| After Phase B | $31,536.57 | $57,818.49 |
+| Change | +$382.05 (Coriander dozen at $22.02) | −$920.83 (mostly Rum: 2.7 × $404.82 → $54.68) |
+
+St Alma dish costs after Phase B vs FoodByUs: Roasted Baby Beetroots $3.87 = $3.87,
+Mixed Greens Salad $2.58 vs $2.59, Guacamole & Tostadas $2.74 vs $2.76, Flan $4.21 vs
+$4.31, Poblano Chicken Taco $1.36 vs $1.38, Polenta Parmesan Fries $15.29 → $4.52
+(FoodByUs $1.43 — remaining gap is the polenta/oil lines, not the cheese). Salmon
+dishes now cost ABOVE FoodByUs (Salmon Crudo $7.67 vs $4.83): Stock's portion is
+larger than FoodByUs's, same per-kg price. Snapper (new) $21.52 vs $9.19 and
+Agave Beef Short Ribs $11.19 vs $20.20 are portion/line questions, not prices.
+
+Rolled back: StockItem and RecipeLine checksums identical, valuations back to
+$31,154.50 / $58,739.31. Production order: `--fixes item-cost-fixes.json --apply
+--run-id prod-fbu-costs-YYYYMMDD --i-mean-production`, then `--refresh-costs
+--apply-refresh`. Rollback: `--rollback <runId>`, then refresh again.
