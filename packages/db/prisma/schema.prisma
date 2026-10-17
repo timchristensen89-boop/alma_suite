@@ -3273,6 +3273,12 @@ model StockItem {
   countArea           String? // physical walking-order grouping for stocktake (Bar, Kitchen, Cool room…)
   measurePerCountUnit Float? // net measurable amount in ONE count/cost unit, e.g. a punnet ≈ 250 (g). Bridges weight/volume recipe lines to count-unit items.
   measureUnit         String? // 'g' or 'ml' — the unit measurePerCountUnit is expressed in
+  /// A prepared product (a cocktail batch, a kitchen prep) can name the prep
+  /// recipe it is made from. The recipe only suggests the cost per count unit
+  /// (batch cost ÷ yield). Counting the item never touches the ingredients:
+  /// once linked, a count of this item replaces the old prep-line explosion,
+  /// so the same tequila is never counted twice.
+  prepRecipeId        String?
   latestCostCents     Int? // most recent landed cost per purchase unit
   latestCostAt        DateTime? // when latestCostCents was last updated — drives staleness warnings
   onHand              Float                     @default(0)
@@ -3284,6 +3290,7 @@ model StockItem {
   createdAt           DateTime                  @default(now())
   updatedAt           DateTime                  @updatedAt
   category            StockCategory?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  prepRecipe          Recipe?                   @relation("PrepStockItems", fields: [prepRecipeId], references: [id], onDelete: SetNull)
   venueStock          VenueStockItem[]
   recipeLines         RecipeLine[]
   stocktakeLines      StocktakeLine[]
@@ -3302,6 +3309,7 @@ model StockItem {
   @@index([status])
   @@index([name])
   @@index([countArea])
+  @@index([prepRecipeId])
 }
 
 // Manager/admin-initiated movement of stock between venues. Adjusts each
@@ -3664,6 +3672,7 @@ model Recipe {
   offeredOn          SetMenuOption[]
   winePour           WinePour?
   stocktakeLines     StocktakeLine[]           @relation("StocktakePrepLines")
+  prepStockItems     StockItem[]               @relation("PrepStockItems")
 
   @@index([title])
   @@index([category])

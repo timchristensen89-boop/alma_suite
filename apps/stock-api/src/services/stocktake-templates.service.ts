@@ -7,7 +7,7 @@ import type {
   StocktakeTemplatesPayload,
   StocktakeTemplateResolved
 } from '@alma/shared';
-import { stocktakeTemplateInputSchema } from '@alma/shared';
+import { PREPARED_STOCK_CATEGORIES, stocktakeTemplateInputSchema } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { buildCountSheetSections } from '../lib/count-sheet.js';
 import { listPrepRecipeOptions } from './prep-recipes.service.js';
@@ -49,6 +49,22 @@ async function resolveItemIds(row: TemplateRow): Promise<Set<string>> {
     select: { id: true }
   });
   const set = new Set(base.map((item) => item.id));
+  // A batch or kitchen prep is made at one venue: the venue of the recipe it
+  // is linked to. On a venue's sheet, leave out prepared items made at the
+  // other venue. Unlinked prepared items, and all bought stock, stay
+  // catalogue-wide as before. (A stock row is not the test — starting a count
+  // creates one at that venue for every line on it.)
+  if (row.venue) {
+    const otherVenues = await prisma.stockItem.findMany({
+      where: {
+        id: { in: [...set] },
+        category: { name: { in: [...PREPARED_STOCK_CATEGORIES] } },
+        prepRecipe: { venue: { not: null, notIn: [row.venue] } }
+      },
+      select: { id: true }
+    });
+    for (const item of otherVenues) set.delete(item.id);
+  }
   for (const id of row.includeItemIds) set.add(id);
   for (const id of row.excludeItemIds) set.delete(id);
   return set;

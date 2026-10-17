@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
+  PrepRecipeLinkOption,
   StockCategory,
   StockItem,
   StockItemCreateInput,
   StockItemStatus,
   StockItemUpdateInput
 } from '@alma/shared';
-import { isWineCategory, splitWineName, withVintage } from '@alma/shared';
+import { isPreparedStockCategory, isWineCategory, splitWineName, withVintage } from '@alma/shared';
 import { ActionFeedback, Button, Input, Select } from '@alma/ui';
 import { ApiError, api } from '../../lib/api';
 
@@ -36,6 +37,9 @@ type Draft = {
   reorderPoint: string;
   status: StockItemStatus;
   notes: string;
+  // Prepared products (Batch Cocktails, Kitchen Prep)
+  prepRecipeId: string;
+  costPerUnitDollars: string;
 };
 
 const STATUS_OPTIONS: Array<{ label: string; value: StockItemStatus }> = [
@@ -73,7 +77,9 @@ function emptyDraft(): Draft {
     parLevel: '0',
     reorderPoint: '',
     status: 'ACTIVE',
-    notes: ''
+    notes: '',
+    prepRecipeId: '',
+    costPerUnitDollars: ''
   };
 }
 
@@ -91,9 +97,20 @@ function draftFromItem(item: StockItem): Draft {
     parLevel: String(item.parLevel),
     reorderPoint: item.reorderPoint === null ? '' : String(item.reorderPoint),
     status: item.status,
-    notes: item.notes ?? ''
+    notes: item.notes ?? '',
+    prepRecipeId: item.prepRecipeId ?? '',
+    costPerUnitDollars: centsToDollars(item.avgCostCents)
   };
 }
+
+// What a prepared product is counted in. Containers are entered on the count
+// screen and land as these units.
+const PREPARED_COUNT_UNITS = [
+  { label: 'litres (L)', value: 'L' },
+  { label: 'millilitres (mL)', value: 'mL' },
+  { label: 'kilograms (kg)', value: 'kg' },
+  { label: 'grams (g)', value: 'g' }
+];
 
 /**
  * Inline item form used on the Items page for create + edit.
@@ -142,6 +159,35 @@ export function ItemForm({
   // nothing else reads. Every vintage stays its own item.
   const categoryName = categories.find((c) => c.id === draft.categoryId)?.name ?? initial?.category?.name ?? null;
   const isWine = isWineCategory(categoryName);
+  const isPrepared = isPreparedStockCategory(categoryName);
+  // Moving an item into a prepared section starts it counting in litres;
+  // "ea" means nothing for a batch.
+  useEffect(() => {
+    if (isPrepared && !PREPARED_COUNT_UNITS.some((unit) => unit.value === draft.countUnit) && mode === 'create') {
+      setDraft((d) => ({ ...d, countUnit: 'L' }));
+    }
+  }, [isPrepared, draft.countUnit, mode]);
+  const [prepRecipes, setPrepRecipes] = useState<PrepRecipeLinkOption[] | null>(null);
+  useEffect(() => {
+    if (!isPrepared || prepRecipes) return;
+    let cancelled = false;
+    api<{ prepRecipes: PrepRecipeLinkOption[] }>('/api/items/prep-recipe-options')
+      .then((payload) => { if (!cancelled) setPrepRecipes(payload.prepRecipes); })
+      .catch(() => { if (!cancelled) setPrepRecipes([]); });
+    return () => { cancelled = true; };
+  }, [isPrepared, prepRecipes]);
+  const recipeOptions = useMemo(
+    () => [
+      { label: 'Not linked', value: '' },
+      ...(prepRecipes ?? [])
+        .filter((recipe) => !recipe.linkedItem || recipe.linkedItem.id === initial?.id)
+        .map((recipe) => ({
+          label: `${recipe.title}${recipe.venue ? ` — ${recipe.venue}` : ''}${recipe.yieldQuantity ? ` (makes ${recipe.yieldQuantity} ${recipe.yieldUnit ?? ''})` : ''}`,
+          value: recipe.id
+        }))
+    ],
+    [prepRecipes, initial?.id]
+  );
   const wineParts = isWine ? splitWineName(draft.name) : null;
   const [vintageDraft, setVintageDraft] = useState(() => {
     const parts = splitWineName(mode === 'edit' && initial ? initial.name : '');
@@ -246,7 +292,32 @@ export function ItemForm({
       return;
     }
 
-    const payload: StockItemCreateInput = {
+    const preparedCost = draft.costPerUnitDollars.trim() === '' ? undefined : Number(draft.costPerUnitDollars);
+    if (isPrepared && preparedCost !== undefined && (!Number.isFinite(preparedCost) || preparedCost < 0)) {
+      setError('Cost cannot be negative');
+      setFeedback('Cost cannot be negative');
+      setFeedbackTone('error');
+      return;
+    }
+    const payload: StockItemCreateInput = isPrepared
+      ? {
+          // A prepared product: counted in L/kg (or mL/g), bought by nobody,
+          // kept in a standard container. The container is the purchase unit
+          // so "1 container" on the count screen converts to its size.
+          name: draft.name.trim(),
+          sku: draft.sku.trim(),
+          categoryId: draft.categoryId,
+          unit: 'container',
+          countUnit: draft.countUnit.trim() || 'L',
+          conversionFactor,
+          prepRecipeId: draft.prepRecipeId,
+          ...(preparedCost !== undefined ? { avgCostCents: Math.round(preparedCost * 100) } : {}),
+          parLevel,
+          reorderPoint,
+          status: draft.status,
+          notes: draft.notes.trim()
+        }
+      : {
       name: draft.name.trim(),
       sku: draft.sku.trim(),
       categoryId: draft.categoryId,
@@ -362,14 +433,16 @@ export function ItemForm({
           onChange={(event) => update('categoryId', event.currentTarget.value)}
           options={categoryOptions}
         />
-        <Input
-          label="Purchase unit"
-          required
-          value={draft.unit}
-          onChange={(event) => update('unit', event.currentTarget.value)}
-          list="stock-unit-suggestions"
-          placeholder="case, kg, L..."
-        />
+        {isPrepared ? null : (
+          <Input
+            label="Purchase unit"
+            required
+            value={draft.unit}
+            onChange={(event) => update('unit', event.currentTarget.value)}
+            list="stock-unit-suggestions"
+            placeholder="case, kg, L..."
+          />
+        )}
         <Select
           label="Status"
           value={draft.status}
@@ -383,73 +456,141 @@ export function ItemForm({
         </datalist>
       </div>
 
+      {isPrepared ? (
+        <>
+          <div className="form-grid three">
+            <Select
+              label="Counted in"
+              value={draft.countUnit}
+              onChange={(event) => update('countUnit', event.currentTarget.value)}
+              options={PREPARED_COUNT_UNITS.some((unit) => unit.value === draft.countUnit) ? PREPARED_COUNT_UNITS : [{ label: draft.countUnit || 'L', value: draft.countUnit || 'L' }, ...PREPARED_COUNT_UNITS]}
+              hint="Staff can still count in containers or the smaller unit — it is converted for them."
+            />
+            <Input
+              label={`Container size (${countUnit})`}
+              type="number"
+              step="0.001"
+              min="0.001"
+              value={draft.conversionFactor}
+              onChange={(event) => update('conversionFactor', event.currentTarget.value)}
+              hint={`How much one standard container holds, e.g. 5 for a 5 ${countUnit} container.`}
+            />
+            <Input
+              label={`Cost per ${countUnit}`}
+              type="number"
+              step="0.01"
+              min="0"
+              value={draft.costPerUnitDollars}
+              onChange={(event) => update('costPerUnitDollars', event.currentTarget.value)}
+              placeholder="0.00"
+              hint={`Value of 1 ${countUnit}. A count of 2.5 ${countUnit} is worth 2.5 × this.`}
+            />
+          </div>
+          <div className="form-grid two">
+            <Select
+              label="Made from recipe"
+              value={draft.prepRecipeId}
+              onChange={(event) => update('prepRecipeId', event.currentTarget.value)}
+              options={recipeOptions}
+              hint="Optional. The recipe suggests the cost; counting this never changes its ingredients' stock."
+            />
+            <div className="prepared-recipe-cost">
+              {initial?.prepRecipe && initial.prepRecipe.id === draft.prepRecipeId ? (
+                initial.prepRecipe.costPerCountUnitCents !== null ? (
+                  <>
+                    <p className="subtle">
+                      Recipe cost: <strong>{formatCurrency(initial.prepRecipe.costPerCountUnitCents)} / {countUnit}</strong>
+                      {initial.prepRecipe.batchCostCents !== null ? ` (batch ${formatCurrency(initial.prepRecipe.batchCostCents)} for ${initial.prepRecipe.yieldQuantity} ${initial.prepRecipe.yieldUnit})` : ''}
+                    </p>
+                    {initial.prepRecipe.note ? <p className="subtle">{initial.prepRecipe.note}</p> : null}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => update('costPerUnitDollars', centsToDollars(initial.prepRecipe!.costPerCountUnitCents))}
+                    >
+                      Use recipe cost
+                    </Button>
+                  </>
+                ) : (
+                  <p className="subtle">{initial.prepRecipe.note}</p>
+                )
+              ) : draft.prepRecipeId ? (
+                <p className="subtle">Save to see what this recipe says one {countUnit} costs.</p>
+              ) : null}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
       <div className="form-grid three">
-        <Input
-          label="Sale / recipe unit"
-          value={draft.countUnit}
-          onChange={(event) => update('countUnit', event.currentTarget.value)}
-          list="stock-unit-suggestions"
-          placeholder="bottle, can, g, mL..."
-          hint="The unit recipes and single-sale costs should use."
-        />
-        <Input
-          label="Units per purchase unit"
-          type="number"
-          step="0.0001"
-          min="0.0001"
-          value={draft.conversionFactor}
-          onChange={(event) => update('conversionFactor', event.currentTarget.value)}
-          hint="Example: case of beer = 24 bottles."
-        />
-        <Input
-          label="Latest purchase price"
-          type="number"
-          step="0.01"
-          min="0"
-          value={draft.latestCostDollars}
-          onChange={(event) => update('latestCostDollars', event.currentTarget.value)}
-          placeholder="Optional"
-          hint={`Calculated unit cost: ${formatCurrency(calculatedUnitCostCents)} / ${countUnit}`}
-        />
-      </div>
-
-      <div className="form-grid two">
-        <Input
-          label={`Measure per ${countUnit}`}
-          type="number"
-          step="0.01"
-          min="0"
-          value={draft.measurePerCountUnit}
-          onChange={(event) => update('measurePerCountUnit', event.currentTarget.value)}
-          placeholder="Optional"
-          hint={`How much one ${countUnit} weighs or holds — lets g/mL recipes cost this item. e.g. 1 punnet ≈ 250 g.`}
-        />
-        <Select
-          label="Measure unit"
-          value={draft.measureUnit}
-          onChange={(event) => update('measureUnit', event.currentTarget.value)}
-          options={[
-            { label: 'grams (g)', value: 'g' },
-            { label: 'millilitres (mL)', value: 'ml' }
-          ]}
-        />
-      </div>
-
-      {(() => {
-        const cu = (draft.countUnit.trim() || draft.unit.trim() || 'unit').toLowerCase();
-        const hasMeasure = draft.measurePerCountUnit.trim() !== '' && Number(draft.measurePerCountUnit) > 0;
-        const mass = ['mg', 'g', 'kg', 'gram', 'grams', 'kilogram', 'kilo'];
-        const vol = ['ml', 'cl', 'dl', 'l', 'litre', 'liter'];
-        let usable: string;
-        if (mass.includes(cu) || (hasMeasure && draft.measureUnit === 'g')) usable = 'Unit, kg, g';
-        else if (vol.includes(cu) || (hasMeasure && draft.measureUnit === 'ml')) usable = 'Unit, L, mL';
-        else usable = `Unit only (1 = one whole ${countUnit}) — add a “measure per ${countUnit}” above to also cost g/mL recipe lines`;
-        return (
-          <p className="subtle" style={{ marginTop: -4 }}>
-            Recipe lines can cost this item in: <strong>{usable}</strong>.
-          </p>
-        );
-      })()}
+          <Input
+            label="Sale / recipe unit"
+            value={draft.countUnit}
+            onChange={(event) => update('countUnit', event.currentTarget.value)}
+            list="stock-unit-suggestions"
+            placeholder="bottle, can, g, mL..."
+            hint="The unit recipes and single-sale costs should use."
+          />
+          <Input
+            label="Units per purchase unit"
+            type="number"
+            step="0.0001"
+            min="0.0001"
+            value={draft.conversionFactor}
+            onChange={(event) => update('conversionFactor', event.currentTarget.value)}
+            hint="Example: case of beer = 24 bottles."
+          />
+          <Input
+            label="Latest purchase price"
+            type="number"
+            step="0.01"
+            min="0"
+            value={draft.latestCostDollars}
+            onChange={(event) => update('latestCostDollars', event.currentTarget.value)}
+            placeholder="Optional"
+            hint={`Calculated unit cost: ${formatCurrency(calculatedUnitCostCents)} / ${countUnit}`}
+          />
+        </div>
+  
+        <div className="form-grid two">
+          <Input
+            label={`Measure per ${countUnit}`}
+            type="number"
+            step="0.01"
+            min="0"
+            value={draft.measurePerCountUnit}
+            onChange={(event) => update('measurePerCountUnit', event.currentTarget.value)}
+            placeholder="Optional"
+            hint={`How much one ${countUnit} weighs or holds — lets g/mL recipes cost this item. e.g. 1 punnet ≈ 250 g.`}
+          />
+          <Select
+            label="Measure unit"
+            value={draft.measureUnit}
+            onChange={(event) => update('measureUnit', event.currentTarget.value)}
+            options={[
+              { label: 'grams (g)', value: 'g' },
+              { label: 'millilitres (mL)', value: 'ml' }
+            ]}
+          />
+        </div>
+  
+        {(() => {
+          const cu = (draft.countUnit.trim() || draft.unit.trim() || 'unit').toLowerCase();
+          const hasMeasure = draft.measurePerCountUnit.trim() !== '' && Number(draft.measurePerCountUnit) > 0;
+          const mass = ['mg', 'g', 'kg', 'gram', 'grams', 'kilogram', 'kilo'];
+          const vol = ['ml', 'cl', 'dl', 'l', 'litre', 'liter'];
+          let usable: string;
+          if (mass.includes(cu) || (hasMeasure && draft.measureUnit === 'g')) usable = 'Unit, kg, g';
+          else if (vol.includes(cu) || (hasMeasure && draft.measureUnit === 'ml')) usable = 'Unit, L, mL';
+          else usable = `Unit only (1 = one whole ${countUnit}) — add a “measure per ${countUnit}” above to also cost g/mL recipe lines`;
+          return (
+            <p className="subtle" style={{ marginTop: -4 }}>
+              Recipe lines can cost this item in: <strong>{usable}</strong>.
+            </p>
+          );
+        })()}
+        </>
+      )}
 
       <div className="form-grid two">
         <Input

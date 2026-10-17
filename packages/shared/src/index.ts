@@ -5723,6 +5723,10 @@ export type StockItem = {
   measurePerCountUnit: number | null;
   /** Unit measurePerCountUnit is expressed in: 'g' or 'ml'. */
   measureUnit: string | null;
+  /** The prep recipe a prepared product (Batch Cocktails, Kitchen Prep) is made from, if linked. */
+  prepRecipeId?: string | null;
+  /** Present on the single-item read: the linked recipe and the cost per count unit it suggests. */
+  prepRecipe?: PrepRecipeCostLink | null;
   latestCostCents: number | null;
   latestCostAt: string | null;
   onHand: number;
@@ -5736,6 +5740,25 @@ export type StockItem = {
   venueStock?: VenueStockItem | null;
   /** On hand summed across every venue (combined total). */
   totalOnHand?: number | null;
+};
+
+/**
+ * A prepared product's recipe, as the item editor shows it. The recipe only
+ * suggests a cost: batch cost ÷ yield, in the item's count unit. Nothing is
+ * deducted from or credited to the ingredients when the item is counted.
+ */
+export type PrepRecipeCostLink = {
+  id: string;
+  title: string;
+  venue: string | null;
+  yieldQuantity: number | null;
+  yieldUnit: string | null;
+  /** Whole-batch cost from the recipe's ingredient lines. */
+  batchCostCents: number | null;
+  /** batchCost ÷ yield, expressed per one of the item's count units; null when the yield cannot be converted. */
+  costPerCountUnitCents: number | null;
+  /** Why there is no suggestion, when there is none. */
+  note: string | null;
 };
 
 export type VenueStockItem = {
@@ -6110,6 +6133,8 @@ export const stockItemCreateInputSchema = z.object({
     z.coerce.number().positive('Measure per count unit must be greater than zero').optional()
   ),
   measureUnit: z.enum(['g', 'ml']).optional().or(z.literal('')),
+  // '' or null unlinks the recipe.
+  prepRecipeId: z.string().optional().nullable().or(z.literal('')),
   latestCostCents: z.preprocess(
     emptyStringToUndefined,
     z.coerce.number().int().nonnegative('Latest purchase price cannot be negative').optional()
@@ -7567,6 +7592,18 @@ export type StocktakeTemplatesPayload = {
 
 // A prep recipe offered as a countable made item, plus what (if anything)
 // stops it working. `problems` is empty exactly when `countable` is true.
+/** A prep recipe offered when linking a prepared-stock item to what it is made from. */
+export type PrepRecipeLinkOption = {
+  id: string;
+  title: string;
+  venue: string | null;
+  category: string | null;
+  yieldQuantity: number | null;
+  yieldUnit: string | null;
+  /** The prepared-stock item already made from this recipe, if any. */
+  linkedItem: { id: string; name: string } | null;
+};
+
 export type StocktakePrepRecipeOption = {
   id: string;
   title: string;

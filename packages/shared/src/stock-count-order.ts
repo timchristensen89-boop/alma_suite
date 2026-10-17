@@ -25,6 +25,14 @@
  */
 
 export const PREP_COUNT_CATEGORY = 'Prep (made items)';
+/** Prepared products counted as stock items, each its own section. */
+export const BATCH_COCKTAILS_CATEGORY = 'Batch Cocktails';
+export const KITCHEN_PREP_CATEGORY = 'Kitchen Prep';
+export const PREPARED_STOCK_CATEGORIES = [BATCH_COCKTAILS_CATEGORY, KITCHEN_PREP_CATEGORY] as const;
+export function isPreparedStockCategory(category: string | null | undefined): boolean {
+  const folded = foldText(category ?? '');
+  return PREPARED_STOCK_CATEGORIES.some((name) => foldText(name) === folded);
+}
 export const UNCATEGORISED_COUNT_CATEGORY = 'Uncategorised';
 
 /**
@@ -53,7 +61,11 @@ export const STOCK_COUNT_CATEGORY_ORDER = [
   'Oils & Condiments',
   'Desserts & Sweets',
   'Frozen',
-  'Other'
+  'Other',
+  // Made on site, after every bought ingredient: a batch is counted where it
+  // is kept, and never inside the spirits or produce it was made from.
+  'Batch Cocktails',
+  'Kitchen Prep'
 ] as const;
 
 const CATEGORY_RANK = new Map<string, number>(

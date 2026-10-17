@@ -1883,3 +1883,61 @@ function parsePriceWindowInput(
   if (body.active !== undefined) out.active = Boolean(body.active);
   return out;
 }
+
+// The recipe import turned a recipe's yield and portion notes into lines of
+// their own — "(46.67 portions)", "74.99 ml", "2.1 kg" — with no ingredient
+// behind them. They are not missing ingredients, so they do not count as
+// uncosted.
+function isImportLeftover(name: string | null | undefined): boolean {
+  return /^\(?\s*[\d.]+\s*(portions?|ml|l|g|kg|units?)?\s*\)?$/i.test((name ?? '').trim());
+}
+
+/**
+ * A prep recipe's whole-batch cost, for the prepared-stock item it may be
+ * linked to. Read-only: suggesting a cost per litre or kilo never moves stock.
+ */
+export async function prepRecipeBatchCost(id: string): Promise<{
+  id: string;
+  title: string;
+  venue: string | null;
+  yieldQuantity: number | null;
+  yieldUnit: string | null;
+  isPrepRecipe: boolean;
+  /** Whole-batch cost when every ingredient is costed; otherwise the cost of the costed ones. */
+  batchCostCents: number | null;
+  /** Ingredient lines with no cost — the batch cost above leaves them out. */
+  uncostedLines: number;
+  /** Their names, so a manager can see what to cost or link. */
+  uncostedIngredients: string[];
+  totalLines: number;
+} | null> {
+  const row = await prisma.recipe.findUnique({ where: { id }, select: { id: true } });
+  if (!row) return null;
+  const full = await findRecipeWithLines(id);
+  const cost = calculateRecipeCost(full);
+  // An ingredient is a line with an amount that is not an import leftover. The
+  // import also split some names over two lines ("Ron Santiago de Cuba" +
+  // "Blanca"); the fragment has no amount and is not a missing ingredient.
+  const ingredients = cost.lines.filter(
+    (line) => !isImportLeftover(line.ingredientName) && line.quantity !== null && line.quantity > 0
+  );
+  return {
+    id: full.id,
+    title: full.title,
+    venue: full.venue,
+    yieldQuantity: full.yieldQuantity,
+    yieldUnit: full.yieldUnit,
+    isPrepRecipe: full.isPrepRecipe,
+    // A suggestion for a stock value: the costed ingredients, even when one
+    // is missing a price — understating is the safe direction for stock, and
+    // the caller says how many lines were left out.
+    batchCostCents:
+      cost.batchCostCents ??
+      (cost.lines.some((line) => line.lineCostCents !== null)
+        ? cost.lines.reduce((total, line) => total + (line.lineCostCents ?? 0), 0)
+        : null),
+    uncostedLines: ingredients.filter((line) => line.lineCostCents === null).length,
+    uncostedIngredients: ingredients.filter((line) => line.lineCostCents === null).map((line) => line.ingredientName),
+    totalLines: ingredients.length
+  };
+}

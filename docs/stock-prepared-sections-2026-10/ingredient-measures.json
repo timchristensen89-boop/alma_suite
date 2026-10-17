@@ -1,0 +1,28 @@
+{
+  "sheets": {},
+  "measures": [
+    {
+      "itemId": "cmptowc6600zas601i90aolcq",
+      "item": "Onions Spanish",
+      "from": { "measurePerCountUnit": 100, "measureUnit": "g" },
+      "to": { "measurePerCountUnit": 10000, "measureUnit": "g" },
+      "reason": "Bought as \"Onions Spanish Large Bag\" (Produce to Perfection, $24.23 on 1 Oct, 15 Sep, 19 Sep); Loaded counted it as 10 kg bags. The 100 g placeholder made 1.3 kg of onion cost $364 in Martajada Sauce. From the 17 Oct audit's measure plan."
+    },
+    {
+      "itemId": "cmoqfbtch00ly9ky24k97oeb6",
+      "item": "Tomatoes Large Box",
+      "from": { "measurePerCountUnit": 100, "measureUnit": "g" },
+      "to": { "measurePerCountUnit": 10000, "measureUnit": "g" },
+      "reason": "Item note \"Pack: 10 kg\"; bought as \"Tomatoes Large Box\" (Produce to Perfection, $45.60 weekly Sep–Oct). The 100 g placeholder made 2 kg of tomato cost $710. From the 17 Oct audit's measure plan."
+    },
+    {
+      "itemId": "cmoqfbn2h007m9ky23kc27jqf",
+      "item": "Chilli Morita",
+      "from": { "measurePerCountUnit": 100, "measureUnit": "g" },
+      "to": { "measurePerCountUnit": 1000, "measureUnit": "g" },
+      "reason": "Item note \"Pack: 1 kg\" at $50.00. From the 17 Oct audit's measure plan."
+    }
+  ],
+  "lines": [],
+  "holdings": []
+}

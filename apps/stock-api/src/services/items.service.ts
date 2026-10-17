@@ -20,6 +20,7 @@ import {
   type StockCategory,
   type StockDashboardPayload,
   type StockItem,
+  type PrepRecipeCostLink,
   type StockItemsPayload,
   type StockItemsSummary,
   type StockLowStockItem,
@@ -34,6 +35,7 @@ import { effectiveLowStockThreshold, isLowStockRow, lowStockStatus, rankStockAtt
 import { HttpError } from '../lib/http.js';
 import { actorPinnedVenue, isVenueUnscopedActor } from '../lib/venue-scope.js';
 import { convertQuantityToCostUnit } from './units.js';
+import { prepRecipeBatchCost } from './recipes.service.js';
 
 type StockItemRow = Prisma.StockItemGetPayload<{
   include: { category: { select: { id: true; name: true } } };
@@ -156,6 +158,7 @@ function toItemPayload(row: StockItemRow): StockItem {
     countArea: row.countArea,
     measurePerCountUnit: row.measurePerCountUnit ?? null,
     measureUnit: row.measureUnit ?? null,
+    prepRecipeId: (row as { prepRecipeId?: string | null }).prepRecipeId ?? null,
     latestCostCents: row.latestCostCents,
     latestCostAt: row.latestCostAt?.toISOString() ?? null,
     onHand: row.onHand,
@@ -166,6 +169,62 @@ function toItemPayload(row: StockItemRow): StockItem {
     notes: row.notes,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
+  };
+}
+
+// The prep recipe a prepared product links to must be a real prep recipe;
+// '' or null unlinks. Returns undefined when the field was not sent.
+async function resolvePrepRecipeId(value: string | null | undefined): Promise<string | null | undefined> {
+  if (value === undefined) return undefined;
+  const id = normaliseOptionalText(value ?? undefined);
+  if (!id) return null;
+  const recipe = await prisma.recipe.findUnique({ where: { id }, select: { isPrepRecipe: true } });
+  if (!recipe) throw new HttpError(400, 'That recipe no longer exists');
+  if (!recipe.isPrepRecipe) throw new HttpError(400, 'Only a prep recipe (a batch or kitchen prep) can be linked to a stock item');
+  return id;
+}
+
+/**
+ * What the linked recipe says one count unit costs: the batch cost divided by
+ * the yield, with the yield converted into the item's count unit by the same
+ * rules a count uses (1500 mL → 1.5 L; 2 kg → 1 container of 2 kg). No
+ * suggestion when the yield cannot be converted (a recipe that yields
+ * "portions" for an item counted in litres) — it is never guessed.
+ */
+export async function prepRecipeCostLink(item: {
+  prepRecipeId?: string | null;
+  unit: string;
+  countUnit: string | null;
+  conversionFactor: number;
+  measurePerCountUnit: number | null;
+  measureUnit: string | null;
+}): Promise<PrepRecipeCostLink | null> {
+  if (!item.prepRecipeId) return null;
+  const recipe = await prepRecipeBatchCost(item.prepRecipeId);
+  if (!recipe) return null;
+  const countUnit = item.countUnit ?? item.unit;
+  let costPerCountUnitCents: number | null = null;
+  let note: string | null = null;
+  if (recipe.batchCostCents === null) note = 'None of the recipe\'s ingredients has a cost yet.';
+  else if (!recipe.yieldQuantity || recipe.yieldQuantity <= 0 || !recipe.yieldUnit) note = 'The recipe has no yield, so a cost per unit cannot be worked out.';
+  else {
+    const converted = convertQuantityToCostUnit(recipe.yieldQuantity, recipe.yieldUnit, item);
+    if (converted.via === 'unknown' || converted.quantity <= 0) {
+      note = `The recipe yields ${recipe.yieldQuantity} ${recipe.yieldUnit}, which can't be turned into ${countUnit}.`;
+    } else {
+      costPerCountUnitCents = Math.round(recipe.batchCostCents / converted.quantity);
+      if (recipe.uncostedLines > 0) note = `${recipe.uncostedLines} of ${recipe.totalLines} ingredients have no cost yet, so this is lower than the true cost.`;
+    }
+  }
+  return {
+    id: recipe.id,
+    title: recipe.title,
+    venue: recipe.venue,
+    yieldQuantity: recipe.yieldQuantity,
+    yieldUnit: recipe.yieldUnit,
+    batchCostCents: recipe.batchCostCents,
+    costPerCountUnitCents,
+    note
   };
 }
 
@@ -1312,6 +1371,7 @@ export const itemsService = {
         ? normaliseOptionalNumber(data.avgCostCents) ?? null
         : unitCostFromPurchaseCost(latestCostCents, conversionFactor) ?? null;
     await assertCategoryExists(categoryId);
+    const prepRecipeId = await resolvePrepRecipeId(data.prepRecipeId);
 
     if (sku) {
       const existing = await prisma.stockItem.findUnique({ where: { sku } });
@@ -1330,6 +1390,7 @@ export const itemsService = {
           countArea: countArea ?? null,
           measurePerCountUnit,
           measureUnit,
+          prepRecipeId: prepRecipeId ?? null,
           latestCostCents: latestCostCents ?? null,
           latestCostAt: latestCostCents !== undefined ? new Date() : null,
           parLevel: data.parLevel,
@@ -1363,7 +1424,7 @@ export const itemsService = {
   async getItem(id: string): Promise<StockItem> {
     const row = await prisma.stockItem.findUnique({ where: { id }, include: { category: { select: { id: true, name: true } } } });
     if (!row) throw new HttpError(404, 'Item not found');
-    return toItemPayload(row);
+    return { ...toItemPayload(row), prepRecipe: await prepRecipeCostLink(row) };
   },
 
   async updateItem(id: string, input: unknown): Promise<StockItem> {
@@ -1397,6 +1458,7 @@ export const itemsService = {
           ? unitCostFromPurchaseCost(nextLatestCostCents, nextConversionFactor) ?? existing.avgCostCents
           : undefined;
     await assertCategoryExists(categoryId);
+    const prepRecipeId = await resolvePrepRecipeId(data.prepRecipeId);
 
     if (sku && sku !== existing.sku) {
       const conflict = await prisma.stockItem.findUnique({ where: { sku } });
@@ -1423,6 +1485,7 @@ export const itemsService = {
         ...(data.measureUnit !== undefined && {
           measureUnit: (normaliseOptionalText(data.measureUnit) as 'g' | 'ml' | null) ?? null
         }),
+        ...(prepRecipeId !== undefined && { prepRecipeId }),
         ...(data.latestCostCents !== undefined && {
           latestCostCents: nextLatestCostCents,
           latestCostAt: nextLatestCostCents !== null ? new Date() : null

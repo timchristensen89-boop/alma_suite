@@ -16,6 +16,8 @@ import {
   IMPLAUSIBLE_COUNT_SHARE,
   convertQuantityToCostUnit,
   countSearchMatcher,
+  isMeasureUnit,
+  isPreparedStockCategory,
   normaliseUnitLabel,
   organiseCountRows,
   setActiveUnitAliases,
@@ -95,6 +97,14 @@ function formatQty(value: number | null | undefined) {
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
 }
 
+// What a stored count shows in its box: the number as stored (to 4 places),
+// never a rounded display value — the box is saved back as typed, so a
+// rounded 1.41 would overwrite a stored 1.4125 the next time the row saves.
+function storedQty(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '';
+  return String(Math.round(value * 10000) / 10000);
+}
+
 function isOpenForCounting(stocktake: Pick<Stocktake, 'status' | 'appliedAt'>) {
   return !stocktake.appliedAt && (stocktake.status === 'IN_PROGRESS' || stocktake.status === 'REOPENED');
 }
@@ -120,6 +130,38 @@ function estimateLineValueCents(item: StockItem | undefined, countedQty: number 
   const conv = convertQuantityToCostUnit(countedQty, unit, item);
   const unitMismatch = conv.via === 'unknown' && !!unit && normaliseUnitLabel(unit) !== normaliseUnitLabel(countUnit);
   return { cents: unitMismatch ? null : Math.round(unitCostCents * conv.quantity), unitMismatch, countUnit, unitCostCents };
+}
+
+// A prepared product (Batch Cocktails, Kitchen Prep) can be counted in its
+// count unit, the metric unit beside it, or whole containers: 2.5 L, 2500 mL
+// or "half a 5 L container" all land as litres. Bought stock keeps the single
+// unit it is counted in.
+type EntryUnit = { value: string; label: string };
+const METRIC_SIBLING: Record<string, { unit: string; label: string }> = {
+  l: { unit: 'mL', label: 'mL' },
+  ml: { unit: 'L', label: 'L' },
+  kg: { unit: 'g', label: 'g' },
+  g: { unit: 'kg', label: 'kg' }
+};
+function entryUnitsFor(item: StockItem | undefined): EntryUnit[] | null {
+  if (!item || !isPreparedStockCategory(item.category?.name ?? item.categoryName)) return null;
+  const base = stockCountUnit(item);
+  const units: EntryUnit[] = [{ value: base, label: base }];
+  const sibling = METRIC_SIBLING[normaliseUnitLabel(base)];
+  if (sibling) units.push({ value: sibling.unit, label: sibling.label });
+  const factor = item.conversionFactor || 1;
+  if (normaliseUnitLabel(item.unit) !== normaliseUnitLabel(base) && factor > 0 && !isMeasureUnit(item.unit)) {
+    units.push({ value: item.unit, label: `${item.unit} (${formatQty(factor)} ${base})` });
+  }
+  return units.length > 1 ? units : null;
+}
+
+// A quantity entered in another unit, in the item's count unit — the same
+// conversion the API makes on save, so what the row says is what is stored.
+function toCountUnit(item: StockItem, qty: number, unit: string): number | null {
+  const conv = convertQuantityToCostUnit(qty, unit, item);
+  if (conv.via === 'unknown') return null;
+  return Math.round(conv.quantity * 10000) / 10000;
 }
 
 function parseQty(raw: string): number | null {
@@ -388,7 +430,7 @@ export function StocktakeCountPage() {
       ]);
       setStocktake(detail);
       setMeta(detail.lines.map(lineMeta));
-      setQty(new Map(detail.lines.map((line) => [line.id, formatQty(line.countedQty)])));
+      setQty(new Map(detail.lines.map((line) => [line.id, storedQty(line.countedQty)])));
       setItems(picker.items);
       setCategories(picker.categories);
       setPrepRecipes(prep.prepRecipes);
@@ -960,17 +1002,41 @@ type CountRowProps = {
  * typed in should re-render on a keystroke.
  */
 const CountRow = memo(function CountRow({ line, item, name, vintage, detail, value, flaggedShare, pending, failed, showExpected, readOnly, canEdit, onChange, onKeyDown, onEdit }: CountRowProps) {
+  const entryUnits = useMemo(() => entryUnitsFor(item), [item]);
+  const baseUnit = item ? stockCountUnit(item) : line.unit || '';
+  const [entryUnit, setEntryUnit] = useState<string>(baseUnit);
+  // While a prepared item is being entered in another unit the number lives
+  // here and is not saved; committing (Enter, Tab, leaving the box) converts
+  // it to the count unit, saves that, and switches back.
+  const [draft, setDraft] = useState<string | null>(null);
+  const converting = Boolean(entryUnits && item && normaliseUnitLabel(entryUnit) !== normaliseUnitLabel(baseUnit));
+  const draftQty = draft !== null ? parseQty(draft) : null;
+  const draftInBase = converting && item && draftQty !== null ? toCountUnit(item, draftQty, entryUnit) : null;
+
   const flagged = flaggedShare !== null;
-  const parsed = parseQty(value);
-  const estimate = item ? estimateLineValueCents(item, parsed, line.unit || null) : null;
+  const parsed = converting ? draftInBase : parseQty(value);
+  const estimate = item ? estimateLineValueCents(item, parsed, converting ? baseUnit : line.unit || null) : null;
   const expected = item ? item.venueStock?.onHand ?? item.onHand : null;
   const measurePer = item?.measurePerCountUnit ?? null;
   const asMeasure = flagged && measurePer && measurePer > 0 && item?.measureUnit && parsed ? Math.round((parsed / measurePer) * 100) / 100 : null;
   const isPrep = Boolean(line.recipeId);
 
+  function commitDraft() {
+    if (!converting) return;
+    if (draft !== null) {
+      if (draft.trim() === '') onChange(line.id, '');
+      else if (draftInBase !== null) onChange(line.id, String(draftInBase));
+    }
+    setDraft(null);
+    setEntryUnit(baseUnit);
+  }
+
   let hint: string | null = null;
   let hintTone: '' | ' is-alert' | ' is-muted' = ' is-muted';
-  if (estimate?.unitMismatch) {
+  if (converting && draftQty !== null) {
+    hint = draftInBase !== null ? `= ${formatQty(draftInBase)} ${baseUnit}` : `Can't turn ${entryUnit} into ${baseUnit} for this item`;
+    hintTone = draftInBase !== null ? ' is-muted' : ' is-alert';
+  } else if (estimate?.unitMismatch) {
     hint = `Unit “${line.unit}” does not match ${estimate.countUnit} — check the item`;
     hintTone = ' is-alert';
   } else if (flagged && estimate?.cents != null) {
@@ -981,7 +1047,7 @@ const CountRow = memo(function CountRow({ line, item, name, vintage, detail, val
   }
 
   return (
-    <div className={`count-row${pending ? ' is-pending' : ''}${failed ? ' is-failed' : ''}${isPrep ? ' is-prep' : ''}${name === null ? ' is-vintage' : ''}`}>
+    <div className={`count-row${pending ? ' is-pending' : ''}${failed ? ' is-failed' : ''}${isPrep ? ' is-prep' : ''}${name === null ? ' is-vintage' : ''}${entryUnits ? ' has-unit' : ''}`}>
       <div className="count-row-main">
         <span className="count-row-name">
           {name === null ? (
@@ -997,7 +1063,7 @@ const CountRow = memo(function CountRow({ line, item, name, vintage, detail, val
           )}
           {isPrep ? <span className="count-row-detail">made item</span> : null}
         </span>
-        <span className="count-row-unit">{line.unit || estimate?.countUnit || ''}</span>
+        {entryUnits ? null : <span className="count-row-unit">{line.unit || estimate?.countUnit || ''}</span>}
         {hint ? <span className={`count-row-hint${hintTone}`}>{hint}</span> : null}
       </div>
       <input
@@ -1007,14 +1073,38 @@ const CountRow = memo(function CountRow({ line, item, name, vintage, detail, val
         autoComplete="off"
         className="count-qty"
         data-line-id={line.id}
-        aria-label={`Count for ${name ?? `${vintage ?? ''} ${line.label}`.trim()}`}
-        value={value}
+        aria-label={`Count for ${name ?? `${vintage ?? ''} ${line.label}`.trim()}${converting ? ` in ${entryUnit}` : ''}`}
+        value={converting ? draft ?? '' : value}
         placeholder="–"
         disabled={readOnly}
-        onChange={(event) => onChange(line.id, event.currentTarget.value)}
-        onKeyDown={(event) => onKeyDown(event, line.id)}
+        onChange={(event) => (converting ? setDraft(sanitiseQty(event.currentTarget.value)) : onChange(line.id, event.currentTarget.value))}
+        onKeyDown={(event) => {
+          if (converting && (event.key === 'Enter' || event.key === 'Tab')) commitDraft();
+          onKeyDown(event, line.id);
+        }}
+        onBlur={commitDraft}
         onFocus={(event) => event.currentTarget.select()}
       />
+      {entryUnits ? (
+        <select
+          className="count-row-unit-select"
+          aria-label={`Unit for ${line.label}`}
+          value={entryUnit}
+          disabled={readOnly}
+          onChange={(event) => {
+            const next = event.currentTarget.value;
+            setDraft(normaliseUnitLabel(next) === normaliseUnitLabel(baseUnit) ? null : '');
+            setEntryUnit(next);
+          }}
+        >
+          {entryUnits.map((unit) => (
+            <option key={unit.value} value={unit.value}>{unit.label}</option>
+          ))}
+        </select>
+      ) : (
+        <span className="count-row-unit-placeholder" aria-hidden />
+      )}
+      <span className="count-row-value" aria-label="Value">{estimate?.cents != null ? formatCurrency(estimate.cents) : ''}</span>
       {canEdit ? (
         <button type="button" className="count-row-edit" aria-label={`Edit ${line.label}`} title="Edit this item" onClick={() => onEdit(line.itemId)}>
           <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden><path d="M13.6 3.2a1.5 1.5 0 0 1 2.1 0l1.1 1.1a1.5 1.5 0 0 1 0 2.1L7.5 15.7 3.5 16.5l.8-4L13.6 3.2z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
