@@ -1,0 +1,1970 @@
+{
+ "holdings": [
+  {
+   "item": "CHEESE MOZZARELLA SHREDDED 2KG (Cheese King) EA (6)",
+   "kept": [
+    {
+     "item": "Cheese Mozzarella Shredded",
+     "factor": 0.5,
+     "onHand": 2.01,
+     "countedOnLatestSheet": 2.01
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbmwx007a9ky2w7ppq6vh",
+   "onHand": 1.005,
+   "dropped": [
+    {
+     "item": "CHEESE MOZZARELLA SHREDDED 2KG (Cheese King) EA (6)",
+     "onHand": 1,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "each",
+   "expectNow": 3.01,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "FINEST CALL MANGO PUREE 1000ML BOTTLE",
+   "kept": [
+    {
+     "item": "Finest Call Mango Puree",
+     "factor": 1,
+     "onHand": 1,
+     "countedOnLatestSheet": 1
+    }
+   ],
+   "venue": "St Alma",
+   "itemId": "cmoqfboky00b29ky211u9f76e",
+   "onHand": 1.0,
+   "dropped": [
+    {
+     "item": "FINEST CALL MANGO PUREE 1000ML BOTTLE",
+     "onHand": 2.5,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "bottle",
+   "expectNow": 3.5,
+   "latestSheet": "St Alma \u2014 Bar & FOH 01/10/2026"
+  },
+  {
+   "item": "Flour Plain",
+   "kept": [
+    {
+     "item": "FLOUR PLAIN 12.5KG (Manildra) EA",
+     "factor": 12.5,
+     "onHand": 1,
+     "countedOnLatestSheet": 1
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmptowats00qys601jz6ayyqv",
+   "onHand": 12.5,
+   "dropped": [
+    {
+     "item": "Flour Plain",
+     "onHand": 5.82,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "each",
+   "expectNow": 6.82,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "GIFFARD COCONUT SYRUP 1000ML BOTTLE",
+   "kept": [
+    {
+     "item": "Giffard Coconut Syrup",
+     "factor": 1,
+     "onHand": 2.5,
+     "countedOnLatestSheet": 2.5
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbp2600c69ky24p8ikf3e",
+   "onHand": 2.5,
+   "dropped": [
+    {
+     "item": "GIFFARD COCONUT SYRUP 1000ML BOTTLE",
+     "onHand": 0.525686,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "bottle",
+   "expectNow": 3.025686,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "GIFFARD COCONUT SYRUP 1000ML BOTTLE",
+   "kept": [
+    {
+     "item": "Giffard Coconut Syrup",
+     "factor": 1,
+     "onHand": 2.8,
+     "countedOnLatestSheet": 2.8
+    }
+   ],
+   "venue": "St Alma",
+   "itemId": "cmoqfbp2600c69ky24p8ikf3e",
+   "onHand": 2.8,
+   "dropped": [
+    {
+     "item": "GIFFARD COCONUT SYRUP 1000ML BOTTLE",
+     "onHand": 2.6,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "bottle",
+   "expectNow": 5.4,
+   "latestSheet": "St Alma \u2014 Bar & FOH 01/10/2026"
+  },
+  {
+   "item": "Giffard Falernum Syrup 1000ml",
+   "kept": [
+    {
+     "item": "Giffard Falernum Syrup",
+     "factor": 1,
+     "onHand": 1.25,
+     "countedOnLatestSheet": 1.25
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmptovv30003is60112onwtn0",
+   "onHand": 1.25,
+   "dropped": [
+    {
+     "item": "Giffard Falernum Syrup 1000ml",
+     "onHand": 0.8,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "bottle",
+   "expectNow": 2.05,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "GIFFARD GINGER SYRUP 1000ML BOTTLE",
+   "kept": [
+    {
+     "item": "Giffard Ginger Syrup",
+     "factor": 1,
+     "onHand": 1.65,
+     "countedOnLatestSheet": 1.65
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbp3y00ca9ky2jzs8f0n8",
+   "onHand": 1.65,
+   "dropped": [
+    {
+     "item": "GIFFARD GINGER SYRUP 1000ML BOTTLE",
+     "onHand": 0.6875,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "bottle",
+   "expectNow": 2.3375,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "GIFFARD GINGER SYRUP 1000ML BOTTLE",
+   "kept": [
+    {
+     "item": "Giffard Ginger Syrup",
+     "factor": 1,
+     "onHand": 3.5,
+     "countedOnLatestSheet": 3.5
+    }
+   ],
+   "venue": "St Alma",
+   "itemId": "cmoqfbp3y00ca9ky2jzs8f0n8",
+   "onHand": 3.5,
+   "dropped": [
+    {
+     "item": "GIFFARD GINGER SYRUP 1000ML BOTTLE",
+     "onHand": 3.02,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "bottle",
+   "expectNow": 6.52,
+   "latestSheet": "St Alma \u2014 Bar & FOH 01/10/2026"
+  },
+  {
+   "item": "GIFFARD ROSE SYRUP 1L BOTTLE",
+   "kept": [
+    {
+     "item": "Giffard Rose Syrup",
+     "factor": 1,
+     "onHand": 1.1,
+     "countedOnLatestSheet": 1.1
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbp7g00ci9ky2fenupt1l",
+   "onHand": 1.1,
+   "dropped": [
+    {
+     "item": "GIFFARD ROSE SYRUP 1L BOTTLE",
+     "onHand": 0.725,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "bottle",
+   "expectNow": 1.825,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "GIFFARD ROSE SYRUP 1L BOTTLE",
+   "kept": [
+    {
+     "item": "Giffard Rose Syrup",
+     "factor": 1,
+     "onHand": 3.1,
+     "countedOnLatestSheet": 3.1
+    }
+   ],
+   "venue": "St Alma",
+   "itemId": "cmoqfbp7g00ci9ky2fenupt1l",
+   "onHand": 3.1,
+   "dropped": [
+    {
+     "item": "GIFFARD ROSE SYRUP 1L BOTTLE",
+     "onHand": 4.5,
+     "countedOnLatestSheet": null
+    },
+    {
+     "item": "Giffard Rose Syrup 1000ml",
+     "onHand": 0.97,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "bottle",
+   "expectNow": 8.57,
+   "latestSheet": "St Alma \u2014 Bar & FOH 01/10/2026"
+  },
+  {
+   "item": "Lime Juice (1 x 5L)",
+   "kept": [
+    {
+     "item": "Lime Juice",
+     "factor": 5,
+     "onHand": 5.02,
+     "countedOnLatestSheet": 5.02
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbq3n00ek9ky2f7n9793j",
+   "onHand": 25.1,
+   "dropped": [
+    {
+     "item": "Lime Juice (1 x 5L)",
+     "onHand": 3.5,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "L",
+   "expectNow": 8.52,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "Lime Juice (1 x 5L)",
+   "kept": [
+    {
+     "item": "Lime Juice",
+     "factor": 5,
+     "onHand": 1,
+     "countedOnLatestSheet": 1
+    },
+    {
+     "item": "Lime Juice (1 x 5L)",
+     "factor": 1,
+     "onHand": 3.8,
+     "countedOnLatestSheet": 3.8
+    }
+   ],
+   "venue": "St Alma",
+   "itemId": "cmoqfbq3n00ek9ky2f7n9793j",
+   "onHand": 8.8,
+   "dropped": null,
+   "evidence": true,
+   "countUnit": "L",
+   "expectNow": 4.8,
+   "latestSheet": "St Alma \u2014 Bar & FOH 01/10/2026"
+  },
+  {
+   "item": "LYRES AGAVE BLANCO 700ML BOTTLE",
+   "kept": [
+    {
+     "item": "Lyres Agave Blanco",
+     "factor": 1,
+     "onHand": 5.8,
+     "countedOnLatestSheet": 5.8
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbq6600eq9ky2qgnr8ejx",
+   "onHand": 5.8,
+   "dropped": [
+    {
+     "item": "LYRES AGAVE BLANCO 700ML BOTTLE",
+     "onHand": 0.985776,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "bottle",
+   "expectNow": 6.785776,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "Mayonnaise Whole Egg",
+   "kept": [
+    {
+     "item": "Mayonnaise Whole Egg",
+     "factor": 1,
+     "onHand": 1,
+     "countedOnLatestSheet": 1
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmptowav600r7s601h67jhrcs",
+   "onHand": 1.0,
+   "dropped": [
+    {
+     "item": "MAYONNAISE WHOLE EGG 10KG (Birch & Waite) EA",
+     "onHand": 1,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "each",
+   "expectNow": 2,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "Mayonnaise Whole Egg",
+   "kept": [
+    {
+     "item": "MAYONNAISE WHOLE EGG 15KG (Birch & Waite) EA",
+     "factor": 15,
+     "onHand": 0.916292,
+     "countedOnLatestSheet": 0.2
+    }
+   ],
+   "venue": "St Alma",
+   "itemId": "cmptowav600r7s601h67jhrcs",
+   "onHand": 13.74438,
+   "dropped": null,
+   "evidence": true,
+   "countUnit": "each",
+   "expectNow": 0.916292,
+   "latestSheet": "St Alma \u2014 Kitchen 31/8/2026"
+  },
+  {
+   "item": "OIL OLIVE EXTRA VIRGIN 4LT (Natures Secret)",
+   "kept": [
+    {
+     "item": "OIL OLIVE EXTRA VIRGIN 4LT (Natures Secret)",
+     "factor": 1,
+     "onHand": 2.209456,
+     "countedOnLatestSheet": 1
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbr1o00gq9ky2w9f9olq3",
+   "onHand": 2.209456,
+   "dropped": [
+    {
+     "item": "Oil Olive Extra Virgin",
+     "onHand": 4.24,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "L",
+   "expectNow": 6.449456,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "OIL OLIVE POMACE 4L (Trading)",
+   "kept": [
+    {
+     "item": "Oil Olive Pomace",
+     "factor": 0.25,
+     "onHand": 7,
+     "countedOnLatestSheet": 7
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbr2k00gs9ky2ncbfja0w",
+   "onHand": 1.75,
+   "dropped": [
+    {
+     "item": "OIL OLIVE POMACE 4L (Trading)",
+     "onHand": 2.5,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "each",
+   "expectNow": 9.5,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "RICE BASMATI 1KG (Natures Secret) EA (12)",
+   "kept": [
+    {
+     "item": "RICE BASMATI 1KG (Natures Secret) EA (12)",
+     "factor": 1,
+     "onHand": 4,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbs0300iw9ky2r864y9f8",
+   "onHand": 4.0,
+   "dropped": [
+    {
+     "item": "Rice Basmati",
+     "onHand": 1,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": false,
+   "countUnit": "each",
+   "expectNow": 5,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "SALT TABLE 14KG (Olssons) CTN",
+   "kept": [
+    {
+     "item": "Salt Table",
+     "factor": 0.07142857142857142,
+     "onHand": 2,
+     "countedOnLatestSheet": 2
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbscr00jo9ky2pmb89fp0",
+   "onHand": 0.142857,
+   "dropped": [
+    {
+     "item": "SALT TABLE 14KG (Olssons) CTN",
+     "onHand": 0.4121,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "each",
+   "expectNow": 2.4121,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "SESAME SEED WHITE 1KG (Galaxy) EA (12)",
+   "kept": [
+    {
+     "item": "Sesame Seed White",
+     "factor": 1,
+     "onHand": 0.969,
+     "countedOnLatestSheet": 0.969
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbskr00k69ky2ie8qaiuw",
+   "onHand": 0.969,
+   "dropped": [
+    {
+     "item": "SESAME SEED WHITE 1KG (Galaxy) EA (12)",
+     "onHand": 1,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "each",
+   "expectNow": 1.969,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "SUGAR CASTER 1KG (CSR) EA (12)",
+   "kept": [
+    {
+     "item": "Sugar Caster",
+     "factor": 1,
+     "onHand": 1,
+     "countedOnLatestSheet": 1
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbsv900ku9ky23m3omsgz",
+   "onHand": 1.0,
+   "dropped": [
+    {
+     "item": "SUGAR CASTER 1KG (CSR) EA (12)",
+     "onHand": 2,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "each",
+   "expectNow": 3,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "SUPASAWA 700ML - (CASE OF 6)",
+   "kept": [
+    {
+     "item": "Supasawa",
+     "factor": 1,
+     "onHand": 1,
+     "countedOnLatestSheet": 1
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbswy00ky9ky2n2nczql9",
+   "onHand": 1.0,
+   "dropped": [
+    {
+     "item": "SUPASAWA 700ML - (CASE OF 6)",
+     "onHand": 1.4,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "bottle",
+   "expectNow": 2.4,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "SUPASAWA 700ML - (CASE OF 6)",
+   "kept": [
+    {
+     "item": "Supasawa",
+     "factor": 1,
+     "onHand": 2,
+     "countedOnLatestSheet": 2
+    }
+   ],
+   "venue": "St Alma",
+   "itemId": "cmoqfbswy00ky9ky2n2nczql9",
+   "onHand": 2.0,
+   "dropped": [
+    {
+     "item": "SUPASAWA 700ML - (CASE OF 6)",
+     "onHand": 3.3,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "bottle",
+   "expectNow": 5.3,
+   "latestSheet": "St Alma \u2014 Bar & FOH 01/10/2026"
+  },
+  {
+   "item": "VINEGAR WHITE 4LT (Edlyn) EA (3)",
+   "kept": [
+    {
+     "item": "VINEGAR WHITE 4LT (Edlyn) EA (3)",
+     "factor": 1,
+     "onHand": 3,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbtor00mq9ky2jb7tdpcq",
+   "onHand": 3.0,
+   "dropped": [
+    {
+     "item": "Vinegar White",
+     "onHand": 2.15,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": false,
+   "countUnit": "each",
+   "expectNow": 5.15,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "VINEGAR WHITE WINE 500ML (PGF) EA",
+   "kept": [
+    {
+     "item": "VINEGAR WHITE WINE 500ML (PGF) EA",
+     "factor": 1,
+     "onHand": 1,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbtqg00mu9ky23ctmc7au",
+   "onHand": 1.0,
+   "dropped": [
+    {
+     "item": "Vinegar White Wine",
+     "onHand": 0.5,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": false,
+   "countUnit": "each",
+   "expectNow": 1.5,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "Watermelon Juice (1 x 5L)",
+   "kept": [
+    {
+     "item": "Watermelon Juice",
+     "factor": 5,
+     "onHand": 3.32,
+     "countedOnLatestSheet": 3.32
+    }
+   ],
+   "venue": "Alma Avalon",
+   "itemId": "cmoqfbtwm00n89ky2nzqu27ne",
+   "onHand": 16.6,
+   "dropped": [
+    {
+     "item": "Watermelon Juice (1 x 5L)",
+     "onHand": 11.3,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "L",
+   "expectNow": 14.62,
+   "latestSheet": "Stocktake 10/1/2026"
+  },
+  {
+   "item": "Watermelon Juice (1 x 5L)",
+   "kept": [
+    {
+     "item": "Watermelon Juice (1 x 5L)",
+     "factor": 1,
+     "onHand": 2.2,
+     "countedOnLatestSheet": 2.2
+    }
+   ],
+   "venue": "St Alma",
+   "itemId": "cmoqfbtwm00n89ky2nzqu27ne",
+   "onHand": 2.2,
+   "dropped": [
+    {
+     "item": "Watermelon Juice",
+     "onHand": 0.9,
+     "countedOnLatestSheet": null
+    }
+   ],
+   "evidence": true,
+   "countUnit": "L",
+   "expectNow": 3.1,
+   "latestSheet": "St Alma \u2014 Bar & FOH 01/10/2026"
+  }
+ ],
+ "revertLines": [
+  {
+   "id": "cmthmm13v003ioa01utgh22wi",
+   "set": {
+    "notes": null,
+    "countedQty": 0,
+    "stockValueCents": 0
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 1,
+    "stockValueCents": 250
+   }
+  },
+  {
+   "id": "cmthmm13w004moa01rz38b403",
+   "set": {
+    "notes": null,
+    "countedQty": 0,
+    "stockValueCents": 0
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 0.2,
+    "stockValueCents": 2340
+   }
+  },
+  {
+   "id": "cmthmm13y0075oa01ykky6xau",
+   "set": {
+    "notes": null,
+    "countedQty": 0,
+    "stockValueCents": 0
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 0.23,
+    "stockValueCents": 207
+   }
+  },
+  {
+   "id": "cmti4209t03xroa01aybs0fkr",
+   "set": {
+    "notes": null,
+    "countedQty": 0,
+    "stockValueCents": 0
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 1.2,
+    "stockValueCents": 3132
+   }
+  },
+  {
+   "id": "cmti4209t03xuoa01ysvcpzoi",
+   "set": {
+    "notes": null,
+    "countedQty": 0.8,
+    "stockValueCents": 1904
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 1.6,
+    "stockValueCents": 3757
+   }
+  },
+  {
+   "id": "cmti4209t03xwoa01i5hk22nk",
+   "set": {
+    "notes": null,
+    "countedQty": 0,
+    "stockValueCents": 0
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 1.7,
+    "stockValueCents": 0
+   }
+  },
+  {
+   "id": "cmti4209t03y4oa01gppyutaq",
+   "set": {
+    "notes": null,
+    "countedQty": 0.5,
+    "stockValueCents": 7118
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 0.98,
+    "stockValueCents": 8257
+   }
+  },
+  {
+   "id": "cmti4209w03zwoa01dcw6efck",
+   "set": {
+    "notes": null,
+    "countedQty": 0,
+    "stockValueCents": 0
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 5.7,
+    "stockValueCents": 16673
+   }
+  },
+  {
+   "id": "cmtim0y9c04xqoa0103j5d59c",
+   "set": {
+    "notes": null,
+    "countedQty": 0,
+    "stockValueCents": 0
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 8,
+    "stockValueCents": 0
+   }
+  },
+  {
+   "id": "cmupcujbc03l6pd01bdj3pdh0",
+   "set": {
+    "notes": null,
+    "countedQty": null,
+    "stockValueCents": null
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 1,
+    "stockValueCents": 1400
+   }
+  },
+  {
+   "id": "cmupcujbe03mdpd01wxx6iia5",
+   "set": {
+    "notes": null,
+    "countedQty": null,
+    "stockValueCents": null
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 2.5,
+    "stockValueCents": 6525
+   }
+  },
+  {
+   "id": "cmupcujbf03mgpd01e6wj5ehv",
+   "set": {
+    "notes": null,
+    "countedQty": null,
+    "stockValueCents": null
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 1.25,
+    "stockValueCents": 2895
+   }
+  },
+  {
+   "id": "cmupcujbf03mipd01p4nvjtjz",
+   "set": {
+    "notes": null,
+    "countedQty": null,
+    "stockValueCents": null
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 1.65,
+    "stockValueCents": 0
+   }
+  },
+  {
+   "id": "cmupcujbf03mqpd01p4v8ydxz",
+   "set": {
+    "notes": null,
+    "countedQty": null,
+    "stockValueCents": null
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 1.1,
+    "stockValueCents": 2610
+   }
+  },
+  {
+   "id": "cmupcujbm03phpd01m85dq6s5",
+   "set": {
+    "notes": null,
+    "countedQty": null,
+    "stockValueCents": null
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 5.8,
+    "stockValueCents": 16965
+   }
+  },
+  {
+   "id": "cmupcujbs03s4pd01a2adn9vb",
+   "set": {
+    "notes": null,
+    "countedQty": 0.5,
+    "stockValueCents": 450
+   },
+   "expectNow": {
+    "notes": "Unit fix 2026-10-16 (run prod-unitfix-20261016-shelfcheck): was 500 g, now 1 each. Shelf check 16 Oct 2026 (Tim): the counted amount is right. 500 g = one 500 g tub.",
+    "countedQty": 1.5,
+    "stockValueCents": 1350
+   }
+  },
+  {
+   "id": "cmupcujbx03uypd01234fsgbm",
+   "set": {
+    "notes": null,
+    "countedQty": null,
+    "stockValueCents": null
+   },
+   "expectNow": {
+    "notes": "Unit fix 2026-10-16 (run prod-unitfix-20261016-high): was 969 g, now 0.969 each. 969 g of a 1 kg pack.",
+    "countedQty": 0.969,
+    "stockValueCents": 872
+   }
+  },
+  {
+   "id": "cmupcujby03vmpd013xswyn73",
+   "set": {
+    "notes": null,
+    "countedQty": null,
+    "stockValueCents": null
+   },
+   "expectNow": {
+    "notes": null,
+    "countedQty": 1,
+    "stockValueCents": 2760
+   }
+  }
+ ],
+ "restoreLines": [
+  {
+   "id": "cmrnijqv500kqqg01j00gjq5n",
+   "unit": "l",
+   "label": "VINEGAR WHITE 5LT (Menu Master) EA (3)",
+   "notes": null,
+   "itemId": "cmoqfbtor00mq9ky2jb7tdpcq",
+   "legacyId": null,
+   "location": "Oils & Condiments",
+   "position": 746,
+   "recipeId": null,
+   "createdAt": "2026-07-16T12:56:49.578",
+   "updatedAt": "2026-07-16T12:56:49.578",
+   "countedQty": 0,
+   "stocktakeId": "cmq49xa2i0001s601z7kg0l2q",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmthmm13v003joa01jibuyx81",
+   "unit": "each",
+   "label": "FLOUR PLAIN 12.5KG (Manildra) EA",
+   "notes": null,
+   "itemId": "cmptowats00qys601jz6ayyqv",
+   "legacyId": null,
+   "location": null,
+   "position": 127,
+   "recipeId": null,
+   "createdAt": "2026-08-31T19:23:22.257",
+   "updatedAt": "2026-08-31T19:23:22.257",
+   "countedQty": 0,
+   "stocktakeId": "cmtgle57d0000oe01ffocxzgy",
+   "stockValueCents": 0
+  },
+  {
+   "id": "cmthmm13v003koa01j8133u8m",
+   "unit": "each",
+   "label": "FLOUR PLAIN 1KG (Manildra) EA",
+   "notes": null,
+   "itemId": "cmptowats00qys601jz6ayyqv",
+   "legacyId": null,
+   "location": null,
+   "position": 128,
+   "recipeId": null,
+   "createdAt": "2026-08-31T19:23:22.257",
+   "updatedAt": "2026-08-31T19:23:22.257",
+   "countedQty": 1,
+   "stocktakeId": "cmtgle57d0000oe01ffocxzgy",
+   "stockValueCents": 250
+  },
+  {
+   "id": "cmthmm13w004noa0110yqhlmw",
+   "unit": "each",
+   "label": "MAYONNAISE WHOLE EGG 10KG (Birch & Waite) EA",
+   "notes": null,
+   "itemId": "cmptowav600r7s601h67jhrcs",
+   "legacyId": null,
+   "location": null,
+   "position": 167,
+   "recipeId": null,
+   "createdAt": "2026-08-31T19:23:22.257",
+   "updatedAt": "2026-08-31T19:23:22.257",
+   "countedQty": 0,
+   "stocktakeId": "cmtgle57d0000oe01ffocxzgy",
+   "stockValueCents": 0
+  },
+  {
+   "id": "cmthmm13w004ooa01uka6g590",
+   "unit": "each",
+   "label": "MAYONNAISE WHOLE EGG 15KG (Birch & Waite) EA",
+   "notes": null,
+   "itemId": "cmptowav600r7s601h67jhrcs",
+   "legacyId": null,
+   "location": null,
+   "position": 168,
+   "recipeId": null,
+   "createdAt": "2026-08-31T19:23:22.257",
+   "updatedAt": "2026-08-31T19:23:22.257",
+   "countedQty": 0.2,
+   "stocktakeId": "cmtgle57d0000oe01ffocxzgy",
+   "stockValueCents": 2340
+  },
+  {
+   "id": "cmthmm13x005hoa01fved2xmk",
+   "unit": "each",
+   "label": "Onion Powder",
+   "notes": null,
+   "itemId": "cmoqfbr7100h29ky2r48yn0lt",
+   "legacyId": null,
+   "location": null,
+   "position": 197,
+   "recipeId": null,
+   "createdAt": "2026-08-31T19:23:22.257",
+   "updatedAt": "2026-08-31T19:23:22.257",
+   "countedQty": 0,
+   "stocktakeId": "cmtgle57d0000oe01ffocxzgy",
+   "stockValueCents": 0
+  },
+  {
+   "id": "cmthmm13y0072oa01n74ti285",
+   "unit": "each",
+   "label": "Sea Salt Flakes",
+   "notes": null,
+   "itemId": "cmoqfbsiy00k29ky26w7hlejy",
+   "legacyId": null,
+   "location": null,
+   "position": 254,
+   "recipeId": null,
+   "createdAt": "2026-08-31T19:23:22.257",
+   "updatedAt": "2026-08-31T19:23:22.257",
+   "countedQty": 0,
+   "stocktakeId": "cmtgle57d0000oe01ffocxzgy",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmthmm13y0074oa01z69ubtad",
+   "unit": "each",
+   "label": "Sesame Seed White",
+   "notes": null,
+   "itemId": "cmoqfbskr00k69ky2ie8qaiuw",
+   "legacyId": null,
+   "location": null,
+   "position": 256,
+   "recipeId": null,
+   "createdAt": "2026-08-31T19:23:22.257",
+   "updatedAt": "2026-08-31T19:23:22.257",
+   "countedQty": 0.23,
+   "stocktakeId": "cmtgle57d0000oe01ffocxzgy",
+   "stockValueCents": 207
+  },
+  {
+   "id": "cmthmm13z0085oa01v5gpdr01",
+   "unit": "each",
+   "label": "Vinegar White",
+   "notes": null,
+   "itemId": "cmoqfbtor00mq9ky2jb7tdpcq",
+   "legacyId": null,
+   "location": null,
+   "position": 293,
+   "recipeId": null,
+   "createdAt": "2026-08-31T19:23:22.257",
+   "updatedAt": "2026-08-31T19:23:22.257",
+   "countedQty": 0,
+   "stocktakeId": "cmtgle57d0000oe01ffocxzgy",
+   "stockValueCents": 0
+  },
+  {
+   "id": "cmthmm13z0087oa018773udw7",
+   "unit": "each",
+   "label": "VINEGAR WHITE 5LT (Menu Master) EA (3)",
+   "notes": null,
+   "itemId": "cmoqfbtor00mq9ky2jb7tdpcq",
+   "legacyId": null,
+   "location": null,
+   "position": 295,
+   "recipeId": null,
+   "createdAt": "2026-08-31T19:23:22.257",
+   "updatedAt": "2026-08-31T19:23:22.257",
+   "countedQty": 0,
+   "stocktakeId": "cmtgle57d0000oe01ffocxzgy",
+   "stockValueCents": 0
+  },
+  {
+   "id": "cmthmm13z0088oa01lp2eb13u",
+   "unit": "each",
+   "label": "Vinegar White Wine",
+   "notes": null,
+   "itemId": "cmoqfbtqg00mu9ky23ctmc7au",
+   "legacyId": null,
+   "location": null,
+   "position": 296,
+   "recipeId": null,
+   "createdAt": "2026-08-31T19:23:22.257",
+   "updatedAt": "2026-08-31T19:23:22.257",
+   "countedQty": 0,
+   "stocktakeId": "cmtgle57d0000oe01ffocxzgy",
+   "stockValueCents": 0
+  },
+  {
+   "id": "cmti01rk300zzoa01svsjizt9",
+   "unit": "each",
+   "label": "FLOUR PLAIN 12.5KG (Manildra) EA",
+   "notes": null,
+   "itemId": "cmptowats00qys601jz6ayyqv",
+   "legacyId": null,
+   "location": null,
+   "position": 342,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rk30100oa01qhb8q9rg",
+   "unit": "each",
+   "label": "FLOUR PLAIN 1KG (Manildra) EA",
+   "notes": null,
+   "itemId": "cmptowats00qys601jz6ayyqv",
+   "legacyId": null,
+   "location": null,
+   "position": 343,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rk40114oa01wztssvi6",
+   "unit": "bottle",
+   "label": "Giffard Coconut Syrup",
+   "notes": null,
+   "itemId": "cmoqfbp2600c69ky24p8ikf3e",
+   "legacyId": null,
+   "location": null,
+   "position": 383,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rk40117oa01q5889au9",
+   "unit": "bottle",
+   "label": "Giffard Falernum Syrup",
+   "notes": null,
+   "itemId": "cmptovv30003is60112onwtn0",
+   "legacyId": null,
+   "location": null,
+   "position": 386,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rk40119oa01ryebz6mh",
+   "unit": "bottle",
+   "label": "Giffard Ginger Syrup",
+   "notes": null,
+   "itemId": "cmoqfbp3y00ca9ky2jzs8f0n8",
+   "legacyId": null,
+   "location": null,
+   "position": 388,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rk4011goa01vrsyzw0q",
+   "unit": "bottle",
+   "label": "Giffard Rose Syrup",
+   "notes": null,
+   "itemId": "cmoqfbp7g00ci9ky2fenupt1l",
+   "legacyId": null,
+   "location": null,
+   "position": 395,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rk4011hoa01ackil8n3",
+   "unit": "bottle",
+   "label": "Giffard Rose Syrup 1000ml",
+   "notes": null,
+   "itemId": "cmoqfbp7g00ci9ky2fenupt1l",
+   "legacyId": null,
+   "location": null,
+   "position": 396,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rk7014foa01r655s0c0",
+   "unit": "bottle",
+   "label": "Lyres Agave Blanco",
+   "notes": null,
+   "itemId": "cmoqfbq6600eq9ky2qgnr8ejx",
+   "legacyId": null,
+   "location": null,
+   "position": 502,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rk70159oa01yzehsoze",
+   "unit": "each",
+   "label": "MAYONNAISE WHOLE EGG 10KG (Birch & Waite) EA",
+   "notes": null,
+   "itemId": "cmptowav600r7s601h67jhrcs",
+   "legacyId": null,
+   "location": null,
+   "position": 532,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rk7015aoa01u95ugxol",
+   "unit": "each",
+   "label": "MAYONNAISE WHOLE EGG 15KG (Birch & Waite) EA",
+   "notes": null,
+   "itemId": "cmptowav600r7s601h67jhrcs",
+   "legacyId": null,
+   "location": null,
+   "position": 533,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rk90178oa017230r7te",
+   "unit": "each",
+   "label": "Onion Powder",
+   "notes": null,
+   "itemId": "cmoqfbr7100h29ky2r48yn0lt",
+   "legacyId": null,
+   "location": null,
+   "position": 603,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rkb01a4oa017odhgokp",
+   "unit": "each",
+   "label": "Sea Salt Flakes",
+   "notes": null,
+   "itemId": "cmoqfbsiy00k29ky26w7hlejy",
+   "legacyId": null,
+   "location": null,
+   "position": 707,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rkb01a8oa01r50ikluy",
+   "unit": "each",
+   "label": "Sesame Seed White",
+   "notes": null,
+   "itemId": "cmoqfbskr00k69ky2ie8qaiuw",
+   "legacyId": null,
+   "location": null,
+   "position": 711,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rkc01axoa01k718t03r",
+   "unit": "bottle",
+   "label": "Supasawa",
+   "notes": null,
+   "itemId": "cmoqfbswy00ky9ky2n2nczql9",
+   "legacyId": null,
+   "location": null,
+   "position": 736,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rkd01cjoa013p7ndcgh",
+   "unit": "each",
+   "label": "Vinegar White",
+   "notes": null,
+   "itemId": "cmoqfbtor00mq9ky2jb7tdpcq",
+   "legacyId": null,
+   "location": null,
+   "position": 794,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rkd01cloa01aqskk8d2",
+   "unit": "each",
+   "label": "VINEGAR WHITE 5LT (Menu Master) EA (3)",
+   "notes": null,
+   "itemId": "cmoqfbtor00mq9ky2jb7tdpcq",
+   "legacyId": null,
+   "location": null,
+   "position": 796,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti01rkd01cmoa01t9hig5ib",
+   "unit": "each",
+   "label": "Vinegar White Wine",
+   "notes": null,
+   "itemId": "cmoqfbtqg00mu9ky23ctmc7au",
+   "legacyId": null,
+   "location": null,
+   "position": 797,
+   "recipeId": null,
+   "createdAt": "2026-09-01T01:39:31.368",
+   "updatedAt": "2026-09-01T01:39:31.368",
+   "countedQty": null,
+   "stocktakeId": "cmti01rjj00qgoa01uhp30tw9",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti4209t03xqoa019r34bbu9",
+   "unit": "bottle",
+   "label": "Giffard Coconut Syrup",
+   "notes": null,
+   "itemId": "cmoqfbp2600c69ky24p8ikf3e",
+   "legacyId": null,
+   "location": null,
+   "position": 204,
+   "recipeId": null,
+   "createdAt": "2026-09-01T03:31:41.135",
+   "updatedAt": "2026-09-01T03:31:41.135",
+   "countedQty": 1.2,
+   "stocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "stockValueCents": 3132
+  },
+  {
+   "id": "cmti4209t03xtoa01fv4v9cec",
+   "unit": "bottle",
+   "label": "Giffard Falernum Syrup",
+   "notes": null,
+   "itemId": "cmptovv30003is60112onwtn0",
+   "legacyId": null,
+   "location": null,
+   "position": 207,
+   "recipeId": null,
+   "createdAt": "2026-09-01T03:31:41.135",
+   "updatedAt": "2026-09-01T03:31:41.135",
+   "countedQty": 0.8,
+   "stocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "stockValueCents": 1853
+  },
+  {
+   "id": "cmti4209t03xvoa01tbnygpgk",
+   "unit": "bottle",
+   "label": "Giffard Ginger Syrup",
+   "notes": null,
+   "itemId": "cmoqfbp3y00ca9ky2jzs8f0n8",
+   "legacyId": null,
+   "location": null,
+   "position": 209,
+   "recipeId": null,
+   "createdAt": "2026-09-01T03:31:41.135",
+   "updatedAt": "2026-09-01T03:31:41.135",
+   "countedQty": 1.7,
+   "stocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "stockValueCents": 0
+  },
+  {
+   "id": "cmti4209t03y2oa018y9l14ei",
+   "unit": "bottle",
+   "label": "Giffard Rose Syrup",
+   "notes": null,
+   "itemId": "cmoqfbp7g00ci9ky2fenupt1l",
+   "legacyId": null,
+   "location": null,
+   "position": 216,
+   "recipeId": null,
+   "createdAt": "2026-09-01T03:31:41.135",
+   "updatedAt": "2026-09-01T03:31:41.135",
+   "countedQty": 0.48,
+   "stocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "stockValueCents": 1139
+  },
+  {
+   "id": "cmti4209t03y3oa019ysgdfni",
+   "unit": "bottle",
+   "label": "Giffard Rose Syrup 1000ml",
+   "notes": null,
+   "itemId": "cmoqfbp7g00ci9ky2fenupt1l",
+   "legacyId": null,
+   "location": null,
+   "position": 217,
+   "recipeId": null,
+   "createdAt": "2026-09-01T03:31:41.135",
+   "updatedAt": "2026-09-01T03:31:41.135",
+   "countedQty": null,
+   "stocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmti4209w03zvoa01qrqpyh4o",
+   "unit": "bottle",
+   "label": "Lyres Agave Blanco",
+   "notes": null,
+   "itemId": "cmoqfbq6600eq9ky2qgnr8ejx",
+   "legacyId": null,
+   "location": null,
+   "position": 281,
+   "recipeId": null,
+   "createdAt": "2026-09-01T03:31:41.135",
+   "updatedAt": "2026-09-01T03:31:41.135",
+   "countedQty": 5.7,
+   "stocktakeId": "cmti14e7m02nooa01uz4i5l9a",
+   "stockValueCents": 16673
+  },
+  {
+   "id": "cmtim0y9b04w7oa01isozrg8g",
+   "unit": "bottle",
+   "label": "Giffard Falernum Syrup",
+   "notes": null,
+   "itemId": "cmptovv30003is60112onwtn0",
+   "legacyId": null,
+   "location": null,
+   "position": 152,
+   "recipeId": null,
+   "createdAt": "2026-09-01T11:54:44.965",
+   "updatedAt": "2026-09-01T11:54:44.965",
+   "countedQty": 0,
+   "stocktakeId": "cmtgs6a1a06faoe01qwx3ci3y",
+   "stockValueCents": 0
+  },
+  {
+   "id": "cmtim0y9c04xpoa015kt9lioh",
+   "unit": "L",
+   "label": "Lime Juice",
+   "notes": null,
+   "itemId": "cmoqfbq3n00ek9ky2f7n9793j",
+   "legacyId": null,
+   "location": null,
+   "position": 206,
+   "recipeId": null,
+   "createdAt": "2026-09-01T11:54:44.965",
+   "updatedAt": "2026-09-01T11:54:44.965",
+   "countedQty": 8,
+   "stocktakeId": "cmtgs6a1a06faoe01qwx3ci3y",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmupcujbc03l7pd011vhof9ik",
+   "unit": "each",
+   "label": "FLOUR PLAIN 12.5KG (Manildra) EA",
+   "notes": null,
+   "itemId": "cmptowats00qys601jz6ayyqv",
+   "legacyId": null,
+   "location": null,
+   "position": 330,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": 1,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": 1400
+  },
+  {
+   "id": "cmupcujbc03l8pd01gc06g5qc",
+   "unit": "each",
+   "label": "FLOUR PLAIN 1KG (Manildra) EA",
+   "notes": null,
+   "itemId": "cmptowats00qys601jz6ayyqv",
+   "legacyId": null,
+   "location": null,
+   "position": 331,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": null,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmupcujbe03mcpd010sv1znun",
+   "unit": "bottle",
+   "label": "Giffard Coconut Syrup",
+   "notes": null,
+   "itemId": "cmoqfbp2600c69ky24p8ikf3e",
+   "legacyId": null,
+   "location": null,
+   "position": 371,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": 2.5,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": 6525
+  },
+  {
+   "id": "cmupcujbf03mfpd01ud2zusqm",
+   "unit": "bottle",
+   "label": "Giffard Falernum Syrup",
+   "notes": null,
+   "itemId": "cmptovv30003is60112onwtn0",
+   "legacyId": null,
+   "location": null,
+   "position": 374,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": 1.25,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": 2895
+  },
+  {
+   "id": "cmupcujbf03mhpd01btl6tqt6",
+   "unit": "bottle",
+   "label": "Giffard Ginger Syrup",
+   "notes": null,
+   "itemId": "cmoqfbp3y00ca9ky2jzs8f0n8",
+   "legacyId": null,
+   "location": null,
+   "position": 376,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": 1.65,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": 0
+  },
+  {
+   "id": "cmupcujbf03mopd01wh3wxc0d",
+   "unit": "bottle",
+   "label": "Giffard Rose Syrup",
+   "notes": null,
+   "itemId": "cmoqfbp7g00ci9ky2fenupt1l",
+   "legacyId": null,
+   "location": null,
+   "position": 383,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": 1.1,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": 2610
+  },
+  {
+   "id": "cmupcujbf03mppd01tyfrc5x2",
+   "unit": "bottle",
+   "label": "Giffard Rose Syrup 1000ml",
+   "notes": null,
+   "itemId": "cmoqfbp7g00ci9ky2fenupt1l",
+   "legacyId": null,
+   "location": null,
+   "position": 384,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": null,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmupcujbm03pgpd01e0ozwykp",
+   "unit": "bottle",
+   "label": "Lyres Agave Blanco",
+   "notes": null,
+   "itemId": "cmoqfbq6600eq9ky2qgnr8ejx",
+   "legacyId": null,
+   "location": null,
+   "position": 483,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": 5.8,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": 16965
+  },
+  {
+   "id": "cmupcujbo03qapd01f13moswq",
+   "unit": "each",
+   "label": "MAYONNAISE WHOLE EGG 10KG (Birch & Waite) EA",
+   "notes": null,
+   "itemId": "cmptowav600r7s601h67jhrcs",
+   "legacyId": null,
+   "location": null,
+   "position": 513,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": null,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmupcujbo03qbpd01jnk549cu",
+   "unit": "each",
+   "label": "MAYONNAISE WHOLE EGG 15KG (Birch & Waite) EA",
+   "notes": null,
+   "itemId": "cmptowav600r7s601h67jhrcs",
+   "legacyId": null,
+   "location": null,
+   "position": 514,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": null,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmupcujbs03s3pd01k0erxglr",
+   "unit": "each",
+   "label": "Onion Powder",
+   "notes": "Unit fix 2026-10-16 (run prod-unitfix-20261016-shelfcheck): was 500 g, now 1 each. Shelf check 16 Oct 2026 (Tim): the counted amount is right. 500 g = one 500 g tub.",
+   "itemId": "cmoqfbr7100h29ky2r48yn0lt",
+   "legacyId": null,
+   "location": null,
+   "position": 578,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-16T10:39:45.677",
+   "countedQty": 1,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": 900
+  },
+  {
+   "id": "cmupcujbx03utpd01wyujzdy8",
+   "unit": "each",
+   "label": "Sea Salt Flakes",
+   "notes": null,
+   "itemId": "cmoqfbsiy00k29ky26w7hlejy",
+   "legacyId": null,
+   "location": null,
+   "position": 676,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": null,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmupcujbx03uxpd01fdb2c2oe",
+   "unit": "each",
+   "label": "Sesame Seed White",
+   "notes": "Unit fix 2026-10-16 (run prod-unitfix-20261016-high): was 969 g, now 0.969 each. 969 g of a 1 kg pack.",
+   "itemId": "cmoqfbskr00k69ky2ie8qaiuw",
+   "legacyId": null,
+   "location": null,
+   "position": 680,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-16T10:16:12.423",
+   "countedQty": 0.969,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": 872
+  },
+  {
+   "id": "cmupcujby03vlpd01znl8f4ye",
+   "unit": "bottle",
+   "label": "Supasawa",
+   "notes": null,
+   "itemId": "cmoqfbswy00ky9ky2n2nczql9",
+   "legacyId": null,
+   "location": null,
+   "position": 704,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": 1,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": 2760
+  },
+  {
+   "id": "cmupcujc103x7pd014z77thio",
+   "unit": "each",
+   "label": "Vinegar White",
+   "notes": null,
+   "itemId": "cmoqfbtor00mq9ky2jb7tdpcq",
+   "legacyId": null,
+   "location": null,
+   "position": 762,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": null,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmupcujc103x9pd01xhpt0fob",
+   "unit": "each",
+   "label": "VINEGAR WHITE 5LT (Menu Master) EA (3)",
+   "notes": null,
+   "itemId": "cmoqfbtor00mq9ky2jb7tdpcq",
+   "legacyId": null,
+   "location": null,
+   "position": 764,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": null,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": null
+  },
+  {
+   "id": "cmupcujc103xapd01d3q23h0d",
+   "unit": "each",
+   "label": "Vinegar White Wine",
+   "notes": null,
+   "itemId": "cmoqfbtqg00mu9ky23ctmc7au",
+   "legacyId": null,
+   "location": null,
+   "position": 765,
+   "recipeId": null,
+   "createdAt": "2026-10-01T09:51:54.637",
+   "updatedAt": "2026-10-01T09:51:54.637",
+   "countedQty": null,
+   "stocktakeId": "cmupcujav03c0pd01796c5bpm",
+   "stockValueCents": null
+  }
+ ],
+ "generatedFrom": "production copy 2026-10-17 06:37 AEDT (before the 06:48 app merges) vs production copy 12:39 AEDT",
+ "relinkMovements": [
+  {
+   "id": "cmurfyhkg088epd013e4td59r",
+   "expectNow": "cmthmm13v003ioa01utgh22wi",
+   "sourceStocktakeLineId": "cmthmm13v003joa01jibuyx81"
+  },
+  {
+   "id": "cmurfyhkl088ipd01ccq0uura",
+   "expectNow": "cmthmm13v003ioa01utgh22wi",
+   "sourceStocktakeLineId": "cmthmm13v003koa01j8133u8m"
+  },
+  {
+   "id": "cmurfyhqx08cupd01nefbbggg",
+   "expectNow": "cmthmm13w004moa01rz38b403",
+   "sourceStocktakeLineId": "cmthmm13w004noa0110yqhlmw"
+  },
+  {
+   "id": "cmurfyhr208cypd01aw1i09hg",
+   "expectNow": "cmthmm13w004moa01rz38b403",
+   "sourceStocktakeLineId": "cmthmm13w004ooa01uka6g590"
+  },
+  {
+   "id": "cmurfyhvz08g6pd01fmhkufhg",
+   "expectNow": "cmthmm13x005ioa01wevs1lo9",
+   "sourceStocktakeLineId": "cmthmm13x005hoa01fved2xmk"
+  },
+  {
+   "id": "cmurfyi8n08mipd01b0s12p1c",
+   "expectNow": "cmthmm13y0073oa01segc41fq",
+   "sourceStocktakeLineId": "cmthmm13y0072oa01n74ti285"
+  },
+  {
+   "id": "cmurfyi9908mqpd01qwr1t2tl",
+   "expectNow": "cmthmm13y0075oa01ykky6xau",
+   "sourceStocktakeLineId": "cmthmm13y0074oa01z69ubtad"
+  },
+  {
+   "id": "cmurfyifn08qupd01i19a6l67",
+   "expectNow": "cmthmm13z0086oa01rk4k1vxo",
+   "sourceStocktakeLineId": "cmthmm13z0085oa01v5gpdr01"
+  },
+  {
+   "id": "cmurfyify08r2pd01r1eyrcki",
+   "expectNow": "cmthmm13z0086oa01rk4k1vxo",
+   "sourceStocktakeLineId": "cmthmm13z0087oa018773udw7"
+  },
+  {
+   "id": "cmurfyig308r6pd019fpvuisb",
+   "expectNow": "cmthmm13z0089oa01zmbtwzwd",
+   "sourceStocktakeLineId": "cmthmm13z0088oa01lp2eb13u"
+  },
+  {
+   "id": "cmurfyqpc098ipd01aop04su3",
+   "expectNow": "cmtim0y9b04w8oa012sxvn799",
+   "sourceStocktakeLineId": "cmtim0y9b04w7oa01isozrg8g"
+  },
+  {
+   "id": "cmurfyqzc09eipd01b7f5vfsr",
+   "expectNow": "cmtim0y9c04xqoa0103j5d59c",
+   "sourceStocktakeLineId": "cmtim0y9c04xpoa015kt9lioh"
+  },
+  {
+   "id": "cmurfz26z0a22pd01kkp3j5vd",
+   "expectNow": "cmti4209t03xroa01aybs0fkr",
+   "sourceStocktakeLineId": "cmti4209t03xqoa019r34bbu9"
+  },
+  {
+   "id": "cmurfz27i0a2epd014c3vjiqx",
+   "expectNow": "cmti4209t03xuoa01ysvcpzoi",
+   "sourceStocktakeLineId": "cmti4209t03xtoa01fv4v9cec"
+  },
+  {
+   "id": "cmurfz27v0a2mpd01gt3hzavn",
+   "expectNow": "cmti4209t03xwoa01i5hk22nk",
+   "sourceStocktakeLineId": "cmti4209t03xvoa01tbnygpgk"
+  },
+  {
+   "id": "cmurfz28y0a36pd01qjxpgz9c",
+   "expectNow": "cmti4209t03y4oa01gppyutaq",
+   "sourceStocktakeLineId": "cmti4209t03y2oa018y9l14ei"
+  },
+  {
+   "id": "cmurfz2g80a82pd01vgru5q9y",
+   "expectNow": "cmti4209w03zwoa01dcw6efck",
+   "sourceStocktakeLineId": "cmti4209w03zvoa01qrqpyh4o"
+  },
+  {
+   "id": "cmvaukhbe0001ccb1fr5u73jn",
+   "expectNow": "cmtim0y9c04xqoa0103j5d59c",
+   "sourceStocktakeLineId": "cmtim0y9c04xpoa015kt9lioh"
+  },
+  {
+   "id": "cmvawl35p01bbcc5csqrtd2tk",
+   "expectNow": "cmupcujbc03l6pd01bdj3pdh0",
+   "sourceStocktakeLineId": "cmupcujbc03l7pd011vhof9ik"
+  },
+  {
+   "id": "cmvawl4ts01d3cc5cxzh4xnfx",
+   "expectNow": "cmupcujbe03mdpd01wxx6iia5",
+   "sourceStocktakeLineId": "cmupcujbe03mcpd010sv1znun"
+  },
+  {
+   "id": "cmvawl4x901d7cc5ck3jg1g0y",
+   "expectNow": "cmupcujbf03mgpd01e6wj5ehv",
+   "sourceStocktakeLineId": "cmupcujbf03mfpd01ud2zusqm"
+  },
+  {
+   "id": "cmvawl50t01dbcc5cgibr9c0a",
+   "expectNow": "cmupcujbf03mipd01p4nvjtjz",
+   "sourceStocktakeLineId": "cmupcujbf03mhpd01btl6tqt6"
+  },
+  {
+   "id": "cmvawl5fl01drcc5c9skqw25c",
+   "expectNow": "cmupcujbf03mqpd01p4v8ydxz",
+   "sourceStocktakeLineId": "cmupcujbf03mopd01wh3wxc0d"
+  },
+  {
+   "id": "cmvawlb0i01jvcc5cplrh13kz",
+   "expectNow": "cmupcujbm03phpd01m85dq6s5",
+   "sourceStocktakeLineId": "cmupcujbm03pgpd01e0ozwykp"
+  },
+  {
+   "id": "cmvawlflv01ozcc5c51f2qxku",
+   "expectNow": "cmupcujbs03s4pd01a2adn9vb",
+   "sourceStocktakeLineId": "cmupcujbs03s3pd01k0erxglr"
+  },
+  {
+   "id": "cmvawlkcr01u7cc5cu0qruc9u",
+   "expectNow": "cmupcujbx03uypd01234fsgbm",
+   "sourceStocktakeLineId": "cmupcujbx03uxpd01fdb2c2oe"
+  },
+  {
+   "id": "cmvawllad01v7cc5c5g8hvr1c",
+   "expectNow": "cmupcujby03vmpd013xswyn73",
+   "sourceStocktakeLineId": "cmupcujby03vlpd01znl8f4ye"
+  }
+ ],
+ "items": [
+  {
+   "id": "cmptowap000q1s6018squehvr",
+   "item": "Agave Syrup",
+   "why": "Saved in the item form at 06:50 with count unit \"gram\" and 750 per purchase unit, which divided the $56.73 tub price by 750 ($0.08). It is the kitchen 4 L tub: its archived twin is \"Agave Syrup Clear (4L)\" at $56.70, every count since Aug is in tubs (\"each\") valued at $56.73, and recipes use it by the mL. The 750 matches the bar's Crawleys 750 mL bottle (Paramount PO 26 Jul), which is a different product with no stock record.",
+   "expectNow": {
+    "countUnit": "gram",
+    "conversionFactor": 750,
+    "avgCostCents": 8,
+    "measurePerCountUnit": 100,
+    "measureUnit": "g"
+   },
+   "set": {
+    "countUnit": "each",
+    "conversionFactor": 1,
+    "avgCostCents": 5673,
+    "latestCostAt": "2026-05-31T11:21:45.265Z",
+    "measurePerCountUnit": 4000,
+    "measureUnit": "ml"
+   }
+  },
+  {
+   "id": "cmoqfbq3n00ek9ky2f7n9793j",
+   "item": "Lime Juice (1 x 5L)",
+   "why": "Counted in litres, bought in 5 L containers (Nectar Cold Pressed \"Lime Juice 5L\" $70.00, orders 31 Aug and 6 Oct). The merge copied \"5000 mL\" onto the litre unit. Purchase unit becomes the 5 L container so an invoice of 2 containers books 10 L. Cost per litre is corrected in PR #324.",
+   "expectNow": {
+    "unit": "L",
+    "conversionFactor": 1,
+    "measurePerCountUnit": 5000,
+    "measureUnit": "ml"
+   },
+   "set": {
+    "unit": "container",
+    "conversionFactor": 5,
+    "measurePerCountUnit": 1000,
+    "measureUnit": "ml"
+   }
+  },
+  {
+   "id": "cmoqfbtwm00n89ky2nzqu27ne",
+   "item": "Watermelon Juice (1 x 5L)",
+   "why": "Counted in litres, bought in 5 L containers (Nectar Cold Pressed \"Pure Watermelon Juice 5L\" $34.80). Same merge damage and same fix as Lime Juice. Cost per litre is corrected in PR #324.",
+   "expectNow": {
+    "unit": "L",
+    "conversionFactor": 1,
+    "measurePerCountUnit": 5000,
+    "measureUnit": "ml"
+   },
+   "set": {
+    "unit": "container",
+    "conversionFactor": 5,
+    "measurePerCountUnit": 1000,
+    "measureUnit": "ml"
+   }
+  },
+  {
+   "id": "cmoqfbtor00mq9ky2jb7tdpcq",
+   "item": "VINEGAR WHITE 4LT (Edlyn) EA (3)",
+   "why": "The merge copied the duplicate's placeholder purchase price ($1.08) onto this 4 L record as its latest price. Put back the empty value it had.",
+   "expectNow": {
+    "latestCostCents": 108
+   },
+   "set": {
+    "latestCostCents": null,
+    "latestCostAt": null
+   }
+  }
+ ]
+}
