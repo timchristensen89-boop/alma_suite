@@ -3727,8 +3727,8 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   max-width: 210mm;
   box-sizing: border-box;
   font-family: var(--font-sans);
-  font-size: 9.5pt;
-  line-height: 1.2;
+  font-size: 9pt;
+  line-height: 1.15;
 }
 
 .count-sheet-head {
@@ -3776,8 +3776,10 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 }
 
 .count-sheet-columns {
-  column-gap: 6mm;
-  column-fill: auto;
+  column-gap: 5mm;
+  /* On screen the preview has no page height, so columns balance; in print
+     each page fills its left column, then its right (see @media print). */
+  column-fill: balance;
 }
 
 .count-sheet-page.is-two-col .count-sheet-columns {
@@ -3785,7 +3787,7 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 }
 
 .count-sheet-section {
-  margin: 0 0 4mm;
+  margin: 0 0 3mm;
   break-inside: auto;
 }
 
@@ -3798,7 +3800,7 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 .count-sheet-table th,
 .count-sheet-table td {
   border: 0.5pt solid #666;
-  padding: 1.5pt 4pt;
+  padding: 1pt 3pt;
   vertical-align: middle;
   text-align: left;
   overflow-wrap: anywhere;
@@ -3830,17 +3832,27 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   opacity: 0.8;
 }
 
-.count-sheet-table .col-vint { width: 11.5mm; text-align: center; white-space: nowrap; overflow-wrap: normal; }
-.count-sheet-table .col-unit { width: 12mm; font-size: 8pt; color: #333; }
-.count-sheet-table .col-num { width: 11mm; text-align: right; }
+.count-sheet-section-unit {
+  margin-left: 6pt;
+  font-weight: 400;
+  font-size: 7.5pt;
+  opacity: 0.85;
+}
+
+.count-sheet-row-unit { color: #444; font-size: 7.5pt; font-weight: 600; white-space: nowrap; }
+.count-sheet-section:last-child { margin-bottom: 0; }
+
+.count-sheet-table .col-vint { width: 10mm; text-align: center; white-space: nowrap; overflow-wrap: normal; }
+.count-sheet-table .col-unit { width: 11mm; font-size: 7.5pt; color: #333; }
+.count-sheet-table .col-num { width: 10mm; text-align: right; }
 .count-sheet-table .col-tally { width: 20mm; }
-.count-sheet-table .col-count { width: 15mm; }
+.count-sheet-table .col-count { width: 14mm; }
 .count-sheet-table .col-notes { width: 30mm; }
 
 .count-sheet-table tbody tr {
   break-inside: avoid;
   page-break-inside: avoid;
-  height: 5.6mm;
+  height: 5.2mm;
 }
 
 .count-sheet-table tbody td.col-item {
@@ -3875,7 +3887,7 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 
 @page {
   size: A4 portrait;
-  margin: 9mm 9mm 10mm;
+  margin: 8mm 8mm 9mm;
 }
 
 @media print {
@@ -3919,6 +3931,9 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   .count-sheet-table tbody .count-sheet-group-row td,
   .count-sheet-table tbody td.col-tally { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .count-sheet-section { break-inside: auto; }
+  .count-sheet-columns { column-fill: auto; }
+  .count-sheet-page, .count-sheet, .count-sheet-columns { margin-bottom: 0 !important; padding-bottom: 0 !important; }
+  html, body { margin: 0 !important; padding: 0 !important; }
   a[href]::after { content: none !important; }
 }
 
