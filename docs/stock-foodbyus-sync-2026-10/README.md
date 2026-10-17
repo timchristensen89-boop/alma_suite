@@ -243,3 +243,23 @@ touched. Production order: `--links recipe-line-fixes-ribs-salmon.json --apply-l
 Seen but not touched: St Alma has a second, yield-less Churros prep with a
 self-named "Churros 1 units" line (uncosted); two Negroni recipes per venue, one
 costed, one not; Strangelove soda lines linked to "Ginger kg".
+
+### Phase C production run (18 Oct 2026 03:14, approved by Tim)
+
+Backup `/opt/alma/backups/pre-fbu-c-oct18-20261018-031155.dump` (99.7 MB), restored
+locally and matched on all six tables. Both dry runs matched the rehearsal with no
+refusals.
+
+```
+Applied links run prod-fbu-lines-20261018: 33 recipe line(s); 31 recipe cost(s) refreshed.
+Applied recipes run prod-fbu-yields2-20261018: 2 recipe(s); 2 recipe cost(s) refreshed.
+Refreshed 659 recipe cost(s); 0 changed.
+```
+
+Agave Beef Short Ribs $11.19 → $24.86, Salmon (new) $8.50 → $6.28, Salmon Crudo
+$7.67 → $4.72, Snapper (new) $21.52 → $9.71; Chicken Adobo $252.48 → $91.00, Refried
+Bean Puree $203.93 → $42.45, Green Aguachile $36.22 → $5.94 — exactly the rehearsal.
+StockItem, VenueStockItem, StocktakeLine and InventoryMovement byte-identical;
+valuations unchanged ($31,536.57 / $57,818.49). Rollback: `--rollback
+prod-fbu-yields2-20261018`, then `--rollback prod-fbu-lines-20261018`, then
+`--refresh-costs --apply-refresh`.
