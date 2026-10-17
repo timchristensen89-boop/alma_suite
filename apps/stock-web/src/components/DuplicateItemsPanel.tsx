@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { StockItemDuplicateGroup, StockItemDuplicatesPayload, StockItemMergeResult } from '@alma/shared';
+import type { StockItemDuplicateGroup, StockItemDuplicatesPayload } from '@alma/shared';
 import { ActionFeedback, Badge, Button, CollapsibleCard } from '@alma/ui';
 import { ApiError, api } from '../lib/api';
-import { confirmDangerousAction } from '../lib/confirmDangerousAction';
+import { MergeReviewDrawer } from './MergeReviewDrawer';
 
 /**
  * Possible duplicate items, as the API sees them, with a one-click merge per
  * group. The detection rule lives in @alma/shared (stock-duplicates.ts) and
  * the merge in the API; this only shows the groups, lets a manager pick the
- * keeper (the suggested one is pre-selected) and confirms before merging.
+ * keeper (the suggested one is pre-selected) and opens the review, which shows
+ * venue by venue what the merge would do before anything changes.
  *
  * Flagged groups (different pack sizes, different units) can still be merged
  * — a manager may know they really are one shelf — but they say why they were
@@ -57,7 +58,7 @@ function GroupRow({
           }
           onClick={() => onMerge(group, parentId)}
         >
-          {busy ? 'Merging…' : `Keep "${keeper?.name ?? '—'}", merge the rest`}
+          {busy ? 'Reviewing…' : `Keep "${keeper?.name ?? '—'}", review merge`}
         </Button>
       </div>
       <div className="stock-duplicate-members">
@@ -133,42 +134,14 @@ export function DuplicateItemsPanel({
 
   const flaggedCount = useMemo(() => report?.groups.filter((group) => group.sizeConflict || group.unitConflict).length ?? 0, [report]);
 
-  async function merge(group: StockItemDuplicateGroup, parentId: string) {
-    const keeper = group.items.find((item) => item.id === parentId);
+  const [review, setReview] = useState<{ key: string; parentId: string; duplicateIds: string[] } | null>(null);
+
+  function merge(group: StockItemDuplicateGroup, parentId: string) {
     const others = group.items.filter((item) => item.id !== parentId);
-    if (!keeper || others.length === 0) return;
-    const confirmed = confirmDangerousAction({
-      title: `Merge ${others.map((item) => `"${item.name}"`).join(', ')} into "${keeper.name}"?`,
-      message:
-        'All recipe, invoice, stocktake, movement, delivery, order, supplier-alias and Square history from the other items moves onto the kept one. Per-venue stock is combined. The others are archived. This cannot be undone from the app.',
-      confirmationText: 'MERGE ITEMS'
-    });
-    if (!confirmed) return;
-    setMergingKey(group.key);
+    if (others.length === 0) return;
     setFeedback(null);
-    try {
-      const result = await api<StockItemMergeResult>('/api/items/merge', {
-        method: 'POST',
-        body: JSON.stringify({ parentId, duplicateIds: others.map((item) => item.id), confirmationText: 'MERGE ITEMS' })
-      });
-      const moved = result.moved;
-      const parts = [
-        moved.stocktakeLines ? `${moved.stocktakeLines} count line${moved.stocktakeLines === 1 ? '' : 's'}` : null,
-        moved.invoiceLines ? `${moved.invoiceLines} invoice line${moved.invoiceLines === 1 ? '' : 's'}` : null,
-        moved.recipeLines ? `${moved.recipeLines} recipe line${moved.recipeLines === 1 ? '' : 's'}` : null,
-        moved.movements ? `${moved.movements} movement${moved.movements === 1 ? '' : 's'}` : null,
-        moved.aliases ? `${moved.aliases} supplier alias${moved.aliases === 1 ? '' : 'es'}` : null
-      ].filter(Boolean);
-      onMerged(
-        `Merged ${result.mergedCount} item${result.mergedCount === 1 ? '' : 's'} into "${keeper.name}"${parts.length ? ` — moved ${parts.join(', ')}` : ''}${
-          result.venuesAdded.length ? `; now stocked at ${result.venuesAdded.join(', ')} too` : ''
-        }.`
-      );
-    } catch (err) {
-      setFeedback(err instanceof ApiError ? err.message : 'Could not merge items.');
-    } finally {
-      setMergingKey(null);
-    }
+    setMergingKey(group.key);
+    setReview({ key: group.key, parentId, duplicateIds: others.map((item) => item.id) });
   }
 
   if (!canManage || (!report && !error)) return null;
@@ -187,16 +160,25 @@ export function DuplicateItemsPanel({
     >
       <p className="subtle stock-duplicates-intro">
         Same product entered more than once (spelling, pack note or plural aside). Merging keeps one row and moves every
-        record from the others onto it, so counts, purchases and recipes stop splitting across two rows. Wine and
-        spirits only match on an identical name — vintages and bottle sizes are different products.
+        record from the others onto it, exactly as recorded, so counts, purchases and recipes stop splitting across two
+        rows. Stock is never added together: you see each venue's quantity before confirming, and decide wherever the
+        rows disagree. Wine and spirits only match on an identical name — vintages and bottle sizes are different products.
       </p>
       {error ? <ActionFeedback message={error} tone="error" /> : null}
       {feedback ? <ActionFeedback message={feedback} tone="error" /> : null}
       <div className="stock-duplicate-groups">
         {report?.groups.map((group) => (
-          <GroupRow key={group.key} group={group} canManage={canManage} busy={mergingKey === group.key} onMerge={(g, parentId) => void merge(g, parentId)} />
+          <GroupRow key={group.key} group={group} canManage={canManage} busy={mergingKey === group.key} onMerge={(g, parentId) => merge(g, parentId)} />
         ))}
       </div>
+      {review ? (
+        <MergeReviewDrawer
+          parentId={review.parentId}
+          duplicateIds={review.duplicateIds}
+          onClose={() => { setReview(null); setMergingKey(null); }}
+          onMerged={(message) => { setReview(null); setMergingKey(null); onMerged(message); }}
+        />
+      ) : null}
     </CollapsibleCard>
   );
 }

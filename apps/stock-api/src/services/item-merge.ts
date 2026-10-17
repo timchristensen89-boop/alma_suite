@@ -20,9 +20,10 @@
  *     the manager's decision: keep one record's quantity, or enter what is on
  *     the shelf. Nothing is decided for them.
  *   - Holdings stay at their venue; nothing moves between venues.
- *   - A merge is refused while an open count lists two of the records (apply
- *     would keep only one line) or lists a duplicate counted in a unit that
- *     differs from the kept item's.
+ *   - A merge is refused while a count that can still be applied (open,
+ *     submitted, reopened) lists two of the records (apply would keep only one
+ *     line) or lists a duplicate counted in a unit that differs from the kept
+ *     item's. Applied and locked counts are history: repointed only.
  *   - planMerge is the preview; mergeItemsWithin re-plans inside the
  *     transaction with the rows locked, and refuses if the plan differs from
  *     what the manager reviewed (planToken). Repeating a completed merge
@@ -193,7 +194,9 @@ export async function planMerge(db: Db, parentId: string, duplicateIds: string[]
   // unit would be read in the kept item's unit.
   const real = await realVenues(db, venueNames);
   const openLines = await db.stocktakeLine.findMany({
-    where: { itemId: { in: memberIds }, stocktake: { appliedAt: null } },
+    // Sheets that can still be applied. LOCKED sheets (frozen imports) are
+    // history like applied ones: repointed, never applied, never blocking.
+    where: { itemId: { in: memberIds }, stocktake: { appliedAt: null, status: { not: 'LOCKED' } } },
     select: { id: true, itemId: true, countedQty: true, stocktake: { select: { id: true, name: true, venue: true } } }
   });
   const blockers: string[] = [];
@@ -248,6 +251,7 @@ export async function planMerge(db: Db, parentId: string, duplicateIds: string[]
     parentId: parent.id,
     parentName: parent.name,
     keptUnit: describeUnit(parent),
+    keptCostCents: parent.avgCostCents,
     duplicates: allDups.map((d) => ({ id: d.id, name: d.name, unit: describeUnit(d), factor: done.includes(d) ? null : factors.get(d.id) ?? null, alreadyMerged: done.includes(d) })),
     venues,
     blockers,

@@ -6219,6 +6219,8 @@ export type StockItemMergePreview = {
   parentId: string;
   parentName: string;
   keptUnit: string;
+  /** The kept item's cost per count unit: every holding is valued at it after the merge. */
+  keptCostCents: number | null;
   duplicates: Array<{ id: string; name: string; unit: string; factor: number | null; alreadyMerged: boolean }>;
   venues: StockItemMergeVenuePlan[];
   /** Merges that cannot happen until something is fixed (an open count listing both records, a unit that cannot be converted on an open count…). */

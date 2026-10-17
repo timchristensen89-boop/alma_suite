@@ -4315,3 +4315,29 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 
 /* A prepared product prints its container beside its name on the count sheet. */
 .count-sheet-container { color: #666; font-size: 0.85em; white-space: nowrap; }
+
+/* Merge review drawer — what a duplicate merge will do, venue by venue. */
+.count-drawer.merge-review { width: min(640px, 100%); }
+.merge-review-rules { margin: 0 0 14px; padding-left: 18px; display: grid; gap: 6px; line-height: 1.45; }
+.merge-review-note { padding: 10px 12px; border-radius: 8px; background: var(--color-surface-muted); }
+.merge-review-blockers { margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--color-danger, #b42318); background: color-mix(in srgb, var(--color-danger, #b42318) 8%, transparent); }
+.merge-review-blockers ul { margin: 6px 0 0; padding-left: 18px; }
+.merge-review-venue { margin: 0 0 14px; padding: 12px; border: 1px solid var(--color-border); border-radius: 10px; }
+.merge-review-venue.needs-decision { border-color: var(--color-warning, #b54708); }
+.merge-review-venue h4 { margin: 0 0 8px; display: flex; gap: 8px; align-items: center; }
+.merge-review-table { width: 100%; border-collapse: collapse; font-size: 0.92em; }
+.merge-review-table th, .merge-review-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.merge-review-outcome { margin: 8px 0 0; }
+.merge-review-choices { margin: 10px 0 0; border: 0; padding: 0; display: grid; gap: 8px; }
+.merge-review-choices legend { font-weight: 600; margin-bottom: 4px; }
+.merge-review-choices label { display: flex; gap: 8px; align-items: flex-start; }
+.merge-review-choices label > input[type='radio'] { margin-top: 3px; flex: none; }
+.merge-review-choice-text { flex: 1; line-height: 1.5; }
+.merge-review-choices label.is-disabled { opacity: 0.55; }
+.merge-review-counted { width: 96px; }
+.merge-review-value { margin: 4px 0 12px; }
+@media (max-width: 720px) {
+  .merge-review-table th:nth-child(3), .merge-review-table td:nth-child(3) { display: none; }
+}
+.merge-review-table td { overflow-wrap: anywhere; }
+.merge-review-converted { display: block; font-size: 0.9em; }

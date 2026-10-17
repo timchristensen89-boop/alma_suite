@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { StockCategory, StockItem, StockItemsPayload, StockItemMergeResult, VenueStockItem } from '@alma/shared';
+import type { StockCategory, StockItem, StockItemsPayload, VenueStockItem } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } from '@alma/ui';
 import { IconItems } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -13,6 +13,7 @@ import { canManageStock } from '../lib/stockPermissions';
 import { ItemForm } from '../features/items/ItemForm';
 import { PortionsBuilder } from '../features/recipes/PortionsBuilder';
 import { DuplicateItemsPanel } from '../components/DuplicateItemsPanel';
+import { MergeReviewDrawer } from '../components/MergeReviewDrawer';
 
 const UNCATEGORISED_FILTER = '__uncategorised';
 
@@ -230,7 +231,6 @@ export function ItemsPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeParentId, setMergeParentId] = useState('');
-  const [merging, setMerging] = useState(false);
   const [mergeMessage, setMergeMessage] = useState<string | null>(null);
   const [exportingItems, setExportingItems] = useState(false);
   const [bulkCategory, setBulkCategory] = useState('');
@@ -558,7 +558,9 @@ export function ItemsPage() {
     }
   }
 
-  async function mergeSelectedItems() {
+  const [mergeReview, setMergeReview] = useState<{ parentId: string; duplicateIds: string[] } | null>(null);
+
+  function mergeSelectedItems() {
     if (!canManage) {
       setError('Manager access is required to merge items.');
       return;
@@ -569,37 +571,19 @@ export function ItemsPage() {
       return;
     }
     const parentId = mergeParentId && ids.includes(mergeParentId) ? mergeParentId : ids[0]!;
-    const parent = selectedItems.find((item) => item.id === parentId);
-    const duplicateIds = ids.filter((id) => id !== parentId);
-    const confirmed = confirmDangerousAction({
-      title: `Merge ${duplicateIds.length} item${duplicateIds.length === 1 ? '' : 's'} into "${parent?.name ?? 'the parent'}"?`,
-      message:
-        'All recipe, invoice, stocktake, movement, delivery, purchase-order and Square history from the other items moves onto this one. Per-venue stock is combined — a venue that only the merged items had becomes stocked on the kept item too. The merged items are archived. This is not easily reversible.',
-      confirmationText: 'MERGE ITEMS'
-    });
-    if (!confirmed) return;
+    setMergeReview({ parentId, duplicateIds: ids.filter((id) => id !== parentId) });
+  }
 
-    setMerging(true);
-    try {
-      const result = await api<StockItemMergeResult>('/api/items/merge', {
-        method: 'POST',
-        body: JSON.stringify({ parentId, duplicateIds, confirmationText: 'MERGE ITEMS' })
-      });
-      setSelectedIds(new Set());
-      setMergeOpen(false);
-      setMergeParentId('');
-      setError(null);
-      if (form.mode === 'edit' && duplicateIds.includes(form.item.id)) setForm({ mode: 'closed' });
-      setReloadKey((value) => value + 1);
-      setMergeMessage(
-        `Merged ${result.mergedCount} item${result.mergedCount === 1 ? '' : 's'} into "${parent?.name ?? 'the parent'}".` +
-          (result.venuesAdded.length ? ` Now stocked at: ${result.venuesAdded.join(', ')}.` : '')
-      );
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not merge items');
-    } finally {
-      setMerging(false);
-    }
+  function finishMerge(message: string) {
+    const duplicateIds = mergeReview?.duplicateIds ?? [];
+    setMergeReview(null);
+    setSelectedIds(new Set());
+    setMergeOpen(false);
+    setMergeParentId('');
+    setError(null);
+    if (form.mode === 'edit' && duplicateIds.includes(form.item.id)) setForm({ mode: 'closed' });
+    setReloadKey((value) => value + 1);
+    setMergeMessage(message);
   }
 
   const cardTitle = form.mode === 'edit' ? `Editing ${form.item.name}` : 'Items';
@@ -902,7 +886,7 @@ export function ItemsPage() {
                       variant="secondary"
                       size="sm"
                       onClick={() => setBulkOpen((value) => !value)}
-                      disabled={deleting || bulkBusy || merging || !canManage}
+                      disabled={deleting || bulkBusy || mergeReview !== null || !canManage}
                       title={canManage ? undefined : 'Manager access required'}
                     >
                       {bulkOpen ? 'Close bulk edit' : 'Bulk edit'}
@@ -913,7 +897,7 @@ export function ItemsPage() {
                         variant="secondary"
                         size="sm"
                         onClick={() => { setMergeParentId((current) => current || Array.from(selectedIds)[0] || ''); setMergeOpen((value) => !value); }}
-                        disabled={deleting || bulkBusy || merging || !canManage}
+                        disabled={deleting || bulkBusy || mergeReview !== null || !canManage}
                         title={canManage ? 'Merge the selected items into one' : 'Manager access required'}
                       >
                         {mergeOpen ? 'Close merge' : `Merge ${selectedIds.size}`}
@@ -974,12 +958,10 @@ export function ItemsPage() {
                     type="button"
                     variant="secondary"
                     size="sm"
-                    disabled={merging || !canManage}
-                    onClick={() => void mergeSelectedItems()}
+                    disabled={mergeReview !== null || !canManage}
+                    onClick={() => mergeSelectedItems()}
                   >
-                    {merging
-                      ? 'Merging…'
-                      : `Keep “${selectedItems.find((item) => item.id === (mergeParentId || Array.from(selectedIds)[0]))?.name ?? '—'}”, merge the rest`}
+                    {`Keep “${selectedItems.find((item) => item.id === (mergeParentId || Array.from(selectedIds)[0]))?.name ?? '—'}”, review merge`}
                   </Button>
                 </div>
               </div>
@@ -1082,6 +1064,14 @@ export function ItemsPage() {
           />
         )}
       </Card>
+      {mergeReview ? (
+        <MergeReviewDrawer
+          parentId={mergeReview.parentId}
+          duplicateIds={mergeReview.duplicateIds}
+          onClose={() => setMergeReview(null)}
+          onMerged={finishMerge}
+        />
+      ) : null}
     </div>
   );
 }
