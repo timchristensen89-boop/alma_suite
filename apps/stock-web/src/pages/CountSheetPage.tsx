@@ -15,8 +15,8 @@ import { useAuth } from '../lib/auth';
  * A working document, not a report: categories in walking order, wines
  * grouped by name with their vintages under them, one short row per line
  * with a box to write in, two columns to the A4 page so a bar sheet is a
- * few pages rather than a dozen. Headings repeat when a table crosses a
- * page, rows never split. Values never print; expected quantities print
+ * few pages rather than a dozen. Rows never split. The vintage column and
+ * the unit column print only where a section needs them. Values never print; expected quantities print
  * only when the sheet is deliberately not blind.
  *
  * Reached from a count (`/stocktake/:id/print`) or straight from a template
@@ -146,7 +146,20 @@ export function CountSheetPage({ source }: { source: 'stocktake' | 'template' })
     }
   }
 
-  const columns = 4 + (options.blind ? 0 : 1) + (options.tally ? 1 : 0) + (options.notes ? 1 : 0);
+  // Columns a section really needs. The vintage column prints only where a
+  // section has vintages. The unit column never prints: the section heading
+  // says the unit most of its rows count in, and a row that counts in a
+  // different unit says so beside its name. Both save width, so names wrap
+  // less and the sheet runs shorter.
+  function sectionLayout(rows: StocktakeCountSheetRow[]) {
+    const showVint = rows.some((row) => row.group || rowVintage(row));
+    const tally = new Map<string, number>();
+    for (const row of rows) tally.set(row.unit || '—', (tally.get(row.unit || '—') ?? 0) + 1);
+    const mainUnit = Array.from(tally.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—';
+    const mixed = tally.size > 1;
+    const columns = 2 + (showVint ? 1 : 0) + (options.blind ? 0 : 1) + (options.tally ? 1 : 0) + (options.notes ? 1 : 0);
+    return { showVint, mainUnit, mixed, columns };
+  }
 
   return (
     <div className={`count-sheet-page${options.twoColumns ? ' is-two-col' : ''}`}>
@@ -196,13 +209,14 @@ export function CountSheetPage({ source }: { source: 'stocktake' | 'template' })
           </p>
 
           <div className="count-sheet-columns">
-            {sheet.sections.map((section) => (
+            {sheet.sections.map((section) => {
+              const { showVint, mainUnit, mixed, columns } = sectionLayout(section.rows);
+              return (
               <section key={section.area} className="count-sheet-section">
                 <table className="count-sheet-table">
                   <colgroup>
                     <col className="col-item" />
-                    <col className="col-vint" />
-                    <col className="col-unit" />
+                    {showVint ? <col className="col-vint" /> : null}
                     {!sheet.blind ? <col className="col-num" /> : null}
                     {options.tally ? <col className="col-tally" /> : null}
                     <col className="col-count" />
@@ -212,13 +226,13 @@ export function CountSheetPage({ source }: { source: 'stocktake' | 'template' })
                     <tr className="count-sheet-section-row">
                       <th colSpan={columns}>
                         {section.area}
+                        <span className="count-sheet-section-unit">count in {mainUnit}{mixed ? ' unless shown' : ''}</span>
                         <span className="count-sheet-section-count">{section.rows.length}</span>
                       </th>
                     </tr>
                     <tr>
                       <th className="col-item">Item</th>
-                      <th className="col-vint">Vint.</th>
-                      <th className="col-unit">Unit</th>
+                      {showVint ? <th className="col-vint">Vint.</th> : null}
                       {!sheet.blind ? <th className="col-num">Exp.</th> : null}
                       {options.tally ? <th className="col-tally">Tally</th> : null}
                       <th className="col-count">Count</th>
@@ -240,11 +254,11 @@ export function CountSheetPage({ source }: { source: 'stocktake' | 'template' })
                             <td className="col-item">{row.group ? <span className="count-sheet-vintage-only">{rowVintage(row) || row.vintage}{rowName(row) ? ` · ${rowName(row)}` : ''}</span> : (
                               <>
                                 {rowName(row)}
+                                {(row.unit || '—') !== mainUnit ? <span className="count-sheet-row-unit"> · {row.unit || '—'}</span> : null}
                                 {containerNote(row) ? <span className="count-sheet-container"> · {containerNote(row)}</span> : null}
                               </>
                             )}</td>
-                            <td className="col-vint">{row.group ? '' : rowVintage(row)}</td>
-                            <td className="col-unit">{row.unit || '—'}</td>
+                            {showVint ? <td className="col-vint">{row.group ? '' : rowVintage(row)}</td> : null}
                             {!sheet.blind ? <td className="col-num">{formatQty(row.expectedQty)}</td> : null}
                             {options.tally ? <td className="col-tally" /> : null}
                             <td className="col-count">{row.countedQty !== null ? <span className="count-sheet-prefilled">{formatQty(row.countedQty)}</span> : null}</td>
@@ -256,7 +270,8 @@ export function CountSheetPage({ source }: { source: 'stocktake' | 'template' })
                   </tbody>
                 </table>
               </section>
-            ))}
+              );
+            })}
           </div>
         </article>
       )}
