@@ -298,7 +298,7 @@ async function rollback(runId: string, force: boolean) {
     }
     for (const r of rows.filter((x) => x.kind === 'recipe')) {
       const p = r.payload;
-      await tx.recipe.update({ where: { id: r.rowId }, data: { yieldQuantity: p.yieldQuantity as number | null, yieldUnit: p.yieldUnit as string | null, estimatedCost: p.estimatedCost as number | null } });
+      await tx.recipe.update({ where: { id: r.rowId }, data: { yieldQuantity: p.yieldQuantity as number | null, yieldUnit: p.yieldUnit as string | null, portionSize: p.portionSize as number | null, portionUnit: p.portionUnit as string | null, estimatedCost: p.estimatedCost as number | null } });
       await tx.$executeRawUnsafe(`UPDATE "Recipe" SET "updatedAt" = ($1::timestamptz AT TIME ZONE 'UTC') WHERE id = $2`, p.updatedAt, r.rowId);
     }
     for (const r of rows.filter((x) => x.kind === 'recipeLine')) {

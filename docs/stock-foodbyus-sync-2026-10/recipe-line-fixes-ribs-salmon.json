@@ -1,0 +1,530 @@
+[
+ {
+  "lineId": "cmoqfcvqd02iq9ky2d3fsreeq",
+  "recipe": "Salmon (new) (St Alma)",
+  "expectNow": {
+   "ingredientName": "Salmon Ceviche Sauce (new)",
+   "quantity": 60,
+   "unit": "g",
+   "itemId": "cmoqfbs9w00ji9ky2v0axetiu",
+   "subRecipeId": null
+  },
+  "set": {
+   "itemId": null,
+   "subRecipeId": "cmoqfcybi02tc9ky29u90rqk6"
+  },
+  "why": "The 60 g of ceviche sauce was linked to the raw salmon fillet item, so the dish paid $50.70/kg for its sauce. FoodByUs: 60 g of the prep 'Salmon Ceviche Sauce (new)' ($0.83)."
+ },
+ {
+  "lineId": "cmoqfcuek02f29ky2wyprjqb2",
+  "recipe": "Salmon Crudo (St Alma)",
+  "expectNow": {
+   "ingredientName": "Salmon Cure",
+   "quantity": 5,
+   "unit": "g",
+   "itemId": "cmoqfbs9w00ji9ky2v0axetiu",
+   "subRecipeId": null
+  },
+  "set": {
+   "itemId": null,
+   "subRecipeId": "cmoqfcxch02pf9ky2wmm9y94v"
+  },
+  "why": "The 5 g of cure was linked to the raw salmon fillet item. FoodByUs: 5 g of the prep 'Salmon Cure' ($0.03)."
+ },
+ {
+  "lineId": "cmqf5we320012s601y4osyng1",
+  "recipe": "Agave Beef Short Ribs (St Alma)",
+  "expectNow": {
+   "ingredientName": "Agave Beef Short Ribs",
+   "quantity": 250,
+   "unit": "g",
+   "itemId": null,
+   "subRecipeId": "cmoqfcxa102p29ky20c9ksk32"
+  },
+  "set": {
+   "quantity": 1,
+   "unit": "units"
+  },
+  "why": "FoodByUs serves one rib portion of the braise (the batch makes 30 from 20 kg of ribs, ~667 g raw each), not 250 g. With the prep yield set to 30 units this costs the portion at $18.03 as FoodByUs does."
+ },
+ {
+  "lineId": "cmoqfc3fq014j9ky2wz1fyhqn",
+  "recipe": "Avocado Cream (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 4.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 400.0,
+   "unit": "g"
+  },
+  "why": "'4 units' of an item counted by the dozen costs 4 dozen ($88.08). FoodByUs uses 4 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 400 g."
+ },
+ {
+  "lineId": "cmoqfc5ta01ds9ky2gp45jzha",
+  "recipe": "Chimichurri (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 1.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 100.0,
+   "unit": "g"
+  },
+  "why": "'1 units' of an item counted by the dozen costs 1 dozen ($22.02). FoodByUs uses 1 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 100 g."
+ },
+ {
+  "lineId": "cmoqfc4sy01a39ky2m2othu1u",
+  "recipe": "Coriander & Onion (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 1.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 100.0,
+   "unit": "g"
+  },
+  "why": "'1 units' of an item counted by the dozen costs 1 dozen ($22.02). FoodByUs uses 1 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 100 g."
+ },
+ {
+  "lineId": "cmoqfc66w01et9ky2eqdviuif",
+  "recipe": "Coriander Rice (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 1.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 100.0,
+   "unit": "g"
+  },
+  "why": "'1 units' of an item counted by the dozen costs 1 dozen ($22.02). FoodByUs uses 1 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 100 g."
+ },
+ {
+  "lineId": "cmoqfc3ap01449ky2esdcb91s",
+  "recipe": "Herb Oil (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 12.5,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 1250.0,
+   "unit": "g"
+  },
+  "why": "'12.5 units' of an item counted by the dozen costs 12.5 dozen ($275.25). FoodByUs uses 12.5 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 1250 g."
+ },
+ {
+  "lineId": "cmoqfc5yl01eb9ky2wiqgizpz",
+  "recipe": "Mole Verde (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 1.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 100.0,
+   "unit": "g"
+  },
+  "why": "'1 units' of an item counted by the dozen costs 1 dozen ($22.02). FoodByUs uses 1 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 100 g."
+ },
+ {
+  "lineId": "cmoqfc38b013x9ky2zp8yk07x",
+  "recipe": "Pico de Gallo (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 1.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 100.0,
+   "unit": "g"
+  },
+  "why": "'1 units' of an item counted by the dozen costs 1 dozen ($22.02). FoodByUs uses 1 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 100 g."
+ },
+ {
+  "lineId": "cmoqfc55e01ba9ky2jmkpysi4",
+  "recipe": "Pico Verde (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 0.4,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 40.0,
+   "unit": "g"
+  },
+  "why": "'0.4 units' of an item counted by the dozen costs 0.4 dozen ($8.81). FoodByUs uses 0.4 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 40 g."
+ },
+ {
+  "lineId": "cmoqfc4qd019s9ky29humtqdp",
+  "recipe": "Salsa Verde (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 1.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 100.0,
+   "unit": "g"
+  },
+  "why": "'1 units' of an item counted by the dozen costs 1 dozen ($22.02). FoodByUs uses 1 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 100 g."
+ },
+ {
+  "lineId": "cmoqfc46a017w9ky2e9kmr4vj",
+  "recipe": "Short Ribs (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 2.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 200.0,
+   "unit": "g"
+  },
+  "why": "'2 units' of an item counted by the dozen costs 2 dozen ($44.04). FoodByUs uses 2 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 200 g."
+ },
+ {
+  "lineId": "cmq5mwzqg000vs601entqg66q",
+  "recipe": "Agave Beef Short Ribs (St Alma)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 2.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 200.0,
+   "unit": "g"
+  },
+  "why": "'2 units' of an item counted by the dozen costs 2 dozen ($44.04). FoodByUs uses 2 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 200 g."
+ },
+ {
+  "lineId": "cmoqfcxu002ra9ky2l1ya9e1z",
+  "recipe": "Chicken Adobo (St Alma)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 8.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 800.0,
+   "unit": "g"
+  },
+  "why": "'8 units' of an item counted by the dozen costs 8 dozen ($176.16). FoodByUs uses 8 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 800 g."
+ },
+ {
+  "lineId": "cmoqfcx5202oi9ky2h4qi674b",
+  "recipe": "Coriander Cashew Salsa (St Alma)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 8.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 800.0,
+   "unit": "g"
+  },
+  "why": "'8 units' of an item counted by the dozen costs 8 dozen ($176.16). FoodByUs uses 8 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 800 g."
+ },
+ {
+  "lineId": "cmoqfcvve02jc9ky267w1byxo",
+  "recipe": "Green Aguachile (St Alma)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 1.5,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 150.0,
+   "unit": "g"
+  },
+  "why": "'1.5 units' of an item counted by the dozen costs 1.5 dozen ($33.03). FoodByUs uses 1.5 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 150 g."
+ },
+ {
+  "lineId": "cmpy4yqrp0004s6010ewx5g1b",
+  "recipe": "Guacamole (St Alma)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 3.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 300.0,
+   "unit": "g"
+  },
+  "why": "'3 units' of an item counted by the dozen costs 3 dozen ($66.06). FoodByUs uses 3 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 300 g."
+ },
+ {
+  "lineId": "cmoqfcwq302mo9ky2s44dkiod",
+  "recipe": "Martajada Sauce (St Alma)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 3.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 300.0,
+   "unit": "g"
+  },
+  "why": "'3 units' of an item counted by the dozen costs 3 dozen ($66.06). FoodByUs uses 3 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 300 g."
+ },
+ {
+  "lineId": "cmoqfcxmj02ql9ky2kkxdut95",
+  "recipe": "Refried Bean Puree (St Alma)",
+  "expectNow": {
+   "ingredientName": "Coriander",
+   "quantity": 8.0,
+   "unit": "units",
+   "itemId": "cmoqfbnit008o9ky2rf1uo52e",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 800.0,
+   "unit": "g"
+  },
+  "why": "'8 units' of an item counted by the dozen costs 8 dozen ($176.16). FoodByUs uses 8 bunch(es) at $1.835; one bunch is 100 g of the 1,200 g dozen, so 800 g."
+ },
+ {
+  "lineId": "cmoqfc3fq014l9ky2xazanuji",
+  "recipe": "Avocado Cream (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 8.0,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 560.0,
+   "unit": "g"
+  },
+  "why": "'8 units' of an item counted in kilos costs 8 kg. These are 8 lime(s) at ~70 g each, so 560 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmoqfc17s00zk9ky2n5qv3b9a",
+  "recipe": "Grilled Halloumi (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 0.25,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 17.5,
+   "unit": "g"
+  },
+  "why": "'0.25 units' of an item counted in kilos costs 0.25 kg. These are 0.25 lime(s) at ~70 g each, so 17.5 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmoqfc10b00yz9ky2dpjbr0cl",
+  "recipe": "Grilled Halloumi (1pc) (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 0.13,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 9.1,
+   "unit": "g"
+  },
+  "why": "'0.13 units' of an item counted in kilos costs 0.13 kg. These are 0.13 lime(s) at ~70 g each, so 9.1 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmpxhmtoo000es601p5y7o4j8",
+  "recipe": "Guacamole (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 4.0,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 280.0,
+   "unit": "g"
+  },
+  "why": "'4 units' of an item counted in kilos costs 4 kg. These are 4 lime(s) at ~70 g each, so 280 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmoqfc3d8014b9ky2osb7wk97",
+  "recipe": "Leche de Tigre (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 7.5,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 525.0,
+   "unit": "g"
+  },
+  "why": "'7.5 units' of an item counted in kilos costs 7.5 kg. These are 7.5 lime(s) at ~70 g each, so 525 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmoqfc55e01bb9ky2ar6ldh1t",
+  "recipe": "Pico Verde (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 4.0,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 280.0,
+   "unit": "g"
+  },
+  "why": "'4 units' of an item counted in kilos costs 4 kg. These are 4 lime(s) at ~70 g each, so 280 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmoqfc0si00ya9ky2yytgo1w3",
+  "recipe": "Prawn Tostada (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 0.13,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 9.1,
+   "unit": "g"
+  },
+  "why": "'0.13 units' of an item counted in kilos costs 0.13 kg. These are 0.13 lime(s) at ~70 g each, so 9.1 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmoqfc1k401089ky2yq3iba1c",
+  "recipe": "Salmon Sashimi Hard Shell Taco (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 0.13,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 9.1,
+   "unit": "g"
+  },
+  "why": "'0.13 units' of an item counted in kilos costs 0.13 kg. These are 0.13 lime(s) at ~70 g each, so 9.1 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmoqfc1ho01039ky2lggdmo7f",
+  "recipe": "Salmon Sashimi Hard Shell Taco (1pc) (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 0.13,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 9.1,
+   "unit": "g"
+  },
+  "why": "'0.13 units' of an item counted in kilos costs 0.13 kg. These are 0.13 lime(s) at ~70 g each, so 9.1 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmoqfc419017b9ky22711eii7",
+  "recipe": "Salmon Taco Mix (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 0.75,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 52.5,
+   "unit": "g"
+  },
+  "why": "'0.75 units' of an item counted in kilos costs 0.75 kg. These are 0.75 lime(s) at ~70 g each, so 52.5 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmoqfc0xu00yq9ky2veptt77s",
+  "recipe": "Seared Scallop (1pc) (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 0.25,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 17.5,
+   "unit": "g"
+  },
+  "why": "'0.25 units' of an item counted in kilos costs 0.25 kg. These are 0.25 lime(s) at ~70 g each, so 17.5 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmoqfc1rl010p9ky24x59jr28",
+  "recipe": "Sweet Corn (Alma Avalon)",
+  "expectNow": {
+   "ingredientName": "Lime",
+   "quantity": 0.25,
+   "unit": "units",
+   "itemId": "cmoqfbq4h00em9ky277nydo2i",
+   "subRecipeId": null
+  },
+  "set": {
+   "quantity": 17.5,
+   "unit": "g"
+  },
+  "why": "'0.25 units' of an item counted in kilos costs 0.25 kg. These are 0.25 lime(s) at ~70 g each, so 17.5 g (FoodByUs costs limes by weight)."
+ },
+ {
+  "lineId": "cmoqfcvnw02im9ky2uui1zl22",
+  "recipe": "Snapper (new) dish (St Alma)",
+  "expectNow": {
+   "ingredientName": "Snapper (new)",
+   "quantity": 1,
+   "unit": "units",
+   "itemId": "cmoqfbsoi00ke9ky2epvlc28b",
+   "subRecipeId": null
+  },
+  "set": {
+   "itemId": null,
+   "subRecipeId": "cmoqfcy6j02sp9ky2md75axp4"
+  },
+  "why": "'1 units' was linked to the whole-snapper item counted in kilos, so the plate paid for a kilo of fish ($20.50). FoodByUs: one portion of the prep 'Snapper (new)' (400 g fish, cucumber, fennel, apple, tomato, lime, oil = $8.74)."
+ }
+]

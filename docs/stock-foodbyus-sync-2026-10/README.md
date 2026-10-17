@@ -194,3 +194,52 @@ Rolled back: StockItem and RecipeLine checksums identical, valuations back to
 $31,154.50 / $58,739.31. Production order: `--fixes item-cost-fixes.json --apply
 --run-id prod-fbu-costs-YYYYMMDD --i-mean-production`, then `--refresh-costs
 --apply-refresh`. Rollback: `--rollback <runId>`, then refresh again.
+
+## Phase C — portions and 'units' lines from FoodByUs (ribs, salmon, snapper)
+
+Tim asked (18 Oct) to use FoodByUs for the ribs and salmon dishes. Looking at
+why they still disagreed turned up one general fault: recipe lines written as
+`N units` against an item counted by the **dozen** (Coriander Dozen) or by the
+**kilo** (Limes Volume Box 10kg) cost N dozen / N kilos. FoodByUs uses one
+bunch / one lime. Invisible while coriander was $0.20 a dozen; after Phase B
+it made Herb Oil $282 a batch and Chicken Adobo $252.
+
+`recipe-line-fixes-ribs-salmon.json` (33 lines) and `recipe-yields-ribs.json` (2 preps):
+
+| Fix | Lines | What changes |
+|---|---|---|
+| Coriander `N units` → `N × 100 g` | 17 (StA 7, AA 10) | one bunch = 100 g of the 1,200 g dozen = $1.835, as FoodByUs |
+| Lime `N units` → `N × 70 g` | 13 (AA) | one lime ≈ 70 g; FoodByUs costs limes by weight |
+| Salmon (new): ceviche sauce 60 g → prep link | 1 | was linked to the raw salmon fillet item |
+| Salmon Crudo: cure 5 g → prep link | 1 | was linked to the raw salmon fillet item |
+| Agave Beef Short Ribs: 250 g → 1 units of the braise; prep yield 25,005 g → 30 units, stale 250 g portion size cleared | 1 + 1 | FoodByUs: one rib portion of a 30-portion batch |
+| Snapper (new): `1 units` → prep link; prep yield 461 g → 1 units | 1 + 1 | was 1 kg of whole snapper ($20.50); FoodByUs: one plated portion ($8.74) |
+
+Rollback of the `recipe` snapshot now restores `portionSize`/`portionUnit` too.
+
+### Rehearsal (copy at the production state, 18 Oct)
+
+```
+Applied links run rs3-links: 33 recipe line(s); 31 recipe cost(s) refreshed.
+Applied recipes run rs3-yields: 2 recipe(s); 2 recipe cost(s) refreshed.
+Refreshed 659 recipe cost(s); 0 changed.
+```
+
+43 stored costs change. St Alma vs FoodByUs: Agave Beef Short Ribs $11.19 → $24.86
+($20.20; the rest is lettuce costed from a 20s box and ribs at $29.00 vs $25.90/kg),
+Salmon (new) $8.50 → $6.28 ($6.48), Salmon Crudo $7.67 → $4.72 ($4.83), Snapper (new)
+$21.52 → $9.71 ($9.19); preps Chicken Adobo $252 → $91.00 ($92.48), Coriander Cashew
+Salsa $180 → $18.33 ($18.31), Refried Bean Puree $204 → $42.45 ($42.37), Martajada
+$79 → $18.87 ($19.42), Green Aguachile $36 → $5.94 ($6.42), Octopus Adobo $18.79 →
+$7.73 ($7.83). Avalon preps drop the same way (Herb Oil $282 → $30, Avocado Cream $138 →
+$23, Guacamole $31 → $9.91). St Alma dishes within 20% of FoodByUs: 15 of 19.
+
+Rolled back: RecipeLine checksum identical; Recipe costs, yields and portion sizes
+identical (only `updatedAt` moves, bumped by the cost refresh). No stock table is
+touched. Production order: `--links recipe-line-fixes-ribs-salmon.json --apply-links
+--run-id prod-fbu-lines-YYYYMMDD`, `--recipes recipe-yields-ribs.json --apply-recipes
+--run-id prod-fbu-yields2-YYYYMMDD`, `--refresh-costs --apply-refresh`.
+
+Seen but not touched: St Alma has a second, yield-less Churros prep with a
+self-named "Churros 1 units" line (uncosted); two Negroni recipes per venue, one
+costed, one not; Strangelove soda lines linked to "Ginger kg".
