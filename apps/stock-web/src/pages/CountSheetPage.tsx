@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { StocktakeCountSheet, StocktakeCountSheetRow } from '@alma/shared';
+import { isPreparedStockCategory } from '@alma/shared';
 import { Button, EmptyState, Spinner } from '@alma/ui';
 import { IconStocktake } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -63,6 +64,13 @@ function formatSheetDate(iso: string | null) {
 function rowName(row: StocktakeCountSheetRow) {
   if (row.group) return row.vintageDetail ?? '';
   return row.wineName ?? row.label;
+}
+
+// A prepared product prints its container, so a part-container can be
+// written as litres or kilos: "1 container = 5 L".
+function containerNote(row: StocktakeCountSheetRow) {
+  if (!isPreparedStockCategory(row.category) || !row.purchaseUnit || !row.conversionFactor) return null;
+  return `1 ${row.purchaseUnit} = ${formatQty(row.conversionFactor)} ${row.unit}`;
 }
 
 function rowVintage(row: StocktakeCountSheetRow) {
@@ -229,7 +237,12 @@ export function CountSheetPage({ source }: { source: 'stocktake' | 'template' })
                             </tr>
                           ) : null}
                           <tr className={`${row.kind === 'PREPPED_ITEM' ? 'is-prep' : ''}${row.group ? ' is-vintage' : ''}`}>
-                            <td className="col-item">{row.group ? <span className="count-sheet-vintage-only">{rowVintage(row) || row.vintage}{rowName(row) ? ` · ${rowName(row)}` : ''}</span> : rowName(row)}</td>
+                            <td className="col-item">{row.group ? <span className="count-sheet-vintage-only">{rowVintage(row) || row.vintage}{rowName(row) ? ` · ${rowName(row)}` : ''}</span> : (
+                              <>
+                                {rowName(row)}
+                                {containerNote(row) ? <span className="count-sheet-container"> · {containerNote(row)}</span> : null}
+                              </>
+                            )}</td>
                             <td className="col-vint">{row.group ? '' : rowVintage(row)}</td>
                             <td className="col-unit">{row.unit || '—'}</td>
                             {!sheet.blind ? <td className="col-num">{formatQty(row.expectedQty)}</td> : null}

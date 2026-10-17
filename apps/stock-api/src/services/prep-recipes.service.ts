@@ -2,7 +2,7 @@
 // ingredients. The arithmetic is in lib/prep-explosion.ts; this is the reading.
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
-import type { StocktakePrepRecipeOption } from '@alma/shared';
+import type { PrepRecipeLinkOption, StocktakePrepRecipeOption } from '@alma/shared';
 import { prepCountReadiness, type PrepRecipeSpec, type PrepStockItem } from '../lib/prep-explosion.js';
 
 // Recipe lines nest (birria contains birria adobo), so the recipes needed to
@@ -98,7 +98,12 @@ export async function listPrepRecipeOptions(
   recipeIds?: string[]
 ): Promise<StocktakePrepRecipeOption[]> {
   const rows = await prisma.recipe.findMany({
-    where: recipeIds ? { id: { in: recipeIds } } : { status: 'ACTIVE', isPrepRecipe: true },
+    // A recipe that has its own prepared-stock item (Batch Cocktails, Kitchen
+    // Prep) is counted as that item — offering it here too would let the same
+    // batch be counted twice, once as stock and once through its ingredients.
+    where: recipeIds
+      ? { id: { in: recipeIds } }
+      : { status: 'ACTIVE', isPrepRecipe: true, prepStockItems: { none: { status: 'ACTIVE' } } },
     select: { ...prepRecipeSelect, category: true },
     orderBy: [{ category: 'asc' }, { title: 'asc' }]
   });
@@ -128,4 +133,22 @@ export async function listPrepRecipeOptions(
   return order
     ? options.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
     : options;
+}
+
+/** Every active prep recipe, for linking a prepared-stock item to the recipe it is made from. */
+export async function listPrepRecipesForLinking(): Promise<PrepRecipeLinkOption[]> {
+  const rows = await prisma.recipe.findMany({
+    where: { status: 'ACTIVE', isPrepRecipe: true },
+    select: { id: true, title: true, venue: true, category: true, yieldQuantity: true, yieldUnit: true, prepStockItems: { where: { status: 'ACTIVE' }, select: { id: true, name: true } } },
+    orderBy: [{ title: 'asc' }, { venue: 'asc' }]
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    venue: row.venue,
+    category: row.category,
+    yieldQuantity: row.yieldQuantity,
+    yieldUnit: row.yieldUnit,
+    linkedItem: row.prepStockItems[0] ? { id: row.prepStockItems[0].id, name: row.prepStockItems[0].name } : null
+  }));
 }

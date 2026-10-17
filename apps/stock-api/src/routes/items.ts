@@ -1,3 +1,4 @@
+import { listPrepRecipesForLinking } from '../services/prep-recipes.service.js';
 import { Router } from 'express';
 import { requireStockManager } from '../lib/stock-permissions.js';
 import { itemsService } from '../services/items.service.js';
@@ -154,6 +155,15 @@ itemsRouter.patch('/categories/:id', async (req, res, next) => {
 // by every unit conversion. Reading is open to any stock user (the stocktake
 // screen loads them for live value estimates); writing is manager-gated in
 // the service.
+itemsRouter.get('/prep-recipe-options', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json({ prepRecipes: await listPrepRecipesForLinking() });
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.get('/unit-aliases', async (_req, res, next) => {
   try {
     res.json(await unitAliasesService.list());

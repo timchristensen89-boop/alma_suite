@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import type { StocktakeCountSheet, StocktakeCountSheetRow } from '@alma/shared';
+import { isPreparedStockCategory } from '@alma/shared';
 
 /**
  * The blank Excel count sheet.
@@ -33,7 +34,11 @@ function formatQty(value: number | null): number | '' {
 // name) indented under the wine; a standalone row shows the wine or item name.
 function itemLabel(row: StocktakeCountSheetRow): string {
   if (row.group) return `    ${row.vintageDetail ?? (row.vintage && row.vintage !== 'No year' ? '' : row.label)}`.trimEnd() || `    ${row.label}`;
-  return row.wineName ?? row.label;
+  const container =
+    isPreparedStockCategory(row.category) && row.purchaseUnit && row.conversionFactor
+      ? ` (1 ${row.purchaseUnit} = ${Number(row.conversionFactor.toFixed(3))} ${row.unit})`
+      : '';
+  return `${row.wineName ?? row.label}${container}`;
 }
 
 function vintageCell(row: StocktakeCountSheetRow): string {

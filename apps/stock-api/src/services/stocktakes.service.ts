@@ -1368,6 +1368,10 @@ export const stocktakesService = {
       if (duplicate) throw new HttpError(409, 'That prepped item is already on this count.');
       const recipe = await tx.recipe.findUnique({ where: { id: recipeId }, select: { id: true, title: true, yieldUnit: true } });
       if (!recipe) throw new HttpError(404, 'Recipe not found');
+      const asStock = await tx.stockItem.findFirst({ where: { prepRecipeId: recipeId, status: 'ACTIVE' }, select: { name: true, category: { select: { name: true } } } });
+      if (asStock) {
+        throw new HttpError(409, `"${recipe.title}" is counted as "${asStock.name}"${asStock.category ? ` in ${asStock.category.name}` : ''}. Count it there instead.`);
+      }
       const created = await tx.stocktakeLine.create({
         data: {
           stocktakeId: id,
@@ -1467,6 +1471,16 @@ export const stocktakesService = {
         const result = inCountUnit(line.countedQty, line.unit, item, { label: line.label, allowMeasure: false });
         if (!result.ok) refused.push(result.message);
         else inCountUnits.set(line.id, { countedQty: result.countedQty as number, unit: result.unit, converted: result.converted });
+      }
+      // The same batch twice: once as a prepared-stock item, once as a prep
+      // line whose ingredients would be credited to raw stock.
+      const prepLineRecipeIds = stocktake.lines.filter((line) => line.recipeId && line.countedQty != null).map((line) => line.recipeId as string);
+      if (prepLineRecipeIds.length && countedItemIds.length) {
+        const both = await tx.stockItem.findMany({
+          where: { id: { in: countedItemIds }, prepRecipeId: { in: prepLineRecipeIds } },
+          select: { name: true }
+        });
+        for (const item of both) refused.push(`${item.name} is counted twice: as stock and as a prepped item. Remove the prepped-item line.`);
       }
       if (refused.length) {
         const shown = refused.slice(0, 8).join(' ');
