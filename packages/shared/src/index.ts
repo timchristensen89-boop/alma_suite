@@ -8463,11 +8463,21 @@ export type SupplierSpendBasisMonth = {
 // Stock home: the three COGS figures the owner wants at a glance, from the
 // Xero profit and loss (accrual, ex-GST), per venue and for the group.
 // Every figure carries sales too, so COGS can be read as a % of sales.
+/** What the COGS figure is made of: Xero's Direct Costs accounts, bucketed. */
+export type StockCogsFigureDetail = {
+  foodCogsCents: number;
+  bevCogsCents: number;
+  otherCogsCents: number;
+  accounts: Array<{ name: string; cents: number; bucket: string }>;
+};
+
 export type StockCogsFigure = {
   cogsCents: number;
   salesCents: number;
   /** cogs ÷ sales, as a percentage; null when there were no sales. */
   cogsPercent: number | null;
+  /** Present when Xero returned the period (absent for an empty venue). */
+  detail?: StockCogsFigureDetail;
 };
 export type StockCogsComparison = {
   /** Which days this covers, YYYY-MM-DD inclusive. */

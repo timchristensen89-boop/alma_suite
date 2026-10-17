@@ -32,7 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     to: '/',
     label: 'Dashboard',
-    description: 'Cost of goods this month and year to date',
+    description: 'Sales, cost of goods and product performance',
     icon: <IconDashboard />,
     end: true
   },
