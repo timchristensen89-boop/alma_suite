@@ -1,5 +1,5 @@
 {
- "generatedFrom": "alma_stock_live — read-only copy of production, 17 Oct 2026 06:37 AEDT (audit PR alma_suite#323, docs/stock-final-audit-2026-10-17/case-pricing.json, verdict confirmed)",
+ "generatedFrom": "17 Oct 2026: audit PR #323 confirmed items, verified against supplier documents (Gmail order confirmations / POs, stored invoice lines, Xero bills)",
  "costs": [
   {
    "confidence": "high",
@@ -9,9 +9,17 @@
     "avgCostCents": 20442
    },
    "to": {
-    "avgCostCents": 3407
+    "avgCostCents": 2919
    },
-   "reason": "case of 6 (inferred): $204.42 = 6 × $34.07; Lyre's 700 mL spirits cost $29–35 a bottle (Lyre's Triple Sec 700 mL $35.19, Lyres White Cane $29.26) Count unit: bottle."
+   "reason": "supplier price: 2 × Lyre's White Rum Alternative 700ml @ $29.19 (ex GST) — Paramount Liquor 2026-07-26; St Alma PO forwarded by Dirk, Gmail thread 19f9db619f1f80a0",
+   "pack": "700 mL bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "Paramount Liquor",
+    "date": "2026-07-26",
+    "document": "St Alma PO forwarded by Dirk, Gmail thread 19f9db619f1f80a0",
+    "line": "2 × Lyre's White Rum Alternative 700ml @ $29.19 (ex GST)",
+    "basis": "supplier price"
+   }
   },
   {
    "confidence": "high",
@@ -21,9 +29,17 @@
     "avgCostCents": 21114
    },
    "to": {
-    "avgCostCents": 3519
+    "avgCostCents": 2919
    },
-   "reason": "case of 6 (inferred): $211.14 = 6 × $35.19, exactly Lyre's Triple Sec 700 mL; twin Lyres Agave Blanco $29.25 Count unit: bottle."
+   "reason": "supplier price: 1 × Lyre's Tequila Alternative 700ml @ $29.19 (ex GST) — Paramount Liquor 2026-07-26; St Alma PO, Gmail thread 19f9db619f1f80a0",
+   "pack": "700 mL bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "Paramount Liquor",
+    "date": "2026-07-26",
+    "document": "St Alma PO, Gmail thread 19f9db619f1f80a0",
+    "line": "1 × Lyre's Tequila Alternative 700ml @ $29.19 (ex GST)",
+    "basis": "supplier price"
+   }
   },
   {
    "confidence": "high",
@@ -35,7 +51,15 @@
    "to": {
     "avgCostCents": 2995
    },
-   "reason": "case of 6 (inferred): $179.70 = 6 × $29.95, exactly the twin's latest invoice price Count unit: bottle."
+   "reason": "case ÷ 6, matches twin: $179.70 = 6 × $29.95 — (no supplier document found); twin record \"Sammy Piquant The Jetsetter\" latest purchase price $29.95",
+   "pack": "700 mL bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "(no supplier document found)",
+    "date": null,
+    "document": "twin record \"Sammy Piquant The Jetsetter\" latest purchase price $29.95",
+    "line": "$179.70 = 6 × $29.95",
+    "basis": "case ÷ 6, matches twin"
+   }
   },
   {
    "confidence": "high",
@@ -47,7 +71,15 @@
    "to": {
     "avgCostCents": 1124
    },
-   "reason": "case of 12 (purchase unit \"case\", 12 per case): $134.88 = 12 × $11.24; twin Herradura Agave Nectar $12.28 Count unit: each."
+   "reason": "case ÷ 12: $134.88 = 12 × $11.24 — (no supplier document found); item purchase setup: case of 12; twin \"Herradura Agave Nectar\" $12.28",
+   "pack": "473 mL bottle; purchase unit case of 12",
+   "evidence": {
+    "supplier": "(no supplier document found)",
+    "date": null,
+    "document": "item purchase setup: case of 12; twin \"Herradura Agave Nectar\" $12.28",
+    "line": "$134.88 = 12 × $11.24",
+    "basis": "case ÷ 12"
+   }
   },
   {
    "confidence": "high",
@@ -59,7 +91,15 @@
    "to": {
     "avgCostCents": 2471
    },
-   "reason": "case of 6 (purchase unit \"case\", 6 per case): $148.26 = 6 × $24.71; twin Supasawa $27.60 Count unit: bottle."
+   "reason": "case ÷ 6: $148.26 = 6 × $24.71 — (no supplier document found); item purchase setup: case of 6; twin \"Supasawa\" $27.60",
+   "pack": "700 mL bottle; purchase unit case of 6",
+   "evidence": {
+    "supplier": "(no supplier document found)",
+    "date": null,
+    "document": "item purchase setup: case of 6; twin \"Supasawa\" $27.60",
+    "line": "$148.26 = 6 × $24.71",
+    "basis": "case ÷ 6"
+   }
   },
   {
    "confidence": "high",
@@ -71,7 +111,15 @@
    "to": {
     "avgCostCents": 2373
    },
-   "reason": "case of 6 (inferred): $142.35 = 6 × $23.73, exactly the twin Giffard Rose Syrup Count unit: bottle."
+   "reason": "case ÷ 6, matches supplier price: Giffard Vanilla Syrup 1L @ $23.73 (same Giffard 1 L syrup price); $142.35 = 6 × $23.73 — Paramount Liquor 2026-07-26; St Alma PO, Gmail thread 19f9db619f1f80a0",
+   "pack": "1 L bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "Paramount Liquor",
+    "date": "2026-07-26",
+    "document": "St Alma PO, Gmail thread 19f9db619f1f80a0",
+    "line": "Giffard Vanilla Syrup 1L @ $23.73 (same Giffard 1 L syrup price); $142.35 = 6 × $23.73",
+    "basis": "case ÷ 6, matches supplier price"
+   }
   },
   {
    "confidence": "high",
@@ -83,7 +131,15 @@
    "to": {
     "avgCostCents": 2140
    },
-   "reason": "case of 6 (inferred): $128.40 = 6 × $21.40, exactly the other Giffard 1 L syrups; twin $26.10 Count unit: bottle."
+   "reason": "case ÷ 6: $128.40 = 6 × $21.40 — (no coconut-specific document); other Giffard 1 L records cost $21.40; Paramount Giffard 1 L syrup $23.73 (26 Jul)",
+   "pack": "1 L bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "(no coconut-specific document)",
+    "date": null,
+    "document": "other Giffard 1 L records cost $21.40; Paramount Giffard 1 L syrup $23.73 (26 Jul)",
+    "line": "$128.40 = 6 × $21.40",
+    "basis": "case ÷ 6"
+   }
   },
   {
    "confidence": "high",
@@ -95,7 +151,15 @@
    "to": {
     "avgCostCents": 8335
    },
-   "reason": "case of 6 (inferred): $500.10 = 6 × $83.35; twin Don Julio Blanco $83.40 Count unit: bottle."
+   "reason": "case ÷ 6, matches twin: $500.10 = 6 × $83.35 — (no supplier document found); twin record \"Don Julio Blanco\" $83.40",
+   "pack": "750 mL bottle (was a 6-bottle price)",
+   "evidence": {
+    "supplier": "(no supplier document found)",
+    "date": null,
+    "document": "twin record \"Don Julio Blanco\" $83.40",
+    "line": "$500.10 = 6 × $83.35",
+    "basis": "case ÷ 6, matches twin"
+   }
   },
   {
    "confidence": "high",
@@ -107,7 +171,15 @@
    "to": {
     "avgCostCents": 3400
    },
-   "reason": "20 L drum, counted in litres: $680 is the drum price on a litre unit; twin Triple Sec 20 L is $30/L ($600 a drum) Count unit: L."
+   "reason": "drum ÷ 20 L: $680 = one 20 L drum; ÷ 20 = $34.00/L — Manly Spirits (receipts carry no line items); twin \"Triple SEC 20L - 20% ABV\" $30.00/L ($600 a drum)",
+   "pack": "per litre of a 20 L drum",
+   "evidence": {
+    "supplier": "Manly Spirits (receipts carry no line items)",
+    "date": null,
+    "document": "twin \"Triple SEC 20L - 20% ABV\" $30.00/L ($600 a drum)",
+    "line": "$680 = one 20 L drum; ÷ 20 = $34.00/L",
+    "basis": "drum ÷ 20 L"
+   }
   },
   {
    "confidence": "high",
@@ -117,9 +189,17 @@
     "avgCostCents": 3000
    },
    "to": {
-    "avgCostCents": 600
+    "avgCostCents": 696
    },
-   "reason": "5 L container, counted in litres: $30 is the 5 L price on a litre unit; twin Watermelon Juice is $34.80 per 5 L ($6.96/L) Count unit: L."
+   "reason": "supplier price: Pure Watermelon Juice 5L @ $34.80 → $6.96/L — Nectar Cold Pressed 2026-10-06; Order Confirmation OMO14912, Gmail thread 1a1100d63e027370 (also 31 Aug thread 1a0578539dd976c3; Xero bill OMI13328 6 May)",
+   "pack": "per litre of a 5 L container",
+   "evidence": {
+    "supplier": "Nectar Cold Pressed",
+    "date": "2026-10-06",
+    "document": "Order Confirmation OMO14912, Gmail thread 1a1100d63e027370 (also 31 Aug thread 1a0578539dd976c3; Xero bill OMI13328 6 May)",
+    "line": "Pure Watermelon Juice 5L @ $34.80 → $6.96/L",
+    "basis": "supplier price"
+   }
   },
   {
    "confidence": "high",
@@ -129,9 +209,37 @@
     "avgCostCents": 12400
    },
    "to": {
-    "avgCostCents": 2067
+    "avgCostCents": 2050
    },
-   "reason": "case price per kg (inferred): $124/kg = 6 × $20.67; twin Beef Chuck Roll $20.50/kg Count unit: kg."
+   "reason": "supplier price: 13.9 kg $284.95; 15 kg $307.50; 20.3 kg $416.15 = $20.50/kg each time — FoodByUs 2026-06-30; invoice lines 30 Jun, 2 Jun, 9 May (stored SupplierInvoiceLine)",
+   "pack": "per kg",
+   "evidence": {
+    "supplier": "FoodByUs",
+    "date": "2026-06-30",
+    "document": "invoice lines 30 Jun, 2 Jun, 9 May (stored SupplierInvoiceLine)",
+    "line": "13.9 kg $284.95; 15 kg $307.50; 20.3 kg $416.15 = $20.50/kg each time",
+    "basis": "supplier price"
+   }
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbq3n00ek9ky2f7n9793j",
+   "item": "Lime Juice (1 x 5L)",
+   "from": {
+    "avgCostCents": 7000
+   },
+   "to": {
+    "avgCostCents": 1400
+   },
+   "pack": "per litre of a 5 L container",
+   "evidence": {
+    "supplier": "Nectar Cold Pressed",
+    "date": "2026-10-06",
+    "document": "Order Confirmation OMO14912, Gmail thread 1a1100d63e027370 (also Xero bill OMI13328 6 May)",
+    "line": "Lime Juice 5L @ $70.00 → $14.00/L",
+    "basis": "supplier price"
+   },
+   "reason": "supplier price: Lime Juice 5L @ $70.00 → $14.00/L — Nectar Cold Pressed 2026-10-06; Order Confirmation OMO14912 (Gmail 1a1100d63e027370), Xero bill OMI13328"
   }
  ]
 }
