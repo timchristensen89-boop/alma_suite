@@ -240,6 +240,26 @@
     "basis": "supplier price"
    },
    "reason": "supplier price: Lime Juice 5L @ $70.00 → $14.00/L — Nectar Cold Pressed 2026-10-06; Order Confirmation OMO14912 (Gmail 1a1100d63e027370), Xero bill OMI13328"
+  },
+  {
+   "confidence": "high",
+   "itemId": "cmoqfbm1m005a9ky2bo078h4b",
+   "item": "BEEF SHORT RIBS GRAINFED 3 RIB",
+   "from": {
+    "avgCostCents": 5180
+   },
+   "to": {
+    "avgCostCents": 2900
+   },
+   "pack": "per kg (was 2 × the per-kg price)",
+   "evidence": {
+    "supplier": "FoodByUs",
+    "date": "2026-07-07",
+    "document": "invoice lines matched to this item (stored SupplierInvoiceLine), Apr–Jul 2026",
+    "line": "$29.00/kg on every delivery since 13 Jun (14.1 kg $408.90, 14.9 kg $432.10, 17.1 kg $495.90 on 2 Jul, 57.4 kg $1,664.60 on 7 Jul); $25.90/kg before (e.g. 41.1 kg $1,064.49, 45.4 kg $1,175.86); stored $51.80 = 2 × $25.90; Avalon twin $25.89",
+    "basis": "supplier price (latest invoice)"
+   },
+   "reason": "supplier price (latest invoice): $29.00/kg on every delivery since 13 Jun (14.1 kg $408.90, 14.9 kg $432.10, 17.1 kg $495.90 on 2 Jul, 57.4 kg $1,664.60 on 7 Jul); $25.90/kg before (e.g. 41.1 kg $1,064.49, 45.4 kg $1,175.86); stored $51.80 = 2 × $25.90; Avalon twin $25.89 — FoodByUs; invoice lines matched to this item (stored SupplierInvoiceLine), Apr–Jul 2026"
   }
  ]
 }

@@ -1,10 +1,10 @@
-# Case-price corrections: 12 items, verified against supplier documents (prepared 17 Oct 2026, **not applied**)
+# Case-price corrections: 13 items, verified against supplier documents (prepared 17 Oct 2026, **not applied**)
 
-These 12 stock items store a **case, drum or container price as their per-bottle, per-litre or per-kilo cost**. Each correction was checked against supplier documents: Gmail order confirmations and POs, the invoice lines stored in Stock, and Xero bills.
+These 13 stock items store a **case, drum or container price as their per-bottle, per-litre or per-kilo cost**. Each correction was checked against supplier documents: Gmail order confirmations and POs, the invoice lines stored in Stock, and Xero bills.
 
 - **Where a supplier document prices the exact product, that price is used:** Lyre's 700 mL, Giffard 1 L syrup, the Nectar juices, and FoodByUs chuck roll.
 - **Where no document exists,** the correction is the stored price divided by the pack size, and it matches the same product's twin record.
-- **Changed after verification:** Lyre's White Cane and Agave are now $29.19, not $34.07/$35.19. Watermelon is $6.96/L, not $6.00. Chuck roll is $20.50/kg, not $20.67. **Lime Juice (1 × 5L)** is added as a 12th item.
+- **Changed after verification:** Lyre's White Cane and Agave are now $29.19, not $34.07/$35.19. Watermelon is $6.96/L, not $6.00. Chuck roll is $20.50/kg, not $20.67. **Lime Juice (1 × 5L)** is added as a 12th item, and **Beef Short Ribs (3 rib)** as a 13th: $51.80/kg was exactly 2 × $25.90, and FoodByUs has charged $29.00/kg on every delivery since 13 Jun.
 
 `case-price-fixes.json` holds each item's evidence: supplier, date, document and line.
 
@@ -22,23 +22,24 @@ These 12 stock items store a **case, drum or container price as their per-bottle
 | Watermelon Juice (1 x 5L) | $30.00 | $6.96 | per litre of a 5 L container | 14.62 | 3.1 | $-336.84 | $-71.42 | **Nectar Cold Pressed** 2026-10-06: Pure Watermelon Juice 5L @ $34.80 → $6.96/L (supplier price) |
 | YG BEEF CHUCK ROLL | $124.00 | $20.50 | per kg | — | 2.757 | — | $-285.33 | **FoodByUs** 2026-06-30: 13.9 kg $284.95; 15 kg $307.50; 20.3 kg $416.15 = $20.50/kg each time (supplier price) |
 | Lime Juice (1 x 5L) | $70.00 | $14.00 | per litre of a 5 L container | 8.52 | 4.8 | $-477.12 | $-268.80 | **Nectar Cold Pressed** 2026-10-06: Lime Juice 5L @ $70.00 → $14.00/L (supplier price) |
-| **Total** | | | | | | **$-8,155.34** | **$-5,055.04** | |
+| BEEF SHORT RIBS GRAINFED 3 RIB | $51.80 | $29.00 | per kg (was 2 × the per-kg price) | — | 24.59 | — | $-560.65 | **FoodByUs** 2026-07-07: $29.00/kg on every delivery since 13 Jun (14.1 kg $408.90, 14.9 kg $432.10, 17.1 kg $495.90 on 2 Jul, 57.4 kg $1,664.60 on 7 Jul); $25.90/kg before (e.g. 41.1 kg $1,064.49, 45.4 kg $1,175.86); stored $51.80 = 2 × $25.90; Avalon twin $25.89 (supplier price (latest invoice)) |
+| **Total** | | | | | | **$-8,155.34** | **$-5,615.69** | |
 
-Quantities held are production at 12:46 AEDT on 17 Oct. **What changes:** only each item's average cost. The latest purchase price, every stocktake line's recorded value and every movement stay as they were.
+Quantities held are production at 12:51 AEDT on 17 Oct. **What changes:** only each item's average cost. The latest purchase price, every stocktake line's recorded value and every movement stay as they were.
 
-## Effect (production, 17 Oct 12:46 AEDT)
+## Effect (production, 17 Oct 12:51 AEDT)
 
 | | Alma Avalon | St Alma |
 |---|---:|---:|
 | Stock value now | $39,322.32 | $64,566.68 |
-| Correction | −$8,155.34 | −$5,055.04 |
-| **After** | **$31,166.98** | **$59,511.64** |
+| Correction | −$8,155.34 | −$5,615.69 |
+| **After** | **$31,166.98** | **$58,950.98** |
 
 **Order in production:** the separate merge-repair script runs **first**. It restores the holdings that the 06:48 app merges summed, so the quantities on Supasawa, Lyre's Agave and Giffard Rose/Coconut will drop. These case prices run second, and the combined totals will be recomputed in the final rehearsal.
 
 ## Rehearsal
 
-- **Fresh production copy (12:46):** the dry run had no refusals. Apply lowered Avalon to $31,166.98 and St Alma to $59,511.64. Holdings, stocktake lines and movements were unchanged.
+- **Fresh production copy (12:51):** the dry run had no refusals. Apply lowered Avalon to $31,166.98 and St Alma to $58,950.98. Holdings, stocktake lines and movements were unchanged.
 - **Rollback** was identical to the pristine twin: StockItem, VenueStockItem, StocktakeLine and InventoryMovement full-row checksums all match.
 - **Read-only dry run against production:** identical to the rehearsal, with no refusals (`production-dry-run-2026-10-17.txt`).
 - **Tests:** stock-api 335/335, including the cost-fix tests (apply, then stale refusal, then exact rollback; a correction that would raise a cost is refused).
@@ -52,7 +53,7 @@ DATABASE_URL=… tsx apps/stock-api/scripts/fix-unit-entries-2026-10.ts --fixes 
 DATABASE_URL=… tsx apps/stock-api/scripts/fix-unit-entries-2026-10.ts --fixes … --rollback prod-case-prices-YYYYMMDD --i-mean-production   # undo
 ```
 
-The run refuses everything if any of the 12 costs has changed since review.
+The run refuses everything if any of the 13 costs has changed since review.
 
 ## Risk of the error coming back (follow-up, not part of this fix)
 
