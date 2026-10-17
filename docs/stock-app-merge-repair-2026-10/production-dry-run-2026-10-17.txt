@@ -1,0 +1,76 @@
+database: alma_suite_v18 — PRODUCTION
+
+== History: 53 deleted lines put back, 18 added-together lines restored, 27 movements relinked
+
+== Holdings (27)
+  CHEESE MOZZARELLA SHREDDED 2KG (Cheese King) EA (6) @ Alma Avalon: 3.01 → 1.005 each  ($-23.06)
+      kept: Cheese Mozzarella Shredded 2.01 × 0.5; dropped as leftover: CHEESE MOZZARELLA SHREDDED 2KG (Cheese King) EA (6) 1
+  FINEST CALL MANGO PUREE 1000ML BOTTLE @ St Alma: 3.5 → 1 bottle  ($-37.80)
+      kept: Finest Call Mango Puree 1; dropped as leftover: FINEST CALL MANGO PUREE 1000ML BOTTLE 2.5
+  Flour Plain @ Alma Avalon: 6.82 → 12.5 each  ($6.36)
+      kept: FLOUR PLAIN 12.5KG (Manildra) EA 1 × 12.5; dropped as leftover: Flour Plain 5.82
+  GIFFARD COCONUT SYRUP 1000ML BOTTLE @ Alma Avalon: 3.025686 → 2.5 bottle  ($-67.50)
+      kept: Giffard Coconut Syrup 2.5; dropped as leftover: GIFFARD COCONUT SYRUP 1000ML BOTTLE 0.525686
+  GIFFARD COCONUT SYRUP 1000ML BOTTLE @ St Alma: 5.4 → 2.8 bottle  ($-333.84)
+      kept: Giffard Coconut Syrup 2.8; dropped as leftover: GIFFARD COCONUT SYRUP 1000ML BOTTLE 2.6
+  Giffard Falernum Syrup 1000ml @ Alma Avalon: 2.05 → 1.25 bottle  ($-19.04)
+      kept: Giffard Falernum Syrup 1.25; dropped as leftover: Giffard Falernum Syrup 1000ml 0.8
+  GIFFARD GINGER SYRUP 1000ML BOTTLE @ Alma Avalon: 2.3375 → 1.65 bottle  ($-14.71)
+      kept: Giffard Ginger Syrup 1.65; dropped as leftover: GIFFARD GINGER SYRUP 1000ML BOTTLE 0.6875
+  GIFFARD GINGER SYRUP 1000ML BOTTLE @ St Alma: 6.52 → 3.5 bottle  ($-64.63)
+      kept: Giffard Ginger Syrup 3.5; dropped as leftover: GIFFARD GINGER SYRUP 1000ML BOTTLE 3.02
+  GIFFARD ROSE SYRUP 1L BOTTLE @ Alma Avalon: 1.825 → 1.1 bottle  ($-103.20)
+      kept: Giffard Rose Syrup 1.1; dropped as leftover: GIFFARD ROSE SYRUP 1L BOTTLE 0.725
+  GIFFARD ROSE SYRUP 1L BOTTLE @ St Alma: 8.57 → 3.1 bottle  ($-778.65)
+      kept: Giffard Rose Syrup 3.1; dropped as leftover: GIFFARD ROSE SYRUP 1L BOTTLE 4.5, Giffard Rose Syrup 1000ml 0.97
+  Lime Juice (1 x 5L) @ Alma Avalon: 8.52 → 25.1 L  ($1160.60)
+      kept: Lime Juice 5.02 × 5; dropped as leftover: Lime Juice (1 x 5L) 3.5
+  Lime Juice (1 x 5L) @ St Alma: 4.8 → 8.8 L  ($280.00)
+      kept: Lime Juice 1 × 5 + Lime Juice (1 x 5L) 3.8
+  LYRES AGAVE BLANCO 700ML BOTTLE @ Alma Avalon: 6.785776 → 5.8 bottle  ($-208.14)
+      kept: Lyres Agave Blanco 5.8; dropped as leftover: LYRES AGAVE BLANCO 700ML BOTTLE 0.985776
+  Mayonnaise Whole Egg @ Alma Avalon: 2 → 1 each  ($-8.42)
+      kept: Mayonnaise Whole Egg 1; dropped as leftover: MAYONNAISE WHOLE EGG 10KG (Birch & Waite) EA 1
+  Mayonnaise Whole Egg @ St Alma: 0.916292 → 13.74438 each  ($108.01)
+      kept: MAYONNAISE WHOLE EGG 15KG (Birch & Waite) EA 0.916292 × 15
+  OIL OLIVE EXTRA VIRGIN 4LT (Natures Secret) @ Alma Avalon: 6.449456 → 2.209456 L  ($-51.94)
+      kept: OIL OLIVE EXTRA VIRGIN 4LT (Natures Secret) 2.209456; dropped as leftover: Oil Olive Extra Virgin 4.24
+  OIL OLIVE POMACE 4L (Trading) @ Alma Avalon: 9.5 → 1.75 each  ($-201.50)
+      kept: Oil Olive Pomace 7 × 0.25; dropped as leftover: OIL OLIVE POMACE 4L (Trading) 2.5
+  RICE BASMATI 1KG (Natures Secret) EA (12) @ Alma Avalon: 5 → 4 each  ($-3.00)
+      kept: RICE BASMATI 1KG (Natures Secret) EA (12) 4; dropped as leftover: Rice Basmati 1 — neither counted on the latest sheet; kept the main record
+  SALT TABLE 14KG (Olssons) CTN @ Alma Avalon: 2.4121 → 0.142857 each  ($-31.77)
+      kept: Salt Table 2 × 0.07142857142857142; dropped as leftover: SALT TABLE 14KG (Olssons) CTN 0.4121
+  SESAME SEED WHITE 1KG (Galaxy) EA (12) @ Alma Avalon: 1.969 → 0.969 each  ($-9.00)
+      kept: Sesame Seed White 0.969; dropped as leftover: SESAME SEED WHITE 1KG (Galaxy) EA (12) 1
+  SUGAR CASTER 1KG (CSR) EA (12) @ Alma Avalon: 3 → 1 each  ($-5.50)
+      kept: Sugar Caster 1; dropped as leftover: SUGAR CASTER 1KG (CSR) EA (12) 2
+  SUPASAWA 700ML - (CASE OF 6) @ Alma Avalon: 2.4 → 1 bottle  ($-207.56)
+      kept: Supasawa 1; dropped as leftover: SUPASAWA 700ML - (CASE OF 6) 1.4
+  SUPASAWA 700ML - (CASE OF 6) @ St Alma: 5.3 → 2 bottle  ($-489.26)
+      kept: Supasawa 2; dropped as leftover: SUPASAWA 700ML - (CASE OF 6) 3.3
+  VINEGAR WHITE 4LT (Edlyn) EA (3) @ Alma Avalon: 5.15 → 3 each  ($-9.25)
+      kept: VINEGAR WHITE 4LT (Edlyn) EA (3) 3; dropped as leftover: Vinegar White 2.15 — neither counted on the latest sheet; kept the main record
+  VINEGAR WHITE WINE 500ML (PGF) EA @ Alma Avalon: 1.5 → 1 each  ($-2.50)
+      kept: VINEGAR WHITE WINE 500ML (PGF) EA 1; dropped as leftover: Vinegar White Wine 0.5 — neither counted on the latest sheet; kept the main record
+  Watermelon Juice (1 x 5L) @ Alma Avalon: 14.62 → 16.6 L  ($59.40)
+      kept: Watermelon Juice 3.32 × 5; dropped as leftover: Watermelon Juice (1 x 5L) 11.3
+  Watermelon Juice (1 x 5L) @ St Alma: 3.1 → 2.2 L  ($-27.00)
+      kept: Watermelon Juice (1 x 5L) 2.2; dropped as leftover: Watermelon Juice 0.9
+  → Alma Avalon: $260.27 at today's costs
+  → St Alma: $-1343.17 at today's costs
+
+== Items (4)
+  Agave Syrup: {"countUnit":"gram","conversionFactor":750,"avgCostCents":8,"measurePerCountUnit":100,"measureUnit":"g"} → {"countUnit":"each","conversionFactor":1,"avgCostCents":5673,"latestCostAt":"2026-05-31T11:21:45.265Z","measurePerCountUnit":4000,"measureUnit":"ml"}
+      Saved in the item form at 06:50 with count unit "gram" and 750 per purchase unit, which divided the $56.73 tub price by 750 ($0.08). It is the kitchen 4 L tub: its archived twin is "Agave Syrup Clear (4L)" at $56.70, every count since Aug is in tubs ("each") valued at $56.73, and recipes use it by the mL. The 750 matches the bar's Crawleys 750 mL bottle (Paramount PO 26 Jul), which is a different product with no stock record.
+  Lime Juice (1 x 5L): {"unit":"L","conversionFactor":1,"measurePerCountUnit":5000,"measureUnit":"ml"} → {"unit":"container","conversionFactor":5,"measurePerCountUnit":1000,"measureUnit":"ml"}
+      Counted in litres, bought in 5 L containers (Nectar Cold Pressed "Lime Juice 5L" $70.00, orders 31 Aug and 6 Oct). The merge copied "5000 mL" onto the litre unit. Purchase unit becomes the 5 L container so an invoice of 2 containers books 10 L. Cost per litre is corrected in PR #324.
+  Watermelon Juice (1 x 5L): {"unit":"L","conversionFactor":1,"measurePerCountUnit":5000,"measureUnit":"ml"} → {"unit":"container","conversionFactor":5,"measurePerCountUnit":1000,"measureUnit":"ml"}
+      Counted in litres, bought in 5 L containers (Nectar Cold Pressed "Pure Watermelon Juice 5L" $34.80). Same merge damage and same fix as Lime Juice. Cost per litre is corrected in PR #324.
+  VINEGAR WHITE 4LT (Edlyn) EA (3): {"latestCostCents":108} → {"latestCostCents":null,"latestCostAt":null}
+      The merge copied the duplicate's placeholder purchase price ($1.08) onto this 4 L record as its latest price. Put back the empty value it had.
+
+Every row matches what was reviewed.
+Dry run — nothing written. Re-run with --apply.
+  Alma Avalon: active stock value $39322.32
+  St Alma: active stock value $64566.68
