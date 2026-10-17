@@ -1,446 +1,178 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { StockCostOfGoodsPayload, StockDashboardPayload } from '@alma/shared';
-import { Badge, Card, EmptyState, PageHeader, Select, Spinner, StatCard } from '@alma/ui';
-import { IconInvoices, IconItems, IconRecipes, IconStocktake, IconSuppliers } from '../lib/icons';
+import type { StockCogsComparison, StockCogsOverviewPayload, StockCogsRow, StockDashboardPayload } from '@alma/shared';
+import { Card, EmptyState, PageHeader, Spinner } from '@alma/ui';
+import { IconRecipes } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { ApiError, api } from '../lib/api';
+import { ApiError, api, suiteApi } from '../lib/api';
 
-function formatQuantity(value: number | null | undefined, unit?: string | null) {
-  const formatted = new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 2
-  }).format(value ?? 0);
-  return unit ? `${formatted} ${unit}` : formatted;
+/**
+ * The Stock home page: cost of goods, nothing else.
+ *
+ * One row per venue plus the group. Each row shows this month so far, last
+ * month and the year to date, every figure beside the same days a year
+ * earlier, plus this month beside the same days of last month. The figures
+ * come from the Xero profit and loss (accrual, ex-GST) through the suite
+ * API, so they agree with the accounts rather than with the stock ledger.
+ */
+
+function money(cents: number) {
+  return (cents / 100).toLocaleString('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 });
 }
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return 'Not recorded';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    hour: 'numeric',
-    minute: '2-digit'
-  });
+function percent(value: number | null) {
+  return value === null ? '—' : `${value.toFixed(1)}%`;
 }
 
-function statusTone(status: string): 'danger' | 'warning' | 'positive' {
-  if (status === 'OUT_OF_STOCK') return 'danger';
-  if (status === 'LOW_STOCK') return 'warning';
-  return 'positive';
+function change(value: number | null) {
+  if (value === null) return null;
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(1)}%`;
 }
 
-function formatMoney(cents: number | null | undefined) {
-  return ((cents ?? 0) / 100).toLocaleString(undefined, { style: 'currency', currency: 'AUD' });
+function shortDate(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 }
 
-function formatPercent(value: number | null | undefined) {
-  if (value == null || Number.isNaN(value)) return '—';
-  return `${value.toFixed(1)}%`;
+function monthName(iso: string) {
+  const [y, m] = iso.split('-').map(Number) as [number, number];
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-AU', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** One cell: COGS, its % of sales, and the prior figure with the change. */
+function Figure({ c, priorLabel, column }: { c: StockCogsComparison; priorLabel: string; column: string }) {
+  const delta = change(c.changePercent);
+  // Lower cost of goods is the good direction.
+  const tone = c.changePercent === null ? '' : c.changePercent <= 0 ? ' is-down' : ' is-up';
+  return (
+    <td className="cogs-cell" data-column={column}>
+      <span className="cogs-value">{money(c.current.cogsCents)}</span>
+      <span className="cogs-sub">{percent(c.current.cogsPercent)} of {money(c.current.salesCents)} sales</span>
+      <span className={`cogs-prior${tone}`}>
+        {priorLabel}: {money(c.prior.cogsCents)}
+        {c.prior.cogsPercent !== null ? ` (${percent(c.prior.cogsPercent)})` : ''}
+        {delta ? <b> {delta}</b> : null}
+      </span>
+    </td>
+  );
+}
+
+function Row({ row }: { row: StockCogsRow }) {
+  return (
+    <tr className={row.venue ? '' : 'cogs-group-row'}>
+      <th scope="row">{row.label}</th>
+      <Figure column="This month so far vs last month" c={row.previousMonth} priorLabel={`${shortDate(row.previousMonth.priorFrom)}–${shortDate(row.previousMonth.priorTo)}`} />
+      <Figure column="This month so far vs last year" c={row.monthToDate} priorLabel="Last year" />
+      <Figure column={`${monthName(row.lastMonth.from)} vs last year`} c={row.lastMonth} priorLabel="Last year" />
+      <Figure column="Year to date vs last year" c={row.yearToDate} priorLabel="Last year" />
+    </tr>
+  );
 }
 
 export function DashboardPage() {
-  useDocumentTitle('Dashboard');
-  const [dashboard, setDashboard] = useState<StockDashboardPayload | null>(null);
-  const [selectedVenue, setSelectedVenue] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [cogs, setCogs] = useState<StockCostOfGoodsPayload | null>(null);
+  useDocumentTitle('Stock');
+  const [cogs, setCogs] = useState<StockCogsOverviewPayload | null>(null);
   const [cogsError, setCogsError] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<StockDashboardPayload | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-
-    async function loadDashboard() {
+    void (async () => {
       try {
-        const query = selectedVenue ? `?venue=${encodeURIComponent(selectedVenue)}` : '';
-        const payload = await api<StockDashboardPayload>(`/api/items/dashboard${query}`);
-        if (!cancelled) {
-          setDashboard(payload);
-          if (!selectedVenue && payload.scope.venue) {
-            setSelectedVenue(payload.scope.venue);
-          }
-          setError(null);
-        }
-      } catch (err) {
-        const message = err instanceof ApiError ? err.message : 'Could not load stock dashboard';
-        if (!cancelled) setError(message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    loadDashboard();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedVenue]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadCogs() {
-      try {
-        const params = new URLSearchParams({ days: '30' });
-        if (selectedVenue) params.set('venue', selectedVenue);
-        const payload = await api<StockCostOfGoodsPayload>(`/api/recipes/cost-of-goods?${params.toString()}`);
+        const payload = await suiteApi<StockCogsOverviewPayload>('/api/reports/cogs-overview');
         if (!cancelled) {
           setCogs(payload);
           setCogsError(null);
         }
       } catch (err) {
-        // Unavailable is not "loading": the card used to spin forever here.
-        if (!cancelled) {
-          setCogs(null);
-          setCogsError(err instanceof ApiError ? err.message : 'Could not load cost of goods');
-        }
+        if (!cancelled) setCogsError(err instanceof ApiError ? err.message : 'Could not load cost of goods.');
       }
-    }
-    loadCogs();
+    })();
+    // The one operational number worth keeping on the home page: counts
+    // waiting for review. Everything else lives on its own page.
+    void (async () => {
+      try {
+        const payload = await api<StockDashboardPayload>('/api/items/dashboard');
+        if (!cancelled) setDashboard(payload);
+      } catch {
+        /* the link to counts still works */
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [selectedVenue]);
+  }, []);
 
-  const venueOptions = [
-    ...(dashboard?.scope.admin ? [{ label: 'All venues', value: '' }] : []),
-    ...((dashboard?.venues ?? []).map((venue) => ({ label: venue, value: venue })))
-  ];
-  const activeVenue = selectedVenue || dashboard?.scope.venue || '';
+  const first = cogs?.rows[0];
+  const waiting = dashboard?.summary.readyForReviewStocktakes ?? 0;
 
   return (
     <div className="page-stack">
       <PageHeader
         eyebrow="Stock"
-        title="Stock dashboard"
-        description={(() => {
-          if (loading) return 'Loading stock signals…';
-          if (error) return 'Could not refresh the stock dashboard.';
-          const low = dashboard?.summary.lowStockItems ?? 0;
-          const out = dashboard?.summary.outOfStockItems ?? 0;
-          const draft = dashboard?.summary.readyForReviewStocktakes ?? 0;
-          const parts: string[] = [];
-          if (out > 0) parts.push(`${out} out of stock`);
-          if (low > 0) parts.push(`${low} running low`);
-          if (draft > 0) parts.push(`${draft} stocktake${draft === 1 ? '' : 's'} awaiting review`);
-          if (parts.length === 0) return 'Everything is on the shelf and stocktakes are clear.';
-          return `${parts.join(' · ')}.`;
-        })()}
+        title="Cost of goods"
+        description={
+          first
+            ? `${monthName(first.monthToDate.from)} to ${shortDate(first.monthToDate.to)} · from Xero, ex GST · refreshed ${new Date(cogs!.lastRefreshed).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}`
+            : cogsError
+              ? 'Cost of goods is unavailable.'
+              : 'Loading cost of goods…'
+        }
         actions={
           <div className="stock-dashboard-headeractions">
-            {venueOptions.length > 0 ? (
-              <Select
-                label="Venue"
-                value={selectedVenue}
-                onChange={(event) => setSelectedVenue(event.currentTarget.value)}
-                options={venueOptions}
-              />
-            ) : null}
+            {waiting > 0 ? <Link className="btn btn-sm btn-secondary" to="/stocktake">{waiting} count{waiting === 1 ? '' : 's'} to review</Link> : null}
             <Link className="btn btn-sm" to="/stocktake">Take stock</Link>
           </div>
         }
       />
 
-      {/* The money first: what the mapped menu sold, what it cost on paper,
-          what the bills say it cost, and what is left — over the last 30
-          days. Each percentage sits under the dollar figure it was computed
-          from, and the actual figure says which method produced it. */}
-      <div className="stat-grid">
-        <StatCard
-          label="Mapped item sales (30d)"
-          value={cogs ? formatMoney(cogs.mappedSalesCents) : '—'}
-          hint={
-            cogs
-              ? `Square items mapped to recipes · ${cogs.coverage.mappedRecipes} dishes${activeVenue ? ` · ${activeVenue}` : ' · all venues'}`
-              : 'Not venue takings — only items mapped to recipes'
-          }
-        />
-        <StatCard
-          label="Theoretical food & drink cost (30d)"
-          value={cogs ? formatMoney(cogs.theoretical.cogsCents) : '—'}
-          hint={
-            cogs?.theoretical.percentOfMappedSales != null
-              ? `${formatPercent(cogs.theoretical.percentOfMappedSales)} of mapped sales · recipe cost × units sold${cogs.coverage.zeroCostRecipes > 0 ? ` · ${cogs.coverage.zeroCostRecipes} uncosted` : ''}`
-              : 'Recipe cost × units sold'
-          }
-          tone={cogs && cogs.coverage.zeroCostRecipes > 0 ? 'warning' : undefined}
-        />
-        <StatCard
-          label={cogs && cogs.actual.source !== 'stock_bounded' ? 'Supplier purchases (30d)' : 'Actual food & drink cost (30d)'}
-          value={cogs ? formatMoney(cogs.actual.cogsCents) : '—'}
-          hint={
-            cogs
-              ? cogs.actual.comparable
-                ? `${formatPercent(cogs.actual.percentOfMappedSales)} of mapped sales · ${cogs.actual.label}`
-                : `${cogs.actual.label} — whole-venue figure, not a % of mapped sales`
-              : 'Opening + purchases − closing, or bills only'
-          }
-          tone={cogs && !cogs.actual.comparable ? 'warning' : undefined}
-        />
-        <StatCard
-          label="Gross profit (30d)"
-          value={cogs && cogs.mappedSalesCents > 0 ? formatMoney(cogs.theoretical.grossProfitCents) : '—'}
-          hint={
-            cogs && cogs.mappedSalesCents > 0
-              ? cogs.actual.comparable && cogs.actual.grossProfitPercent != null
-                ? `${formatPercent(cogs.theoretical.grossProfitPercent)} on recipe cost · ${formatPercent(cogs.actual.grossProfitPercent)} on actual`
-                : `${formatPercent(cogs.theoretical.grossProfitPercent)} on recipe cost · actual GP needs like-for-like scope (${cogs.actual.comparability.reasons[0] ?? 'see Cost of Goods'})`
-              : 'Needs mapped sales in the window'
-          }
-          tone={cogs?.theoretical.grossProfitPercent != null && cogs.theoretical.grossProfitPercent < 60 ? 'warning' : undefined}
-        />
-      </div>
-
-      {error ? <EmptyState icon={<IconItems size={24} />} title="Stock dashboard unavailable" description={error} /> : null}
-      {loading ? <Spinner label="Loading stock dashboard" /> : null}
-
-      <div className="stat-grid">
-        <Link to="/items" className="stat-card-link" aria-label="Open catalogue items">
-          <StatCard
-            icon={<IconItems size={18} />}
-            label="Items"
-            value={loading ? '—' : String(dashboard?.summary.activeItems ?? 0)}
-            hint={`${dashboard?.summary.categories ?? 0} categories`}
-          />
-        </Link>
-        <Link to="/reorder" className="stat-card-link" aria-label="Open below-par list">
-          <StatCard
-            icon={<IconStocktake size={18} />}
-            label="Low stock"
-            value={loading ? '—' : String(dashboard?.summary.lowStockItems ?? 0)}
-            hint={
-              activeVenue
-                ? `${dashboard?.summary.outOfStockItems ?? 0} out of stock at ${activeVenue}`
-                : `${dashboard?.summary.outOfStockItems ?? 0} out of stock across venue stock`
-            }
-            tone={loading || !dashboard ? undefined : (dashboard.summary.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'}
-          />
-        </Link>
-        <Link to="/items" className="stat-card-link" aria-label="Open on hand stock">
-          <StatCard
-            icon={<IconSuppliers size={18} />}
-            label="On hand"
-            value={loading ? '—' : formatQuantity(dashboard?.summary.totalOnHand)}
-            hint={activeVenue ? 'Tracked units at the selected venue' : 'Tracked units across venue stock'}
-            tone={(dashboard?.summary.totalOnHand ?? 0) < 0 ? 'danger' : undefined}
-          />
-        </Link>
-        <Link to="/stocktake" className="stat-card-link" aria-label="Open stocktakes ready for review">
-          <StatCard
-            icon={<IconInvoices size={18} />}
-            label="Ready for review"
-            value={loading ? '—' : String(dashboard?.summary.readyForReviewStocktakes ?? 0)}
-            hint={`${dashboard?.summary.openStocktakes ?? 0} draft stocktakes`}
-            tone={(dashboard?.summary.readyForReviewStocktakes ?? 0) > 0 ? 'warning' : 'neutral'}
-          />
-        </Link>
-      </div>
-
-      {/* Needs attention + stocktakes awaiting review are two halves of the
-          same "what's off the shelf" question — paired via the suite's
-          ov-two grid instead of stacking. */}
-      <div className="ov-two st-dashboard-pair">
-        <Card
-          title="Needs attention"
-          subtitle="Low-stock and out-of-stock items, most urgent first — the same rows the Low stock count above is made of."
-          action={
-            <Link className="btn btn-ghost btn-sm" to="/reorder">
-              View below par
-            </Link>
-          }
-          padding="none"
-        >
-          <div className="stock-dashboard-table-scroll">
-            <table>
-              <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Venue</th>
-                    <th>Category</th>
-                    <th>On hand</th>
-                    <th>Par</th>
-                    <th>Reorder</th>
-                    <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard?.lowStockItems.length ? (
-                  dashboard.lowStockItems.map((item) => (
-                    <tr key={item.venueStockItemId ?? `${item.id}:${item.venue ?? 'global'}`}>
-                      <td>
-                        <span className="cell-stack">
-                          <strong>{item.name}</strong>
-                          <span className="subtle">{item.sku ?? 'No SKU'} · {formatDateTime(item.updatedAt)}</span>
-                        </span>
-                      </td>
-                      <td>{(item.venue ?? activeVenue) || 'Unassigned'}</td>
-                      <td>{item.category?.name ?? 'Uncategorised'}</td>
-                      <td>{formatQuantity(item.onHand, item.unit)}</td>
-                      <td>{formatQuantity(item.parLevel, item.unit)}</td>
-                      <td>{item.reorderPoint === null ? '—' : formatQuantity(item.reorderPoint, item.unit)}</td>
-                      <td>
-                        <Badge tone={statusTone(item.stockStatus)} dot>
-                          {item.suggestedAction}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={7} className="table-empty-cell">
-                      {loading
-                        ? 'Loading low-stock items…'
-                        : error || !dashboard
-                          ? 'Low-stock items are unavailable right now.'
-                          : `No low-stock or out-of-stock items${activeVenue ? ` at ${activeVenue}` : ''} right now.`}
-                    </td>
-                  </tr>
-                )}
-                {dashboard && (dashboard.lowStockItemsTotal ?? dashboard.lowStockItems.length) > dashboard.lowStockItems.length ? (
-                  <tr>
-                    <td colSpan={7} className="table-empty-cell">
-                      Showing the {dashboard.lowStockItems.length} most urgent of {dashboard.lowStockItemsTotal} items.{' '}
-                      <Link to="/reorder">View all below par →</Link>
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        <Card
-          title="Stocktakes ready for review"
-          subtitle="Submitted counts that have not yet been approved into the inventory ledger."
-          action={
-            <Link className="btn btn-ghost btn-sm" to="/stocktake">
-              Review
-            </Link>
-          }
-          padding="none"
-        >
-          <div className="stock-dashboard-table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Stocktake</th>
-                  <th>Venue</th>
-                  <th>Lines</th>
-                  <th>Variance lines</th>
-                  <th>Submitted</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard?.readyForReviewStocktakes.length ? (
-                  dashboard.readyForReviewStocktakes.map((stocktake) => (
-                    <tr key={stocktake.id}>
-                      <td>{stocktake.name}</td>
-                      <td>{stocktake.venue ?? 'Unassigned'}</td>
-                      <td>{stocktake.lineCount}</td>
-                      <td>{stocktake.varianceLineCount}</td>
-                      <td>{formatDateTime(stocktake.submittedAt ?? stocktake.updatedAt)}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="table-empty-cell">
-                      {loading ? 'Loading stocktakes…' : error || !dashboard ? 'Stocktakes are unavailable right now.' : 'No submitted stocktakes are waiting for review.'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
-
-      <Card
-        title="Cost of Goods"
-        subtitle={`${cogs ? `${cogs.window.from} to ${cogs.window.to}` : 'Last 30 days'}. Theoretical (sold × recipe cost) vs actual (opening + purchases − closing when stocktakes bracket the window; otherwise supplier bills only, which is not comparable).`}
-      >
+      <Card padding="none">
         {cogsError ? (
           <EmptyState icon={<IconRecipes size={24} />} title="Cost of goods unavailable" description={cogsError} />
         ) : !cogs ? (
-          <Spinner label="Loading cost of goods" />
-        ) : cogs.dishMargin.mappedRecipes === 0 ? (
-          <EmptyState
-            icon={<IconRecipes size={24} />}
-            title="No Square sales mapped to recipes yet"
-            description="Theoretical COGS needs dishes mapped to Square items. Map recipes to Square sales under Recipes → Margins to see theoretical cost and variance. Actual purchases are still shown below."
-          />
+          <Spinner label="Reading the Xero profit and loss" />
         ) : (
-          <>
-            {/* Sales, actual COGS, GP and variance lead the page now — this
-                card keeps the recipe-side detail behind them. */}
-            <div className="stat-grid">
-              <StatCard
-                icon={<IconRecipes size={18} />}
-                label="Actual vs theoretical"
-                value={cogs.varianceCents == null ? '—' : formatMoney(cogs.varianceCents)}
-                hint={
-                  cogs.variancePercent != null
-                    ? `${formatPercent(cogs.variancePercent)} vs recipe cost of what sold`
-                    : `Not comparable: ${cogs.actual.comparability.reasons.join('; ')}`
-                }
-                tone={cogs.variancePercent != null && Math.abs(cogs.variancePercent) > 15 ? 'warning' : undefined}
-              />
-              <StatCard
-                icon={<IconRecipes size={18} />}
-                label="Costing coverage"
-                value={`${cogs.coverage.mappedRecipes} dishes`}
-                hint={`${cogs.coverage.zeroCostRecipes} uncosted · ${cogs.coverage.suspectRecipes} batch-costed (excluded) · ${cogs.coverage.serveSizeRequiredRecipes} serve size required (excluded${cogs.coverage.serveSizeRequiredSalesCents > 0 ? `, ${formatMoney(cogs.coverage.serveSizeRequiredSalesCents)} of sales` : ''}) · ${cogs.coverage.unmappedRecipes} with no sales`}
-                tone={cogs.coverage.zeroCostRecipes + cogs.coverage.suspectRecipes + cogs.coverage.serveSizeRequiredRecipes > 0 ? 'warning' : undefined}
-              />
-              <StatCard
-                icon={<IconItems size={18} />}
-                label="Avg dish margin"
-                value={cogs.dishMargin.avgMarginPercent != null ? formatPercent(cogs.dishMargin.avgMarginPercent) : '—'}
-                hint="Unweighted mean across dishes that sold"
-              />
-            </div>
-            <p className="subtle" style={{ marginTop: 12 }}>
-              Supplier price changes (30d): {cogs.priceMovement.increasedItems} item
-              {cogs.priceMovement.increasedItems === 1 ? '' : 's'} up,{' '}
-              {cogs.priceMovement.decreasedItems} down.{' '}
-              <Link to="/price-movement">View price changes →</Link>
-            </p>
-          </>
+          <div className="stock-dashboard-table-scroll">
+            <table className="cogs-table">
+              <thead>
+                <tr>
+                  <th />
+                  <th>
+                    This month so far
+                    <span className="cogs-head-sub">vs the same days last month</span>
+                  </th>
+                  <th>
+                    This month so far
+                    <span className="cogs-head-sub">vs the same days last year</span>
+                  </th>
+                  <th>
+                    {monthName(first!.lastMonth.from)}
+                    <span className="cogs-head-sub">vs {monthName(first!.lastMonth.priorFrom)}</span>
+                  </th>
+                  <th>
+                    Year to date
+                    <span className="cogs-head-sub">1 Jan–{shortDate(first!.yearToDate.to)} vs last year</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {cogs.rows.map((row) => <Row key={row.label} row={row} />)}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 
-      <Card title="Fast paths" subtitle="Jump into the stock tools without hunting through the menu.">
-        <div className="stock-dashboard-links">
-          <Link to="/stocktake">
-            <IconStocktake size={18} />
-            <span>Start or review a stocktake</span>
-          </Link>
-          <Link to="/items">
-            <IconItems size={18} />
-            <span>Manage items and categories</span>
-          </Link>
-          <Link to="/recipes">
-            <IconRecipes size={18} />
-            <span>Review recipe costing</span>
-          </Link>
-          <Link to="/invoices">
-            <IconInvoices size={18} />
-            <span>Match supplier invoice lines</span>
-          </Link>
-          <Link to="/deliveries">
-            <IconInvoices size={18} />
-            <span>Check a delivery invoice</span>
-          </Link>
-          <Link to="/wastage">
-            <IconStocktake size={18} />
-            <span>Record wastage</span>
-          </Link>
-          <Link to="/reorder">
-            <IconItems size={18} />
-            <span>Review reorder notices</span>
-          </Link>
-        </div>
-      </Card>
+      {cogs?.notes.length ? (
+        <ul className="subtle cogs-notes">
+          {cogs.notes.map((note) => <li key={note}>{note}</li>)}
+        </ul>
+      ) : null}
+      <p className="subtle">
+        Cost of goods is Xero's Cost of Sales for each venue's organisation (accrual basis, ex GST), so it matches the accounts.
+        It is only as current as the bills entered in Xero. The stock ledger's own figure is under <Link to="/recipes">Recipes → Cost of goods</Link>.
+      </p>
     </div>
   );
 }

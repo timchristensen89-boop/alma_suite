@@ -8460,6 +8460,52 @@ export type SupplierSpendBasisMonth = {
   otherShare: number | null;
 };
 
+// Stock home: the three COGS figures the owner wants at a glance, from the
+// Xero profit and loss (accrual, ex-GST), per venue and for the group.
+// Every figure carries sales too, so COGS can be read as a % of sales.
+export type StockCogsFigure = {
+  cogsCents: number;
+  salesCents: number;
+  /** cogs ÷ sales, as a percentage; null when there were no sales. */
+  cogsPercent: number | null;
+};
+export type StockCogsComparison = {
+  /** Which days this covers, YYYY-MM-DD inclusive. */
+  from: string;
+  to: string;
+  current: StockCogsFigure;
+  /** The same days a year earlier (or the previous month, for `previousMonth`). */
+  prior: StockCogsFigure;
+  priorFrom: string;
+  priorTo: string;
+  /** Change in COGS dollars vs prior; null when prior is zero. */
+  changePercent: number | null;
+};
+export type StockCogsRow = {
+  /** 'Group' or a venue name. */
+  label: string;
+  venue: string | null;
+  /** This month so far vs the same days last year. */
+  monthToDate: StockCogsComparison;
+  /** Last full month vs the same month last year. */
+  lastMonth: StockCogsComparison;
+  /** This month so far vs the same number of days of last month. */
+  previousMonth: StockCogsComparison;
+  /** 1 Jan to today vs the same days last year. */
+  yearToDate: StockCogsComparison;
+};
+export type StockCogsOverviewPayload = {
+  asOf: string;
+  source: 'xero';
+  basis: 'accrual-ex-gst';
+  rows: StockCogsRow[];
+  /** Xero organisations read, and the venue each one maps to. */
+  tenants: Array<{ name: string | null; venue: string | null }>;
+  /** Plain-words caveats (an unmapped tenant, a month with no bills yet). */
+  notes: string[];
+  lastRefreshed: string;
+};
+
 export type SupplierSpendPayload = {
   generatedAt: string;
   venue: string | null;

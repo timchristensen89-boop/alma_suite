@@ -3293,6 +3293,84 @@ async function xeroProfitAndLossTrend(monthCount: number): Promise<XeroPlTrend> 
   return { months, perVenue, tenants: tenantSummaries };
 }
 
+export type XeroPlPeriodPair = { current: XeroPlMonth; prior: XeroPlMonth };
+export type XeroPlPeriodRequest = {
+  key: string;
+  /** YYYY-MM-DD inclusive. */
+  from: string;
+  to: string;
+  /** How far back Xero's comparison column sits: the same days a month or a year earlier. */
+  timeframe: 'MONTH' | 'YEAR';
+};
+export type XeroPlPeriodPairs = {
+  perVenue: Record<string, Record<string, XeroPlPeriodPair>>;
+  group: Record<string, XeroPlPeriodPair>;
+  tenants: Array<{ id: string; name: string | null; venue: string | null }>;
+};
+
+function emptyPlMonth(month: string): XeroPlMonth {
+  return { month, salesCents: 0, cogsCents: 0, foodCogsCents: 0, bevCogsCents: 0, otherCogsCents: 0, accounts: [] };
+}
+
+function addPlMonth(target: XeroPlMonth, source: XeroPlMonth) {
+  target.salesCents += source.salesCents;
+  target.cogsCents += source.cogsCents;
+  target.foodCogsCents += source.foodCogsCents;
+  target.bevCogsCents += source.bevCogsCents;
+  target.otherCogsCents += source.otherCogsCents;
+  for (const account of source.accounts) {
+    const merged = target.accounts.find((entry) => entry.name === account.name);
+    if (merged) merged.cents += account.cents;
+    else target.accounts.push({ ...account });
+  }
+}
+
+// Sales and Cost of Sales for arbitrary date windows, each beside the same
+// window a month or a year earlier (Xero's own comparison column), per
+// tenant → venue and summed for the group. One Xero call per tenant per
+// window; the Stock home page's four windows across two tenants is eight.
+async function xeroCogsPeriodPairs(requests: XeroPlPeriodRequest[]): Promise<XeroPlPeriodPairs> {
+  const connection = await connectedXeroConnection();
+  const tenantList = xeroTenantsFromConnection(connection);
+  const tenants = tenantList.length > 0
+    ? tenantList
+    : connection.providerAccountId
+      ? [{ id: connection.providerAccountId, name: null }]
+      : [];
+  if (tenants.length === 0) throw new HttpError(409, 'Xero tenant is not selected.');
+  const venues = await configuredVenueNames();
+
+  const perVenue: XeroPlPeriodPairs['perVenue'] = {};
+  const group: XeroPlPeriodPairs['group'] = {};
+  const tenantSummaries: XeroPlPeriodPairs['tenants'] = [];
+  let activeConnection = connection;
+  for (const tenant of tenants) {
+    const venue = resolveVenueFromTenantName(tenant.name, venues);
+    tenantSummaries.push({ id: tenant.id, name: tenant.name, venue });
+    for (const request of requests) {
+      const path =
+        `/api.xro/2.0/Reports/ProfitAndLoss?fromDate=${request.from}&toDate=${request.to}` +
+        `&timeframe=${request.timeframe}&periods=1&standardLayout=true`;
+      const response = await xeroGetJson<{ Reports?: XeroReportRow[] }>(path, { connection: activeConnection, tenantId: tenant.id });
+      activeConnection = response.connection;
+      // Two columns, newest first from Xero; the parser returns them ascending.
+      const columns = parseXeroProfitAndLoss(response.data.Reports?.[0], new Date(`${request.to}T00:00:00Z`), 2);
+      const pair: XeroPlPeriodPair = {
+        current: columns[columns.length - 1] ?? emptyPlMonth(request.to.slice(0, 7) + '-01'),
+        prior: columns.length > 1 ? columns[0]! : emptyPlMonth(request.to.slice(0, 7) + '-01')
+      };
+      if (venue) {
+        perVenue[venue] ??= {};
+        perVenue[venue]![request.key] = pair;
+      }
+      const sum = (group[request.key] ??= { current: emptyPlMonth(pair.current.month), prior: emptyPlMonth(pair.prior.month) });
+      addPlMonth(sum.current, pair.current);
+      addPlMonth(sum.prior, pair.prior);
+    }
+  }
+  return { perVenue, group, tenants: tenantSummaries };
+}
+
 function defaultBillDates(query: Record<string, unknown>) {
   const end = parseXeroDate(query.endDate) ?? new Date();
   const start = parseXeroDate(query.startDate) ?? new Date(end);
@@ -5154,6 +5232,10 @@ export const integrationService = {
   // Monthly Income + Cost of Sales trend from the Xero P&L report (group +
   // per-venue). Basis for projected supplier spend — see supplier-spend.service.
   xeroProfitAndLossTrend,
+
+  // Sales + Cost of Sales for given windows beside the same window a month or
+  // a year earlier, per venue and group. Basis for the Stock home page.
+  xeroCogsPeriodPairs,
 
   // Trailing ACCPAY bill totals per supplier straight from Xero — the share
   // basis for projected supplier spend (local imports only cover a handful

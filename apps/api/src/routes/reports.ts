@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireManager } from '../lib/auth-middleware.js';
 import { reportsService } from '../services/reports.service.js';
 import { supplierSpendService } from '../services/supplier-spend.service.js';
+import { cogsOverviewService } from '../services/cogs-overview.service.js';
 
 export const reportsRouter = Router();
 
@@ -10,6 +11,16 @@ export const reportsRouter = Router();
 reportsRouter.get('/projected-supplier-spend', requireManager, async (req, res, next) => {
   try {
     res.json(await supplierSpendService.projectedSpend(req.query, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// The Stock home page: COGS this month, last month and year to date, per
+// venue and for the group, each against last year, from the Xero P&L.
+reportsRouter.get('/cogs-overview', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await cogsOverviewService.overview());
   } catch (error) {
     next(error);
   }

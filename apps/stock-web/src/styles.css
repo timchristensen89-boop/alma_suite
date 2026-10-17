@@ -4356,3 +4356,31 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 }
 .merge-review-table td { overflow-wrap: anywhere; }
 .merge-review-converted { display: block; font-size: 0.9em; }
+
+/* Stock home: the cost-of-goods table. One row per venue plus the group;
+   each cell is the figure, its share of sales, and the prior figure. */
+.cogs-table { width: 100%; border-collapse: collapse; }
+.cogs-table th, .cogs-table td { padding: 12px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--color-border); }
+.cogs-table thead th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted); }
+.cogs-head-sub { display: block; text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 12px; margin-top: 2px; }
+.cogs-table tbody th { font-weight: 600; white-space: nowrap; }
+.cogs-group-row th, .cogs-group-row td { background: var(--color-surface-muted); }
+.cogs-group-row .cogs-value { font-size: 1.35em; }
+.cogs-cell { min-width: 150px; }
+.cogs-value { display: block; font-size: 1.2em; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cogs-sub { display: block; font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
+.cogs-prior { display: block; font-size: 12px; color: var(--color-text-muted); margin-top: 6px; }
+.cogs-prior b { font-weight: 600; }
+.cogs-prior.is-down b { color: var(--color-positive, #1a7f4b); }
+.cogs-prior.is-up b { color: var(--color-danger, #b42318); }
+.cogs-notes { margin: 0; padding-left: 18px; }
+@media (max-width: 860px) {
+  /* Phones: one card per row, the four figures stacked with their own labels. */
+  .cogs-table, .cogs-table tbody, .cogs-table tr, .cogs-table th, .cogs-table td { display: block; }
+  .cogs-table thead { display: none; }
+  .cogs-table tr { padding: 4px 0 8px; border-bottom: 1px solid var(--color-border); }
+  .cogs-table tbody th { padding: 10px 14px 2px; font-size: 1.05em; border: 0; }
+  .cogs-table td { padding: 8px 14px; border: 0; min-width: 0; }
+  .cogs-cell::before { content: attr(data-column); display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted); margin-bottom: 2px; }
+  .cogs-group-row .cogs-value { font-size: 1.2em; }
+}
