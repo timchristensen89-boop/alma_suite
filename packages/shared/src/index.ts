@@ -6208,6 +6208,8 @@ export type StockItemMergeVenuePlan = {
   outcome: 'nothing' | 'keep' | 'carry' | 'decide';
   /** Quantity the kept item will hold after the merge (null until decided). */
   resultOnHand: number | null;
+  /** Hard limits the merge enforces at this venue: the kept item may hold no more than the largest single record held (null when a record's unit cannot be converted), and the stock value may not exceed what the records were worth together. */
+  ceiling: { onHand: number | null; valueCents: number };
   needsDecision: boolean;
   /** Why a decision is needed, in plain words. */
   reason: string | null;

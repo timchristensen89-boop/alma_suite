@@ -93,18 +93,54 @@ test('decisions are applied per venue, exactly; nothing is ever added together',
     const preview = await itemsService.previewMerge({ parentId: f.ids[0], duplicateIds: [f.ids[1]] });
     const result = await itemsService.mergeItems({
       parentId: f.ids[0], duplicateIds: [f.ids[1]], confirmationText: CONFIRM, planToken: preview.planToken,
-      holdings: [{ venue: 'St Alma', keep: 'duplicate', itemId: f.ids[1] }, { venue: 'Alma Avalon', keep: 'counted', countedQty: 2.4 }]
+      holdings: [{ venue: 'St Alma', keep: 'duplicate', itemId: f.ids[1] }, { venue: 'Alma Avalon', keep: 'counted', countedQty: 1.2 }]
     });
-    assert.deepEqual(result.holdings, [{ venue: 'Alma Avalon', before: 1.4, after: 2.4 }, { venue: 'St Alma', before: 3.3, after: 2 }]);
-    assert.deepEqual(await holdingsOf(f.ids), [[f.ids[0], 'Alma Avalon', 2.4], [f.ids[0], 'St Alma', 2]]);
+    assert.deepEqual(result.holdings, [{ venue: 'Alma Avalon', before: 1.4, after: 1.2 }, { venue: 'St Alma', before: 3.3, after: 2 }]);
+    assert.deepEqual(await holdingsOf(f.ids), [[f.ids[0], 'Alma Avalon', 1.2], [f.ids[0], 'St Alma', 2]]);
     const kept = await prisma.stockItem.findUniqueOrThrow({ where: { id: f.ids[0] } });
-    assert.equal(kept.onHand, 4.4);
+    assert.equal(kept.onHand, 3.2);
     // Every change is on the ledger, for both records.
     const corrections = await prisma.inventoryMovement.findMany({ where: { itemId: { in: f.ids }, movementType: 'STOCKTAKE_CORRECTION' } });
     assert.equal(corrections.length, 4, 'kept item at two venues + the duplicate\'s two dropped holdings');
     assert.ok(corrections.every((m) => /nothing added together|merged into/.test(m.notes ?? '')));
   } finally {
     await f.cleanup();
+  }
+});
+
+test('a merge can never raise stock or value: a counted quantity above any record, a carry at a higher cost, and a backfilled cost are all refused', NO_DB, async () => {
+  const f = await makeItems(tagOf('ceiling'), [
+    { name: 'Lime (1 x 5L)', unit: 'L', countUnit: 'L', avgCostCents: 7000, holdings: { 'St Alma': 0, 'Alma Avalon': 3.5 } },
+    { name: 'Lime Juice', unit: 'each', countUnit: 'each', measurePerCountUnit: 5000, measureUnit: 'ml', avgCostCents: 1520, holdings: { 'St Alma': 1, 'Alma Avalon': 5.02 } }
+  ]);
+  try {
+    const preview = await itemsService.previewMerge({ parentId: f.ids[0], duplicateIds: [f.ids[1]] });
+    const st = preview.venues.find((v) => v.venue === 'St Alma')!;
+    assert.equal(st.outcome, 'carry');
+    assert.deepEqual(st.ceiling, { onHand: 5, valueCents: 1520 }, 'one 5 L container worth $15.20');
+    // Carrying 5 L at $70/L would be $350 of stock that was worth $15.20: refused until the cost is fixed.
+    await assert.rejects(itemsService.mergeItems({ parentId: f.ids[0], duplicateIds: [f.ids[1]], confirmationText: CONFIRM, holdings: [{ venue: 'Alma Avalon', keep: 'keep' }] }), /worth \$350\.00 .* more than the \$15\.20/);
+    // A counted quantity above the largest record is refused too.
+    await assert.rejects(itemsService.mergeItems({ parentId: f.ids[0], duplicateIds: [f.ids[1]], confirmationText: CONFIRM, holdings: [{ venue: 'Alma Avalon', keep: 'counted', countedQty: 30 }] }), /more than any record held/);
+    const before = await holdingsOf(f.ids);
+    assert.deepEqual(await holdingsOf(f.ids), before);
+    // With the cost corrected to $14/L the carry is worth $70 ≤ $15.20? No: 5 L × $14 = $70 > $15.20 still. Fix the duplicate's cost to the real $70 a container first.
+    await prisma.stockItem.update({ where: { id: f.ids[1] }, data: { avgCostCents: 7000 } });
+    await prisma.stockItem.update({ where: { id: f.ids[0] }, data: { avgCostCents: 1400 } });
+    const result = await itemsService.mergeItems({ parentId: f.ids[0], duplicateIds: [f.ids[1]], confirmationText: CONFIRM, holdings: [{ venue: 'Alma Avalon', keep: 'keep' }] });
+    assert.deepEqual(result.holdings, [{ venue: 'Alma Avalon', before: 3.5, after: 3.5 }, { venue: 'St Alma', before: 0, after: 5 }]);
+  } finally {
+    await f.cleanup();
+  }
+  // A kept item with no cost takes a same-unit duplicate's cost; stock the kept item already held becomes valued, so that is refused.
+  const g = await makeItems(tagOf('backfill'), [
+    { name: 'Salt A', unit: 'each', avgCostCents: null, holdings: { 'St Alma': 2 } },
+    { name: 'Salt B', unit: 'each', avgCostCents: 1400, holdings: { 'Alma Avalon': 1 } }
+  ]);
+  try {
+    await assert.rejects(itemsService.mergeItems({ parentId: g.ids[0], duplicateIds: [g.ids[1]], confirmationText: CONFIRM }), /St Alma: .*worth \$28\.00/);
+  } finally {
+    await g.cleanup();
   }
 });
 
@@ -253,6 +289,8 @@ test('property: without a counted quantity, no merge ever raises a venue above i
         const total = before.filter((r) => r[1] === venue).reduce((s, r) => s + Number(r[2] ?? 0), 0);
         const after = (await prisma.venueStockItem.findFirst({ where: { stockItemId: f.ids[0], venue } }))?.onHand ?? 0;
         assert.ok(after <= largest + 1e-9, `round ${round} ${venue}: ${after} > largest ${largest}`);
+        const valueBefore = before.filter((r) => r[1] === venue).reduce((s, r) => s + Number(r[2] ?? 0), 0) * 1000;
+        assert.ok(after * 1000 <= valueBefore + 1, `round ${round} ${venue}: value rose`);
         if (total > largest + 1e-9) assert.ok(after < total, 'never the sum of two holdings');
       }
     } finally {

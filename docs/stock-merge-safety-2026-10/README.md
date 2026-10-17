@@ -30,6 +30,8 @@ The merge now lives in `apps/stock-api/src/services/item-merge.ts`. One planning
 
 Holdings never move between venues. Every change to a holding is written to the ledger as a stocktake-correction movement, on both the kept item and the duplicate.
 
+**Hard ceilings, enforced inside the merge.** At each venue the kept item may end up holding no more than the largest single record held there (in the kept unit), and worth no more than the records were worth together at their own costs. A counted quantity above that is refused ("count it on a stocktake instead"). A carry or decision that would be worth more at the kept item's cost is refused ("check the cost per bottle on these items before merging"), because that is how a case price on one record inflates value. A cost filled in from a duplicate counts too. The review screen shows the limit beside the counted-quantity box.
+
 **Counts that can still be applied block the merge.** This applies when an open, submitted or reopened count lists two of the records, because apply keeps one line per item and would silently drop the other. It also applies when such a count has a duplicate counted in a different unit. Applied and locked counts are history: they are repointed and never block.
 
 **Safe under concurrency, and safe to repeat.** The records and their counts are locked for the duration of the merge. The merge re-plans inside the transaction and refuses if stock or counts changed since the manager's review (`planToken`). Repeating a finished merge changes nothing (`alreadyMerged`). Two simultaneous clicks produce one merge and one no-op.
@@ -63,9 +65,10 @@ Merge stays disabled until every venue is decided, then the typed MERGE ITEMS co
 - history is identical before and after: every line and movement, with nothing folded
 - an open count listing both records blocks the merge
 - a stale review is refused, a repeated merge is a no-op, and simultaneous clicks produce one merge
-- **property:** across 12 randomised three-record merges, no venue ever ends above its largest record, and never at the sum
+- a counted quantity above any record, a carry at a higher cost and a backfilled cost are all refused, with nothing written
+- **property:** across 12 randomised three-record merges, no venue's quantity ever ends above its largest record, and no venue's value ever rises
 
-The stock-api suite passes 348 of 348.
+The stock-api suite passes 349 of 349.
 
 ## Rehearsal on restored production copies
 
@@ -77,9 +80,9 @@ The stock-api suite passes 348 of 348.
 |---|---:|---:|---|---|---|
 | Old merge (what happened at 06:48) | 25 | — | $37,596 → $39,322 | $63,528 → $64,567 | 53 lines deleted, 18 summed |
 | **New merge, no decisions** | 4 | 21 | **unchanged** | **unchanged** | identical |
-| New merge, keeping the most recently counted record | 25 | 0 | $37,596 → $39,765 | $63,528 → $62,871 | identical |
+| New merge, keeping the most recently counted record | 17 (8 refused) | 0 | $37,596 → $37,294 | $63,528 → $63,276 | identical |
 
-In the last row, no venue ever exceeded its largest record. The Avalon rise in that row comes from juice counted in 5 L containers being converted to litres at the then-uncorrected $70/L price, which PR #324 has since fixed. It is not from adding stock.
+In the last row the 8 refusals are the merges that would have raised value at the kept item's cost: Lyre's Agave, Giffard Ginger, Mango Puree, Mayonnaise, Lime Juice, Watermelon Juice and two more. Those are the case-price errors PR #324 corrected. With the ceilings, no venue's quantity or value ever rose.
 
 `scripts/rehearse-safe-merge.ts` reproduces these runs. It refuses to run against anything but a local copy.
 

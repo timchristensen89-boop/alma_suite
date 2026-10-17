@@ -170,7 +170,15 @@ export async function planMerge(db: Db, parentId: string, duplicateIds: string[]
     const suggested = holders
       .filter((r) => r.lastCountedAt)
       .sort((a, b) => (b.lastCountedAt ?? '').localeCompare(a.lastCountedAt ?? ''))[0];
-    const base = { venue, members: rows, suggestedItemId: holders.length > 1 ? suggested?.itemId ?? null : null };
+    // What a merge may never exceed here: the largest quantity any one record
+    // held (in the kept unit), and the records' combined value at their own
+    // costs. Enforced again inside the merge; shown so the manager sees it.
+    const costOf = (id: string) => members.find((m) => m.id === id)?.avgCostCents ?? 0;
+    const ceiling = {
+      onHand: holders.every((r) => r.onHandInKeptUnit !== null) ? Math.max(0, ...holders.map((r) => r.onHandInKeptUnit ?? 0)) : null,
+      valueCents: Math.round(rows.reduce((sum, r) => sum + (r.onHand ?? 0) * costOf(r.itemId), 0))
+    };
+    const base = { venue, members: rows, ceiling, suggestedItemId: holders.length > 1 ? suggested?.itemId ?? null : null };
     if (holders.length === 0) return { ...base, outcome: 'nothing' as const, resultOnHand: keptRow.onHand, needsDecision: false, reason: null };
     if (holders.length === 1 && holders[0]!.isKept) return { ...base, outcome: 'keep' as const, resultOnHand: keptRow.onHand, needsDecision: false, reason: null };
     if (holders.length === 1 && holders[0]!.onHandInKeptUnit !== null) {
@@ -233,8 +241,7 @@ export async function planMerge(db: Db, parentId: string, duplicateIds: string[]
     purchaseOrderLines: dupIds.length ? await db.purchaseOrderLine.count({ where: { stockItemId: { in: dupIds } } }) : 0
   };
 
-  const costOf = new Map(members.map((m) => [m.id, m.avgCostCents ?? 0]));
-  const valueBeforeCents = Math.round(members.reduce((sum, m) => sum + m.venueStock.reduce((s, r) => s + (r.onHand ?? 0) * (costOf.get(m.id) ?? 0), 0), 0));
+  const valueBeforeCents = venues.reduce((sum, v) => sum + v.ceiling.valueCents, 0);
   const valueAfterCents = Math.round(venues.reduce((sum, v) => sum + (v.resultOnHand ?? v.members[0]!.onHand ?? 0) * (parent.avgCostCents ?? 0), 0));
 
   const planToken = createHash('sha256')
@@ -356,6 +363,26 @@ export async function mergeItemsWithin(
         parentSuppliers.add(row.supplierId);
       }
       moved.priceListItems += 1;
+    }
+  }
+
+  // The cost the kept item will carry after the merge: its own, or (when it
+  // has none) a same-unit duplicate's. Every holding is valued at it.
+  const sameUnitForCost = dups.filter((d) => plan._factors.get(d.id) === 1);
+  const effectiveCostCents = parent.avgCostCents ?? sameUnitForCost.map((d) => d.avgCostCents).find((c) => c !== null && c !== undefined) ?? null;
+
+  // Hard limits, per venue. A merge may never leave the kept item holding more
+  // than the largest single record held, nor worth more than the records were
+  // worth together. If it would, the costs or units are wrong and must be fixed
+  // first; the merge refuses rather than deciding for anyone.
+  for (const { v, onHand } of targets) {
+    const qty = onHand ?? 0;
+    if (v.ceiling.onHand !== null && qty > v.ceiling.onHand + 1e-6) {
+      throw new HttpError(409, `${v.venue}: ${qty} ${describeUnit(parent)} is more than any record held here (at most ${v.ceiling.onHand}). A merge can never raise stock; count it on a stocktake instead.`);
+    }
+    const valueCents = Math.round(qty * (effectiveCostCents ?? 0));
+    if (valueCents > v.ceiling.valueCents + 1) {
+      throw new HttpError(409, `${v.venue}: the merged stock would be worth $${(valueCents / 100).toFixed(2)} at "${parent.name}"'s cost, more than the $${(v.ceiling.valueCents / 100).toFixed(2)} the records are worth now. Check the cost per ${describeUnit(parent)} on these items before merging.`);
     }
   }
 

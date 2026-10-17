@@ -79,7 +79,7 @@ export function MergeReviewDrawer({
         if (c.kind === 'duplicate') { holdings.push({ venue: v.venue, keep: 'duplicate', itemId: c.itemId }); qty = v.members.find((m) => m.itemId === c.itemId)?.onHandInKeptUnit ?? 0; }
         if (c.kind === 'counted') {
           const n = Number(c.text);
-          if (c.text.trim() === '' || !Number.isFinite(n) || n < 0) { ready = false; continue; }
+          if (c.text.trim() === '' || !Number.isFinite(n) || n < 0 || (v.ceiling.onHand !== null && n > v.ceiling.onHand + 1e-6)) { ready = false; continue; }
           holdings.push({ venue: v.venue, keep: 'counted', countedQty: n });
           qty = n;
         }
@@ -219,6 +219,10 @@ export function MergeReviewDrawer({
                             onChange={(event) => setChoices((c) => ({ ...c, [v.venue]: { kind: 'counted', text: event.target.value } }))}
                           />{' '}
                           {unit}
+                          {v.ceiling.onHand !== null ? <span className="subtle"> (at most {fmtQty(v.ceiling.onHand)}: a merge never raises stock)</span> : null}
+                          {choices[v.venue]?.kind === 'counted' && v.ceiling.onHand !== null && Number((choices[v.venue] as { text: string }).text) > v.ceiling.onHand + 1e-6 ? (
+                            <span className="error-text"> More than any record held. Count it on a stocktake instead.</span>
+                          ) : null}
                         </span>
                       </label>
                     </fieldset>
