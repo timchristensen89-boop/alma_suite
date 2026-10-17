@@ -97,6 +97,14 @@ function formatQty(value: number | null | undefined) {
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
 }
 
+// What a stored count shows in its box: the number as stored (to 4 places),
+// never a rounded display value — the box is saved back as typed, so a
+// rounded 1.41 would overwrite a stored 1.4125 the next time the row saves.
+function storedQty(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '';
+  return String(Math.round(value * 10000) / 10000);
+}
+
 function isOpenForCounting(stocktake: Pick<Stocktake, 'status' | 'appliedAt'>) {
   return !stocktake.appliedAt && (stocktake.status === 'IN_PROGRESS' || stocktake.status === 'REOPENED');
 }
@@ -422,7 +430,7 @@ export function StocktakeCountPage() {
       ]);
       setStocktake(detail);
       setMeta(detail.lines.map(lineMeta));
-      setQty(new Map(detail.lines.map((line) => [line.id, formatQty(line.countedQty)])));
+      setQty(new Map(detail.lines.map((line) => [line.id, storedQty(line.countedQty)])));
       setItems(picker.items);
       setCategories(picker.categories);
       setPrepRecipes(prep.prepRecipes);
@@ -1039,7 +1047,7 @@ const CountRow = memo(function CountRow({ line, item, name, vintage, detail, val
   }
 
   return (
-    <div className={`count-row${pending ? ' is-pending' : ''}${failed ? ' is-failed' : ''}${isPrep ? ' is-prep' : ''}${name === null ? ' is-vintage' : ''}`}>
+    <div className={`count-row${pending ? ' is-pending' : ''}${failed ? ' is-failed' : ''}${isPrep ? ' is-prep' : ''}${name === null ? ' is-vintage' : ''}${entryUnits ? ' has-unit' : ''}`}>
       <div className="count-row-main">
         <span className="count-row-name">
           {name === null ? (
