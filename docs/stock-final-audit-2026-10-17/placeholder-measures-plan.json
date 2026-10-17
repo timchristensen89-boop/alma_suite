@@ -1,0 +1,564 @@
+[
+ {
+  "group": "set",
+  "name": "Cheese Halloumi",
+  "id": "cmptowaly00pgs6019u3x1oam",
+  "measure": 750,
+  "measureUnit": "g",
+  "why": "invoice \"CHEESE HALOUMI 750GM\"; $85 for 5 = $17 each, the item cost",
+  "recipes": 2
+ },
+ {
+  "group": "count_only",
+  "name": "Midnight Mixers Classic Dry Tonic",
+  "id": "cmptovv6o0046s601ztaha619",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Cheese Ricotta Salata",
+  "id": "cmptowamw00pms6014jqksjgp",
+  "measure": 700,
+  "measureUnit": "g",
+  "why": "invoice \"AVG 700GM\"; Loaded counted it as \"700 Grams\" packs",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Cheese Goat",
+  "id": "cmptowali00pds601pr4jz6a4",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "invoice \"CHEESE GOAT LOG 1KG\" at $27.50 = the item cost",
+  "recipes": 2
+ },
+ {
+  "group": "count_only",
+  "name": "Midnight Mixers Soda Water",
+  "id": "cmptovv740049s6019wi9zn1b",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Oil Canola Spray",
+  "id": "cmptowaxd00rms601wckpebp1",
+  "measure": 450,
+  "measureUnit": "g",
+  "why": "invoice \"OIL CANOLA SPRAY 450GM\" at $4.50 = the item cost",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Coriander Ground",
+  "id": "cmptowatg00qvs601oasi3tiy",
+  "measure": 400,
+  "measureUnit": "g",
+  "why": "Loaded counted it as \"400 Grams\" packs",
+  "recipes": 0
+ },
+ {
+  "group": "count_only",
+  "name": "Cucumber Telegraph",
+  "id": "cmptowc0600y4s6017ca0xp16",
+  "why": "counted by the each; no recipe uses it by weight or volume (1 recipe lines by unit)",
+  "countUnit": "each"
+ },
+ {
+  "group": "count_only",
+  "name": "Dill",
+  "id": "cmoqfbnx3009k9ky2oav6wpwa",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "count_only",
+  "name": "Eggplant Box",
+  "id": "cmoqfbo3a009y9ky2x2kxp7xc",
+  "why": "counted by the each; no recipe uses it by weight or volume (1 recipe lines by unit)",
+  "countUnit": "each"
+ },
+ {
+  "group": "count_only",
+  "name": "Cucumber Quks",
+  "id": "cmptowbzp00y1s601sgs2p9p8",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Grapefruit Ruby",
+  "id": "cmptowbbr00u7s60121eayt8c",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded counted it in kilos",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Medley Tomatoes",
+  "id": "cmptowc4700yys601clclnxhr",
+  "measure": 200,
+  "measureUnit": "g",
+  "why": "Loaded counted it as \"200 Grams\" punnets",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Milk",
+  "id": "cmptowanu00pss601m30z8h5i",
+  "measure": 2000,
+  "measureUnit": "ml",
+  "why": "Loaded counted it as \"2 L\" bottles",
+  "recipes": 0
+ },
+ {
+  "group": "count_only",
+  "name": "Bay Leaves Bunch",
+  "id": "cmoqfbly300529ky2zhbuedjg",
+  "why": "counted by the each; no recipe uses it by weight or volume (6 recipe lines by unit)",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Vinegar White",
+  "id": "cmptowb8d00tms601mt1fnshi",
+  "measure": 1000,
+  "measureUnit": "ml",
+  "why": "Loaded counted it in litres; $1.08 is a per-litre price",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Nut Walnut",
+  "id": "cmptowaww00rjs601go69qsu1",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded counted it in kilos",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Oil Olive Extra Virgin",
+  "id": "cmptowayc00rss601jvo6xbsn",
+  "measure": 1000,
+  "measureUnit": "ml",
+  "why": "Loaded counted it in litres; $12.27 is a per-litre price",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Onion Fried",
+  "id": "cmptowazs00s1s601wxfjrkdv",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded counted it as \"1 KG\" packs",
+  "recipes": 0
+ },
+ {
+  "group": "count_only",
+  "name": "Petite Bouche Watercress",
+  "id": "cmptowbkg00vts6010gp6od19",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Onions Spanish",
+  "id": "cmptowc6600zas601i90aolcq",
+  "measure": 10000,
+  "measureUnit": "g",
+  "why": "invoice \"Onions Spanish Large Bag\"; Loaded counted it as \"10 KG\" bags (14 recipe lines in grams)",
+  "recipes": 14
+ },
+ {
+  "group": "set",
+  "name": "Chilli Large Red",
+  "id": "cmoqfbn1m007k9ky2to6qxb70",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "item note \"Pack: 1 kg\"",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Oranges Large",
+  "id": "cmptowbd200ugs601jay6ugcn",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded cost \"1 Kilo = $4.74\" = the item cost",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Freshwater Brewing Keg",
+  "id": "cmoqfbouh00bo9ky2cw59grj4",
+  "measure": 50000,
+  "measureUnit": "ml",
+  "why": "item note \"Pack: 50 l\" (recipe lines in mL)",
+  "recipes": 3
+ },
+ {
+  "group": "ask",
+  "name": "Beans Butter",
+  "id": "cmptowaqc00qas6012x3ha83g",
+  "question": "1 recipe line uses grams; bought as an A10 tin — what is the drained weight, or the tin weight?",
+  "recipes": 1,
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Chilli Choptle in Adobo",
+  "id": "cmptowar500qgs6017lhxa9vq",
+  "measure": 3000,
+  "measureUnit": "g",
+  "why": "Loaded counted it as \"3 KG\" tins",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Agave Syrup",
+  "id": "cmptowap000q1s6018squehvr",
+  "measure": 4000,
+  "measureUnit": "ml",
+  "why": "Loaded counted it as \"4L\"; agave nectar comes in 4 L at about this price",
+  "recipes": 4
+ },
+ {
+  "group": "set",
+  "name": "Coconut Flakes",
+  "id": "cmptowaso00qps601rqg9zavt",
+  "measure": 500,
+  "measureUnit": "g",
+  "why": "Loaded counted it as \"500 Grams\" packs",
+  "recipes": 1
+ },
+ {
+  "group": "keep",
+  "name": "Chilli Guajillo Dried",
+  "id": "cmptowaro00qjs60131vn5wcu",
+  "why": "100 g is real: Loaded cost \"540.37 Gram = $26.02\" = $4.82 per 100 g, the item cost",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Carrots Medium",
+  "id": "cmoqfbmnj006o9ky2pgijhsw1",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "item note \"Pack: 1 kg\"; Loaded counted it in kilos",
+  "recipes": 2
+ },
+ {
+  "group": "count_only",
+  "name": "Celeriac",
+  "id": "cmptowbwr00xis601igr7z0ct",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Chilli Habenero",
+  "id": "cmptowbxs00xns601unt5kb3h",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded counted it in kilos",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Peanuts Roasted",
+  "id": "cmptowb1200sas601rc2omwjk",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded counted it as \"1 KG\" packs",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Chilli Jalapeno",
+  "id": "cmptowbyi00xts6015io2wrtg",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded cost \"1.15 Kilo = $10.41\" ($9.05/kg = the item cost)",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Chilli Poblano",
+  "id": "cmptowbyz00xws60151owtgis",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded counted it in kilos",
+  "recipes": 0
+ },
+ {
+  "group": "count_only",
+  "name": "Flower Edible Elder",
+  "id": "cmptowc0n00y7s6017qbmdibm",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "ask",
+  "name": "Fresh Mix Forage",
+  "id": "cmsdf12xr004cmij9mhw0pbqj",
+  "question": "7 recipe lines use grams — how many grams in one punnet/pack?",
+  "recipes": 7,
+  "countUnit": "each"
+ },
+ {
+  "group": "count_only",
+  "name": "Flower Edible Marigold",
+  "id": "cmptowc0z00yas601q5ul159m",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "count_only",
+  "name": "Flower Edible Viola",
+  "id": "cmptowc1g00yds6017hucs1zp",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "count_only",
+  "name": "Flowers Edible Phlox",
+  "id": "cmptowc1t00ygs601cman1hzw",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Large Red Capsicum",
+  "id": "cmptowc2z00yps601jhtt7c7q",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded counted it in kilos; $7.15 is a per-kilo price",
+  "recipes": 0
+ },
+ {
+  "group": "count_only",
+  "name": "Petite Bouche Bulls Blood",
+  "id": "cmptowbj100vhs601og68qjjm",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "count_only",
+  "name": "Petite Bouche Chervil",
+  "id": "cmptowbje00vks601ys0c5lyh",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "count_only",
+  "name": "Petite Bouche Red Elk",
+  "id": "cmptowbjq00vns601fx9kk9ux",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "count_only",
+  "name": "Petite Bouche Upperland Cress",
+  "id": "cmptowbk300vqs601e3zo75xu",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Salt Rock Coarse",
+  "id": "cmptowb3l00sss6013jh0wuri",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded counted it in kilos",
+  "recipes": 2
+ },
+ {
+  "group": "count_only",
+  "name": "TOMATILLOS A10 GREEN TOMATO (Faro) EA (6)",
+  "id": "cmoqfbt6e00lk9ky2s49xhsub",
+  "why": "counted by the each; no recipe uses it by weight or volume (8 recipe lines by unit)",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Shallots Golden Peeled",
+  "id": "cmptowc7000zfs601xzn8r27q",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded counted it as \"1 KG\" packs",
+  "recipes": 1
+ },
+ {
+  "group": "set",
+  "name": "Sour Cream Light",
+  "id": "cmptowaon00pys601f49k34fg",
+  "measure": 1000,
+  "measureUnit": "ml",
+  "why": "Loaded counted it in litres",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Sugar Brown",
+  "id": "cmptowb5j00t4s601bwhwf7yo",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "invoice \"SUGAR BROWN 1KG\" at $4.00 = the item cost",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Thyme Dried",
+  "id": "cmptowbm700w1s601v69vps2z",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "Loaded counted it as \"1 KG\" packs",
+  "recipes": 0
+ },
+ {
+  "group": "ask",
+  "name": "Tomatoes Cherry",
+  "id": "cmptowc7t00zls601u3qyp57t",
+  "question": "2 recipe lines use grams — how many grams in one punnet? (often 250 g)",
+  "recipes": 2,
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Tomatoes Large Box",
+  "id": "cmoqfbtch00ly9ky24k97oeb6",
+  "measure": 10000,
+  "measureUnit": "g",
+  "why": "item note \"Pack: 10 kg\"; invoice \"Tomatoes Large Box\" (12 recipe lines in grams)",
+  "recipes": 12
+ },
+ {
+  "group": "count_only",
+  "name": "Fennel Each",
+  "id": "cmoqfboj700ay9ky2iogsvgg2",
+  "why": "counted by the each; no recipe uses it by weight or volume (1 recipe lines by unit)",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Lyres Orange Sec",
+  "id": "cmptovwf500dls601h14lq2ra",
+  "measure": 700,
+  "measureUnit": "ml",
+  "why": "Loaded counted it as \"700 mL\" bottles",
+  "recipes": 0
+ },
+ {
+  "group": "set",
+  "name": "Sammy Piquant The Jetsetter",
+  "id": "cmptovuzr002xs601p38qiam2",
+  "measure": 700,
+  "measureUnit": "ml",
+  "why": "Loaded cost \"0.5 700 mL = $17.03\"",
+  "recipes": 0
+ },
+ {
+  "group": "count_only",
+  "name": "Capi Ginger Beer",
+  "id": "cmptovv150036s601c09m15sy",
+  "why": "counted by the each; no recipe uses it by weight or volume",
+  "countUnit": "each"
+ },
+ {
+  "group": "count_only",
+  "name": "Broccolinni Box",
+  "id": "cmoqfbm9p005s9ky2vffqhsxk",
+  "why": "counted by the bunch; no recipe uses it by weight or volume (2 recipe lines by unit)",
+  "countUnit": "bunch"
+ },
+ {
+  "group": "count_only",
+  "name": "Carrots Dutch Box",
+  "id": "cmoqfbmmp006m9ky2nrktjelx",
+  "why": "counted by the each; no recipe uses it by weight or volume (2 recipe lines by unit)",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Chilli Morita",
+  "id": "cmoqfbn2h007m9ky23kc27jqf",
+  "measure": 1000,
+  "measureUnit": "g",
+  "why": "item note \"Pack: 1 kg\"",
+  "recipes": 3
+ },
+ {
+  "group": "count_only",
+  "name": "STRANGELOVE DOUBLE GINGER BEER - (CASE OF 24)",
+  "id": "cmoqfbsr300kk9ky29gynj26g",
+  "why": "counted by the each; no recipe uses it by weight or volume (3 recipe lines by unit)",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Fee Brothers Grapefruit Bitters",
+  "id": "cmptovvac004us601hee8v7h5",
+  "measure": 150,
+  "measureUnit": "ml",
+  "why": "Loaded counted it as \"150 mL\" bottles",
+  "recipes": 0
+ },
+ {
+  "group": "ask",
+  "name": "Tortilla Corn",
+  "id": "cmptowajj00p1s601zwo9pc7k",
+  "question": "counted one tortilla at a time (1,700 at Avalon) but counted 2.15 in August — is the count unit one tortilla, or a pack?",
+  "recipes": 10,
+  "countUnit": "each"
+ },
+ {
+  "group": "ask",
+  "name": "Coriander Dozen",
+  "id": "cmoqfbnit008o9ky2rf1uo52e",
+  "question": "counted by the dozen bunches, but 18 recipe lines use grams — how many grams is one dozen bunches?",
+  "recipes": 18,
+  "countUnit": "dozen"
+ },
+ {
+  "group": "set",
+  "name": "Tortilla Flour 12inch",
+  "id": "cmptowak400p4s601hqhv1mtt",
+  "measure": 91,
+  "measureUnit": "g",
+  "why": "invoice \"FLOUR TORTILLAS 12X91GM\" — one tortilla is 91 g",
+  "recipes": 9
+ },
+ {
+  "group": "count_only",
+  "name": "STRANGELOVE YUZU SODA - (CASE OF 24)",
+  "id": "cmoqfbstk00kq9ky2mo6yhudf",
+  "why": "counted by the each; no recipe uses it by weight or volume (1 recipe lines by unit)",
+  "countUnit": "each"
+ },
+ {
+  "group": "count_only",
+  "name": "STRANGELOVE VERY MANDARIN - (CASE OF 24)",
+  "id": "cmoqfbssr00ko9ky2ekwp1xki",
+  "why": "counted by the each; no recipe uses it by weight or volume (2 recipe lines by unit)",
+  "countUnit": "each"
+ },
+ {
+  "group": "set",
+  "name": "Whole Dried Arbol Chilli 75GRS",
+  "id": "cmoqfbu1y00nk9ky2sgnx0fqg",
+  "measure": 75,
+  "measureUnit": "g",
+  "why": "name and item note \"Pack: 75 g\"",
+  "recipes": 2
+ },
+ {
+  "group": "keep",
+  "name": "CHEESE BLUE 100GM (Castello) EA (10)",
+  "id": "cmoqfbmud00749ky2mu2gd12f",
+  "why": "100 g is real: name and item note \"Pack: 100 g\"",
+  "recipes": 1
+ }
+]
