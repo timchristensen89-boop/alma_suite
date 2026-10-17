@@ -11,6 +11,8 @@ recipesRouter.get('/', async (req, res, next) => {
       ? Number.parseInt(raw, 10)
       : null;
     res.json(await recipesService.list({
+      // Scope the sales join to one venue (the home page's per-venue lists).
+      venue: typeof req.query.venue === 'string' && req.query.venue.trim() ? req.query.venue.trim() : null,
       withSalesLookbackDays: Number.isFinite(parsed) ? parsed : null
     }));
   } catch (error) {
