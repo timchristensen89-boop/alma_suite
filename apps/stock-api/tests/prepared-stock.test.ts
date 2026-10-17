@@ -40,7 +40,9 @@ async function fixture(tag: string) {
       lines: { create: [
         { ingredientName: tequila.name, quantity: 700, unit: 'ml', itemId: tequila.id, position: 1 },
         { ingredientName: lime.name, quantity: 300, unit: 'ml', itemId: lime.id, position: 2 },
-        { ingredientName: '(10 portions)', quantity: 1, unit: 'l', position: 3 }
+        { ingredientName: '(10 portions)', quantity: 1, unit: 'l', position: 3 },
+        // The import split some names over two lines; the fragment has no amount.
+        { ingredientName: 'Blanco', quantity: null, unit: 'bottle', itemId: tequila.id, position: 4 }
       ] }
     }
   });
@@ -103,7 +105,7 @@ test('the linked recipe suggests the cost per litre, ignoring import leftovers',
     assert.ok(item.prepRecipe);
     assert.equal(item.prepRecipe!.batchCostCents, 5128);
     assert.equal(item.prepRecipe!.costPerCountUnitCents, 5128, '$51.28 for 1 L');
-    assert.equal(item.prepRecipe!.note, null, 'the "(10 portions)" line is an import leftover, not a missing ingredient');
+    assert.equal(item.prepRecipe!.note, null, 'the "(10 portions)" leftover and the "Blanco" name fragment are not missing ingredients');
     // Unlinking clears the suggestion; linking a dish (not a prep recipe) is refused.
     const dish = await prisma.recipe.create({ data: { title: `Dish ${f.recipe.id}`, isPrepRecipe: false, status: 'ACTIVE' } });
     await assert.rejects(itemsService.updateItem(f.batch.id, { prepRecipeId: dish.id }), /Only a prep recipe/);

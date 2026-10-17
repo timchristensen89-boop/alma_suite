@@ -1,0 +1,16 @@
+[
+  {
+    "lineId": "cmq5n59s0001is6018z92knwc",
+    "recipe": "Coconut Margarita Batch (St Alma)",
+    "expectNow": { "ingredientName": "Coconut Washed", "quantity": 1, "unit": "units", "itemId": null, "subRecipeId": null },
+    "set": { "ingredientName": "Coconut Washed Tequila/CDC", "quantity": 1900, "unit": "ml", "subRecipeId": "cmoqfctuu02d89ky2akkw0b8b" },
+    "why": "The import split \"Coconut Washed Tequila/CDC\" over two lines and lost the amount. The batch makes 2,825 mL from 625 mL Supasawa and 300 mL coconut syrup; the remaining 1,900 mL is exactly one batch of the St Alma Coconut Washed Tequila/CDC prep recipe (yield 1,900 mL)."
+  },
+  {
+    "lineId": "cmoqfcxwk02rn9ky2yxmfs560",
+    "recipe": "Octopus Adobo (St Alma)",
+    "expectNow": { "ingredientName": "Chicken Adobo", "quantity": 500, "unit": "g", "itemId": null, "subRecipeId": null },
+    "set": { "subRecipeId": "cmoqfcxtz02r49ky20ejhyhkp" },
+    "why": "500 g of the St Alma Chicken Adobo prep recipe (yield 7.3 kg); the line was never linked, so the batch had no cost for it."
+  }
+]

@@ -5,6 +5,7 @@
  *   DATABASE_URL=… tsx scripts/create-prepared-stock-items-2026-10.ts            # dry run
  *   DATABASE_URL=… tsx scripts/create-prepared-stock-items-2026-10.ts --apply
  *   DATABASE_URL=… tsx scripts/create-prepared-stock-items-2026-10.ts --rollback <runId>
+ *   DATABASE_URL=… tsx scripts/create-prepared-stock-items-2026-10.ts --links <file> [--apply-links]
  *
  * Each item: the recipe's title (with " — <venue>" when two venues share a
  * title), in Batch Cocktails (batches, syrups, cordials) or Kitchen Prep
@@ -89,8 +90,13 @@ async function plan(all: boolean): Promise<Planned[]> {
       problems.push(`recipe says ${dollars(avgCostCents)} per ${countUnit} — an ingredient cost looks wrong; cost left blank`);
       avgCostCents = null;
     }
-    if (countUnit && avgCostCents === null && !problems.some((p) => p.startsWith('recipe says'))) problems.push('no ingredient has a cost — cost per unit left blank');
-    else if (countUnit && cost && cost.uncostedLines > 0) problems.push(`${cost.uncostedLines} of ${cost.totalLines} ingredients uncosted — cost is a floor`);
+    // A partial cost understates the batch, so it is never booked: the item is
+    // created with no cost and the missing ingredients are named.
+    if (countUnit && cost && cost.uncostedLines > 0 && avgCostCents !== null) {
+      problems.push(`no cost for ${cost.uncostedIngredients.map((n) => `"${n}"`).join(', ')} — cost left blank until it is costed or linked`);
+      avgCostCents = null;
+    }
+    if (countUnit && avgCostCents === null && !problems.length) problems.push('no ingredient has a cost — cost per unit left blank');
     let name = r.title.trim();
     if ((titleCount.get(name.toLowerCase()) ?? 0) > 1 && r.venue) name = `${name} — ${r.venue}`;
     if (taken.has(name.toLowerCase())) problems.push(`an item called "${name}" already exists`);
@@ -114,7 +120,8 @@ async function apply(runId: string, rows: Planned[]) {
   const sectionId = new Map(sections.map((s) => [s.name, s.id]));
   if (sectionId.size < 2) throw new Error('The Batch Cocktails / Kitchen Prep categories are missing — run the migration first');
   const ready = rows.filter((r) => r.countUnit && !r.problems.some((p) => p.startsWith('an item called')));
-  // Problems that only mean "cost is a floor" do not block creation.
+  // A blank cost does not block creation: the manager types it, or presses
+  // "Use recipe cost" once the ingredients are costed.
   await prisma.$transaction(async (tx) => {
     for (const r of ready) {
       const item = await tx.stockItem.create({
@@ -145,6 +152,40 @@ async function apply(runId: string, rows: Planned[]) {
   return ready.length;
 }
 
+type LinkFix = { lineId: string; recipe: string; expectNow: Record<string, unknown>; set: Record<string, unknown>; why: string };
+
+/**
+ * Recipe-line links that make a batch's cost complete: a line the import left
+ * unlinked ("Coconut Washed", "Chicken Adobo") pointed at the prep recipe it
+ * names. Checked against what was reviewed, snapshotted, then written. Run
+ * before the dry run so the plan's costs include them.
+ */
+async function applyLinks(runId: string, file: string) {
+  const fs = await import('node:fs');
+  const fixes = JSON.parse(fs.readFileSync(file, 'utf8')) as LinkFix[];
+  const problems: string[] = [];
+  for (const f of fixes) {
+    const line = (await prisma.recipeLine.findUnique({ where: { id: f.lineId } })) as unknown as Record<string, unknown> | null;
+    if (!line) { problems.push(`${f.recipe}: line ${f.lineId} is gone`); continue; }
+    for (const [k, v] of Object.entries(f.expectNow)) if ((line[k] ?? null) !== v) problems.push(`${f.recipe}: ${k} is ${String(line[k])}, reviewed ${String(v)}`);
+    if (typeof f.set.subRecipeId === 'string') {
+      const sub = await prisma.recipe.findUnique({ where: { id: f.set.subRecipeId }, select: { isPrepRecipe: true, status: true } });
+      if (!sub?.isPrepRecipe || sub.status !== 'ACTIVE') problems.push(`${f.recipe}: ${f.set.subRecipeId} is not an active prep recipe`);
+    }
+  }
+  for (const f of fixes) console.log(`  ${f.recipe}: ${JSON.stringify(f.expectNow)} → ${JSON.stringify(f.set)}\n      ${f.why}`);
+  if (problems.length) throw new Error(`REFUSED:\n  ${problems.join('\n  ')}`);
+  if (!flag('--apply-links')) { console.log('Links checked — nothing written. Re-run with --apply-links.'); return; }
+  await prisma.$transaction(async (tx) => {
+    for (const f of fixes) {
+      const before = await tx.recipeLine.findUniqueOrThrow({ where: { id: f.lineId } });
+      await tx.$executeRawUnsafe(`INSERT INTO "${TABLE}" ("runId",kind,"rowId",payload) VALUES ($1,'recipeLine',$2,$3::jsonb)`, runId, f.lineId, JSON.stringify(before));
+      await tx.recipeLine.update({ where: { id: f.lineId }, data: f.set });
+    }
+  });
+  console.log(`Applied links run ${runId}: ${fixes.length} recipe line(s). Rollback: --rollback ${runId}`);
+}
+
 async function rollback(runId: string, force: boolean) {
   const rows = await prisma.$queryRawUnsafe<Array<{ kind: string; rowId: string; payload: Record<string, unknown> }>>(`SELECT kind, "rowId", payload FROM "${TABLE}" WHERE "runId" = $1 ORDER BY id`, runId);
   if (!rows.length) throw new Error(`No record of run ${runId}`);
@@ -158,6 +199,11 @@ async function rollback(runId: string, force: boolean) {
     throw new Error(`run ${runId}: the items have been used since (${used[0]} count lines, ${used[1]} movements, ${used[2]} recipe lines). Decide what to keep, then --force.`);
   }
   await prisma.$transaction(async (tx) => {
+    for (const r of rows.filter((x) => x.kind === 'recipeLine')) {
+      const p = r.payload;
+      await tx.recipeLine.update({ where: { id: r.rowId }, data: { ingredientName: p.ingredientName as string, quantity: p.quantity as number | null, unit: p.unit as string | null, itemId: p.itemId as string | null, subRecipeId: p.subRecipeId as string | null } });
+      await tx.$executeRawUnsafe(`UPDATE "RecipeLine" SET "updatedAt" = ($1::timestamptz AT TIME ZONE 'UTC') WHERE id = $2`, p.updatedAt, r.rowId);
+    }
     await tx.venueStockItem.deleteMany({ where: { stockItemId: { in: itemIds } } });
     await tx.stockItem.deleteMany({ where: { id: { in: itemIds } } });
     for (const t of rows.filter((r) => r.kind === 'template')) {
@@ -165,19 +211,24 @@ async function rollback(runId: string, force: boolean) {
       await tx.$executeRawUnsafe(`UPDATE "StocktakeTemplate" SET "updatedAt" = ($1::timestamptz AT TIME ZONE 'UTC') WHERE id = $2`, t.payload.updatedAt, t.rowId);
     }
   });
-  console.log(`Rolled back run ${runId}: ${itemIds.length} item(s) removed, ${rows.filter((r) => r.kind === 'template').length} template(s) restored.`);
+  console.log(`Rolled back run ${runId}: ${itemIds.length} item(s) removed, ${rows.filter((r) => r.kind === 'template').length} template(s) and ${rows.filter((r) => r.kind === 'recipeLine').length} recipe line(s) restored.`);
 }
 
 async function main() {
   const url = process.env.DATABASE_URL ?? '';
   const [{ db }] = await prisma.$queryRawUnsafe<Array<{ db: string }>>('SELECT current_database() AS db');
   const production = db === 'alma_suite_v18' || !/@(localhost|127\.0\.0\.1)[:/]/.test(url);
-  const writing = flag('--apply') || option('--rollback');
+  const writing = flag('--apply') || flag('--apply-links') || option('--rollback');
   if (production && writing && !flag('--i-mean-production')) throw new Error(`Connected to ${db}. Add --i-mean-production to write to it.`);
   console.log(`database: ${db}${production ? ' — PRODUCTION' : ''}`);
   await ensureTable();
   const runToRollback = option('--rollback');
   if (runToRollback) return rollback(runToRollback, flag('--force'));
+  const linksFile = option('--links');
+  if (linksFile) {
+    const runId = option('--run-id') ?? `prepared-links-${new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}`;
+    return applyLinks(runId, linksFile);
+  }
 
   const rows = await plan(flag('--all'));
   for (const section of [BAR_SECTION, KITCHEN_SECTION]) {

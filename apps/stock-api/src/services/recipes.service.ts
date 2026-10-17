@@ -1907,12 +1907,20 @@ export async function prepRecipeBatchCost(id: string): Promise<{
   batchCostCents: number | null;
   /** Ingredient lines with no cost — the batch cost above leaves them out. */
   uncostedLines: number;
+  /** Their names, so a manager can see what to cost or link. */
+  uncostedIngredients: string[];
   totalLines: number;
 } | null> {
   const row = await prisma.recipe.findUnique({ where: { id }, select: { id: true } });
   if (!row) return null;
   const full = await findRecipeWithLines(id);
   const cost = calculateRecipeCost(full);
+  // An ingredient is a line with an amount that is not an import leftover. The
+  // import also split some names over two lines ("Ron Santiago de Cuba" +
+  // "Blanca"); the fragment has no amount and is not a missing ingredient.
+  const ingredients = cost.lines.filter(
+    (line) => !isImportLeftover(line.ingredientName) && line.quantity !== null && line.quantity > 0
+  );
   return {
     id: full.id,
     title: full.title,
@@ -1928,7 +1936,8 @@ export async function prepRecipeBatchCost(id: string): Promise<{
       (cost.lines.some((line) => line.lineCostCents !== null)
         ? cost.lines.reduce((total, line) => total + (line.lineCostCents ?? 0), 0)
         : null),
-    uncostedLines: cost.lines.filter((line) => line.lineCostCents === null && !isImportLeftover(line.ingredientName)).length,
-    totalLines: cost.lines.filter((line) => !isImportLeftover(line.ingredientName)).length
+    uncostedLines: ingredients.filter((line) => line.lineCostCents === null).length,
+    uncostedIngredients: ingredients.filter((line) => line.lineCostCents === null).map((line) => line.ingredientName),
+    totalLines: ingredients.length
   };
 }
